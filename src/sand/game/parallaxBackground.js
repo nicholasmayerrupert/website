@@ -276,6 +276,14 @@ function ridgeY(worldX, base, amp, seed) {
   return base + amp * 0.72 - broad * amp * 1.35 - shoulder * amp * 0.48 + brokenEdge;
 }
 
+function tracePixelSurface(ctx, points, yOffset = 0) {
+  ctx.lineTo(points[0].x, points[0].y + yOffset);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i - 1].y + yOffset);
+    ctx.lineTo(points[i].x, points[i].y + yOffset);
+  }
+}
+
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, scale = 1) {
   const offX = snapScreenPixel(camX * depth - w * 0.5, scale);
   // Round the stable contour before applying the screen-pixel offset. The
@@ -302,7 +310,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(surfacePoints[0].x, h);
-  for (const point of surfacePoints) ctx.lineTo(point.x, point.y);
+  tracePixelSurface(ctx, surfacePoints);
   ctx.lineTo(surfacePoints[surfacePoints.length - 1].x, h);
   ctx.closePath();
   ctx.fill();
@@ -312,14 +320,12 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
 
   // A narrow crest light separates overlapping silhouettes while preserving
   // the intentionally hard pixel edge.
-  ctx.strokeStyle = mixColor(color, skyLow, 0.34);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  surfacePoints.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y + 1);
-    else ctx.lineTo(point.x, point.y + 1);
-  });
-  ctx.stroke();
+  ctx.fillStyle = mixColor(color, skyLow, 0.34);
+  for (let i = 1; i < surfacePoints.length; i++) {
+    const left = surfacePoints[i - 1];
+    const right = surfacePoints[i];
+    ctx.fillRect(left.x, left.y + 1, right.x - left.x, 1);
+  }
 
   // Alternating faces give each ridge structure as the camera pans.
   const facetPeriod = 48 + detail * 12;
@@ -363,6 +369,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   return {
     offX,
     offY,
+    minimumSurfaceY: base - offY - amp * 1.23,
     surfaceRawY,
     surfaceWorldRawY,
     surfaceWorldY,
@@ -371,7 +378,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   };
 }
 
-function drawSnowCap(ctx, points, snow, snowLine, amp, ridge) {
+function drawSnowCap(ctx, points, snow, snowLine, amp) {
   if (points.length < 4) return;
   const capPoints = points.map((point) => {
     const { rawY, worldX } = point;
@@ -391,9 +398,8 @@ function drawSnowCap(ctx, points, snow, snowLine, amp, ridge) {
     for (let column = 0; column < columns; column++) {
       const t = column / columns;
       const x = left.x + column;
-      const top = Math.round((left.y + (right.y - left.y) * t) + ridge.offY) - ridge.offY;
       const depth = Math.round(left.depth + (right.depth - left.depth) * t);
-      if (depth > 0) ctx.fillRect(x, top, 1, depth);
+      if (depth > 0) ctx.fillRect(x, left.y, 1, depth);
     }
   }
 }
@@ -412,12 +418,54 @@ function drawSnowCaps(ctx, ridge, base, amp, color, daylight) {
       cap.push(point);
     } else if (cap.length) {
       cap.push(point);
-      drawSnowCap(ctx, cap, snow, snowLine, amp, ridge);
+      drawSnowCap(ctx, cap, snow, snowLine, amp);
       cap = [];
     }
     previous = point;
   }
-  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp, ridge);
+  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp);
+}
+
+function drawPine(ctx, x, groundY, height, dark, light) {
+  const top = groundY - height;
+  ctx.fillStyle = dark;
+  ctx.fillRect(x, top, 1, height + 1);
+  ctx.fillRect(x - 1, top + 1, 3, 1);
+  ctx.fillRect(x - 2, top + 3, 5, 1);
+  if (height >= 6) ctx.fillRect(x - 2, top + 5, 5, 1);
+  ctx.fillStyle = light;
+  ctx.fillRect(x, top + 1, 1, Math.max(1, height - 2));
+  ctx.fillRect(x - 1, top + 3, 1, 1);
+}
+
+function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
+  const dark = mixColor(color, '#061713', 0.62);
+  const light = mixColor(color, skyLow, 0.28);
+  const bandStep = 9;
+  const bandCount = Math.ceil(Math.max(0, h - ridge.minimumSurfaceY) / bandStep) + 1;
+
+  for (let band = 0; band < bandCount; band++) {
+    const spacing = 11 + (band % 3);
+    const stagger = (band * 7) % spacing;
+    const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
+    for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
+      const treeSeed = worldX + seed * 613 + band * 1877;
+      if (rand01(treeSeed) < Math.min(0.24, 0.1 + band * 0.006)) continue;
+      const x = worldX - ridge.offX;
+      const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
+      const groundY = ridge.surfaceWorldY(worldX) + 1 + band * bandStep
+        + Math.floor(rand01(treeSeed + 198) * 4);
+      if (groundY - height > h || groundY > h + 4) continue;
+
+      ctx.globalAlpha = Math.max(0.58, 1 - band * 0.035);
+      drawPine(ctx, x, groundY, height, dark, light);
+      if (rand01(treeSeed + 294) > 0.56) {
+        ctx.fillStyle = light;
+        ctx.fillRect(x - 3, groundY + 2, 2 + Math.floor(rand01(treeSeed + 388) * 4), 1);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawLodgeWindow(ctx, x, y, light) {
@@ -685,7 +733,8 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3, s);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
-    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4, s);
+    const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4, s);
+    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2, s);

@@ -817,23 +817,57 @@ bool ForceSystem::tryMoveLoose(
     return E.canEnterIndex(toK, material);
   };
   int destination = -1;
+  int stepX = moveCount > 0 ? moves[0].first : 0;
+  int stepY = moveCount > 0 ? moves[0].second : 0;
+  int pressureX = x - stepX, pressureY = y - stepY;
+  bool pressureBehind = false;
+  if (pressureX > 0 && pressureX < E.cols - 1
+      && pressureY > 0 && pressureY < E.rows) {
+    int pressureK = pressureY * E.cols + pressureX;
+    pressureBehind = E.L->grid[pressureK] == material
+                  && E.L->vacatedStamp[pressureK] != E.tick;
+  }
+  uint32_t lateralPhase = E.L->worldSeed ^ 0x4C495155u
+                        ^ ((uint32_t)E.tick * 0x9e3779b9u);
+  bool fanPressuredLiquid = target == FORCE_LIQUID
+    && magnitude >= CELL_STEP_FORCE && pressureBehind
+    && whash2(lateralPhase, E.L->worldOffsetX + x,
+              E.L->worldOffsetY + y) < 0.125;
+  // Pressurized liquid occasionally takes another inward route before the
+  // direct radial cell, widening an incoming stream into available shell space.
+  if (fanPressuredLiquid && moveCount > 0) {
+    std::array<std::pair<int, int>, 2> lateralMoves;
+    if (stepX && stepY) {
+      lateralMoves = {{moves[1], moves[2]}};
+    } else {
+      lateralMoves = {{
+        {stepX + stepY, stepY - stepX},
+        {stepX - stepY, stepY + stepX}
+      }};
+    }
+    if (((E.L->worldOffsetX + x) + (E.L->worldOffsetY + y)
+         + E.tick) & 1)
+      std::swap(lateralMoves[0], lateralMoves[1]);
+    for (const auto& lateral : lateralMoves) {
+      int nx = x + lateral.first, ny = y + lateral.second;
+      if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows)
+        continue;
+      int toK = ny * E.cols + nx;
+      uint8_t occupant = E.L->grid[toK];
+      if (occupant != EMPTY && !E.isGasMaterial(occupant)) continue;
+      if (!canEnter(toK)) continue;
+      destination = toK;
+      break;
+    }
+  }
   if (moveCount > 0) {
     int nx = x + moves[0].first, ny = y + moves[0].second;
     if (nx > 0 && nx < E.cols - 1 && ny > 0 && ny < E.rows) {
       int toK = ny * E.cols + nx;
-      if (canEnter(toK)) destination = toK;
+      if (destination < 0 && canEnter(toK)) destination = toK;
     }
   }
   if (destination < 0 && moveCount > 0) {
-    int stepX = moves[0].first, stepY = moves[0].second;
-    int pressureX = x - stepX, pressureY = y - stepY;
-    bool pressureBehind = false;
-    if (pressureX > 0 && pressureX < E.cols - 1
-        && pressureY > 0 && pressureY < E.rows) {
-      int pressureK = pressureY * E.cols + pressureX;
-      pressureBehind = E.L->grid[pressureK] == material
-                    && E.L->vacatedStamp[pressureK] != E.tick;
-    }
     double minimum = looseMinForce[layerIndex(E.L)][material];
     bool forcePressureGradient = target != FORCE_GAS
       && minimum < 1e20 && magnitude > minimum + 0.015;

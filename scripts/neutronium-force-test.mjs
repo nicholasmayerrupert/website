@@ -134,8 +134,9 @@ for (const [label, mat, limit] of [
   const before = countMaterial(engine, mat);
   const idleAt = runUntilIdle(engine, limit);
   const quadrants = quadrantCounts(engine, mat, sourceX, sourceY);
+  const minimumQuadrant = mat === MAT.SAND ? 10 : 38;
   check(`one-sided ${label} wraps around neutronium (${quadrants.join('/')})`,
-    quadrants.every((count) => count >= 10));
+    quadrants.every((count) => count >= minimumQuadrant));
   check(`one-sided radial flow conserves ${label}`,
     countMaterial(engine, mat) === before);
   check(`one-sided ${label} flow settles (${idleAt} steps)`,
@@ -200,7 +201,7 @@ for (const [label, mat, limit] of [
   }
   const sandBefore = countMaterial(engine, MAT.SAND);
   const waterBefore = countMaterial(engine, MAT.WATER);
-  const idleAt = runUntilIdle(engine, 250);
+  const idleAt = runUntilIdle(engine, 320);
   const sand = materialStats(engine, MAT.SAND, sourceX, sourceY);
   const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
   check(`sand sorts inside water (${sand.meanRadius.toFixed(2)} < ${water.meanRadius.toFixed(2)})`,
@@ -208,7 +209,7 @@ for (const [label, mat, limit] of [
   check('radially sorted sand and water are conserved',
     sand.count === sandBefore && water.count === waterBefore);
   check(`a static mixed scene settles (${idleAt} steps)`,
-    idleAt > 0 && idleAt <= 250 && engine.stepWorld() === false);
+    idleAt > 0 && idleAt <= 320 && engine.stepWorld() === false);
   engine.destroy();
 }
 

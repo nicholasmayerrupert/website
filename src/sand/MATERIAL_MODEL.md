@@ -99,9 +99,10 @@ free body cell and a static `STONE` component cell.
   subordinate receives attraction from that pair. Strong fields replace ordinary
   downward loose-material settling.
   Pressure-blocked powders and liquids spread along force tangents to wrap around
-  the source, while density displacement sorts denser materials inward and
-  liquids into an outer shell. Force-balanced loose cells become inactive around
-  a static source.
+  the source. Pressurized liquids occasionally take a lateral-inward free-volume
+  route before their direct radial step, broadening the outer shell without
+  changing density displacement. Force-balanced loose cells become inactive
+  around a static source.
 
 ## Which field should code use?
 

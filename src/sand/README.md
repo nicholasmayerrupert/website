@@ -338,7 +338,9 @@ neutronium field, force-directed settling owns loose-material motion
 instead of the ordinary downward density, gap, and liquid surface passes.
 Pressure-blocked powders and liquids can move along force tangents, so a mass
 arriving from one direction wraps around the source instead of remaining in its
-starting quadrant. Denser loose materials sort closer to the source, with water
+starting quadrant. Pressurized liquids also occasionally choose a lateral-inward
+free cell before the direct radial cell, widening incoming streams before they can
+form narrow spires. Denser loose materials sort closer to the source, with water
 forming the outer shell. Tangential flow stops after quadrant coverage is balanced
 or stops improving, and a blocked static arrangement becomes inactive; moving
 neutronium bodies continue to wake their field.

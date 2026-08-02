@@ -106,7 +106,8 @@ component registration, and generation/restoration. Browser presentation exposes
   cells park without rescheduling the layer, so the scene returns to the normal
   idle fast path. Moving neutronium dominance is filtered from emitter cell-count
   metadata during the existing nearest-source query; it does not add a body-pair
-  scan or a contact pass.
+  scan or a contact pass. Liquid fanning is a hashed alternate candidate inside
+  the same active-cell force query and does not add a grid traversal.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a

@@ -393,13 +393,9 @@ void ForceSystem::wakeAffectedTargets(
     if (body->jointRole == 2 || body->awake) continue;
     int x = (int)std::lround(body->px), y = (int)std::lround(body->py);
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
-    if (bins) {
-      int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
-      if (bin < 0 || bin >= (int)bins->size() || !(*bins)[bin]) continue;
-    }
+    if (bins && !bodyTouchesBins(body, *bins)) continue;
     double forceX, forceY;
-    bool active = sampleLayer(layer, body->px, body->py, FORCE_RIGID,
-                              body->id, forceX, forceY);
+    bool active = sampleBody(layer, body, forceX, forceY);
     if (!active && !wakeReleased) continue;
     if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
     if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
@@ -1054,12 +1050,65 @@ bool ForceSystem::sampleLoose(
   return entry.active;
 }
 
-bool ForceSystem::sample(
-    double x, double y, uint8_t target, int sourceBodyId,
-    double& forceX, double& forceY,
-    int targetNeutroniumCells, int targetBodyLayer) const {
-  return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY,
-                     targetNeutroniumCells, targetBodyLayer);
+bool ForceSystem::sampleBody(
+    Layer* layer, Body* body, double& forceX, double& forceY) const {
+  int targetLayer = layerIndex(layer);
+  int neutroniumCells = bodyNeutroniumCellCount(body);
+  if (sampleLayer(layer, body->px, body->py, FORCE_RIGID, body->id,
+                  forceX, forceY, neutroniumCells,
+                  neutroniumCells > 0 ? targetLayer : -1))
+    return true;
+  // Moving neutronium uses body-level dominance metadata. Keep that exact path
+  // to one query; ordinary long bodies can fall back to their exposed cells.
+  if (neutroniumCells > 0) return false;
+
+  double cs = std::cos(body->angle), sn = std::sin(body->angle);
+  double bestMagnitude2 = 0;
+  uint8_t targetBit = layerBit(layer);
+  for (int point : body->boundaryPts) {
+    if (point < 0 || point >= body->nPts) continue;
+    double localX = body->points[point * 2];
+    double localY = body->points[point * 2 + 1];
+    double x = body->px + localX * cs - localY * sn;
+    double y = body->py + localX * sn + localY * cs;
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+    int bin = ((int)y >> CHUNK_SHIFT) * E.chunkCols
+            + ((int)x >> CHUNK_SHIFT);
+    if (!binAffectsLayer(states[0], bin, targetBit)
+        && !binAffectsLayer(states[1], bin, targetBit))
+      continue;
+    double sampleX, sampleY;
+    if (!sampleLayer(layer, x, y, FORCE_RIGID, body->id,
+                     sampleX, sampleY))
+      continue;
+    double magnitude2 = sampleX * sampleX + sampleY * sampleY;
+    if (magnitude2 <= bestMagnitude2) continue;
+    bestMagnitude2 = magnitude2;
+    forceX = sampleX;
+    forceY = sampleY;
+  }
+  return bestMagnitude2 > 1e-12;
+}
+
+bool ForceSystem::bodyTouchesBins(
+    const Body* body, const std::vector<uint8_t>& bins) const {
+  auto pointTouches = [&](double x, double y) {
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
+    int bin = ((int)y >> CHUNK_SHIFT) * E.chunkCols
+            + ((int)x >> CHUNK_SHIFT);
+    return bin >= 0 && bin < (int)bins.size() && bins[bin];
+  };
+  if (pointTouches(body->px, body->py)) return true;
+  double cs = std::cos(body->angle), sn = std::sin(body->angle);
+  for (int point : body->boundaryPts) {
+    if (point < 0 || point >= body->nPts) continue;
+    double localX = body->points[point * 2];
+    double localY = body->points[point * 2 + 1];
+    double x = body->px + localX * cs - localY * sn;
+    double y = body->py + localX * sn + localY * cs;
+    if (pointTouches(x, y)) return true;
+  }
+  return false;
 }
 
 bool ForceSystem::sampleActor(
@@ -1104,23 +1153,13 @@ bool ForceSystem::overridesGravity(
 
 void ForceSystem::applyBodyForces() {
   int targetLayer = layerIndex(E.L);
-  auto fieldChangedAt = [&](const Body* body) {
-    int x = (int)std::floor(body->px);
-    int y = (int)std::floor(body->py);
-    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
-    int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
-    return bin >= 0 && bin < (int)changedBins[targetLayer].size()
-        && changedBins[targetLayer][bin];
-  };
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    if (!body->awake && !fieldChangedAt(body)) continue;
-    int neutroniumCells = bodyNeutroniumCellCount(body);
+    if (!body->awake
+        && !bodyTouchesBins(body, changedBins[targetLayer])) continue;
     double forceX, forceY;
     bool active = E.L->forceActive
-      && sample(body->px, body->py, FORCE_RIGID, body->id,
-                forceX, forceY, neutroniumCells,
-                neutroniumCells > 0 ? targetLayer : -1);
+      && sampleBody(E.L, body, forceX, forceY);
     if (!body->awake) E.rigid.wakeBody(body);
     if (!active) continue;
     body->vx += forceX;

@@ -326,6 +326,48 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// A long target uses its nearby exposed cells when its center lies beyond the
+// source reach.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 20, 56, 20, 111, MAT.STONE);
+  engine.paintDisc(20, 55, 0, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  engine.spawnBox(102, 55, 75, 1, MAT.RIGID);
+  const before = engine._bodyState(0);
+  engine.stepWorld();
+  const after = engine._bodyState(0);
+  check('a long rigid target is attracted through its nearby end',
+    before && after && after.px < before.px - 0.05 && after.vx < -0.05);
+  engine.destroy();
+}
+
+// A changed field beside an exposed cell wakes a long sleeping target even when
+// the center occupies a different force bin.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  engine.syncComponents();
+  engine.spawnBox(102, 108, 75, 2, MAT.RIGID);
+  let sleepTick = -1;
+  for (let step = 1; step <= 80; step++) {
+    engine.stepWorld();
+    if (!engine._bodyAwake(0)) {
+      sleepTick = step;
+      break;
+    }
+  }
+  paintRect(engine, 20, 109, 20, 111, MAT.STONE);
+  engine.paintDisc(20, 108, 0, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  engine.stepWorld();
+  const after = engine._bodyState(0);
+  check(`a nearby field wakes a long rigid target (slept at ${sleepTick})`,
+    sleepTick > 0 && engine._bodyAwake(0) === 1 && after?.vx < -0.05);
+  engine.destroy();
+}
+
 // Persistent gas is repelled across layers before its normal buoyant movement.
 for (const [sourceLayer, targetLayer, label] of [
   [0, 1, 'foreground neutronium repels background gas'],

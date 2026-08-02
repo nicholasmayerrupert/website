@@ -165,10 +165,10 @@ class ForceSystem {
                    int targetBodyLayer = -1) const;
   bool sampleLoose(Layer* layer, int x, int y, uint8_t target,
                    double& forceX, double& forceY);
-  bool sample(double x, double y, uint8_t target, int sourceBodyId,
-              double& forceX, double& forceY,
-              int targetNeutroniumCells = 0,
-              int targetBodyLayer = -1) const;
+  bool sampleBody(Layer* layer, Body* body,
+                  double& forceX, double& forceY) const;
+  bool bodyTouchesBins(const Body* body,
+                       const std::vector<uint8_t>& bins) const;
   int looseMoveCandidates(double forceX, double forceY,
                           std::array<std::pair<int, int>, 3>& moves) const;
 };

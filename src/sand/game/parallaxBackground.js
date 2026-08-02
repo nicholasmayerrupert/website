@@ -363,7 +363,6 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   return {
     offX,
     offY,
-    minimumSurfaceY: base - offY - amp * 1.23,
     surfaceRawY,
     surfaceWorldRawY,
     surfaceWorldY,
@@ -419,48 +418,6 @@ function drawSnowCaps(ctx, ridge, base, amp, color, daylight) {
     previous = point;
   }
   if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp, ridge);
-}
-
-function drawPine(ctx, x, groundY, height, dark, light) {
-  const top = groundY - height;
-  ctx.fillStyle = dark;
-  ctx.fillRect(x, top, 1, height + 1);
-  ctx.fillRect(x - 1, top + 1, 3, 1);
-  ctx.fillRect(x - 2, top + 3, 5, 1);
-  if (height >= 6) ctx.fillRect(x - 2, top + 5, 5, 1);
-  ctx.fillStyle = light;
-  ctx.fillRect(x, top + 1, 1, Math.max(1, height - 2));
-  ctx.fillRect(x - 1, top + 3, 1, 1);
-}
-
-function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
-  const dark = mixColor(color, '#061713', 0.62);
-  const light = mixColor(color, skyLow, 0.28);
-  const bandStep = 9;
-  const bandCount = Math.ceil(Math.max(0, h - ridge.minimumSurfaceY) / bandStep) + 1;
-
-  for (let band = 0; band < bandCount; band++) {
-    const spacing = 11 + (band % 3);
-    const stagger = (band * 7) % spacing;
-    const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
-    for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
-      const treeSeed = worldX + seed * 613 + band * 1877;
-      if (rand01(treeSeed) < Math.min(0.24, 0.1 + band * 0.006)) continue;
-      const x = worldX - ridge.offX;
-      const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
-      const groundY = ridge.surfaceWorldY(worldX) + 1 + band * bandStep
-        + Math.floor(rand01(treeSeed + 198) * 4);
-      if (groundY - height > h || groundY > h + 4) continue;
-
-      ctx.globalAlpha = Math.max(0.58, 1 - band * 0.035);
-      drawPine(ctx, x, groundY, height, dark, light);
-      if (rand01(treeSeed + 294) > 0.56) {
-        ctx.fillStyle = light;
-        ctx.fillRect(x - 3, groundY + 2, 2 + Math.floor(rand01(treeSeed + 388) * 4), 1);
-      }
-    }
-  }
-  ctx.globalAlpha = 1;
 }
 
 function drawLodgeWindow(ctx, x, y, light) {
@@ -728,8 +685,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3, s);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
-    const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4, s);
-    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
+    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4, s);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2, s);

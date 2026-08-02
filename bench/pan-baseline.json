@@ -50,33 +50,33 @@
   "verticalFlicker": {
     "axis": "y",
     "subSteps": 24,
-    "cam0": 112,
+    "cam0": 106,
     "instability": 0,
     "perStep": 0,
     "worst": 0,
     "dbg": [
-      "112.042:0.0/sh0/oy0",
-      "112.083:0.0/sh0/oy0",
-      "112.125:0.0/sh1/oy-1",
-      "112.167:0.0/sh0/oy-1",
-      "112.208:0.0/sh0/oy-1",
-      "112.250:0.0/sh1/oy-2",
-      "112.292:0.0/sh0/oy-2",
-      "112.333:0.0/sh0/oy-2",
-      "112.375:0.0/sh0/oy-2",
-      "112.417:0.0/sh1/oy-3",
-      "112.458:0.0/sh0/oy-3",
-      "112.500:0.0/sh0/oy-3",
-      "112.542:0.0/sh0/oy-3",
-      "112.583:0.0/sh0/oy-3"
+      "106.042:0.0/sh0/oy0",
+      "106.083:0.0/sh0/oy0",
+      "106.125:0.0/sh1/oy-1",
+      "106.167:0.0/sh0/oy-1",
+      "106.208:0.0/sh0/oy-1",
+      "106.250:0.0/sh1/oy-2",
+      "106.292:0.0/sh0/oy-2",
+      "106.333:0.0/sh0/oy-2",
+      "106.375:0.0/sh0/oy-2",
+      "106.417:0.0/sh1/oy-3",
+      "106.458:0.0/sh0/oy-3",
+      "106.500:0.0/sh0/oy-3",
+      "106.542:0.0/sh0/oy-3",
+      "106.583:0.0/sh0/oy-3"
     ]
   },
   "parallaxHorizontal": {
     "axis": "x",
-    "worst": 0.02738,
+    "worst": 0.01386,
     "layers": [
       {
-        "mismatch": 0.02738,
+        "mismatch": 0.01386,
         "shift": 1
       },
       {
@@ -84,7 +84,7 @@
         "shift": 3
       },
       {
-        "mismatch": 0.00042,
+        "mismatch": 0.00018,
         "shift": 4
       },
       {
@@ -95,18 +95,18 @@
   },
   "parallaxVertical": {
     "axis": "y",
-    "worst": 0.02809,
+    "worst": 0.03222,
     "layers": [
       {
-        "mismatch": 0.02809,
+        "mismatch": 0.03222,
         "shift": 5
       },
       {
-        "mismatch": 0.005,
+        "mismatch": 0.00636,
         "shift": 6
       },
       {
-        "mismatch": 0.00386,
+        "mismatch": 0.00381,
         "shift": 7
       },
       {
@@ -116,11 +116,11 @@
     ]
   },
   "perf": {
-    "stepMs": 4.5,
+    "stepMs": 0.1,
     "actorMs": 0,
-    "renderMs": 24.6,
-    "lightMs": 17.9,
-    "fillMs": 1.9,
+    "renderMs": 2.5,
+    "lightMs": 0,
+    "fillMs": 0.1,
     "uploadMs": 0.1,
     "groundingMs": 0,
     "crossLayerGroundingMs": 0,
@@ -135,8 +135,8 @@
     "tailMs": 0,
     "layersMs": 0,
     "crossMs": 0,
-    "avgFrameMs": 6.357,
-    "p95FrameMs": 33.3,
+    "avgFrameMs": 1.59,
+    "p95FrameMs": 16.7,
     "samples": 21,
     "dirtyChunks": 0,
     "dirtyRows": 0,
@@ -145,22 +145,22 @@
     "componentCellCount": 0,
     "crossBondCount": 0,
     "worldShifts": 0,
-    "actorTick": 541,
-    "worldTick": 389,
-    "mirrorWorldTick": 371,
-    "worldTps": 28.008985916352337,
+    "actorTick": 582,
+    "worldTick": 158,
+    "mirrorWorldTick": 158,
+    "worldTps": 29.352107606031,
     "workerControls": 11,
     "workerResizePending": false,
     "workerResizeControls": 0,
     "workerControlWorldX": -78,
-    "workerControlWorldY": -81,
+    "workerControlWorldY": -87,
     "workerEdges": 0,
     "workerToolWrites": 0,
     "mirrorApplyMs": 0.10000002384185791,
-    "mirrorPacketBytes": 5132,
+    "mirrorPacketBytes": 76892,
     "actorSteps": 3,
     "actorDebtMs": 0,
-    "actorDroppedMs": 466.6,
+    "actorDroppedMs": 250,
     "worldStepped": false,
     "wasmHeapMB": 96,
     "rows": 352,

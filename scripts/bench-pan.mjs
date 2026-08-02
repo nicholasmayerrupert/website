@@ -115,6 +115,7 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
   const canvas = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
+  const stride = 4;
   const grab = () => ctx.getImageData(0, 0, W, H).data;
   const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
   // Exact noon ridge fills isolate the four scenery layers from clouds, facets,
@@ -142,9 +143,9 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
 
   const layers = target.map((color) => {
     let best = Infinity, bestShift = 0;
-    for (let shift = -4; shift <= 4; shift++) {
+    for (let shift = -12; shift <= 12; shift++) {
       let changed = 0, covered = 0;
-      for (let y = 5; y < H - 5; y++) for (let x = 5; x < W - 5; x++) {
+      for (let y = 12; y < H - 12; y += stride) for (let x = 12; x < W - 12; x += stride) {
         const ax = axis === 'x' ? x + shift : x;
         const ay = axis === 'y' ? y + shift : y;
         if (ax < 0 || ax >= W || ay < 0 || ay >= H) continue;

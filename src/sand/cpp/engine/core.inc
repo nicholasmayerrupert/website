@@ -9,15 +9,13 @@
   // Falling loose cells carry downward momentum in Layer::fallSpeed. A clear
   // vertical fall accelerates by one cell/tick until its material's terminal
   // speed; contact, diagonal avalanching, and lateral flow reset that momentum.
-  // Liquid terminal speed remains density-scaled. Sand matches water's cap;
-  // other powders retain the higher shared cap.
+  // Liquid terminal speed remains density-scaled. Every loose solid shares the
+  // lower powder cap so material identity does not change freefall distance.
   static const int LIQUID_FALL_PER_DENSITY = 3;
   static const int LIQUID_FALL_CAP = 5;
-  static const int SAND_FALL_CAP = 3;
-  static const int POWDER_FALL_CAP = 8;
+  static const int POWDER_FALL_CAP = 3;
   int looseFallCap(uint8_t m) {
-    if (isLooseSolidMaterial(m))
-      return m == SAND ? SAND_FALL_CAP : POWDER_FALL_CAP;
+    if (isLooseSolidMaterial(m)) return POWDER_FALL_CAP;
     int cap = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
     return imax(1, imin(LIQUID_FALL_CAP, cap));
   }

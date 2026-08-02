@@ -1,4 +1,12 @@
 {
+  "meta": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v22.23.1",
+    "browser": "149.0.7827.55",
+    "deviceScaleFactor": 1,
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+  },
   "info": {
     "cols": 512,
     "rows": 352,
@@ -8,7 +16,9 @@
     "viewRows": 140,
     "dpr": 1,
     "canvasW": 1366,
-    "canvasH": 768
+    "canvasH": 768,
+    "maxTextureSize": 8192,
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
   },
   "cursor": {
     "worstCellErr": 0
@@ -40,78 +50,78 @@
   "verticalFlicker": {
     "axis": "y",
     "subSteps": 24,
-    "cam0": 102,
+    "cam0": 112,
     "instability": 0,
     "perStep": 0,
     "worst": 0,
     "dbg": [
-      "102.042:0.0/sh0/oy0",
-      "102.083:0.0/sh0/oy0",
-      "102.125:0.0/sh1/oy-1",
-      "102.167:0.0/sh0/oy-1",
-      "102.208:0.0/sh0/oy-1",
-      "102.250:0.0/sh1/oy-2",
-      "102.292:0.0/sh0/oy-2",
-      "102.333:0.0/sh0/oy-2",
-      "102.375:0.0/sh0/oy-2",
-      "102.417:0.0/sh1/oy-3",
-      "102.458:0.0/sh0/oy-3",
-      "102.500:0.0/sh0/oy-3",
-      "102.542:0.0/sh0/oy-3",
-      "102.583:0.0/sh0/oy-3"
+      "112.042:0.0/sh0/oy0",
+      "112.083:0.0/sh0/oy0",
+      "112.125:0.0/sh1/oy-1",
+      "112.167:0.0/sh0/oy-1",
+      "112.208:0.0/sh0/oy-1",
+      "112.250:0.0/sh1/oy-2",
+      "112.292:0.0/sh0/oy-2",
+      "112.333:0.0/sh0/oy-2",
+      "112.375:0.0/sh0/oy-2",
+      "112.417:0.0/sh1/oy-3",
+      "112.458:0.0/sh0/oy-3",
+      "112.500:0.0/sh0/oy-3",
+      "112.542:0.0/sh0/oy-3",
+      "112.583:0.0/sh0/oy-3"
     ]
   },
   "parallaxHorizontal": {
     "axis": "x",
-    "worst": 0.04193,
+    "worst": 0.02738,
     "layers": [
       {
-        "mismatch": 0.04193,
+        "mismatch": 0.02738,
         "shift": 1
       },
       {
-        "mismatch": 0.0131,
-        "shift": 1
+        "mismatch": 0,
+        "shift": 3
       },
       {
-        "mismatch": 0.00238,
-        "shift": 1
+        "mismatch": 0.00042,
+        "shift": 4
       },
       {
-        "mismatch": 0.01907,
-        "shift": 1
+        "mismatch": 0,
+        "shift": 6
       }
     ]
   },
   "parallaxVertical": {
     "axis": "y",
-    "worst": 0.01974,
+    "worst": 0.02809,
     "layers": [
       {
-        "mismatch": 0,
-        "shift": 2
+        "mismatch": 0.02809,
+        "shift": 5
       },
       {
-        "mismatch": 0.00066,
-        "shift": 2
+        "mismatch": 0.005,
+        "shift": 6
       },
       {
-        "mismatch": 0.00445,
-        "shift": 2
+        "mismatch": 0.00386,
+        "shift": 7
       },
       {
-        "mismatch": 0.01974,
-        "shift": 2
+        "mismatch": 0.01871,
+        "shift": 7
       }
     ]
   },
   "perf": {
-    "stepMs": 0.01,
+    "stepMs": 4.5,
     "actorMs": 0,
-    "renderMs": 0.68,
-    "lightMs": 5.845,
-    "fillMs": 0.355,
-    "uploadMs": 0.125,
+    "renderMs": 24.6,
+    "lightMs": 17.9,
+    "fillMs": 1.9,
+    "uploadMs": 0.1,
     "groundingMs": 0,
     "crossLayerGroundingMs": 0,
     "componentIndexMs": 0,
@@ -125,9 +135,9 @@
     "tailMs": 0,
     "layersMs": 0,
     "crossMs": 0,
-    "avgFrameMs": 1.597,
-    "p95FrameMs": 5.265,
-    "samples": 120,
+    "avgFrameMs": 6.357,
+    "p95FrameMs": 33.3,
+    "samples": 21,
     "dirtyChunks": 0,
     "dirtyRows": 0,
     "dirtyCells": 0,
@@ -135,20 +145,24 @@
     "componentCellCount": 0,
     "crossBondCount": 0,
     "worldShifts": 0,
-    "actorTick": 249,
-    "worldTick": 131,
-    "mirrorWorldTick": 131,
-    "worldTps": 60.42303774866089,
-    "workerControls": 101,
+    "actorTick": 541,
+    "worldTick": 389,
+    "mirrorWorldTick": 371,
+    "worldTps": 28.008985916352337,
+    "workerControls": 11,
+    "workerResizePending": false,
+    "workerResizeControls": 0,
+    "workerControlWorldX": -78,
+    "workerControlWorldY": -81,
     "workerEdges": 0,
     "workerToolWrites": 0,
-    "mirrorApplyMs": 0.16499996185302734,
-    "mirrorPacketBytes": 148564,
-    "actorSteps": 1,
-    "actorDebtMs": 16.6,
-    "actorDroppedMs": 0,
+    "mirrorApplyMs": 0.10000002384185791,
+    "mirrorPacketBytes": 5132,
+    "actorSteps": 3,
+    "actorDebtMs": 0,
+    "actorDroppedMs": 466.6,
     "worldStepped": false,
-    "wasmHeapMB": 38.4,
+    "wasmHeapMB": 96,
     "rows": 352,
     "cols": 512
   }

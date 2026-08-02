@@ -13,7 +13,7 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --repeat 5 --compare bench/baseline.json` | Repeat the comparison to separate timing noise from a regression. |
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
-| `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava, rigid piles, and 128-body dense fields. |
+| `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava, rigid piles, stable contacts, and 128-body dense fields. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, two-axis cell stability, and parallax rigidity. |
 | `npm run bench:actor-rigid:compare` | Check dense player/creature cadence plus kinematic body contacts, crushes, and actor/body determinism. |
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
@@ -116,7 +116,9 @@ component registration, and generation/restoration. Browser presentation exposes
   minimum force and quadrant balance used by pressure flow without keeping the
   whole field scheduled. Static blocked cells park without rescheduling the layer,
   while already-awake rigid bodies retain their solver sleep progress when force
-  is applied. Moving neutronium dominance is filtered from emitter cell-count
+  is applied. Sleeping rigid contact islands ignore an unchanged force field and
+  wake when their covered source-bin signature changes. Moving neutronium
+  dominance is filtered from emitter cell-count
   metadata during the existing nearest-source query; it does not add a body-pair
   scan or a contact pass. Liquid fanning is a hashed alternate candidate inside
   the same active-cell force query and does not add a grid traversal. Tangential

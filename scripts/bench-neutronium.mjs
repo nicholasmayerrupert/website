@@ -63,6 +63,14 @@ const addRigidPile = (engine) => {
   }
 };
 
+const addStableContactRow = (engine) => {
+  addFloor(engine);
+  paintRect(engine, 20, ROWS - 3, COLS - 21, ROWS - 3, MAT.NEUTRONIUM);
+  engine.syncComponents();
+  for (let i = 0; i < 48; i++)
+    engine.spawnBox(90 + i * 12, ROWS - 11, 2, 2, MAT.RIGID);
+};
+
 const addDenseBodyField = (engine, material) => {
   for (let i = 0; i < 128; i++) {
     const x = Math.round(256 - 15 * 7.5 + (i % 16) * 15);
@@ -104,6 +112,9 @@ const setups = {
     addStaticSource(engine);
     addRigidPile(engine);
     engine.syncComponents();
+  },
+  'stable-contact-48': (engine) => {
+    addStableContactRow(engine);
   },
   'moving-rigid-48': (engine) => {
     addFloor(engine);

@@ -419,6 +419,37 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// A rigid body pressed into stable support by an unchanged neutronium field can
+// keep its contact island asleep. Editing the field wakes it again.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 20, 114, COLS - 21, 114, MAT.NEUTRONIUM);
+  engine.syncComponents();
+  engine.spawnBox(90, 106, 2, 2, MAT.RIGID);
+  let sleepTick = -1;
+  for (let step = 1; step <= 100; step++) {
+    engine.stepWorld();
+    if (!engine._bodyAwake(0)) {
+      sleepTick = step;
+      break;
+    }
+  }
+  let stayedAsleep = sleepTick > 0;
+  for (let step = 0; step < 40; step++) {
+    engine.stepWorld();
+    stayedAsleep &&= engine._bodyAwake(0) === 0;
+  }
+  check(`a stable neutronium contact island sleeps (tick ${sleepTick})`,
+    sleepTick > 0 && stayedAsleep);
+  paintRect(engine, 20, 114, COLS - 21, 114, MAT.STONE);
+  engine.syncComponents();
+  engine.stepWorld();
+  check('changing the neutronium field wakes the sleeping island',
+    engine._bodyAwake(0) === 1);
+  engine.destroy();
+}
+
 // Equal moving sources use a stable identity tie-break instead of applying
 // reciprocal attraction, so the dominant source cannot change every tick.
 {

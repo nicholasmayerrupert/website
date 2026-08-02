@@ -1103,16 +1103,26 @@ bool ForceSystem::overridesGravity(
 }
 
 void ForceSystem::applyBodyForces() {
-  if (!E.L->forceActive) return;
+  int targetLayer = layerIndex(E.L);
+  auto fieldChangedAt = [&](const Body* body) {
+    int x = (int)std::floor(body->px);
+    int y = (int)std::floor(body->py);
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
+    int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
+    return bin >= 0 && bin < (int)changedBins[targetLayer].size()
+        && changedBins[targetLayer][bin];
+  };
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
+    if (!body->awake && !fieldChangedAt(body)) continue;
     int neutroniumCells = bodyNeutroniumCellCount(body);
     double forceX, forceY;
-    if (!sample(body->px, body->py, FORCE_RIGID, body->id,
+    bool active = E.L->forceActive
+      && sample(body->px, body->py, FORCE_RIGID, body->id,
                 forceX, forceY, neutroniumCells,
-                neutroniumCells > 0 ? layerIndex(E.L) : -1))
-      continue;
+                neutroniumCells > 0 ? targetLayer : -1);
     if (!body->awake) E.rigid.wakeBody(body);
+    if (!active) continue;
     body->vx += forceX;
     body->vy += forceY;
   }

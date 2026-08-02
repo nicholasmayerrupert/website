@@ -13,7 +13,7 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --repeat 5 --compare bench/baseline.json` | Repeat the comparison to separate timing noise from a regression. |
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
-| `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava and rigid piles. |
+| `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava, rigid piles, and 128-body dense fields. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, two-axis cell stability, and parallax rigidity. |
 | `npm run bench:actor-rigid:compare` | Check dense player/creature cadence plus kinematic body contacts, crushes, and actor/body determinism. |
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
@@ -104,7 +104,11 @@ component registration, and generation/restoration. Browser presentation exposes
   connected component/body, so force queries inspect nearby sources rather than
   summing every source cell. Neutronium direction uses a cached nearest-cell
   distance transform; unchanged static geometry reuses it, while changed or
-  moving geometry updates the bounded source region plus force reach. Exact loose-
+  moving geometry updates the bounded source region plus force reach. Emitter
+  fingerprints are computed once and reused by every covered bin. Dense moving-
+  neutronium scenes use a balanced nearest-point index when the distance-field
+  winner is not an eligible dominant body, preserving the exact source ordering
+  without scanning every neutronium cell for every body. Exact loose-
   cell samples are cached in the affected chunks for the current tick, so settle,
   density, and liquid-tail ownership checks reuse the wake scan's result. Per-bin
   source signatures restrict moving/removed-field wakes to the swept bins; local
@@ -155,7 +159,8 @@ component registration, and generation/restoration. Browser presentation exposes
   it with insertion sort, then restores surviving pairs to deterministic
   body-index order before generating contacts.
 - Each body caches an exact non-overlapping rectangle cover of its occupied
-  pixels. Child transforms are computed once per candidate pair. Small compounds
+  pixels. Current and predicted child transforms reuse one body pose for all
+  candidate pairs at the same substep time. Small compounds
   use direct endpoint-AABB rejection; larger child sets use a two-set
   sweep-and-prune over their start/end bounds before oriented-box SAT. The
   surviving pairs return to child-index order, preserving deterministic contact
@@ -176,7 +181,8 @@ component registration, and generation/restoration. Browser presentation exposes
   separating half-space. Stable local anchors persist normal/friction impulses
   across substeps and ticks, including short decaying persistence for large
   raster contacts, so dense piles converge from the previous solution and enter
-  island sleep instead of cold-solving jitter indefinitely.
+  island sleep instead of cold-solving jitter indefinitely. Consecutive manifold
+  points with the same persistent feature reuse one contact-cache lookup.
 - Each contact stores its substep-constant inverse normal, tangent, and
   positional effective masses. Solver iterations reuse them instead of
   rebuilding and dividing by the same mass and inertia expression.

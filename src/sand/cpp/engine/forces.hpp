@@ -37,6 +37,7 @@ struct ForceEmitter {
   int sourceBodyLayer = -1;
   int neutroniumCells = 0;
   uint64_t geometryRevision = 0;
+  uint64_t signature = 0;
   bool nearestNeutronium = false;
   bool dynamicGeometry = false;
 };
@@ -86,6 +87,10 @@ class ForceSystem {
     int gridX = 0, gridY = 0;
     int sourceLayer = 0, emitter = -1;
   };
+  struct NeutroniumKdNode {
+    int seed = -1, left = -1, right = -1, bestDominanceSeed = -1;
+    float minX = 0, minY = 0, maxX = 0, maxY = 0;
+  };
 
   Engine& E;
   LayerState states[2];
@@ -107,6 +112,9 @@ class ForceSystem {
   std::vector<uint64_t> currentBinSignatures[2];
   std::vector<uint8_t> changedBins[2];
   std::vector<NeutroniumSeed> neutroniumSeeds;
+  std::vector<int> neutroniumKdOrder;
+  std::vector<NeutroniumKdNode> neutroniumKdNodes;
+  int neutroniumKdRoot = -1;
   std::vector<int> nearestSeedAt, nearestVertical, nearestNeutroniumField;
   std::vector<int> edtLocations;
   std::vector<double> edtBreaks;
@@ -121,8 +129,18 @@ class ForceSystem {
   int bodyNeutroniumCellCount(const Body* body) const;
   void prepareLayer(Layer* layer);
   void addEmitter(LayerState& state, const ForceEmitter& emitter);
+  uint64_t emitterSignature(const ForceEmitter& emitter) const;
   void addNeutroniumEmitters(Layer* layer, LayerState& state);
   void buildBins(LayerState& state);
+  void buildNeutroniumIndex();
+  int buildNeutroniumKdNode(int begin, int end, int depth);
+  bool neutroniumSourceDominates(int seedIndex, int targetNeutroniumCells,
+                                 int targetBodyLayer,
+                                 int targetBodyId) const;
+  int nearestDominantNeutronium(double x, double y,
+                                int targetNeutroniumCells,
+                                int targetBodyLayer,
+                                int targetBodyId) const;
   void buildNearestNeutroniumField();
   bool stateAffectsLayer(const LayerState& state, uint8_t targetLayer) const;
   bool binAffectsLayer(const LayerState& state, int bin,

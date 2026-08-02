@@ -79,7 +79,12 @@
                  b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
       b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
     }
+    for (int bi = 0; bi < n; bi++) {
+      currentChildPoses[bi] = childPose(solverBodies[bi], 0);
+      nextChildPoseDt[bi] = -1;
+    }
     contacts.clear();
+    previousRestoreKeyValid = false;
     // Penetration depth of a point that is already inside target T, measured by
     // marching outward along T's surface normal until it exits the mask.
     auto penDepth = [&](Body* target, double wx, double wy,
@@ -592,7 +597,7 @@
       bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
       bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
       ChildContactState childContactState =
-        collectChildContacts(A, B, pairDt);
+        collectChildContacts(A, B, pairDt, pair.first, pair.second);
       if (childContactState == CCS_SEPARATED) continue;
       ChildBounds sweptA, sweptB;
       if (childContactState != CCS_CURRENT) {
@@ -696,7 +701,7 @@
           continue;
         double pairDt = bodyDt[ai];
         ChildContactState childContactState =
-          collectChildContacts(A, B, pairDt);
+          collectChildContacts(A, B, pairDt, ai, -1);
         if (childContactState == CCS_SEPARATED) continue;
         ChildBounds sweptA, sweptB;
         if (childContactState != CCS_CURRENT) {

@@ -1,5 +1,5 @@
 // Focused spatial-force benchmark: loose liquids and rigid piles around static,
-// ordinary moving, and large moving neutronium sources.
+// ordinary moving, large moving, and dense interacting neutronium sources.
 
 import { performance } from 'node:perf_hooks';
 import {
@@ -63,6 +63,20 @@ const addRigidPile = (engine) => {
   }
 };
 
+const addDenseBodyField = (engine, material) => {
+  for (let i = 0; i < 128; i++) {
+    const x = Math.round(256 - 15 * 7.5 + (i % 16) * 15);
+    const y = 35 + Math.floor(i / 16) * 7;
+    engine.spawnBox(x, y, 2, 2, material);
+    engine._setBodyMotion(
+      i,
+      ((i * 17) % 7 - 3) * 0.03,
+      ((i * 11) % 5 - 2) * 0.02,
+      ((i % 3) - 1) * 0.002,
+    );
+  }
+};
+
 const setups = {
   'static-lava': (engine) => {
     addFloor(engine);
@@ -97,6 +111,12 @@ const setups = {
     engine.spawnBox(410, 145, 7, 7, MAT.NEUTRONIUM);
     addRigidPile(engine);
     engine._setBodyMotion(0, -0.12, -0.15, 0.002);
+  },
+  'dense-rigid-128': (engine) => {
+    addDenseBodyField(engine, MAT.RIGID);
+  },
+  'dense-neutronium-128': (engine) => {
+    addDenseBodyField(engine, MAT.NEUTRONIUM);
   },
 };
 const scenarioArg = valueAfter('--scenario', 'all');

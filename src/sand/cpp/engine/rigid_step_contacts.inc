@@ -116,6 +116,9 @@
   for (int i = 0; i < n; i++)
     if (!broadphaseSeen[i]) broadphaseOrder.push_back(i);
   ContactCache& previousContacts = contactCaches[activeLayer];
+  ContactCacheKey previousRestoreKey;
+  ContactCache::iterator previousRestoreEntry = previousContacts.end();
+  bool previousRestoreKeyValid = false;
   auto& impactTicks = impactContactTicks[activeLayer];
   for (auto it = impactTicks.begin(); it != impactTicks.end();) {
     if (it->second < E.tick - R_IMPACT_SOUND_SEPARATION_TICKS)
@@ -166,7 +169,16 @@
     lby = -contact.rbx * bsn + contact.rby * bcs;
   };
   auto restoreContact = [&](Contact& contact, int normalBucket, double dt) {
-    auto found = previousContacts.find(cacheKey(contact, normalBucket));
+    ContactCacheKey key = cacheKey(contact, normalBucket);
+    ContactCache::iterator found;
+    if (previousRestoreKeyValid && key == previousRestoreKey) {
+      found = previousRestoreEntry;
+    } else {
+      found = previousContacts.find(key);
+      previousRestoreKey = key;
+      previousRestoreEntry = found;
+      previousRestoreKeyValid = true;
+    }
     if (found == previousContacts.end()) return;
     double lax, lay, lbx, lby;
     localAnchors(contact, lax, lay, lbx, lby);
@@ -395,35 +407,45 @@
   std::vector<ChildManifold> childManifoldScratch;
   std::vector<ChildFrame> currentChildFramesA, currentChildFramesB;
   std::vector<ChildFrame> nextChildFramesA, nextChildFramesB;
+  struct ChildPose {
+    double px = 0, py = 0;
+    double ux = 1, uy = 0, vx = 0, vy = 1;
+  };
+  std::vector<ChildPose> currentChildPoses(n), nextChildPoses(n);
+  std::vector<double> nextChildPoseDt(n, -1);
   std::vector<ChildBounds> childBoundsA, childBoundsB;
   std::vector<ChildEvent> childEventScratch;
   std::vector<int> activeChildrenA, activeChildrenB;
   std::vector<std::pair<int, int>> childPairScratch;
-  auto collectChildFrames = [](Body* body, double time,
-                               std::vector<ChildFrame>& frames) {
-    frames.resize(body->collisionRects.size());
+  auto childPose = [](Body* body, double time) {
     double angle = body->angle + body->omega * time;
     double ux = std::cos(angle), uy = std::sin(angle);
-    double vx = -uy, vy = ux;
-    double px = body->px + body->vx * time;
-    double py = body->py + body->vy * time;
+    return ChildPose{
+      body->px + body->vx * time,
+      body->py + body->vy * time,
+      ux, uy, -uy, ux,
+    };
+  };
+  auto collectChildFrames = [](Body* body, const ChildPose& pose,
+                               std::vector<ChildFrame>& frames) {
+    frames.resize(body->collisionRects.size());
     for (int child = 0; child < (int)frames.size(); child++) {
       ChildFrame& frame = frames[child];
       frame.body = body;
       frame.rect = &body->collisionRects[child];
       frame.child = child;
-      frame.ux = ux;
-      frame.uy = uy;
-      frame.vx = vx;
-      frame.vy = vy;
-      frame.px = px;
-      frame.py = py;
+      frame.ux = pose.ux;
+      frame.uy = pose.uy;
+      frame.vx = pose.vx;
+      frame.vy = pose.vy;
+      frame.px = pose.px;
+      frame.py = pose.py;
       double lx = body->offsetX
         + (frame.rect->x0 + frame.rect->x1 - 1) * 0.5;
       double ly = body->offsetY
         + (frame.rect->y0 + frame.rect->y1 - 1) * 0.5;
-      frame.cx = px + lx * ux + ly * vx;
-      frame.cy = py + lx * uy + ly * vy;
+      frame.cx = pose.px + lx * pose.ux + ly * pose.vx;
+      frame.cy = pose.py + lx * pose.uy + ly * pose.vy;
       frame.hx = (frame.rect->x1 - frame.rect->x0) * 0.5;
       frame.hy = (frame.rect->y1 - frame.rect->y0) * 0.5;
     }
@@ -865,12 +887,25 @@
     CCS_SPECULATIVE,
     CCS_CURRENT,
   };
-  auto collectChildContacts = [&](Body* a, Body* b, double dt) {
+  auto collectChildContacts = [&](Body* a, Body* b, double dt,
+                                  int bodyIndexA, int bodyIndexB) {
     childManifoldScratch.clear();
-    collectChildFrames(a, 0, currentChildFramesA);
-    collectChildFrames(b, 0, currentChildFramesB);
-    collectChildFrames(a, dt, nextChildFramesA);
-    collectChildFrames(b, dt, nextChildFramesB);
+    ChildPose currentA = bodyIndexA >= 0
+      ? currentChildPoses[bodyIndexA] : childPose(a, 0);
+    ChildPose currentB = bodyIndexB >= 0
+      ? currentChildPoses[bodyIndexB] : childPose(b, 0);
+    auto nextPose = [&](Body* body, int bodyIndex) {
+      if (bodyIndex < 0) return childPose(body, dt);
+      if (nextChildPoseDt[bodyIndex] != dt) {
+        nextChildPoseDt[bodyIndex] = dt;
+        nextChildPoses[bodyIndex] = childPose(body, dt);
+      }
+      return nextChildPoses[bodyIndex];
+    };
+    collectChildFrames(a, currentA, currentChildFramesA);
+    collectChildFrames(b, currentB, currentChildFramesB);
+    collectChildFrames(a, nextPose(a, bodyIndexA), nextChildFramesA);
+    collectChildFrames(b, nextPose(b, bodyIndexB), nextChildFramesB);
     bool sweptCandidate = collectChildPairCandidates(a, b, dt);
     bool currentContact = false;
     for (const auto& pair : childPairScratch) {

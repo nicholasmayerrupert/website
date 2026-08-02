@@ -75,7 +75,40 @@ void ForceSystem::addEmitter(
   if (emitter.radius <= 0 || emitter.strength == 0 || emitter.targets == 0
       || emitter.layerTargets == 0)
     return;
-  state.emitters.push_back(emitter);
+  ForceEmitter stored = emitter;
+  stored.signature = emitterSignature(stored);
+  state.emitters.push_back(stored);
+}
+
+uint64_t ForceSystem::emitterSignature(const ForceEmitter& emitter) const {
+  uint64_t hash = 1469598103934665603ull;
+  auto mixBytes = [&](const void* data, size_t length) {
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < length; i++) {
+      hash ^= bytes[i];
+      hash *= 1099511628211ull;
+    }
+  };
+  mixBytes(&emitter.x, sizeof(emitter.x));
+  mixBytes(&emitter.y, sizeof(emitter.y));
+  mixBytes(&emitter.radius, sizeof(emitter.radius));
+  mixBytes(&emitter.strength, sizeof(emitter.strength));
+  mixBytes(&emitter.geometryMinX, sizeof(emitter.geometryMinX));
+  mixBytes(&emitter.geometryMinY, sizeof(emitter.geometryMinY));
+  mixBytes(&emitter.geometryMaxX, sizeof(emitter.geometryMaxX));
+  mixBytes(&emitter.geometryMaxY, sizeof(emitter.geometryMaxY));
+  mixBytes(&emitter.directionX, sizeof(emitter.directionX));
+  mixBytes(&emitter.directionY, sizeof(emitter.directionY));
+  mixBytes(&emitter.kind, sizeof(emitter.kind));
+  mixBytes(&emitter.targets, sizeof(emitter.targets));
+  mixBytes(&emitter.repelTargets, sizeof(emitter.repelTargets));
+  mixBytes(&emitter.layerTargets, sizeof(emitter.layerTargets));
+  mixBytes(&emitter.sourceBodyId, sizeof(emitter.sourceBodyId));
+  mixBytes(&emitter.sourceBodyLayer, sizeof(emitter.sourceBodyLayer));
+  mixBytes(&emitter.neutroniumCells, sizeof(emitter.neutroniumCells));
+  mixBytes(&emitter.geometryRevision, sizeof(emitter.geometryRevision));
+  mixBytes(&emitter.nearestNeutronium, sizeof(emitter.nearestNeutronium));
+  return hash;
 }
 
 void ForceSystem::addNeutroniumEmitters(
@@ -257,25 +290,7 @@ uint64_t ForceSystem::forceBinSignature(
       if (!(emitter.layerTargets & targetLayer)) continue;
       any = true;
       mixBytes(&sourceLayer, sizeof(sourceLayer));
-      mixBytes(&emitter.x, sizeof(emitter.x));
-      mixBytes(&emitter.y, sizeof(emitter.y));
-      mixBytes(&emitter.radius, sizeof(emitter.radius));
-      mixBytes(&emitter.strength, sizeof(emitter.strength));
-      mixBytes(&emitter.geometryMinX, sizeof(emitter.geometryMinX));
-      mixBytes(&emitter.geometryMinY, sizeof(emitter.geometryMinY));
-      mixBytes(&emitter.geometryMaxX, sizeof(emitter.geometryMaxX));
-      mixBytes(&emitter.geometryMaxY, sizeof(emitter.geometryMaxY));
-      mixBytes(&emitter.directionX, sizeof(emitter.directionX));
-      mixBytes(&emitter.directionY, sizeof(emitter.directionY));
-      mixBytes(&emitter.kind, sizeof(emitter.kind));
-      mixBytes(&emitter.targets, sizeof(emitter.targets));
-      mixBytes(&emitter.repelTargets, sizeof(emitter.repelTargets));
-      mixBytes(&emitter.layerTargets, sizeof(emitter.layerTargets));
-      mixBytes(&emitter.sourceBodyId, sizeof(emitter.sourceBodyId));
-      mixBytes(&emitter.sourceBodyLayer, sizeof(emitter.sourceBodyLayer));
-      mixBytes(&emitter.neutroniumCells, sizeof(emitter.neutroniumCells));
-      mixBytes(&emitter.geometryRevision, sizeof(emitter.geometryRevision));
-      mixBytes(&emitter.nearestNeutronium, sizeof(emitter.nearestNeutronium));
+      mixBytes(&emitter.signature, sizeof(emitter.signature));
     }
   }
   return any ? hash : 0;
@@ -482,6 +497,156 @@ void ForceSystem::buildBins(LayerState& state) {
   }
 }
 
+bool ForceSystem::neutroniumSourceDominates(
+    int seedIndex, int targetNeutroniumCells,
+    int targetBodyLayer, int targetBodyId) const {
+  if (seedIndex < 0 || seedIndex >= (int)neutroniumSeeds.size()) return false;
+  const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
+  const LayerState& state = states[seed.sourceLayer];
+  if (seed.emitter < 0 || seed.emitter >= (int)state.emitters.size())
+    return false;
+  const ForceEmitter& emitter = state.emitters[seed.emitter];
+  if (emitter.sourceBodyId < 0) return true;
+  if (emitter.sourceBodyLayer == targetBodyLayer
+      && emitter.sourceBodyId == targetBodyId)
+    return false;
+  if (emitter.neutroniumCells != targetNeutroniumCells)
+    return emitter.neutroniumCells > targetNeutroniumCells;
+  if (emitter.sourceBodyLayer != targetBodyLayer)
+    return emitter.sourceBodyLayer < targetBodyLayer;
+  return emitter.sourceBodyId < targetBodyId;
+}
+
+int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
+  if (begin >= end) return -1;
+  int middle = begin + (end - begin) / 2;
+  int axis = depth & 1;
+  std::nth_element(
+    neutroniumKdOrder.begin() + begin,
+    neutroniumKdOrder.begin() + middle,
+    neutroniumKdOrder.begin() + end,
+    [&](int first, int second) {
+      const NeutroniumSeed& a = neutroniumSeeds[first];
+      const NeutroniumSeed& b = neutroniumSeeds[second];
+      float av = axis ? a.y : a.x;
+      float bv = axis ? b.y : b.x;
+      if (av != bv) return av < bv;
+      float ao = axis ? a.x : a.y;
+      float bo = axis ? b.x : b.y;
+      if (ao != bo) return ao < bo;
+      return first < second;
+    });
+  int nodeIndex = (int)neutroniumKdNodes.size();
+  int seedIndex = neutroniumKdOrder[middle];
+  const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
+  neutroniumKdNodes.push_back({
+    seedIndex, -1, -1, seedIndex, seed.x, seed.y, seed.x, seed.y,
+  });
+  int left = buildNeutroniumKdNode(begin, middle, depth + 1);
+  int right = buildNeutroniumKdNode(middle + 1, end, depth + 1);
+  NeutroniumKdNode& node = neutroniumKdNodes[nodeIndex];
+  node.left = left;
+  node.right = right;
+  auto sourceBetter = [&](int first, int second) {
+    if (second < 0) return true;
+    const NeutroniumSeed& firstSeed = neutroniumSeeds[first];
+    const NeutroniumSeed& secondSeed = neutroniumSeeds[second];
+    const ForceEmitter& a =
+      states[firstSeed.sourceLayer].emitters[firstSeed.emitter];
+    const ForceEmitter& b =
+      states[secondSeed.sourceLayer].emitters[secondSeed.emitter];
+    bool aStatic = a.sourceBodyId < 0;
+    bool bStatic = b.sourceBodyId < 0;
+    if (aStatic != bStatic) return aStatic;
+    if (aStatic) return first < second;
+    if (a.neutroniumCells != b.neutroniumCells)
+      return a.neutroniumCells > b.neutroniumCells;
+    if (a.sourceBodyLayer != b.sourceBodyLayer)
+      return a.sourceBodyLayer < b.sourceBodyLayer;
+    if (a.sourceBodyId != b.sourceBodyId)
+      return a.sourceBodyId < b.sourceBodyId;
+    return first < second;
+  };
+  auto includeChild = [&](int childIndex) {
+    if (childIndex < 0) return;
+    const NeutroniumKdNode& child = neutroniumKdNodes[childIndex];
+    node.minX = std::fmin(node.minX, child.minX);
+    node.minY = std::fmin(node.minY, child.minY);
+    node.maxX = std::fmax(node.maxX, child.maxX);
+    node.maxY = std::fmax(node.maxY, child.maxY);
+    if (sourceBetter(child.bestDominanceSeed, node.bestDominanceSeed))
+      node.bestDominanceSeed = child.bestDominanceSeed;
+  };
+  includeChild(left);
+  includeChild(right);
+  return nodeIndex;
+}
+
+void ForceSystem::buildNeutroniumIndex() {
+  neutroniumKdRoot = -1;
+  neutroniumKdOrder.clear();
+  neutroniumKdNodes.clear();
+  // Small source sets are cheaper to scan directly. Dense body scenes amortize
+  // the balanced index over one filtered nearest-source query per body.
+  static constexpr int KD_MIN_SEEDS = 64;
+  if ((int)neutroniumSeeds.size() < KD_MIN_SEEDS) return;
+  neutroniumKdOrder.resize(neutroniumSeeds.size());
+  for (int i = 0; i < (int)neutroniumKdOrder.size(); i++)
+    neutroniumKdOrder[i] = i;
+  neutroniumKdNodes.reserve(neutroniumSeeds.size());
+  neutroniumKdRoot = buildNeutroniumKdNode(
+    0, (int)neutroniumKdOrder.size(), 0);
+}
+
+int ForceSystem::nearestDominantNeutronium(
+    double x, double y, int targetNeutroniumCells,
+    int targetBodyLayer, int targetBodyId) const {
+  if (neutroniumKdRoot < 0) return -1;
+  int bestSeed = -1;
+  double bestDistance2 = 1e30;
+  auto boundsDistance2 = [&](const NeutroniumKdNode& node) {
+    double dx = x < node.minX ? node.minX - x
+              : x > node.maxX ? x - node.maxX : 0;
+    double dy = y < node.minY ? node.minY - y
+              : y > node.maxY ? y - node.maxY : 0;
+    return dx * dx + dy * dy;
+  };
+  auto visit = [&](auto&& self, int nodeIndex) -> void {
+    if (nodeIndex < 0) return;
+    const NeutroniumKdNode& node = neutroniumKdNodes[nodeIndex];
+    if (!neutroniumSourceDominates(
+          node.bestDominanceSeed, targetNeutroniumCells,
+          targetBodyLayer, targetBodyId)
+        || boundsDistance2(node) > bestDistance2)
+      return;
+    if (neutroniumSourceDominates(
+          node.seed, targetNeutroniumCells,
+          targetBodyLayer, targetBodyId)) {
+      const NeutroniumSeed& seed = neutroniumSeeds[node.seed];
+      double dx = seed.x - x, dy = seed.y - y;
+      double distance2 = dx * dx + dy * dy;
+      if (distance2 < bestDistance2
+          || (distance2 == bestDistance2 && node.seed < bestSeed)) {
+        bestDistance2 = distance2;
+        bestSeed = node.seed;
+      }
+    }
+    int first = node.left, second = node.right;
+    double firstDistance = first >= 0
+      ? boundsDistance2(neutroniumKdNodes[first]) : 1e30;
+    double secondDistance = second >= 0
+      ? boundsDistance2(neutroniumKdNodes[second]) : 1e30;
+    if (secondDistance < firstDistance) {
+      std::swap(first, second);
+      std::swap(firstDistance, secondDistance);
+    }
+    if (firstDistance <= bestDistance2) self(self, first);
+    if (secondDistance <= bestDistance2) self(self, second);
+  };
+  visit(visit, neutroniumKdRoot);
+  return bestSeed;
+}
+
 void ForceSystem::buildNearestNeutroniumField() {
   // Source points carry fresh sub-cell body poses every tick. The grid-space
   // nearest assignment is reused until their occupied cells or ownership change.
@@ -519,6 +684,7 @@ void ForceSystem::buildNearestNeutroniumField() {
     }
   }
   mixHash((uint64_t)neutroniumSeeds.size());
+  buildNeutroniumIndex();
 
   int gridLength = E.cols * E.rows;
   bool dimensionsChanged = nearestFieldCols != E.cols
@@ -792,6 +958,11 @@ bool ForceSystem::sampleNearestNeutronium(
   int gridX = (int)std::floor(x), gridY = (int)std::floor(y);
   int fieldSeed = nearestNeutroniumField[gridY * E.cols + gridX];
   int nearestSeed = eligible(fieldSeed) ? fieldSeed : -1;
+  if (nearestSeed < 0 && targetNeutroniumCells > 0
+      && target == FORCE_RIGID && neutroniumKdRoot >= 0) {
+    nearestSeed = nearestDominantNeutronium(
+      x, y, targetNeutroniumCells, targetBodyLayer, sourceBodyId);
+  }
   if (nearestSeed < 0) {
     double nearestDistance2 = 1e30;
     for (int seedIndex = 0; seedIndex < (int)neutroniumSeeds.size();

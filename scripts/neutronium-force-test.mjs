@@ -458,6 +458,31 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// Dense equal-size fields use the nearest eligible older body while preserving
+// the body-id dominance order.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  for (let i = 0; i < 64; i++) {
+    engine.spawnBox(
+      10 + (i % 8) * 12,
+      10 + Math.floor(i / 8) * 13,
+      1, 1, MAT.NEUTRONIUM,
+    );
+  }
+  const oldestBefore = engine._bodyState(0);
+  const newestBefore = engine._bodyState(63);
+  engine.stepWorld();
+  const oldestAfter = engine._bodyState(0);
+  const newestAfter = engine._bodyState(63);
+  check('dense neutronium keeps exact nearest-source dominance',
+    oldestBefore && oldestAfter && newestBefore && newestAfter
+      && Math.abs(oldestAfter.vx) < 1e-9
+      && newestAfter.px < newestBefore.px
+      && newestAfter.vx < 0);
+  engine.destroy();
+}
+
 // Between moving neutronium bodies, the larger source dominates the smaller
 // target. Offset contacts can keep compacting without the small body's field
 // launching the dominant mass sideways or upward.

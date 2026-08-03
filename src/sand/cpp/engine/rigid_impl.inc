@@ -1620,8 +1620,12 @@ bool RigidBodySystem::depenetrateBodyRaster(
       double vn = b->vx * nx + b->vy * ny;
       if (vn > 0) { b->vx -= vn * nx; b->vy -= vn * ny; }
     }
-    b->awake = true;
-    b->stillTicks = 0;
+    // Component bodies keep the solver's sleep progress through the final
+    // raster projection so a terrain-clear pose can settle and bake.
+    if (!requiresClearRaster) {
+      b->awake = true;
+      b->stillTicks = 0;
+    }
   };
   auto trimStep = [&](bool includeRotation) {
     placeAlongStep(0, includeRotation);
@@ -1670,7 +1674,7 @@ bool RigidBodySystem::depenetrateBodyRaster(
       if (!bodyFullyInsideLoadedWindow(b) || !poseAccepted())
         continue;
       b->vx = b->vy = b->omega = 0;
-      b->awake = true; b->stillTicks = 0; return true;
+      return true;
     }
   }
   placeAlongStep(1, true);

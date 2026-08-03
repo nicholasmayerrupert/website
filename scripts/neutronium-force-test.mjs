@@ -628,6 +628,46 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// A neutronium-loaded landmass and its blast rubble must retain solver sleep
+// progress while their final terrain-clear rasters are projected. This keeps a
+// large landing convergent even when many bodies need collision recovery.
+{
+  const cols = 384, rows = 300;
+  const engine = attachTestHooks(createEngineWasmRaw({
+    cols, rows, worldSeed: SEED, sinksOn: false, infinite: false,
+  }));
+  const grid = engine.getGrid();
+  const fill = (x0, y0, x1, y1, mat) => {
+    for (let y = y0; y <= y1; y++) {
+      const row = y * cols;
+      for (let x = x0; x <= x1; x++) grid[row + x] = mat;
+    }
+  };
+  fill(0, 280, cols - 1, rows - 1, MAT.STONE);
+  fill(36, 82, cols - 37, 279, MAT.STONE);
+  fill(132, 66, 251, 81, MAT.NEUTRONIUM);
+  fill(36, 202, cols - 37, 220, MAT.TNT);
+  engine.syncComponents();
+  engine.stepWorld();
+
+  let peakBodies = 0, recoveries = 0, maxBlocked = 0;
+  for (let tick = 0; tick < 260; tick++) {
+    if (tick < 3) engine.placeMaterial(cols - 34, 211, 1, MAT.FIRE);
+    engine.step(tick * 16);
+    peakBodies = Math.max(peakBodies, engine._bodyCount());
+    recoveries += engine.getRigidDebug().depenetrations;
+    for (let body = 0; body < engine._bodyCount(); body++)
+      maxBlocked = Math.max(maxBlocked, engine._bodyBlocked(body));
+  }
+  check(`neutronium-loaded blast produces a dense landing (${peakBodies} bodies)`,
+    peakBodies >= 20);
+  check(`blast bodies keep terrain-clear rasters (${maxBlocked} blocked)`,
+    maxBlocked === 0);
+  check(`blast bodies converge after bounded recovery (${recoveries} recoveries)`,
+    recoveries <= 20 && engine._bodyCount() === 0);
+  engine.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -174,6 +174,8 @@ export function attachTestHooks(engine) {
     maxRelativeSpeed: t.rigidSolverDiag(ptr, 36),
     terrainRiskBodies: t.rigidSolverDiag(ptr, 37),
     impactRiskBodies: t.rigidSolverDiag(ptr, 38),
+    ownershipConflicts: t.rigidSolverDiag(ptr, 39),
+    positionCorrections: t.rigidSolverDiag(ptr, 40),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

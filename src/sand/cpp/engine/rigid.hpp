@@ -29,6 +29,8 @@ class RigidBodySystem {
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
+  int rigidOwnershipConflicts = 0;
+  int rigidPositionCorrections = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
   int rigidIslands = 0, rigidBlockSolves = 0;

@@ -1153,6 +1153,7 @@ void ForceSystem::applyBodyForces() {
   int targetLayer = layerIndex(E.L);
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
+    body->spatialForceApplied = false;
     if (!body->awake
         && !bodyTouchesBins(body, changedBins[targetLayer])) continue;
     double forceX, forceY;
@@ -1160,6 +1161,7 @@ void ForceSystem::applyBodyForces() {
       && sampleBody(E.L, body, forceX, forceY);
     if (!body->awake) E.rigid.wakeBody(body);
     if (!active) continue;
+    body->spatialForceApplied = true;
     body->vx += forceX;
     body->vy += forceY;
   }

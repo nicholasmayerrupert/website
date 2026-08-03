@@ -6,6 +6,7 @@
   rigidMaxChildren = 0;
   rigidCoherentIslands = rigidDenseFallbackIslands = 0;
   rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
+  rigidPositionCorrections = 0;
   rigidMaxRelativeSpeed = 0;
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
   fluidCorrectorPasses = fluidCorrectorBodyCount = 0;

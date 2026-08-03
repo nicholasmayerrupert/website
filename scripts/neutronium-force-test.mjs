@@ -602,6 +602,32 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// Sustained attraction through a stack must preserve a separate raster for
+// every moving body. A shared owner cell means the later body's visible cell was
+// dropped while stamping, even when the velocity solver recovers next tick.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 110, COLS - 1, ROWS - 1, MAT.STONE);
+  engine.syncComponents();
+  for (const [x, y, radius] of [
+    [90, 92, 7], [90, 65, 5], [90, 43, 4], [90, 25, 3], [90, 10, 2],
+  ]) {
+    engine.spawnBox(x, y, radius, radius, MAT.NEUTRONIUM);
+  }
+  let ownershipConflicts = 0;
+  for (let step = 0; step < 240; step++) {
+    engine.stepWorld();
+    ownershipConflicts += engine.getRigidSolverDebug().ownershipConflicts;
+  }
+  check(
+    `force-compressed neutronium bodies keep separate rasters `
+      + `(${ownershipConflicts} ownership conflicts)`,
+    ownershipConflicts === 0,
+  );
+  engine.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1988,6 +1988,7 @@ void RigidBodySystem::moveBodies() {
   rigidStep(1.0);
   rigidCoreMs = emscripten_get_now() - coreStart;
   rigidRejectedCells = 0; rigidDepenetrations = 0;
+  rigidOwnershipConflicts = 0;
   double depenStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
@@ -2008,7 +2009,12 @@ void RigidBodySystem::moveBodies() {
     std::vector<Disp>& displaced = moveDisplaced[slot];
     std::vector<int>& stamped = moveStamped[slot];
     forEachBodyCell(b, [&](int x, int y, int local) {
-      int k = y * E.cols + x; if (E.L->bodyOwner[k] != -1) return; uint8_t m = E.L->grid[k];
+      int k = y * E.cols + x;
+      if (E.L->bodyOwner[k] != -1) {
+        rigidOwnershipConflicts++;
+        return;
+      }
+      uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
       if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
       E.writeGridIndex(k, bodyMaterialAt(b, local)); E.L->bodyOwner[k] = b->id;

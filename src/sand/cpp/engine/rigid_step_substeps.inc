@@ -1082,4 +1082,101 @@
         b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
       }
     }
+    // The velocity solve prevents ordinary tunnelling. If a sustained spatial
+    // force still leaves an already-contacting body pair slightly overlapped,
+    // project only those pairs at their integrated poses. This cold path keeps
+    // rasterized ownership unique without changing ordinary pile settling.
+    positionPairs.clear();
+    if (E.L->forceActive) {
+      spatialForceIsland.assign(n, 0);
+      bool hasForceDrivenIsland = false;
+      for (int bi = 0; bi < n; bi++) {
+        if (!solverBodies[bi]->spatialForceApplied) continue;
+        spatialForceIsland[ufFind(solveParent, bi)] = 1;
+        hasForceDrivenIsland = true;
+      }
+      if (hasForceDrivenIsland) {
+        terrainAnchored.assign(n, 0);
+        for (const Contact& contact : contacts) {
+          int root = ufFind(solveParent, contact.a->idx);
+          if (!spatialForceIsland[root]) continue;
+          if (!contact.b) {
+            terrainAnchored[contact.a->idx] = 1;
+            continue;
+          }
+          if (!contact.bIntegrated || contact.depth <= 0) continue;
+          int a = contact.a->idx, b = contact.b->idx;
+          positionPairs.push_back({imin(a, b), imax(a, b)});
+        }
+      }
+    }
+    if (!positionPairs.empty()) {
+      std::sort(positionPairs.begin(), positionPairs.end());
+      positionPairs.erase(
+        std::unique(positionPairs.begin(), positionPairs.end()),
+        positionPairs.end());
+      for (int iteration = 0; iteration < R_BODY_POSITION_ITERS; iteration++) {
+        bool corrected = false;
+        for (const auto& pair : positionPairs) {
+          Body* A = solverBodies[pair.first];
+          Body* B = solverBodies[pair.second];
+          currentChildPoses[pair.first] = childPose(A, 0);
+          currentChildPoses[pair.second] = childPose(B, 0);
+          nextChildPoseDt[pair.first] = -1;
+          nextChildPoseDt[pair.second] = -1;
+          if (collectChildContacts(
+                A, B, 0, pair.first, pair.second) != CCS_CURRENT)
+            continue;
+          PenPt deepest{};
+          bool hasPenetration = false;
+          for (const ChildManifold& manifold : childManifoldScratch) {
+            for (int pi = 0; pi < manifold.count; pi++) {
+              const PenPt& point = manifold.points[pi];
+              if (point.depth <= 0
+                  || (hasPenetration && point.depth <= deepest.depth))
+                continue;
+              deepest = point;
+              hasPenetration = true;
+            }
+          }
+          if (!hasPenetration) continue;
+          double aInvM = A->awake && !terrainAnchored[pair.first]
+            ? A->invMass : 0;
+          double aInvI = A->awake && !terrainAnchored[pair.first]
+            ? A->invInertia : 0;
+          double bInvM = B->awake && !terrainAnchored[pair.second]
+            ? B->invMass : 0;
+          double bInvI = B->awake && !terrainAnchored[pair.second]
+            ? B->invInertia : 0;
+          double rax = deepest.wx - A->px, ray = deepest.wy - A->py;
+          double rbx = deepest.wx - B->px, rby = deepest.wy - B->py;
+          double aCross = rax * deepest.ny - ray * deepest.nx;
+          double bCross = rbx * deepest.ny - rby * deepest.nx;
+          double inverseMass = aInvM + bInvM
+            + aCross * aCross * aInvI + bCross * bCross * bInvI;
+          if (inverseMass <= 1e-12) continue;
+          double impulse =
+            (deepest.depth + R_BODY_RASTER_CLEARANCE) / inverseMass;
+          A->px += deepest.nx * impulse * aInvM;
+          A->py += deepest.ny * impulse * aInvM;
+          A->angle += aCross * impulse * aInvI;
+          B->px -= deepest.nx * impulse * bInvM;
+          B->py -= deepest.ny * impulse * bInvM;
+          B->angle -= bCross * impulse * bInvI;
+          rigidPositionCorrections++;
+          corrected = true;
+        }
+        if (!corrected) break;
+      }
+      for (const auto& pair : positionPairs) {
+        Body* A = solverBodies[pair.first];
+        Body* B = solverBodies[pair.second];
+        A->cs = std::cos(A->angle);
+        A->sn = std::sin(A->angle);
+        B->cs = std::cos(B->angle);
+        B->sn = std::sin(B->angle);
+        if (A->jointRole == 1) syncJointFollower(A);
+        if (B->jointRole == 1) syncJointFollower(B);
+      }
+    }
   }

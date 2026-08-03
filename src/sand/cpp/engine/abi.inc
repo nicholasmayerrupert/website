@@ -379,6 +379,8 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 36: return e->rigid.rigidMaxRelativeSpeed;
     case 37: return e->rigid.rigidTerrainRiskBodies;
     case 38: return e->rigid.rigidImpactRiskBodies;
+    case 39: return e->rigid.rigidOwnershipConflicts;
+    case 40: return e->rigid.rigidPositionCorrections;
     default: return 0;
   }
 }

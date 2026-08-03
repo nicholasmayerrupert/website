@@ -935,3 +935,6 @@
   };
   std::vector<uint8_t> activeBody(n, 0);
   std::vector<double> bodyDt(n, 0);
+  std::vector<std::pair<int, int>> positionPairs;
+  std::vector<uint8_t> terrainAnchored;
+  std::vector<uint8_t> spatialForceIsland;

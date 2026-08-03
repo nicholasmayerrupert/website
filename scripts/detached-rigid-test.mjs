@@ -194,6 +194,69 @@ check(`naturally unsupported solid enters the rigid solver (bodies ${naturallyLo
   naturallyLoose._bodyCount() === 1 && naturalBody?.nPts === 16 && naturalBody.vy > 0);
 naturallyLoose.destroy();
 
+// A rotating structural body landing across uneven static terrain must keep its
+// complete raster outside the ground until it bakes. The two raised teeth make
+// the irregular body roll across several contact normals before settling.
+{
+  const C = 140, R = 150;
+  const rough = createEngineWasm({
+    cols: C, rows: R, worldSeed: 51, sinksOn: false, infinite: false,
+  });
+  const surface = [
+    130, 129, 128, 128, 129, 129, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 127,
+    127, 127, 126, 126, 126, 126, 125, 125, 125, 125,
+    125, 126, 126, 126, 126, 126, 126,
+  ];
+  for (let x = 0; x < C; x++) {
+    const top = x >= 45 && x < 82 ? surface[x - 45] : 140;
+    for (let y = top; y < R; y++)
+      rough.paintDisc(x, y, 0, MAT.STONE, true);
+  }
+  for (let y = 123; y < 140; y++)
+    rough.paintDisc(44, y, 0, MAT.STONE, true);
+  for (let y = 119; y < 140; y++) for (let x = 80; x <= 81; x++)
+    rough.paintDisc(x, y, 0, MAT.STONE, true);
+
+  const bodyRows = [
+    [[76, 76], [79, 79]], [[72, 74], [76, 85]], [[70, 87]],
+    [[68, 89]], [[67, 89]], [[66, 91]], [[65, 92]], [[65, 93]],
+    [[64, 93]], [[63, 93]], [[63, 94]], [[63, 94]], [[63, 94]],
+    [[63, 94]], [[63, 94]], [[64, 93]], [[64, 93]], [[64, 93]],
+    [[64, 92]], [[65, 92]], [[66, 90]], [[66, 66], [68, 89]],
+    [[68, 88]], [[70, 86]], [[73, 83], [85, 85]],
+    [[77, 77], [80, 80]],
+  ];
+  for (let row = 0; row < bodyRows.length; row++)
+    for (const [x0, x1] of bodyRows[row])
+      for (let x = x0; x <= x1; x++)
+        rough.paintDisc(x, 22 + row, 0, MAT.BRICK, true);
+  rough.syncComponents();
+  rough.stepWorld();
+  const spawned = rough._bodyCount() === 1;
+  if (spawned)
+    rough._setBodyMotion(0, -0.0959774743532762,
+      1.9588832577690483, 0.032843969429377465);
+
+  let maxBlocked = 0, maxRejected = 0, baked = false;
+  for (let tick = 0; tick < 240; tick++) {
+    rough.stepWorld();
+    maxRejected = Math.max(maxRejected,
+      rough.getRigidDebug().rejectedCells);
+    if (rough._bodyCount() === 0) {
+      baked = true;
+      break;
+    }
+    maxBlocked = Math.max(maxBlocked, rough._bodyBlocked(0));
+  }
+  check('rough-ground structural fixture enters the rigid solver', spawned);
+  check(`rough-ground body keeps a complete terrain-clear raster `
+      + `(${maxBlocked} blocked, ${maxRejected} rejected)`,
+    maxBlocked === 0 && maxRejected === 0);
+  check('rough-ground body settles and bakes', baked);
+  rough.destroy();
+}
+
 // A sleeping body on a static platform must enter free fall in the same solver
 // tick when a support cut converts that platform into a body. Their relative
 // separation stays fixed through the initial free-fall transition.

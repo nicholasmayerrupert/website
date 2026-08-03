@@ -118,8 +118,8 @@ class RigidBodySystem {
   int bodyFootprintBlocked(Body* b);
   bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
-  int bodyDepenTolerance(Body* b);
-  bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre);
+  bool depenetrateBodyRaster(Body* b,
+                             const std::array<double, 3>& prePose);
   void bakeBodyToGrid(Body* b, int assemblyId);
   bool bodySolidifies(Body* b);
   bool bodyTouchesGroundedSolid(Body* b);

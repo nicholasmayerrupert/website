@@ -1590,26 +1590,91 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
   b->py = savedPy;
   return supported;
 }
-int RigidBodySystem::bodyDepenTolerance(Body* b) { return imax(1, (int)std::floor(imin(b->w, b->h) * 0.34)); }
-bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre) {
-  int tol = bodyDepenTolerance(b);
-  if (bodyFootprintBlocked(b) <= tol) return false;
-  double newPx = b->px, newPy = b->py, newAngle = b->angle;
-  if (hasPre) {
-    b->px = prePx; b->py = prePy; b->angle = newAngle;
-    if (bodyFootprintBlocked(b) <= tol) {
-      double lo = 0, hi = 1;
-      for (int iter = 0; iter < 6; iter++) { double mid = (lo + hi) * 0.5; b->px = prePx + (newPx - prePx) * mid; b->py = prePy + (newPy - prePy) * mid; b->angle = newAngle; if (bodyFootprintBlocked(b) <= tol) lo = mid; else hi = mid; }
-      b->px = prePx + (newPx - prePx) * lo; b->py = prePy + (newPy - prePy) * lo; b->angle = newAngle;
-      double mvx = newPx - prePx, mvy = newPy - prePy, len = std::hypot(mvx, mvy);
-      if (len > 1e-6) { double nx = mvx / len, ny = mvy / len, vn = b->vx * nx + b->vy * ny; if (vn > 0) { b->vx -= vn * nx; b->vy -= vn * ny; } }
+bool RigidBodySystem::depenetrateBodyRaster(
+    Body* b, const std::array<double, 3>& prePose) {
+  // Bakeable component bodies need a terrain-clear footprint so every cell can
+  // be stamped and baked. Permanent bodies use their contact raster margin.
+  const bool requiresClearRaster = bodySolidifies(b);
+  const int tolerance = requiresClearRaster
+    ? 0
+    : imax(1, (int)std::floor(imin(b->w, b->h) * 0.34));
+  auto poseAccepted = [&]() {
+    return bodyFootprintBlocked(b) <= tolerance;
+  };
+  if (poseAccepted()) return false;
+
+  const std::array<double, 3> solvedPose = {b->px, b->py, b->angle};
+  auto placeAlongStep = [&](double t, bool includeRotation) {
+    b->px = prePose[0] + (solvedPose[0] - prePose[0]) * t;
+    b->py = prePose[1] + (solvedPose[1] - prePose[1]) * t;
+    b->angle = includeRotation
+      ? prePose[2] + (solvedPose[2] - prePose[2]) * t
+      : solvedPose[2];
+  };
+  auto finishRecovery = [&]() {
+    double dx = solvedPose[0] - prePose[0];
+    double dy = solvedPose[1] - prePose[1];
+    double distance = std::hypot(dx, dy);
+    if (distance > 1e-6) {
+      double nx = dx / distance, ny = dy / distance;
+      double vn = b->vx * nx + b->vy * ny;
+      if (vn > 0) { b->vx -= vn * nx; b->vy -= vn * ny; }
+    }
+    b->awake = true;
+    b->stillTicks = 0;
+  };
+  auto trimStep = [&](bool includeRotation) {
+    placeAlongStep(0, includeRotation);
+    if (!poseAccepted()) return false;
+    double lo = 0, hi = 1;
+    for (int iter = 0; iter < 8; iter++) {
+      double mid = (lo + hi) * 0.5;
+      placeAlongStep(mid, includeRotation);
+      if (poseAccepted()) lo = mid;
+      else hi = mid;
+    }
+    placeAlongStep(lo, includeRotation);
+    finishRecovery();
+    return true;
+  };
+
+  if (trimStep(false)) return true;
+  if (!requiresClearRaster) {
+    placeAlongStep(1, true);
+    for (double lift = 0.125; lift <= 3.0 + 1e-9; lift += 0.125) {
+      b->py = solvedPose[1] - lift;
+      if (!poseAccepted()) continue;
+      if (b->vy > 0) b->vy = 0;
+      b->awake = true; b->stillTicks = 0; return true;
+    }
+    placeAlongStep(1, true);
+    return false;
+  }
+  if (trimStep(true)) return true;
+
+  // A blocked saved pose has no collision-free step to trim. Search outward at
+  // its saved angle before leaving the body at the solver's pose.
+  static constexpr double directions[8][2] = {
+    {0, -1}, {-1, 0}, {1, 0}, {0, 1},
+    {-0.7071067811865476, -0.7071067811865476},
+    {0.7071067811865476, -0.7071067811865476},
+    {-0.7071067811865476, 0.7071067811865476},
+    {0.7071067811865476, 0.7071067811865476},
+  };
+  const double escapeRadius = std::hypot((double)b->w, (double)b->h) + 2.0;
+  for (double distance = 0.25; distance <= escapeRadius; distance += 0.25) {
+    for (const auto& direction : directions) {
+      b->px = prePose[0] + direction[0] * distance;
+      b->py = prePose[1] + direction[1] * distance;
+      b->angle = prePose[2];
+      if (!bodyFullyInsideLoadedWindow(b) || !poseAccepted())
+        continue;
+      b->vx = b->vy = b->omega = 0;
       b->awake = true; b->stillTicks = 0; return true;
     }
   }
-  b->px = newPx; b->py = newPy; b->angle = newAngle;
-  double maxLift = 3.0, st = 0.125;
-  for (double lift = st; lift <= maxLift + 1e-9; lift += st) { b->py = newPy - lift; if (bodyFootprintBlocked(b) <= tol) { if (b->vy > 0) b->vy = 0; b->awake = true; b->stillTicks = 0; return true; } }
-  b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
+  placeAlongStep(1, true);
+  return false;
 }
 
 // ===== Body material identity & solidify-on-rest =====
@@ -1993,9 +2058,8 @@ void RigidBodySystem::moveBodies() {
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     int slot = moveBodySlotById.find(b->id)->second;
-    const std::array<double, 3>& prePose = movePrePoses[slot];
     if (b->rasterMayOverlapSolid
-        && depenetrateBodyRaster(b, prePose[0], prePose[1], true))
+        && depenetrateBodyRaster(b, movePrePoses[slot]))
       rigidDepenetrations++;
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration

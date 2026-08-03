@@ -19,8 +19,11 @@
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)
     if (body->jointRole != 2) solverBodies.push_back(body);
-  for (Body* body : solverBodies)
+  int solverChildCount = 0;
+  for (Body* body : solverBodies) {
     rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
+    solverChildCount += (int)body->collisionRects.size();
+  }
   int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
   std::vector<uint8_t> priorRasterRisk(n, 0);
@@ -224,7 +227,8 @@
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
   double globalPointSpeed = 0;
   double denseFrameVx = 0, denseFrameVy = 0;
-  int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
+  int denseFrameBodyCount = 0;
+  int wetSolverBodyCount = 0;
   for (int bi = 0; bi < n; bi++) {
     stepIslandParent[bi] = bi;
     Body* body = solverBodies[bi];
@@ -294,12 +298,19 @@
     || denseGlobalTerrainRisk || denseGlobalImpactRisk;
   bool denseGlobalCoherent =
     denseWetScene && !denseGlobalNewRisk && !denseGlobalCooldown;
+  bool overloadScene =
+    n >= R_OVERLOAD_BODY_THRESHOLD
+    || solverChildCount >= R_OVERLOAD_CHILD_THRESHOLD;
+  int maxSubsteps = overloadScene
+    ? R_OVERLOAD_MAX_SUBSTEPS : R_MAX_SUBSTEPS;
+  int maxSolverIters = overloadScene && !E.L->forceActive
+    ? R_OVERLOAD_MAX_SOLVER_ITERS : R_SOLVER_ITERS;
   double initialSafeSubstep = denseGlobalCoherent
     ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
   int substeps = (int)std::ceil(
     (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
       / initialSafeSubstep);
-  substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
+  substeps = imax(1, imin(maxSubsteps, substeps));
   if (substeps == 1) {
     rigidIslands = n;
     if (denseWetScene) {
@@ -403,7 +414,7 @@
       int count = (int)std::ceil(
         (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
           / safeSubstep);
-      count = imax(1, imin(R_MAX_SUBSTEPS, count));
+      count = imax(1, imin(maxSubsteps, count));
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
     }

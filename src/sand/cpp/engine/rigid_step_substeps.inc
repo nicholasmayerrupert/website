@@ -899,7 +899,7 @@
           + R_SOLVER_ITERS_PER_BODY * solveBodyCount[root];
         if (solveMaxRadius[root] >= 24)
           solverIters = imax(solverIters, R_SOLVER_LARGE_BODY_ITERS);
-        solverIters = imin(R_SOLVER_ITERS, solverIters);
+        solverIters = imin(maxSolverIters, solverIters);
       }
       bool hasImpactTarget = false;
       for (int oi = islandStart; oi < islandEnd; oi++)
@@ -907,7 +907,7 @@
           hasImpactTarget = true;
           break;
         }
-      if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
+      if (hasImpactTarget) solverIters = maxSolverIters;
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
         int mate = contact.blockMate;

@@ -257,7 +257,7 @@ class RigidBodySystem {
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
   std::vector<std::array<double, 3>> movePrePoses;
-  std::vector<int> moveCells, moveFootprint;
+  std::vector<int> moveCells;
 
   Engine& E;
 };

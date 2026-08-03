@@ -394,7 +394,8 @@
     layer->landedComponents.clear();
     bool bounded = focusedSimulationLod();
     size_t dynamicCells = bounded
-      ? std::min(layer->bodyCells.size(), (size_t)R_DYNAMIC_CELL_BUDGET)
+      ? std::min(layer->bodyCells.size() + layer->passiveBodyCells.size(),
+                 (size_t)R_FOCUSED_DYNAMIC_CELL_BUDGET)
       : 0;
     for (int i = 0; i < (int)layer->components.size(); i++) {
       Comp& component = layer->components[i];
@@ -403,7 +404,7 @@
         if (component.buoyancyDirection > 0 && !component.cells.empty())
           layer->landedComponents.push_back(i);
       } else if (!bounded || component.cells.size()
-                 <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells) {
+                 <= (size_t)R_FOCUSED_DYNAMIC_CELL_BUDGET - dynamicCells) {
         layer->mobileComponents.push_back(i);
         if (bounded) dynamicCells += component.cells.size();
       } else {

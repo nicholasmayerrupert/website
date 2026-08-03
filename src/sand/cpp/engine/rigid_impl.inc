@@ -2069,7 +2069,7 @@ void RigidBodySystem::moveBodies() {
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
   rigidDepenMs = emscripten_get_now() - depenStart;
   moveCells.clear();
-  moveFootprint.clear();
+  moveCells.reserve(E.L->bodyCells.size());
   double stampStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
@@ -2087,7 +2087,7 @@ void RigidBodySystem::moveBodies() {
       if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
       E.writeGridIndex(k, bodyMaterialAt(b, local)); E.L->bodyOwner[k] = b->id;
       if (b->blastDebris) E.L->groundedCell[k] = 0;
-      moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      moveCells.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   rigidStampMs = emscripten_get_now() - stampStart;
@@ -2121,7 +2121,7 @@ void RigidBodySystem::moveBodies() {
     if (keep.size() != E.L->bodies.size()) E.L->bodies = std::move(keep);
   }
   int32_t footprintGen = ++E.L->seenGen;
-  for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
+  for (int k : moveCells) E.L->rigidSpillFootprint[k] = footprintGen;
   double spillStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;

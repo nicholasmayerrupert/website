@@ -1618,6 +1618,12 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   };
   std::vector<PendingBody> pending;
   std::unordered_set<Comp*> detached;
+  size_t dynamicCellBudget = E.focusedSimulationLod()
+    ? R_FOCUSED_DYNAMIC_CELL_BUDGET : R_DYNAMIC_CELL_BUDGET;
+  size_t dynamicCells =
+    std::min(lay.bodyCells.size(), dynamicCellBudget);
+  size_t dynamicBodies =
+    std::min(lay.bodies.size(), (size_t)R_DYNAMIC_BODY_BUDGET);
   for (const auto& ids : groups) {
     std::vector<Comp*> components;
     std::vector<int> cells;
@@ -1631,7 +1637,6 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
       }
     }
     if (cells.empty()) continue;
-    for (Comp* component : components) detached.insert(component);
 
     // A cross-layer support group can connect several pieces only through its
     // peer layer. Once detached, each layer-local connected piece is its own
@@ -1642,6 +1647,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     asmCells.reset((size_t)E.cols * E.rows);
     asmPlanned.reset((size_t)E.cols * E.rows);
     for (int k : cells) asmCells.add(k);
+    size_t pendingStart = pending.size();
     for (int seed : cells) {
       if (asmPlanned.has(seed)) continue;
       PendingBody body;
@@ -1663,6 +1669,21 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
       }
       pending.push_back(std::move(body));
     }
+    size_t addedBodies = pending.size() - pendingStart;
+    // One connected body may exceed the cell budget; admitting it saturates
+    // the budget so unrelated fragments wait.
+    bool oversizedSingleBody = addedBodies == 1
+      && dynamicCells < dynamicCellBudget;
+    if (addedBodies > (size_t)R_DYNAMIC_BODY_BUDGET - dynamicBodies
+        || (cells.size() > dynamicCellBudget - dynamicCells
+            && !oversizedSingleBody)) {
+      pending.resize(pendingStart);
+      continue;
+    }
+    for (Comp* component : components) detached.insert(component);
+    dynamicBodies += addedBodies;
+    dynamicCells = std::min(
+      dynamicCellBudget, dynamicCells + cells.size());
   }
   if (pending.empty()) return;
   lay.componentCarryDirty = true;
@@ -1716,14 +1737,13 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   std::vector<PendingJoint> pending;
   std::unordered_set<Comp*> detachedFg, detachedBg;
   auto collect = [&](Layer& lay, const std::vector<int>& ids,
-                     std::unordered_set<Comp*>& detached,
+                     const std::unordered_set<Comp*>& detached,
                      std::vector<std::pair<int, int>>& cells,
                      std::vector<uint8_t>& materials) {
     std::vector<std::pair<int, uint8_t>> indexed;
     for (int id : ids) {
       Comp* component = compById(lay, id);
       if (!component || detached.count(component)) continue;
-      detached.insert(component);
       for (int k : component->cells) {
         if (k < 0 || k >= E.cols * E.rows || lay.bodyOwner[k] >= 0) continue;
         indexed.push_back({k, lay.grid[k]});
@@ -1743,12 +1763,49 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       materials.push_back(cell.second);
     }
   };
+  auto markDetached = [&](Layer& lay, const std::vector<int>& ids,
+                          std::unordered_set<Comp*>& detached) {
+    for (int id : ids) {
+      Comp* component = compById(lay, id);
+      if (component) detached.insert(component);
+    }
+  };
+  size_t dynamicCellBudget = E.focusedSimulationLod()
+    ? R_FOCUSED_DYNAMIC_CELL_BUDGET : R_DYNAMIC_CELL_BUDGET;
+  size_t fgDynamicCells = std::min(
+    E.fg.bodyCells.size(), dynamicCellBudget);
+  size_t bgDynamicCells = std::min(
+    E.bg.bodyCells.size() + E.bg.passiveBodyCells.size(),
+    dynamicCellBudget);
+  size_t fgDynamicBodies = std::min(
+    E.fg.bodies.size(), (size_t)R_DYNAMIC_BODY_BUDGET);
+  size_t bgDynamicBodies = std::min(
+    E.bg.bodies.size(), (size_t)R_DYNAMIC_BODY_BUDGET);
   for (const auto& group : groups) {
     PendingJoint joint;
     collect(E.fg, group.first, detachedFg, joint.fgCells, joint.fgMaterials);
     collect(E.bg, group.second, detachedBg, joint.bgCells, joint.bgMaterials);
-    if (!joint.fgCells.empty() && !joint.bgCells.empty())
-      pending.push_back(std::move(joint));
+    if (joint.fgCells.empty() || joint.bgCells.empty()) continue;
+    bool fgCellsFit = joint.fgCells.size()
+      <= dynamicCellBudget - fgDynamicCells;
+    bool bgCellsFit = joint.bgCells.size()
+      <= dynamicCellBudget - bgDynamicCells;
+    if (fgDynamicBodies >= (size_t)R_DYNAMIC_BODY_BUDGET
+        || bgDynamicBodies >= (size_t)R_DYNAMIC_BODY_BUDGET
+        || (!fgCellsFit
+            && fgDynamicCells >= dynamicCellBudget)
+        || (!bgCellsFit
+            && bgDynamicCells >= dynamicCellBudget))
+      continue;
+    markDetached(E.fg, group.first, detachedFg);
+    markDetached(E.bg, group.second, detachedBg);
+    fgDynamicBodies++;
+    bgDynamicBodies++;
+    fgDynamicCells = std::min(
+      dynamicCellBudget, fgDynamicCells + joint.fgCells.size());
+    bgDynamicCells = std::min(
+      dynamicCellBudget, bgDynamicCells + joint.bgCells.size());
+    pending.push_back(std::move(joint));
   }
   if (pending.empty()) return;
 

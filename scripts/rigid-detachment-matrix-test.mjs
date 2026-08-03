@@ -459,6 +459,29 @@ function runDrainedSupportCase(spec, caseIndex) {
   };
 }
 
+function runOverloadAdmissionCase() {
+  const cols = 220;
+  const rows = 80;
+  const engine = createEngineWasm({
+    cols,
+    rows,
+    worldSeed: 0xB0D1,
+    sinksOn: false,
+    infinite: false,
+  });
+  for (let body = 0; body < 160; body++) {
+    const x = 5 + (body % 40) * 5;
+    const y = 5 + Math.floor(body / 40) * 15;
+    paintRect(engine, 0, x, y, x + 1, y + 1, MAT.STONE);
+  }
+  engine.syncComponents();
+  engine.stepWorld();
+  const bodies = engine._bodyCount();
+  const waitingCells = countUnsupportedStatic(engine, 0);
+  engine.destroy();
+  return { bodies, waitingCells };
+}
+
 for (let i = 0; i < CASES.length; i++) {
   const spec = CASES[i];
   const result = runCase(spec, i);
@@ -474,6 +497,11 @@ for (let i = 0; i < DRAINED_SUPPORT_CASES.length; i++) {
   const result = runDrainedSupportCase(spec, i);
   check(`${spec.name}${result.detail ? ` — ${result.detail}` : ''}`, result.ok);
 }
+
+const overload = runOverloadAdmissionCase();
+check(`mass detachment admits 128 bodies and queues the remaining cells `
+    + `(${overload.bodies} bodies, ${overload.waitingCells} waiting cells)`,
+  overload.bodies === 128 && overload.waitingCells === 128);
 
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

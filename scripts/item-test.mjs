@@ -7,7 +7,7 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
-import { OFF, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
+import { OFF, PROJECTILE_KIND, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker, gridHash } from './sand-test-util.mjs';
 
 const COLS = 160, ROWS = 120, FLOOR = 90;
@@ -123,19 +123,45 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
   e.destroy();
 }
 
-// 6) World shift: items remap by the shift delta and drop when off-buffer.
+// 6) World shift: items remap by the shift delta and persist off-buffer.
 {
   const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 9, sinksOn: false, infinite: true });
   e.spawnItem(MAT.WOOD, 1, 150, 30, 0, 0);
   e.shiftWorldXY(40, 0); // 150 -> 110, stays in buffer
   let it = e.getItems();
   check(`item remaps with the world shift (x ${it[0]?.x.toFixed(1)})`, e.itemCount() === 1 && Math.abs(it[0].x - 110) < 1.5);
-  e.shiftWorldXY(128, 0); // 110 -> -18, off buffer -> dropped
-  check(`item dropped when shifted off-buffer (count ${e.itemCount()})`, e.itemCount() === 0);
+  e.shiftWorldXY(128, 0); // 110 -> -18, off buffer -> tile store
+  check(`item leaves the live actor set off-buffer (count ${e.itemCount()})`, e.itemCount() === 0);
+  e.shiftWorldXY(-128, 0);
+  it = e.getItems();
+  check(`stored item returns at its world position (x ${it[0]?.x.toFixed(1)})`,
+    e.itemCount() === 1 && Math.abs(it[0].x - 110) < 1.5);
   e.destroy();
 }
 
-// 7) Determinism: items must not perturb the sim RNG. Same seed + same sand, one
+// 7) World shift: live projectiles retain their actor state while off-buffer.
+{
+  const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 9, sinksOn: false, infinite: true });
+  e.setSurvivalInventory(true);
+  const player = e.spawnPlayer(150, 30);
+  e.setPlayerInput(player, { bits: 16, aimX: 210, aimY: 32, seq: 1 });
+  e.stepActors();
+  const before = e.getProjectiles().find((value) =>
+    value.kind === PROJECTILE_KIND.BLAST_ROUND);
+  e.shiftWorldXY(192, 0);
+  check('projectile leaves the live actor set off-buffer',
+    before && e.getProjectiles().length === 0);
+  e.shiftWorldXY(-192, 0);
+  const after = e.getProjectiles().find((value) => value.id === before?.id);
+  check('stored projectile returns with its exact motion state', after
+    && after.x === before.x && after.y === before.y
+    && after.vx === before.vx && after.vy === before.vy
+    && after.charge === before.charge && after.fuse === before.fuse
+    && after.rotation === before.rotation);
+  e.destroy();
+}
+
+// 8) Determinism: items must not perturb the sim RNG. Same seed + same sand, one
 //    engine also spawns/updates items — the grids must hash identically.
 {
   const mk = () => { const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 123, sinksOn: false, infinite: false }); e.paintDisc(80, 30, 6, MAT.SAND, false); return e; };

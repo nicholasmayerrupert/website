@@ -177,7 +177,23 @@
     perfSandMs += emscripten_get_now() - tS;
 
     double tL = emscripten_get_now();
-    for (int k : activeLiquidCells) { uint8_t m = L->grid[k]; if (!isLiquidMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (m == LAVA) settleLava(x, y, k); else settleLiquid(x, y, k, m); }
+    for (size_t first = 0; first < activeLiquidCells.size();) {
+      int rowK = activeLiquidCells[first];
+      int y = rowK / cols, rowBegin = y * cols, rowEnd = rowBegin + cols;
+      size_t last = first + 1;
+      while (last < activeLiquidCells.size()
+             && activeLiquidCells[last] >= rowBegin
+             && activeLiquidCells[last] < rowEnd)
+        last++;
+      for (; first < last; first++) {
+        int k = activeLiquidCells[first];
+        uint8_t m = L->grid[k];
+        if (!isLiquidMaterial(m)) continue;
+        int x = k - rowBegin;
+        if (m == LAVA) settleLava(x, y, k);
+        else settleLiquid(x, y, k, m);
+      }
+    }
     // Density-chain relocate liquids displaced by denser liquids this settle (before
     // gas claims free cells and before the double-buffer swap commits next[]).
     resolveLiquidDisplacements();

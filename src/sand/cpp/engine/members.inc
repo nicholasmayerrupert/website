@@ -95,6 +95,11 @@
   std::unordered_set<int> crossFrozenIceFg, crossFrozenIceBg;
   std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
+  struct StoredItem { Item value; double wx = 0, wy = 0; };
+  struct StoredProjectile { Projectile value; double wx = 0, wy = 0; };
+  std::unordered_map<int64_t, std::vector<StoredItem>> itemStore;
+  std::unordered_map<int64_t, std::vector<StoredProjectile>> projectileStore;
+  int storedItemCount = 0, storedProjectileCount = 0;
   std::vector<std::pair<int32_t, int32_t>> activeSpanUnionScratch;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
@@ -441,10 +446,54 @@
       emscripten_console_error(buf);
       abort();
     };
-    auto checkLayer = [&](Layer& lay) {
+    std::unordered_set<Body*> liveFg(fg.bodies.begin(), fg.bodies.end());
+    std::unordered_set<Body*> liveBg(bg.bodies.begin(), bg.bodies.end());
+    auto checkLayer = [&](Layer& lay, bool background) {
       size_t n = (size_t)cols * rows;
-      for (size_t k = 0; k < n; k++)
-        if (lay.bodyOwner[k] != -1 && lay.grid[k] == EMPTY) fail("body-owned cell is EMPTY", (int)k, 0, lay.bodyOwner[k]);
+      std::unordered_map<int, Body*> bodiesById;
+      bodiesById.reserve(lay.bodies.size() * 2);
+      for (Body* body : lay.bodies) {
+        if (!body) fail("null body in layer roster", 0, -1, 0);
+        if (!bodiesById.emplace(body->id, body).second)
+          failBody("duplicate live body id", body, -1, body->id);
+        if ((!background && body->jointRole == 2)
+            || (background && body->jointRole == 1))
+          failBody("joint role is in the wrong layer", body, -1, background);
+        if ((body->jointRole == 0) != (body->jointPeer == nullptr))
+          failBody("joint role/peer disagreement", body, -1, body->jointRole);
+        bool markedPassive = lay.passiveBodyIds.count(body->id) != 0;
+        if (markedPassive != (body->jointRole == 2))
+          failBody("passive body id roster mismatch", body, -1, markedPassive);
+      }
+      for (int id : lay.passiveBodyIds)
+        if (!bodiesById.count(id))
+          fail("passive body id has no live body", 0, -1, id);
+
+      std::vector<uint8_t> listed(n, 0);
+      auto checkBodyCells = [&](const std::vector<int>& cells, uint8_t kind) {
+        for (int k : cells) {
+          if (k < 0 || k >= (int)n) fail("body cell list index out of bounds", k, -1, kind);
+          if (listed[k]) fail("body cell appears more than once", k, lay.grid[k], listed[k]);
+          listed[k] = kind;
+          auto found = bodiesById.find(lay.bodyOwner[k]);
+          if (found == bodiesById.end())
+            fail("listed body cell has no live owner", k, lay.grid[k], lay.bodyOwner[k]);
+          if ((found->second->jointRole == 2) != (kind == 2))
+            fail("body cell is in the wrong active/passive list", k, lay.grid[k], found->second->jointRole);
+        }
+      };
+      checkBodyCells(lay.bodyCells, 1);
+      checkBodyCells(lay.passiveBodyCells, 2);
+      for (size_t k = 0; k < n; k++) if (lay.bodyOwner[k] != -1) {
+        if (lay.grid[k] == EMPTY)
+          fail("body-owned cell is EMPTY", (int)k, 0, lay.bodyOwner[k]);
+        auto found = bodiesById.find(lay.bodyOwner[k]);
+        if (found == bodiesById.end())
+          fail("body-owned cell has no live body", (int)k, lay.grid[k], lay.bodyOwner[k]);
+        uint8_t expected = found->second->jointRole == 2 ? 2 : 1;
+        if (listed[k] != expected)
+          fail("body-owned cell missing from body cell roster", (int)k, lay.grid[k], listed[k]);
+      }
       lay.seenGen++;
       for (Comp& component : lay.components) for (int k : component.cells) {
         if (k < 0 || k >= (int)n) fail("component cell out of bounds", k, -1, 0);
@@ -535,8 +584,41 @@
         }
       }
     };
-    checkLayer(fg);
-    checkLayer(bg);
+    checkLayer(fg, false);
+    checkLayer(bg, true);
+    for (Body* leader : fg.bodies) {
+      if (leader->jointRole != 1) continue;
+      Body* follower = leader->jointPeer;
+      if (!follower || !liveBg.count(follower))
+        failBody("joint follower is not live in background", leader, -1, 0);
+      if (follower->jointRole != 2 || follower->jointPeer != leader)
+        failBody("joint peer link is not reciprocal", leader, -1,
+                 follower->jointRole);
+      if (leader->id != follower->id)
+        failBody("joint peer id mismatch", leader, -1, follower->id);
+      if (leader->w != follower->w || leader->h != follower->h
+          || leader->occ != follower->occ
+          || leader->offsetX != follower->offsetX
+          || leader->offsetY != follower->offsetY)
+        failBody("joint geometry mismatch", leader, -1, follower->id);
+      if (leader->cellMaterials != follower->jointPeerMaterials
+          || leader->jointPeerMaterials != follower->cellMaterials)
+        failBody("joint material maps are not symmetric", leader, -1,
+                 follower->id);
+      if (leader->px != follower->px || leader->py != follower->py
+          || leader->angle != follower->angle
+          || leader->vx != follower->vx || leader->vy != follower->vy
+          || leader->omega != follower->omega
+          || leader->awake != follower->awake
+          || leader->stillTicks != follower->stillTicks
+          || leader->cs != follower->cs || leader->sn != follower->sn)
+        failBody("joint shared pose/motion mismatch", leader, -1,
+                 follower->id);
+    }
+    for (Body* follower : bg.bodies)
+      if (follower->jointRole == 2
+          && (!follower->jointPeer || !liveFg.count(follower->jointPeer)))
+        failBody("joint leader is not live in foreground", follower, -1, 0);
   }
 #endif
 

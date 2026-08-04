@@ -634,6 +634,7 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
       b->vy += dy * force;
       b->awake = true;
       b->stillTicks = 0;
+      if (b->jointRole == 1) E.rigid.syncJointFollower(b);
     }
 
     int localDebrisCap = bb.debrisStepCap;

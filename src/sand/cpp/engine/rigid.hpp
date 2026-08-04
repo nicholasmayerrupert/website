@@ -74,6 +74,8 @@ class RigidBodySystem {
                            const std::vector<uint8_t>& fgMaterials,
                            const std::vector<std::pair<int, int>>& bgCells,
                            const std::vector<uint8_t>& bgMaterials);
+  void bindJointBodies(Body* leader, Body* follower, int jointId);
+  void unbindJointBodies(Body* leader, Body* follower);
   void freezeCellsOntoBody(Layer& sourceLayer, int sourceBodyId,
                            Layer& targetLayer, const std::vector<int>& cells);
   uint8_t bodyMaterialAt(Body* b, int localIndex);

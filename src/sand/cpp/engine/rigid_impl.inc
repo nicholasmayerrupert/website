@@ -271,6 +271,25 @@ Body* RigidBodySystem::spawnBodyImpl(const std::vector<std::pair<int, int>>& cel
   computeDerived(b, true);
   return b;
 }
+void RigidBodySystem::bindJointBodies(Body* leader, Body* follower, int jointId) {
+  if (!leader || !follower) return;
+  leader->id = follower->id = jointId;
+  E.fg.nextBodyId = imax(E.fg.nextBodyId, jointId + 1);
+  E.bg.nextBodyId = imax(E.bg.nextBodyId, jointId + 1);
+  leader->jointRole = 1;
+  follower->jointRole = 2;
+  leader->jointPeer = follower;
+  follower->jointPeer = leader;
+  E.bg.passiveBodyIds.insert(jointId);
+}
+void RigidBodySystem::unbindJointBodies(Body* leader, Body* follower) {
+  if (!leader || !follower) return;
+  E.bg.passiveBodyIds.erase(follower->id);
+  leader->jointPeer = nullptr;
+  follower->jointPeer = nullptr;
+  leader->jointRole = 0;
+  follower->jointRole = 0;
+}
 Body* RigidBodySystem::spawnJointBodyImpl(
     const std::vector<std::pair<int, int>>& fgCells,
     const std::vector<uint8_t>& fgMaterials,
@@ -290,9 +309,7 @@ Body* RigidBodySystem::spawnJointBodyImpl(
   Body* follower = spawnBodyImpl(unionCells, bgMaterials[0], DENSITY[bgMaterials[0]]);
   if (!leader || !follower) return nullptr;
   int jointId = imax(leader->id, follower->id);
-  leader->id = follower->id = jointId;
-  E.fg.nextBodyId = imax(E.fg.nextBodyId, jointId + 1);
-  E.bg.nextBodyId = imax(E.bg.nextBodyId, jointId + 1);
+  bindJointBodies(leader, follower, jointId);
 
   int minX = unionCells[0].first, minY = unionCells[0].second;
   for (const auto& cell : unionCells) {
@@ -317,14 +334,9 @@ Body* RigidBodySystem::spawnJointBodyImpl(
   };
   fillLayerMap(leader, fgCells, fgMaterials, bgCells, bgMaterials);
   fillLayerMap(follower, bgCells, bgMaterials, fgCells, fgMaterials);
-  leader->jointRole = 1;
-  follower->jointRole = 2;
-  leader->jointPeer = follower;
-  follower->jointPeer = leader;
   computeDerived(leader, true);
   computeDerived(follower, true);
   syncJointFollower(leader);
-  E.bg.passiveBodyIds.insert(jointId);
   return leader;
 }
 void RigidBodySystem::freezeCellsOntoBody(
@@ -359,17 +371,11 @@ void RigidBodySystem::freezeCellsOntoBody(
       source->jointPeerMaterials.assign(source->occ.size(), EMPTY);
       peer->cellMaterials.assign(peer->occ.size(), EMPTY);
       peer->jointPeerMaterials = sourceMaterials;
-      source->jointPeer = peer;
-      peer->jointPeer = source;
-
       Body* leader = &sourceLayer == &E.fg ? source : peer;
       Body* follower = &sourceLayer == &E.bg ? source : peer;
-      leader->jointRole = 1;
-      follower->jointRole = 2;
       int oldId = source->id;
       int jointId = imax(E.fg.nextBodyId, E.bg.nextBodyId);
-      E.fg.nextBodyId = E.bg.nextBodyId = jointId + 1;
-      source->id = peer->id = jointId;
+      bindJointBodies(leader, follower, jointId);
       for (int k : sourceLayer.bodyCells)
         if (sourceLayer.bodyOwner[k] == oldId)
           sourceLayer.bodyOwner[k] = jointId;
@@ -385,7 +391,6 @@ void RigidBodySystem::freezeCellsOntoBody(
         }
         E.bg.bodyCells = std::move(active);
       }
-      E.bg.passiveBodyIds.insert(jointId);
       computeDerived(leader, true);
       computeDerived(follower, true);
       syncJointFollower(leader);
@@ -761,13 +766,11 @@ void RigidBodySystem::breakJointBody(Body* member) {
     for (size_t i = 0; i < body->occ.size(); i++)
       body->occ[i] = body->cellMaterials[i] != EMPTY;
     body->jointPeerMaterials.clear();
-    body->jointPeer = nullptr;
-    body->jointRole = 0;
     computeDerived(body, true);
   };
+  unbindJointBodies(leader, follower);
   keepOwnLayer(leader);
   keepOwnLayer(follower);
-  E.bg.passiveBodyIds.erase(follower->id);
   std::vector<int> stillPassive;
   stillPassive.reserve(E.bg.passiveBodyCells.size());
   for (int k : E.bg.passiveBodyCells) {

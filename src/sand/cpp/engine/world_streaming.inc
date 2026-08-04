@@ -160,6 +160,164 @@
   }
   int worldStoredTileCount() const { return (int)(fg.tileStore.size() + bg.tileStore.size()); }
   int worldPrefetchTileCount() const { return (int)(fg.prefetchStore.size() + bg.prefetchStore.size()); }
+  void csSaveFusesLeaving(int bx0, int by0, int w, int h) {
+    for (auto it = L->pendingDetonations.begin();
+         it != L->pendingDetonations.end();) {
+      int k = it->first;
+      int y = k / cols, x = k - y * cols;
+      if (x < bx0 || x >= bx0 + w || y < by0 || y >= by0 + h) {
+        ++it;
+        continue;
+      }
+      int wx = L->worldOffsetX + x, wy = L->worldOffsetY + y;
+      int64_t key = tileKey(floorDiv(wx, CHUNK_SIZE),
+                            floorDiv(wy, CHUNK_SIZE));
+      auto& stored = L->fuseStore[key];
+      auto same = std::find_if(stored.begin(), stored.end(),
+        [&](const Layer::StoredFuse& fuse) {
+          return fuse.wx == wx && fuse.wy == wy;
+        });
+      if (same == stored.end()) stored.push_back({wx, wy, it->second});
+      else same->ticks = imin(same->ticks, it->second);
+      it = L->pendingDetonations.erase(it);
+    }
+  }
+  void shiftPendingFuses(int dx, int dy) {
+    if (L->pendingDetonations.empty()) return;
+    std::unordered_map<int, int> shifted;
+    shifted.reserve(L->pendingDetonations.size());
+    for (const auto& entry : L->pendingDetonations) {
+      int y = entry.first / cols, x = entry.first - y * cols;
+      int nx = x - dx, ny = y - dy;
+      if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+      int k = ny * cols + nx;
+      auto inserted = shifted.emplace(k, entry.second);
+      if (!inserted.second) inserted.first->second = imin(inserted.first->second,
+                                                         entry.second);
+    }
+    L->pendingDetonations.swap(shifted);
+  }
+  void csRestoreFuses(int bx0, int by0, int w, int h) {
+    int worldX0 = L->worldOffsetX + bx0;
+    int worldY0 = L->worldOffsetY + by0;
+    int tileX0 = floorDiv(worldX0, CHUNK_SIZE);
+    int tileY0 = floorDiv(worldY0, CHUNK_SIZE);
+    int tileX1 = floorDiv(worldX0 + w - 1, CHUNK_SIZE);
+    int tileY1 = floorDiv(worldY0 + h - 1, CHUNK_SIZE);
+    for (int tileY = tileY0; tileY <= tileY1; tileY++)
+      for (int tileX = tileX0; tileX <= tileX1; tileX++) {
+        auto store = L->fuseStore.find(tileKey(tileX, tileY));
+        if (store == L->fuseStore.end()) continue;
+        std::vector<Layer::StoredFuse> keep;
+        for (const Layer::StoredFuse& fuse : store->second) {
+          int x = fuse.wx - L->worldOffsetX;
+          int y = fuse.wy - L->worldOffsetY;
+          if (x < bx0 || x >= bx0 + w || y < by0 || y >= by0 + h) {
+            keep.push_back(fuse);
+            continue;
+          }
+          int k = y * cols + x;
+          if (L->grid[k] == TNT && L->bodyOwner[k] < 0) {
+            auto inserted = L->pendingDetonations.emplace(k, fuse.ticks);
+            if (!inserted.second)
+              inserted.first->second = imin(inserted.first->second, fuse.ticks);
+          }
+        }
+        if (keep.empty()) L->fuseStore.erase(store);
+        else store->second.swap(keep);
+      }
+  }
+  void remapStoredEntities(int oldOffX, int oldOffY,
+                           int newOffX, int newOffY,
+                           int restoreX0, int restoreY0,
+                           int restoreW, int restoreH) {
+    std::vector<Item> keptItems;
+    keptItems.reserve(itemsys.items.size());
+    for (Item item : itemsys.items) {
+      double wx = oldOffX + item.px, wy = oldOffY + item.py;
+      item.px = wx - newOffX; item.py = wy - newOffY;
+      if (item.px >= 0 && item.px < cols && item.py >= 0 && item.py < rows) {
+        keptItems.push_back(item);
+      } else if (item.kind == IT_ITEM && storedItemCount < IT_MAX_ITEMS) {
+        int64_t key = tileKey(floorDiv((int)std::floor(wx), CHUNK_SIZE),
+                              floorDiv((int)std::floor(wy), CHUNK_SIZE));
+        itemStore[key].push_back({item, wx, wy});
+        storedItemCount++;
+      }
+    }
+    itemsys.items.swap(keptItems);
+
+    std::vector<Projectile> keptProjectiles;
+    keptProjectiles.reserve(projectiles.projectiles.size());
+    for (Projectile projectile : projectiles.projectiles) {
+      double wx = oldOffX + projectile.px, wy = oldOffY + projectile.py;
+      projectile.px = wx - newOffX; projectile.py = wy - newOffY;
+      if (projectile.px >= 0 && projectile.px < cols
+          && projectile.py >= 0 && projectile.py < rows) {
+        keptProjectiles.push_back(projectile);
+      } else if (storedProjectileCount < PROJECTILE_MAX) {
+        int64_t key = tileKey(floorDiv((int)std::floor(wx), CHUNK_SIZE),
+                              floorDiv((int)std::floor(wy), CHUNK_SIZE));
+        projectileStore[key].push_back({projectile, wx, wy});
+        storedProjectileCount++;
+      }
+    }
+    projectiles.projectiles.swap(keptProjectiles);
+
+    int worldX0 = newOffX + restoreX0;
+    int worldY0 = newOffY + restoreY0;
+    int tileX0 = floorDiv(worldX0, CHUNK_SIZE);
+    int tileY0 = floorDiv(worldY0, CHUNK_SIZE);
+    int tileX1 = floorDiv(worldX0 + restoreW - 1, CHUNK_SIZE);
+    int tileY1 = floorDiv(worldY0 + restoreH - 1, CHUNK_SIZE);
+    for (int tileY = tileY0; tileY <= tileY1; tileY++)
+      for (int tileX = tileX0; tileX <= tileX1; tileX++) {
+        int64_t key = tileKey(tileX, tileY);
+        auto itemTile = itemStore.find(key);
+        if (itemTile != itemStore.end()) {
+          std::vector<StoredItem> keep;
+          for (StoredItem stored : itemTile->second) {
+            double x = stored.wx - newOffX, y = stored.wy - newOffY;
+            bool inRestore = x >= restoreX0 && x < restoreX0 + restoreW
+                          && y >= restoreY0 && y < restoreY0 + restoreH;
+            if (!inRestore || (int)itemsys.items.size() >= IT_MAX_ITEMS) {
+              keep.push_back(stored);
+              continue;
+            }
+            stored.value.px = x; stored.value.py = y;
+            itemsys.items.push_back(stored.value);
+            storedItemCount--;
+          }
+          if (keep.empty()) itemStore.erase(itemTile);
+          else itemTile->second.swap(keep);
+        }
+        auto projectileTile = projectileStore.find(key);
+        if (projectileTile != projectileStore.end()) {
+          std::vector<StoredProjectile> keep;
+          for (StoredProjectile stored : projectileTile->second) {
+            double x = stored.wx - newOffX, y = stored.wy - newOffY;
+            bool inRestore = x >= restoreX0 && x < restoreX0 + restoreW
+                          && y >= restoreY0 && y < restoreY0 + restoreH;
+            if (!inRestore
+                || (int)projectiles.projectiles.size() >= PROJECTILE_MAX) {
+              keep.push_back(stored);
+              continue;
+            }
+            stored.value.px = x; stored.value.py = y;
+            projectiles.projectiles.push_back(stored.value);
+            storedProjectileCount--;
+          }
+          if (keep.empty()) projectileStore.erase(projectileTile);
+          else projectileTile->second.swap(keep);
+        }
+      }
+    std::sort(itemsys.items.begin(), itemsys.items.end(),
+              [](const Item& a, const Item& b) { return a.id < b.id; });
+    std::sort(projectiles.projectiles.begin(), projectiles.projectiles.end(),
+              [](const Projectile& a, const Projectile& b) {
+                return a.id < b.id;
+              });
+  }
   // Only WHOLE 32x32 tiles fully inside the buffer are persisted; a partial edge
   // tile (when cols/rows aren't chunk-multiples — e.g. the headless tests) is
   // skipped and just regenerates. The game's buffer is chunk-rounded, so every
@@ -230,6 +388,7 @@
         double awx = L->worldOffsetX + b->px, awy = L->worldOffsetY + b->py;
         L->bodyStore[tileKey(floorDiv((int)std::floor(awx), CHUNK_SIZE),
                              floorDiv((int)std::floor(awy), CHUNK_SIZE))].push_back({b, {awx, awy}});
+        if (b->jointRole == 2) L->passiveBodyIds.erase(b->id);
       } else staying.push_back(b);
     }
     L->bodies = std::move(staying);
@@ -433,18 +592,13 @@
     useLayer(&bg); restampBodiesAfterStream();
     useLayer(&fg);
     for (auto& p : psys.players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
-    // Items are buffer-local entities like psys.players: slide them by the same delta and
-    // drop any that leave the loaded window (v1 — no off-buffer item persistence).
-    if (!itemsys.items.empty()) {
-      std::vector<Item> keep; keep.reserve(itemsys.items.size());
-      for (auto& it : itemsys.items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
-      itemsys.items.swap(keep);
-    }
-    if (!projectiles.projectiles.empty()) {
-      std::vector<Projectile> keep; keep.reserve(projectiles.projectiles.size());
-      for (auto arrow : projectiles.projectiles) { arrow.px -= dx; arrow.py -= dy; if (arrow.px >= 0 && arrow.px < cols && arrow.py >= 0 && arrow.py < rows) keep.push_back(arrow); }
-      projectiles.projectiles.swap(keep);
-    }
+    int restoreX = dx > 0 ? cols - std::abs(dx) : 0;
+    int restoreY = dy > 0 ? rows - std::abs(dy) : 0;
+    int restoreW = dx ? std::abs(dx) : cols;
+    int restoreH = dy ? std::abs(dy) : rows;
+    remapStoredEntities(fg.worldOffsetX - dx, fg.worldOffsetY - dy,
+                        fg.worldOffsetX, fg.worldOffsetY,
+                        restoreX, restoreY, restoreW, restoreH);
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the L->grid shift)
     remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
     useLayer(&fg); clearAllMineDamage();
@@ -460,7 +614,6 @@
     int lx0, ly0, lw, lh, ex0, ey0, ew, eh;
     if (dx) { lh = eh = rows; ly0 = ey0 = 0; lw = ew = s; lx0 = dx > 0 ? 0 : cols - s; ex0 = dx > 0 ? cols - s : 0; }
     else    { lw = ew = cols; lx0 = ex0 = 0; lh = eh = s; ly0 = dy > 0 ? 0 : rows - s; ey0 = dy > 0 ? rows - s : 0; }
-
     // 1) clear body rasters so no body ghost is saved/memmoved (bodies persist via
     //    bodyStore + translate below). body-material invariant: body cells hold their
     //    real material now, so clear by isBodyCell, not by == RIGID.
@@ -468,9 +621,9 @@
     L->bodyCells.clear();
     for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
     L->passiveBodyCells.clear();
-    L->pendingDetonations.clear(); // lit-fuse cell indices are buffer-local; drop them on a shift (a rare lost fuse)
     L->blastSparseCarryReady = false;
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
+    csSaveFusesLeaving(lx0, ly0, lw, lh);
     csSaveBodiesLeaving(lx0, ly0, lw, lh);
     csSaveTiles(lx0, ly0, lw, lh);
     // 3) slide the buffers + dirty marks.
@@ -498,12 +651,13 @@
           markLayerRowSpan(L, y, span.first, span.second);
       }
     }
+    shiftPendingFuses(dx, dy);
     std::fill(L->compOccStamp.begin(), L->compOccStamp.end(), -1);
     std::fill(L->vacatedStamp.begin(), L->vacatedStamp.end(), -1);
     std::fill(L->assemblyWakeStamp.begin(), L->assemblyWakeStamp.end(), -1);
     perfShiftBuffers = emscripten_get_now() - _t;
     // 4) translate staying bodies; drop any fully off the buffer.
-    { std::vector<Body*> keep; for (Body* b : L->bodies) { b->px -= dx; b->py -= dy; if (b->px > -b->maxR && b->px < cols + b->maxR && b->py > -b->maxR && b->py < rows + b->maxR) keep.push_back(b); else delete b; } L->bodies = std::move(keep); }
+    { std::vector<Body*> keep; for (Body* b : L->bodies) { b->px -= dx; b->py -= dy; if (b->px > -b->maxR && b->px < cols + b->maxR && b->py > -b->maxR && b->py < rows + b->maxR) keep.push_back(b); else { if (b->jointRole == 2) L->passiveBodyIds.erase(b->id); delete b; } } L->bodies = std::move(keep); }
     // 5) advance the offset, then bring in the entering band: generate the baseline
     //    only if not fully cached, then overlay any saved tiles + restore bodies.
     L->worldOffsetX += dx; L->worldOffsetY += dy;
@@ -512,6 +666,7 @@
     else shiftFillHit++; // band fully cached (saved tiles or a prefetched baseline) -> no worldgen this frame
     csLoadTiles(ex0, ey0, ew, eh);
     csRestoreBodies(ex0, ey0, ew, eh);
+    csRestoreFuses(ex0, ey0, ew, eh);
     perfShiftFill = emscripten_get_now() - _t;
     // 6) mark the entering band active so it simulates.
     if (dx) for (int y = 0; y < rows; y++)
@@ -560,6 +715,7 @@
 
     // Players / items in world space (shared offset across layers).
     struct WEnt { double wx, wy; };
+    int oldOffX = fg.worldOffsetX, oldOffY = fg.worldOffsetY;
     std::vector<WEnt> playerWorld; playerWorld.reserve(psys.players.size());
     for (auto& p : psys.players) playerWorld.push_back({fg.worldOffsetX + p.px, fg.worldOffsetY + p.py});
     std::vector<WEnt> itemWorld; itemWorld.reserve(itemsys.items.size());
@@ -574,7 +730,6 @@
       int newOffX = ((int)std::floor(worldCX - newCols * 0.5)) & ~(CHUNK_SIZE - 1);
       int newOffY = ((int)std::floor(worldCY - newRows * 0.5)) & ~(CHUNK_SIZE - 1);
       int oldCols = cols, oldRows = rows;
-      int oldOffX = fg.worldOffsetX, oldOffY = fg.worldOffsetY;
       cols = newCols; rows = newRows;
       chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
       chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
@@ -616,8 +771,8 @@
       L->bodyCells.clear();
       for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
       L->passiveBodyCells.clear();
-      L->pendingDetonations.clear();
       L->blastSparseCarryReady = false;
+      csSaveFusesLeaving(0, 0, cols, rows);
       csSaveBodiesLeaving(0, 0, cols, rows); // all bodies -> bodyStore (world keys)
       csSaveTiles(0, 0, cols, rows);
       // Components are buffer-indexed; drop and re-register after refill.
@@ -654,6 +809,7 @@
       fillRect(0, cols, 0, rows);
       csLoadTiles(0, 0, cols, rows);
       csRestoreBodies(0, 0, cols, rows);
+      csRestoreFuses(0, 0, cols, rows);
       registerSeededComponents(0, cols);
       // Wake the whole window so settle re-activates after the rebuild.
       markAllDirty();
@@ -674,24 +830,8 @@
       p.aimX = p.px; p.aimY = p.py;
       p.mineActive = false;
     }
-    {
-      std::vector<Item> keep; keep.reserve(itemsys.items.size());
-      for (size_t i = 0; i < itemsys.items.size(); i++) {
-        auto it = itemsys.items[i];
-        it.px = itemWorld[i].wx - newOffX;
-        it.py = itemWorld[i].wy - newOffY;
-        if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it);
-      }
-      itemsys.items.swap(keep);
-    }
-    {
-      std::vector<Projectile> keep; keep.reserve(projectiles.projectiles.size());
-      for (size_t i = 0; i < projectiles.projectiles.size(); i++) {
-        auto arrow = projectiles.projectiles[i]; arrow.px = projectileWorld[i].wx - newOffX; arrow.py = projectileWorld[i].wy - newOffY;
-        if (arrow.px >= 0 && arrow.px < cols && arrow.py >= 0 && arrow.py < rows) keep.push_back(arrow);
-      }
-      projectiles.projectiles.swap(keep);
-    }
+    remapStoredEntities(oldOffX, oldOffY,
+                        newOffX, newOffY, 0, 0, cols, rows);
 
     // Prefetch scratch matches the new dims; cancel any in-flight band.
     pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;

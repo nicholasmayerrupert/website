@@ -264,6 +264,7 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.prevBodyCells.clear();
     lay.curBodyCells.clear();
     lay.pendingDetonations.clear();
+    lay.fuseStore.clear();
     std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
     lay.nextComponentId = lay.nextBodyId = 1;
     lay.myceliumActive = false;
@@ -274,6 +275,8 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
   };
   reset(e->fg);
   reset(e->bg);
+  e->itemStore.clear(); e->projectileStore.clear();
+  e->storedItemCount = e->storedProjectileCount = 0;
   e->rigid.clearContactCaches();
   e->comps.jointSupportValid = false;
   e->comps.jointSupportSleeping = false;

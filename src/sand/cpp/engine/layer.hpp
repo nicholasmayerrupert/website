@@ -3,6 +3,9 @@
 // buffers. Engine owns foreground and background instances.
 
 struct Layer {
+  struct StoredFuse {
+    int wx = 0, wy = 0, ticks = 0;
+  };
   EngineStorageRole storageRole = ESR_FULL;
   // double buffer + the "current"/"next" pointers (alternate each step)
   std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
@@ -184,6 +187,7 @@ struct Layer {
   std::unordered_map<int64_t, std::vector<uint8_t>> prefetchStore;
   std::unordered_set<int64_t> dirtyWorldTiles;
   std::unordered_map<int64_t, std::vector<std::pair<Body*, std::pair<double, double>>>> bodyStore; // tile -> [(body, (worldPx,worldPy))]
+  std::unordered_map<int64_t, std::vector<StoredFuse>> fuseStore;
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;
 

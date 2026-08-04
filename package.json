@@ -83,6 +83,7 @@
     "test:rigid-topple": "node scripts/rigid-topple-test.mjs",
     "test:rigidmat": "node scripts/rigidmat-test.mjs",
     "test:rigid-spawn-joint": "node scripts/rigid-spawn-joint-repro.mjs",
+    "test:structural-stress": "node scripts/structural-mutation-stress-test.mjs",
     "test:explosives": "node scripts/explosives-test.mjs",
     "test:tnt-u": "MAX_CASES=12 node scripts/repro-tnt-u.mjs",
     "test:methane": "node scripts/methane-test.mjs",

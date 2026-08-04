@@ -961,6 +961,41 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- streaming preserves a live static fuse ---
+// A static fuse is actor-like simulation state, not derivable from the TNT cell.
+// Streaming the charge out and back must retain its remaining countdown.
+{
+  const C = 224, R = 160;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 0x5170, sinksOn: false, infinite: true,
+  });
+  const tx = 20, ty = 72;
+  for (let y = ty + 1; y < R; y++)
+    for (let x = tx - 6; x <= tx + 6; x++)
+      placeFixture(e, x, y, 0, MAT.STONE);
+  placeFixture(e, tx, ty, 0, MAT.TNT);
+  e.syncComponents();
+  placeFixture(e, tx + 1, ty, 1, MAT.FIRE);
+  e.stepWorld();
+  for (let y = ty - 5; y <= ty + 5; y++)
+    for (let x = tx - 5; x <= tx + 5; x++)
+      if (x !== tx || y !== ty) e.eraseDiscLayer(0, x, y, 0);
+  e.shiftWorldXY(32, 0);
+  e.shiftWorldXY(-32, 0);
+  const restored = e.getGrid()[ty * C + tx] === MAT.TNT;
+  let detonated = false;
+  for (let tick = 0; tick < 40; tick++) {
+    e.stepWorld();
+    if (e.getGrid()[ty * C + tx] !== MAT.TNT) {
+      detonated = true;
+      break;
+    }
+  }
+  check('streamed static TNT restores at its world position', restored);
+  check('streamed static TNT retains its live fuse', detonated);
+  e.destroy();
+}
+
 // --- generated two-layer terrain: foreground TNT blast invalidates stale cross-layer bonds ---
 {
   const C = 512, R = 256, seed = 12648430;

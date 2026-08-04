@@ -2866,20 +2866,22 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
   E.L->componentRegistryDirty = true;
   E.invalidateComponentIndexPatches(E.L);
   // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
-  // is "seen" iff seenStamp[k] == gen. Each registration behavior bumps gen, so
-  // the "clear" between materials costs O(1) instead of zeroing E.cols*E.rows.
+  // is "seen" iff seenStamp[k] == gen. One generation covers every registration
+  // behavior because each flood has a disjoint material predicate. Existing
+  // component/body membership is stamped once, independent of material count.
   // New cells also seed prevCompCells: if a freshly generated/restored component
   // moves on its first tick, carry must clear its old footprint from next[].
   std::vector<int32_t>& seen = E.L->seenStamp;
+  int32_t gen = ++E.L->seenGen;
+  for (auto& comp : E.L->components)
+    for (int k : comp.cells) seen[k] = gen;
+  for (int k : E.L->bodyCells) seen[k] = gen;
+  for (int k : E.L->passiveBodyCells) seen[k] = gen;
   // Rock-like materials (chunk-bounded). Each same-id region floods as its own island,
   // so a vein of ore inside stone is a distinct component (and stays a distinct
   // material when it falls — see matOf in moveRigidAssemblies). New non-plant,
   // non-ice structural component materials register here automatically.
   {
-    int32_t gen = ++E.L->seenGen;
-    for (auto& comp : E.L->components) for (int k : comp.cells) seen[k] = gen;
-    for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components (skip both seeding and flood-merge)
-    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx;
       uint8_t material = E.L->grid[k];
@@ -2904,10 +2906,6 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
   }
   // Plant-family materials are unbounded so a whole tree is one partition.
   {
-    int32_t gen = ++E.L->seenGen;
-    for (auto& comp : E.L->components) for (int k : comp.cells) seen[k] = gen;
-    for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
-    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx; if (seen[k] == gen || !E.isPlantMaterial(E.L->grid[k])) continue;
       std::vector<int> cells; int yMax;
@@ -2922,10 +2920,6 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
   }
   // Ice is unbounded so material-specific freezing can extend one partition.
   {
-    int32_t gen = ++E.L->seenGen;
-    for (auto& comp : E.L->components) for (int k : comp.cells) seen[k] = gen;
-    for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
-    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx; if (seen[k] == gen || !E.isIceMaterial(E.L->grid[k])) continue;
       std::vector<int> cells; int yMax;

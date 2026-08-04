@@ -1,6 +1,7 @@
 #pragma once
 // Dropped items and cosmetic particles are non-grid actors. They never use the
-// shared RNG or enter the chunk store; world shifts remap their local positions.
+// shared RNG. World shifts persist collectible items by absolute world tile;
+// short-lived cosmetic particles remain local to the loaded window.
 
 struct Engine;
 

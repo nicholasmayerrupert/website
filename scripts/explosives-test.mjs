@@ -286,6 +286,30 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 {
+  // An enclosed cave front can leave several rubble bodies resting while other
+  // structural work continues. Every supported sleeping fragment must bake.
+  const C = 160, R = 120, cx = C >> 1, cy = R >> 1;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.setBgEnabled(true);
+  e.paintDisc(cx, cy, C, MAT.STONE, true);
+  e.eraseDisc(cx, cy, 35);
+  e.paintDiscLayer(1, cx, cy, C, MAT.STONE, true);
+  e.paintDisc(cx, cy, 18, MAT.TNT, true);
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  let peakBodies = 0;
+  for (let i = 0; i < 500; i++) {
+    if (i < 3) e.placeMaterial(cx + 20, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    peakBodies = Math.max(peakBodies, e._bodyCount());
+  }
+  check(`enclosed cave blast emitted physical rubble (peak ${peakBodies})`,
+    peakBodies > 0);
+  check(`all supported cave rubble baked (${e._bodyCount()} bodies remain)`,
+    e._bodyCount() === 0);
+  e.destroy();
+}
+{
   // A descending structural body continues through contact with live rubble.
   const e = mk();
   for (let x = 30; x < 110; x++)

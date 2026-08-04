@@ -786,6 +786,11 @@ void RigidBodySystem::rigidStep(double tickDt) {
 #include "rigid_step_contacts.inc"
 #include "rigid_step_substeps.inc"
 #include "rigid_step_finalize.inc"
+  // Background contacts resolve against the physical foreground leader. Mirror
+  // any resulting motion into its passive background footprint.
+  if (E.L == &E.bg)
+    for (const auto& entry : peerJointLeaders)
+      syncJointFollower(entry.second);
 }
 template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
@@ -1770,7 +1775,8 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
 void RigidBodySystem::bakeRestingBodies() {
   auto falling = [](const std::vector<Comp>& components) {
     for (const Comp& component : components)
-      if (component.buoyancyDirection > 0) return true;
+      if (!component.cells.empty() && component.buoyancyDirection > 0)
+        return true;
     return false;
   };
   bool deferBlastBake = false;

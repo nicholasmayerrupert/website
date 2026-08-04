@@ -1623,9 +1623,73 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     b->py = savedPy + oy;
     if (b->jointRole == 1) syncJointFollower(b);
   };
-  // Keep the solver's rotation and tangential travel. The first clear radial
-  // ring supplies only the shortest local translation needed by the grid.
   const double step = 0.125;
+  auto clearAlong = [&](const double* direction) {
+    for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
+      place(direction[0] * radius, direction[1] * radius);
+      if (bodyFootprintBlocked(b) != 0) continue;
+      double blockedRadius = radius - step;
+      double clearRadius = radius;
+      for (int iteration = 0; iteration < 6; iteration++) {
+        double middle = (blockedRadius + clearRadius) * 0.5;
+        place(direction[0] * middle, direction[1] * middle);
+        if (bodyFootprintBlocked(b) == 0) clearRadius = middle;
+        else blockedRadius = middle;
+      }
+      place(0, 0);
+      dx = direction[0] * clearRadius;
+      dy = direction[1] * clearRadius;
+      return true;
+    }
+    place(0, 0);
+    return false;
+  };
+
+  // Follow the blocking terrain's outward normal so raster clearance cannot
+  // undo the solver's tangential travel along a slope.
+  double normalX = 0, normalY = 0;
+  occStamp.reset((size_t)E.cols * E.rows);
+  auto accumulateNormal = [&](int x, int y, int) {
+    int k = y * E.cols + x;
+    if (occStamp.has(k)) return;
+    occStamp.add(k);
+    auto blockedIn = [&](Layer& layer) {
+      if (layer.bodyOwner[k] == b->id) return false;
+      uint8_t material = layer.grid[k];
+      return material != EMPTY && !E.isGasMaterial(material)
+        && !E.isBuoyantMedium(material);
+    };
+    if (!blockedIn(*E.L)
+        && !(b->jointRole == 1 && blockedIn(E.bg))) return;
+    double nx = 0, ny = 0;
+    terrainNormalAt(b, x, y, b->density, nx, ny);
+    normalX += nx;
+    normalY += ny;
+  };
+  forEachBodyCell(b, accumulateNormal);
+  if (b->jointRole == 1 && b->jointPeer)
+    forEachBodyCell(b->jointPeer, accumulateNormal);
+  double normalLength = std::hypot(normalX, normalY);
+  if (normalLength > 1e-9) {
+    normalX /= normalLength;
+    normalY /= normalLength;
+    std::array<int, 16> order;
+    for (int i = 0; i < (int)order.size(); i++) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int c) {
+      double alignmentA = directions[a][0] * normalX
+                        + directions[a][1] * normalY;
+      double alignmentC = directions[c][0] * normalX
+                        + directions[c][1] * normalY;
+      return alignmentA > alignmentC;
+    });
+    for (int directionIndex : order)
+      if (clearAlong(directions[directionIndex])) return true;
+    dx = dy = 0;
+    return false;
+  }
+
+  // A balanced obstruction has no reliable normal. Use the shortest local
+  // translation without changing the solver's rotation.
   for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
     bool found = false;
     double bestRadius = radius, bestX = 0, bestY = 0;

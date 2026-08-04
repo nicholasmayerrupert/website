@@ -239,7 +239,7 @@ naturallyLoose.destroy();
 
   let structuralPrevious = rough._bodyState(0);
   let structuralTouching = false, structuralFrozenTicks = 0;
-  let structuralLongestFreeze = 0, structuralMaxContactStep = 0;
+  let structuralLongestInterruptedFreeze = 0, structuralMaxContactStep = 0;
   let maxBlocked = 0, maxRejected = 0, baked = false;
   for (let tick = 0; tick < 240; tick++) {
     rough.stepWorld();
@@ -261,9 +261,11 @@ naturallyLoose.destroy();
       structuralMaxContactStep = Math.max(structuralMaxContactStep, poseStep);
     if (rough._bodyAwake(0) && poseStep < 1e-4)
       structuralFrozenTicks++;
-    else structuralFrozenTicks = 0;
-    structuralLongestFreeze = Math.max(
-      structuralLongestFreeze, structuralFrozenTicks);
+    else {
+      structuralLongestInterruptedFreeze = Math.max(
+        structuralLongestInterruptedFreeze, structuralFrozenTicks);
+      structuralFrozenTicks = 0;
+    }
     structuralPrevious = state;
     maxBlocked = Math.max(maxBlocked, rough._bodyBlocked(0));
   }
@@ -272,8 +274,8 @@ naturallyLoose.destroy();
       + `(${maxBlocked} blocked, ${maxRejected} rejected)`,
     maxBlocked === 0 && maxRejected === 0);
   check(`component rigid keeps rolling on rough ground (`
-      + `${structuralLongestFreeze} frozen ticks)`,
-    structuralTouching && structuralLongestFreeze === 0);
+      + `${structuralLongestInterruptedFreeze} interrupted frozen ticks)`,
+    structuralTouching && structuralLongestInterruptedFreeze === 0);
   check(`component rolling remains continuous (largest contact step `
       + `${structuralMaxContactStep.toFixed(3)})`,
     structuralMaxContactStep < 3);
@@ -332,6 +334,48 @@ naturallyLoose.destroy();
     rollingMaxBlocked === 0 && rollingMaxRejected === 0);
   check(`generic rigid settles after rolling (step ${sleptAt})`, sleptAt >= 0);
   rolling.destroy();
+
+  // Raster clearance follows the terrain normal. A shorter sideways escape
+  // must not repeatedly undo motion along a shallow slope while the solver
+  // still reports meaningful tangential velocity.
+  const shallow = createEngineWasm({
+    cols: 150, rows: 130, worldSeed: 51, sinksOn: false, infinite: false,
+  });
+  for (let x = 0; x < 150; x++) {
+    const roughness = (x * 17 + 3) % 7 < 1 ? -1 : 0;
+    const top = Math.round(108 - 0.08 * (x - 75)) + roughness;
+    for (let y = top; y < 130; y++)
+      shallow.paintDisc(x, y, 0, MAT.STONE, true);
+  }
+  shallow.syncComponents();
+  shallow.spawnBox(75, 45, 9, 1, MAT.RIGID);
+  shallow._setBodyMotion(0, 0.13, 1.1, -0.027);
+
+  let shallowPrevious = shallow._bodyState(0);
+  let correctionTicks = 0, stalledCorrectionTicks = 0;
+  let longestCorrectionStall = 0;
+  for (let tick = 0; tick < 120; tick++) {
+    shallow.stepWorld();
+    const state = shallow._bodyState(0);
+    const centerStep = Math.hypot(
+      state.px - shallowPrevious.px, state.py - shallowPrevious.py);
+    const poseStep = centerStep
+      + Math.abs(state.angle - shallowPrevious.angle) * state.maxR;
+    const pointSpeed = Math.hypot(state.vx, state.vy)
+      + Math.abs(state.omega) * state.maxR;
+    const adjusted = shallow.getRigidDebug().depenetrations > 0;
+    if (adjusted) correctionTicks++;
+    if (adjusted && pointSpeed > 0.15 && poseStep < 0.03)
+      stalledCorrectionTicks++;
+    else stalledCorrectionTicks = 0;
+    longestCorrectionStall = Math.max(
+      longestCorrectionStall, stalledCorrectionTicks);
+    shallowPrevious = state;
+  }
+  check(`rough-ground correction preserves tangential travel (`
+      + `${longestCorrectionStall} stalled ticks across ${correctionTicks} corrections)`,
+    correctionTicks > 0 && longestCorrectionStall === 0);
+  shallow.destroy();
 }
 
 // A sleeping body on a static platform must enter free fall in the same solver

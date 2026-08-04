@@ -195,8 +195,7 @@ check(`naturally unsupported solid enters the rigid solver (bodies ${naturallyLo
 naturallyLoose.destroy();
 
 // A rotating structural body landing across uneven static terrain must keep its
-// complete raster outside the ground until it bakes. The two raised teeth make
-// the irregular body roll across several contact normals before settling.
+// complete raster outside the ground until it bakes.
 {
   const C = 140, R = 150;
   const rough = createEngineWasm({

@@ -682,17 +682,10 @@ static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
-// Bound structural occupancy admitted to free-body motion. Excess detached
-// terrain waits until earlier debris settles.
-static const int    R_DYNAMIC_CELL_BUDGET = 65536;
-static const int    R_FOCUSED_DYNAMIC_CELL_BUDGET = 8192;
-static const int    R_DYNAMIC_BODY_BUDGET = 128;
-// Dense or geometrically complex scenes retain swept collision while bounding
-// the microstep and iterative-solve multipliers.
-static const int    R_OVERLOAD_BODY_THRESHOLD = 128;
-static const int    R_OVERLOAD_CHILD_THRESHOLD = 2048;
-static const int    R_OVERLOAD_MAX_SUBSTEPS = 4;
-static const int    R_OVERLOAD_MAX_SOLVER_ITERS = 32;
+// In focused simulation LOD, bound the combined occupancy of free bodies and
+// components admitted to rigid motion. Excess detached terrain waits until
+// earlier debris settles instead of turning the loaded world into hot bodies.
+static const int    R_DYNAMIC_CELL_BUDGET = 8192;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_RADIUS = 4;
 static const int    R_FLUID_BATCH_DOMAIN_RADIUS = 3;

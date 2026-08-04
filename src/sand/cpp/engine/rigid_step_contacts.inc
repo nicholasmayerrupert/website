@@ -533,23 +533,6 @@
         currentChildFramesB[bi], nextChildFramesB[bi], dt);
       includeBounds(childBoundsB[bi]);
     }
-    // A direct scan is cheaper than sorting interval events when one compound
-    // has only a few children, and retains the solver's child-index order.
-    if ((int64_t)countA * countB <= 4ll * (countA + countB)) {
-      for (int ai = 0; ai < countA; ai++)
-        for (int bi = 0; bi < countB; bi++) {
-          if (!childBoundsOverlap(childBoundsA[ai], childBoundsB[bi]))
-            continue;
-          sweptCandidate = true;
-          if (!childFramesOverlap(currentChildFramesA[ai],
-                                  currentChildFramesB[bi])
-              && !childFramesOverlap(nextChildFramesA[ai],
-                                     nextChildFramesB[bi]))
-            continue;
-          childPairScratch.push_back({ai, bi});
-        }
-      return sweptCandidate;
-    }
     double spanX = std::fmax(1e-9, maxX - minX);
     double spanY = std::fmax(1e-9, maxY - minY);
     bool sweepX = totalX * spanY <= totalY * spanX;

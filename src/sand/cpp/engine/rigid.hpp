@@ -118,8 +118,8 @@ class RigidBodySystem {
   int bodyFootprintBlocked(Body* b);
   bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
-  bool depenetrateBodyRaster(Body* b,
-                             const std::array<double, 3>& prePose);
+  double terrainClearFraction(Body* b,
+                              const std::array<double, 3>& previousPose);
   void bakeBodyToGrid(Body* b, int assemblyId);
   bool bodySolidifies(Body* b);
   bool bodyTouchesGroundedSolid(Body* b);
@@ -257,7 +257,13 @@ class RigidBodySystem {
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
   std::vector<std::array<double, 3>> movePrePoses;
-  std::vector<int> moveCells;
+  std::vector<std::pair<int, int>> terrainTrimPairs;
+  struct TerrainTrimState {
+    int parent = 0;
+    double bodyFraction = 1, islandFraction = 1;
+  };
+  std::vector<TerrainTrimState> terrainTrimStates;
+  std::vector<int> moveCells, moveFootprint;
 
   Engine& E;
 };

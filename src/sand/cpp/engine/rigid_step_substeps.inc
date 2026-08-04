@@ -793,6 +793,14 @@
       }
     }
     nc = (int)contacts.size();
+    if (sub + 1 == substeps) {
+      for (const Contact& contact : contacts) {
+        if (!contact.b || !contact.bIntegrated
+            || contact.a->idx < 0 || contact.b->idx < 0)
+          continue;
+        terrainTrimPairs.push_back({contact.a->id, contact.b->id});
+      }
+    }
     rigidContacts += nc;
     for (Contact& contact : contacts) {
       Body* A = contact.a;
@@ -899,7 +907,7 @@
           + R_SOLVER_ITERS_PER_BODY * solveBodyCount[root];
         if (solveMaxRadius[root] >= 24)
           solverIters = imax(solverIters, R_SOLVER_LARGE_BODY_ITERS);
-        solverIters = imin(maxSolverIters, solverIters);
+        solverIters = imin(R_SOLVER_ITERS, solverIters);
       }
       bool hasImpactTarget = false;
       for (int oi = islandStart; oi < islandEnd; oi++)
@@ -907,7 +915,7 @@
           hasImpactTarget = true;
           break;
         }
-      if (hasImpactTarget) solverIters = maxSolverIters;
+      if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
         int mate = contact.blockMate;

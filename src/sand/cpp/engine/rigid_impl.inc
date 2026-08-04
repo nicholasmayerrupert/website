@@ -1590,95 +1590,41 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
   b->py = savedPy;
   return supported;
 }
-bool RigidBodySystem::depenetrateBodyRaster(
-    Body* b, const std::array<double, 3>& prePose) {
-  // Bakeable component bodies need a terrain-clear footprint so every cell can
-  // be stamped and baked. Permanent bodies use their contact raster margin.
-  const bool requiresClearRaster = bodySolidifies(b);
-  const int tolerance = requiresClearRaster
-    ? 0
-    : imax(1, (int)std::floor(imin(b->w, b->h) * 0.34));
-  auto poseAccepted = [&]() {
-    return bodyFootprintBlocked(b) <= tolerance;
-  };
-  if (poseAccepted()) return false;
+double RigidBodySystem::terrainClearFraction(
+    Body* b, const std::array<double, 3>& previousPose) {
+  if (bodyFootprintBlocked(b) == 0) return 1;
 
   const std::array<double, 3> solvedPose = {b->px, b->py, b->angle};
-  auto placeAlongStep = [&](double t, bool includeRotation) {
-    b->px = prePose[0] + (solvedPose[0] - prePose[0]) * t;
-    b->py = prePose[1] + (solvedPose[1] - prePose[1]) * t;
-    b->angle = includeRotation
-      ? prePose[2] + (solvedPose[2] - prePose[2]) * t
-      : solvedPose[2];
-  };
-  auto finishRecovery = [&]() {
-    double dx = solvedPose[0] - prePose[0];
-    double dy = solvedPose[1] - prePose[1];
-    double distance = std::hypot(dx, dy);
-    if (distance > 1e-6) {
-      double nx = dx / distance, ny = dy / distance;
-      double vn = b->vx * nx + b->vy * ny;
-      if (vn > 0) { b->vx -= vn * nx; b->vy -= vn * ny; }
-    }
-    // Component bodies keep the solver's sleep progress through the final
-    // raster projection so a terrain-clear pose can settle and bake.
-    if (!requiresClearRaster) {
-      b->awake = true;
-      b->stillTicks = 0;
-    }
-  };
-  auto trimStep = [&](bool includeRotation) {
-    placeAlongStep(0, includeRotation);
-    if (!poseAccepted()) return false;
-    double lo = 0, hi = 1;
-    for (int iter = 0; iter < 8; iter++) {
-      double mid = (lo + hi) * 0.5;
-      placeAlongStep(mid, includeRotation);
-      if (poseAccepted()) lo = mid;
-      else hi = mid;
-    }
-    placeAlongStep(lo, includeRotation);
-    finishRecovery();
-    return true;
+  auto place = [&](double fraction) {
+    b->px = previousPose[0]
+      + (solvedPose[0] - previousPose[0]) * fraction;
+    b->py = previousPose[1]
+      + (solvedPose[1] - previousPose[1]) * fraction;
+    b->angle = previousPose[2]
+      + (solvedPose[2] - previousPose[2]) * fraction;
   };
 
-  if (trimStep(false)) return true;
-  if (!requiresClearRaster) {
-    placeAlongStep(1, true);
-    for (double lift = 0.125; lift <= 3.0 + 1e-9; lift += 0.125) {
-      b->py = solvedPose[1] - lift;
-      if (!poseAccepted()) continue;
-      if (b->vy > 0) b->vy = 0;
-      b->awake = true; b->stillTicks = 0; return true;
-    }
-    placeAlongStep(1, true);
-    return false;
+  place(0);
+  if (bodyFootprintBlocked(b) != 0) {
+    b->vx = b->vy = b->omega = 0;
+    place(1);
+    return 0;
   }
-  if (trimStep(true)) return true;
 
-  // A blocked saved pose has no collision-free step to trim. Search outward at
-  // its saved angle before leaving the body at the solver's pose.
-  static constexpr double directions[8][2] = {
-    {0, -1}, {-1, 0}, {1, 0}, {0, 1},
-    {-0.7071067811865476, -0.7071067811865476},
-    {0.7071067811865476, -0.7071067811865476},
-    {-0.7071067811865476, 0.7071067811865476},
-    {0.7071067811865476, 0.7071067811865476},
-  };
-  const double escapeRadius = std::hypot((double)b->w, (double)b->h) + 2.0;
-  for (double distance = 0.25; distance <= escapeRadius; distance += 0.25) {
-    for (const auto& direction : directions) {
-      b->px = prePose[0] + direction[0] * distance;
-      b->py = prePose[1] + direction[1] * distance;
-      b->angle = prePose[2];
-      if (!bodyFullyInsideLoadedWindow(b) || !poseAccepted())
-        continue;
-      b->vx = b->vy = b->omega = 0;
-      return true;
-    }
+  double travel = std::hypot(
+    solvedPose[0] - previousPose[0], solvedPose[1] - previousPose[1])
+    + std::fabs(solvedPose[2] - previousPose[2]) * b->maxR;
+  // Resolve the last clear pose to a world-space precision, independent of the
+  // body's speed, size, or the number of solver iterations used this tick.
+  double clear = 0, blocked = 1;
+  while ((blocked - clear) * travel > R_BODY_RASTER_CLEARANCE) {
+    double middle = (clear + blocked) * 0.5;
+    place(middle);
+    if (bodyFootprintBlocked(b) == 0) clear = middle;
+    else blocked = middle;
   }
-  placeAlongStep(1, true);
-  return false;
+  place(1);
+  return clear;
 }
 
 // ===== Body material identity & solidify-on-rest =====
@@ -2059,17 +2005,65 @@ void RigidBodySystem::moveBodies() {
   rigidRejectedCells = 0; rigidDepenetrations = 0;
   rigidOwnershipConflicts = 0;
   double depenStart = emscripten_get_now();
+  terrainTrimStates.assign(simulatedBodyCount, TerrainTrimState{});
+  bool needsTerrainTrim = false;
   for (Body* b : E.L->bodies) {
-    if (b->jointRole == 2) continue;
+    if (b->jointRole == 2 || !b->rasterMayOverlapSolid) continue;
     int slot = moveBodySlotById.find(b->id)->second;
-    if (b->rasterMayOverlapSolid
-        && depenetrateBodyRaster(b, movePrePoses[slot]))
+    double fraction = terrainClearFraction(b, movePrePoses[slot]);
+    terrainTrimStates[slot].bodyFraction = fraction;
+    if (fraction < 1) {
+      needsTerrainTrim = true;
       rigidDepenetrations++;
+    }
+  }
+  auto trimRoot = [&](int slot) {
+    int root = slot;
+    while (terrainTrimStates[root].parent != root)
+      root = terrainTrimStates[root].parent;
+    while (terrainTrimStates[slot].parent != slot) {
+      int next = terrainTrimStates[slot].parent;
+      terrainTrimStates[slot].parent = root;
+      slot = next;
+    }
+    return root;
+  };
+  if (needsTerrainTrim) {
+    for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
+      terrainTrimStates[slot].parent = slot;
+    for (const auto& pair : terrainTrimPairs) {
+      auto first = moveBodySlotById.find(pair.first);
+      auto second = moveBodySlotById.find(pair.second);
+      if (first == moveBodySlotById.end()
+          || second == moveBodySlotById.end())
+        continue;
+      int a = trimRoot(first->second), b = trimRoot(second->second);
+      if (a != b) terrainTrimStates[b].parent = a;
+    }
+    // Apply one fraction to each final contact component so the terrain guard
+    // preserves the relative poses already resolved for a resting stack.
+    for (int slot = 0; slot < (int)simulatedBodyCount; slot++) {
+      int root = trimRoot(slot);
+      terrainTrimStates[root].islandFraction = std::fmin(
+        terrainTrimStates[root].islandFraction,
+        terrainTrimStates[slot].bodyFraction);
+    }
+    for (Body* b : E.L->bodies) {
+      if (b->jointRole == 2) continue;
+      int slot = moveBodySlotById.find(b->id)->second;
+      double fraction = terrainTrimStates[trimRoot(slot)].islandFraction;
+      if (fraction >= 1) continue;
+      const std::array<double, 3>& previous = movePrePoses[slot];
+      b->px = previous[0] + (b->px - previous[0]) * fraction;
+      b->py = previous[1] + (b->py - previous[1]) * fraction;
+      b->angle = previous[2] + (b->angle - previous[2]) * fraction;
+      if (b->jointRole == 1) syncJointFollower(b);
+    }
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
   rigidDepenMs = emscripten_get_now() - depenStart;
   moveCells.clear();
-  moveCells.reserve(E.L->bodyCells.size());
+  moveFootprint.clear();
   double stampStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
@@ -2087,7 +2081,7 @@ void RigidBodySystem::moveBodies() {
       if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
       E.writeGridIndex(k, bodyMaterialAt(b, local)); E.L->bodyOwner[k] = b->id;
       if (b->blastDebris) E.L->groundedCell[k] = 0;
-      moveCells.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   rigidStampMs = emscripten_get_now() - stampStart;
@@ -2121,7 +2115,7 @@ void RigidBodySystem::moveBodies() {
     if (keep.size() != E.L->bodies.size()) E.L->bodies = std::move(keep);
   }
   int32_t footprintGen = ++E.L->seenGen;
-  for (int k : moveCells) E.L->rigidSpillFootprint[k] = footprintGen;
+  for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
   double spillStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;

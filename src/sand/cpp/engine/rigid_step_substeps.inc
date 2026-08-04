@@ -798,7 +798,7 @@
         if (!contact.b || !contact.bIntegrated
             || contact.a->idx < 0 || contact.b->idx < 0)
           continue;
-        terrainTrimPairs.push_back({contact.a->id, contact.b->id});
+        terrainContactPairs.push_back({contact.a->id, contact.b->id});
       }
     }
     rigidContacts += nc;

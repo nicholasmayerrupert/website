@@ -237,6 +237,9 @@ naturallyLoose.destroy();
     rough._setBodyMotion(0, -0.0959774743532762,
       1.9588832577690483, 0.032843969429377465);
 
+  let structuralPrevious = rough._bodyState(0);
+  let structuralTouching = false, structuralFrozenTicks = 0;
+  let structuralLongestFreeze = 0, structuralMaxContactStep = 0;
   let maxBlocked = 0, maxRejected = 0, baked = false;
   for (let tick = 0; tick < 240; tick++) {
     rough.stepWorld();
@@ -246,18 +249,39 @@ naturallyLoose.destroy();
       baked = true;
       break;
     }
+    const state = rough._bodyState(0);
+    structuralTouching = structuralTouching
+      || rough.getRigidSolverDebug().contacts > 0;
+    const centerStep = Math.hypot(
+      state.px - structuralPrevious.px,
+      state.py - structuralPrevious.py);
+    const poseStep = centerStep
+      + Math.abs(state.angle - structuralPrevious.angle) * state.maxR;
+    if (structuralTouching)
+      structuralMaxContactStep = Math.max(structuralMaxContactStep, poseStep);
+    if (rough._bodyAwake(0) && poseStep < 1e-4)
+      structuralFrozenTicks++;
+    else structuralFrozenTicks = 0;
+    structuralLongestFreeze = Math.max(
+      structuralLongestFreeze, structuralFrozenTicks);
+    structuralPrevious = state;
     maxBlocked = Math.max(maxBlocked, rough._bodyBlocked(0));
   }
   check('rough-ground structural fixture enters the rigid solver', spawned);
   check(`rough-ground body keeps a complete terrain-clear raster `
       + `(${maxBlocked} blocked, ${maxRejected} rejected)`,
     maxBlocked === 0 && maxRejected === 0);
+  check(`component rigid keeps rolling on rough ground (`
+      + `${structuralLongestFreeze} frozen ticks)`,
+    structuralTouching && structuralLongestFreeze === 0);
+  check(`component rolling remains continuous (largest contact step `
+      + `${structuralMaxContactStep.toFixed(3)})`,
+    structuralMaxContactStep < 3);
   check('rough-ground body settles and bakes', baked);
   rough.destroy();
 
-  // A permanent generic body can tolerate the few raster cells produced by a
-  // continuous contact on stair-stepped terrain. It must preserve tangential
-  // rolling instead of repeatedly discarding its complete solved step.
+  // Rough-terrain raster adjustment is the same for permanent and component
+  // bodies: preserve the solved roll and translate the contact clear.
   const rolling = createEngineWasm({
     cols: C, rows: R, worldSeed: 51, sinksOn: false, infinite: false,
   });
@@ -280,10 +304,14 @@ naturallyLoose.destroy();
 
   let previous = rolling._bodyState(0);
   let touching = false, frozenTicks = 0, longestFreeze = 0;
-  let maxContactStep = 0, sleptAt = -1;
+  let maxContactStep = 0, rollingMaxBlocked = 0;
+  let rollingMaxRejected = 0, sleptAt = -1;
   for (let tick = 0; tick < 300; tick++) {
     rolling.stepWorld();
     const state = rolling._bodyState(0);
+    rollingMaxBlocked = Math.max(rollingMaxBlocked, rolling._bodyBlocked(0));
+    rollingMaxRejected = Math.max(
+      rollingMaxRejected, rolling.getRigidDebug().rejectedCells);
     touching = touching || rolling.getRigidSolverDebug().contacts > 0;
     const centerStep = Math.hypot(state.px - previous.px, state.py - previous.py);
     const poseStep = centerStep
@@ -295,10 +323,13 @@ naturallyLoose.destroy();
     if (!rolling._bodyAwake(0) && sleptAt < 0) sleptAt = tick;
     previous = state;
   }
-  check(`generic rigid keeps rolling on rough ground (longest freeze ${longestFreeze} ticks)`,
-    touching && longestFreeze < 20);
+  check(`generic rigid keeps rolling on rough ground (${longestFreeze} frozen ticks)`,
+    touching && longestFreeze === 0);
   check(`rough-ground rolling remains continuous (largest contact step ${maxContactStep.toFixed(3)})`,
     maxContactStep < 2);
+  check(`generic rigid keeps a terrain-clear raster `
+      + `(${rollingMaxBlocked} blocked, ${rollingMaxRejected} rejected)`,
+    rollingMaxBlocked === 0 && rollingMaxRejected === 0);
   check(`generic rigid settles after rolling (step ${sleptAt})`, sleptAt >= 0);
   rolling.destroy();
 }

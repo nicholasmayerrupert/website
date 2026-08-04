@@ -15,7 +15,7 @@
   fluidSolveMs = fluidWritebackMs = 0;
   rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
   rigidMaxContactDepth = 0;
-  terrainTrimPairs.clear();
+  terrainContactPairs.clear();
   std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)

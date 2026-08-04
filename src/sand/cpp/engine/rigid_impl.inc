@@ -1594,50 +1594,63 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
   b->py = savedPy;
   return supported;
 }
-double RigidBodySystem::terrainClearFraction(
-    Body* b, const std::array<double, 3>& previousPose) {
-  // Component bodies need every cell available before they can bake. Permanent
-  // generic bodies keep a small raster tolerance so a single rough-terrain
-  // pixel cannot discard the whole tangential step and pin a rolling body.
-  const int tolerance = bodySolidifies(b)
-    ? 0
-    : imax(1, (int)std::floor(imin(b->w, b->h) * 0.34));
-  auto poseAccepted = [&]() {
-    return bodyFootprintBlocked(b) <= tolerance;
+bool RigidBodySystem::findTerrainClearAdjustment(
+    Body* b, double& dx, double& dy) {
+  static constexpr double directions[16][2] = {
+    {0, -1}, {-0.3826834323650898, -0.9238795325112867},
+    {0.3826834323650898, -0.9238795325112867},
+    {-0.7071067811865476, -0.7071067811865476},
+    {0.7071067811865476, -0.7071067811865476},
+    {-0.9238795325112867, -0.3826834323650898},
+    {0.9238795325112867, -0.3826834323650898},
+    {-1, 0}, {1, 0},
+    {-0.9238795325112867, 0.3826834323650898},
+    {0.9238795325112867, 0.3826834323650898},
+    {-0.7071067811865476, 0.7071067811865476},
+    {0.7071067811865476, 0.7071067811865476},
+    {-0.3826834323650898, 0.9238795325112867},
+    {0.3826834323650898, 0.9238795325112867},
+    {0, 1},
   };
-  if (poseAccepted()) return 1;
-
-  const std::array<double, 3> solvedPose = {b->px, b->py, b->angle};
-  auto place = [&](double fraction) {
-    b->px = previousPose[0]
-      + (solvedPose[0] - previousPose[0]) * fraction;
-    b->py = previousPose[1]
-      + (solvedPose[1] - previousPose[1]) * fraction;
-    b->angle = previousPose[2]
-      + (solvedPose[2] - previousPose[2]) * fraction;
+  const double savedPx = b->px, savedPy = b->py;
+  auto place = [&](double ox, double oy) {
+    b->px = savedPx + ox;
+    b->py = savedPy + oy;
+    if (b->jointRole == 1) syncJointFollower(b);
   };
-
-  place(0);
-  if (!poseAccepted()) {
-    b->vx = b->vy = b->omega = 0;
-    place(1);
-    return 0;
+  // Keep the solver's rotation and tangential travel. The first clear radial
+  // ring supplies only the shortest local translation needed by the grid.
+  const double step = 0.125;
+  for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
+    bool found = false;
+    double bestRadius = radius, bestX = 0, bestY = 0;
+    for (const auto& direction : directions) {
+      place(direction[0] * radius, direction[1] * radius);
+      if (bodyFootprintBlocked(b) != 0) continue;
+      double blockedRadius = radius - step;
+      double clearRadius = radius;
+      for (int iteration = 0; iteration < 6; iteration++) {
+        double middle = (blockedRadius + clearRadius) * 0.5;
+        place(direction[0] * middle, direction[1] * middle);
+        if (bodyFootprintBlocked(b) == 0) clearRadius = middle;
+        else blockedRadius = middle;
+      }
+      if (!found || clearRadius < bestRadius) {
+        found = true;
+        bestRadius = clearRadius;
+        bestX = direction[0] * clearRadius;
+        bestY = direction[1] * clearRadius;
+      }
+    }
+    place(0, 0);
+    if (!found) continue;
+    dx = bestX;
+    dy = bestY;
+    return true;
   }
-
-  double travel = std::hypot(
-    solvedPose[0] - previousPose[0], solvedPose[1] - previousPose[1])
-    + std::fabs(solvedPose[2] - previousPose[2]) * b->maxR;
-  // Resolve the last clear pose to a world-space precision, independent of the
-  // body's speed, size, or the number of solver iterations used this tick.
-  double clear = 0, blocked = 1;
-  while ((blocked - clear) * travel > R_BODY_RASTER_CLEARANCE) {
-    double middle = (clear + blocked) * 0.5;
-    place(middle);
-    if (poseAccepted()) clear = middle;
-    else blocked = middle;
-  }
-  place(1);
-  return clear;
+  place(0, 0);
+  dx = dy = 0;
+  return false;
 }
 
 // ===== Body material identity & solidify-on-rest =====
@@ -1991,7 +2004,6 @@ void RigidBodySystem::moveBodies() {
     movePreviousFootprints.resize(simulatedBodyCount);
     moveDisplaced.resize(simulatedBodyCount);
     moveStamped.resize(simulatedBodyCount);
-    movePrePoses.resize(simulatedBodyCount);
   }
   for (size_t slot = 0; slot < simulatedBodyCount; slot++) {
     movePreviousFootprints[slot].clear();
@@ -2008,70 +2020,75 @@ void RigidBodySystem::moveBodies() {
     E.L->bodyOwner[k] = -1;
   } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
   rigidClearMs = emscripten_get_now() - clearStart;
-  for (Body* b : E.L->bodies) if (b->jointRole != 2) {
-    int slot = moveBodySlotById.find(b->id)->second;
-    movePrePoses[slot] = {b->px, b->py, b->angle};
-  }
   double coreStart = emscripten_get_now();
   rigidStep(1.0);
   rigidCoreMs = emscripten_get_now() - coreStart;
   rigidRejectedCells = 0; rigidDepenetrations = 0;
   rigidOwnershipConflicts = 0;
   double depenStart = emscripten_get_now();
-  terrainTrimStates.assign(simulatedBodyCount, TerrainTrimState{});
-  bool needsTerrainTrim = false;
-  for (Body* b : E.L->bodies) {
-    if (b->jointRole == 2 || !b->rasterMayOverlapSolid) continue;
-    int slot = moveBodySlotById.find(b->id)->second;
-    double fraction = terrainClearFraction(b, movePrePoses[slot]);
-    terrainTrimStates[slot].bodyFraction = fraction;
-    if (fraction < 1) {
-      needsTerrainTrim = true;
-      rigidDepenetrations++;
-    }
-  }
-  auto trimRoot = [&](int slot) {
+  terrainAdjustmentParents.resize(simulatedBodyCount);
+  auto adjustmentRoot = [&](int slot) {
     int root = slot;
-    while (terrainTrimStates[root].parent != root)
-      root = terrainTrimStates[root].parent;
-    while (terrainTrimStates[slot].parent != slot) {
-      int next = terrainTrimStates[slot].parent;
-      terrainTrimStates[slot].parent = root;
+    while (terrainAdjustmentParents[root] != root)
+      root = terrainAdjustmentParents[root];
+    while (terrainAdjustmentParents[slot] != slot) {
+      int next = terrainAdjustmentParents[slot];
+      terrainAdjustmentParents[slot] = root;
       slot = next;
     }
     return root;
   };
-  if (needsTerrainTrim) {
-    for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
-      terrainTrimStates[slot].parent = slot;
-    for (const auto& pair : terrainTrimPairs) {
-      auto first = moveBodySlotById.find(pair.first);
-      auto second = moveBodySlotById.find(pair.second);
-      if (first == moveBodySlotById.end()
-          || second == moveBodySlotById.end())
-        continue;
-      int a = trimRoot(first->second), b = trimRoot(second->second);
-      if (a != b) terrainTrimStates[b].parent = a;
+  for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
+    terrainAdjustmentParents[slot] = slot;
+  for (const auto& pair : terrainContactPairs) {
+    auto first = moveBodySlotById.find(pair.first);
+    auto second = moveBodySlotById.find(pair.second);
+    if (first == moveBodySlotById.end()
+        || second == moveBodySlotById.end())
+      continue;
+    int a = adjustmentRoot(first->second);
+    int b = adjustmentRoot(second->second);
+    if (a != b) terrainAdjustmentParents[b] = a;
+  }
+  std::vector<uint8_t> adjustmentRootActive(simulatedBodyCount, 0);
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2 || !body->rasterMayOverlapSolid) continue;
+    int slot = moveBodySlotById.find(body->id)->second;
+    adjustmentRootActive[adjustmentRoot(slot)] = 1;
+  }
+  // Translate a complete final-contact island together so terrain correction
+  // cannot pull a resting stack apart. Material and bake lifetime are irrelevant.
+  for (int pass = 0; pass < 8; pass++) {
+    bool adjusted = false;
+    for (Body* body : E.L->bodies) {
+      if (body->jointRole == 2) continue;
+      int slot = moveBodySlotById.find(body->id)->second;
+      int root = adjustmentRoot(slot);
+      if (!adjustmentRootActive[root]
+          || bodyFootprintBlocked(body) == 0) continue;
+      double dx = 0, dy = 0;
+      if (!findTerrainClearAdjustment(body, dx, dy)) continue;
+      for (Body* member : E.L->bodies) {
+        if (member->jointRole == 2) continue;
+        int memberSlot = moveBodySlotById.find(member->id)->second;
+        if (adjustmentRoot(memberSlot) != root) continue;
+        member->px += dx;
+        member->py += dy;
+        if (member->jointRole == 1) syncJointFollower(member);
+      }
+      rigidDepenetrations++;
+      adjusted = true;
+      break;
     }
-    // Apply one fraction to each final contact component so the terrain guard
-    // preserves the relative poses already resolved for a resting stack.
-    for (int slot = 0; slot < (int)simulatedBodyCount; slot++) {
-      int root = trimRoot(slot);
-      terrainTrimStates[root].islandFraction = std::fmin(
-        terrainTrimStates[root].islandFraction,
-        terrainTrimStates[slot].bodyFraction);
-    }
-    for (Body* b : E.L->bodies) {
-      if (b->jointRole == 2) continue;
-      int slot = moveBodySlotById.find(b->id)->second;
-      double fraction = terrainTrimStates[trimRoot(slot)].islandFraction;
-      if (fraction >= 1) continue;
-      const std::array<double, 3>& previous = movePrePoses[slot];
-      b->px = previous[0] + (b->px - previous[0]) * fraction;
-      b->py = previous[1] + (b->py - previous[1]) * fraction;
-      b->angle = previous[2] + (b->angle - previous[2]) * fraction;
-      if (b->jointRole == 1) syncJointFollower(b);
-    }
+    if (!adjusted) break;
+  }
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2) continue;
+    int slot = moveBodySlotById.find(body->id)->second;
+    if (!adjustmentRootActive[adjustmentRoot(slot)]
+        || bodyFootprintBlocked(body) == 0) continue;
+    body->awake = true;
+    body->stillTicks = 0;
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
   rigidDepenMs = emscripten_get_now() - depenStart;

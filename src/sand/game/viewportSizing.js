@@ -98,16 +98,14 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
 
   const canvasW = Math.max(1, Math.round(cssW * safeDpr));
   const canvasH = Math.max(1, Math.round(cssH * safeDpr));
-  // Fractional device-px per cell when zoomed out past 1 px/cell (multiple cells
-  // per device pixel). When zoomed in, ceil so the cell layer covers the canvas
-  // (integer path preserves the sub-cell pan flicker fix).
+  // Prefer whole device pixels when rounding changes the scale by at most 10%.
+  // Larger jumps would make the rasterized view materially smaller than the
+  // camera's view, so keep the exact fractional scale at those zoom levels.
   const rawDev = Math.max(canvasW / viewCols, canvasH / viewRows);
-  let cellDev;
-  if (rawDev >= 1) {
-    cellDev = Math.max(1, Math.ceil(rawDev - 0.001));
-  } else {
-    cellDev = Math.max(1e-3, rawDev);
-  }
+  const integerDev = Math.max(1, Math.ceil(rawDev - 0.001));
+  const cellDev = rawDev >= 1 && integerDev <= rawDev * 1.1
+    ? integerDev
+    : Math.max(1e-3, rawDev);
   const cellSize = cssW / viewCols;
 
   return {

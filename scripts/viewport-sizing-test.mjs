@@ -87,6 +87,12 @@ console.log('viewport sizing');
   const weird = computeViewportSizing(1001, 677, 1.25);
   check(`integer cellDev covers width with GL overdraw (${weird.cellDev} px/cell)`, weird.cellDev >= 1 && (weird.viewCols + 2) * weird.cellDev >= weird.canvasW);
   check(`integer cellDev covers height with GL overdraw (${weird.cellDev} px/cell)`, (weird.viewRows + 2) * weird.cellDev >= weird.canvasH);
+
+  const nearOne = computeViewportSizing(1200, 800, 1, SIZING, 0.2);
+  check(`near-one cellDev keeps the raster and camera views aligned (${nearOne.cellDev.toFixed(3)} px/cell)`,
+    nearOne.cellDev < 2
+      && nearOne.viewCols * nearOne.cellDev <= nearOne.canvasW * 1.1
+      && nearOne.viewRows * nearOne.cellDev <= nearOne.canvasH * 1.1);
 }
 
 {

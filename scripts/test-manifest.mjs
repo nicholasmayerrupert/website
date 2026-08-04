@@ -47,6 +47,7 @@ export const UNIT_SUITES = [
   ['house-blast-float', 'house-blast-float-test.mjs'],
   ['rigid-topple', 'rigid-topple-test.mjs'],
   ['rigidmat', 'rigidmat-test.mjs'],
+  ['structural-stress', 'structural-mutation-stress-test.mjs'],
   ['explosives', 'explosives-test.mjs'],
   ['methane', 'methane-test.mjs'],
   ['grounding', 'grounding-incremental-test.mjs'],

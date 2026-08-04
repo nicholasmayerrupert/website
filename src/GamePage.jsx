@@ -6,7 +6,7 @@ import { useMediaQuery } from './hooks/useMediaQuery';
 import { SandGame } from './sand/react/SandGame';
 import { SandCampaign } from './sand/react/SandCampaign';
 
-const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
+const MOBILE_QUERY = '(max-width: 767px)';
 const GAME_QUERY = typeof window !== 'undefined'
   ? new URLSearchParams(window.location.search)
   : new URLSearchParams();

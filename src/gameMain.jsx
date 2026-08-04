@@ -4,7 +4,7 @@ import './index.css'
 import GamePage from './GamePage.jsx'
 
 const eagerGameSand = !window.matchMedia ||
-  !window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
+  !window.matchMedia('(max-width: 767px)').matches
 if (eagerGameSand) void import('./sand/embed/sandGame.js')
 
 function BootSignal() {

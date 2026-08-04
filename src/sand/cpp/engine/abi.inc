@@ -323,6 +323,7 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
   b->vx = vx; b->vy = vy; b->omega = omega; b->awake = true; b->stillTicks = 0;
+  if (b->jointRole == 1) e->rigid.syncJointFollower(b);
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_set_liquid_velocity(

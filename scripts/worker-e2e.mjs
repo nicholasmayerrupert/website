@@ -211,7 +211,14 @@ try {
   const clocks = await page.evaluate(() => { const p = window.__sandPerf(); return [p.mirrorWorldTick, p.worldTick]; });
   check('render mirror uses a worker-derived world clock for live lighting',
     clocks[0] > 0 && clocks[1] >= clocks[0], `${clocks[0]} / ${clocks[1]}`);
-  await page.waitForTimeout(900); // exceed queued mirror packets; prove the worker kept advancing the actor
+  await page.waitForFunction(({ id, x, y }) => {
+    const creature = window.__sandTest.getCreatures().find((candidate) => candidate.id === id);
+    return creature && Math.hypot(creature.x - x, creature.y - y) > 0.1;
+  }, {
+    id: foxAfter.creature.id,
+    x: foxAfter.creature.x,
+    y: foxAfter.creature.y,
+  }, { timeout: 10_000 });
   const movedFox = await page.evaluate((id) => window.__sandTest.getCreatures().find((c) => c.id === id), foxAfter.creature.id);
   check('egg-spawned creature keeps simulating after selecting another tool',
     movedFox && Math.hypot(movedFox.x - foxAfter.creature.x, movedFox.y - foxAfter.creature.y) > 0.1);

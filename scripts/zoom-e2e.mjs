@@ -121,7 +121,7 @@ try {
   // arbitrary delay while the old and new buffers can still be in flight.
   await page.waitForFunction(() => !window.__sandPerf().workerResizePending,
     null, { timeout: 30000 });
-  await page.evaluate(() => window.__sandTest.render());
+  await page.evaluate(() => window.__sandTest.render(true));
   await page.waitForTimeout(100);
   const extreme = await info();
   // A completed worker resize and its first texture upload can land on adjacent
@@ -130,9 +130,14 @@ try {
   // preserve its drawing buffer after presentation.
   const rendered = await page.waitForFunction(() => {
     const t = window.__sandTest, i = t.info();
-    t.render();
-    const pixels = t.readPixels(0, 0, i.canvasW, i.canvasH);
-    for (let p = 3; p < pixels.length; p += 4) if (pixels[p] > 0) return true;
+    t.render(true);
+    const width = Math.min(16, i.canvasW);
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const x = Math.max(0, Math.min(i.canvasW - width,
+        Math.floor(i.canvasW * fraction - width * 0.5)));
+      const pixels = t.readPixels(x, 0, width, i.canvasH);
+      for (let p = 3; p < pixels.length; p += 4) if (pixels[p] > 0) return true;
+    }
     return false;
   }, null, { timeout: 15000, polling: 500 }).then(() => true, () => false);
   if (!rendered) console.log('  extreme debug', await page.evaluate(() => {

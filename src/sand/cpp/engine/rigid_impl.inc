@@ -1533,6 +1533,7 @@ int RigidBodySystem::bodyFootprintBlocked(Body* b) {
       && !E.isBuoyantMedium(material);
   };
   auto probe = [&](int x, int y, int) {
+    if (E.L->infinite && (x == 0 || x == E.cols - 1)) return;
     int k = y * E.cols + x;
     if (occStamp.has(k)) return;
     occStamp.add(k);

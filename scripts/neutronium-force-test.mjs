@@ -447,6 +447,38 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// Structural placement onto either half of detached two-layer terrain keeps
+// the shared pose intact, including when the new material emits strong forces.
+for (const [label, sourceLayer] of [['foreground', 0], ['background', 1]]) {
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  paintRectLayer(engine, 0, 35, 24, 74, 44, MAT.STONE);
+  paintRectLayer(engine, 1, 35, 24, 74, 44, MAT.BRICK);
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+  check(`${label} placement starts with bonded terrain`,
+    engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2);
+  check(`${label} neutronium placement attaches`,
+    engine.placeMaterial(77, 34, 2, MAT.NEUTRONIUM, sourceLayer));
+  check(`${label} placement preserves the terrain joint`,
+    engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2);
+  for (let i = 0; i < 24; i++) engine.stepWorld();
+  const fg = engine._bodyStateLayer(0, 0);
+  const bg = engine._bodyStateLayer(1, 0);
+  const sharedPose = fg && bg
+    && ['px', 'py', 'angle', 'vx', 'vy', 'omega']
+      .every((field) => Math.abs(fg[field] - bg[field]) < 1e-9);
+  check(`${label} neutronium cannot pull the two layers apart`, sharedPose);
+  engine.destroy();
+}
+
 // A neutronium body is excluded from its own emitter.
 {
   const engine = createEngineWasm();

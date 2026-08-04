@@ -2354,18 +2354,127 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
   }
 
   std::vector<Body*> touching;
+  bool touchesJoint = false;
   if (!touchingIds.empty()) {
     for (Body* body : E.L->bodies)
-      if (touchingIds.count(body->id)) touching.push_back(body);
+      if (touchingIds.count(body->id)) {
+        touching.push_back(body);
+        touchesJoint = touchesJoint || body->jointRole != 0;
+      }
     std::sort(touching.begin(), touching.end(),
               [](Body* a, Body* b) { return a->id < b->id; });
-    for (Body* body : touching)
-      if (body->jointRole) breakJointBody(body);
   }
 
+  Layer* placementLayer = E.L;
   Body* body = nullptr;
   if (touching.empty()) {
     body = spawnBodyImpl(spawnCells, material, DENSITY[material]);
+  } else if (touchesJoint) {
+    // Preserve the two-layer object when a placement welds to either half.
+    // This path is placement-only; ordinary single-layer welds retain the
+    // smaller layer-local merge below.
+    std::map<int, uint8_t> activeMaterialAt, peerMaterialAt;
+    std::array<std::unordered_set<int>, 2> removedIds;
+    std::array<std::unordered_set<Body*>, 2> removedBodies;
+    int activeLayer = placementLayer == &E.bg ? 1 : 0;
+    int peerLayer = 1 - activeLayer;
+    double momentumX = 0, momentumY = 0, spin = 0;
+    int fuseTicks = 0;
+    auto collectRaster = [&](Body* source, std::map<int, uint8_t>& materialAt) {
+      forEachBodyCell(source, [&](int x, int y, int local) {
+        materialAt.emplace(y * E.cols + x, bodyMaterialAt(source, local));
+      });
+    };
+    for (Body* source : touching) {
+      Body* physical = source->jointRole == 2 ? source->jointPeer : source;
+      double mass = physical && physical->invMass > 0
+        ? 1.0 / physical->invMass : 0;
+      if (physical) {
+        momentumX += physical->vx * mass;
+        momentumY += physical->vy * mass;
+        spin += physical->omega * mass;
+        if (physical->fuseTicks > 0
+            && (!fuseTicks || physical->fuseTicks < fuseTicks))
+          fuseTicks = physical->fuseTicks;
+      }
+      collectRaster(source, activeMaterialAt);
+      removedIds[activeLayer].insert(source->id);
+      removedBodies[activeLayer].insert(source);
+      if (source->jointRole && source->jointPeer) {
+        collectRaster(source->jointPeer, peerMaterialAt);
+        removedIds[peerLayer].insert(source->jointPeer->id);
+        removedBodies[peerLayer].insert(source->jointPeer);
+      }
+    }
+    for (const auto& cell : spawnCells)
+      activeMaterialAt[cell.second * E.cols + cell.first] = material;
+
+    auto clearRemoved = [&](Layer& layer, int layerIndex) {
+      Engine::ActiveLayerScope layerScope(E, &layer);
+      auto clearCells = [&](std::vector<int>& cells) {
+        std::vector<int> kept;
+        kept.reserve(cells.size());
+        for (int k : cells) {
+          if (k >= 0 && k < E.cols * E.rows
+              && removedIds[layerIndex].count(layer.bodyOwner[k])) {
+            E.writeGridIndex(k, EMPTY);
+            layer.bodyOwner[k] = -1;
+          } else {
+            kept.push_back(k);
+          }
+        }
+        cells = std::move(kept);
+      };
+      clearCells(layer.bodyCells);
+      clearCells(layer.passiveBodyCells);
+      for (Body* removed : removedBodies[layerIndex])
+        if (removed->jointRole == 2) layer.passiveBodyIds.erase(removed->id);
+      std::vector<Body*> kept;
+      kept.reserve(layer.bodies.size());
+      for (Body* candidate : layer.bodies)
+        if (!removedBodies[layerIndex].count(candidate)) kept.push_back(candidate);
+      layer.bodies = std::move(kept);
+    };
+    clearRemoved(E.fg, 0);
+    clearRemoved(E.bg, 1);
+    std::unordered_set<Body*> deleted;
+    for (const auto& layerBodies : removedBodies)
+      for (Body* removed : layerBodies)
+        if (deleted.insert(removed).second) delete removed;
+
+    auto unpack = [&](const std::map<int, uint8_t>& materialAt,
+                      std::vector<std::pair<int, int>>& cells,
+                      std::vector<uint8_t>& materials) {
+      cells.reserve(materialAt.size());
+      materials.reserve(materialAt.size());
+      for (const auto& entry : materialAt) {
+        cells.push_back({entry.first % E.cols, entry.first / E.cols});
+        materials.push_back(entry.second);
+      }
+    };
+    std::vector<std::pair<int, int>> activeCells, peerCells;
+    std::vector<uint8_t> activeMaterials, peerMaterials;
+    unpack(activeMaterialAt, activeCells, activeMaterials);
+    unpack(peerMaterialAt, peerCells, peerMaterials);
+    Body* leader = placementLayer == &E.fg
+      ? spawnJointBodyImpl(activeCells, activeMaterials,
+                           peerCells, peerMaterials)
+      : spawnJointBodyImpl(peerCells, peerMaterials,
+                           activeCells, activeMaterials);
+    if (leader && leader->jointPeer) {
+      double totalMass = leader->invMass > 0 ? 1.0 / leader->invMass : 0;
+      if (totalMass > 0) {
+        leader->vx = momentumX / totalMass;
+        leader->vy = momentumY / totalMass;
+        leader->omega = spin / totalMass;
+      }
+      leader->blastDebris = false;
+      leader->fuseTicks = fuseTicks;
+      leader->jointPeer->blastDebris = false;
+      leader->jointPeer->fuseTicks = fuseTicks;
+      syncJointFollower(leader);
+      body = leader;
+    }
   } else {
     // Placement welds every contacted body and the new cells into one raster.
     // Existing bodies may be rotated, so their current world raster is the
@@ -2435,36 +2544,48 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
   }
 
   if (!body) return nullptr;
-  int minX = E.cols - 1, minY = E.rows - 1, maxX = 0, maxY = 0;
-  std::vector<Disp> displaced;
-  std::vector<int> footprint;
-  forEachBodyCell(body, [&](int x, int y, int local) {
-    int k = y * E.cols + x;
-    if (E.L->bodyOwner[k] >= 0 && E.L->bodyOwner[k] != body->id) return;
-    uint8_t existing = E.L->grid[k];
-    if (!canBodyOccupy(existing, k, body->density)) return;
-    if (isBodyRelocatable(existing, k, body->density))
-      displaced.push_back({existing, k});
-    E.writeGridIndex(k, bodyMaterialAt(body, local));
-    E.L->bodyOwner[k] = body->id;
-    E.L->bodyCells.push_back(k);
-    footprint.push_back(k);
-    minX = imin(minX, x); minY = imin(minY, y);
-    maxX = imax(maxX, x); maxY = imax(maxY, y);
-  });
-  if (!footprint.empty()) {
-    int32_t footprintGen = ++E.L->seenGen;
-    for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
-    spillDisplacedBodyMaterial(displaced, footprint, footprintGen, body->id, body->density);
-    E.markDirtyRect(minX, minY, maxX, maxY);
+  auto stampSpawned = [&](Layer& layer, Body* spawned, bool passive) {
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    int minX = E.cols - 1, minY = E.rows - 1, maxX = 0, maxY = 0;
+    std::vector<Disp> displaced;
+    std::vector<int> footprint;
+    forEachBodyCell(spawned, [&](int x, int y, int local) {
+      int k = y * E.cols + x;
+      if (layer.bodyOwner[k] >= 0 && layer.bodyOwner[k] != spawned->id) return;
+      uint8_t existing = layer.grid[k];
+      if (!canBodyOccupy(existing, k, spawned->density)) return;
+      if (isBodyRelocatable(existing, k, spawned->density))
+        displaced.push_back({existing, k});
+      E.writeGridIndex(k, bodyMaterialAt(spawned, local));
+      layer.bodyOwner[k] = spawned->id;
+      (passive ? layer.passiveBodyCells : layer.bodyCells).push_back(k);
+      footprint.push_back(k);
+      minX = imin(minX, x); minY = imin(minY, y);
+      maxX = imax(maxX, x); maxY = imax(maxY, y);
+    });
+    if (!footprint.empty()) {
+      int32_t footprintGen = ++layer.seenGen;
+      for (int k : footprint) layer.rigidSpillFootprint[k] = footprintGen;
+      spillDisplacedBodyMaterial(displaced, footprint, footprintGen,
+                                 spawned->id, spawned->density);
+      E.markDirtyRect(minX, minY, maxX, maxY);
+    }
+    layer.sleepingBodySupportDirty = true;
+  };
+  Body* result = body;
+  if (body->jointRole == 1 && body->jointPeer) {
+    stampSpawned(E.fg, body, false);
+    stampSpawned(E.bg, body->jointPeer, true);
+    result = placementLayer == &E.fg ? body : body->jointPeer;
+  } else {
+    stampSpawned(*placementLayer, body, false);
   }
-  E.L->sleepingBodySupportDirty = true;
   if (E.bgEnabled) {
     E.comps.jointDirty = true;
     E.comps.jointBondsInvalid = true;
     E.comps.jointSupportValid = false;
   }
-  return body;
+  return result;
 }
 Body* RigidBodySystem::spawnBody(const std::vector<std::pair<int, int>>& cells) { return finishSpawn(cells, RIGID); }
 

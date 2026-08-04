@@ -7,7 +7,8 @@
 // (0 = opaque, 1 = invisible).
 // density 0 = weightless (air/gas). looseSorted marks materials that participate
 // in density-sorted loose settling (powders + flowing liquids). mobility is the
-// per-tick chance a loose material attempts to move (lava < 1 = viscous).
+// per-tick chance for viscosity-limited settling and spreading; unobstructed
+// vertical lava fall uses the ordinary gravity cadence.
 import { KIND, MATERIALS, MAT_CLASS, MC } from './materials.generated.js';
 
 export { KIND, MATERIALS, MAT_CLASS, MC };

@@ -18,8 +18,10 @@ const e = createEngineWasm({
 const powders = MATERIALS.filter((material) => material.kind === KIND.POWDER)
   .map((material, index) => ({ ...material, x: 8 + index * 9, rows: [], speeds: [] }));
 const water = { material: MAT.WATER, x: COLS - 8, rows: [], speeds: [] };
+const lava = { material: MAT.LAVA, x: COLS - 16, rows: [], speeds: [] };
 for (const powder of powders) e.paintDisc(powder.x, 10, 0, powder.id, true);
 e.paintDisc(water.x, 10, 0, water.material, true);
+e.paintDisc(lava.x, 10, 0, lava.material, true);
 
 const rowOf = (material, x) => {
   const grid = e.getGrid();
@@ -28,7 +30,7 @@ const rowOf = (material, x) => {
 };
 for (let i = 0; i < 8; i++) {
   e.stepWorld();
-  for (const sample of [...powders, water]) {
+  for (const sample of [...powders, water, lava]) {
     const material = sample.id ?? sample.material;
     const y = rowOf(material, sample.x);
     sample.rows.push(y);
@@ -49,13 +51,49 @@ check(`water accelerates to its terminal speed (${deltas(water.rows).join(', ')}
   same(deltas(water.rows), cappedDeltas));
 check(`water speed remains capped (${water.speeds.join(', ')})`,
   same(water.speeds, cappedDeltas));
+const lavaDeltas = [1, 2, 3, 4, 5, 5, 5, 5];
+check(`lava uses ordinary fall acceleration despite its viscosity (${deltas(lava.rows).join(', ')})`,
+  same(deltas(lava.rows), lavaDeltas));
+check(`lava speed reaches its density-scaled terminal cap (${lava.speeds.join(', ')})`,
+  same(lava.speeds, lavaDeltas));
 check('all loose cells remain conserved',
   powders.every((powder) => [...e.getGrid()].filter((m) => m === powder.id).length === 1)
-    && [...e.getGrid()].filter((m) => m === water.material).length === 1);
+    && [...e.getGrid()].filter((m) => m === water.material).length === 1
+    && [...e.getGrid()].filter((m) => m === lava.material).length === 1);
 check(`loose cells remain cellular materials (bodies ${e._bodyCount()})`,
   e._bodyCount() === 0);
 
 e.destroy();
+
+const viscosity = createEngineWasm({
+  cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false,
+});
+for (let x = 0; x < COLS; x++)
+  for (let y = 90; y < ROWS; y++)
+    viscosity.paintDisc(x, y, 0, MAT.STONE, true);
+viscosity.syncComponents();
+for (let x = 18; x <= 20; x++) for (let y = 78; y < 90; y++)
+  viscosity.paintDisc(x, y, 0, MAT.WATER, true);
+for (let x = 70; x <= 72; x++) for (let y = 78; y < 90; y++)
+  viscosity.paintDisc(x, y, 0, MAT.LAVA, true);
+for (let tick = 0; tick < 4; tick++) viscosity.stepWorld();
+const horizontalSpan = (material) => {
+  let minX = COLS, maxX = -1;
+  const grid = viscosity.getGrid();
+  for (let k = 0; k < grid.length; k++) {
+    if (grid[k] !== material) continue;
+    const x = k % COLS;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+  }
+  return maxX - minX + 1;
+};
+const waterSpan = horizontalSpan(MAT.WATER);
+const lavaSpan = horizontalSpan(MAT.LAVA);
+check(`lava remains more viscous laterally than water (${lavaSpan} < ${waterSpan})`,
+  lavaSpan < waterSpan);
+viscosity.destroy();
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

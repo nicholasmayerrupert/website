@@ -105,13 +105,15 @@
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, self);
   }
-  void settleLiquid(int x, int y, int k, uint8_t m) {
+  void settleLiquid(int x, int y, int k, uint8_t m,
+                    bool handleSpatialForce = true) {
     if (L->next[k] != EMPTY) return;
     // Already moved this tick (e.g. denser liquid sank in settleLooseDensityInterface
     // and enqueued a lighter liquid instead of swapping into the source). Without this
     // guard the same grid cell is settled again and duplicates into a free next[].
     if (L->vacatedStamp[k] == tick) return;
-    if (L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
+    if (handleSpatialForce
+        && L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
     int belowK = k + cols;
     // Packed early-out must use effective occupancy (next / vacated), not raw grid[].
     // Otherwise a denser cell above one that just sank still sees "solid pack of m"
@@ -269,15 +271,26 @@
   void settleLava(int x, int y, int k) {
     if (L->next[k] != EMPTY) return;
     bool movementAllowed = rand() < MOBILITY[LAVA];
+    if (L->forceActive
+        && forces.tryMoveLoose(x, y, k, LAVA, movementAllowed))
+      return;
+    int belowK = k + cols;
+    // Viscosity limits lava's spreading, not its straight gravitational fall.
+    // Downward movement and sinking use the ordinary liquid cadence while
+    // diagonal, lateral, and surface flow retain lava's lower mobility.
+    bool straightGravityPath = gravityCellStep && y + 1 < rows
+      && liquidColumnPassable(belowK, LAVA)
+      && !(L->forceActive && forces.overridesGravity(x, y, LAVA));
+    if (straightGravityPath) {
+      settleLiquid(x, y, k, LAVA, false);
+      return;
+    }
     if (!movementAllowed) {
-      if (L->forceActive
-          && forces.tryMoveLoose(x, y, k, LAVA, false))
-        return;
       writeNextIndex(k, LAVA);
       if (L->fallSpeed) carryNextFallSpeed(k, L->fallSpeed[k]);
       return;
     }
-    settleLiquid(x, y, k, LAVA);
+    settleLiquid(x, y, k, LAVA, false);
   }
 
   // After liquid settle: place every lighter liquid that denser fluid displaced this

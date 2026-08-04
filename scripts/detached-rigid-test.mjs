@@ -254,6 +254,53 @@ naturallyLoose.destroy();
     maxBlocked === 0 && maxRejected === 0);
   check('rough-ground body settles and bakes', baked);
   rough.destroy();
+
+  // A permanent generic body can tolerate the few raster cells produced by a
+  // continuous contact on stair-stepped terrain. It must preserve tangential
+  // rolling instead of repeatedly discarding its complete solved step.
+  const rolling = createEngineWasm({
+    cols: C, rows: R, worldSeed: 51, sinksOn: false, infinite: false,
+  });
+  for (let x = 0; x < C; x++) {
+    const top = x >= 45 && x < 82 ? surface[x - 45] : 140;
+    for (let y = top; y < R; y++)
+      rolling.paintDisc(x, y, 0, MAT.STONE, true);
+  }
+  for (let y = 123; y < 140; y++)
+    rolling.paintDisc(44, y, 0, MAT.STONE, true);
+  for (let y = 119; y < 140; y++) for (let x = 80; x <= 81; x++)
+    rolling.paintDisc(x, y, 0, MAT.STONE, true);
+  rolling.syncComponents();
+  const rollingCells = [];
+  for (let row = 0; row < bodyRows.length; row++)
+    for (const [x0, x1] of bodyRows[row])
+      for (let x = x0; x <= x1; x++) rollingCells.push([x - 4, 22 + row]);
+  rolling.spawnBody(rollingCells);
+  rolling._setBodyMotion(0, -0.3, 1.2, -0.03284);
+
+  let previous = rolling._bodyState(0);
+  let touching = false, frozenTicks = 0, longestFreeze = 0;
+  let maxContactStep = 0, sleptAt = -1;
+  for (let tick = 0; tick < 300; tick++) {
+    rolling.stepWorld();
+    const state = rolling._bodyState(0);
+    touching = touching || rolling.getRigidSolverDebug().contacts > 0;
+    const centerStep = Math.hypot(state.px - previous.px, state.py - previous.py);
+    const poseStep = centerStep
+      + Math.abs(state.angle - previous.angle) * state.maxR;
+    if (touching) maxContactStep = Math.max(maxContactStep, poseStep);
+    if (rolling._bodyAwake(0) && poseStep < 1e-4) frozenTicks++;
+    else frozenTicks = 0;
+    longestFreeze = Math.max(longestFreeze, frozenTicks);
+    if (!rolling._bodyAwake(0) && sleptAt < 0) sleptAt = tick;
+    previous = state;
+  }
+  check(`generic rigid keeps rolling on rough ground (longest freeze ${longestFreeze} ticks)`,
+    touching && longestFreeze < 20);
+  check(`rough-ground rolling remains continuous (largest contact step ${maxContactStep.toFixed(3)})`,
+    maxContactStep < 2);
+  check(`generic rigid settles after rolling (step ${sleptAt})`, sleptAt >= 0);
+  rolling.destroy();
 }
 
 // A sleeping body on a static platform must enter free fall in the same solver

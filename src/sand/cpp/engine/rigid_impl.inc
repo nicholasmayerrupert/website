@@ -1596,7 +1596,16 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
 }
 double RigidBodySystem::terrainClearFraction(
     Body* b, const std::array<double, 3>& previousPose) {
-  if (bodyFootprintBlocked(b) == 0) return 1;
+  // Component bodies need every cell available before they can bake. Permanent
+  // generic bodies keep a small raster tolerance so a single rough-terrain
+  // pixel cannot discard the whole tangential step and pin a rolling body.
+  const int tolerance = bodySolidifies(b)
+    ? 0
+    : imax(1, (int)std::floor(imin(b->w, b->h) * 0.34));
+  auto poseAccepted = [&]() {
+    return bodyFootprintBlocked(b) <= tolerance;
+  };
+  if (poseAccepted()) return 1;
 
   const std::array<double, 3> solvedPose = {b->px, b->py, b->angle};
   auto place = [&](double fraction) {
@@ -1609,7 +1618,7 @@ double RigidBodySystem::terrainClearFraction(
   };
 
   place(0);
-  if (bodyFootprintBlocked(b) != 0) {
+  if (!poseAccepted()) {
     b->vx = b->vy = b->omega = 0;
     place(1);
     return 0;
@@ -1624,7 +1633,7 @@ double RigidBodySystem::terrainClearFraction(
   while ((blocked - clear) * travel > R_BODY_RASTER_CLEARANCE) {
     double middle = (clear + blocked) * 0.5;
     place(middle);
-    if (bodyFootprintBlocked(b) == 0) clear = middle;
+    if (poseAccepted()) clear = middle;
     else blocked = middle;
   }
   place(1);

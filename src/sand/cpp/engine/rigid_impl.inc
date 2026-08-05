@@ -2166,6 +2166,14 @@ void RigidBodySystem::moveBodies() {
     int b = adjustmentRoot(second->second);
     if (a != b) terrainAdjustmentParents[b] = a;
   }
+  std::vector<uint8_t> crossLayerRoots(simulatedBodyCount, 0);
+  bool hasCrossLayerRoot = false;
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole != 1) continue;
+    int slot = moveBodySlotById.find(body->id)->second;
+    crossLayerRoots[adjustmentRoot(slot)] = 1;
+    hasCrossLayerRoot = true;
+  }
   std::vector<uint8_t> adjustmentRootActive(simulatedBodyCount, 0);
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2 || !body->rasterMayOverlapSolid) continue;
@@ -2210,7 +2218,8 @@ void RigidBodySystem::moveBodies() {
   // solver still leaves a raster conflict, restore only the affected final
   // contact islands before any cell can be discarded by ordered stamping.
   std::vector<uint8_t> rollbackRoots(simulatedBodyCount, 0);
-  for (int pass = 0; E.L->forceActive && pass < 2; pass++) {
+  for (int pass = 0;
+       E.L->forceActive && hasCrossLayerRoot && pass < 2; pass++) {
     std::fill(rollbackRoots.begin(), rollbackRoots.end(), 0);
     moveFootprint.clear();
     bool conflict = false;
@@ -2219,6 +2228,7 @@ void RigidBodySystem::moveBodies() {
       int slot = moveBodySlotById.find(body->id)->second;
       auto noteCell = [&](int x, int y, int) {
         int k = y * E.cols + x;
+        int root = adjustmentRoot(slot);
         auto blockedIn = [&](Layer& layer) {
           if (layer.cellComp[k] >= 0) return true;
           int owner = layer.bodyOwner[k];
@@ -2230,8 +2240,10 @@ void RigidBodySystem::moveBodies() {
         };
         if (blockedIn(*E.L)
             || (body->jointRole == 1 && blockedIn(E.bg))) {
-          rollbackRoots[adjustmentRoot(slot)] = 1;
-          conflict = true;
+          if (crossLayerRoots[root]) {
+            rollbackRoots[root] = 1;
+            conflict = true;
+          }
         }
         int owner = E.L->bodyOwner[k];
         if (owner < 0) {
@@ -2242,9 +2254,12 @@ void RigidBodySystem::moveBodies() {
         if (owner == body->id) return;
         auto other = moveBodySlotById.find(owner);
         if (other == moveBodySlotById.end()) return;
-        rollbackRoots[adjustmentRoot(slot)] = 1;
-        rollbackRoots[adjustmentRoot(other->second)] = 1;
-        conflict = true;
+        int otherRoot = adjustmentRoot(other->second);
+        if (crossLayerRoots[root] || crossLayerRoots[otherRoot]) {
+          rollbackRoots[root] = 1;
+          rollbackRoots[otherRoot] = 1;
+          conflict = true;
+        }
       };
       forEachBodyCell(body, noteCell);
       if (body->jointRole == 1 && body->jointPeer)
@@ -2365,12 +2380,25 @@ void RigidBodySystem::recoverAfterCarry() {
     return root;
   };
   std::vector<uint8_t> rollbackRoots(moveBodyIds.size(), 0);
+  std::vector<uint8_t> crossLayerRoots(moveBodyIds.size(), 0);
+  bool hasCrossLayerRoot = false;
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole != 1) continue;
+    auto slot = moveBodySlotById.find(body->id);
+    if (slot != moveBodySlotById.end()) {
+      crossLayerRoots[adjustmentRoot(slot->second)] = 1;
+      hasCrossLayerRoot = true;
+    }
+  }
+  if (!hasCrossLayerRoot) return;
   bool blocked = false;
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2 || bodyFootprintBlocked(body) == 0) continue;
     auto slot = moveBodySlotById.find(body->id);
     if (slot == moveBodySlotById.end()) continue;
-    rollbackRoots[adjustmentRoot(slot->second)] = 1;
+    int root = adjustmentRoot(slot->second);
+    if (!crossLayerRoots[root]) continue;
+    rollbackRoots[root] = 1;
     blocked = true;
   }
   if (!blocked) return;

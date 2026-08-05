@@ -6,6 +6,7 @@ import {
   createEngineWasm as createEngineWasmRaw,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { buildCrossLayerSliverScene } from './rigid-sliver-scenario.mjs';
 
@@ -95,6 +96,49 @@ check(`sliver rasters remain clear of terrain (${maxRejected} rejected cells)`,
 console.log(`  info body max ${maxBodyMs.toFixed(3)} ms at tick ${maxBodyTick} with ${maxBodyCount} foreground bodies (core/depen/stamp ${maxRigidCoreMs.toFixed(3)}/${maxRigidDepenMs.toFixed(3)}/${maxRigidStampMs.toFixed(3)}), solver body-steps max ${maxGlobalBodySteps}, position corrections/recoveries max ${maxPositionCorrections}/${maxRecoveryBodies}, first blocked/conflict ticks ${firstBlockedTick}/${firstConflictTick}`);
 
 engine.destroy();
+
+console.log('\nforce-driven single-layer rigid pile stays live');
+const pile = attachTestHooks(createEngineWasmRaw({
+  cols: 768,
+  rows: 320,
+  worldSeed: 0xC0FFEE,
+  sinksOn: false,
+  infinite: false,
+}));
+const paintPileRect = (x0, y0, x1, y1, material) => {
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      pile.paintDisc(x, y, 0, material, true);
+};
+paintPileRect(0, 315, 767, 319, MAT.STONE);
+paintPileRect(390, 145, 390, 314, MAT.STONE);
+pile.paintDisc(390, 145, 7, MAT.NEUTRONIUM, true);
+for (let i = 0; i < 48; i++)
+  pile.spawnBox(255 + (i % 8) * 19, 45 + Math.floor(i / 8) * 16,
+    2, 2, MAT.RIGID);
+pile.syncComponents();
+
+let maxPileRecoveries = 0;
+for (let tick = 0; tick <= 500; tick++) {
+  pile.stepWorld();
+  maxPileRecoveries = Math.max(maxPileRecoveries,
+    pile.getRigidSolverDebug().recoveryBodies);
+}
+let finalPileAwake = 0;
+let finalPileMoving = 0;
+for (let body = 0; body < pile._bodyCount(); body++) {
+  finalPileAwake += pile._bodyAwake(body) > 0;
+  const state = pile._bodyState(body);
+  const pointSpeed = Math.hypot(state.vx, state.vy)
+    + Math.abs(state.omega) * state.maxR;
+  finalPileMoving += pointSpeed > 0.001;
+}
+check(`single-layer pile bypasses cross-layer recovery (${maxPileRecoveries} bodies)`,
+  maxPileRecoveries === 0);
+check(`force-driven pile stays live (${finalPileMoving}/48 moving, ${finalPileAwake} awake)`,
+  finalPileMoving >= 16 && finalPileAwake >= 16);
+pile.destroy();
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

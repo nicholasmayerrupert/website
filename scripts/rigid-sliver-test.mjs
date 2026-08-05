@@ -53,6 +53,7 @@ let maxRigidStampMs = 0;
 let firstBlockedTick = -1;
 let firstConflictTick = -1;
 let maxBodyCenterY = 0;
+let maxBlockedDetails = null;
 for (let tick = 0; tick < 360; tick++) {
   engine.stepWorld();
   const solver = engine.getRigidSolverDebug();
@@ -83,7 +84,14 @@ for (let tick = 0; tick < 360; tick++) {
     if (state) maxBodyCenterY = Math.max(maxBodyCenterY, state.py);
     const blocked = engine._bodyBlocked(i);
     if (blocked > 0 && firstBlockedTick < 0) firstBlockedTick = tick;
-    maxBlocked = Math.max(maxBlocked, blocked);
+    if (blocked > maxBlocked) {
+      maxBlocked = blocked;
+      maxBlockedDetails = {
+        tick, body: i, role: engine._bodyJointRoleLayer(0, i),
+        state: engine._bodyStateLayer(0, i),
+        ...engine._bodyBlockedDetails(i),
+      };
+    }
   }
   if (solver.ownershipConflicts > 0 && firstConflictTick < 0)
     firstConflictTick = tick;
@@ -94,6 +102,8 @@ check(`slivers reach the neutronium collision zone (y ${maxBodyCenterY.toFixed(1
   maxBodyCenterY >= 160);
 check(`sliver rasters stay mutually clear (${maxBlocked} blocked cells)`,
   maxBlocked === 0);
+if (maxBlockedDetails)
+  console.log(`  info blocked details ${JSON.stringify(maxBlockedDetails)}`);
 check(`sliver stamping keeps unique ownership (${maxOwnershipConflicts} conflicts)`,
   maxOwnershipConflicts === 0);
 check(`sliver rasters remain clear of terrain (${maxRejected} rejected cells)`,

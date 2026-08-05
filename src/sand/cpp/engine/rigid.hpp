@@ -65,6 +65,7 @@ class RigidBodySystem {
   // stamp + cell list replacing a per-call unordered_set (the probes only sum
   // integer counters, so iteration order is irrelevant).
   StampSet occStamp;
+  StampSet rasterClaimStamp;
   std::vector<int> occCells;
   // Body erosion connectivity and ownership repair use dense generation stamps
   // because every key is already a loaded-grid cell index.
@@ -128,7 +129,8 @@ class RigidBodySystem {
                           bool splitJointBodies = true);
   void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);
   void erodeBodies(std::vector<int>& cells);
-  int bodyFootprintBlocked(Body* b);
+  int bodyFootprintBlocked(Body* b,
+                           std::array<int, 8>* details = nullptr);
   bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
   bool findTerrainClearAdjustment(Body* b, double& dx, double& dy);

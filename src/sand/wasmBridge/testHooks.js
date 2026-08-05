@@ -19,6 +19,8 @@ function table() {
     mod: M.mod,
     bodyCount: c('engine_test_body_count', 'number', ['number']),
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
+    bodyBlockedKind: c('engine_test_body_blocked_kind', 'number',
+      ['number', 'number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
     bodyChildCount: c('engine_test_body_child_count', 'number', ['number', 'number']),
@@ -73,6 +75,16 @@ export function attachTestHooks(engine) {
   const ptr = engine.ptr;
   engine._bodyCount = () => t.bodyCount(ptr);
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
+  engine._bodyBlockedDetails = (i) => ({
+    activeBody: t.bodyBlockedKind(ptr, i, 0),
+    activeStatic: t.bodyBlockedKind(ptr, i, 1),
+    peerBody: t.bodyBlockedKind(ptr, i, 2),
+    peerStatic: t.bodyBlockedKind(ptr, i, 3),
+    x: t.bodyBlockedKind(ptr, i, 4),
+    y: t.bodyBlockedKind(ptr, i, 5),
+    material: t.bodyBlockedKind(ptr, i, 6),
+    owner: t.bodyBlockedKind(ptr, i, 7),
+  });
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
   engine._bodyChildCount = (i) => t.bodyChildCount(ptr, i);

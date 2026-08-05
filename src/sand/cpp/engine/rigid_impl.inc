@@ -1541,21 +1541,40 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
     E.markCellIndex(k);
   }
 }
-int RigidBodySystem::bodyFootprintBlocked(Body* b) {
+int RigidBodySystem::bodyFootprintBlocked(
+    Body* b, std::array<int, 8>* details) {
   int blocked = 0;
-  auto blockedIn = [&](Layer& lay, int k) {
+  if (details) *details = {0, 0, 0, 0, -1, -1, -1, -2};
+  auto rememberFirst = [&](Layer& lay, int k) {
+    if (!details || (*details)[4] >= 0) return;
+    (*details)[4] = k % E.cols;
+    (*details)[5] = k / E.cols;
+    (*details)[6] = lay.grid[k];
+    (*details)[7] = lay.bodyOwner[k];
+  };
+  auto blockedIn = [&](Layer& lay, int k, int detailOffset) {
     if (lay.bodyOwner[k] == b->id) return false;
+    if (lay.bodyOwner[k] >= 0) {
+      if (details) (*details)[detailOffset]++;
+      rememberFirst(lay, k);
+      return true;
+    }
     uint8_t material = lay.grid[k];
-    return material != EMPTY && !E.isGasMaterial(material)
+    bool solid = material != EMPTY && !E.isGasMaterial(material)
       && !E.isBuoyantMedium(material);
+    if (solid) {
+      if (details) (*details)[detailOffset + 1]++;
+      rememberFirst(lay, k);
+    }
+    return solid;
   };
   auto probe = [&](int x, int y, int) {
     if (E.L->infinite && (x == 0 || x == E.cols - 1)) return;
     int k = y * E.cols + x;
     if (occStamp.has(k)) return;
     occStamp.add(k);
-    if (blockedIn(*E.L, k)
-        || (b->jointRole == 1 && blockedIn(E.bg, k))) blocked++;
+    if (blockedIn(*E.L, k, 0)
+        || (b->jointRole == 1 && blockedIn(E.bg, k, 2))) blocked++;
   };
   occStamp.reset((size_t)E.cols * E.rows);
   forEachBodyCell(b, probe);
@@ -2212,6 +2231,84 @@ void RigidBodySystem::moveBodies() {
         || bodyFootprintBlocked(body) == 0) continue;
     body->awake = true;
     body->stillTicks = 0;
+  }
+  // Continuous contacts can be clear while two transformed cell centers still
+  // round to the same raster cell. Under a sustained spatial force, give each
+  // body union a deterministic sub-cell translation before stamping so a later
+  // body never loses one of its represented cells to an earlier owner.
+  bool hasJointUnion = false;
+  for (Body* body : E.L->bodies)
+    if (body->jointRole == 1) { hasJointUnion = true; break; }
+  if (E.L->forceActive && hasJointUnion && simulatedBodyCount > 1) {
+    static constexpr double directions[8][2] = {
+      {0, -1}, {-0.7071067811865476, -0.7071067811865476},
+      {0.7071067811865476, -0.7071067811865476}, {-1, 0}, {1, 0},
+      {-0.7071067811865476, 0.7071067811865476},
+      {0.7071067811865476, 0.7071067811865476}, {0, 1},
+    };
+    rasterClaimStamp.reset((size_t)E.cols * E.rows);
+    auto forEachUnionCell = [&](Body* body, auto&& callback) {
+      forEachBodyCell(body, callback);
+      if (body->jointRole == 1 && body->jointPeer)
+        forEachBodyCell(body->jointPeer, callback);
+    };
+    auto overlapsClaim = [&](Body* body) {
+      bool overlap = false;
+      forEachUnionCell(body, [&](int x, int y, int) {
+        if (rasterClaimStamp.has(y * E.cols + x)) overlap = true;
+      });
+      return overlap;
+    };
+    auto claim = [&](Body* body) {
+      forEachUnionCell(body, [&](int x, int y, int) {
+        rasterClaimStamp.add(y * E.cols + x);
+      });
+    };
+    for (Body* body : E.L->bodies) {
+      if (body->jointRole == 2) continue;
+      bool claimOverlap = overlapsClaim(body);
+      bool staticOverlap = bodyFootprintBlocked(body) != 0;
+      if (!claimOverlap && !staticOverlap) {
+        claim(body);
+        continue;
+      }
+      if (body->jointRole != 1) {
+        claim(body);
+        continue;
+      }
+      double savedPx = body->px, savedPy = body->py;
+      bool recovered = false;
+      if (staticOverlap) {
+        double dx = 0, dy = 0;
+        if (findTerrainClearAdjustment(body, dx, dy)) {
+          body->px = savedPx + dx;
+          body->py = savedPy + dy;
+          if (body->jointRole == 1) syncJointFollower(body);
+          recovered = !overlapsClaim(body);
+        }
+      }
+      for (double radius = 0.0625; radius <= 2.0 && !recovered;
+           radius += 0.0625) {
+        for (const auto& direction : directions) {
+          body->px = savedPx + direction[0] * radius;
+          body->py = savedPy + direction[1] * radius;
+          if (body->jointRole == 1) syncJointFollower(body);
+          if (bodyFootprintBlocked(body) != 0 || overlapsClaim(body))
+            continue;
+          recovered = true;
+          break;
+        }
+      }
+      if (!recovered) {
+        body->px = savedPx;
+        body->py = savedPy;
+        if (body->jointRole == 1) syncJointFollower(body);
+      } else {
+        wakeBody(body);
+        rigidRecoveryBodies++;
+      }
+      claim(body);
+    }
   }
   bakeRestingBodies(); // a component-backed body with a stable raster becomes static
   rigidDepenMs = emscripten_get_now() - depenStart;

@@ -936,7 +936,7 @@
         if (contacts[contactOrder[oi]].targetVn > 0) {
           hasImpactTarget = true;
           break;
-        }
+      }
       if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
@@ -1033,10 +1033,13 @@
           if (residual <= solverResidualTolerance) break;
         }
       }
+      double islandVelocityResidual = 0;
       for (int oi = islandStart; oi < islandEnd; oi++)
-        rigidMaxVelocityResidual = std::fmax(
-          rigidMaxVelocityResidual,
+        islandVelocityResidual = std::fmax(
+          islandVelocityResidual,
           contactVelocityResidual(contacts[contactOrder[oi]]));
+      rigidMaxVelocityResidual = std::fmax(
+        rigidMaxVelocityResidual, islandVelocityResidual);
       for (int it = 0; it < solverIters; it++) {
         rigidBiasIterations++;
         rigidBiasConstraintEvals += islandEnd - islandStart;
@@ -1059,14 +1062,30 @@
           if (residual <= solverResidualTolerance) break;
         }
       }
+      double islandBiasResidual = 0;
+      double islandPenetrationResidual = 0;
       for (int oi = islandStart; oi < islandEnd; oi++) {
         const Contact& contact = contacts[contactOrder[oi]];
-        rigidMaxBiasResidual = std::fmax(
-          rigidMaxBiasResidual, contactBiasResidual(contact));
+        islandBiasResidual = std::fmax(
+          islandBiasResidual, contactBiasResidual(contact));
         double slop = rigidContactSlop(contact);
-        rigidMaxPenetrationResidual = std::fmax(
-          rigidMaxPenetrationResidual,
+        islandPenetrationResidual = std::fmax(
+          islandPenetrationResidual,
           std::fmax(0.0, contact.depth - slop));
+      }
+      rigidMaxBiasResidual = std::fmax(
+        rigidMaxBiasResidual, islandBiasResidual);
+      rigidMaxPenetrationResidual = std::fmax(
+        rigidMaxPenetrationResidual, islandPenetrationResidual);
+      bool stressed = !hasImpactTarget
+        && (islandVelocityResidual > R_STRESS_VELOCITY_RESIDUAL
+          || islandBiasResidual > R_STRESS_BIAS_RESIDUAL
+          || islandPenetrationResidual > R_STRESS_PENETRATION_RESIDUAL);
+      if (stressed) {
+        for (int bi = 0; bi < n; bi++)
+          if (ufFind(solveParent, bi) == root)
+            solverBodies[bi]->stressMicrostepTicks =
+              R_STRESS_MICROSTEP_HYSTERESIS;
       }
       islandStart = islandEnd;
     }

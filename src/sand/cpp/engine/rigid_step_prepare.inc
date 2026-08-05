@@ -38,6 +38,7 @@
   int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
   std::vector<uint8_t> priorRasterRisk(n, 0);
+  std::vector<uint8_t> stressSubstep(n, 0);
   std::vector<double> priorImpactSpeed(n, 0);
   std::vector<double> islandMinStill(n);
   std::vector<uint8_t> liquidContact(n, 0);
@@ -55,6 +56,7 @@
     int stillTicks = 0;
     double recentImpactSpeed = 0;
     uint8_t denseMicrostepTicks = 0;
+    uint8_t stressMicrostepTicks = 0;
   };
   std::vector<LoadedWindowFreezeState> loadedWindowFreeze(n);
   for (int bi = 0; bi < n; bi++) {
@@ -67,9 +69,12 @@
     freeze.stillTicks = body->stillTicks;
     freeze.recentImpactSpeed = body->recentImpactSpeed;
     freeze.denseMicrostepTicks = body->denseMicrostepTicks;
+    freeze.stressMicrostepTicks = body->stressMicrostepTicks;
     priorRasterRisk[bi] = body->rasterMayOverlapSolid ? 1 : 0;
     priorImpactSpeed[bi] = body->recentImpactSpeed;
     if (body->denseMicrostepTicks > 0) body->denseMicrostepTicks--;
+    stressSubstep[bi] = body->stressMicrostepTicks > 0;
+    if (body->stressMicrostepTicks > 0) body->stressMicrostepTicks--;
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
     fluidStartPose[bi] = {body->px, body->py, body->angle};
@@ -239,10 +244,12 @@
   double globalPointSpeed = 0;
   double denseFrameVx = 0, denseFrameVy = 0;
   int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
+  bool anyStressedBody = false;
   for (int bi = 0; bi < n; bi++) {
     stepIslandParent[bi] = bi;
     Body* body = solverBodies[bi];
     if (liquidContact[bi]) wetSolverBodyCount++;
+    anyStressedBody = anyStressedBody || stressSubstep[bi];
     if (body->awake) {
       denseFrameVx += body->vx;
       denseFrameVy += body->vy;
@@ -314,6 +321,7 @@
     (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
       / initialSafeSubstep);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
+  if (anyStressedBody) substeps = imax(substeps, R_STRESS_MIN_SUBSTEPS);
   if (substeps == 1) {
     rigidIslands = n;
     if (denseWetScene) {
@@ -358,6 +366,7 @@
     std::vector<int> islandBodyCount(n, 0), islandAwakeCount(n, 0);
     std::vector<int> islandSubsteps(n, 1);
     std::vector<uint8_t> islandTerrainRisk(n, 0);
+    std::vector<uint8_t> islandStress(n, 0);
     std::vector<uint8_t> islandCooldown(n, 0), islandRefreshCooldown(n, 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(stepIslandParent, bi);
@@ -371,6 +380,7 @@
         islandMaxPriorImpact[root], priorImpactSpeed[bi]);
       islandCooldown[root] =
         islandCooldown[root] || body->denseMicrostepTicks > 0;
+      islandStress[root] = islandStress[root] || stressSubstep[bi];
       if (!body->awake) continue;
       double pointSpeed = std::hypot(body->vx, body->vy)
         + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
@@ -418,6 +428,8 @@
         (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
           / safeSubstep);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
+      if (islandStress[root])
+        count = imax(count, R_STRESS_MIN_SUBSTEPS);
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
     }

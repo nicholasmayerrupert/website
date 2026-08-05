@@ -306,6 +306,7 @@ struct Body {
   // newly turbulent or landing island stays on normal microsteps briefly.
   double recentImpactSpeed = 0;
   uint8_t denseMicrostepTicks = 0;
+  uint8_t stressMicrostepTicks = 0;
   uint8_t bakeRasterSampleTag = UINT8_MAX;
   uint32_t bakeRasterSignature = 0;
   double maxDepth = 0; int idx = 0;
@@ -709,6 +710,11 @@ static const int    R_DENSE_RIGID_CARGO_BODIES = 64;
 static const double R_DENSE_COHERENT_RELATIVE_SPEED = 1.25;
 static const double R_DENSE_COHERENT_IMPACT_SPEED = 0.5;
 static const int    R_DENSE_MICROSTEP_HYSTERESIS = 3;
+static const int    R_STRESS_MICROSTEP_HYSTERESIS = 2;
+static const int    R_STRESS_MIN_SUBSTEPS = 2;
+static const double R_STRESS_VELOCITY_RESIDUAL = 0.08;
+static const double R_STRESS_BIAS_RESIDUAL = 0.08;
+static const double R_STRESS_PENETRATION_RESIDUAL = 0.10;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is

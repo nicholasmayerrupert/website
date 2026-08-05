@@ -98,5 +98,6 @@
     body->stillTicks = freeze.stillTicks;
     body->recentImpactSpeed = freeze.recentImpactSpeed;
     body->denseMicrostepTicks = freeze.denseMicrostepTicks;
+    body->stressMicrostepTicks = freeze.stressMicrostepTicks;
     if (body->jointRole == 1) syncJointFollower(body);
   }

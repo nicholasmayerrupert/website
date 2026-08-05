@@ -1,10 +1,15 @@
         // Direct support edges run from the lower body to the upper body. SCCs
         // keep cyclic contact groups on one level while terrain-rooted longest
         // paths define the bottom-to-top solve order.
-        std::vector<std::vector<int>> shockGraph(n);
-        std::vector<uint8_t> shockTerrainRoot(n, 0);
-        std::vector<int> shockBottom(nc, -2);
-        std::vector<uint8_t> shockTopIsA(nc, 1);
+        shockGraphScratch.resize(n);
+        for (std::vector<int>& edges : shockGraphScratch) edges.clear();
+        shockTerrainRootScratch.assign(n, 0);
+        shockBottomScratch.assign(nc, -2);
+        shockTopIsAScratch.assign(nc, 1);
+        auto& shockGraph = shockGraphScratch;
+        auto& shockTerrainRoot = shockTerrainRootScratch;
+        auto& shockBottom = shockBottomScratch;
+        auto& shockTopIsA = shockTopIsAScratch;
         for (int oi = islandStart; oi < islandEnd; oi++) {
           int ci = contactOrder[oi];
           Contact& contact = contacts[ci];
@@ -26,9 +31,16 @@
           shockGraph[bottom].push_back(top);
         }
 
-        std::vector<int> shockIndex(n, -1), shockLow(n, 0), shockStack;
-        std::vector<int> shockComponent(n, -1);
-        std::vector<uint8_t> shockOnStack(n, 0);
+        shockIndexScratch.assign(n, -1);
+        shockLowScratch.assign(n, 0);
+        shockStackScratch.clear();
+        shockComponentScratch.assign(n, -1);
+        shockOnStackScratch.assign(n, 0);
+        auto& shockIndex = shockIndexScratch;
+        auto& shockLow = shockLowScratch;
+        auto& shockStack = shockStackScratch;
+        auto& shockComponent = shockComponentScratch;
+        auto& shockOnStack = shockOnStackScratch;
         int shockNextIndex = 0, shockComponentCount = 0;
         auto shockStrongConnect = [&](auto&& self, int bodyIndex) -> void {
           shockIndex[bodyIndex] = shockLow[bodyIndex] = shockNextIndex++;
@@ -57,7 +69,8 @@
           if (ufFind(solveParent, bi) == root && shockIndex[bi] < 0)
             shockStrongConnect(shockStrongConnect, bi);
 
-        std::vector<int> shockLevel(shockComponentCount, -1);
+        shockLevelScratch.assign(shockComponentCount, -1);
+        auto& shockLevel = shockLevelScratch;
         for (int bi = 0; bi < n; bi++)
           if (shockTerrainRoot[bi] && shockComponent[bi] >= 0)
             shockLevel[shockComponent[bi]] = 0;
@@ -81,14 +94,18 @@
         }
 
         int shockLayerCount = 0;
-        std::vector<int> shockBodyLevel(n, -1);
+        shockBodyLevelScratch.assign(n, -1);
+        auto& shockBodyLevel = shockBodyLevelScratch;
         for (int bi = 0; bi < n; bi++) {
           int component = shockComponent[bi];
           if (component < 0) continue;
           shockBodyLevel[bi] = shockLevel[component];
           shockLayerCount = imax(shockLayerCount, shockBodyLevel[bi] + 1);
         }
-        std::vector<std::vector<int>> shockLayers(shockLayerCount);
+        shockLayersScratch.resize(shockLayerCount);
+        for (std::vector<int>& layerContacts : shockLayersScratch)
+          layerContacts.clear();
+        auto& shockLayers = shockLayersScratch;
         for (int oi = islandStart; oi < islandEnd; oi++) {
           int ci = contactOrder[oi];
           int bottom = shockBottom[ci];
@@ -109,7 +126,8 @@
         if (shockLayerCount > 1 && shockContactCount >= 4) {
           rigidShockIslands++;
           rigidShockMaxLayers = imax(rigidShockMaxLayers, shockLayerCount);
-          std::vector<std::array<double, 3>> deferred(nc, {0, 0, 0});
+          shockDeferredScratch.assign(nc, {0, 0, 0});
+          auto& deferred = shockDeferredScratch;
           // A layer solve treats the lower body as infinite mass. The omitted
           // equal-and-opposite velocity change is retained per contact so the
           // downward pass can transmit it before solving the next lower layer.

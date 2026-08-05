@@ -202,6 +202,13 @@ class RigidBodySystem {
     int retryTick = 0, lastTick = 0;
   };
   std::unordered_map<uint64_t, ShockAttemptState> shockAttemptCache;
+  std::vector<std::vector<int>> shockGraphScratch, shockLayersScratch;
+  std::vector<uint8_t> shockTerrainRootScratch, shockTopIsAScratch;
+  std::vector<uint8_t> shockOnStackScratch;
+  std::vector<int> shockBottomScratch, shockIndexScratch, shockLowScratch;
+  std::vector<int> shockStackScratch, shockComponentScratch;
+  std::vector<int> shockLevelScratch, shockBodyLevelScratch;
+  std::vector<std::array<double, 3>> shockDeferredScratch;
   ContactCache nextContactCacheScratch;
   std::vector<Contact> solverContactScratch;
   std::vector<int> broadphaseOrderScratch;

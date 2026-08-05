@@ -715,7 +715,6 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_BODY_RASTER_CLEARANCE = 0.02;
-static const double R_BODY_MAX_POSITION_CORRECTION = 0.2;
 static const int    R_BODY_POSITION_ITERS = 6;
 static const double R_SLENDER_PARALLEL_COS = 0.75;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;

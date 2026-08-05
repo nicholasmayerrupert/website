@@ -1163,9 +1163,8 @@
           double inverseMass = aInvM + bInvM
             + aCross * aCross * aInvI + bCross * bCross * bInvI;
           if (inverseMass <= 1e-12) continue;
-          double correction = std::fmin(R_BODY_MAX_POSITION_CORRECTION,
-            deepest.depth + R_BODY_RASTER_CLEARANCE);
-          double impulse = correction / inverseMass;
+          double impulse =
+            (deepest.depth + R_BODY_RASTER_CLEARANCE) / inverseMass;
           A->px += deepest.nx * impulse * aInvM;
           A->py += deepest.ny * impulse * aInvM;
           A->angle += aCross * impulse * aInvI;

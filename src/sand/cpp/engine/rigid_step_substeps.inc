@@ -883,12 +883,25 @@
         ufUnite(solveParent, contact.a->idx, contact.b->idx);
     std::fill(solveBodyCount.begin(), solveBodyCount.end(), 0);
     std::fill(solveMaxRadius.begin(), solveMaxRadius.end(), 0);
+    std::fill(solveMinX.begin(), solveMinX.end(), 1e18);
+    std::fill(solveMinY.begin(), solveMinY.end(), 1e18);
+    std::fill(solveMaxX.begin(), solveMaxX.end(), -1e18);
+    std::fill(solveMaxY.begin(), solveMaxY.end(), -1e18);
+    std::fill(solveShockKey.begin(), solveShockKey.end(),
+      E.L == &E.bg ? 0xcbf29ce484222325ULL : 0x84222325cbf29ce4ULL);
     std::fill(solveHasGeneral.begin(), solveHasGeneral.end(), 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(solveParent, bi);
+      Body* body = solverBodies[bi];
       solveBodyCount[root]++;
-      solveMaxRadius[root] = std::fmax(solveMaxRadius[root], solverBodies[bi]->maxR);
-      if (!solverBodies[bi]->blastDebris) solveHasGeneral[root] = 1;
+      solveMaxRadius[root] = std::fmax(solveMaxRadius[root], body->maxR);
+      solveMinX[root] = std::fmin(solveMinX[root], body->aabbX0);
+      solveMinY[root] = std::fmin(solveMinY[root], body->aabbY0);
+      solveMaxX[root] = std::fmax(solveMaxX[root], body->aabbX1);
+      solveMaxY[root] = std::fmax(solveMaxY[root], body->aabbY1);
+      solveShockKey[root] ^= (uint32_t)body->id;
+      solveShockKey[root] *= 0x100000001b3ULL;
+      if (!body->blastDebris) solveHasGeneral[root] = 1;
     }
     contactOrder.resize(nc);
     contactRoot.resize(nc);
@@ -962,10 +975,7 @@
         return std::fmax(normalResidual, tangentResidual);
       };
       auto contactBiasResidual = [&](const Contact& contact) {
-        bool precisePair = contact.b
-          && rigidLargeSlenderBody(contact.a)
-          && rigidLargeSlenderBody(contact.b);
-        double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+        double slop = rigidContactSlop(contact);
         double bias = R_BAUMGARTE
           * std::fmax(0.0, contact.depth - slop);
         bias = std::fmin(bias, R_MAX_BIAS_VEL);
@@ -979,10 +989,29 @@
         return contact.accBias > 1e-12
           ? std::fabs(bias - vn) : std::fmax(0.0, bias - vn);
       };
+      bool shockVelocityConverged = false;
+      uint64_t shockIslandKey = solveShockKey[root];
+      bool shockAspectEligible = solveBodyCount[root] >= 8
+        && solveMaxY[root] - solveMinY[root]
+          >= solveMaxX[root] - solveMinX[root];
+      bool shockAttemptAllowed = true;
+      if (solverMode >= 2) {
+        auto previousAttempt = shockAttemptCache.find(shockIslandKey);
+        if (previousAttempt != shockAttemptCache.end()
+            && previousAttempt->second.retryTick > E.tick) {
+          shockAttemptAllowed = false;
+          previousAttempt->second.lastTick = E.tick;
+          rigidShockSkipped++;
+        }
+      }
+      if (solverMode >= 2 && !hasImpactTarget && solveBodyCount[root] >= 4
+          && !E.L->forceActive && shockAttemptAllowed && shockAspectEligible) {
+#include "rigid_step_shock.inc"
+      }
       // The first passes run from the lowest contact upward so support impulses
       // propagate through tall stacks promptly. Later passes alternate direction
       // to remove a permanent ordering bias.
-      for (int it = 0; it < solverIters; it++) {
+      for (int it = 0; it < solverIters && !shockVelocityConverged; it++) {
         rigidVelocityIterations++;
         rigidVelocityConstraintEvals += islandEnd - islandStart;
         double moved = 0;
@@ -1034,10 +1063,7 @@
         const Contact& contact = contacts[contactOrder[oi]];
         rigidMaxBiasResidual = std::fmax(
           rigidMaxBiasResidual, contactBiasResidual(contact));
-        bool precisePair = contact.b
-          && rigidLargeSlenderBody(contact.a)
-          && rigidLargeSlenderBody(contact.b);
-        double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+        double slop = rigidContactSlop(contact);
         rigidMaxPenetrationResidual = std::fmax(
           rigidMaxPenetrationResidual,
           std::fmax(0.0, contact.depth - slop));
@@ -1199,10 +1225,11 @@
           int root = ufFind(solveParent, contact.a->idx);
           if (!spatialForceIsland[root]) continue;
           if (!contact.b) {
-            terrainAnchored[contact.a->idx] = 1;
+            if (contact.depth > 0)
+              terrainAnchored[contact.a->idx] = 1;
             continue;
           }
-          if (!contact.bIntegrated || contact.depth <= 0) continue;
+          if (!contact.bIntegrated) continue;
           int a = contact.a->idx, b = contact.b->idx;
           positionPairs.push_back({imin(a, b), imax(a, b)});
         }

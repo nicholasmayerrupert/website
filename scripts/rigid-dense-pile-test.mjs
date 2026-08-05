@@ -4,7 +4,16 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
-const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
+const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
+const residualTolerance = Number(
+  process.env.RIGID_RESIDUAL_TOLERANCE ?? 1e-4);
+const minIterations = Number(process.env.RIGID_MIN_ITERATIONS ?? 4);
+const createEngineWasm = (opts) => {
+  const engine = attachTestHooks(createEngineWasmRaw(opts));
+  engine._setRigidSolverOptions(
+    solverMode, residualTolerance, minIterations);
+  return engine;
+};
 const COLS = 240, ROWS = 180, STONE = 3;
 
 await initSandWasm();

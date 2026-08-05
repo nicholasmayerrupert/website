@@ -12,6 +12,17 @@ static bool rigidTightSlenderBounds(const Body* body) {
   return body->tightSlenderBounds;
 }
 
+static bool rigidPreciseContact(const Contact& contact) {
+  return contact.b && (!contact.bIntegrated
+    || contact.a->jointRole == 1 || contact.b->jointRole == 1
+    || (rigidLargeSlenderBody(contact.a)
+      && rigidLargeSlenderBody(contact.b)));
+}
+
+static double rigidContactSlop(const Contact& contact) {
+  return rigidPreciseContact(contact) ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+}
+
 static double rigidContactVx(const Body* body) {
   return body->kinematic ? body->kinematicVx : body->vx;
 }
@@ -50,6 +61,7 @@ void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
   for (auto& contacts : impactContactTicks) contacts.clear();
   for (auto& axes : pairAxes) axes.clear();
+  shockAttemptCache.clear();
   for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
 }
 void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
@@ -701,9 +713,7 @@ void RigidBodySystem::applyWarmStart(Contact& c) {
 }
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  bool precisePair = B && rigidLargeSlenderBody(A)
-                       && rigidLargeSlenderBody(B);
-  double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+  double slop = rigidContactSlop(c);
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;

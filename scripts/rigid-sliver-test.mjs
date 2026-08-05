@@ -12,14 +12,19 @@ import { buildCrossLayerSliverScene } from './rigid-sliver-scenario.mjs';
 
 await initSandWasm();
 const { check, done } = makeChecker('cross-layer rigid slivers');
+const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
+const useSolverMode = (engine) => {
+  engine._setRigidSolverOptions(solverMode);
+  return engine;
+};
 
-const engine = attachTestHooks(createEngineWasmRaw({
+const engine = useSolverMode(attachTestHooks(createEngineWasmRaw({
   cols: 360,
   rows: 240,
   worldSeed: 0x51a7c0de,
   sinksOn: false,
   infinite: false,
-}));
+})));
 buildCrossLayerSliverScene(engine, {
   left: 28,
   right: 332,
@@ -98,13 +103,13 @@ console.log(`  info body max ${maxBodyMs.toFixed(3)} ms at tick ${maxBodyTick} w
 engine.destroy();
 
 console.log('\nforce-driven single-layer rigid pile stays live');
-const pile = attachTestHooks(createEngineWasmRaw({
+const pile = useSolverMode(attachTestHooks(createEngineWasmRaw({
   cols: 768,
   rows: 320,
   worldSeed: 0xC0FFEE,
   sinksOn: false,
   infinite: false,
-}));
+})));
 const paintPileRect = (x0, y0, x1, y1, material) => {
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++)

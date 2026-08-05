@@ -400,6 +400,11 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 45: return e->rigid.rigidMaxVelocityResidual;
     case 46: return e->rigid.rigidMaxBiasResidual;
     case 47: return e->rigid.rigidMaxPenetrationResidual;
+    case 48: return e->rigid.rigidShockIslands;
+    case 49: return e->rigid.rigidShockConstraintEvals;
+    case 50: return e->rigid.rigidShockFallbacks;
+    case 51: return e->rigid.rigidShockMaxLayers;
+    case 52: return e->rigid.rigidShockSkipped;
     default: return 0;
   }
 }

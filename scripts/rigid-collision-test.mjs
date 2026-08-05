@@ -12,7 +12,12 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 // Every engine in this file gets the test hooks (grounding/body/particle pokes).
-const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
+const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
+const createEngineWasm = (opts) => {
+  const engine = attachTestHooks(createEngineWasmRaw(opts));
+  engine._setRigidSolverOptions(solverMode);
+  return engine;
+};
 
 const COLS = 200, ROWS = 140, SEED = 0xC0FFEE, STONE = 3, RIGID = 13, DRIFTWOOD = 14;
 await initSandWasm();

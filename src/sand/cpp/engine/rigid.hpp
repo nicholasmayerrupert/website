@@ -27,7 +27,7 @@ class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
 
-  int solverMode = 1;
+  int solverMode = 2;
   double solverResidualTolerance = 1e-4;
   int solverMinIterations = 4;
 
@@ -39,6 +39,9 @@ class RigidBodySystem {
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
   int rigidVelocityConstraintEvals = 0, rigidBiasConstraintEvals = 0;
+  int rigidShockIslands = 0, rigidShockConstraintEvals = 0;
+  int rigidShockFallbacks = 0, rigidShockMaxLayers = 0;
+  int rigidShockSkipped = 0;
   int rigidIslands = 0, rigidBlockSolves = 0;
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
@@ -194,6 +197,11 @@ class RigidBodySystem {
     uint8_t age = 0;
   };
   std::array<std::unordered_map<uint64_t, PairAxisState>, 2> pairAxes;
+  struct ShockAttemptState {
+    uint8_t consecutiveFailures = 0;
+    int retryTick = 0, lastTick = 0;
+  };
+  std::unordered_map<uint64_t, ShockAttemptState> shockAttemptCache;
   ContactCache nextContactCacheScratch;
   std::vector<Contact> solverContactScratch;
   std::vector<int> broadphaseOrderScratch;

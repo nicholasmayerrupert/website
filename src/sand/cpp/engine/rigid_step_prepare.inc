@@ -1,6 +1,8 @@
   rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
   rigidVelocityIterations = rigidBiasIterations = 0;
   rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
+  rigidShockIslands = rigidShockConstraintEvals = 0;
+  rigidShockFallbacks = rigidShockMaxLayers = rigidShockSkipped = 0;
   rigidIslands = rigidBlockSolves = 0;
   rigidIslandBodySteps = rigidGlobalBodySteps = 0;
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
@@ -18,6 +20,14 @@
   rigidMaxContactDepth = 0;
   rigidMaxVelocityResidual = rigidMaxBiasResidual = 0;
   rigidMaxPenetrationResidual = 0;
+  if ((E.tick & 255) == 0) {
+    for (auto it = shockAttemptCache.begin(); it != shockAttemptCache.end();) {
+      if (it->second.lastTick + 512 < E.tick)
+        it = shockAttemptCache.erase(it);
+      else
+        ++it;
+    }
+  }
   terrainContactPairs.clear();
   std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());
@@ -429,6 +439,8 @@
   std::vector<int> solveParent(n), solveBodyCount(n);
   std::vector<int> contactOrder, contactRoot;
   std::vector<double> solveMaxRadius(n);
+  std::vector<double> solveMinX(n), solveMinY(n), solveMaxX(n), solveMaxY(n);
+  std::vector<uint64_t> solveShockKey(n);
   std::vector<uint8_t> solveHasGeneral(n);
   struct PenPt {
     double wx, wy, nx, ny, depth;

@@ -187,6 +187,11 @@ export function attachTestHooks(engine) {
     maxVelocityResidual: t.rigidSolverDiag(ptr, 45),
     maxBiasResidual: t.rigidSolverDiag(ptr, 46),
     maxPenetrationResidual: t.rigidSolverDiag(ptr, 47),
+    shockIslands: t.rigidSolverDiag(ptr, 48),
+    shockConstraintEvals: t.rigidSolverDiag(ptr, 49),
+    shockFallbacks: t.rigidSolverDiag(ptr, 50),
+    shockMaxLayers: t.rigidSolverDiag(ptr, 51),
+    shockSkipped: t.rigidSolverDiag(ptr, 52),
   });
   engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
     minIterations = 4) => t.setRigidSolverOptions(

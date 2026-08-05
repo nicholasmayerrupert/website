@@ -79,7 +79,7 @@ const engine = attachTestHooks(createEngineWasmRaw({
   sinksOn: false,
   infinite: false,
 }));
-const solverMode = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '1', 10);
+const solverMode = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const residualTolerance = Number.parseFloat(
   process.env.RIGID_RESIDUAL_TOLERANCE ?? '0.0001');
 const solverMinIterations = Number.parseInt(
@@ -113,6 +113,11 @@ let biasConstraintEvals = 0;
 let maxVelocityResidual = 0;
 let maxBiasResidual = 0;
 let maxPenetrationResidual = 0;
+let shockIslands = 0;
+let shockConstraintEvals = 0;
+let shockFallbacks = 0;
+let shockMaxLayers = 0;
+let shockSkipped = 0;
 for (let step = 0; step < STEPS; step++) {
   if (spawned < BODY_COUNT && step % SPAWN_INTERVAL === 0) {
     engine.spawnBody(shape(spawned));
@@ -142,6 +147,11 @@ for (let step = 0; step < STEPS; step++) {
   maxBiasResidual = Math.max(maxBiasResidual, solver.maxBiasResidual);
   maxPenetrationResidual = Math.max(
     maxPenetrationResidual, solver.maxPenetrationResidual);
+  shockIslands += solver.shockIslands;
+  shockConstraintEvals += solver.shockConstraintEvals;
+  shockFallbacks += solver.shockFallbacks;
+  shockMaxLayers = Math.max(shockMaxLayers, solver.shockMaxLayers);
+  shockSkipped += solver.shockSkipped;
 }
 
 console.log(JSON.stringify({
@@ -188,6 +198,11 @@ console.log(JSON.stringify({
     maxVelocityResidual,
     maxBiasResidual,
     maxPenetrationResidual,
+    shockIslands,
+    shockConstraintEvals,
+    shockFallbacks,
+    shockMaxLayers,
+    shockSkipped,
   },
 }, null, 2));
 

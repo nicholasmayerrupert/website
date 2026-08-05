@@ -1154,20 +1154,14 @@ void ForceSystem::applyBodyForces() {
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
     body->spatialForceApplied = false;
-    body->spatialForceChanged = false;
-    body->spatialForceX = body->spatialForceY = 0;
-    bool forceChanged = dynamicField[targetLayer]
-      || bodyTouchesBins(body, changedBins[targetLayer]);
-    if (!body->awake && !forceChanged) continue;
+    if (!body->awake
+        && !bodyTouchesBins(body, changedBins[targetLayer])) continue;
     double forceX, forceY;
     bool active = E.L->forceActive
       && sampleBody(E.L, body, forceX, forceY);
     if (!body->awake) E.rigid.wakeBody(body);
     if (!active) continue;
     body->spatialForceApplied = true;
-    body->spatialForceChanged = forceChanged;
-    body->spatialForceX = forceX;
-    body->spatialForceY = forceY;
     body->vx += forceX;
     body->vy += forceY;
   }

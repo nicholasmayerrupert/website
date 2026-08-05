@@ -5,9 +5,6 @@
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
   rigidMaxChildren = 0;
   rigidCoherentIslands = rigidDenseFallbackIslands = 0;
-  rigidDenseForceIslands = rigidForceContactFallbackIslands = 0;
-  rigidForceMotionFallbackIslands = rigidForceFieldFallbackIslands = 0;
-  rigidForceBoundaryFallbackIslands = 0;
   rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
   rigidPositionCorrections = 0;
   rigidMaxRelativeSpeed = 0;
@@ -29,7 +26,6 @@
   std::vector<int> islandParent(n);
   std::vector<uint8_t> priorRasterRisk(n, 0);
   std::vector<double> priorImpactSpeed(n, 0);
-  std::vector<uint8_t> priorContact(n, 0);
   std::vector<double> islandMinStill(n);
   std::vector<uint8_t> liquidContact(n, 0);
   std::vector<uint8_t> liquidSurfaceContact(n, 0);
@@ -60,7 +56,6 @@
     freeze.denseMicrostepTicks = body->denseMicrostepTicks;
     priorRasterRisk[bi] = body->rasterMayOverlapSolid ? 1 : 0;
     priorImpactSpeed[bi] = body->recentImpactSpeed;
-    priorContact[bi] = body->hadContact ? 1 : 0;
     if (body->denseMicrostepTicks > 0) body->denseMicrostepTicks--;
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
@@ -344,19 +339,12 @@
       }
     }
     std::vector<double> islandPointSpeed(n, 0);
-    std::vector<double> islandCadencePointSpeed(n, 0);
     std::vector<double> islandVxSum(n, 0), islandVySum(n, 0);
-    std::vector<double> islandCadenceVxSum(n, 0), islandCadenceVySum(n, 0);
     std::vector<double> islandMaxRelativeSpeed(n, 0);
-    std::vector<double> islandMaxCadenceRelativeSpeed(n, 0);
     std::vector<double> islandMaxPriorImpact(n, 0);
     std::vector<int> islandBodyCount(n, 0), islandAwakeCount(n, 0);
-    std::vector<int> islandPriorContactCount(n, 0);
-    std::vector<int> islandForceBodyCount(n, 0);
     std::vector<int> islandSubsteps(n, 1);
     std::vector<uint8_t> islandTerrainRisk(n, 0);
-    std::vector<uint8_t> islandBoundaryRisk(n, 0);
-    std::vector<uint8_t> islandForceUnchanged(n, 1), islandHasJoint(n, 0);
     std::vector<uint8_t> islandCooldown(n, 0), islandRefreshCooldown(n, 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(stepIslandParent, bi);
@@ -366,35 +354,16 @@
         islandTerrainRisk[root] || priorRasterRisk[bi]
         || tickX0[bi] <= 0 || tickY0[bi] <= 0
         || tickX1[bi] >= E.cols || tickY1[bi] >= E.rows;
-      islandBoundaryRisk[root] = islandBoundaryRisk[root]
-        || tickX0[bi] <= 0 || tickY0[bi] <= 0
-        || tickX1[bi] >= E.cols || tickY1[bi] >= E.rows;
-      islandHasJoint[root] = islandHasJoint[root] || body->jointRole != 0;
       islandMaxPriorImpact[root] = std::fmax(
         islandMaxPriorImpact[root], priorImpactSpeed[bi]);
       islandCooldown[root] =
         islandCooldown[root] || body->denseMicrostepTicks > 0;
       if (!body->awake) continue;
-      if (priorContact[bi]) islandPriorContactCount[root]++;
       double pointSpeed = std::hypot(body->vx, body->vy)
         + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
       islandPointSpeed[root] = std::fmax(islandPointSpeed[root], pointSpeed);
       islandVxSum[root] += body->vx;
       islandVySum[root] += body->vy;
-      double cadenceVx = body->vx;
-      double cadenceVy = body->vy;
-      if (body->spatialForceApplied) {
-        cadenceVx -= body->spatialForceX;
-        cadenceVy -= body->spatialForceY;
-        islandForceBodyCount[root]++;
-        if (body->spatialForceChanged) islandForceUnchanged[root] = 0;
-      }
-      double cadencePointSpeed = std::hypot(cadenceVx, cadenceVy)
-        + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
-      islandCadencePointSpeed[root] = std::fmax(
-        islandCadencePointSpeed[root], cadencePointSpeed);
-      islandCadenceVxSum[root] += cadenceVx;
-      islandCadenceVySum[root] += cadenceVy;
       islandAwakeCount[root]++;
     }
     for (int bi = 0; bi < n; bi++) {
@@ -412,20 +381,6 @@
         islandMaxRelativeSpeed[root], relativeSpeed);
       rigidMaxRelativeSpeed = std::fmax(
         rigidMaxRelativeSpeed, relativeSpeed);
-      double cadenceVx = body->vx
-        - (body->spatialForceApplied ? body->spatialForceX : 0);
-      double cadenceVy = body->vy
-        - (body->spatialForceApplied ? body->spatialForceY : 0);
-      double cadenceMeanVx = islandCadenceVxSum[root]
-        / islandAwakeCount[root];
-      double cadenceMeanVy = islandCadenceVySum[root]
-        / islandAwakeCount[root];
-      double cadenceRelativeSpeed =
-        std::hypot(cadenceVx - cadenceMeanVx,
-                   cadenceVy - cadenceMeanVy)
-        + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
-      islandMaxCadenceRelativeSpeed[root] = std::fmax(
-        islandMaxCadenceRelativeSpeed[root], cadenceRelativeSpeed);
     }
     substeps = 1;
     for (int root = 0; root < n; root++) {
@@ -438,58 +393,17 @@
         || islandMaxPriorImpact[root] > R_DENSE_COHERENT_IMPACT_SPEED;
       bool coherentDenseIsland =
         denseWetIsland && !newDenseRisk && !islandCooldown[root];
-      // An unchanged static field can add a large common impulse to a packed
-      // island even when its prior contact motion remains slow. Reduce cadence
-      // only for large, mostly force-driven single-layer islands whose contact
-      // and relative-motion signals remain coherent.
-      bool denseForceIsland =
-        islandBodyCount[root] >= R_DENSE_FORCE_ISLAND_BODIES
-        && islandForceBodyCount[root] >= R_DENSE_FORCE_DRIVEN_BODIES
-        && islandForceBodyCount[root] * 2 >= islandAwakeCount[root]
-        && !islandHasJoint[root];
-      bool forceContactCoherent =
-        islandPriorContactCount[root] * 10
-          >= islandAwakeCount[root] * 9;
-      bool coherentForceIsland =
-        denseForceIsland && islandForceUnchanged[root]
-        && forceContactCoherent
-        && !islandBoundaryRisk[root]
-        && islandMaxCadenceRelativeSpeed[root]
-             <= R_DENSE_COHERENT_RELATIVE_SPEED;
-      if (denseForceIsland) {
-        rigidDenseForceIslands++;
-        if (!islandForceUnchanged[root]) rigidForceFieldFallbackIslands++;
-        if (!forceContactCoherent)
-          rigidForceContactFallbackIslands++;
-        if (islandBoundaryRisk[root]) rigidForceBoundaryFallbackIslands++;
-        if (islandMaxCadenceRelativeSpeed[root]
-              > R_DENSE_COHERENT_RELATIVE_SPEED)
-          rigidForceMotionFallbackIslands++;
-      }
-      if (denseWetIsland || denseForceIsland) {
-        if (coherentDenseIsland || coherentForceIsland) rigidCoherentIslands++;
+      if (denseWetIsland) {
+        if (coherentDenseIsland) rigidCoherentIslands++;
         else rigidDenseFallbackIslands++;
       }
       if (denseWetIsland && newDenseRisk)
         islandRefreshCooldown[root] = 1;
       double safeSubstep = coherentDenseIsland
         ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
-      double cadencePointSpeed = coherentForceIsland
-        ? islandCadencePointSpeed[root] : islandPointSpeed[root];
       int count = (int)std::ceil(
-        (cadencePointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
+        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
           / safeSubstep);
-      if (coherentForceIsland) {
-        int ordinaryCount = (int)std::ceil(
-          (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
-            / R_SAFE_SUBSTEP);
-        // Keep naturally cheap ticks unchanged and retain three swept solves
-        // whenever force-inflated speed would otherwise request more work.
-        if (ordinaryCount > 2)
-          count = imax(R_DENSE_FORCE_MIN_REDUCED_SUBSTEPS, count);
-        else
-          count = ordinaryCount;
-      }
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);

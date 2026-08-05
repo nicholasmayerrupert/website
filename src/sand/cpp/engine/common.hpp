@@ -295,8 +295,6 @@ struct Body {
   double aabbX0 = 0, aabbY0 = 0, aabbX1 = 0, aabbY1 = 0;
   double pvx = 0, pvy = 0, pw = 0;
   bool spatialForceApplied = false;
-  bool spatialForceChanged = false;
-  double spatialForceX = 0, spatialForceY = 0;
   // omega entering the substep's contact solve (before the solver converts the
   // body's fall into rotation). Used to tell a genuine topple — where the solver
   // feeds angular velocity that grows in one direction each substep — apart from
@@ -708,9 +706,6 @@ static const int    R_FLUID_DENSE_CORRECTOR_CADENCE = 6;
 static const int    R_FLUID_CORRECTOR_BATCH_BODIES = 16;
 static const int    R_FLUID_DENSE_BATCH_BODIES = 24;
 static const int    R_DENSE_RIGID_CARGO_BODIES = 64;
-static const int    R_DENSE_FORCE_ISLAND_BODIES = 64;
-static const int    R_DENSE_FORCE_DRIVEN_BODIES = 24;
-static const int    R_DENSE_FORCE_MIN_REDUCED_SUBSTEPS = 3;
 static const double R_DENSE_COHERENT_RELATIVE_SPEED = 1.25;
 static const double R_DENSE_COHERENT_IMPACT_SPEED = 0.5;
 static const int    R_DENSE_MICROSTEP_HYSTERESIS = 3;

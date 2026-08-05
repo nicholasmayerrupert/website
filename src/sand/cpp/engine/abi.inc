@@ -390,11 +390,6 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 39: return e->rigid.rigidOwnershipConflicts;
     case 40: return e->rigid.rigidPositionCorrections;
     case 41: return e->rigid.rigidRecoveryBodies;
-    case 42: return e->rigid.rigidDenseForceIslands;
-    case 43: return e->rigid.rigidForceContactFallbackIslands;
-    case 44: return e->rigid.rigidForceMotionFallbackIslands;
-    case 45: return e->rigid.rigidForceFieldFallbackIslands;
-    case 46: return e->rigid.rigidForceBoundaryFallbackIslands;
     default: return 0;
   }
 }

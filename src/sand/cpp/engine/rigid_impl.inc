@@ -1724,8 +1724,8 @@ bool RigidBodySystem::findTerrainClearAdjustment(
 
 // ===== Body material identity & solidify-on-rest =====
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
-// real material into the grid; when a NON-RIGID body sleeps it bakes into a
-// normal static component here. RIGID bodies stay free forever.
+// real material into the grid; when a component-backed body's raster stays fixed
+// it bakes into a normal static component here. RIGID bodies stay free forever.
 void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
   // The body's cells were just cleared to EMPTY (moveBodies). Restore each
   // rasterized material. Each material stays an isolated component carrying the
@@ -1753,27 +1753,10 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
 // Every component material has a static representation. Generic RIGID has none
 // and therefore remains a body.
 bool RigidBodySystem::bodySolidifies(Body* b) {
-  if (b->cellMaterials.empty()) return E.isComponentMaterial(b->material);
-  bool hasMaterial = false;
-  for (int i = 0; i < (int)b->occ.size(); i++) {
-    if (!b->occ[i]) continue;
-    uint8_t own = bodyMaterialAt(b, i);
-    if (own != EMPTY) {
-      hasMaterial = true;
-      if (!E.isComponentMaterial(own)) return false;
-    }
-    if (b->jointRole) {
-      uint8_t peer = b->jointPeerMaterials[i];
-      if (peer != EMPTY) {
-        hasMaterial = true;
-        if (!E.isComponentMaterial(peer)) return false;
-      }
-    }
-  }
-  return hasMaterial;
+  return E.bodySolidifiesToComponents(b);
 }
-// Baking is a structural transition, so solver sleep alone is insufficient:
-// buoyancy can put a floating body to sleep with no terrain contact. Require a
+// Baking is a structural transition, so an unchanged raster alone is insufficient:
+// buoyancy can hold a floating body still with no terrain contact. Require a
 // grounded static support below the raster (or the world floor). Side contact
 // does not bear the body's weight; liquids and other free bodies remain entirely
 // in the rigid solver.
@@ -1836,28 +1819,63 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
   }
   return mediumBelow > 0 && mediumBelow > solidBelow;
 }
-void RigidBodySystem::bakeRestingBodies() {
-  auto falling = [](const std::vector<Comp>& components) {
-    for (const Comp& component : components)
-      if (!component.cells.empty() && component.buoyancyDirection > 0)
-        return true;
-    return false;
-  };
-  bool deferBlastBake = false;
-  for (Body* b : E.L->bodies) {
-    if (!b->awake && b->blastDebris) {
-      deferBlastBake = falling(E.L->components);
-      break;
-    }
+bool RigidBodySystem::rasterStableForBake(Body* b) {
+  forEachBodyCell(b, [](int, int, int) {});
+  uint8_t sampleTag = (uint8_t)E.tick;
+  if (b->bakeRasterSampleTag == sampleTag)
+    return b->bakeRasterStableTicks >= R_BAKE_RASTER_TICKS;
+  uint32_t signature = 2166136261u;
+  for (const BodyRasterCell& cell : b->rasterFootprint) {
+    signature ^= (uint32_t)(cell.y * E.cols + cell.x);
+    signature *= 16777619u;
+    signature ^= bodyMaterialAt(b, cell.local);
+    signature *= 16777619u;
   }
+  signature ^= (uint32_t)b->rasterFootprint.size();
+  signature *= 16777619u;
+  if (b->bakeRasterSignature == signature) {
+    if (b->bakeRasterStableTicks < R_BAKE_RASTER_TICKS)
+      b->bakeRasterStableTicks++;
+  } else {
+    b->bakeRasterSignature = signature;
+    b->bakeRasterStableTicks = 1;
+  }
+  b->bakeRasterSampleTag = sampleTag;
+  return b->bakeRasterStableTicks >= R_BAKE_RASTER_TICKS;
+}
+void RigidBodySystem::bakeRestingBodies() {
+  bool liveTntBody = false;
+  for (Body* b : E.L->bodies)
+    if (E.bodyContainsMaterial(b, TNT)) { liveTntBody = true; break; }
+  bool deferBlastBake = E.layerHasFallingComponents(E.L);
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) {
       keep.push_back(b);
       continue;
     }
+    bool explosiveBody = b->blastDebris || E.bodyContainsMaterial(b, TNT);
+    if ((liveTntBody || explosiveBody) && b->awake) {
+      keep.push_back(b);
+      continue;
+    }
+    bool rasterBakeCandidate = !b->awake || b->rasterMayOverlapSolid;
+    if (b->jointRole == 1 && b->jointPeer)
+      rasterBakeCandidate = rasterBakeCandidate
+        || !b->jointPeer->awake || b->jointPeer->rasterMayOverlapSolid;
+    if (!liveTntBody && !rasterBakeCandidate) {
+      keep.push_back(b);
+      continue;
+    }
+    bool stableRaster = liveTntBody || rasterStableForBake(b);
+    bool peerStableRaster = true;
+    if (!liveTntBody && b->jointRole == 1 && b->jointPeer) {
+      Engine::ActiveLayerScope layerScope(E, &E.bg);
+      peerStableRaster = rasterStableForBake(b->jointPeer);
+    }
     bool canBake = bodyFullyInsideLoadedWindow(b)
-      && !b->awake && (!b->blastDebris || !deferBlastBake)
+      && stableRaster && peerStableRaster
+      && (!b->blastDebris || !deferBlastBake)
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
     bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
     bool peerGroundedContact = false;
@@ -1865,9 +1883,6 @@ void RigidBodySystem::bakeRestingBodies() {
       Engine::ActiveLayerScope layerScope(E, &E.bg);
       peerGroundedContact = bodyTouchesGroundedSolid(b->jointPeer);
     }
-    // Keep the joint component graph stable while a structural fall is active;
-    // blast rubble bakes as soon as that motion clears. Other component-backed
-    // bodies retain their normal solidify-on-rest behavior.
     if (canBake && (groundedContact || peerGroundedContact)) {
       int assemblyId = E.nextBakedAssemblyId++;
       if (b->jointRole == 1 && b->jointPeer) {
@@ -1992,16 +2007,35 @@ void RigidBodySystem::moveBodies() {
   // stamps when joint already ran this tick OR a prior joint closure is valid.
   bool hasSleepingBody = false;
   bool hasAwakeBody = false;
+  bool hasPendingBakeRaster = false;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     if (b->awake) hasAwakeBody = true;
     else hasSleepingBody = true;
+    if (E.bodyNeedsBakeTick(E.L, b))
+      hasPendingBakeRaster = true;
   }
   bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
+  auto awaitingStableBakeRaster = [&]() {
+    bool awaiting = false;
+    for (Body* b : E.L->bodies) {
+      if (!E.bodyNeedsBakeTick(E.L, b)) continue;
+      if (!rasterStableForBake(b)) awaiting = true;
+      if (b->jointRole == 1 && b->jointPeer) {
+        Engine::ActiveLayerScope layerScope(E, &E.bg);
+        if (!rasterStableForBake(b->jointPeer)) awaiting = true;
+      }
+    }
+    return awaiting;
+  };
+  if (!hasAwakeBody && hasPendingBakeRaster
+      && !needsGroundRefresh && !E.L->sleepingBodySupportDirty
+      && awaitingStableBakeRaster()) return;
   // Stable sleeping bodies remain stamped in the live grid. Support/topology
   // invalidation wakes this path even when the preceding grounding pass consumed
   // the source dirty flags.
-  if (!hasAwakeBody && !needsGroundRefresh && !E.L->sleepingBodySupportDirty) return;
+  if (!hasAwakeBody && !hasPendingBakeRaster
+      && !needsGroundRefresh && !E.L->sleepingBodySupportDirty) return;
   if (hasSleepingBody || needsGroundRefresh) {
     if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
       // joint stamps intact; body wake probes do not need a re-flood
@@ -2039,6 +2073,12 @@ void RigidBodySystem::moveBodies() {
     if (!supported) wakeBody(b);
   }
   E.L->sleepingBodySupportDirty = false;
+  if (!hasAwakeBody && hasPendingBakeRaster) {
+    bool wokeDuringSupportCheck = false;
+    for (Body* b : E.L->bodies)
+      if (b->jointRole != 2 && b->awake) { wokeDuringSupportCheck = true; break; }
+    if (!wokeDuringSupportCheck && awaitingStableBakeRaster()) return;
+  }
   if (E.L == &E.fg) {
     for (int k : E.bg.passiveBodyCells) {
       if (k < 0 || k >= E.cols * E.rows) continue;
@@ -2160,7 +2200,7 @@ void RigidBodySystem::moveBodies() {
     body->awake = true;
     body->stillTicks = 0;
   }
-  bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
+  bakeRestingBodies(); // a component-backed body with a stable raster becomes static
   rigidDepenMs = emscripten_get_now() - depenStart;
   moveCells.clear();
   moveFootprint.clear();

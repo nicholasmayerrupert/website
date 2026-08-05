@@ -1007,8 +1007,8 @@
       b->angle += (b->omega + b->pw) * dt;
       // Granular support is sampled as a medium rather than a terrain contact.
       // Near rest, confirm the body has powder beneath its bottom edge so an
-      // exact zero-velocity equilibrium can sleep and bake instead of remaining
-      // an awake solver participant forever.
+      // exact zero-velocity equilibrium can sleep instead of remaining an awake
+      // solver participant forever.
       bool looseContact = false;
       if (b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN
           && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG

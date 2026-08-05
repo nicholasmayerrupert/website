@@ -287,6 +287,7 @@ struct Body {
   int rasterCols = 0, rasterRows = 0;
   bool rasterFootprintValid = false;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
+  uint8_t bakeRasterStableTicks = 0;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;
@@ -305,6 +306,8 @@ struct Body {
   // newly turbulent or landing island stays on normal microsteps briefly.
   double recentImpactSpeed = 0;
   uint8_t denseMicrostepTicks = 0;
+  uint8_t bakeRasterSampleTag = UINT8_MAX;
+  uint32_t bakeRasterSignature = 0;
   double maxDepth = 0; int idx = 0;
 };
 struct Contact {
@@ -680,6 +683,7 @@ struct Player {
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 // In focused simulation LOD, bound the combined occupancy of free bodies and

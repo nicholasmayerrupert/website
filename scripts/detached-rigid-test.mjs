@@ -259,9 +259,9 @@ naturallyLoose.destroy();
       + Math.abs(state.angle - structuralPrevious.angle) * state.maxR;
     if (structuralTouching)
       structuralMaxContactStep = Math.max(structuralMaxContactStep, poseStep);
-    if (rough._bodyAwake(0) && poseStep < 1e-4)
+    if (rough._bodyAwake(0) && poseStep < 1e-4) {
       structuralFrozenTicks++;
-    else {
+    } else if (rough._bodyAwake(0)) {
       structuralLongestInterruptedFreeze = Math.max(
         structuralLongestInterruptedFreeze, structuralFrozenTicks);
       structuralFrozenTicks = 0;

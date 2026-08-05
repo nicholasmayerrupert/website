@@ -43,6 +43,27 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- Baking follows the raster rather than solver sleep. Repeatedly waking a
+//     grounded body with sub-cell motion keeps its continuous solver state live,
+//     while an unchanged visible footprint still becomes static. ---
+{
+  const e = mk();
+  for (let y = 80; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  e.spawnBox(60, 76, 4, 4, MAT.WOOD);
+  let bakedAt = -1, forcedAwakeTicks = 0;
+  for (let i = 0; i < 60 && e._bodyCount() > 0; i++) {
+    e._setBodyMotion(0, 0, 0, i & 1 ? -0.002 : 0.002);
+    if (e._bodyAwake(0) === 1) forcedAwakeTicks++;
+    e.stepWorld();
+    if (e._bodyCount() === 0) bakedAt = i;
+  }
+  check(`unchanged raster bakes despite continuous solver wakes (step ${bakedAt})`,
+    forcedAwakeTicks >= 20 && bakedAt >= 19 && bakedAt < 40);
+  e.destroy();
+}
+
 // --- a RIGID body NEVER bakes: it stays a free body forever ---
 {
   const e = mk();

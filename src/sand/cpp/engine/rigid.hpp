@@ -126,6 +126,7 @@ class RigidBodySystem {
   bool bodyTouchesGroundedSolid(Body* b);
   bool bodyTouchesSettledLooseComponent(Body* b);
   bool bodyHasLooseSupport(Body* b);
+  bool rasterStableForBake(Body* b);
   void stampJointFollower(Body* leader);
   void restampBodiesAfterStream();
   void bakeRestingBodies();

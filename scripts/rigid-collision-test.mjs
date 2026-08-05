@@ -507,6 +507,7 @@ for (const dt of [16, 8, 33, 50]) {
     run(e, 400);                                            // let it plunge and find its float depth
     const water1 = waterCount(e);
     run(e, 400);                                            // float undisturbed
+    for (let i = 0; i < 400 && e._bodyAwake(idx) !== 0; i++) e.stepWorld();
     const s = e._bodyState(idx), bot = bodyBottom(e, WOOD), surf = surfaceY(e), water2 = waterCount(e);
     check(`wood did not sink to the floor (bottom ${bot} < ${yBot - 2})`, bot >= 0 && bot < yBot - 2);
     check(`wood is partially submerged, not resting on top (bottom ${bot} > surface ${surf})`, bot > surf + 1);

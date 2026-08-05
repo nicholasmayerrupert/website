@@ -17,11 +17,64 @@
     ActiveLayerScope(const ActiveLayerScope&) = delete;
     ActiveLayerScope& operator=(const ActiveLayerScope&) = delete;
   };
+  bool bodySolidifiesToComponents(Body* b) {
+    if (b->cellMaterials.empty()) return isComponentMaterial(b->material);
+    bool hasMaterial = false;
+    for (int i = 0; i < (int)b->occ.size(); i++) {
+      if (!b->occ[i]) continue;
+      uint8_t own = b->cellMaterials[i];
+      if (own != EMPTY) {
+        hasMaterial = true;
+        if (!isComponentMaterial(own)) return false;
+      }
+      if (b->jointRole) {
+        uint8_t peer = b->jointPeerMaterials[i];
+        if (peer != EMPTY) {
+          hasMaterial = true;
+          if (!isComponentMaterial(peer)) return false;
+        }
+      }
+    }
+    return hasMaterial;
+  }
+  bool bodyContainsMaterial(Body* b, uint8_t material) {
+    if (b->cellMaterials.empty()) return b->material == material;
+    for (int i = 0; i < (int)b->occ.size(); i++) {
+      if (!b->occ[i]) continue;
+      if (b->cellMaterials[i] == material
+          || (b->jointRole && b->jointPeerMaterials[i] == material)) return true;
+    }
+    return false;
+  }
+  bool layerHasFallingComponents(Layer* lay) {
+    for (const Comp& component : lay->components)
+      if (!component.cells.empty() && component.buoyancyDirection > 0)
+        return true;
+    return false;
+  }
+  bool bodyBakeRetryDeferred(Layer* lay) {
+    if (!lay->pendingDetonations.empty()) return true;
+    for (Body* b : lay->bodies)
+      if (bodyContainsMaterial(b, TNT)) return true;
+    return layerHasFallingComponents(lay);
+  }
+  bool bodyNeedsBakeTick(Layer* lay, Body* b) {
+    if (b->jointRole == 2 || b->awake || bodyBakeRetryDeferred(lay)
+        || !bodySolidifiesToComponents(b)) return false;
+    bool rasterPending = b->bakeRasterStableTicks < R_BAKE_RASTER_TICKS;
+    if (b->jointRole == 1 && b->jointPeer)
+      rasterPending = rasterPending
+        || b->jointPeer->bakeRasterStableTicks < R_BAKE_RASTER_TICKS;
+    return rasterPending;
+  }
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
-      if (b->jointRole != 2 && (b->awake || b->fuseTicks > 0)) return true;
+      if (b->jointRole != 2
+          && (b->awake || b->fuseTicks > 0
+              || bodyNeedsBakeTick(lay, b)))
+        return true;
     for (int y = 0; y < rows; y++) if (!lay->rowMarkSpans[y].empty()) return true;
     return false;
   }
@@ -256,7 +309,7 @@
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
   //   * A detached structural assembly may carry a per-cell material map.
   //     Component bodies bake into isolated, assembly-tagged material
-  //     partitions after solver sleep and direct grounded-solid contact.
+  //     partitions after a stable raster interval and direct grounded-solid contact.
   //     RIGID bodies never bake, and a body still floating on liquid remains
   //     free.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
@@ -691,6 +744,11 @@
       markLayerRowSpan(L, y, x, x);
     }
     for (Body* b : L->bodies) if (b->jointRole != 2 && b->fuseTicks > 0) {
+      int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
+      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+      markLayerRowSpan(L, y, x, x);
+    }
+    for (Body* b : L->bodies) if (bodyNeedsBakeTick(L, b)) {
       int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       markLayerRowSpan(L, y, x, x);

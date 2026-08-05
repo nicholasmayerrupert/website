@@ -51,11 +51,10 @@ check(`water accelerates to its terminal speed (${deltas(water.rows).join(', ')}
   same(deltas(water.rows), cappedDeltas));
 check(`water speed remains capped (${water.speeds.join(', ')})`,
   same(water.speeds, cappedDeltas));
-const lavaDeltas = [1, 2, 3, 4, 5, 5, 5, 5];
-check(`lava uses ordinary fall acceleration despite its viscosity (${deltas(lava.rows).join(', ')})`,
-  same(deltas(lava.rows), lavaDeltas));
-check(`lava speed reaches its density-scaled terminal cap (${lava.speeds.join(', ')})`,
-  same(lava.speeds, lavaDeltas));
+check(`lava matches ordinary fluid fall acceleration despite its viscosity (${deltas(lava.rows).join(', ')})`,
+  same(deltas(lava.rows), cappedDeltas));
+check(`lava speed matches the ordinary fluid terminal cap (${lava.speeds.join(', ')})`,
+  same(lava.speeds, cappedDeltas));
 check('all loose cells remain conserved',
   powders.every((powder) => [...e.getGrid()].filter((m) => m === powder.id).length === 1)
     && [...e.getGrid()].filter((m) => m === water.material).length === 1

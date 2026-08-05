@@ -324,6 +324,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
   Body* b = e->fg.bodies[i];
   b->vx = vx; b->vy = vy; b->omega = omega; b->awake = true; b->stillTicks = 0;
   if (b->jointRole == 1) e->rigid.syncJointFollower(b);
+  e->useLayer(&e->fg);
+  int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
+  if (x >= 0 && x < e->cols && y >= 0 && y < e->rows)
+    e->markCellIndex(y * e->cols + x);
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_set_liquid_velocity(

@@ -890,6 +890,7 @@
     std::fill(solveShockKey.begin(), solveShockKey.end(),
       E.L == &E.bg ? 0xcbf29ce484222325ULL : 0x84222325cbf29ce4ULL);
     std::fill(solveHasGeneral.begin(), solveHasGeneral.end(), 0);
+    std::fill(solveHasStress.begin(), solveHasStress.end(), 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(solveParent, bi);
       Body* body = solverBodies[bi];
@@ -902,6 +903,7 @@
       solveShockKey[root] ^= (uint32_t)body->id;
       solveShockKey[root] *= 0x100000001b3ULL;
       if (!body->blastDebris) solveHasGeneral[root] = 1;
+      solveHasStress[root] = solveHasStress[root] || stressSubstep[bi];
     }
     contactOrder.resize(nc);
     contactRoot.resize(nc);
@@ -938,6 +940,8 @@
           break;
       }
       if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
+      else if (solveHasStress[root])
+        solverIters = imax(solverMinIterations, (solverIters + 1) / 2);
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
         int mate = contact.blockMate;

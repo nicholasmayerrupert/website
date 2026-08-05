@@ -1,9 +1,10 @@
   rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
   rigidVelocityIterations = rigidBiasIterations = 0;
+  rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
   rigidIslands = rigidBlockSolves = 0;
   rigidIslandBodySteps = rigidGlobalBodySteps = 0;
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
-  rigidMaxChildren = 0;
+  rigidMaxChildren = rigidChildTransforms = 0;
   rigidCoherentIslands = rigidDenseFallbackIslands = 0;
   rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
   rigidPositionCorrections = 0;
@@ -15,6 +16,8 @@
   fluidSolveMs = fluidWritebackMs = 0;
   rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
   rigidMaxContactDepth = 0;
+  rigidMaxVelocityResidual = rigidMaxBiasResidual = 0;
+  rigidMaxPenetrationResidual = 0;
   terrainContactPairs.clear();
   std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());

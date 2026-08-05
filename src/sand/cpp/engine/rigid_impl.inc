@@ -112,7 +112,9 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
       uint8_t material = bodyMaterialAt(b, j * b->w + i);
       cellMass = material > EMPTY && material < TABLE ? DENSITY[material] : 0;
     }
-    double r2 = lx * lx + ly * ly; inertia += cellMass * r2; if (r2 > maxR2) maxR2 = r2;
+    double r2 = lx * lx + ly * ly;
+    inertia += cellMass * (r2 + 1.0 / 6.0);
+    if (r2 > maxR2) maxR2 = r2;
     bool exL = !filled(i - 1, j), exR = !filled(i + 1, j), exU = !filled(i, j - 1), exD = !filled(i, j + 1);
     if (exL || exR || exU || exD) {
       b->boundaryPts.push_back(pi);

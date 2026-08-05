@@ -79,6 +79,13 @@ const engine = attachTestHooks(createEngineWasmRaw({
   sinksOn: false,
   infinite: false,
 }));
+const solverMode = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '1', 10);
+const residualTolerance = Number.parseFloat(
+  process.env.RIGID_RESIDUAL_TOLERANCE ?? '0.0001');
+const solverMinIterations = Number.parseInt(
+  process.env.RIGID_MIN_ITERATIONS ?? '4', 10);
+engine._setRigidSolverOptions(
+  solverMode, residualTolerance, solverMinIterations);
 
 for (let y = FLOOR_Y; y < ROWS; y++)
   for (let x = 0; x < COLS; x++)
@@ -100,6 +107,12 @@ let contacts = 0;
 let islandBodySteps = 0;
 let globalBodySteps = 0;
 let maxChildren = 0;
+let childTransforms = 0;
+let velocityConstraintEvals = 0;
+let biasConstraintEvals = 0;
+let maxVelocityResidual = 0;
+let maxBiasResidual = 0;
+let maxPenetrationResidual = 0;
 for (let step = 0; step < STEPS; step++) {
   if (spawned < BODY_COUNT && step % SPAWN_INTERVAL === 0) {
     engine.spawnBody(shape(spawned));
@@ -121,10 +134,23 @@ for (let step = 0; step < STEPS; step++) {
   islandBodySteps += solver.islandBodySteps;
   globalBodySteps += solver.globalBodySteps;
   maxChildren = Math.max(maxChildren, solver.maxChildren);
+  childTransforms += solver.childTransforms;
+  velocityConstraintEvals += solver.velocityConstraintEvals;
+  biasConstraintEvals += solver.biasConstraintEvals;
+  maxVelocityResidual = Math.max(
+    maxVelocityResidual, solver.maxVelocityResidual);
+  maxBiasResidual = Math.max(maxBiasResidual, solver.maxBiasResidual);
+  maxPenetrationResidual = Math.max(
+    maxPenetrationResidual, solver.maxPenetrationResidual);
 }
 
 console.log(JSON.stringify({
   scene: `${BODY_COUNT} continuously spawned long bodies`,
+  solverOptions: {
+    mode: solverMode,
+    residualTolerance,
+    minIterations: solverMinIterations,
+  },
   steps: STEPS,
   finalChecksum: checksum(engine),
   bodies: {
@@ -156,6 +182,12 @@ console.log(JSON.stringify({
     islandBodySteps,
     globalBodySteps,
     maxChildren,
+    childTransforms,
+    velocityConstraintEvals,
+    biasConstraintEvals,
+    maxVelocityResidual,
+    maxBiasResidual,
+    maxPenetrationResidual,
   },
 }, null, 2));
 

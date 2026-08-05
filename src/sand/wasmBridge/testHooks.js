@@ -55,6 +55,8 @@ function table() {
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
     rigidDepen: c('engine_test_rigid_depen', 'number', ['number']),
     rigidSolverDiag: c('engine_test_rigid_solver_diag', 'number', ['number', 'number']),
+    setRigidSolverOptions: c('engine_test_set_rigid_solver_options', null,
+      ['number', 'number', 'number', 'number']),
     rigidSpillProbe: c('engine_test_rigid_spill_probe', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     setGroundingDebug: c('engine_test_set_grounding_debug', null, ['number', 'number', 'number']),
     groundingMismatches: c('engine_test_grounding_mismatches', 'number', ['number']),
@@ -101,9 +103,9 @@ export function attachTestHooks(engine) {
     t.spawnWorldWeight(ptr, species | 0, worldX, worldY);
   engine._spawnNaturalAt = (species, worldX, worldY) =>
     t.spawnNaturalAt(ptr, species | 0, worldX, worldY);
-  // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
+  // Continuous body state, including inverse mass and rotational inertia.
   engine._bodyState = (i) => {
-    const buf = mod._malloc(8 * 8);
+    const buf = mod._malloc(10 * 8);
     const ok = t.bodyState(ptr, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -111,12 +113,13 @@ export function attachTestHooks(engine) {
       px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
       vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
       nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
+      invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
     };
     mod._free(buf);
     return s;
   };
   engine._bodyStateLayer = (layer, i) => {
-    const buf = mod._malloc(8 * 8);
+    const buf = mod._malloc(10 * 8);
     const ok = t.bodyStateLayer(ptr, layer ? 1 : 0, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -124,6 +127,7 @@ export function attachTestHooks(engine) {
       px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
       vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
       nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
+      invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
     };
     mod._free(buf);
     return s;
@@ -177,7 +181,16 @@ export function attachTestHooks(engine) {
     ownershipConflicts: t.rigidSolverDiag(ptr, 39),
     positionCorrections: t.rigidSolverDiag(ptr, 40),
     recoveryBodies: t.rigidSolverDiag(ptr, 41),
+    childTransforms: t.rigidSolverDiag(ptr, 42),
+    velocityConstraintEvals: t.rigidSolverDiag(ptr, 43),
+    biasConstraintEvals: t.rigidSolverDiag(ptr, 44),
+    maxVelocityResidual: t.rigidSolverDiag(ptr, 45),
+    maxBiasResidual: t.rigidSolverDiag(ptr, 46),
+    maxPenetrationResidual: t.rigidSolverDiag(ptr, 47),
   });
+  engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
+    minIterations = 4) => t.setRigidSolverOptions(
+    ptr, mode | 0, residualTolerance, minIterations | 0);
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);
   engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);

@@ -81,6 +81,7 @@
     }
     for (int bi = 0; bi < n; bi++) {
       currentChildPoses[bi] = childPose(solverBodies[bi], 0);
+      currentChildFramesValid[bi] = 0;
       nextChildPoseDt[bi] = -1;
     }
     contacts.clear();
@@ -602,16 +603,20 @@
       ChildBounds sweptA, sweptB;
       if (childContactState != CCS_CURRENT) {
         sweptA = sweptBodyBounds(
-          A, currentChildFramesA[0], nextChildFramesA[0], pairDt);
+          A, (*activeCurrentChildFramesA)[0],
+          (*activeNextChildFramesA)[0], pairDt);
         sweptB = sweptBodyBounds(
-          B, currentChildFramesB[0], nextChildFramesB[0], pairDt);
+          B, (*activeCurrentChildFramesB)[0],
+          (*activeNextChildFramesB)[0], pairDt);
         if (childContactState == CCS_NONE
             && !sweptBoundsOverlap(sweptA, sweptB))
           continue;
         if (childContactState == CCS_NONE
             && sweptObbsSeparated(
-              A, currentChildFramesA[0], nextChildFramesA[0],
-              B, currentChildFramesB[0], nextChildFramesB[0], pairDt)) {
+              A, (*activeCurrentChildFramesA)[0],
+              (*activeNextChildFramesA)[0],
+              B, (*activeCurrentChildFramesB)[0],
+              (*activeNextChildFramesB)[0], pairDt)) {
           continue;
         }
       }
@@ -706,16 +711,20 @@
         ChildBounds sweptA, sweptB;
         if (childContactState != CCS_CURRENT) {
           sweptA = sweptBodyBounds(
-            A, currentChildFramesA[0], nextChildFramesA[0], pairDt);
+            A, (*activeCurrentChildFramesA)[0],
+            (*activeNextChildFramesA)[0], pairDt);
           sweptB = sweptBodyBounds(
-            B, currentChildFramesB[0], nextChildFramesB[0], pairDt);
+            B, (*activeCurrentChildFramesB)[0],
+            (*activeNextChildFramesB)[0], pairDt);
           if (childContactState == CCS_NONE
               && !sweptBoundsOverlap(sweptA, sweptB))
             continue;
           if (childContactState == CCS_NONE
               && sweptObbsSeparated(
-                A, currentChildFramesA[0], nextChildFramesA[0],
-                B, currentChildFramesB[0], nextChildFramesB[0], pairDt)) {
+                A, (*activeCurrentChildFramesA)[0],
+                (*activeNextChildFramesA)[0],
+                B, (*activeCurrentChildFramesB)[0],
+                (*activeNextChildFramesB)[0], pairDt)) {
             continue;
           }
         }
@@ -923,11 +932,59 @@
           return ci < mate ? resolveContactBlock(contact, contacts[mate]) : 0.0;
         return resolveContact(contact);
       };
+      auto contactVelocityResidual = [&](const Contact& contact) {
+        Body* A = contact.a;
+        Body* B = contact.b;
+        double rvx = A->vx - A->omega * contact.ray;
+        double rvy = A->vy + A->omega * contact.rax;
+        if (B) {
+          rvx -= rigidContactVx(B) - rigidContactOmega(B) * contact.rby;
+          rvy -= rigidContactVy(B) + rigidContactOmega(B) * contact.rbx;
+        }
+        double vn = rvx * contact.nx + rvy * contact.ny;
+        double normalResidual = contact.accJn > 1e-12
+          ? std::fabs(contact.targetVn - vn)
+          : std::fmax(0.0, contact.targetVn - vn);
+        double tx = -contact.ny, ty = contact.nx;
+        double vt = rvx * tx + rvy * ty;
+        double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
+          ? contact.staticFriction : contact.dynamicFriction;
+        double limit = coefficient * contact.accJn;
+        double tangentResidual = 0;
+        if (limit > 1e-12) {
+          if (contact.accJt >= limit - 1e-12)
+            tangentResidual = std::fmax(0.0, vt);
+          else if (contact.accJt <= -limit + 1e-12)
+            tangentResidual = std::fmax(0.0, -vt);
+          else
+            tangentResidual = std::fabs(vt);
+        }
+        return std::fmax(normalResidual, tangentResidual);
+      };
+      auto contactBiasResidual = [&](const Contact& contact) {
+        bool precisePair = contact.b
+          && rigidLargeSlenderBody(contact.a)
+          && rigidLargeSlenderBody(contact.b);
+        double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+        double bias = R_BAUMGARTE
+          * std::fmax(0.0, contact.depth - slop);
+        bias = std::fmin(bias, R_MAX_BIAS_VEL);
+        double rvx = contact.a->pvx - contact.a->pw * contact.ray;
+        double rvy = contact.a->pvy + contact.a->pw * contact.rax;
+        if (contact.b && contact.bIntegrated) {
+          rvx -= contact.b->pvx - contact.b->pw * contact.rby;
+          rvy -= contact.b->pvy + contact.b->pw * contact.rbx;
+        }
+        double vn = rvx * contact.nx + rvy * contact.ny;
+        return contact.accBias > 1e-12
+          ? std::fabs(bias - vn) : std::fmax(0.0, bias - vn);
+      };
       // The first passes run from the lowest contact upward so support impulses
       // propagate through tall stacks promptly. Later passes alternate direction
       // to remove a permanent ordering bias.
       for (int it = 0; it < solverIters; it++) {
         rigidVelocityIterations++;
+        rigidVelocityConstraintEvals += islandEnd - islandStart;
         double moved = 0;
         bool bottomUp = it < R_SHOCK_ORDER_ITERS || !(it & 1);
         if (bottomUp) {
@@ -938,9 +995,22 @@
             moved += solveVelocity(contactOrder[oi]);
         }
         if (moved == 0.0) break;
+        if (solverMode > 0 && it + 1 >= solverMinIterations
+            && ((it + 1 - solverMinIterations) & 1) == 0) {
+          double residual = 0;
+          for (int oi = islandStart; oi < islandEnd; oi++)
+            residual = std::fmax(residual, contactVelocityResidual(
+              contacts[contactOrder[oi]]));
+          if (residual <= solverResidualTolerance) break;
+        }
       }
+      for (int oi = islandStart; oi < islandEnd; oi++)
+        rigidMaxVelocityResidual = std::fmax(
+          rigidMaxVelocityResidual,
+          contactVelocityResidual(contacts[contactOrder[oi]]));
       for (int it = 0; it < solverIters; it++) {
         rigidBiasIterations++;
+        rigidBiasConstraintEvals += islandEnd - islandStart;
         double moved = 0;
         bool bottomUp = it < R_SHOCK_ORDER_ITERS || !(it & 1);
         if (bottomUp) {
@@ -951,6 +1021,26 @@
             moved += resolveBias(contacts[contactOrder[oi]]);
         }
         if (moved == 0.0) break;
+        if (solverMode > 0 && it + 1 >= solverMinIterations
+            && ((it + 1 - solverMinIterations) & 1) == 0) {
+          double residual = 0;
+          for (int oi = islandStart; oi < islandEnd; oi++)
+            residual = std::fmax(residual, contactBiasResidual(
+              contacts[contactOrder[oi]]));
+          if (residual <= solverResidualTolerance) break;
+        }
+      }
+      for (int oi = islandStart; oi < islandEnd; oi++) {
+        const Contact& contact = contacts[contactOrder[oi]];
+        rigidMaxBiasResidual = std::fmax(
+          rigidMaxBiasResidual, contactBiasResidual(contact));
+        bool precisePair = contact.b
+          && rigidLargeSlenderBody(contact.a)
+          && rigidLargeSlenderBody(contact.b);
+        double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+        rigidMaxPenetrationResidual = std::fmax(
+          rigidMaxPenetrationResidual,
+          std::fmax(0.0, contact.depth - slop));
       }
       islandStart = islandEnd;
     }
@@ -1130,6 +1220,8 @@
           Body* B = solverBodies[pair.second];
           currentChildPoses[pair.first] = childPose(A, 0);
           currentChildPoses[pair.second] = childPose(B, 0);
+          currentChildFramesValid[pair.first] = 0;
+          currentChildFramesValid[pair.second] = 0;
           nextChildPoseDt[pair.first] = -1;
           nextChildPoseDt[pair.second] = -1;
           if (collectChildContacts(

@@ -221,6 +221,7 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int 
   Body* b = lay.bodies[i];
   out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx;
   out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
+  out[8] = b->invMass; out[9] = b->invInertia;
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_box_layer(
@@ -311,11 +312,14 @@ EMSCRIPTEN_KEEPALIVE int engine_test_collect_dynamic_lights(Engine* e) {
   e->glp.glCollectDynamicLights();
   return (int)e->renderer.dynamicLights.size();
 }
-// Read continuous body pose/motion for tests/tools: [px,py,angle,vx,vy,omega,nPts,maxR].
+// Read continuous body state for tests/tools:
+// [px,py,angle,vx,vy,omega,nPts,maxR,invMass,invInertia].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
-  out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx; out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
+  out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx;
+  out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
+  out[8] = b->invMass; out[9] = b->invInertia;
   return 1;
 }
 // Set continuous body motion (test/tool hook): wakes the body.
@@ -390,8 +394,20 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 39: return e->rigid.rigidOwnershipConflicts;
     case 40: return e->rigid.rigidPositionCorrections;
     case 41: return e->rigid.rigidRecoveryBodies;
+    case 42: return e->rigid.rigidChildTransforms;
+    case 43: return e->rigid.rigidVelocityConstraintEvals;
+    case 44: return e->rigid.rigidBiasConstraintEvals;
+    case 45: return e->rigid.rigidMaxVelocityResidual;
+    case 46: return e->rigid.rigidMaxBiasResidual;
+    case 47: return e->rigid.rigidMaxPenetrationResidual;
     default: return 0;
   }
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_solver_options(
+    Engine* e, int mode, double residualTolerance, int minIterations) {
+  e->rigid.solverMode = mode;
+  e->rigid.solverResidualTolerance = std::fmax(0.0, residualTolerance);
+  e->rigid.solverMinIterations = imax(1, minIterations);
 }
 // Synthetic spill probe for outlet-locality regression tests. The rectangle is
 // stamped as one body and `source` is treated as loose material displaced from

@@ -27,6 +27,10 @@ class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
 
+  int solverMode = 1;
+  double solverResidualTolerance = 1e-4;
+  int solverMinIterations = 4;
+
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   int rigidOwnershipConflicts = 0;
@@ -34,10 +38,11 @@ class RigidBodySystem {
   int rigidPositionCorrections = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
+  int rigidVelocityConstraintEvals = 0, rigidBiasConstraintEvals = 0;
   int rigidIslands = 0, rigidBlockSolves = 0;
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
-  int rigidMaxChildren = 0;
+  int rigidMaxChildren = 0, rigidChildTransforms = 0;
   int rigidCoherentIslands = 0, rigidDenseFallbackIslands = 0;
   int rigidTerrainRiskBodies = 0, rigidImpactRiskBodies = 0;
   double rigidMaxRelativeSpeed = 0;
@@ -50,6 +55,8 @@ class RigidBodySystem {
   double rigidStampMs = 0, rigidSpillMs = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
+  double rigidMaxVelocityResidual = 0, rigidMaxBiasResidual = 0;
+  double rigidMaxPenetrationResidual = 0;
   void clearContactCaches();
   // Scratch for per-body bottom-edge support probes: membership
   // stamp + cell list replacing a per-call unordered_set (the probes only sum

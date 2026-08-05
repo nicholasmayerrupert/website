@@ -40,6 +40,7 @@ export const UNIT_SUITES = [
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],
   ['rigid-collision', 'rigid-collision-test.mjs'],
+  ['rigid-inertia', 'rigid-inertia-test.mjs'],
   ['rigid-fluid-accuracy', 'rigid-fluid-accuracy-test.mjs'],
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-large-body', 'rigid-large-body-test.mjs'],

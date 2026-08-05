@@ -75,6 +75,7 @@
     "test:structures": "node scripts/worldgen-structures-test.mjs",
     "test:flora": "node scripts/flora-test.mjs",
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",
+    "test:rigid-inertia": "node scripts/rigid-inertia-test.mjs",
     "test:rigid-fluid-accuracy": "node scripts/rigid-fluid-accuracy-test.mjs",
     "test:rigid-dense-pile": "node scripts/rigid-dense-pile-test.mjs",
     "test:rigid-large-body": "node scripts/rigid-large-body-test.mjs",

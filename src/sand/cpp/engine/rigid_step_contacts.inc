@@ -405,14 +405,20 @@
     bool start = false;
   };
   std::vector<ChildManifold> childManifoldScratch;
-  std::vector<ChildFrame> currentChildFramesA, currentChildFramesB;
-  std::vector<ChildFrame> nextChildFramesA, nextChildFramesB;
+  std::vector<ChildFrame> currentChildFrameScratchA, currentChildFrameScratchB;
+  std::vector<ChildFrame> nextChildFrameScratchA, nextChildFrameScratchB;
   struct ChildPose {
     double px = 0, py = 0;
     double ux = 1, uy = 0, vx = 0, vy = 1;
   };
   std::vector<ChildPose> currentChildPoses(n), nextChildPoses(n);
   std::vector<double> nextChildPoseDt(n, -1);
+  std::vector<std::vector<ChildFrame>> currentChildFrames(n), nextChildFrames(n);
+  std::vector<uint8_t> currentChildFramesValid(n, 0);
+  const std::vector<ChildFrame>* activeCurrentChildFramesA = nullptr;
+  const std::vector<ChildFrame>* activeCurrentChildFramesB = nullptr;
+  const std::vector<ChildFrame>* activeNextChildFramesA = nullptr;
+  const std::vector<ChildFrame>* activeNextChildFramesB = nullptr;
   std::vector<ChildBounds> childBoundsA, childBoundsB;
   std::vector<ChildEvent> childEventScratch;
   std::vector<int> activeChildrenA, activeChildrenB;
@@ -426,9 +432,10 @@
       ux, uy, -uy, ux,
     };
   };
-  auto collectChildFrames = [](Body* body, const ChildPose& pose,
-                               std::vector<ChildFrame>& frames) {
+  auto collectChildFrames = [&](Body* body, const ChildPose& pose,
+                                std::vector<ChildFrame>& frames) {
     frames.resize(body->collisionRects.size());
+    rigidChildTransforms += (int)frames.size();
     for (int child = 0; child < (int)frames.size(); child++) {
       ChildFrame& frame = frames[child];
       frame.body = body;
@@ -488,7 +495,11 @@
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
   };
-  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB, double dt) {
+  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB, double dt,
+      const std::vector<ChildFrame>& currentFramesA,
+      const std::vector<ChildFrame>& currentFramesB,
+      const std::vector<ChildFrame>& nextFramesA,
+      const std::vector<ChildFrame>& nextFramesB) {
     int countA = (int)bodyA->collisionRects.size();
     int countB = (int)bodyB->collisionRects.size();
     bool sweptCandidate = false;
@@ -497,15 +508,13 @@
       for (int ai = 0; ai < countA; ai++)
         for (int bi = 0; bi < countB; bi++) {
           ChildBounds boundsA = childBoundsAtBothPoses(
-            bodyA, currentChildFramesA[ai], nextChildFramesA[ai], dt);
+            bodyA, currentFramesA[ai], nextFramesA[ai], dt);
           ChildBounds boundsB = childBoundsAtBothPoses(
-            bodyB, currentChildFramesB[bi], nextChildFramesB[bi], dt);
+            bodyB, currentFramesB[bi], nextFramesB[bi], dt);
           if (!childBoundsOverlap(boundsA, boundsB)) continue;
           sweptCandidate = true;
-          if (!childFramesOverlap(currentChildFramesA[ai],
-                                  currentChildFramesB[bi])
-              && !childFramesOverlap(nextChildFramesA[ai],
-                                     nextChildFramesB[bi]))
+          if (!childFramesOverlap(currentFramesA[ai], currentFramesB[bi])
+              && !childFramesOverlap(nextFramesA[ai], nextFramesB[bi]))
             continue;
           childPairScratch.push_back({ai, bi});
         }
@@ -525,12 +534,12 @@
     };
     for (int ai = 0; ai < countA; ai++) {
       childBoundsA[ai] = childBoundsAtBothPoses(bodyA,
-        currentChildFramesA[ai], nextChildFramesA[ai], dt);
+        currentFramesA[ai], nextFramesA[ai], dt);
       includeBounds(childBoundsA[ai]);
     }
     for (int bi = 0; bi < countB; bi++) {
       childBoundsB[bi] = childBoundsAtBothPoses(bodyB,
-        currentChildFramesB[bi], nextChildFramesB[bi], dt);
+        currentFramesB[bi], nextFramesB[bi], dt);
       includeBounds(childBoundsB[bi]);
     }
     double spanX = std::fmax(1e-9, maxX - minX);
@@ -583,10 +592,8 @@
         if (!overlapsOtherAxis(childBoundsA[ai], childBoundsB[bi]))
           continue;
         sweptCandidate = true;
-        if (!childFramesOverlap(currentChildFramesA[ai],
-                                currentChildFramesB[bi])
-            && !childFramesOverlap(nextChildFramesA[ai],
-                                   nextChildFramesB[bi]))
+        if (!childFramesOverlap(currentFramesA[ai], currentFramesB[bi])
+            && !childFramesOverlap(nextFramesA[ai], nextFramesB[bi]))
           continue;
         childPairScratch.push_back({ai, bi});
       }
@@ -890,32 +897,58 @@
   auto collectChildContacts = [&](Body* a, Body* b, double dt,
                                   int bodyIndexA, int bodyIndexB) {
     childManifoldScratch.clear();
-    ChildPose currentA = bodyIndexA >= 0
-      ? currentChildPoses[bodyIndexA] : childPose(a, 0);
-    ChildPose currentB = bodyIndexB >= 0
-      ? currentChildPoses[bodyIndexB] : childPose(b, 0);
-    auto nextPose = [&](Body* body, int bodyIndex) {
-      if (bodyIndex < 0) return childPose(body, dt);
+    auto currentFrames = [&](Body* body, int bodyIndex,
+                             std::vector<ChildFrame>& scratch)
+        -> const std::vector<ChildFrame>& {
+      if (bodyIndex < 0) {
+        collectChildFrames(body, childPose(body, 0), scratch);
+        return scratch;
+      }
+      if (!currentChildFramesValid[bodyIndex]) {
+        collectChildFrames(body, currentChildPoses[bodyIndex],
+                           currentChildFrames[bodyIndex]);
+        currentChildFramesValid[bodyIndex] = 1;
+      }
+      return currentChildFrames[bodyIndex];
+    };
+    auto framesAtDt = [&](Body* body, int bodyIndex,
+                          std::vector<ChildFrame>& scratch)
+        -> const std::vector<ChildFrame>& {
+      if (bodyIndex < 0) {
+        collectChildFrames(body, childPose(body, dt), scratch);
+        return scratch;
+      }
       if (nextChildPoseDt[bodyIndex] != dt) {
         nextChildPoseDt[bodyIndex] = dt;
         nextChildPoses[bodyIndex] = childPose(body, dt);
+        collectChildFrames(body, nextChildPoses[bodyIndex],
+                           nextChildFrames[bodyIndex]);
       }
-      return nextChildPoses[bodyIndex];
+      return nextChildFrames[bodyIndex];
     };
-    collectChildFrames(a, currentA, currentChildFramesA);
-    collectChildFrames(b, currentB, currentChildFramesB);
-    collectChildFrames(a, nextPose(a, bodyIndexA), nextChildFramesA);
-    collectChildFrames(b, nextPose(b, bodyIndexB), nextChildFramesB);
-    bool sweptCandidate = collectChildPairCandidates(a, b, dt);
+    const std::vector<ChildFrame>& currentFramesA = currentFrames(
+      a, bodyIndexA, currentChildFrameScratchA);
+    const std::vector<ChildFrame>& currentFramesB = currentFrames(
+      b, bodyIndexB, currentChildFrameScratchB);
+    const std::vector<ChildFrame>& nextFramesA = framesAtDt(
+      a, bodyIndexA, nextChildFrameScratchA);
+    const std::vector<ChildFrame>& nextFramesB = framesAtDt(
+      b, bodyIndexB, nextChildFrameScratchB);
+    activeCurrentChildFramesA = &currentFramesA;
+    activeCurrentChildFramesB = &currentFramesB;
+    activeNextChildFramesA = &nextFramesA;
+    activeNextChildFramesB = &nextFramesB;
+    bool sweptCandidate = collectChildPairCandidates(
+      a, b, dt, currentFramesA, currentFramesB, nextFramesA, nextFramesB);
     bool currentContact = false;
     for (const auto& pair : childPairScratch) {
       int ai = pair.first, bi = pair.second;
       rigidChildPairs++;
-      const ChildFrame& nowA = currentChildFramesA[ai];
-      const ChildFrame& nowB = currentChildFramesB[bi];
+      const ChildFrame& nowA = currentFramesA[ai];
+      const ChildFrame& nowB = currentFramesB[bi];
       if (!childFramesOverlap(nowA, nowB)) {
-        const ChildFrame& nextA = nextChildFramesA[ai];
-        const ChildFrame& nextB = nextChildFramesB[bi];
+        const ChildFrame& nextA = nextFramesA[ai];
+        const ChildFrame& nextB = nextFramesB[bi];
         if (childFramesOverlap(nextA, nextB))
           childSatManifolds(nextA, nextB, true);
         continue;
@@ -924,8 +957,8 @@
         currentContact = true;
         continue;
       }
-      const ChildFrame& nextA = nextChildFramesA[ai];
-      const ChildFrame& nextB = nextChildFramesB[bi];
+      const ChildFrame& nextA = nextFramesA[ai];
+      const ChildFrame& nextB = nextFramesB[bi];
       if (childFramesOverlap(nextA, nextB))
         childSatManifolds(nextA, nextB, true);
     }

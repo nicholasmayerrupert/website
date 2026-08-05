@@ -86,6 +86,21 @@ const addDenseBodyField = (engine, material) => {
   }
 };
 
+const addTinyIrregularField = (engine) => {
+  const shapes = [
+    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2]],
+    [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2]],
+    [[0, 0], [1, 0], [2, 0], [1, 1], [1, 2]],
+    [[0, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
+  ];
+  for (let i = 0; i < 128; i++) {
+    const x = 304 + (i % 16) * 10;
+    const y = 28 + Math.floor(i / 16) * 10;
+    engine.spawnBody(shapes[i % shapes.length]
+      .map(([dx, dy]) => [x + dx, y + dy]));
+  }
+};
+
 const setups = {
   'static-lava': (engine) => {
     addFloor(engine);
@@ -130,6 +145,12 @@ const setups = {
   'dense-neutronium-128': (engine) => {
     addDenseBodyField(engine, MAT.NEUTRONIUM);
   },
+  'static-tiny-irregular-128': (engine) => {
+    addFloor(engine);
+    addStaticSource(engine, 384, 205);
+    engine.syncComponents();
+    addTinyIrregularField(engine);
+  },
   'cross-layer-slivers': (engine) => {
     buildCrossLayerSliverScene(engine, {
       left: 204,
@@ -157,6 +178,14 @@ const phaseKeys = [
   'forcePrepareMs', 'forceWakeMs', 'bodyMs', 'liquidMs', 'tailMs',
   'liquidRelaxMs', 'liquidSurfaceMs',
 ];
+const rigidKeys = [
+  'substeps', 'islandBodySteps', 'globalBodySteps', 'contacts', 'childPairs',
+  'childManifolds', 'velocityIterations', 'positionCorrections', 'rigidCoreMs',
+  'coherentIslands', 'denseFallbackIslands',
+  'denseForceIslands', 'forceContactFallbackIslands',
+  'forceMotionFallbackIslands', 'forceFieldFallbackIslands',
+  'forceBoundaryFallbackIslands',
+];
 
 const percentile = (values, fraction) => {
   if (!values.length) return 0;
@@ -168,6 +197,8 @@ const summarize = (values) => ({
   p50: percentile(values, 0.5),
   p95: percentile(values, 0.95),
   p99: percentile(values, 0.99),
+  max: values.length ? Math.max(...values) : 0,
+  nonzero: values.filter((value) => value > 0).length,
 });
 
 const worstWindowP50 = (values) => {
@@ -182,6 +213,9 @@ const worstWindowP50 = (values) => {
 const runScenario = (setup) => {
   const combined = { stepMs: [] };
   for (const key of phaseKeys) combined[key] = [];
+  const rigid = Object.fromEntries(rigidKeys.map((key) => [key, []]));
+  const coherentStepMs = [];
+  const fallbackStepMs = [];
   const repeatWindows = [];
   let activeSteps = 0;
   for (let repeat = 0; repeat < repeats; repeat++) {
@@ -193,9 +227,13 @@ const runScenario = (setup) => {
       if (!engine.stepWorld()) break;
       const perf = engine.getPerf();
       const phases = engine.getStepPerf();
+      const solver = engine.getRigidSolverDebug();
       combined.stepMs.push(perf.stepMs);
       repeatSteps.push(perf.stepMs);
       for (const key of phaseKeys) combined[key].push(phases[key] ?? 0);
+      for (const key of rigidKeys) rigid[key].push(solver[key] ?? 0);
+      (solver.coherentIslands > 0 ? coherentStepMs : fallbackStepMs)
+        .push(perf.stepMs);
       activeSteps++;
     }
     repeatWindows.push(worstWindowP50(repeatSteps));
@@ -208,6 +246,13 @@ const runScenario = (setup) => {
     phases: Object.fromEntries(
       phaseKeys.map((key) => [key, summarize(combined[key])]),
     ),
+    rigid: Object.fromEntries(
+      rigidKeys.map((key) => [key, summarize(rigid[key])]),
+    ),
+    cadenceSteps: {
+      coherent: summarize(coherentStepMs),
+      fallback: summarize(fallbackStepMs),
+    },
   };
 };
 
@@ -227,6 +272,22 @@ for (const [name, setup] of selectedSetups) {
     + ` ${result.worstWindowP50.toFixed(3)} ms`,
   );
   console.log(`  phase p50 (ms): ${phase}`);
+  console.log(`  rigid p50: ${rigidKeys.map((key) =>
+    `${key} ${result.rigid[key].p50.toFixed(0)}`).join('  ')}`);
+  console.log(`  rigid p95: ${rigidKeys.map((key) =>
+    `${key} ${result.rigid[key].p95.toFixed(0)}`).join('  ')}`);
+  console.log(`  coherent cadence: ${result.rigid.coherentIslands.nonzero}`
+    + `/${result.activeSteps} samples, max ${result.rigid.coherentIslands.max}`);
+  console.log(`  cadence step p50/p95: coherent `
+    + `${result.cadenceSteps.coherent.p50.toFixed(3)}/`
+    + `${result.cadenceSteps.coherent.p95.toFixed(3)} ms, fallback `
+    + `${result.cadenceSteps.fallback.p50.toFixed(3)}/`
+    + `${result.cadenceSteps.fallback.p95.toFixed(3)} ms`);
+  console.log(`  force fallback samples: contact `
+    + `${result.rigid.forceContactFallbackIslands.nonzero}, motion `
+    + `${result.rigid.forceMotionFallbackIslands.nonzero}, field `
+    + `${result.rigid.forceFieldFallbackIslands.nonzero}, boundary `
+    + `${result.rigid.forceBoundaryFallbackIslands.nonzero}`);
 }
 console.log(`\nwall ${(performance.now() - started).toFixed(0)} ms, ${repeats} repeats`);
 

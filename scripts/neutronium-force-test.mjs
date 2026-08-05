@@ -660,6 +660,49 @@ for (const [label, sourceLayer] of [['foreground', 0], ['background', 1]]) {
   engine.destroy();
 }
 
+// A large field of small compound bodies can share a reduced cadence once its
+// static force-compressed contact island is coherent. Body retention and raster
+// pressure remain bounded while the dense island uses that cadence.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 90, 85, 90, 111, MAT.STONE);
+  engine.paintDisc(90, 85, 5, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  const shapes = [
+    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2]],
+    [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2]],
+    [[0, 0], [1, 0], [2, 0], [1, 1], [1, 2]],
+    [[0, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
+  ];
+  for (let body = 0; body < 128; body++) {
+    const x = 20 + (body % 16) * 9;
+    const y = 6 + Math.floor(body / 16) * 7;
+    engine.spawnBody(shapes[body % shapes.length]
+      .map(([dx, dy]) => [x + dx, y + dy]));
+  }
+  let coherentTicks = 0;
+  let ownershipConflicts = 0;
+  for (let step = 0; step < 720; step++) {
+    if (!engine.stepWorld()) break;
+    const solver = engine.getRigidSolverDebug();
+    coherentTicks += solver.coherentIslands > 0;
+    ownershipConflicts += solver.ownershipConflicts;
+  }
+  let blockedCells = 0;
+  for (let body = 0; body < engine._bodyCount(); body++)
+    blockedCells += engine._bodyBlocked(body);
+  check(`dense force island uses coherent cadence (${coherentTicks} ticks)`,
+    coherentTicks >= 40);
+  check(`dense force island retains its bodies (${engine._bodyCount()}/128)`,
+    engine._bodyCount() >= 126);
+  check(`dense force island keeps raster pressure bounded `
+      + `(${ownershipConflicts} conflicts, ${blockedCells} blocked cells)`,
+    ownershipConflicts <= 3000 && blockedCells <= 18);
+  engine.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

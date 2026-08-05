@@ -591,8 +591,9 @@ double RigidBodySystem::resolveContactFriction(Contact& c) {
   double vt = rtvx * tx + rtvy * ty;
   double movedT = 0;
   if (c.tangentMass > 0) {
-    double candidate = c.accJt - vt * c.tangentMass;
-    double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
+    double tangentError = vt - c.frictionTargetVt;
+    double candidate = c.accJt - tangentError * c.tangentMass;
+    double coefficient = std::fabs(tangentError) <= R_STATIC_FRICTION_SPEED
       ? c.staticFriction : c.dynamicFriction;
     double limit = coefficient * c.accJn;
     double newJt = candidate;

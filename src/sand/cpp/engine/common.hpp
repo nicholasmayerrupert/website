@@ -332,6 +332,9 @@ struct Contact {
   double accJn, accJt, accBias;
   int blockMate;
   bool persisted;
+  double frictionLax = 0, frictionLay = 0;
+  double frictionLbx = 0, frictionLby = 0;
+  double frictionTargetVt = 0;
 };
 
 // ---- Dropped items + cosmetic particles (items.inc) ----
@@ -723,6 +726,10 @@ static const double R_FLUID_IMPACT_SOUND_MIN_SPEED = 1.5;
 static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
 static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
 static const double R_STATIC_FRICTION_SPEED = 0.025;
+static const double R_FRICTION_ANCHOR_CAPTURE_SPEED = 0.08;
+static const double R_FRICTION_ANCHOR_MAX_SEPARATION = 0.5;
+static const double R_FRICTION_ANCHOR_BETA = 0.05;
+static const double R_FRICTION_ANCHOR_MAX_SPEED = 0.01;
 static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
 static const int    R_CONTACT_CACHE_MISSED_SUBSTEPS = 2;
 static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;

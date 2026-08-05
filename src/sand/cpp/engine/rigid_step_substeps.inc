@@ -960,17 +960,18 @@
           : std::fmax(0.0, contact.targetVn - vn);
         double tx = -contact.ny, ty = contact.nx;
         double vt = rvx * tx + rvy * ty;
-        double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
+        double tangentError = vt - contact.frictionTargetVt;
+        double coefficient = std::fabs(tangentError) <= R_STATIC_FRICTION_SPEED
           ? contact.staticFriction : contact.dynamicFriction;
         double limit = coefficient * contact.accJn;
         double tangentResidual = 0;
         if (limit > 1e-12) {
           if (contact.accJt >= limit - 1e-12)
-            tangentResidual = std::fmax(0.0, vt);
+            tangentResidual = std::fmax(0.0, tangentError);
           else if (contact.accJt <= -limit + 1e-12)
-            tangentResidual = std::fmax(0.0, -vt);
+            tangentResidual = std::fmax(0.0, -tangentError);
           else
-            tangentResidual = std::fabs(vt);
+            tangentResidual = std::fabs(tangentError);
         }
         return std::fmax(normalResidual, tangentResidual);
       };
@@ -1080,11 +1081,23 @@
     ContactCache& nextContacts = nextContactCacheScratch;
     nextContacts.clear();
     nextContacts.reserve(previousContacts.size());
-    for (const Contact& contact : contacts) {
-      double lax, lay, lbx, lby;
-      localAnchors(contact, lax, lay, lbx, lby);
+    for (Contact& contact : contacts) {
+      double rvx = contact.a->vx - contact.a->omega * contact.ray;
+      double rvy = contact.a->vy + contact.a->omega * contact.rax;
+      if (contact.b) {
+        rvx -= rigidContactVx(contact.b)
+             - rigidContactOmega(contact.b) * contact.rby;
+        rvy -= rigidContactVy(contact.b)
+             + rigidContactOmega(contact.b) * contact.rbx;
+      }
+      double vt = rvx * -contact.ny + rvy * contact.nx;
+      if (std::fabs(vt) > R_FRICTION_ANCHOR_CAPTURE_SPEED)
+        localAnchors(contact,
+          contact.frictionLax, contact.frictionLay,
+          contact.frictionLbx, contact.frictionLby);
       nextContacts[cacheKey(contact, contact.normalBucket)].push_back({
-        lax, lay, lbx, lby, contact.nx, contact.ny,
+        contact.frictionLax, contact.frictionLay,
+        contact.frictionLbx, contact.frictionLby, contact.nx, contact.ny,
         contact.accJn, contact.accJt, contact.dt, 0, false,
       });
     }

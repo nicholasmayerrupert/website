@@ -160,8 +160,11 @@
     Body* A = contact.a;
     lax = contact.rax * A->cs + contact.ray * A->sn;
     lay = -contact.rax * A->sn + contact.ray * A->cs;
-    lbx = lby = 0;
-    if (!contact.b) return;
+    if (!contact.b) {
+      lbx = A->px + contact.rax;
+      lby = A->py + contact.ray;
+      return;
+    }
     Body* B = contact.b;
     double bcs = contact.bIntegrated ? B->cs : std::cos(B->angle);
     double bsn = contact.bIntegrated ? B->sn : std::sin(B->angle);
@@ -182,6 +185,10 @@
     if (found == previousContacts.end()) return;
     double lax, lay, lbx, lby;
     localAnchors(contact, lax, lay, lbx, lby);
+    contact.frictionLax = lax;
+    contact.frictionLay = lay;
+    contact.frictionLbx = lbx;
+    contact.frictionLby = lby;
     CachedContact* best = nullptr;
     double bestDistance = 1e18;
     for (CachedContact& cached : found->second) {
@@ -214,6 +221,45 @@
     else if (contact.accJt < -maxFriction) contact.accJt = -maxFriction;
     contact.persisted = true;
     contact.targetVn = 0;
+    contact.frictionLax = best->lax;
+    contact.frictionLay = best->lay;
+    contact.frictionLbx = best->lbx;
+    contact.frictionLby = best->lby;
+    double anchorAx = contact.a->px
+      + best->lax * contact.a->cs - best->lay * contact.a->sn;
+    double anchorAy = contact.a->py
+      + best->lax * contact.a->sn + best->lay * contact.a->cs;
+    double anchorBx = best->lbx, anchorBy = best->lby;
+    if (contact.b) {
+      double bcs = contact.bIntegrated
+        ? contact.b->cs : std::cos(contact.b->angle);
+      double bsn = contact.bIntegrated
+        ? contact.b->sn : std::sin(contact.b->angle);
+      anchorBx = contact.b->px + best->lbx * bcs - best->lby * bsn;
+      anchorBy = contact.b->py + best->lbx * bsn + best->lby * bcs;
+    }
+    double tx = -contact.ny, ty = contact.nx;
+    double separation = (anchorAx - anchorBx) * tx
+                      + (anchorAy - anchorBy) * ty;
+    double rvx = contact.a->vx - contact.a->omega * contact.ray;
+    double rvy = contact.a->vy + contact.a->omega * contact.rax;
+    if (contact.b) {
+      rvx -= rigidContactVx(contact.b)
+           - rigidContactOmega(contact.b) * contact.rby;
+      rvy -= rigidContactVy(contact.b)
+           + rigidContactOmega(contact.b) * contact.rbx;
+    }
+    double vt = rvx * tx + rvy * ty;
+    if (!contact.b
+        && std::fabs(separation) <= R_FRICTION_ANCHOR_MAX_SEPARATION
+        && std::fabs(vt) <= R_FRICTION_ANCHOR_CAPTURE_SPEED) {
+      contact.frictionTargetVt = -R_FRICTION_ANCHOR_BETA
+        * separation / std::fmax(dt, 1e-9);
+      contact.frictionTargetVt = std::fmax(
+        -R_FRICTION_ANCHOR_MAX_SPEED,
+        std::fmin(R_FRICTION_ANCHOR_MAX_SPEED,
+                  contact.frictionTargetVt));
+    }
   };
   // Each layer owns its integration pass, but a joint body's collision shape is
   // present in both grids. Resolve owner-marked contacts against the peer's real

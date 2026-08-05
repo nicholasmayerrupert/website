@@ -681,7 +681,7 @@ struct Player {
 // Player snapshot layout: PS_* offsets / PS_STRIDE in abi.generated.hpp.
 
 // Rigid-body tunables.
-static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
+static const double R_GRAVITY = 0.06, R_MAX_SPEED = 12.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
 static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
@@ -730,8 +730,8 @@ static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
 static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
 static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;
 static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
-static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
-static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
+static const double R_CONTACT_LIN_DAMP = 1.0, R_CONTACT_ANG_DAMP = 1.0;
+static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_WAKE_LIN = 0.08;

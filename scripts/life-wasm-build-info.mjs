@@ -26,7 +26,7 @@ const files = [];
 for (const path of roots) await collect(path, files);
 const hash = createHash('sha256');
 for (const path of files.sort()) {
-  hash.update(relative(root, path));
+  hash.update(relative(root, path).replaceAll('\\', '/'));
   hash.update('\0');
   hash.update(await readFile(path));
   hash.update('\0');

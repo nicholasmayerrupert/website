@@ -52,19 +52,23 @@
         return true;
     return false;
   }
-  bool bodyBakeRetryDeferred(Layer* lay) {
+  bool bodyBakeRetryDeferred(Layer* lay, Body* body) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
       if (bodyContainsMaterial(b, TNT)) return true;
-    return layerHasFallingComponents(lay);
+    // Blast debris completes its local stable-raster/support proof while
+    // unrelated static components are still settling elsewhere in the layer.
+    return !body->blastDebris && layerHasFallingComponents(lay);
   }
   bool bodyNeedsBakeTick(Layer* lay, Body* b) {
-    if (b->jointRole == 2 || b->awake || bodyBakeRetryDeferred(lay)
+    if (b->jointRole == 2 || b->awake || bodyBakeRetryDeferred(lay, b)
         || !bodySolidifiesToComponents(b)) return false;
-    bool rasterPending = b->bakeRasterStableTicks < R_BAKE_RASTER_TICKS;
+    // Keep one transition tick after the last stability sample so a quiet
+    // layer reaches bakeRestingBodies() instead of going inactive at the gate.
+    bool rasterPending = b->bakeRasterStableTicks <= R_BAKE_RASTER_TICKS;
     if (b->jointRole == 1 && b->jointPeer)
       rasterPending = rasterPending
-        || b->jointPeer->bakeRasterStableTicks < R_BAKE_RASTER_TICKS;
+        || b->jointPeer->bakeRasterStableTicks <= R_BAKE_RASTER_TICKS;
     return rasterPending;
   }
   // Non-consuming check: does a layer have any active row marks this step?

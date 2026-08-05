@@ -138,7 +138,10 @@
       if (fluidBodyStamp[layer][nk] == fluidBodyGeneration) continue;
       if (E.isLiquidMaterial(lay->grid[nk]))
         fluidSeeds.push_back({layer * cellCount + nk, bodyIndex});
-      else if (lay->grid[nk] == EMPTY || E.isGasMaterial(lay->grid[nk]))
+      else if (d == 2 && !(lay->infinite
+                           && (x == 0 || x == E.cols - 1))
+               && (lay->grid[nk] == EMPTY
+                   || E.isGasMaterial(lay->grid[nk])))
         fluidBodySurface[bodyIndex] = 1;
     }
   }

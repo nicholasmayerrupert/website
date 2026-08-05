@@ -1859,7 +1859,6 @@ void RigidBodySystem::bakeRestingBodies() {
   bool liveTntBody = false;
   for (Body* b : E.L->bodies)
     if (E.bodyContainsMaterial(b, TNT)) { liveTntBody = true; break; }
-  bool deferBlastBake = E.layerHasFallingComponents(E.L);
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) {
@@ -1887,7 +1886,6 @@ void RigidBodySystem::bakeRestingBodies() {
     }
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
-      && (!b->blastDebris || !deferBlastBake)
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
     bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
     bool peerGroundedContact = false;

@@ -266,7 +266,9 @@ naturallyLoose.destroy();
       structuralMaxContactStep = Math.max(structuralMaxContactStep, poseStep);
     if (rough._bodyAwake(0) && poseStep < 1e-4) {
       structuralFrozenTicks++;
-    } else if (rough._bodyAwake(0)) {
+    } else if (rough._bodyAwake(0) && poseStep >= 1e-3) {
+      // Only material motion interrupts a settling pause. Sub-millipixel
+      // convergence immediately before baking is not visible rolling.
       structuralLongestInterruptedFreeze = Math.max(
         structuralLongestInterruptedFreeze, structuralFrozenTicks);
       structuralFrozenTicks = 0;

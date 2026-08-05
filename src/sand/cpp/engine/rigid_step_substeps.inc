@@ -514,15 +514,17 @@
         };
         bool icyContact = materialAtContact(A) == ICE
           || (B && materialAtContact(B) == ICE);
+        bool streamedSideBoundary = !B && E.L->infinite
+          && (p->wx < 0 || p->wx >= E.cols);
         if (!B) {
           int tx = (int)std::floor(p->wx), ty = (int)std::floor(p->wy);
           icyContact = icyContact || (tx >= 0 && tx < E.cols
             && ty >= 0 && ty < E.rows && E.L->grid[ty * E.cols + tx] == ICE);
         }
-        double staticFriction = icyContact
-          ? R_ICE_STATIC_FRICTION : R_STATIC_FRICTION;
-        double dynamicFriction = icyContact
-          ? R_ICE_DYNAMIC_FRICTION : R_DYNAMIC_FRICTION;
+        double staticFriction = streamedSideBoundary ? 0
+          : icyContact ? R_ICE_STATIC_FRICTION : R_STATIC_FRICTION;
+        double dynamicFriction = streamedSideBoundary ? 0
+          : icyContact ? R_ICE_DYNAMIC_FRICTION : R_DYNAMIC_FRICTION;
         Contact contact{
           A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
           p->childA, p->childB, p->featureA, p->featureB,

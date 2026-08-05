@@ -90,6 +90,7 @@ class ForceSystem {
   struct NeutroniumKdNode {
     int seed = -1, left = -1, right = -1, bestDominanceSeed = -1;
     float minX = 0, minY = 0, maxX = 0, maxY = 0;
+    int gridMinX = 0, gridMinY = 0, gridMaxX = 0, gridMaxY = 0;
   };
 
   Engine& E;
@@ -137,6 +138,7 @@ class ForceSystem {
   bool neutroniumSourceDominates(int seedIndex, int targetNeutroniumCells,
                                  int targetBodyLayer,
                                  int targetBodyId) const;
+  int nearestGridNeutronium(int x, int y) const;
   int nearestDominantNeutronium(double x, double y,
                                 int targetNeutroniumCells,
                                 int targetBodyLayer,

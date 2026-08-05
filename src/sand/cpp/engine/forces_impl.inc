@@ -535,6 +535,7 @@ int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
   const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
   neutroniumKdNodes.push_back({
     seedIndex, -1, -1, seedIndex, seed.x, seed.y, seed.x, seed.y,
+    seed.gridX, seed.gridY, seed.gridX, seed.gridY,
   });
   int left = buildNeutroniumKdNode(begin, middle, depth + 1);
   int right = buildNeutroniumKdNode(middle + 1, end, depth + 1);
@@ -568,6 +569,10 @@ int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
     node.minY = std::fmin(node.minY, child.minY);
     node.maxX = std::fmax(node.maxX, child.maxX);
     node.maxY = std::fmax(node.maxY, child.maxY);
+    node.gridMinX = imin(node.gridMinX, child.gridMinX);
+    node.gridMinY = imin(node.gridMinY, child.gridMinY);
+    node.gridMaxX = imax(node.gridMaxX, child.gridMaxX);
+    node.gridMaxY = imax(node.gridMaxY, child.gridMaxY);
     if (sourceBetter(child.bestDominanceSeed, node.bestDominanceSeed))
       node.bestDominanceSeed = child.bestDominanceSeed;
   };
@@ -590,6 +595,58 @@ void ForceSystem::buildNeutroniumIndex() {
   neutroniumKdNodes.reserve(neutroniumSeeds.size());
   neutroniumKdRoot = buildNeutroniumKdNode(
     0, (int)neutroniumKdOrder.size(), 0);
+}
+
+int ForceSystem::nearestGridNeutronium(int x, int y) const {
+  int bestSeed = -1;
+  int bestDistance2 = INT_MAX;
+  auto consider = [&](int seedIndex) {
+    const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
+    int dx = seed.gridX - x, dy = seed.gridY - y;
+    int distance2 = dx * dx + dy * dy;
+    if (distance2 > bestDistance2) return;
+    if (distance2 == bestDistance2 && bestSeed >= 0) {
+      const NeutroniumSeed& best = neutroniumSeeds[bestSeed];
+      if (seed.gridX > best.gridX
+          || (seed.gridX == best.gridX && seed.gridY > best.gridY)
+          || (seed.gridX == best.gridX && seed.gridY == best.gridY
+              && seedIndex > bestSeed))
+        return;
+    }
+    bestDistance2 = distance2;
+    bestSeed = seedIndex;
+  };
+  if (neutroniumKdRoot < 0) {
+    for (int seed = 0; seed < (int)neutroniumSeeds.size(); seed++)
+      consider(seed);
+    return bestSeed;
+  }
+  auto boundsDistance2 = [&](const NeutroniumKdNode& node) {
+    int dx = x < node.gridMinX ? node.gridMinX - x
+           : x > node.gridMaxX ? x - node.gridMaxX : 0;
+    int dy = y < node.gridMinY ? node.gridMinY - y
+           : y > node.gridMaxY ? y - node.gridMaxY : 0;
+    return dx * dx + dy * dy;
+  };
+  auto visit = [&](auto&& self, int nodeIndex) -> void {
+    if (nodeIndex < 0) return;
+    const NeutroniumKdNode& node = neutroniumKdNodes[nodeIndex];
+    if (boundsDistance2(node) > bestDistance2) return;
+    consider(node.seed);
+    int first = node.left, second = node.right;
+    int firstDistance = first >= 0
+      ? boundsDistance2(neutroniumKdNodes[first]) : INT_MAX;
+    int secondDistance = second >= 0
+      ? boundsDistance2(neutroniumKdNodes[second]) : INT_MAX;
+    if (secondDistance < firstDistance) {
+      std::swap(first, second);
+      std::swap(firstDistance, secondDistance);
+    }
+    if (firstDistance <= bestDistance2) self(self, first);
+    if (secondDistance <= bestDistance2) self(self, second);
+  };
+  visit(visit, neutroniumKdRoot);
+  return bestSeed;
 }
 
 int ForceSystem::nearestDominantNeutronium(
@@ -679,6 +736,63 @@ void ForceSystem::buildNearestNeutroniumField() {
   }
   mixHash((uint64_t)neutroniumSeeds.size());
   buildNeutroniumIndex();
+
+  // Rigid neutronium targets already use the filtered KD query because their
+  // nearest seed is commonly their own excluded body. Avoid rebuilding the
+  // loaded-window distance field when no loose cell or ordinary rigid can read
+  // it; the remaining point samples reproduce its choice through the KD index.
+  bool hasOrdinaryRigid = false;
+  int neutroniumBodyCount = 0;
+  auto noteRigidConsumers = [&](Layer& layer) {
+    for (Body* body : layer.bodies) {
+      if (body->jointRole == 2) continue;
+      if (bodyNeutroniumCellCount(body) == 0) {
+        hasOrdinaryRigid = true;
+      } else {
+        neutroniumBodyCount++;
+      }
+    }
+  };
+  noteRigidConsumers(E.fg);
+  if (E.bgEnabled) noteRigidConsumers(E.bg);
+  static constexpr int DENSE_NEUTRONIUM_BODY_COUNT = 8;
+  bool needsGridField = hasOrdinaryRigid
+                     || neutroniumBodyCount < DENSE_NEUTRONIUM_BODY_COUNT;
+  auto noteLooseConsumers = [&](Layer& layer) {
+    int gridLength = E.cols * E.rows;
+    int k = 0;
+    for (; k + 7 < gridLength && !needsGridField; k += 8) {
+      uint64_t materials = 0;
+      memcpy(&materials, layer.grid + k, sizeof(materials));
+      if (materials == 0) continue;
+      for (int lane = 0; lane < 8; lane++) {
+        uint8_t material = layer.grid[k + lane];
+        if (E.isLooseSolidMaterial(material)
+            || E.isLiquidMaterial(material)
+            || E.isGasMaterial(material)) {
+          needsGridField = true;
+          break;
+        }
+      }
+    }
+    for (; k < gridLength && !needsGridField; k++) {
+      uint8_t material = layer.grid[k];
+      needsGridField = E.isLooseSolidMaterial(material)
+                    || E.isLiquidMaterial(material)
+                    || E.isGasMaterial(material);
+    }
+  };
+  if (!needsGridField) noteLooseConsumers(E.fg);
+  if (!needsGridField && E.bgEnabled) noteLooseConsumers(E.bg);
+  if (!needsGridField) {
+    int padding = (int)std::ceil(maxRadius);
+    nearestFieldX0 = imax(0, seedMinX - padding);
+    nearestFieldX1 = imin(E.cols - 1, seedMaxX + padding);
+    nearestFieldY0 = imax(0, seedMinY - padding);
+    nearestFieldY1 = imin(E.rows - 1, seedMaxY + padding);
+    nearestFieldValid = false;
+    return;
+  }
 
   int gridLength = E.cols * E.rows;
   bool dimensionsChanged = nearestFieldCols != E.cols
@@ -922,7 +1036,7 @@ bool ForceSystem::sampleNearestNeutronium(
     double& forceX, double& forceY) const {
   forceX = forceY = 0;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows
-      || nearestNeutroniumField.empty() || neutroniumSeeds.empty())
+      || neutroniumSeeds.empty())
     return false;
   int targetLayer = layerIndex(layer);
   auto eligible = [&](int seedIndex) {
@@ -950,7 +1064,13 @@ bool ForceSystem::sampleNearestNeutronium(
              && emitter.sourceBodyId == sourceBodyId);
   };
   int gridX = (int)std::floor(x), gridY = (int)std::floor(y);
-  int fieldSeed = nearestNeutroniumField[gridY * E.cols + gridX];
+  int fieldSeed = nearestFieldValid
+               && (int)nearestNeutroniumField.size() == E.cols * E.rows
+    ? nearestNeutroniumField[gridY * E.cols + gridX] : -1;
+  if (!nearestFieldValid && gridX >= nearestFieldX0
+      && gridX <= nearestFieldX1 && gridY >= nearestFieldY0
+      && gridY <= nearestFieldY1)
+    fieldSeed = nearestGridNeutronium(gridX, gridY);
   int nearestSeed = eligible(fieldSeed) ? fieldSeed : -1;
   if (nearestSeed < 0 && targetNeutroniumCells > 0
       && target == FORCE_RIGID && neutroniumKdRoot >= 0) {

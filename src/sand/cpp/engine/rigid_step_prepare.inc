@@ -442,6 +442,7 @@
   std::vector<double> solveMinX(n), solveMinY(n), solveMaxX(n), solveMaxY(n);
   std::vector<uint64_t> solveShockKey(n);
   std::vector<uint8_t> solveHasGeneral(n);
+  std::vector<uint8_t> solveHasPeerContacts(n);
   struct PenPt {
     double wx, wy, nx, ny, depth;
     int bk = 0;

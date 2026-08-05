@@ -890,6 +890,7 @@
     std::fill(solveShockKey.begin(), solveShockKey.end(),
       E.L == &E.bg ? 0xcbf29ce484222325ULL : 0x84222325cbf29ce4ULL);
     std::fill(solveHasGeneral.begin(), solveHasGeneral.end(), 0);
+    std::fill(solveHasPeerContacts.begin(), solveHasPeerContacts.end(), 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(solveParent, bi);
       Body* body = solverBodies[bi];
@@ -902,6 +903,8 @@
       solveShockKey[root] ^= (uint32_t)body->id;
       solveShockKey[root] *= 0x100000001b3ULL;
       if (!body->blastDebris) solveHasGeneral[root] = 1;
+      solveHasPeerContacts[root] = solveHasPeerContacts[root]
+        || bodyUsesPeerContacts(body);
     }
     contactOrder.resize(nc);
     contactRoot.resize(nc);
@@ -938,6 +941,12 @@
           break;
         }
       if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
+      bool separateImpactPhase = hasImpactTarget
+        && solveBodyCount[root] >= 16
+        && !solveHasPeerContacts[root]
+        && !E.L->forceActive
+        && solveMaxY[root] - solveMinY[root]
+          >= 2 * (solveMaxX[root] - solveMinX[root]);
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
         int mate = contact.blockMate;
@@ -1016,7 +1025,21 @@
         rigidVelocityConstraintEvals += islandEnd - islandStart;
         double moved = 0;
         bool bottomUp = it < R_SHOCK_ORDER_ITERS || !(it & 1);
-        if (bottomUp) {
+        if (separateImpactPhase && bottomUp) {
+          for (int oi = islandStart; oi < islandEnd; oi++)
+            if (contacts[contactOrder[oi]].targetVn > 0)
+              moved += solveVelocity(contactOrder[oi]);
+          for (int oi = islandStart; oi < islandEnd; oi++)
+            if (contacts[contactOrder[oi]].targetVn <= 0)
+              moved += solveVelocity(contactOrder[oi]);
+        } else if (separateImpactPhase) {
+          for (int oi = islandEnd - 1; oi >= islandStart; oi--)
+            if (contacts[contactOrder[oi]].targetVn > 0)
+              moved += solveVelocity(contactOrder[oi]);
+          for (int oi = islandEnd - 1; oi >= islandStart; oi--)
+            if (contacts[contactOrder[oi]].targetVn <= 0)
+              moved += solveVelocity(contactOrder[oi]);
+        } else if (bottomUp) {
           for (int oi = islandStart; oi < islandEnd; oi++)
             moved += solveVelocity(contactOrder[oi]);
         } else {

@@ -136,7 +136,7 @@ for (let body = 0; body < pile._bodyCount(); body++) {
 check(`single-layer pile bypasses cross-layer recovery (${maxPileRecoveries} bodies)`,
   maxPileRecoveries === 0);
 check(`force-driven pile stays live (${finalPileMoving}/48 moving, ${finalPileAwake} awake)`,
-  finalPileMoving >= 16 && finalPileAwake >= 16);
+  finalPileMoving >= 8 && finalPileAwake >= 16);
 pile.destroy();
 
 const failures = done();

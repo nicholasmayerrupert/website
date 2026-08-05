@@ -980,6 +980,7 @@ bool ForceSystem::sampleNearestNeutronium(
   double distance = std::sqrt(distance2);
   double falloff = 1.0 - distance / emitter.radius;
   double magnitude = emitter.strength * falloff * falloff;
+  if (target == FORCE_RIGID && targetNeutroniumCells == 0) magnitude *= 0.5;
   if (emitter.repelTargets & target) magnitude = -magnitude;
   double inverseDistance = 1.0 / distance;
   forceX = dx * inverseDistance * magnitude;

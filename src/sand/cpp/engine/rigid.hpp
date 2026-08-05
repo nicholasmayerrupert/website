@@ -30,6 +30,7 @@ class RigidBodySystem {
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   int rigidOwnershipConflicts = 0;
+  int rigidRecoveryBodies = 0;
   int rigidPositionCorrections = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
@@ -134,6 +135,7 @@ class RigidBodySystem {
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
   void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
+  void recoverAfterCarry();
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material,
                     bool attachTouchingBodies = true);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);
@@ -258,6 +260,7 @@ class RigidBodySystem {
   std::vector<std::vector<int>> movePreviousFootprints;
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
+  std::vector<std::array<double, 3>> movePrePoses;
   std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;

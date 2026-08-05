@@ -8,6 +8,7 @@ import {
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
+import { buildCrossLayerSliverScene } from './rigid-sliver-scenario.mjs';
 
 const COLS = 768;
 const ROWS = 320;
@@ -128,6 +129,18 @@ const setups = {
   },
   'dense-neutronium-128': (engine) => {
     addDenseBodyField(engine, MAT.NEUTRONIUM);
+  },
+  'cross-layer-slivers': (engine) => {
+    buildCrossLayerSliverScene(engine, {
+      left: 204,
+      right: 564,
+      top: 18,
+      bottom: 156,
+      floorY: ROWS - 5,
+      sourceX: 384,
+      sourceY: ROWS - 40,
+      cutSpacing: 10,
+    });
   },
 };
 const scenarioArg = valueAfter('--scenario', 'all');

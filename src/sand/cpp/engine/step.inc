@@ -207,6 +207,7 @@
     std::swap(L->grid, L->next);
     std::swap(L->fallSpeed, L->nextFallSpeed);
     std::swap(L->liquidVel, L->nextLiquidVel);
+    rigid.recoverAfterCarry();
     double tRelax = emscripten_get_now();
     if (L->bodies.size() >= R_DENSE_RIGID_CARGO_BODIES
         || (tick & 1) == 0)

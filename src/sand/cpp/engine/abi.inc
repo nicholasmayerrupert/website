@@ -389,6 +389,7 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 38: return e->rigid.rigidImpactRiskBodies;
     case 39: return e->rigid.rigidOwnershipConflicts;
     case 40: return e->rigid.rigidPositionCorrections;
+    case 41: return e->rigid.rigidRecoveryBodies;
     default: return 0;
   }
 }

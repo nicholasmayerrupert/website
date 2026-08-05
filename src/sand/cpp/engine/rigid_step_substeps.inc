@@ -595,13 +595,22 @@
       Body* B = solverBodies[pair.second];
       if (!A->awake && !B->awake) continue;
       double pairDt = std::fmin(bodyDt[pair.first], bodyDt[pair.second]);
+      double relativePointTravel = (
+          std::hypot(A->vx - B->vx, A->vy - B->vy)
+          + std::fabs(A->omega) * A->maxR
+          + std::fabs(B->omega) * B->maxR) * pairDt;
+      bool speculativeCcdRisk =
+        relativePointTravel > R_SPECULATIVE_CCD_TRAVEL
+        || liquidContact[pair.first] || liquidContact[pair.second];
       bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
       bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
       ChildContactState childContactState =
         collectChildContacts(A, B, pairDt, pair.first, pair.second);
       if (childContactState == CCS_SEPARATED) continue;
       ChildBounds sweptA, sweptB;
-      if (childContactState != CCS_CURRENT) {
+      if (childContactState == CCS_NONE
+          || (childContactState == CCS_SPECULATIVE
+              && speculativeCcdRisk)) {
         sweptA = sweptBodyBounds(
           A, (*activeCurrentChildFramesA)[0],
           (*activeNextChildFramesA)[0], pairDt);
@@ -653,7 +662,11 @@
       if (childContactState != CCS_NONE
           && remembered != activePairAxes.end())
         remembered->second.age = 0;
-      if (childContactState != CCS_CURRENT) {
+      if (childContactState == CCS_SPECULATIVE && !speculativeCcdRisk)
+        rigidSpeculativeCcdSkips++;
+      if (childContactState == CCS_NONE
+          || (childContactState == CCS_SPECULATIVE
+              && speculativeCcdRisk)) {
         rigidSweepFallbacks++;
         penAcc.clear();
         collectSweep(A, B, 1, pairDt);
@@ -705,11 +718,21 @@
             || B->aabbY1 < A->aabbY0)
           continue;
         double pairDt = bodyDt[ai];
+        double relativePointTravel = (
+            std::hypot(A->vx - B->kinematicVx,
+                       A->vy - B->kinematicVy)
+            + std::fabs(A->omega) * A->maxR
+            + std::fabs(B->kinematicOmega) * B->maxR) * pairDt;
+        bool speculativeCcdRisk =
+          relativePointTravel > R_SPECULATIVE_CCD_TRAVEL
+          || liquidContact[ai];
         ChildContactState childContactState =
           collectChildContacts(A, B, pairDt, ai, -1);
         if (childContactState == CCS_SEPARATED) continue;
         ChildBounds sweptA, sweptB;
-        if (childContactState != CCS_CURRENT) {
+        if (childContactState == CCS_NONE
+            || (childContactState == CCS_SPECULATIVE
+                && speculativeCcdRisk)) {
           sweptA = sweptBodyBounds(
             A, (*activeCurrentChildFramesA)[0],
             (*activeNextChildFramesA)[0], pairDt);
@@ -728,7 +751,9 @@
             continue;
           }
         }
-        if (childContactState != CCS_CURRENT) {
+        if (childContactState == CCS_NONE
+            || (childContactState == CCS_SPECULATIVE
+                && speculativeCcdRisk)) {
           rigidSweepFallbacks++;
           penAcc.clear();
           collectSweep(A, B, 1, pairDt);
@@ -745,6 +770,8 @@
           }
           if (childContactState == CCS_NONE) continue;
         }
+        if (childContactState == CCS_SPECULATIVE && !speculativeCcdRisk)
+          rigidSpeculativeCcdSkips++;
         if (!A->awake) wakeBody(A);
         penAcc.clear();
         for (const ChildManifold& manifold : childManifoldScratch)

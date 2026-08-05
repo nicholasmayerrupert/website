@@ -192,6 +192,7 @@ export function attachTestHooks(engine) {
     shockFallbacks: t.rigidSolverDiag(ptr, 50),
     shockMaxLayers: t.rigidSolverDiag(ptr, 51),
     shockSkipped: t.rigidSolverDiag(ptr, 52),
+    speculativeCcdSkips: t.rigidSolverDiag(ptr, 53),
   });
   engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
     minIterations = 4) => t.setRigidSolverOptions(

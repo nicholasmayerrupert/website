@@ -45,6 +45,7 @@ class RigidBodySystem {
   int rigidIslands = 0, rigidBlockSolves = 0;
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
+  int rigidSpeculativeCcdSkips = 0;
   int rigidMaxChildren = 0, rigidChildTransforms = 0;
   int rigidCoherentIslands = 0, rigidDenseFallbackIslands = 0;
   int rigidTerrainRiskBodies = 0, rigidImpactRiskBodies = 0;

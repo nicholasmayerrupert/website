@@ -103,6 +103,7 @@ let spawned = 0;
 let childPairs = 0;
 let manifolds = 0;
 let sweepFallbacks = 0;
+let speculativeCcdSkips = 0;
 let contacts = 0;
 let islandBodySteps = 0;
 let globalBodySteps = 0;
@@ -135,6 +136,7 @@ for (let step = 0; step < STEPS; step++) {
   childPairs += solver.childPairs;
   manifolds += solver.childManifolds;
   sweepFallbacks += solver.sweepFallbacks;
+  speculativeCcdSkips += solver.speculativeCcdSkips;
   contacts += solver.contacts;
   islandBodySteps += solver.islandBodySteps;
   globalBodySteps += solver.globalBodySteps;
@@ -187,7 +189,7 @@ console.log(JSON.stringify({
   solver: {
     childPairs,
     manifolds,
-    sweepFallbacks,
+    sweepFallbacks, speculativeCcdSkips,
     contacts,
     islandBodySteps,
     globalBodySteps,

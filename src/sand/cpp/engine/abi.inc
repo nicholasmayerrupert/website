@@ -405,6 +405,7 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 50: return e->rigid.rigidShockFallbacks;
     case 51: return e->rigid.rigidShockMaxLayers;
     case 52: return e->rigid.rigidShockSkipped;
+    case 53: return e->rigid.rigidSpeculativeCcdSkips;
     default: return 0;
   }
 }

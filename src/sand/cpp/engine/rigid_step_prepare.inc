@@ -6,6 +6,7 @@
   rigidIslands = rigidBlockSolves = 0;
   rigidIslandBodySteps = rigidGlobalBodySteps = 0;
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
+  rigidSpeculativeCcdSkips = 0;
   rigidMaxChildren = rigidChildTransforms = 0;
   rigidCoherentIslands = rigidDenseFallbackIslands = 0;
   rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;

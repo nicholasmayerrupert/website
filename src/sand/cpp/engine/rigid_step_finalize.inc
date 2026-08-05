@@ -77,17 +77,33 @@
     if (!c.b || !c.bIntegrated || !c.a->awake || !c.b->awake) continue;
     ufUnite(islandParent, c.a->idx, c.b->idx);
   }
-  for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
+  for (int bi = 0; bi < n; bi++) {
+    islandMinStill[bi] = 1e18;
+    sleepIslandBodyCount[bi] = 0;
+  }
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
     if (!b->awake) continue;
     int r = ufFind(islandParent, bi);
+    sleepIslandBodyCount[r]++;
     double st = b->hadContact ? b->stillTicks : 0;
     if (fluidOnlySleep[bi])
       st *= (double)R_SLEEP_TICKS / R_FLUID_SLEEP_TICKS;
     if (st < islandMinStill[r]) islandMinStill[r] = st;
   }
-  for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; if (b->jointRole == 1) syncJointFollower(b); } }
+  for (int bi = 0; bi < n; bi++) {
+    Body* b = solverBodies[bi];
+    if (!b->awake) continue;
+    int root = ufFind(islandParent, bi);
+    int sleepTicks = sleepIslandBodyCount[root] >= R_ADAPTIVE_SLEEP_BODIES
+      ? R_ADAPTIVE_SLEEP_TICKS : R_SLEEP_TICKS;
+    if (islandMinStill[root] < sleepTicks) continue;
+    b->awake = false;
+    b->vx = 0;
+    b->vy = 0;
+    b->omega = 0;
+    if (b->jointRole == 1) syncJointFollower(b);
+  }
   for (int bi = 0; bi < n; bi++) {
     const LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
     if (!freeze.frozen) continue;

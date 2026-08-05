@@ -2114,7 +2114,6 @@ void RigidBodySystem::moveBodies() {
     movePreviousFootprints.resize(simulatedBodyCount);
     moveDisplaced.resize(simulatedBodyCount);
     moveStamped.resize(simulatedBodyCount);
-    movePrePoses.resize(simulatedBodyCount);
   }
   for (size_t slot = 0; slot < simulatedBodyCount; slot++) {
     movePreviousFootprints[slot].clear();
@@ -2131,10 +2130,6 @@ void RigidBodySystem::moveBodies() {
     E.L->bodyOwner[k] = -1;
   } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
   rigidClearMs = emscripten_get_now() - clearStart;
-  for (Body* b : E.L->bodies) if (b->jointRole != 2) {
-    int slot = moveBodySlotById.find(b->id)->second;
-    movePrePoses[slot] = {b->px, b->py, b->angle};
-  }
   double coreStart = emscripten_get_now();
   rigidStep(1.0);
   rigidCoreMs = emscripten_get_now() - coreStart;
@@ -2165,14 +2160,6 @@ void RigidBodySystem::moveBodies() {
     int a = adjustmentRoot(first->second);
     int b = adjustmentRoot(second->second);
     if (a != b) terrainAdjustmentParents[b] = a;
-  }
-  std::vector<uint8_t> crossLayerRoots(simulatedBodyCount, 0);
-  bool hasCrossLayerRoot = false;
-  for (Body* body : E.L->bodies) {
-    if (body->jointRole != 1) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
-    crossLayerRoots[adjustmentRoot(slot)] = 1;
-    hasCrossLayerRoot = true;
   }
   std::vector<uint8_t> adjustmentRootActive(simulatedBodyCount, 0);
   for (Body* body : E.L->bodies) {
@@ -2213,81 +2200,6 @@ void RigidBodySystem::moveBodies() {
         || bodyFootprintBlocked(body) == 0) continue;
     body->awake = true;
     body->stillTicks = 0;
-  }
-  // The previous poses were stamped without body/body overlap. If the force
-  // solver still leaves a raster conflict, restore only the affected final
-  // contact islands before any cell can be discarded by ordered stamping.
-  std::vector<uint8_t> rollbackRoots(simulatedBodyCount, 0);
-  for (int pass = 0;
-       E.L->forceActive && hasCrossLayerRoot && pass < 2; pass++) {
-    std::fill(rollbackRoots.begin(), rollbackRoots.end(), 0);
-    moveFootprint.clear();
-    bool conflict = false;
-    for (Body* body : E.L->bodies) {
-      if (body->jointRole == 2) continue;
-      int slot = moveBodySlotById.find(body->id)->second;
-      auto noteCell = [&](int x, int y, int) {
-        int k = y * E.cols + x;
-        int root = adjustmentRoot(slot);
-        auto blockedIn = [&](Layer& layer) {
-          if (layer.cellComp[k] >= 0) return true;
-          int owner = layer.bodyOwner[k];
-          if (owner == body->id
-              || (body->jointPeer && owner == body->jointPeer->id)) return false;
-          uint8_t material = layer.grid[k];
-          return material != EMPTY && !E.isGasMaterial(material)
-            && !E.isBuoyantMedium(material);
-        };
-        if (blockedIn(*E.L)
-            || (body->jointRole == 1 && blockedIn(E.bg))) {
-          if (crossLayerRoots[root]) {
-            rollbackRoots[root] = 1;
-            conflict = true;
-          }
-        }
-        int owner = E.L->bodyOwner[k];
-        if (owner < 0) {
-          E.L->bodyOwner[k] = body->id;
-          moveFootprint.push_back(k);
-          return;
-        }
-        if (owner == body->id) return;
-        auto other = moveBodySlotById.find(owner);
-        if (other == moveBodySlotById.end()) return;
-        int otherRoot = adjustmentRoot(other->second);
-        if (crossLayerRoots[root] || crossLayerRoots[otherRoot]) {
-          rollbackRoots[root] = 1;
-          rollbackRoots[otherRoot] = 1;
-          conflict = true;
-        }
-      };
-      forEachBodyCell(body, noteCell);
-      if (body->jointRole == 1 && body->jointPeer)
-        forEachBodyCell(body->jointPeer, noteCell);
-    }
-    for (int k : moveFootprint) E.L->bodyOwner[k] = -1;
-    if (!conflict) break;
-    for (Body* body : E.L->bodies) {
-      if (body->jointRole == 2) continue;
-      int slot = moveBodySlotById.find(body->id)->second;
-      if (!rollbackRoots[adjustmentRoot(slot)]) continue;
-      const std::array<double, 3>& previous = movePrePoses[slot];
-      body->px = previous[0];
-      body->py = previous[1];
-      body->angle = previous[2];
-      body->vx = body->vy = body->omega = 0;
-      body->pvx = body->pvy = body->pw = 0;
-      body->recentImpactSpeed = 0;
-      body->denseMicrostepTicks = 0;
-      body->bakeRasterStableTicks = 0;
-      body->awake = false;
-      body->stillTicks = R_SLEEP_TICKS;
-      rigidRecoveryBodies++;
-      if (body->jointRole == 1) {
-        if (body->jointPeer) body->jointPeer->bakeRasterStableTicks = 0;
-        syncJointFollower(body);
-      }
-    }
   }
   bakeRestingBodies(); // a component-backed body with a stable raster becomes static
   rigidDepenMs = emscripten_get_now() - depenStart;
@@ -2365,82 +2277,6 @@ void RigidBodySystem::moveBodies() {
     for (Body* leader : leaders) stampJointFollower(leader);
   }
   erodeBodies(moveCells);
-}
-
-void RigidBodySystem::recoverAfterCarry() {
-  // The swapped cellular buffer is the authoritative terrain raster. Rewind a
-  // blocked final-contact island before the next layer can observe its stamps.
-  if (!E.L->forceActive || E.L->bodies.empty()
-      || moveBodySlotById.empty()
-      || terrainAdjustmentParents.size() != moveBodyIds.size()) return;
-  auto adjustmentRoot = [&](int slot) {
-    int root = slot;
-    while (terrainAdjustmentParents[root] != root)
-      root = terrainAdjustmentParents[root];
-    return root;
-  };
-  std::vector<uint8_t> rollbackRoots(moveBodyIds.size(), 0);
-  std::vector<uint8_t> crossLayerRoots(moveBodyIds.size(), 0);
-  bool hasCrossLayerRoot = false;
-  for (Body* body : E.L->bodies) {
-    if (body->jointRole != 1) continue;
-    auto slot = moveBodySlotById.find(body->id);
-    if (slot != moveBodySlotById.end()) {
-      crossLayerRoots[adjustmentRoot(slot->second)] = 1;
-      hasCrossLayerRoot = true;
-    }
-  }
-  if (!hasCrossLayerRoot) return;
-  bool blocked = false;
-  for (Body* body : E.L->bodies) {
-    if (body->jointRole == 2 || bodyFootprintBlocked(body) == 0) continue;
-    auto slot = moveBodySlotById.find(body->id);
-    if (slot == moveBodySlotById.end()) continue;
-    int root = adjustmentRoot(slot->second);
-    if (!crossLayerRoots[root]) continue;
-    rollbackRoots[root] = 1;
-    blocked = true;
-  }
-  if (!blocked) return;
-
-  auto clearBodyCells = [&](Layer& layer, std::vector<int>& cells) {
-    Engine::ActiveLayerScope layerScope(E, &layer);
-    for (int k : cells) {
-      if (k < 0 || k >= E.cols * E.rows) continue;
-      if (layer.bodyOwner[k] >= 0) E.writeGridIndex(k, EMPTY);
-      layer.bodyOwner[k] = -1;
-    }
-    cells.clear();
-  };
-  Layer* movingLayer = E.L;
-  clearBodyCells(*movingLayer, movingLayer->bodyCells);
-  if (movingLayer == &E.fg)
-    clearBodyCells(E.bg, E.bg.passiveBodyCells);
-
-  for (Body* body : movingLayer->bodies) {
-    if (body->jointRole == 2) continue;
-    auto slot = moveBodySlotById.find(body->id);
-    if (slot == moveBodySlotById.end()
-        || !rollbackRoots[adjustmentRoot(slot->second)]) continue;
-    const std::array<double, 3>& previous = movePrePoses[slot->second];
-    body->px = previous[0];
-    body->py = previous[1];
-    body->angle = previous[2];
-    body->vx = body->vy = body->omega = 0;
-    body->pvx = body->pvy = body->pw = 0;
-    body->recentImpactSpeed = 0;
-    body->denseMicrostepTicks = 0;
-    body->bakeRasterStableTicks = 0;
-    body->awake = false;
-    body->stillTicks = R_SLEEP_TICKS;
-    rigidRecoveryBodies++;
-    if (body->jointRole == 1) {
-      if (body->jointPeer) body->jointPeer->bakeRasterStableTicks = 0;
-      syncJointFollower(body);
-    }
-  }
-  E.useLayer(movingLayer);
-  restampBodiesAfterStream();
 }
 
 template <class Cells>

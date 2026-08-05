@@ -135,7 +135,6 @@ class RigidBodySystem {
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
   void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
-  void recoverAfterCarry();
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material,
                     bool attachTouchingBodies = true);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);
@@ -260,7 +259,6 @@ class RigidBodySystem {
   std::vector<std::vector<int>> movePreviousFootprints;
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
-  std::vector<std::array<double, 3>> movePrePoses;
   std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;

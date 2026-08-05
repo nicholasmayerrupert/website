@@ -601,7 +601,7 @@
         collectChildContacts(A, B, pairDt, pair.first, pair.second);
       if (childContactState == CCS_SEPARATED) continue;
       ChildBounds sweptA, sweptB;
-      if (childContactState != CCS_CURRENT) {
+      if (childContactState != CCS_SEPARATED) {
         sweptA = sweptBodyBounds(
           A, (*activeCurrentChildFramesA)[0],
           (*activeNextChildFramesA)[0], pairDt);
@@ -653,7 +653,7 @@
       if (childContactState != CCS_NONE
           && remembered != activePairAxes.end())
         remembered->second.age = 0;
-      if (childContactState != CCS_CURRENT) {
+      if (childContactState != CCS_SEPARATED) {
         rigidSweepFallbacks++;
         penAcc.clear();
         collectSweep(A, B, 1, pairDt);
@@ -709,7 +709,7 @@
           collectChildContacts(A, B, pairDt, ai, -1);
         if (childContactState == CCS_SEPARATED) continue;
         ChildBounds sweptA, sweptB;
-        if (childContactState != CCS_CURRENT) {
+        if (childContactState != CCS_SEPARATED) {
           sweptA = sweptBodyBounds(
             A, (*activeCurrentChildFramesA)[0],
             (*activeNextChildFramesA)[0], pairDt);
@@ -728,7 +728,7 @@
             continue;
           }
         }
-        if (childContactState != CCS_CURRENT) {
+        if (childContactState != CCS_SEPARATED) {
           rigidSweepFallbacks++;
           penAcc.clear();
           collectSweep(A, B, 1, pairDt);

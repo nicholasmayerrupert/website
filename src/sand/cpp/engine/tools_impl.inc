@@ -253,6 +253,10 @@ void ToolSystem::finalizeStructuralPlacement(
         }
       if (touchesStatic) break;
     }
+    if (touchesStatic && E.rigid.placementTouchesBody(island)) {
+      E.finishSpawn(island, mat);
+      continue;
+    }
     if (!touchesStatic) {
       E.finishSpawn(island, mat);
       continue;

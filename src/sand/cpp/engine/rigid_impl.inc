@@ -1881,22 +1881,70 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
   // rasterized material. Each material stays an isolated component carrying the
   // same baked-assembly id, so support and cuts use the component graph without
   // merging the old body into adjacent same-material terrain.
-  bool looseSupport = bodyHasLooseSupport(b)
-                   || bodyTouchesSettledLooseComponent(b);
-  std::array<std::unordered_set<int>, TABLE> baked;
+  std::array<std::vector<int>, TABLE> baked;
+  occStamp.reset((size_t)(E.cols * E.rows));
+  occCells.clear();
+  double rasterStart = emscripten_get_now();
   forEachBodyCell(b, [&](int x, int y, int local) {
     int k = y * E.cols + x;
+    if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); }
     if (E.L->grid[k] != EMPTY && !E.componentDisplaceable(E.L->grid[k])) return; // never clobber solid terrain it came to rest against
     uint8_t material = bodyMaterialAt(b, local);
     if (material == EMPTY || material >= TABLE) return;
-    E.writeGridIndex(k, material);
-    baked[material].insert(k);
+    if (E.L->grid[k] == EMPTY) {
+      E.L->grid[k] = material;
+      if (material == NEUTRONIUM) {
+        E.L->forceSourcePresent = true;
+        E.fg.forceWakePending = E.bg.forceWakePending = true;
+      }
+    } else {
+      E.writeGridIndex(k, material);
+    }
+    baked[material].push_back(k);
+    rigidBakedCells++;
   });
+  rigidBakeRasterMs += emscripten_get_now() - rasterStart;
+  double supportStart = emscripten_get_now();
+  int solidBelow = 0, mediumBelow = 0;
+  bool settledLooseSupport = false;
+  const int offsets[4] = {-1, 1, -E.cols, E.cols};
+  for (const BodyRasterCell& cell : b->rasterBoundaryFootprint) {
+    int k = cell.y * E.cols + cell.x;
+    int y = cell.y, x = cell.x;
+    if (y + 1 >= E.rows) solidBelow++;
+    else if (!occStamp.has(k + E.cols)) {
+      uint8_t below = E.L->grid[k + E.cols];
+      if (E.isBuoyantMedium(below)) mediumBelow++;
+      else if (below != EMPTY && !E.isGasMaterial(below)) solidBelow++;
+    }
+    if (settledLooseSupport) continue;
+    for (int offset : offsets) {
+      if ((offset == -1 && x == 0) || (offset == 1 && x + 1 >= E.cols)
+          || (offset == -E.cols && y == 0)
+          || (offset == E.cols && y + 1 >= E.rows)) continue;
+      int neighbor = k + offset;
+      if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0
+          || !E.isComponentMaterial(E.L->grid[neighbor])) continue;
+      int componentId = E.L->cellComp[neighbor];
+      if (componentId < 0 || componentId >= E.comps.compCount(*E.L)) continue;
+      Comp* component = E.comps.compById(*E.L, componentId);
+      if (component && component->settledBody
+          && component->settledLooseSupport) {
+        settledLooseSupport = true;
+        break;
+      }
+    }
+  }
+  bool looseSupport = settledLooseSupport
+    || (mediumBelow > 0 && mediumBelow > solidBelow);
+  rigidBakeSupportMs += emscripten_get_now() - supportStart;
+  double registerStart = emscripten_get_now();
   for (int material = 0; material < TABLE; material++) {
     if (baked[material].empty()) continue;
     E.comps.registerBakedCells((uint8_t)material, baked[material], assemblyId,
                                E.isIceMaterial(material), looseSupport);
   }
+  rigidBakeRegisterMs += emscripten_get_now() - registerStart;
   if (b->fuseTicks > 0)
     for (int k : baked[TNT]) E.queueDetonation(k, b->fuseTicks);
 }
@@ -2003,7 +2051,8 @@ void RigidBodySystem::bakeRestingBodies() {
       keep.push_back(b);
       continue;
     }
-    bool explosiveBody = b->blastDebris || E.bodyContainsMaterial(b, TNT);
+    bool explosiveBody = b->blastDebris
+      || (liveTntBody && E.bodyContainsMaterial(b, TNT));
     if ((liveTntBody || explosiveBody) && b->awake) {
       keep.push_back(b);
       continue;
@@ -2140,7 +2189,10 @@ void RigidBodySystem::restampBodiesAfterStream() {
 void RigidBodySystem::moveBodies() {
   double bodyPhaseStart = emscripten_get_now();
   if (E.L == &E.fg) {
-    rigidCoreMs = rigidClearMs = rigidDepenMs = rigidStampMs = rigidSpillMs = 0;
+    rigidCoreMs = rigidClearMs = rigidDepenMs = rigidBakeMs = 0;
+    rigidBakeSupportMs = rigidBakeRasterMs = rigidBakeRegisterMs = 0;
+    rigidBakedCells = 0;
+    rigidStampMs = rigidSpillMs = 0;
     rigidPrepareMs = rigidFinalizeMs = 0;
     rigidContactMs = rigidSolveMs = 0;
     rigidPairContactMs = rigidTerrainContactMs = 0;
@@ -2387,9 +2439,11 @@ void RigidBodySystem::moveBodies() {
     body->awake = true;
     body->stillTicks = 0;
   }
-  bakeRestingBodies(); // a component-backed body with a stable raster becomes static
   double depenElapsed = emscripten_get_now() - depenStart;
   rigidDepenMs = rigidDepenMs + depenElapsed;
+  double bakeStart = emscripten_get_now();
+  bakeRestingBodies(); // a component-backed body with a stable raster becomes static
+  rigidBakeMs = rigidBakeMs + (emscripten_get_now() - bakeStart);
   moveCells.clear();
   moveFootprint.clear();
   double stampStart = emscripten_get_now();
@@ -2652,6 +2706,73 @@ void RigidBodySystem::applyAssemblyBodyPush(AssemblyBodyPush& plan) {
   }
 }
 
+void RigidBodySystem::collectPlacementTouchingBodyIds(
+    const std::vector<std::pair<int, int>>& cells,
+    std::unordered_set<int>& touchingIds) {
+  Layer* peer = E.bgEnabled ? (E.L == &E.fg ? &E.bg : &E.fg) : nullptr;
+  std::unordered_map<int, Body*> peerById;
+  if (peer) {
+    peerById.reserve(peer->bodies.size() * 2);
+    for (Body* body : peer->bodies) peerById[body->id] = body;
+  }
+  auto addPeerJoint = [&](int owner) {
+    auto found = peerById.find(owner);
+    if (found == peerById.end()) return;
+    Body* member = found->second;
+    if (!member->jointRole || !member->jointPeer) return;
+    touchingIds.insert(member->jointPeer->id);
+  };
+  int minX = E.cols, minY = E.rows, maxX = -1, maxY = -1;
+  for (const auto& cell : cells) {
+    if (cell.first < 0 || cell.first >= E.cols
+        || cell.second < 0 || cell.second >= E.rows) continue;
+    minX = imin(minX, cell.first); minY = imin(minY, cell.second);
+    maxX = imax(maxX, cell.first); maxY = imax(maxY, cell.second);
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      int x = cell.first + ox, y = cell.second + oy;
+      if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+      int k = y * E.cols + x;
+      int owner = E.L->bodyOwner[k];
+      if (owner >= 0) touchingIds.insert(owner);
+      if (peer && peer->bodyOwner[k] >= 0)
+        addPeerJoint(peer->bodyOwner[k]);
+    }
+  }
+  if (maxX < minX || maxY < minY) return;
+  auto addContinuousContacts = [&](const std::vector<Body*>& bodies,
+                                   bool peerJointsOnly) {
+    for (Body* member : bodies) {
+      if (peerJointsOnly && (!member->jointRole || !member->jointPeer)) continue;
+      Body* activeMember = peerJointsOnly ? member->jointPeer : member;
+      if (touchingIds.count(activeMember->id)) continue;
+      double closestX = std::fmax(minX + 0.5,
+        std::fmin(member->px, maxX + 0.5));
+      double closestY = std::fmax(minY + 0.5,
+        std::fmin(member->py, maxY + 0.5));
+      double dx = closestX - member->px, dy = closestY - member->py;
+      double reach = member->maxR + 1.0;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      member->cs = std::cos(member->angle);
+      member->sn = std::sin(member->angle);
+      for (const auto& cell : cells) {
+        if (insideBodyIndex(member, cell.first + 0.5, cell.second + 0.5) < 0)
+          continue;
+        touchingIds.insert(activeMember->id);
+        break;
+      }
+    }
+  };
+  addContinuousContacts(E.L->bodies, false);
+  if (peer) addContinuousContacts(peer->bodies, true);
+}
+
+bool RigidBodySystem::placementTouchesBody(
+    const std::vector<std::pair<int, int>>& cells) {
+  std::unordered_set<int> touchingIds;
+  collectPlacementTouchingBodyIds(cells, touchingIds);
+  return !touchingIds.empty();
+}
+
 Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells,
                                    uint8_t material, bool attachTouchingBodies) {
   if (cells.empty() || material == EMPTY || material >= TABLE) return nullptr;
@@ -2704,17 +2825,8 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
   const std::vector<std::pair<int, int>>& spawnCells = islands[0];
 
   std::unordered_set<int> touchingIds;
-  if (attachTouchingBodies) {
-    for (const auto& cell : spawnCells) {
-      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-        if (!ox && !oy) continue;
-        int x = cell.first + ox, y = cell.second + oy;
-        if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
-        int owner = E.L->bodyOwner[y * E.cols + x];
-        if (owner >= 0) touchingIds.insert(owner);
-      }
-    }
-  }
+  if (attachTouchingBodies)
+    collectPlacementTouchingBodyIds(spawnCells, touchingIds);
 
   std::vector<Body*> touching;
   bool touchesJoint = false;

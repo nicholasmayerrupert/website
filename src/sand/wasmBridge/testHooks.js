@@ -223,6 +223,11 @@ export function attachTestHooks(engine) {
     rigidFluidFacesTotal: t.rigidSolverDiag(ptr, 76),
     rigidFluidIterationsTotal: t.rigidSolverDiag(ptr, 77),
     rigidFluidDryReferencesSkipped: t.rigidSolverDiag(ptr, 78),
+    rigidBakeMs: t.rigidSolverDiag(ptr, 79),
+    rigidBakedCells: t.rigidSolverDiag(ptr, 80),
+    rigidBakeSupportMs: t.rigidSolverDiag(ptr, 81),
+    rigidBakeRasterMs: t.rigidSolverDiag(ptr, 82),
+    rigidBakeRegisterMs: t.rigidSolverDiag(ptr, 83),
   });
   engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
     minIterations = 4) => t.setRigidSolverOptions(

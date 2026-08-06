@@ -3031,18 +3031,20 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 // touching partition for grounding and later detachment; keeping the component
 // boundary preserves the exact object that produced the bake.
 void ComponentSystem::registerBakedCells(
-    uint8_t mat, std::unordered_set<int>& cells, int assemblyId,
+    uint8_t mat, const std::vector<int>& cells, int assemblyId,
     bool iceCache, bool looseSupport) {
   if (cells.empty()) return;
   E.L->componentCarryDirty = true;
   E.L->componentRegistryDirty = true;
   E.invalidateComponentIndexPatches(E.L);
   E.L->groundDirty = true;
-  std::unordered_set<int> remaining(cells.begin(), cells.end());
+  regCells.reset((size_t)E.cols * E.rows);
+  for (int k : cells) regCells.add(k);
   std::vector<int> stack;
-  while (!remaining.empty()) {
-    int seed = *remaining.begin();
-    remaining.erase(seed);
+  stack.reserve(cells.size());
+  for (int seed : cells) {
+    if (!regCells.has(seed)) continue;
+    regCells.remove(seed);
     Comp component;
     component.id = E.L->nextComponentId++;
     component.bakedAssemblyId = assemblyId;
@@ -3073,9 +3075,8 @@ void ComponentSystem::registerBakedCells(
         int nx = x + ox, ny = y + oy;
         if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
         int nk = ny * E.cols + nx;
-        auto it = remaining.find(nk);
-        if (it == remaining.end()) continue;
-        remaining.erase(it);
+        if (!regCells.has(nk)) continue;
+        regCells.remove(nk);
         stack.push_back(nk);
       }
     }

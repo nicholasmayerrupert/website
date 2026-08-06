@@ -432,6 +432,11 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 76: return e->rigid.rigidFluidFacesTotal;
     case 77: return e->rigid.rigidFluidIterationsTotal;
     case 78: return e->rigid.rigidFluidDryReferencesSkipped;
+    case 79: return e->rigid.rigidBakeMs;
+    case 80: return e->rigid.rigidBakedCells;
+    case 81: return e->rigid.rigidBakeSupportMs;
+    case 82: return e->rigid.rigidBakeRasterMs;
+    case 83: return e->rigid.rigidBakeRegisterMs;
     default: return 0;
   }
 }

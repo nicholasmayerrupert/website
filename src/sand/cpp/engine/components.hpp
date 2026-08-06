@@ -165,7 +165,7 @@ class ComponentSystem {
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax);
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
-  void registerBakedCells(uint8_t mat, std::unordered_set<int>& cells,
+  void registerBakedCells(uint8_t mat, const std::vector<int>& cells,
                           int assemblyId, bool iceCache, bool looseSupport);
   bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors, int indexedComp = -1);
   bool finishFocusedStaticErosion(const std::vector<int>& erased);

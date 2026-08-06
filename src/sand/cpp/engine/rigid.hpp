@@ -58,6 +58,10 @@ class RigidBodySystem {
   double fluidReferenceMs = 0, fluidDomainMs = 0, fluidMatrixMs = 0;
   double fluidSolveMs = 0, fluidWritebackMs = 0;
   double rigidCoreMs = 0, rigidClearMs = 0, rigidDepenMs = 0;
+  double rigidBakeMs = 0;
+  double rigidBakeSupportMs = 0, rigidBakeRasterMs = 0;
+  double rigidBakeRegisterMs = 0;
+  int rigidBakedCells = 0;
   double rigidStampMs = 0, rigidSpillMs = 0;
   double rigidPrepareMs = 0, rigidFinalizeMs = 0;
   double rigidContactMs = 0, rigidSolveMs = 0;
@@ -163,6 +167,10 @@ class RigidBodySystem {
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
   void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
+  void collectPlacementTouchingBodyIds(
+    const std::vector<std::pair<int, int>>& cells,
+    std::unordered_set<int>& touchingIds);
+  bool placementTouchesBody(const std::vector<std::pair<int, int>>& cells);
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material,
                     bool attachTouchingBodies = true);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);

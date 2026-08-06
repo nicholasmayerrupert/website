@@ -1,4 +1,5 @@
   for (int sub = 0; sub < substeps; sub++) {
+    double motionPrepStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
       int cadence = bodySubsteps[bi];
       int before = sub * cadence / substeps;
@@ -8,6 +9,25 @@
       if (activeBody[bi]) rigidIslandBodySteps++;
     }
     std::fill(solidContact.begin(), solidContact.end(), 0);
+    auto bodyMayTouchGranular = [&](Body* body) {
+      if (!terrainOccupancyReady) return true;
+      double minX, minY, maxX, maxY;
+      bodyBounds(body, 1.5, minX, minY, maxX, maxY);
+      int binX0 = imax(0, (int)std::floor(minX))
+                >> TERRAIN_RIGID_BIN_SHIFT;
+      int binY0 = imax(0, (int)std::floor(minY))
+                >> TERRAIN_RIGID_BIN_SHIFT;
+      int binX1 = imin(E.cols - 1, (int)std::floor(maxX))
+                >> TERRAIN_RIGID_BIN_SHIFT;
+      int binY1 = imin(E.rows - 1, (int)std::floor(maxY))
+                >> TERRAIN_RIGID_BIN_SHIFT;
+      if (binX1 < binX0 || binY1 < binY0) return false;
+      for (int binY = binY0; binY <= binY1; binY++)
+        for (int binX = binX0; binX <= binX1; binX++)
+          if (terrainGranularBins[binY * terrainRigidBinCols + binX])
+            return true;
+      return false;
+    };
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       double dt = bodyDt[bi];
@@ -22,7 +42,11 @@
       b->pvx = 0; b->pvy = 0; b->pw = 0;
       b->hadContact = liquidContact[bi] != 0;
       b->maxDepth = 0;
-      if (b->awake && !b->boundaryPts.empty()) {
+      bool mayTouchGranular = b->awake && !b->boundaryPts.empty()
+        && bodyMayTouchGranular(b);
+      if (b->awake && !b->boundaryPts.empty() && !mayTouchGranular)
+        rigidGranularBodiesSkipped++;
+      if (mayTouchGranular) {
         // Powder support remains a local bearing-capacity model. Liquid forces
         // have already been resolved as pressure impulses by coupleLiquids.
         double powderBottomDensityArea = 0;
@@ -84,6 +108,8 @@
       currentChildFramesValid[bi] = 0;
       nextChildPoseDt[bi] = -1;
     }
+    rigidMotionPrepMs += emscripten_get_now() - motionPrepStart;
+    double contactStart = emscripten_get_now();
     contacts.clear();
     previousRestoreKeyValid = false;
     // Penetration depth of a point that is already inside target T, measured by
@@ -239,7 +265,7 @@
       const std::vector<float>& S = b->boundarySamples;
       const std::vector<double>& radii = b->boundarySampleRadii;
       bool exactAngular = needsExactAngularSweep(b);
-      double linearSpeed = exactAngular ? std::hypot(b->vx, b->vy) : 0;
+      double linearSpeed = std::hypot(b->vx, b->vy);
       double angularSpeed = std::fabs(b->omega);
       if (!bodyHasPeerContacts) {
         // The complete substep sweep lies inside the current oriented bounds
@@ -338,9 +364,32 @@
         if (iy >= E.rows) { ox = 0; oy = -1; return; }
         terrainNormalAt(b, ix, iy, b->density, ox, oy);
       };
+      auto terrainMayOccupy = [&](double minX, double minY,
+                                  double maxX, double maxY) {
+        if (!terrainOccupancyReady) return true;
+        if (minX < 0 || minY < 0 || maxX >= E.cols || maxY >= E.rows)
+          return true;
+        int binX0 = (int)std::floor(minX) >> TERRAIN_RIGID_BIN_SHIFT;
+        int binY0 = (int)std::floor(minY) >> TERRAIN_RIGID_BIN_SHIFT;
+        int binX1 = (int)std::floor(maxX) >> TERRAIN_RIGID_BIN_SHIFT;
+        int binY1 = (int)std::floor(maxY) >> TERRAIN_RIGID_BIN_SHIFT;
+        for (int binY = binY0; binY <= binY1; binY++)
+          for (int binX = binX0; binX <= binX1; binX++)
+            if (terrainRigidBins[binY * terrainRigidBinCols + binX])
+              return true;
+        return false;
+      };
       for (size_t si = 0; si + 1 < S.size(); si += 2) {
         double lx = S[si], ly = S[si + 1];
         double sx = b->px + lx * b->cs - ly * b->sn, sy = b->py + lx * b->sn + ly * b->cs;
+        double pointTravel = (linearSpeed + angularSpeed * radii[si / 2]) * dt
+                           + R_CONTACT_SKIN;
+        rigidTerrainSamples++;
+        if (!terrainMayOccupy(sx - pointTravel, sy - pointTravel,
+                              sx + pointTravel, sy + pointTravel)) {
+          rigidTerrainSamplesSkipped++;
+          continue;
+        }
         int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
         if (solid(cx, cy)) {
           tnorm(cx, cy, nx_, ny_);
@@ -558,6 +607,7 @@
         if (bIndex >= 0) solidContact[bIndex] = 1;
       }
     };
+    double pairContactStart = emscripten_get_now();
     auto broadphaseLess = [&](int a, int b) {
       if (solverBodies[a]->aabbX0 != solverBodies[b]->aabbX0)
         return solverBodies[a]->aabbX0 < solverBodies[b]->aabbX0;
@@ -755,6 +805,8 @@
         reduceManifold(penAcc, A, B, 0, -1, pairDt);
       }
     }
+    rigidPairContactMs += emscripten_get_now() - pairContactStart;
+    double terrainContactStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       if (!activeBody[bi] || !b->awake) continue;
@@ -803,7 +855,10 @@
         }
       }
     }
+    rigidTerrainContactMs += emscripten_get_now() - terrainContactStart;
     nc = (int)contacts.size();
+    rigidContactMs += emscripten_get_now() - contactStart;
+    double solveStart = emscripten_get_now();
     if (sub + 1 == substeps) {
       for (const Contact& contact : contacts) {
         if (!contact.b || !contact.bIntegrated
@@ -820,6 +875,10 @@
       double aInvI = A->awake ? A->invInertia : 0;
       double bInvM = B && B->awake ? B->invMass : 0;
       double bInvI = B && B->awake ? B->invInertia : 0;
+      contact.aInvM = aInvM;
+      contact.aInvI = aInvI;
+      contact.bInvM = bInvM;
+      contact.bInvI = bInvI;
       double tx = -contact.ny, ty = contact.nx;
       double rnA = contact.rax * contact.ny
                  - contact.ray * contact.nx;
@@ -1151,6 +1210,8 @@
       }
     }
     previousContacts.swap(nextContacts);
+    rigidSolveMs += emscripten_get_now() - solveStart;
+    double integrateStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       if (!activeBody[bi] || !b->awake) continue;
@@ -1343,4 +1404,5 @@
         if (B->jointRole == 1) syncJointFollower(B);
       }
     }
+    rigidIntegrateMs += emscripten_get_now() - integrateStart;
   }

@@ -3,7 +3,7 @@
   // full faces remain available to the one-pass velocity reconstruction.
   fluidOperatorFaces.clear();
   fluidOperatorFaces.reserve(fluidFaces.size());
-  fluidBodyFaceIndices.clear();
+  fluidBodyOperatorFaces.clear();
   for (int faceIndex = 0; faceIndex < (int)fluidFaces.size(); faceIndex++) {
     const FluidFace& face = fluidFaces[faceIndex];
     if (face.kind == FF_INTERNAL) {
@@ -17,7 +17,12 @@
     } else if (face.kind == FF_DOMAIN) {
       fluidOperatorFaces.push_back({face.a, -1, face.inverseDensity});
     } else if (face.kind == FF_BODY) {
-      fluidBodyFaceIndices.push_back(faceIndex);
+      Body* body = bodies[face.body];
+      double cross = face.rx * face.ny - face.ry * face.nx;
+      fluidBodyOperatorFaces.push_back({
+        face.a, face.body, (double)face.nx, (double)face.ny, cross,
+        body->invMass, body->invInertia,
+      });
     }
   }
   fluidDomainMs += emscripten_get_now() - domainStart;
@@ -98,21 +103,16 @@
         output[face.a] += value[face.a] * face.inverseDensity;
       }
     }
-    for (int faceIndex : fluidBodyFaceIndices) {
-      const FluidFace& face = fluidFaces[faceIndex];
+    for (const FluidBodyOperatorFace& face : fluidBodyOperatorFaces) {
       double impulse = value[face.a];
-      Body* body = bodies[face.body];
-      double cross = face.rx * face.ny - face.ry * face.nx;
-      fluidBodyDVX[face.body] += impulse * face.nx * body->invMass;
-      fluidBodyDVY[face.body] += impulse * face.ny * body->invMass;
-      fluidBodyDW[face.body] += impulse * cross * body->invInertia;
+      fluidBodyDVX[face.body] += impulse * face.nx * face.inverseMass;
+      fluidBodyDVY[face.body] += impulse * face.ny * face.inverseMass;
+      fluidBodyDW[face.body] += impulse * face.cross * face.inverseInertia;
     }
-    for (int faceIndex : fluidBodyFaceIndices) {
-      const FluidFace& face = fluidFaces[faceIndex];
-      double cross = face.rx * face.ny - face.ry * face.nx;
+    for (const FluidBodyOperatorFace& face : fluidBodyOperatorFaces) {
       output[face.a] += fluidBodyDVX[face.body] * face.nx
                       + fluidBodyDVY[face.body] * face.ny
-                      + fluidBodyDW[face.body] * cross;
+                      + fluidBodyDW[face.body] * face.cross;
     }
     if (hasPinned)
       for (int i = 0; i < nodeCount; i++)
@@ -171,8 +171,26 @@
         std::sqrt(std::fmax(diagonal, 1e-9));
     }
     auto applyPreconditioner = [&]() {
+      if (!hasPinned) {
+        for (int i = 0; i < nodeCount; i++) {
+          double value = fluidSolveResidual[i];
+          for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
+            value -= fluidSolveLowerFactor[i][edge]
+                   * fluidSolveApplied[fluidSolveLower[i][edge]];
+          fluidSolveApplied[i] = value / fluidSolveFactorDiagonal[i];
+        }
+        for (int i = nodeCount - 1; i >= 0; i--) {
+          fluidSolvePreconditioned[i] =
+            fluidSolveApplied[i] / fluidSolveFactorDiagonal[i];
+          for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
+            fluidSolveApplied[fluidSolveLower[i][edge]] -=
+              fluidSolveLowerFactor[i][edge]
+              * fluidSolvePreconditioned[i];
+        }
+        return;
+      }
       for (int i = 0; i < nodeCount; i++) {
-        if (hasPinned && fluidSolvePinned[i]) {
+        if (fluidSolvePinned[i]) {
           fluidSolveApplied[i] = fluidSolvePreconditioned[i] = 0;
           continue;
         }
@@ -183,7 +201,7 @@
         fluidSolveApplied[i] = value / fluidSolveFactorDiagonal[i];
       }
       for (int i = nodeCount - 1; i >= 0; i--) {
-        if (hasPinned && fluidSolvePinned[i]) continue;
+        if (fluidSolvePinned[i]) continue;
         fluidSolvePreconditioned[i] =
           fluidSolveApplied[i] / fluidSolveFactorDiagonal[i];
         for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)

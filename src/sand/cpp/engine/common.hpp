@@ -347,6 +347,7 @@ struct Contact {
   double accJn, accJt, accBias;
   int blockMate;
   bool persisted;
+  double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
 };
 
 // ---- Dropped items + cosmetic particles (items.inc) ----

@@ -70,6 +70,10 @@
     referenceX = referenceColumns[referenceColumns.size() / 2].second;
   };
   for (int bodyIndex = 0; bodyIndex < (int)bodies.size(); bodyIndex++) {
+    if (bodyMinLiquidDensity[bodyIndex] >= 1e30) {
+      rigidFluidDryReferencesSkipped++;
+      continue;
+    }
     for (int layer = 0; layer < 2; layer++) {
       FluidReference& reference = fluidReferences[bodyIndex * 2 + layer];
       reference.leftX = reference.rightX = -1;
@@ -130,14 +134,13 @@
       break;
     }
   }
-  auto domainRadius = [&] {
-    if (iceCoupling) return R_FLUID_ICE_DOMAIN_RADIUS;
-    if (wetBodyCount >= R_FLUID_DENSE_BATCH_BODIES)
-      return R_FLUID_DENSE_DOMAIN_RADIUS;
-    if (wetBodyCount >= R_FLUID_CORRECTOR_BATCH_BODIES)
-      return R_FLUID_BATCH_DOMAIN_RADIUS;
-    return R_FLUID_DOMAIN_RADIUS;
-  };
+  const int fluidDomainRadius = iceCoupling
+    ? R_FLUID_ICE_DOMAIN_RADIUS
+    : wetBodyCount >= R_FLUID_DENSE_BATCH_BODIES
+      ? R_FLUID_DENSE_DOMAIN_RADIUS
+      : wetBodyCount >= R_FLUID_CORRECTOR_BATCH_BODIES
+        ? R_FLUID_BATCH_DOMAIN_RADIUS
+        : R_FLUID_DOMAIN_RADIUS;
   // A deterministic multi-source flood extends a uniform near-field band from
   // wet body surfaces. Remote cells remain in the cellular solver.
   auto addNode = [&](int layer, int k, int depth, int sourceBody) {
@@ -176,7 +179,7 @@
     int nodeIndex = fluidNodeIndex[qLayer][qk];
     int depth = fluidNodeDepth[nodeIndex];
     int sourceBody = fluidNodes[nodeIndex].sourceBody;
-    if (depth >= domainRadius()) continue;
+    if (depth >= fluidDomainRadius) continue;
     int y = qk / E.cols, x = qk - y * E.cols;
     if (x > 0) addNode(qLayer, qk - 1, depth + 1, sourceBody);
     if (x + 1 < E.cols) addNode(qLayer, qk + 1, depth + 1, sourceBody);
@@ -216,7 +219,35 @@
       bodyMinLiquidDensity[bodyIndex] < body->density - 1e-6
       && bodyMaxLiquidDensity[bodyIndex] > body->density + 1e-6;
   }
-  std::sort(fluidQueue.begin(), fluidQueue.end());
+  // Packed cells are non-negative grid indices. Stable radix passes produce the
+  // same ascending order as comparison sort while keeping broad wet domains
+  // linear in their node count.
+  fluidQueueSortScratch.resize(fluidQueue.size());
+  std::vector<int>* sortSource = &fluidQueue;
+  std::vector<int>* sortTarget = &fluidQueueSortScratch;
+  static constexpr int FLUID_RADIX_BITS = 11;
+  static constexpr int FLUID_RADIX_SIZE = 1 << FLUID_RADIX_BITS;
+  static constexpr int FLUID_RADIX_MASK = FLUID_RADIX_SIZE - 1;
+  std::array<int, FLUID_RADIX_SIZE> radixCounts;
+  int radixPasses = (uint64_t)cellCount * 2 <= (1ull << 22) ? 2 : 3;
+  for (int pass = 0; pass < radixPasses; pass++) {
+    int shift = pass * FLUID_RADIX_BITS;
+    radixCounts.fill(0);
+    for (int packed : *sortSource)
+      radixCounts[((uint32_t)packed >> shift) & FLUID_RADIX_MASK]++;
+    int offset = 0;
+    for (int& count : radixCounts) {
+      int next = offset + count;
+      count = offset;
+      offset = next;
+    }
+    for (int packed : *sortSource)
+      (*sortTarget)[radixCounts[
+        ((uint32_t)packed >> shift) & FLUID_RADIX_MASK]++] = packed;
+    std::swap(sortSource, sortTarget);
+  }
+  if (sortSource != &fluidQueue)
+    fluidQueue.swap(fluidQueueSortScratch);
   fluidNodeSortScratch.clear();
   fluidNodeSortScratch.reserve(fluidNodes.size());
   for (int packed : fluidQueue) {
@@ -303,7 +334,7 @@
         2.0 / (DENSITY[node.material] + DENSITY[material]);
       // The lateral Robin coefficient represents the pressure response of the
       // unresolved reservoir between this face and the far field.
-      if (nx) face.inverseDensity /= domainRadius();
+      if (nx) face.inverseDensity /= fluidDomainRadius;
       face.boundaryPressure =
         referencePressureAt(node.sourceBody, layer, nk);
       fluidFaces.push_back(face);

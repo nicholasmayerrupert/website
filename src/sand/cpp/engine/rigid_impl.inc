@@ -630,8 +630,6 @@ double RigidBodySystem::resolveContact(Contact& c) {
 }
 double RigidBodySystem::resolveContactNormal(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double rvx = A->vx - A->omega * c.ray, rvy = A->vy + A->omega * c.rax;
   if (B) {
     rvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
@@ -645,15 +643,13 @@ double RigidBodySystem::resolveContactNormal(Contact& c) {
     double applied = newJn - c.accJn; c.accJn = newJn;
     movedN = std::fabs(applied);
     double jx = applied * c.nx, jy = applied * c.ny;
-    A->vx += jx * aInvM; A->vy += jy * aInvM; A->omega += aInvI * (c.rax * jy - c.ray * jx);
-    if (B) { B->vx -= jx * bInvM; B->vy -= jy * bInvM; B->omega -= bInvI * (c.rbx * jy - c.rby * jx); }
+    A->vx += jx * c.aInvM; A->vy += jy * c.aInvM; A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
+    if (B) { B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM; B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx); }
   }
   return movedN;
 }
 double RigidBodySystem::resolveContactFriction(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double tx = -c.ny, ty = c.nx;
   double rtvx = A->vx - A->omega * c.ray, rtvy = A->vy + A->omega * c.rax;
   if (B) {
@@ -673,8 +669,8 @@ double RigidBodySystem::resolveContactFriction(Contact& c) {
     double applied = newJt - c.accJt; c.accJt = newJt;
     movedT = std::fabs(applied);
     double jx = applied * tx, jy = applied * ty;
-    A->vx += jx * aInvM; A->vy += jy * aInvM; A->omega += aInvI * (c.rax * jy - c.ray * jx);
-    if (B) { B->vx -= jx * bInvM; B->vy -= jy * bInvM; B->omega -= bInvI * (c.rbx * jy - c.rby * jx); }
+    A->vx += jx * c.aInvM; A->vy += jy * c.aInvM; A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
+    if (B) { B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM; B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx); }
   }
   return movedT;
 }
@@ -688,10 +684,10 @@ double RigidBodySystem::resolveContactBlock(Contact& first, Contact& second) {
       || first.targetVn > 0 || second.targetVn > 0
       || spanX * spanX + spanY * spanY < R_BLOCK_SOLVE_MIN_SPAN2)
     return resolveContact(first) + resolveContact(second);
-  double aInvM = A->awake ? A->invMass : 0;
-  double aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = B && B->awake ? B->invMass : 0;
-  double bInvI = B && B->awake ? B->invInertia : 0;
+  double aInvM = first.aInvM;
+  double aInvI = first.aInvI;
+  double bInvM = first.bInvM;
+  double bInvI = first.bInvI;
   auto normalVelocity = [&](const Contact& contact) {
     double rvx = A->vx - A->omega * contact.ray;
     double rvy = A->vy + A->omega * contact.rax;
@@ -771,16 +767,14 @@ double RigidBodySystem::resolveContactBlock(Contact& first, Contact& second) {
 }
 void RigidBodySystem::applyWarmStart(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double tx = -c.ny, ty = c.nx;
   double jx = c.accJn * c.nx + c.accJt * tx;
   double jy = c.accJn * c.ny + c.accJt * ty;
-  A->vx += jx * aInvM; A->vy += jy * aInvM;
-  A->omega += aInvI * (c.rax * jy - c.ray * jx);
+  A->vx += jx * c.aInvM; A->vy += jy * c.aInvM;
+  A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
   if (B) {
-    B->vx -= jx * bInvM; B->vy -= jy * bInvM;
-    B->omega -= bInvI * (c.rbx * jy - c.rby * jx);
+    B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM;
+    B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx);
   }
 }
 double RigidBodySystem::resolveBias(Contact& c) {
@@ -788,9 +782,6 @@ double RigidBodySystem::resolveBias(Contact& c) {
   double slop = rigidContactSlop(c);
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
-  double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = (B && B->awake && c.bIntegrated) ? B->invMass : 0;
-  double bInvI = (B && B->awake && c.bIntegrated) ? B->invInertia : 0;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
   if (B && c.bIntegrated) {
     rvx -= B->pvx - B->pw * c.rby;
@@ -802,11 +793,11 @@ double RigidBodySystem::resolveBias(Contact& c) {
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
-  A->pvx += jx * aInvM; A->pvy += jy * aInvM; A->pw += aInvI * (c.rax * jy - c.ray * jx);
+  A->pvx += jx * c.aInvM; A->pvy += jy * c.aInvM; A->pw += c.aInvI * (c.rax * jy - c.ray * jx);
   if (B && c.bIntegrated) {
-    B->pvx -= jx * bInvM;
-    B->pvy -= jy * bInvM;
-    B->pw -= bInvI * (c.rbx * jy - c.rby * jx);
+    B->pvx -= jx * c.bInvM;
+    B->pvy -= jy * c.bInvM;
+    B->pw -= c.bInvI * (c.rbx * jy - c.rby * jx);
   }
   return std::fabs(applied);
 }
@@ -866,10 +857,25 @@ void RigidBodySystem::breakJointBody(Body* member) {
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
 void RigidBodySystem::rigidStep(double tickDt) {
+  double rigidStageStart = emscripten_get_now();
 #include "rigid_step_prepare.inc"
+  rigidStepPrepareMs += emscripten_get_now() - rigidStageStart;
+  rigidStageStart = emscripten_get_now();
 #include "rigid_step_contacts.inc"
+  rigidContactSetupMs += emscripten_get_now() - rigidStageStart;
+  rigidStageStart = emscripten_get_now();
 #include "rigid_step_substeps.inc"
+  rigidStageStart = emscripten_get_now();
 #include "rigid_step_finalize.inc"
+  rigidStepFinalizeMs += emscripten_get_now() - rigidStageStart;
+  rigidFluidReferenceTotalMs += fluidReferenceMs;
+  rigidFluidDomainTotalMs += fluidDomainMs;
+  rigidFluidMatrixTotalMs += fluidMatrixMs;
+  rigidFluidSolveTotalMs += fluidSolveMs;
+  rigidFluidWritebackTotalMs += fluidWritebackMs;
+  rigidFluidNodesTotal += fluidNodeCount;
+  rigidFluidFacesTotal += fluidFaceCount;
+  rigidFluidIterationsTotal += fluidPressureIterations;
   // Background contacts resolve against the physical foreground leader. Mirror
   // any resulting motion into its passive background footprint.
   if (E.L == &E.bg)
@@ -2093,6 +2099,17 @@ void RigidBodySystem::moveBodies() {
   if (E.L == &E.fg) {
     rigidCoreMs = rigidClearMs = rigidDepenMs = rigidStampMs = rigidSpillMs = 0;
     rigidPrepareMs = rigidFinalizeMs = 0;
+    rigidContactMs = rigidSolveMs = 0;
+    rigidPairContactMs = rigidTerrainContactMs = 0;
+    rigidMotionPrepMs = rigidIntegrateMs = 0;
+    rigidStepPrepareMs = rigidContactSetupMs = rigidStepFinalizeMs = 0;
+    rigidOccupancyBuildMs = rigidCadenceMs = 0;
+    rigidFluidCoupleMs = 0;
+    rigidFluidReferenceTotalMs = rigidFluidDomainTotalMs = 0;
+    rigidFluidMatrixTotalMs = rigidFluidSolveTotalMs = 0;
+    rigidFluidWritebackTotalMs = 0;
+    rigidFluidNodesTotal = rigidFluidFacesTotal = 0;
+    rigidFluidIterationsTotal = rigidFluidDryReferencesSkipped = 0;
   }
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)

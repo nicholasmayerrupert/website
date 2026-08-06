@@ -9,6 +9,8 @@
   rigidMaxChildren = rigidChildTransforms = 0;
   rigidCoherentIslands = rigidDenseFallbackIslands = 0;
   rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
+  rigidTerrainSamples = rigidTerrainSamplesSkipped = 0;
+  rigidGranularBodiesSkipped = 0;
   rigidPositionCorrections = 0;
   rigidMaxRelativeSpeed = 0;
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
@@ -36,6 +38,54 @@
   for (Body* body : solverBodies)
     rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
   int n = (int)solverBodies.size();
+  bool terrainOccupancyReady = n >= 16;
+  if (!terrainOccupancyReady)
+    for (Body* body : solverBodies)
+      if (body->nPts >= 4096
+          || body->boundarySamples.size() >= 2048
+          || body->boundaryPts.size() >= 2048) {
+        terrainOccupancyReady = true;
+        break;
+      }
+  double occupancyBuildStart = emscripten_get_now();
+  static constexpr int TERRAIN_RIGID_BIN_SHIFT = 3;
+  static constexpr int TERRAIN_RIGID_BIN_SIZE = 1 << TERRAIN_RIGID_BIN_SHIFT;
+  terrainRigidBinCols = (E.cols + TERRAIN_RIGID_BIN_SIZE - 1)
+                      >> TERRAIN_RIGID_BIN_SHIFT;
+  terrainRigidBinRows = (E.rows + TERRAIN_RIGID_BIN_SIZE - 1)
+                      >> TERRAIN_RIGID_BIN_SHIFT;
+  if (terrainOccupancyReady) {
+    terrainRigidBins.assign(
+      (size_t)terrainRigidBinCols * terrainRigidBinRows, 0);
+    terrainGranularBins.assign(
+      (size_t)terrainRigidBinCols * terrainRigidBinRows, 0);
+    for (int binY = 0; binY < terrainRigidBinRows; binY++) {
+      int y0 = binY * TERRAIN_RIGID_BIN_SIZE;
+      int y1 = imin(E.rows, y0 + TERRAIN_RIGID_BIN_SIZE);
+      for (int binX = 0; binX < terrainRigidBinCols; binX++) {
+        int x0 = binX * TERRAIN_RIGID_BIN_SIZE;
+        int x1 = imin(E.cols, x0 + TERRAIN_RIGID_BIN_SIZE);
+        bool occupied = false, granular = false;
+        for (int y = y0; y < y1 && !(occupied && granular); y++) {
+          const uint8_t* row = E.L->grid + y * E.cols;
+          for (int x = x0; x < x1; x++) {
+            int k = y * E.cols + x;
+            granular = granular || E.isLooseSolidMaterial(row[x]);
+            bool peerRigid = E.L == &E.fg && E.bgEnabled
+              && (E.bg.bodyOwner[k] >= 0
+                  || E.isRigidMaterialClass(E.bg.grid[k]));
+            if (E.isRigidMaterialClass(row[x]) || peerRigid)
+              occupied = true;
+            if (occupied && granular) break;
+          }
+        }
+        int bin = binY * terrainRigidBinCols + binX;
+        terrainRigidBins[bin] = occupied;
+        terrainGranularBins[bin] = granular;
+      }
+    }
+  }
+  rigidOccupancyBuildMs += emscripten_get_now() - occupancyBuildStart;
   std::vector<int> islandParent(n);
   std::vector<uint8_t> priorRasterRisk(n, 0);
   std::vector<double> priorImpactSpeed(n, 0);
@@ -86,6 +136,7 @@
   double fluidInitialStart = emscripten_get_now();
   bool coupledLiquid = coupleLiquids(solverBodies, tickDt);
   fluidInitialMs = emscripten_get_now() - fluidInitialStart;
+  rigidFluidCoupleMs += fluidInitialMs;
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     liquidContact[bi] = body->hadContact;
@@ -235,6 +286,7 @@
   // Build conservative tick islands before sub-stepping. Candidate bodies share
   // one cadence; unrelated slow islands no longer inherit the fastest body's
   // rotational or translational substep count.
+  double cadenceStart = emscripten_get_now();
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
   double globalPointSpeed = 0;
   double denseFrameVx = 0, denseFrameVy = 0;
@@ -430,6 +482,7 @@
     }
   }
   rigidSubsteps = substeps;
+  rigidCadenceMs += emscripten_get_now() - cadenceStart;
   rigidGlobalBodySteps = n * substeps;
   std::vector<Contact>& contacts = solverContactScratch;
   contacts.clear();

@@ -111,6 +111,8 @@
     "bench:eraser": "node scripts/bench-eraser.mjs",
     "bench:sand": "node scripts/bench-sand.mjs",
     "bench:neutronium": "node scripts/bench-neutronium.mjs",
+    "bench:rigid-brutal": "node scripts/bench-rigid-brutal.mjs",
+    "bench:rigid-brutal:compare": "node scripts/bench-rigid-brutal.mjs --compare bench/rigid-brutal-baseline.json",
     "bench:life": "node scripts/bench-life.mjs",
     "bench:fire-plant": "node scripts/bench-fire-plant.mjs",
     "bench:sand:compare": "node scripts/bench-sand.mjs --compare bench/baseline.json",

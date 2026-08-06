@@ -39,6 +39,7 @@
     double fluidCorrectorStart = emscripten_get_now();
     bool correctedLiquid = coupleLiquids(fluidCorrectorBodies, 0);
     fluidCorrectorMs = emscripten_get_now() - fluidCorrectorStart;
+    rigidFluidCoupleMs += fluidCorrectorMs;
     if (correctedLiquid) {
       fluidCorrectorPasses++;
       for (int bi = 0; bi < (int)fluidCorrectorBodies.size(); bi++) {

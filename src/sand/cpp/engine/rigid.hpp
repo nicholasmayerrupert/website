@@ -49,6 +49,8 @@ class RigidBodySystem {
   int rigidMaxChildren = 0, rigidChildTransforms = 0;
   int rigidCoherentIslands = 0, rigidDenseFallbackIslands = 0;
   int rigidTerrainRiskBodies = 0, rigidImpactRiskBodies = 0;
+  int rigidTerrainSamples = 0, rigidTerrainSamplesSkipped = 0;
+  int rigidGranularBodiesSkipped = 0;
   double rigidMaxRelativeSpeed = 0;
   int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
   int fluidCorrectorPasses = 0, fluidCorrectorBodyCount = 0;
@@ -58,6 +60,18 @@ class RigidBodySystem {
   double rigidCoreMs = 0, rigidClearMs = 0, rigidDepenMs = 0;
   double rigidStampMs = 0, rigidSpillMs = 0;
   double rigidPrepareMs = 0, rigidFinalizeMs = 0;
+  double rigidContactMs = 0, rigidSolveMs = 0;
+  double rigidPairContactMs = 0, rigidTerrainContactMs = 0;
+  double rigidMotionPrepMs = 0, rigidIntegrateMs = 0;
+  double rigidStepPrepareMs = 0, rigidContactSetupMs = 0;
+  double rigidStepFinalizeMs = 0;
+  double rigidOccupancyBuildMs = 0, rigidCadenceMs = 0;
+  double rigidFluidCoupleMs = 0;
+  double rigidFluidReferenceTotalMs = 0, rigidFluidDomainTotalMs = 0;
+  double rigidFluidMatrixTotalMs = 0, rigidFluidSolveTotalMs = 0;
+  double rigidFluidWritebackTotalMs = 0;
+  int rigidFluidNodesTotal = 0, rigidFluidFacesTotal = 0;
+  int rigidFluidIterationsTotal = 0, rigidFluidDryReferencesSkipped = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
   double rigidMaxVelocityResidual = 0, rigidMaxBiasResidual = 0;
@@ -217,6 +231,9 @@ class RigidBodySystem {
   std::vector<int> broadphaseOrderScratch;
   std::vector<std::pair<int, int>> broadphasePairScratch;
   std::array<std::vector<int>, 2> broadphaseBodyIds;
+  std::vector<uint8_t> terrainRigidBins;
+  std::vector<uint8_t> terrainGranularBins;
+  int terrainRigidBinCols = 0, terrainRigidBinRows = 0;
 
   struct FluidNode {
     Layer* layer = nullptr;
@@ -246,6 +263,10 @@ class RigidBodySystem {
     int a, b;
     double inverseDensity;
   };
+  struct FluidBodyOperatorFace {
+    int a, body;
+    double nx, ny, cross, inverseMass, inverseInertia;
+  };
   struct FluidReference {
     int leftX = -1, rightX = -1;
   };
@@ -259,7 +280,7 @@ class RigidBodySystem {
   std::vector<FluidNode> fluidNodeSortScratch;
   std::vector<FluidFace> fluidFaces;
   std::vector<FluidOperatorFace> fluidOperatorFaces;
-  std::vector<int> fluidBodyFaceIndices;
+  std::vector<FluidBodyOperatorFace> fluidBodyOperatorFaces;
   std::vector<FluidReference> fluidReferences;
   std::array<std::vector<double>, 2> fluidReferencePressure;
   std::array<std::vector<uint8_t>, 2> fluidReferenceColumnState;
@@ -273,7 +294,7 @@ class RigidBodySystem {
   std::vector<std::array<double, 2>> fluidSolveLowerFactor;
   std::vector<uint8_t> fluidSolveLowerCount;
   std::vector<uint8_t> fluidSolvePinned;
-  std::vector<int> fluidQueue, fluidNodeDepth;
+  std::vector<int> fluidQueue, fluidQueueSortScratch, fluidNodeDepth;
   std::vector<FluidSeed> fluidSeeds;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;

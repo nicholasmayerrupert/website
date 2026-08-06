@@ -341,7 +341,8 @@ void ForceSystem::prepareLooseCachesAndDirtyBins() {
 
 void ForceSystem::wakeAffectedTargets(
     Layer* layer, const std::vector<uint8_t>* bins,
-    bool updateCoverage, bool wakeReleased) {
+    bool updateCoverage, bool wakeReleased,
+    const std::vector<uint8_t>* releasedBins) {
   double wakeStart = emscripten_get_now();
   int index = layerIndex(layer);
   std::array<double, 256>& minForce = looseMinForce[index];
@@ -355,6 +356,9 @@ void ForceSystem::wakeAffectedTargets(
     bool selected = bins ? bin < (int)bins->size() && (*bins)[bin]
       : binAffectsLayer(states[0], bin, targetLayer)
         || binAffectsLayer(states[1], bin, targetLayer);
+    bool released = releasedBins && bin < (int)releasedBins->size()
+      && (*releasedBins)[bin];
+    selected = selected || released;
     if (!selected)
       continue;
     int chunkX = bin % E.chunkCols, chunkY = bin / E.chunkCols;
@@ -372,7 +376,7 @@ void ForceSystem::wakeAffectedTargets(
         if (!target) continue;
         double forceX, forceY;
         bool active = sampleLoose(layer, x, y, target, forceX, forceY);
-        if (!active && !wakeReleased) continue;
+        if (!active && !wakeReleased && !released) continue;
         if (active && updateCoverage) {
           double magnitude = std::hypot(forceX, forceY);
           if (magnitude < minForce[material]) minForce[material] = magnitude;
@@ -395,7 +399,8 @@ void ForceSystem::wakeAffectedTargets(
     if (bins && !bodyTouchesBins(body, *bins)) continue;
     double forceX, forceY;
     bool active = sampleBody(layer, body, forceX, forceY);
-    if (!active && !wakeReleased) continue;
+    bool bodyReleased = releasedBins && bodyTouchesBins(body, *releasedBins);
+    if (!active && !wakeReleased && !bodyReleased) continue;
     E.markLayerRowSpan(layer, y, x, x);
   }
   // Pressure-driven tangential flow stays enabled while a material's force
@@ -980,7 +985,8 @@ void ForceSystem::prepareWorldTick() {
     bool coverageDue = looseCoverageTick[index] < 0
       || E.tick - looseCoverageTick[index] >= COVERAGE_SCAN_CADENCE;
     if (fullWake || coverageDue) {
-      wakeAffectedTargets(layer, nullptr, true, false);
+      wakeAffectedTargets(layer, nullptr, true, false, &changedBins[index]);
+      return;
     }
     // A changed bin can contain both the new field and cells just outside a
     // swept/contracted old field. Revisit only those bins to release the latter.
@@ -1071,7 +1077,12 @@ bool ForceSystem::sampleNearestNeutronium(
       && gridX <= nearestFieldX1 && gridY >= nearestFieldY0
       && gridY <= nearestFieldY1)
     fieldSeed = nearestGridNeutronium(gridX, gridY);
-  int nearestSeed = eligible(fieldSeed) ? fieldSeed : -1;
+  // Loose cells and ordinary actors exclude no neutronium body. Every
+  // nearest-neutronium emitter targets all materials and both layers, so the
+  // distance field's seed is already eligible on this dominant hot path.
+  bool unrestrictedTarget = sourceBodyId < 0 && targetNeutroniumCells == 0;
+  int nearestSeed = unrestrictedTarget
+    ? fieldSeed : eligible(fieldSeed) ? fieldSeed : -1;
   if (nearestSeed < 0 && targetNeutroniumCells > 0
       && target == FORCE_RIGID && neutroniumKdRoot >= 0) {
     nearestSeed = nearestDominantNeutronium(

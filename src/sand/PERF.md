@@ -14,6 +14,7 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
 | `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava, rigid piles, stable contacts, and 128-body dense fields. |
+| `npm run bench:rigid-brutal:compare` | Compare blast-carved cross-layer chunks, irregular RIGID bodies, moving neutronium, active water, tail latency, and 60 Hz backlog pressure. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, two-axis cell stability, and parallax rigidity. |
 | `npm run bench:actor-rigid:compare` | Check dense player/creature cadence plus kinematic body contacts, crushes, and actor/body determinism. |
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
@@ -129,7 +130,10 @@ component registration, and generation/restoration. Browser presentation exposes
   source signatures restrict moving/removed-field wakes to the swept bins; local
   force retries mark only their own dirty cell. Periodic coverage scans gather the
   minimum force and quadrant balance used by pressure flow without keeping the
-  whole field scheduled. Static blocked cells park without rescheduling the layer,
+  whole field scheduled. Coverage passes scan the union of affected and released
+  bins once, and unrestricted loose-cell samples consume the nearest-field seed
+  without rigid-body dominance checks. Static blocked cells park without
+  rescheduling the layer,
   while already-awake rigid bodies retain their solver sleep progress when force
   is applied. Sleeping rigid contact islands ignore an unchanged force field and
   wake when their covered source-bin signature changes. Moving neutronium
@@ -168,6 +172,10 @@ component registration, and generation/restoration. Browser presentation exposes
   beyond the cutoff. Mixed-liquid interfaces extend only the affected body's
   projection to a fixed 24-cell radius; cutoff faces use the adjacent density
   and the column's stratified pressure.
+  Bodies with no adjacent liquid skip hydrostatic reference construction. Domain
+  nodes regain deterministic grid order through stable linear radix passes, and
+  the repeated body-boundary operator stores its invariant normal, lever arm,
+  mass, and inertia data in one compact face stream.
   Pressure Krylov vectors use contiguous storage, the common unpinned iteration
   keeps its convergence and direction updates SIMD-vectorized, and the repeated
   matrix pass traverses compact dynamic faces. Extended ice projections resolve
@@ -209,6 +217,12 @@ component registration, and generation/restoration. Browser presentation exposes
 - Each contact stores its substep-constant inverse normal, tangent, and
   positional effective masses. Solver iterations reuse them instead of
   rebuilding and dividing by the same mass and inertia expression.
+- Dense rigid scenes and bodies with at least 4,096 occupied cells build a
+  conservative 8x8 terrain/material occupancy map. Swept terrain samples whose
+  complete travel bounds miss every rigid bin are rejected before grid contact,
+  and bodies whose transformed bounds miss every powder bin skip granular edge
+  sampling. Small scenes retain direct probes so map construction cannot become
+  their fixed cost.
 - Large rotating bodies and long beams use exact angular sample trajectories.
   Compact bodies use tangent sweeps to keep the common debris path inexpensive;
   long and filled masks still receive convex-corner samples. Immutable sample

@@ -151,7 +151,8 @@ class ForceSystem {
   uint64_t forceBinSignature(int bin, uint8_t targetLayer) const;
   void prepareLooseCachesAndDirtyBins();
   void wakeAffectedTargets(Layer* layer, const std::vector<uint8_t>* bins,
-                           bool updateCoverage, bool wakeReleased);
+                           bool updateCoverage, bool wakeReleased,
+                           const std::vector<uint8_t>* releasedBins = nullptr);
   bool sampleState(const LayerState& state, double x, double y,
                    uint8_t target, uint8_t targetLayer, int sourceBodyId,
                    double& forceX, double& forceY) const;

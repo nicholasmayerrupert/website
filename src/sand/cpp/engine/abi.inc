@@ -408,6 +408,30 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 52: return e->rigid.rigidShockSkipped;
     case 53: return e->rigid.rigidPrepareMs;
     case 54: return e->rigid.rigidFinalizeMs;
+    case 55: return e->rigid.rigidContactMs;
+    case 56: return e->rigid.rigidSolveMs;
+    case 57: return e->rigid.rigidPairContactMs;
+    case 58: return e->rigid.rigidTerrainContactMs;
+    case 59: return e->rigid.rigidTerrainSamples;
+    case 60: return e->rigid.rigidTerrainSamplesSkipped;
+    case 61: return e->rigid.rigidGranularBodiesSkipped;
+    case 62: return e->rigid.rigidMotionPrepMs;
+    case 63: return e->rigid.rigidIntegrateMs;
+    case 64: return e->rigid.rigidStepPrepareMs;
+    case 65: return e->rigid.rigidContactSetupMs;
+    case 66: return e->rigid.rigidStepFinalizeMs;
+    case 67: return e->rigid.rigidOccupancyBuildMs;
+    case 68: return e->rigid.rigidCadenceMs;
+    case 69: return e->rigid.rigidFluidCoupleMs;
+    case 70: return e->rigid.rigidFluidReferenceTotalMs;
+    case 71: return e->rigid.rigidFluidDomainTotalMs;
+    case 72: return e->rigid.rigidFluidMatrixTotalMs;
+    case 73: return e->rigid.rigidFluidSolveTotalMs;
+    case 74: return e->rigid.rigidFluidWritebackTotalMs;
+    case 75: return e->rigid.rigidFluidNodesTotal;
+    case 76: return e->rigid.rigidFluidFacesTotal;
+    case 77: return e->rigid.rigidFluidIterationsTotal;
+    case 78: return e->rigid.rigidFluidDryReferencesSkipped;
     default: return 0;
   }
 }

@@ -13,7 +13,6 @@ const NAME_IDLE_MS = 10_000;
 const GAME_KEYS = new Set([
   'w', 'a', 's', 'd',
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
-  '+', '=', '-', '_', '0',
 ]);
 
 const Hero = ({ onDrawModeChange }) => {
@@ -98,6 +97,12 @@ const Hero = ({ onDrawModeChange }) => {
 
   const desktopNameHidden = !deferSand && nameHidden;
   const mobileNameDimmed = deferSand && drawModeActive;
+  const handleGamePointerDown = (event) => {
+    if (event.button !== 0 && event.button !== 2) return;
+    const path = event.nativeEvent.composedPath?.() || [];
+    if (!path.some((node) => node?.classList?.contains('sg-sim'))) return;
+    noteGameInteraction();
+  };
 
   return (
     <section ref={sectionRef} className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
@@ -112,11 +117,7 @@ const Hero = ({ onDrawModeChange }) => {
       {sandRequested && (
         <div
           className="absolute inset-0 z-10"
-          onPointerDownCapture={noteGameInteraction}
-          onPointerMoveCapture={(event) => {
-            if (event.buttons) noteGameInteraction();
-          }}
-          onWheelCapture={noteGameInteraction}
+          onPointerDownCapture={handleGamePointerDown}
         >
           <SandGame
             mode="creative"

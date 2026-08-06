@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SplitText from "./SplitText";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { SandBackground } from "./sand/react/SandBackground";
@@ -9,9 +9,18 @@ import { SandGame } from "./sand/react/SandGame";
 const PERF_ROUTE = typeof window !== 'undefined' &&
   window.location.pathname.replace(/\/+$/, '') === '/fps';
 const DEFER_SAND_QUERY = '(max-width: 767px), (pointer: coarse)';
+const NAME_IDLE_MS = 10_000;
+const GAME_KEYS = new Set([
+  'w', 'a', 's', 'd',
+  'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
+  '+', '=', '-', '_', '0',
+]);
 
 const Hero = ({ onDrawModeChange }) => {
+  const sectionRef = useRef(null);
+  const nameTimerRef = useRef(0);
   const [drawModeActive, setDrawModeActive] = useState(false);
+  const [nameHidden, setNameHidden] = useState(false);
   const deferSand = useMediaQuery(DEFER_SAND_QUERY);
   const [sandRequested, setSandRequested] = useState(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return true;
@@ -56,8 +65,42 @@ const Hero = ({ onDrawModeChange }) => {
     onDrawModeChange?.(active);
   };
 
+  const noteGameInteraction = useCallback(() => {
+    if (deferSand) return;
+    setNameHidden(true);
+    clearTimeout(nameTimerRef.current);
+    nameTimerRef.current = window.setTimeout(() => {
+      nameTimerRef.current = 0;
+      setNameHidden(false);
+    }, NAME_IDLE_MS);
+  }, [deferSand]);
+
+  useEffect(() => () => clearTimeout(nameTimerRef.current), []);
+
+  useEffect(() => {
+    if (!deferSand) return;
+    clearTimeout(nameTimerRef.current);
+    nameTimerRef.current = 0;
+    setNameHidden(false);
+  }, [deferSand]);
+
+  useEffect(() => {
+    if (deferSand) return undefined;
+    const onKeyDown = (event) => {
+      if (!GAME_KEYS.has(event.key.toLowerCase())) return;
+      const bounds = sectionRef.current?.getBoundingClientRect();
+      if (!bounds || bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
+      noteGameInteraction();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [deferSand, noteGameInteraction]);
+
+  const desktopNameHidden = !deferSand && nameHidden;
+  const mobileNameDimmed = deferSand && drawModeActive;
+
   return (
-    <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
+    <section ref={sectionRef} className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       {deferSand && (
         <SandBackground
           className={`absolute inset-0 overflow-hidden transition-opacity duration-500 ${
@@ -67,7 +110,14 @@ const Hero = ({ onDrawModeChange }) => {
       )}
 
       {sandRequested && (
-        <div className="absolute inset-0 z-10">
+        <div
+          className="absolute inset-0 z-10"
+          onPointerDownCapture={noteGameInteraction}
+          onPointerMoveCapture={(event) => {
+            if (event.buttons) noteGameInteraction();
+          }}
+          onWheelCapture={noteGameInteraction}
+        >
           <SandGame
             mode="creative"
             autoStart={startRequested}
@@ -82,9 +132,13 @@ const Hero = ({ onDrawModeChange }) => {
       {/* Text block */}
       <div
         className={`pointer-events-none absolute inset-x-0 top-20 px-6 text-center text-white transition-opacity duration-500 sm:px-12 md:top-36 lg:top-40 ${
-          drawModeActive ? 'z-0 opacity-20' : 'z-20 opacity-100'
+          desktopNameHidden
+            ? 'z-20 opacity-0'
+            : mobileNameDimmed
+              ? 'z-0 opacity-20'
+              : 'z-20 opacity-100'
         }`}
-        aria-hidden={drawModeActive}
+        aria-hidden={desktopNameHidden || mobileNameDimmed}
       >
         <SplitText
           text="NICHOLAS MAYER-RUPERT"

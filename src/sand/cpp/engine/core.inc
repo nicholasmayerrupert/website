@@ -272,10 +272,10 @@
   }
   void settleLava(int x, int y, int k) {
     if (L->next[k] != EMPTY) return;
-    bool movementAllowed = rand() < MOBILITY[LAVA];
     if (L->forceActive
-        && forces.tryMoveLoose(x, y, k, LAVA, movementAllowed))
+        && forces.tryMoveLoose(x, y, k, LAVA))
       return;
+    bool movementAllowed = rand() < MOBILITY[LAVA];
     int belowK = k + cols;
     // Viscosity limits lava's spreading, not its straight gravitational fall.
     // Downward movement and sinking use the ordinary liquid cadence while

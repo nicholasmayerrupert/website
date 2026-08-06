@@ -123,6 +123,40 @@ const createOpenSuspendedSource = () => {
   engine.destroy();
 }
 
+// Loose force motion blends adjacent cell steps according to the exact force
+// slope. Lava uses that same force cadence as other liquids, while gas uses the
+// opposite weighted heading when neutronium repels it.
+{
+  const traceLiquid = (mat) => {
+    const engine = createEngineWasm();
+    paintRect(engine, 0, 102, COLS - 1, ROWS - 1, MAT.STONE);
+    engine.paintDisc(110, 86, 15, MAT.NEUTRONIUM, true);
+    engine.paintDisc(55, 101, 0, mat, true);
+    engine.syncComponents();
+    for (let i = 0; i < 4; i++) engine.stepWorld();
+    const position = firstCell(engine, mat);
+    engine.destroy();
+    return position;
+  };
+  const water = traceLiquid(MAT.WATER);
+  const lava = traceLiquid(MAT.LAVA);
+  check(`shallow liquid attraction retains its vertical component (${water?.x},${water?.y})`,
+    water?.x > 55 && water?.y < 101);
+  check(`lava matches the ordinary-liquid force cadence (${lava?.x},${lava?.y})`,
+    lava?.x === water?.x && lava?.y === water?.y);
+
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 102, COLS - 1, ROWS - 1, MAT.STONE);
+  engine.paintDisc(110, 86, 15, MAT.NEUTRONIUM, true);
+  engine.paintDisc(55, 74, 0, MAT.METHANE, true);
+  engine.syncComponents();
+  for (let i = 0; i < 12; i++) engine.stepWorld();
+  const methane = firstCell(engine, MAT.METHANE);
+  check(`shallow gas repulsion retains its vertical component (${methane?.x},${methane?.y})`,
+    methane?.x <= 45 && methane?.y < 74);
+  engine.destroy();
+}
+
 // Material arriving from one direction spreads along force tangents once its
 // inward path is pressure-blocked, allowing it to wrap around the source.
 for (const [label, mat, limit] of [

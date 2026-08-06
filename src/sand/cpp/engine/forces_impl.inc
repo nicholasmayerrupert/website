@@ -1240,21 +1240,37 @@ bool ForceSystem::sampleActor(
 }
 
 int ForceSystem::looseMoveCandidates(
-    double forceX, double forceY,
+    double forceX, double forceY, double directionPhase,
     std::array<std::pair<int, int>, 3>& moves) const {
   int stepX = forceX > 1e-9 ? 1 : (forceX < -1e-9 ? -1 : 0);
   int stepY = forceY > 1e-9 ? 1 : (forceY < -1e-9 ? -1 : 0);
   double absX = std::fabs(forceX), absY = std::fabs(forceY);
   int moveCount = 0;
-  if (stepX && stepY && absX * 3 > absY && absY * 3 > absX)
-    moves[moveCount++] = {stepX, stepY};
-  if (absX >= absY) {
-    if (stepX) moves[moveCount++] = {stepX, 0};
+  if (!stepX) {
     if (stepY) moves[moveCount++] = {0, stepY};
-  } else {
-    if (stepY) moves[moveCount++] = {0, stepY};
-    if (stepX) moves[moveCount++] = {stepX, 0};
+    return moveCount;
   }
+  if (!stepY) {
+    moves[moveCount++] = {stepX, 0};
+    return moveCount;
+  }
+
+  std::pair<int, int> major = absX >= absY
+    ? std::make_pair(stepX, 0) : std::make_pair(0, stepY);
+  std::pair<int, int> minor = absX >= absY
+    ? std::make_pair(0, stepY) : std::make_pair(stepX, 0);
+  std::pair<int, int> diagonal = {stepX, stepY};
+  // Weight adjacent lattice steps by the force slope. Across cells, their
+  // average displacement follows the full force angle.
+  double diagonalShare = std::fmin(absX, absY) / std::fmax(absX, absY);
+  if (directionPhase < diagonalShare) {
+    moves[moveCount++] = diagonal;
+    moves[moveCount++] = major;
+  } else {
+    moves[moveCount++] = major;
+    moves[moveCount++] = diagonal;
+  }
+  moves[moveCount++] = minor;
   return moveCount;
 }
 
@@ -1289,7 +1305,7 @@ void ForceSystem::applyBodyForces() {
 }
 
 bool ForceSystem::tryMoveLoose(
-    int x, int y, int k, uint8_t material, bool movementAllowed) {
+    int x, int y, int k, uint8_t material) {
   uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
                  : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
@@ -1310,7 +1326,11 @@ bool ForceSystem::tryMoveLoose(
     return true;
   }
   std::array<std::pair<int, int>, 3> moves;
-  int moveCount = looseMoveCandidates(forceX, forceY, moves);
+  uint32_t directionSeed = E.L->worldSeed ^ 0x444952u;
+  double directionPhase = whash2(directionSeed, E.L->worldOffsetX + x,
+                                 E.L->worldOffsetY + y);
+  int moveCount = looseMoveCandidates(
+    forceX, forceY, directionPhase, moves);
   auto canEnter = [&](int toK, bool followPressureVacancy = false) {
     if (E.isLiquidMaterial(material)) {
       // Radial moves reject same-material vacancies because they are not new
@@ -1444,14 +1464,6 @@ bool ForceSystem::tryMoveLoose(
     // is persistent and may sleep once the repulsive field has packed it.
     if (E.isGasMaterial(material) && material != METHANE)
       E.markCellIndex(k);
-    return true;
-  }
-
-  if (!movementAllowed) {
-    E.L->next[k] = material;
-    E.L->nextFallSpeed[k] = 0;
-    E.L->nextLiquidVel[k] = 0;
-    E.markCellIndex(k);
     return true;
   }
 

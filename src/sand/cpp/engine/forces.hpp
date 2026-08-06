@@ -60,8 +60,7 @@ class ForceSystem {
   bool sampleActor(double x, double y,
                    double& forceX, double& forceY) const;
   bool overridesGravity(int x, int y, uint8_t material);
-  bool tryMoveLoose(int x, int y, int k, uint8_t material,
-                    bool movementAllowed = true);
+  bool tryMoveLoose(int x, int y, int k, uint8_t material);
 
  private:
   struct BinLink { int emitter = -1, next = -1; };
@@ -171,6 +170,6 @@ class ForceSystem {
                   double& forceX, double& forceY) const;
   bool bodyTouchesBins(const Body* body,
                        const std::vector<uint8_t>& bins) const;
-  int looseMoveCandidates(double forceX, double forceY,
+  int looseMoveCandidates(double forceX, double forceY, double directionPhase,
                           std::array<std::pair<int, int>, 3>& moves) const;
 };

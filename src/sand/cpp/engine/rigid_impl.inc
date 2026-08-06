@@ -1768,22 +1768,66 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     {0, 1},
   };
   const double savedPx = b->px, savedPy = b->py;
+  int minX = E.cols, minY = E.rows, maxX = -1, maxY = -1;
+  auto includeRaster = [&](Body* member) {
+    forEachBodyCell(member, [&](int x, int y, int) {
+      minX = imin(minX, x); minY = imin(minY, y);
+      maxX = imax(maxX, x); maxY = imax(maxY, y);
+    });
+  };
+  includeRaster(b);
+  if (b->jointRole == 1 && b->jointPeer) includeRaster(b->jointPeer);
+
+  // Translation keeps the body's angle fixed, so every possible blocker lies
+  // in this small swept AABB. Reuse those terrain cell centers for all probes.
+  std::vector<int> blockingCells;
+  if (maxX >= minX && maxY >= minY) {
+    minX = imax(0, minX - 3); minY = imax(0, minY - 3);
+    maxX = imin(E.cols - 1, maxX + 3); maxY = imin(E.rows - 1, maxY + 3);
+    blockingCells.reserve((size_t)(maxX - minX + 1) * 2);
+    auto blockedIn = [&](Layer& layer, int k) {
+      int owner = layer.bodyOwner[k];
+      if (owner == b->id
+          || (b->jointPeer && owner == b->jointPeer->id)) return false;
+      uint8_t material = layer.grid[k];
+      return material != EMPTY && !E.isGasMaterial(material)
+        && !E.isBuoyantMedium(material);
+    };
+    for (int y = minY; y <= maxY; y++) {
+      for (int x = minX; x <= maxX; x++) {
+        if (E.L->infinite && (x == 0 || x == E.cols - 1)) continue;
+        int k = y * E.cols + x;
+        if (blockedIn(*E.L, k)
+            || (b->jointRole == 1 && blockedIn(E.bg, k)))
+          blockingCells.push_back(k);
+      }
+    }
+  }
   auto place = [&](double ox, double oy) {
     b->px = savedPx + ox;
     b->py = savedPy + oy;
+    b->cs = std::cos(b->angle);
+    b->sn = std::sin(b->angle);
     if (b->jointRole == 1) syncJointFollower(b);
+  };
+  auto overlapsBlockingCell = [&]() {
+    for (int k : blockingCells) {
+      int y = k / E.cols, x = k - y * E.cols;
+      if (insideBodyIndex(b, x + 0.5, y + 0.5) >= 0) return true;
+    }
+    return false;
   };
   const double step = 0.125;
   auto clearAlong = [&](const double* direction) {
     for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
       place(direction[0] * radius, direction[1] * radius);
-      if (bodyFootprintOverlapsSolid(b)) continue;
+      if (overlapsBlockingCell()) continue;
       double blockedRadius = radius - step;
       double clearRadius = radius;
       for (int iteration = 0; iteration < 6; iteration++) {
         double middle = (blockedRadius + clearRadius) * 0.5;
         place(direction[0] * middle, direction[1] * middle);
-        if (!bodyFootprintOverlapsSolid(b)) clearRadius = middle;
+        if (!overlapsBlockingCell()) clearRadius = middle;
         else blockedRadius = middle;
       }
       place(0, 0);
@@ -1845,13 +1889,13 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     double bestRadius = radius, bestX = 0, bestY = 0;
     for (const auto& direction : directions) {
       place(direction[0] * radius, direction[1] * radius);
-      if (bodyFootprintOverlapsSolid(b)) continue;
+      if (overlapsBlockingCell()) continue;
       double blockedRadius = radius - step;
       double clearRadius = radius;
       for (int iteration = 0; iteration < 6; iteration++) {
         double middle = (blockedRadius + clearRadius) * 0.5;
         place(direction[0] * middle, direction[1] * middle);
-        if (!bodyFootprintOverlapsSolid(b)) clearRadius = middle;
+        if (!overlapsBlockingCell()) clearRadius = middle;
         else blockedRadius = middle;
       }
       if (!found || clearRadius < bestRadius) {
@@ -2766,11 +2810,105 @@ void RigidBodySystem::collectPlacementTouchingBodyIds(
   if (peer) addContinuousContacts(peer->bodies, true);
 }
 
-bool RigidBodySystem::placementTouchesBody(
-    const std::vector<std::pair<int, int>>& cells) {
+bool RigidBodySystem::anchorPlacementToStatic(
+    const std::vector<std::pair<int, int>>& cells, uint8_t material) {
+  // Static contact anchors the whole touched component-backed assembly. The
+  // placed cells share its baked assembly id across both simulated layers.
   std::unordered_set<int> touchingIds;
   collectPlacementTouchingBodyIds(cells, touchingIds);
-  return !touchingIds.empty();
+  if (touchingIds.empty()) return false;
+
+  Layer* placementLayer = E.L;
+  std::array<std::vector<Body*>, 2> selected;
+  std::array<std::unordered_set<Body*>, 2> selectedSet;
+  auto select = [&](int layerIndex, Body* body) {
+    if (selectedSet[layerIndex].insert(body).second)
+      selected[layerIndex].push_back(body);
+  };
+  for (Body* member : placementLayer->bodies) {
+    if (!touchingIds.count(member->id)) continue;
+    Body* leader = member->jointRole == 2 ? member->jointPeer : member;
+    if (!leader || !bodyFullyInsideLoadedWindow(leader)
+        || !bodySolidifies(leader)
+        || (leader->jointPeer && !bodySolidifies(leader->jointPeer)))
+      return false;
+    if (leader->jointRole == 1 && leader->jointPeer) {
+      syncJointFollower(leader);
+      select(0, leader);
+      select(1, leader->jointPeer);
+    } else {
+      int layerIndex = placementLayer == &E.bg ? 1 : 0;
+      select(layerIndex, member);
+    }
+  }
+  if (selected[0].empty() && selected[1].empty()) return false;
+
+  auto clearSelected = [&](Layer& layer, int layerIndex) {
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    std::unordered_set<int> ids;
+    ids.reserve(selected[layerIndex].size() * 2);
+    for (Body* body : selected[layerIndex]) ids.insert(body->id);
+    auto clearCells = [&](std::vector<int>& bodyCells) {
+      std::vector<int> kept;
+      kept.reserve(bodyCells.size());
+      for (int k : bodyCells) {
+        if (k >= 0 && k < E.cols * E.rows
+            && ids.count(layer.bodyOwner[k])) {
+          E.writeGridIndex(k, EMPTY);
+          layer.bodyOwner[k] = -1;
+        } else {
+          kept.push_back(k);
+        }
+      }
+      bodyCells = std::move(kept);
+    };
+    clearCells(layer.bodyCells);
+    clearCells(layer.passiveBodyCells);
+    for (int id : ids) layer.passiveBodyIds.erase(id);
+  };
+  clearSelected(E.fg, 0);
+  clearSelected(E.bg, 1);
+
+  int assemblyId = E.nextBakedAssemblyId++;
+  for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+    Layer& layer = layerIndex ? E.bg : E.fg;
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    for (Body* body : selected[layerIndex])
+      bakeBodyToGrid(body, assemblyId);
+  }
+
+  std::vector<int> placed;
+  {
+    Engine::ActiveLayerScope layerScope(E, placementLayer);
+    placed.reserve(cells.size());
+    for (const auto& cell : cells) {
+      if (!E.isInBounds(cell.first, cell.second)) continue;
+      int k = cell.second * E.cols + cell.first;
+      if (placementLayer->grid[k] != EMPTY) continue;
+      E.writeGridIndex(k, material);
+      placed.push_back(k);
+    }
+    E.comps.registerBakedCells(material, placed, assemblyId,
+                               E.isIceMaterial(material), false);
+  }
+
+  for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+    Layer& layer = layerIndex ? E.bg : E.fg;
+    std::vector<Body*> kept;
+    kept.reserve(layer.bodies.size() - selected[layerIndex].size());
+    for (Body* body : layer.bodies) {
+      if (!selectedSet[layerIndex].count(body)) kept.push_back(body);
+    }
+    layer.bodies = std::move(kept);
+    layer.sleepingBodySupportDirty = true;
+  }
+  for (const auto& layerBodies : selected)
+    for (Body* body : layerBodies) delete body;
+  E.comps.jointBakeNeedsGroundRefresh = E.bgEnabled;
+  E.comps.jointDirty = E.bgEnabled;
+  E.comps.jointBondsInvalid = E.bgEnabled;
+  E.comps.jointSupportValid = false;
+  return true;
 }
 
 Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells,

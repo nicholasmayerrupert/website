@@ -122,6 +122,7 @@
     "bench:rigid": "node scripts/bench-rigid.mjs",
     "bench:rigid-terrain": "node scripts/bench-rigid-terrain.mjs",
     "bench:rigid-multilayer-terrain": "node scripts/bench-rigid-multilayer-terrain.mjs",
+    "bench:rigid-placement-intersection": "node scripts/bench-rigid-placement-intersection.mjs",
     "bench:actor-rigid": "node scripts/bench-actor-rigid.mjs",
     "bench:actor-rigid:compare": "node scripts/bench-actor-rigid.mjs --compare bench/actor-rigid-baseline.json",
     "bench:rigid-acid": "node scripts/bench-rigid-acid.mjs",

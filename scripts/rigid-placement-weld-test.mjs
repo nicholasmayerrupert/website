@@ -82,15 +82,21 @@ const findBackgroundOnlyBodyCell = (engine) => {
   const target = findBackgroundOnlyBodyCell(engine);
   check('static-contact scene exposes a background-only joint cell', target !== null);
   if (target) {
-    engine.paintDiscLayer(0, target.x - 1, target.y, 0, MAT.STONE, true);
+    for (let y = target.y; y < ROWS; y++)
+      engine.paintDiscLayer(0, target.x - 1, y, 0, MAT.STONE, true);
     engine.syncComponentsLayer(0);
     check('TNT beside static structure still places',
       engine.placeMaterial(target.x, target.y, 0, MAT.TNT, 0));
     const k = target.y * COLS + target.x;
-    check('body overlap takes precedence over static registration',
-      engine.getGrid()[k] === MAT.TNT && engine._bodyOwnerGrid(0)[k] >= 0);
-    check('static-adjacent placement remains one physical joint',
-      engine._bodyCountLayer(0) === 1 && engine._bodyCountLayer(1) === 1);
+    check('static contact anchors the placed TNT',
+      engine.getGrid()[k] === MAT.TNT && engine._bodyOwnerGrid(0)[k] < 0);
+    check('static contact immediately bakes the touched joint',
+      engine._bodyCountLayer(0) === 0 && engine._bodyCountLayer(1) === 0);
+    engine.stepWorld();
+    check('anchored TNT and both rigid layers remain static',
+      engine.getGrid()[k] === MAT.TNT
+        && engine._bodyCountLayer(0) === 0
+        && engine._bodyCountLayer(1) === 0);
   }
   engine.destroy();
 }

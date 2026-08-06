@@ -244,6 +244,57 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     addFaceSpans(rect, BCF_UP);
     addFaceSpans(rect, BCF_DOWN);
   }
+  b->collisionTree.clear();
+  b->collisionTreeRoot = -1;
+  std::vector<int> collisionOrder(b->collisionRects.size());
+  for (int child = 0; child < (int)collisionOrder.size(); child++)
+    collisionOrder[child] = child;
+  auto buildCollisionTree = [&](auto&& self, int begin, int end) -> int {
+    BodyCollisionNode node;
+    node.x0 = node.y0 = INT_MAX;
+    node.x1 = node.y1 = INT_MIN;
+    int minCenterX = INT_MAX, maxCenterX = INT_MIN;
+    int minCenterY = INT_MAX, maxCenterY = INT_MIN;
+    for (int position = begin; position < end; position++) {
+      const BodyCollisionRect& rect =
+        b->collisionRects[collisionOrder[position]];
+      node.x0 = imin(node.x0, rect.x0);
+      node.y0 = imin(node.y0, rect.y0);
+      node.x1 = imax(node.x1, rect.x1);
+      node.y1 = imax(node.y1, rect.y1);
+      int centerX = rect.x0 + rect.x1;
+      int centerY = rect.y0 + rect.y1;
+      minCenterX = imin(minCenterX, centerX);
+      maxCenterX = imax(maxCenterX, centerX);
+      minCenterY = imin(minCenterY, centerY);
+      maxCenterY = imax(maxCenterY, centerY);
+    }
+    int nodeIndex = (int)b->collisionTree.size();
+    b->collisionTree.push_back(node);
+    if (end - begin == 1) {
+      b->collisionTree[nodeIndex].child = collisionOrder[begin];
+      return nodeIndex;
+    }
+    bool splitX = maxCenterX - minCenterX >= maxCenterY - minCenterY;
+    std::stable_sort(collisionOrder.begin() + begin,
+                     collisionOrder.begin() + end,
+      [&](int first, int second) {
+        const BodyCollisionRect& a = b->collisionRects[first];
+        const BodyCollisionRect& c = b->collisionRects[second];
+        int centerA = splitX ? a.x0 + a.x1 : a.y0 + a.y1;
+        int centerC = splitX ? c.x0 + c.x1 : c.y0 + c.y1;
+        return centerA != centerC ? centerA < centerC : first < second;
+      });
+    int middle = begin + (end - begin) / 2;
+    int left = self(self, begin, middle);
+    int right = self(self, middle, end);
+    b->collisionTree[nodeIndex].left = left;
+    b->collisionTree[nodeIndex].right = right;
+    return nodeIndex;
+  };
+  if (!collisionOrder.empty())
+    b->collisionTreeRoot = buildCollisionTree(
+      buildCollisionTree, 0, (int)collisionOrder.size());
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   if (++b->geometryRevision == 0) b->geometryRevision = 1;
   b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
@@ -1562,6 +1613,13 @@ int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   if (b->jointRole == 1 && b->jointPeer) forEachBodyCell(b->jointPeer, probe);
   return blocked;
 }
+int RigidBodySystem::bodyTerrainBlocked(Body* b) {
+  int blocked = 0;
+  forEachBodyCell(b, [&](int x, int y, int) {
+    if (isBodyTerrain(b, x, y, b->density)) blocked++;
+  });
+  return blocked;
+}
 bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
   bool moving = false;
   int previousTick = E.tick - 1;
@@ -1887,6 +1945,7 @@ void RigidBodySystem::bakeRestingBodies() {
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
+    if (canBake && bodyFootprintBlocked(b) != 0) canBake = false;
     bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
     bool peerGroundedContact = false;
     if (canBake && b->jointRole == 1 && b->jointPeer) {

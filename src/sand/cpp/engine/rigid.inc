@@ -20,5 +20,6 @@
   bool eraseLocalCell(Body* b, int idx) { return rigid.eraseLocalCell(b, idx); }
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return rigid.canBodyOccupy(m, k, bodyDensity); }
   int bodyFootprintBlocked(Body* b) { return rigid.bodyFootprintBlocked(b); }
+  int bodyTerrainBlocked(Body* b) { return rigid.bodyTerrainBlocked(b); }
   bool computeDerived(Body* b, bool preserveWorld) { return rigid.computeDerived(b, preserveWorld); }
   void restampBodiesAfterStream() { rigid.restampBodiesAfterStream(); }

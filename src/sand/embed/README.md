@@ -94,6 +94,7 @@ input.
 | Event | Detail | When |
 | --- | --- | --- |
 | `sand:drawmodechange` | `{ on: boolean }` | Creative palette toggles drawing. Bubbles and crosses the shadow boundary. |
+| `sand:interaction` | `{ kind, button?, key? }` | An accepted primary/secondary surface press or WASD/arrow input reaches the game. |
 | `sand:ready` | none | The engine, renderer, and mode-specific controls have initialized. Bubbles and crosses the shadow boundary. |
 | `sand:error` | `{ message: string }` | Engine initialization failed and the embedded retry panel is available. |
 | `sand:missionupdate` | presented mission snapshot | Authoritative mission state changes. |

@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button state is edge-owned: pointerdown sets bits and pointerup clears them.
@@ -114,6 +114,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     updatePointer(e.clientX, e.clientY);
     if (!ctx.inside) return;
     if (button === 0 || button === 2) {
+      onInteraction?.({ kind: 'pointer', button });
       if (ctx.playMode) { ctx.previewDirty = true; e.preventDefault(); return; } // player builds/mines via input bits
       if (ctx.worldWorker) { ctx.worldWorker.edge('down', button); e.preventDefault(); return; }
       if (ctx.engine.pointerDownAtAim(button)) ctx.previewDirty = true;
@@ -196,6 +197,10 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     }
     const code = KEY_CODES[key];
     if (code === undefined) return;
+    if (key === 'w' || key === 'a' || key === 's' || key === 'd'
+        || key === 'arrowup' || key === 'arrowdown'
+        || key === 'arrowleft' || key === 'arrowright')
+      onInteraction?.({ kind: 'key', key });
     ctx.engine?.inputKey(code, 1);
     if (key !== 'shift') e.preventDefault(); // arrows/space/wasd would scroll the page
   };

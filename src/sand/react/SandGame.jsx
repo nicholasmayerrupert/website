@@ -10,6 +10,7 @@ export function SandGame({
   mode = 'survival',
   autoStart = false,
   onDrawModeChange,
+  onInteraction,
   onReady,
   planet,
   mission,
@@ -36,6 +37,7 @@ export function SandGame({
     const el = ref.current;
     if (!el) return undefined;
     const onChange = (e) => onDrawModeChange?.(e.detail.on);
+    const onGameInteraction = () => onInteraction?.();
     const onGameReady = () => {
       if (readyElementRef.current === el) return;
       readyElementRef.current = el;
@@ -47,6 +49,7 @@ export function SandGame({
     const onTalk = (e) => onTalkAction?.(e.detail);
     const onGameError = (e) => onError?.(e.detail);
     el.addEventListener('sand:drawmodechange', onChange);
+    el.addEventListener('sand:interaction', onGameInteraction);
     el.addEventListener('sand:ready', onGameReady);
     el.addEventListener('sand:missionupdate', onMissionState);
     el.addEventListener('sand:missioncomplete', onMissionDone);
@@ -56,6 +59,7 @@ export function SandGame({
     if (el._ready) onGameReady();
     return () => {
       el.removeEventListener('sand:drawmodechange', onChange);
+      el.removeEventListener('sand:interaction', onGameInteraction);
       el.removeEventListener('sand:ready', onGameReady);
       el.removeEventListener('sand:missionupdate', onMissionState);
       el.removeEventListener('sand:missioncomplete', onMissionDone);
@@ -66,6 +70,7 @@ export function SandGame({
   }, [
     onError,
     onDrawModeChange,
+    onInteraction,
     onMissionComplete,
     onMissionFailed,
     onMissionUpdate,

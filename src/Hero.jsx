@@ -10,13 +10,8 @@ const PERF_ROUTE = typeof window !== 'undefined' &&
   window.location.pathname.replace(/\/+$/, '') === '/fps';
 const DEFER_SAND_QUERY = '(max-width: 767px), (pointer: coarse)';
 const NAME_IDLE_MS = 10_000;
-const GAME_KEYS = new Set([
-  'w', 'a', 's', 'd',
-  'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
-]);
 
 const Hero = ({ onDrawModeChange }) => {
-  const sectionRef = useRef(null);
   const nameTimerRef = useRef(0);
   const [drawModeActive, setDrawModeActive] = useState(false);
   const [nameHidden, setNameHidden] = useState(false);
@@ -83,29 +78,11 @@ const Hero = ({ onDrawModeChange }) => {
     setNameHidden(false);
   }, [deferSand]);
 
-  useEffect(() => {
-    if (deferSand) return undefined;
-    const onKeyDown = (event) => {
-      if (!GAME_KEYS.has(event.key.toLowerCase())) return;
-      const bounds = sectionRef.current?.getBoundingClientRect();
-      if (!bounds || bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
-      noteGameInteraction();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deferSand, noteGameInteraction]);
-
   const desktopNameHidden = !deferSand && nameHidden;
   const mobileNameDimmed = deferSand && drawModeActive;
-  const handleGamePointerDown = (event) => {
-    if (event.button !== 0 && event.button !== 2) return;
-    const path = event.nativeEvent.composedPath?.() || [];
-    if (!path.some((node) => node?.classList?.contains('sg-sim'))) return;
-    noteGameInteraction();
-  };
 
   return (
-    <section ref={sectionRef} className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
+    <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       {deferSand && (
         <SandBackground
           className={`absolute inset-0 overflow-hidden transition-opacity duration-500 ${
@@ -115,14 +92,12 @@ const Hero = ({ onDrawModeChange }) => {
       )}
 
       {sandRequested && (
-        <div
-          className="absolute inset-0 z-10"
-          onPointerDownCapture={handleGamePointerDown}
-        >
+        <div className="absolute inset-0 z-10">
           <SandGame
             mode="creative"
             autoStart={startRequested}
             onDrawModeChange={handleDrawModeChange}
+            onInteraction={noteGameInteraction}
             onReady={() => setSandReady(true)}
             perfHud={PERF_ROUTE}
             debugHitboxes={PERF_ROUTE}

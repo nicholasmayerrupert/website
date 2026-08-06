@@ -597,6 +597,11 @@ class SandGameElement extends HTMLElement {
             this._hud?.setOpen(false);
             this._sizeMenu?.toggleOpen();
           },
+          onInteraction: (detail) => {
+            this.dispatchEvent(new CustomEvent('sand:interaction', {
+              detail, bubbles: true, composed: true,
+            }));
+          },
         });
         this._game = game;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&

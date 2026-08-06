@@ -39,6 +39,7 @@ export function createSandGame(container, opts = {}) {
     onInventory = null,
     onPlayerState = null,
     onMission = null,
+    onInteraction = null,
     onToggleInventory = null,
     onToggleFootprintMenu = null,
   } = opts;
@@ -288,6 +289,7 @@ export function createSandGame(container, opts = {}) {
     refreshBounds: lifecycle.refreshBounds,
     zoomBy: lifecycle.zoomBy,
     resetZoom: lifecycle.resetZoom,
+    onInteraction,
     onToggleInventory,
     onToggleFootprintMenu,
   });

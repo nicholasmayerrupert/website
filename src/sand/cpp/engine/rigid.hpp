@@ -30,6 +30,7 @@ class RigidBodySystem {
   int solverMode = 2;
   double solverResidualTolerance = 1e-4;
   int solverMinIterations = 4;
+  int forceFullSolveBodies = R_FORCE_FULL_SOLVE_BODIES;
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
@@ -56,6 +57,7 @@ class RigidBodySystem {
   double fluidSolveMs = 0, fluidWritebackMs = 0;
   double rigidCoreMs = 0, rigidClearMs = 0, rigidDepenMs = 0;
   double rigidStampMs = 0, rigidSpillMs = 0;
+  double rigidPrepareMs = 0, rigidFinalizeMs = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
   double rigidMaxVelocityResidual = 0, rigidMaxBiasResidual = 0;
@@ -282,6 +284,8 @@ class RigidBodySystem {
   std::vector<std::vector<int>> movePreviousFootprints;
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
+  std::vector<uint8_t> movePreviousMaterialGrid;
+  std::vector<int32_t> movePreviousOwnerGrid;
   std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;

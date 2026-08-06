@@ -58,6 +58,9 @@ function table() {
     rigidSolverDiag: c('engine_test_rigid_solver_diag', 'number', ['number', 'number']),
     setRigidSolverOptions: c('engine_test_set_rigid_solver_options', null,
       ['number', 'number', 'number', 'number']),
+    setRigidForceFullSolveBodies: c(
+      'engine_test_set_rigid_force_full_solve_bodies', null,
+      ['number', 'number']),
     rigidSpillProbe: c('engine_test_rigid_spill_probe', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     setGroundingDebug: c('engine_test_set_grounding_debug', null, ['number', 'number', 'number']),
     groundingMismatches: c('engine_test_grounding_mismatches', 'number', ['number']),
@@ -194,10 +197,14 @@ export function attachTestHooks(engine) {
     shockFallbacks: t.rigidSolverDiag(ptr, 50),
     shockMaxLayers: t.rigidSolverDiag(ptr, 51),
     shockSkipped: t.rigidSolverDiag(ptr, 52),
+    rigidPrepareMs: t.rigidSolverDiag(ptr, 53),
+    rigidFinalizeMs: t.rigidSolverDiag(ptr, 54),
   });
   engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
     minIterations = 4) => t.setRigidSolverOptions(
     ptr, mode | 0, residualTolerance, minIterations | 0);
+  engine._setRigidForceFullSolveBodies = (bodyCount) =>
+    t.setRigidForceFullSolveBodies(ptr, bodyCount | 0);
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);
   engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);

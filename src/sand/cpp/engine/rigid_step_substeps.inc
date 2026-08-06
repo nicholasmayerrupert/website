@@ -893,6 +893,8 @@
       E.L == &E.bg ? 0xcbf29ce484222325ULL : 0x84222325cbf29ce4ULL);
     std::fill(solveHasGeneral.begin(), solveHasGeneral.end(), 0);
     std::fill(solveHasPeerContacts.begin(), solveHasPeerContacts.end(), 0);
+    std::fill(solveHasSpatialForce.begin(), solveHasSpatialForce.end(), 0);
+    std::fill(solveHasJointBody.begin(), solveHasJointBody.end(), 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(solveParent, bi);
       Body* body = solverBodies[bi];
@@ -905,6 +907,8 @@
       solveShockKey[root] ^= (uint32_t)body->id;
       solveShockKey[root] *= 0x100000001b3ULL;
       if (!body->blastDebris) solveHasGeneral[root] = 1;
+      if (body->spatialForceApplied) solveHasSpatialForce[root] = 1;
+      if (body->jointRole != 0) solveHasJointBody[root] = 1;
       solveHasPeerContacts[root] = solveHasPeerContacts[root]
         || bodyUsesPeerContacts(body);
     }
@@ -1021,7 +1025,11 @@
       }
       // The first passes run from the lowest contact upward so support impulses
       // propagate through tall stacks promptly. Later passes alternate direction
-      // to remove a permanent ordering bias.
+      // to remove a permanent ordering bias. Large single-layer spatial-force
+      // islands run to a no-op or the cap so sustained acceleration reaches one
+      // stable network solution instead of repeatedly reactivating marginal
+      // contacts. Joint islands retain residual convergence because both layer
+      // rasters must remain exactly aligned.
       for (int it = 0; it < solverIters && !shockVelocityConverged; it++) {
         rigidVelocityIterations++;
         rigidVelocityConstraintEvals += islandEnd - islandStart;
@@ -1049,7 +1057,11 @@
             moved += solveVelocity(contactOrder[oi]);
         }
         if (moved == 0.0) break;
-        if (solverMode > 0 && it + 1 >= solverMinIterations
+        if (solverMode > 0
+            && (!solveHasSpatialForce[root]
+                || solveHasJointBody[root]
+                || solveBodyCount[root] < forceFullSolveBodies)
+            && it + 1 >= solverMinIterations
             && ((it + 1 - solverMinIterations) & 1) == 0) {
           double residual = 0;
           for (int oi = islandStart; oi < islandEnd; oi++)

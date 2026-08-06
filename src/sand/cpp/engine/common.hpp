@@ -278,6 +278,7 @@ struct Body {
   // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
   std::vector<double> boundarySampleRadii;
+  std::vector<uint8_t> erosionBoundaryMask;
   // Exact non-overlapping rectangle cover of `occ`. Each face indexes its
   // exposed sub-spans so contacts cannot originate from decomposition seams.
   std::vector<BodyCollisionRect> collisionRects;
@@ -292,10 +293,14 @@ struct Body {
   // unchanged pose in the same tick; the pose/revision/grid key prevents reuse
   // after integration, depenetration, erosion, streaming, or resize.
   std::vector<BodyRasterCell> rasterFootprint;
+  // Exact erosion candidates for the cached raster. A world-raster boundary
+  // can only map to a local cell whose eight-neighbourhood is not fully solid.
+  std::vector<BodyRasterCell> rasterBoundaryFootprint;
   double rasterPx = 0, rasterPy = 0, rasterAngle = 0;
   uint32_t rasterGeometryRevision = 0;
   int rasterCols = 0, rasterRows = 0;
   bool rasterFootprintValid = false;
+  bool erodible = false;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   uint8_t bakeRasterStableTicks = 0;
   double invMass = 0, invInertia = 0, maxR = 0;
@@ -696,10 +701,12 @@ static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20
 static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
+static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
 // In focused simulation LOD, bound the combined occupancy of free bodies and
 // components admitted to rigid motion. Excess detached terrain waits until
 // earlier debris settles instead of turning the loaded world into hot bodies.
 static const int    R_DYNAMIC_CELL_BUDGET = 8192;
+static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_RADIUS = 4;
 static const int    R_FLUID_BATCH_DOMAIN_RADIUS = 3;

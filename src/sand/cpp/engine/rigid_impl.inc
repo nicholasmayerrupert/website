@@ -74,6 +74,27 @@ uint8_t RigidBodySystem::bodyMaterialAt(Body* b, int localIndex) {
 }
 bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   b->rasterFootprintValid = false;
+  b->erodible = false;
+  b->erosionBoundaryMask.assign(b->occ.size(), 0);
+  for (int local = 0; local < (int)b->occ.size(); local++) {
+    uint8_t material = bodyMaterialAt(b, local);
+    if (material == RIGID || E.isDissolvable(material)
+        || E.isFlammable(material)) {
+      b->erodible = true;
+    }
+    if (material == EMPTY) continue;
+    int i = local % b->w, j = local / b->w;
+    for (int oy = -1; oy <= 1 && !b->erosionBoundaryMask[local]; oy++)
+      for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int ni = i + ox, nj = j + oy;
+        if (ni < 0 || ni >= b->w || nj < 0 || nj >= b->h
+            || bodyMaterialAt(b, nj * b->w + ni) == EMPTY) {
+          b->erosionBoundaryMask[local] = 1;
+          break;
+        }
+      }
+  }
   int nPts = 0; double sumX = 0, sumY = 0, totalMass = 0;
   for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
     int local = j * b->w + i;
@@ -880,14 +901,18 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX), y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
   if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= E.cols) x1 = E.cols - 1; if (y1 >= E.rows) y1 = E.rows - 1;
   b->rasterFootprint.clear();
+  b->rasterBoundaryFootprint.clear();
   for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
     double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
     double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
     int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
     if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
     int local = j * b->w + i;
-    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY)
+    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) {
       b->rasterFootprint.push_back({wx, wy, local});
+      if (b->erosionBoundaryMask[local])
+        b->rasterBoundaryFootprint.push_back({wx, wy, local});
+    }
   }
   b->rasterPx = b->px;
   b->rasterPy = b->py;
@@ -1573,16 +1598,22 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
   std::unordered_map<int, Body*> bodyById; for (Body* b : E.L->bodies) bodyById[b->id] = b;
   std::unordered_set<Body*> dirty;
   std::vector<int> acidSmoke;
-  for (int k : cells) {
-    double p = rigidErodeProbabilityAt(k); if (p <= 0 || E.rand() >= p) continue;
-    int x = k % E.cols, y = k / E.cols;
-    bool byAcid = (x < E.cols - 1 && E.L->grid[k + 1] == ACID)
-               || (x > 0 && E.L->grid[k - 1] == ACID)
-               || (y < E.rows - 1 && E.L->grid[k + E.cols] == ACID)
-               || (y > 0 && E.L->grid[k - E.cols] == ACID);
-    if (eraseBodyCellIndex(k, bodyById, dirty) && byAcid) {
-      E.audio.noteAcidDissolve(x, y);
-      if (E.rand() < ACRID_SMOKE_P) acidSmoke.push_back(k);
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2 || !body->erodible) continue;
+    for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
+      int k = cell.y * E.cols + cell.x;
+      if (E.L->bodyOwner[k] != body->id) continue;
+      double p = rigidErodeProbabilityAt(k);
+      if (p <= 0 || E.rand() >= p) continue;
+      int x = cell.x, y = cell.y;
+      bool byAcid = (x < E.cols - 1 && E.L->grid[k + 1] == ACID)
+                 || (x > 0 && E.L->grid[k - 1] == ACID)
+                 || (y < E.rows - 1 && E.L->grid[k + E.cols] == ACID)
+                 || (y > 0 && E.L->grid[k - E.cols] == ACID);
+      if (eraseBodyCellIndex(k, bodyById, dirty) && byAcid) {
+        E.audio.noteAcidDissolve(x, y);
+        if (E.rand() < ACRID_SMOKE_P) acidSmoke.push_back(k);
+      }
     }
   }
   finishErasedBodies(dirty, cells);
@@ -2058,7 +2089,11 @@ void RigidBodySystem::restampBodiesAfterStream() {
   E.L->sleepingBodySupportDirty = true;
 }
 void RigidBodySystem::moveBodies() {
-  rigidCoreMs = rigidClearMs = rigidDepenMs = rigidStampMs = rigidSpillMs = 0;
+  double bodyPhaseStart = emscripten_get_now();
+  if (E.L == &E.fg) {
+    rigidCoreMs = rigidClearMs = rigidDepenMs = rigidStampMs = rigidSpillMs = 0;
+    rigidPrepareMs = rigidFinalizeMs = 0;
+  }
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)
     if (b->jointRole != 2) { hasSimulatedBody = true; break; }
@@ -2189,19 +2224,41 @@ void RigidBodySystem::moveBodies() {
     moveDisplaced[slot].clear();
     moveStamped[slot].clear();
   }
+  bool batchRasterRestore = E.L->bodyCells.size()
+                         >= (size_t)R_BODY_RASTER_BATCH_THRESHOLD;
+  if (batchRasterRestore) {
+    size_t gridSize = (size_t)E.cols * E.rows;
+    if (movePreviousMaterialGrid.size() != gridSize) {
+      movePreviousMaterialGrid.assign(gridSize, EMPTY);
+      movePreviousOwnerGrid.assign(gridSize, -1);
+    }
+  }
   double clearStart = emscripten_get_now();
+  rigidPrepareMs = rigidPrepareMs + (clearStart - bodyPhaseStart);
   for (int k : E.L->bodyCells) {
     int owner = E.L->bodyOwner[k];
     auto slot = moveBodySlotById.find(owner);
     if (slot != moveBodySlotById.end())
       movePreviousFootprints[slot->second].push_back(k);
-    if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY);
-    E.L->bodyOwner[k] = -1;
-  } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
-  rigidClearMs = emscripten_get_now() - clearStart;
+    if (batchRasterRestore) {
+      movePreviousMaterialGrid[k] = E.L->grid[k];
+      movePreviousOwnerGrid[k] = owner;
+      E.L->grid[k] = EMPTY;
+      E.L->fallSpeed[k] = 0;
+      E.L->liquidVel[k] = 0;
+      E.L->bodyOwner[k] = -1;
+      E.markCellIndex(k);
+    } else {
+      if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY);
+      E.L->bodyOwner[k] = -1;
+    }
+  }
+  double clearElapsed = emscripten_get_now() - clearStart;
+  rigidClearMs = rigidClearMs + clearElapsed;
   double coreStart = emscripten_get_now();
   rigidStep(1.0);
-  rigidCoreMs = emscripten_get_now() - coreStart;
+  double coreElapsed = emscripten_get_now() - coreStart;
+  rigidCoreMs = rigidCoreMs + coreElapsed;
   rigidRejectedCells = 0; rigidDepenetrations = 0;
   rigidOwnershipConflicts = 0;
   rigidRecoveryBodies = 0;
@@ -2271,7 +2328,8 @@ void RigidBodySystem::moveBodies() {
     body->stillTicks = 0;
   }
   bakeRestingBodies(); // a component-backed body with a stable raster becomes static
-  rigidDepenMs = emscripten_get_now() - depenStart;
+  double depenElapsed = emscripten_get_now() - depenStart;
+  rigidDepenMs = rigidDepenMs + depenElapsed;
   moveCells.clear();
   moveFootprint.clear();
   double stampStart = emscripten_get_now();
@@ -2282,19 +2340,46 @@ void RigidBodySystem::moveBodies() {
     std::vector<int>& stamped = moveStamped[slot];
     forEachBodyCell(b, [&](int x, int y, int local) {
       int k = y * E.cols + x;
-      if (E.L->bodyOwner[k] != -1) {
+      int owner = E.L->bodyOwner[k];
+      uint8_t material = bodyMaterialAt(b, local);
+      if (batchRasterRestore && owner == -1 && E.L->grid[k] == EMPTY
+          && movePreviousOwnerGrid[k] == b->id
+          && movePreviousMaterialGrid[k] == material) {
+        E.L->grid[k] = material;
+        E.L->fallSpeed[k] = 0;
+        E.L->liquidVel[k] = 0;
+        E.L->bodyOwner[k] = b->id;
+        if (material == NEUTRONIUM) {
+          E.L->forceSourcePresent = true;
+          E.fg.forceWakePending = E.bg.forceWakePending = true;
+        }
+        E.noteLooseGroundTouch2At(k, material, EMPTY);
+        if (material == FIRE || material == LAVA)
+          E.L->heatAddedAfterPrepare = true;
+        if (b->blastDebris) E.L->groundedCell[k] = 0;
+        moveCells.push_back(k);
+        moveFootprint.push_back(k);
+        stamped.push_back(k);
+        return;
+      }
+      if (owner != -1) {
         rigidOwnershipConflicts++;
         return;
       }
       uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
       if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
-      E.writeGridIndex(k, bodyMaterialAt(b, local)); E.L->bodyOwner[k] = b->id;
+      E.writeGridIndex(k, material); E.L->bodyOwner[k] = b->id;
       if (b->blastDebris) E.L->groundedCell[k] = 0;
       moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
-  rigidStampMs = emscripten_get_now() - stampStart;
+  if (batchRasterRestore)
+    for (int k : E.L->bodyCells) {
+      movePreviousOwnerGrid[k] = -1;
+    }
+  double stampElapsed = emscripten_get_now() - stampStart;
+  rigidStampMs = rigidStampMs + stampElapsed;
   {
     std::vector<Body*> keep;
     keep.reserve(E.L->bodies.size());
@@ -2335,7 +2420,9 @@ void RigidBodySystem::moveBodies() {
     spillDisplacedBodyMaterial(moveDisplaced[slot], moveStamped[slot],
                                footprintGen, b->id, b->density, vacated);
   }
-  rigidSpillMs = emscripten_get_now() - spillStart;
+  double spillElapsed = emscripten_get_now() - spillStart;
+  rigidSpillMs = rigidSpillMs + spillElapsed;
+  double finalizeStart = emscripten_get_now();
   if (E.L == &E.fg) {
     // Joint erosion rebuilds pieces from the two live owner rasters. Restore
     // the follower before acid/fire can erase the leader so the splitter sees
@@ -2346,6 +2433,8 @@ void RigidBodySystem::moveBodies() {
     for (Body* leader : leaders) stampJointFollower(leader);
   }
   erodeBodies(moveCells);
+  rigidFinalizeMs = rigidFinalizeMs
+                  + (emscripten_get_now() - finalizeStart);
 }
 
 template <class Cells>

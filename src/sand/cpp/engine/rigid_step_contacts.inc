@@ -411,10 +411,24 @@
     double px = 0, py = 0;
     double ux = 1, uy = 0, vx = 0, vy = 1;
   };
+  struct ChildTreePoseCache {
+    Body* body = nullptr;
+    uint32_t geometryRevision = 0;
+    double dt = -1;
+    ChildPose currentPose, nextPose;
+    uint32_t generation = 0;
+    std::vector<ChildFrame> currentChildren, nextChildren;
+    std::vector<uint32_t> currentChildGeneration, nextChildGeneration;
+    std::vector<ChildBounds> nodeBounds;
+    std::vector<uint32_t> nodeBoundsGeneration;
+  };
   std::vector<ChildPose> currentChildPoses(n), nextChildPoses(n);
   std::vector<double> nextChildPoseDt(n, -1);
   std::vector<std::vector<ChildFrame>> currentChildFrames(n), nextChildFrames(n);
   std::vector<uint8_t> currentChildFramesValid(n, 0);
+  std::vector<ChildTreePoseCache> childTreePoseCaches(n);
+  ChildTreePoseCache scratchChildTreePoseCacheA;
+  ChildTreePoseCache scratchChildTreePoseCacheB;
   const std::vector<ChildFrame>* activeCurrentChildFramesA = nullptr;
   const std::vector<ChildFrame>* activeCurrentChildFramesB = nullptr;
   const std::vector<ChildFrame>* activeNextChildFramesA = nullptr;
@@ -424,8 +438,6 @@
   std::vector<int> activeChildrenA, activeChildrenB;
   std::vector<std::pair<int, int>> childPairScratch;
   std::vector<std::pair<int, int>> childTreeStack;
-  std::vector<uint8_t> childTreeValidCurrentA, childTreeValidCurrentB;
-  std::vector<uint8_t> childTreeValidNextA, childTreeValidNextB;
   auto childPose = [](Body* body, double time) {
     double angle = body->angle + body->omega * time;
     double ux = std::cos(angle), uy = std::sin(angle);
@@ -519,39 +531,74 @@
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
   };
-  auto collectChildTreePairCandidates = [&](Body* bodyA, Body* bodyB,
-      double dt, const ChildPose& currentPoseA,
-      const ChildPose& currentPoseB, const ChildPose& nextPoseA,
-      const ChildPose& nextPoseB,
-      std::vector<ChildFrame>& currentFramesA,
-      std::vector<ChildFrame>& currentFramesB,
-      std::vector<ChildFrame>& nextFramesA,
-      std::vector<ChildFrame>& nextFramesB) {
-    int countA = (int)bodyA->collisionRects.size();
-    int countB = (int)bodyB->collisionRects.size();
-    currentFramesA.resize(countA);
-    currentFramesB.resize(countB);
-    nextFramesA.resize(countA);
-    nextFramesB.resize(countB);
-    childTreeValidCurrentA.assign(countA, 0);
-    childTreeValidCurrentB.assign(countB, 0);
-    childTreeValidNextA.assign(countA, 0);
-    childTreeValidNextB.assign(countB, 0);
-    auto ensureFrames = [&](Body* body, int child,
-        const ChildPose& currentPose, const ChildPose& nextPose,
-        std::vector<ChildFrame>& currentFrames,
-        std::vector<ChildFrame>& nextFrames,
-        std::vector<uint8_t>& currentValid,
-        std::vector<uint8_t>& nextValid) {
-      if (!currentValid[child]) {
-        makeChildFrame(body, currentPose, child, currentFrames[child]);
-        currentValid[child] = 1;
-      }
-      if (!nextValid[child]) {
-        makeChildFrame(body, nextPose, child, nextFrames[child]);
-        nextValid[child] = 1;
-      }
+  auto prepareChildTreePoseCache = [&](ChildTreePoseCache& cache,
+      Body* body, double dt) {
+    ChildPose currentPose = childPose(body, 0);
+    ChildPose nextPose = childPose(body, dt);
+    auto samePose = [](const ChildPose& a, const ChildPose& b) {
+      return a.px == b.px && a.py == b.py
+          && a.ux == b.ux && a.uy == b.uy
+          && a.vx == b.vx && a.vy == b.vy;
     };
+    if (cache.body == body
+        && cache.geometryRevision == body->geometryRevision
+        && cache.dt == dt
+        && samePose(cache.currentPose, currentPose)
+        && samePose(cache.nextPose, nextPose))
+      return;
+    cache.body = body;
+    cache.geometryRevision = body->geometryRevision;
+    cache.dt = dt;
+    cache.currentPose = currentPose;
+    cache.nextPose = nextPose;
+    if (++cache.generation == 0) {
+      std::fill(cache.currentChildGeneration.begin(),
+                cache.currentChildGeneration.end(), 0);
+      std::fill(cache.nextChildGeneration.begin(),
+                cache.nextChildGeneration.end(), 0);
+      std::fill(cache.nodeBoundsGeneration.begin(),
+                cache.nodeBoundsGeneration.end(), 0);
+      cache.generation = 1;
+    }
+    size_t childCount = body->collisionRects.size();
+    cache.currentChildren.resize(childCount);
+    cache.nextChildren.resize(childCount);
+    cache.currentChildGeneration.resize(childCount, 0);
+    cache.nextChildGeneration.resize(childCount, 0);
+    size_t nodeCount = body->collisionTree.size();
+    cache.nodeBounds.resize(nodeCount);
+    cache.nodeBoundsGeneration.resize(nodeCount, 0);
+  };
+  auto ensureChildTreeFrames = [&](ChildTreePoseCache& cache, int child) {
+    if (cache.currentChildGeneration[child] != cache.generation) {
+      makeChildFrame(cache.body, cache.currentPose, child,
+                     cache.currentChildren[child]);
+      cache.currentChildGeneration[child] = cache.generation;
+    }
+    if (cache.nextChildGeneration[child] != cache.generation) {
+      makeChildFrame(cache.body, cache.nextPose, child,
+                     cache.nextChildren[child]);
+      cache.nextChildGeneration[child] = cache.generation;
+    }
+  };
+  auto ensureChildTreeNodeBounds = [&](ChildTreePoseCache& cache,
+      int nodeIndex) -> const ChildBounds& {
+    if (cache.nodeBoundsGeneration[nodeIndex] != cache.generation) {
+      const BodyCollisionNode& node = cache.body->collisionTree[nodeIndex];
+      ChildFrame currentNode = makeNodeFrame(
+        cache.body, cache.currentPose, node);
+      ChildFrame nextNode = makeNodeFrame(
+        cache.body, cache.nextPose, node);
+      cache.nodeBounds[nodeIndex] = childBoundsAtBothPoses(
+        cache.body, currentNode, nextNode, cache.dt);
+      cache.nodeBoundsGeneration[nodeIndex] = cache.generation;
+    }
+    return cache.nodeBounds[nodeIndex];
+  };
+  auto collectChildTreePairCandidates = [&](Body* bodyA, Body* bodyB,
+      double dt, ChildTreePoseCache& cacheA, ChildTreePoseCache& cacheB) {
+    prepareChildTreePoseCache(cacheA, bodyA, dt);
+    prepareChildTreePoseCache(cacheB, bodyB, dt);
     bool sweptCandidate = false;
     childPairScratch.clear();
     childTreeStack.clear();
@@ -562,29 +609,21 @@
       childTreeStack.pop_back();
       const BodyCollisionNode& nodeA = bodyA->collisionTree[pair.first];
       const BodyCollisionNode& nodeB = bodyB->collisionTree[pair.second];
-      ChildFrame currentNodeA = makeNodeFrame(bodyA, currentPoseA, nodeA);
-      ChildFrame currentNodeB = makeNodeFrame(bodyB, currentPoseB, nodeB);
-      ChildFrame nextNodeA = makeNodeFrame(bodyA, nextPoseA, nodeA);
-      ChildFrame nextNodeB = makeNodeFrame(bodyB, nextPoseB, nodeB);
-      ChildBounds boundsA = childBoundsAtBothPoses(
-        bodyA, currentNodeA, nextNodeA, dt);
-      ChildBounds boundsB = childBoundsAtBothPoses(
-        bodyB, currentNodeB, nextNodeB, dt);
+      const ChildBounds& boundsA = ensureChildTreeNodeBounds(
+        cacheA, pair.first);
+      const ChildBounds& boundsB = ensureChildTreeNodeBounds(
+        cacheB, pair.second);
       if (!childBoundsOverlap(boundsA, boundsB)) continue;
       bool leafA = nodeA.child >= 0;
       bool leafB = nodeB.child >= 0;
       if (leafA && leafB) {
         sweptCandidate = true;
-        ensureFrames(bodyA, nodeA.child, currentPoseA, nextPoseA,
-          currentFramesA, nextFramesA,
-          childTreeValidCurrentA, childTreeValidNextA);
-        ensureFrames(bodyB, nodeB.child, currentPoseB, nextPoseB,
-          currentFramesB, nextFramesB,
-          childTreeValidCurrentB, childTreeValidNextB);
-        if (childFramesOverlap(currentFramesA[nodeA.child],
-                               currentFramesB[nodeB.child])
-            || childFramesOverlap(nextFramesA[nodeA.child],
-                                  nextFramesB[nodeB.child]))
+        ensureChildTreeFrames(cacheA, nodeA.child);
+        ensureChildTreeFrames(cacheB, nodeB.child);
+        if (childFramesOverlap(cacheA.currentChildren[nodeA.child],
+                               cacheB.currentChildren[nodeB.child])
+            || childFramesOverlap(cacheA.nextChildren[nodeA.child],
+                                  cacheB.nextChildren[nodeB.child]))
           childPairScratch.push_back({nodeA.child, nodeB.child});
         continue;
       }
@@ -598,12 +637,8 @@
         childTreeStack.push_back({pair.first, nodeB.left});
       }
     }
-    ensureFrames(bodyA, 0, currentPoseA, nextPoseA,
-      currentFramesA, nextFramesA,
-      childTreeValidCurrentA, childTreeValidNextA);
-    ensureFrames(bodyB, 0, currentPoseB, nextPoseB,
-      currentFramesB, nextFramesB,
-      childTreeValidCurrentB, childTreeValidNextB);
+    ensureChildTreeFrames(cacheA, 0);
+    ensureChildTreeFrames(cacheB, 0);
     std::sort(childPairScratch.begin(), childPairScratch.end());
     return sweptCandidate;
   };
@@ -1047,18 +1082,18 @@
       && a->collisionRects.size() + b->collisionRects.size() >= 64;
     bool sweptCandidate;
     if (useCollisionTree) {
-      ChildPose currentPoseA = childPose(a, 0);
-      ChildPose currentPoseB = childPose(b, 0);
-      ChildPose nextPoseA = childPose(a, dt);
-      ChildPose nextPoseB = childPose(b, dt);
+      ChildTreePoseCache& cacheA = bodyIndexA >= 0
+        ? childTreePoseCaches[bodyIndexA]
+        : scratchChildTreePoseCacheA;
+      ChildTreePoseCache& cacheB = bodyIndexB >= 0
+        ? childTreePoseCaches[bodyIndexB]
+        : scratchChildTreePoseCacheB;
       sweptCandidate = collectChildTreePairCandidates(
-        a, b, dt, currentPoseA, currentPoseB, nextPoseA, nextPoseB,
-        currentChildFrameScratchA, currentChildFrameScratchB,
-        nextChildFrameScratchA, nextChildFrameScratchB);
-      currentFramesAPtr = &currentChildFrameScratchA;
-      currentFramesBPtr = &currentChildFrameScratchB;
-      nextFramesAPtr = &nextChildFrameScratchA;
-      nextFramesBPtr = &nextChildFrameScratchB;
+        a, b, dt, cacheA, cacheB);
+      currentFramesAPtr = &cacheA.currentChildren;
+      currentFramesBPtr = &cacheB.currentChildren;
+      nextFramesAPtr = &cacheA.nextChildren;
+      nextFramesBPtr = &cacheB.nextChildren;
     } else {
       currentFramesAPtr = &currentFrames(
         a, bodyIndexA, currentChildFrameScratchA);

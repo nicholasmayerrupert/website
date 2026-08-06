@@ -26,8 +26,9 @@ lives in `rigid_impl.inc`.
   are restored to body-index order before contact generation so the sequential
   impulse result stays deterministic.
 - Body/body candidates first test overlapping child rectangles with oriented-box
-  SAT. Compounds with more than 64 possible child pairs first run a two-set
-  sweep-and-prune over child AABBs spanning the current and substep-end poses;
+  SAT. Highly compound pairs traverse balanced collision trees over bounds that
+  span the current and substep-end poses. Child frames and swept node bounds are
+  computed lazily once per body pose and reused across all candidate body pairs;
   smaller compounds use direct endpoint-AABB checks. Surviving pairs return to
   child-index order before contact generation. Reference and incident edges are
   clipped against exposed sub-spans on both children, producing one- or
@@ -96,7 +97,10 @@ lives in `rigid_impl.inc`.
   face from alternating support between its endpoints.
 - Contact islands are ordered from the lowest contact upward for the first
   passes, then alternate direction. Iteration budgets scale with island size,
-  retain a minimum for large bodies, and use the full cap for impacts.
+  retain a minimum for large bodies, and use the full cap for impacts. Islands
+  of at least twelve single-layer bodies under spatial force also run velocity
+  constraints to a no-op or the cap so sustained acceleration converges as one
+  contact network. Cross-layer joint islands retain residual convergence.
 - Raster depenetration remains a last-resort fallback.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
@@ -219,10 +223,9 @@ re-ground an airborne body. Powders never push a rigid body upward.
   large bodies and long beams use exact constant-velocity rotation.
 - Curved masks can occupy several manifold buckets and cost more than flat
   contacts.
-- Child rectangles are tested directly within a broadphase body pair. There is
-  no child BVH; boxes, beams, and the large-L regression have one or two
-  children. Highly alternating masks use a transient two-set sweep-and-prune
-  when their child-pair product exceeds 64.
+- Child rectangles are tested directly within small broadphase body pairs.
+  Highly compound bodies use their balanced collision trees, with per-pose lazy
+  caches for child frames and swept node bounds.
 - Deep stacks converge at the sequential-impulse rate. An ordinary contact
   island starts at 12 iterations plus two per body, large-body islands use at
   least 32, impacts can use 64, and small blast-debris islands use 16.

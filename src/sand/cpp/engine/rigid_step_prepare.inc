@@ -443,6 +443,8 @@
   std::vector<uint64_t> solveShockKey(n);
   std::vector<uint8_t> solveHasGeneral(n);
   std::vector<uint8_t> solveHasPeerContacts(n);
+  std::vector<uint8_t> solveHasSpatialForce(n);
+  std::vector<uint8_t> solveHasJointBody(n);
   struct PenPt {
     double wx, wy, nx, ny, depth;
     int bk = 0;

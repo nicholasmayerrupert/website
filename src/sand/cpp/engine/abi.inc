@@ -406,6 +406,8 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 50: return e->rigid.rigidShockFallbacks;
     case 51: return e->rigid.rigidShockMaxLayers;
     case 52: return e->rigid.rigidShockSkipped;
+    case 53: return e->rigid.rigidPrepareMs;
+    case 54: return e->rigid.rigidFinalizeMs;
     default: return 0;
   }
 }
@@ -414,6 +416,10 @@ EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_solver_options(
   e->rigid.solverMode = mode;
   e->rigid.solverResidualTolerance = std::fmax(0.0, residualTolerance);
   e->rigid.solverMinIterations = imax(1, minIterations);
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_force_full_solve_bodies(
+    Engine* e, int bodyCount) {
+  e->rigid.forceFullSolveBodies = imax(1, bodyCount);
 }
 // Synthetic spill probe for outlet-locality regression tests. The rectangle is
 // stamped as one body and `source` is treated as loose material displaced from

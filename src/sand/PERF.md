@@ -177,23 +177,29 @@ component registration, and generation/restoration. Browser presentation exposes
   body-index order before generating contacts.
 - Each body caches an exact non-overlapping rectangle cover of its occupied
   pixels. Current and predicted child transforms reuse one body pose for all
-  candidate pairs at the same substep time. Small compounds
-  use direct endpoint-AABB rejection; larger child sets use a two-set
-  sweep-and-prune over their start/end bounds before oriented-box SAT. The
-  surviving pairs return to child-index order, preserving deterministic contact
-  generation. Manifolds clip both incident and reference edges against
+  candidate pairs at the same substep time. Highly compound pairs traverse
+  balanced collision trees; child frames and swept node bounds are generated
+  lazily once per body pose and reused by every body pair in that substep.
+  Smaller compounds use direct endpoint-AABB rejection before oriented-box SAT.
+  The surviving pairs return to child-index order, preserving deterministic
+  contact generation. Manifolds clip both incident and reference edges against
   original-mask exposed spans, so decomposition seams cannot act as collision
   faces. Child and face-span ids participate in the warm-start key. A
   short-lived coherent child separating axis prevents a far-side feature from
   reversing a thin contact while the pair crosses a raster boundary.
-- Rigid erosion groups body-owned world cells once per tick, then uses dense
-  generation stamps for connectivity and ownership membership. Damage to joint
-  foreground/background bodies batches geometry reconstruction until all
-  erasures for the tick are known.
+- Rigid erosion tests only cached raster cells whose local eight-neighbourhood
+  reaches the body's boundary, and bodies with no erodible material skip the
+  pass entirely. Connectivity and ownership repair use dense generation stamps.
+  Damage to joint foreground/background bodies batches geometry reconstruction
+  until all erasures for the tick are known.
 - A conservative tick-level candidate graph gives disconnected rigid islands
   independent substep cadences. Contact islands receive size-based solver
   budgets, bottom-up stack ordering, and coupled two-point solves for long
-  support faces.
+  support faces. Single-layer spatial-force islands with at least twelve bodies
+  run velocity constraints to a no-op or the iteration cap; the resulting stable
+  network has fewer repeated contacts and raster ownership conflicts under
+  sustained force. Cross-layer joint islands retain residual convergence so
+  their two rasters stay aligned.
 - Rigid contact manifolds reject deep-overlap normals that oppose the pair's
   separating half-space. Stable local anchors persist normal/friction impulses
   across substeps and ticks, including short decaying persistence for large
@@ -227,6 +233,12 @@ component registration, and generation/restoration. Browser presentation exposes
   body has not moved between queries. A conservative center-line capsule rejects
   actor sweeps before rasterization when no live actor can be reached, and a
   boundary preflight skips fluid stamping when no awake body touches liquid.
+- Layers with at least 8,192 body-owned cells snapshot material and ownership
+  while clearing. Cells that return to the same body and material restore the
+  snapshot directly while preserving grid-dirty, force, heat, and loose-support
+  side effects; moved, blocked, and displaced cells retain the ordinary write
+  path. This keeps very large irregular bodies exact without paying two full
+  general-purpose grid mutations for every unchanged raster cell.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
   Threading rigid islands would require a shared-memory worker package plus

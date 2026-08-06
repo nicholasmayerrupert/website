@@ -26,6 +26,22 @@ const repeatArg = process.argv.indexOf('--repeat');
 const repeats = repeatArg >= 0
   ? Math.max(1, Number.parseInt(process.argv[repeatArg + 1] ?? '3', 10))
   : 3;
+const solverModeArg = process.argv.indexOf('--solver-mode');
+const solverOptions = solverModeArg < 0 ? null : {
+  mode: Number.parseInt(process.argv[solverModeArg + 1] ?? '2', 10),
+  tolerance: Number.parseFloat(valueAfter('--solver-tolerance', '0.0001')),
+  minIterations: Math.max(
+    1,
+    Number.parseInt(valueAfter('--solver-min-iterations', '4'), 10),
+  ),
+};
+const forceFullSolveBodiesArg = process.argv.indexOf(
+  '--force-full-solve-bodies',
+);
+const forceFullSolveBodies = forceFullSolveBodiesArg < 0 ? null : Math.max(
+  1,
+  Number.parseInt(process.argv[forceFullSolveBodiesArg + 1] ?? '6', 10),
+);
 
 await initSandWasm();
 
@@ -178,10 +194,17 @@ const phaseKeys = [
   'forcePrepareMs', 'forceWakeMs', 'bodyMs', 'liquidMs', 'tailMs',
   'liquidRelaxMs', 'liquidSurfaceMs',
 ];
-const rigidKeys = [
+const rigidWorkKeys = [
   'substeps', 'islandBodySteps', 'contacts', 'childPairs', 'childManifolds',
-  'velocityIterations', 'positionCorrections', 'rigidCoreMs',
+  'childTransforms', 'velocityIterations', 'velocityConstraintEvals',
+  'biasConstraintEvals', 'shockIslands', 'shockConstraintEvals',
+  'shockFallbacks', 'positionCorrections', 'ownershipConflicts',
 ];
+const rigidTimingKeys = [
+  'rigidPrepareMs', 'rigidClearMs', 'rigidCoreMs', 'rigidDepenMs',
+  'rigidStampMs', 'rigidSpillMs', 'rigidFinalizeMs',
+];
+const rigidKeys = [...rigidWorkKeys, ...rigidTimingKeys];
 
 const percentile = (values, fraction) => {
   if (!values.length) return 0;
@@ -214,6 +237,13 @@ const runScenario = (setup) => {
   for (let repeat = 0; repeat < repeats; repeat++) {
     const engine = createEngine();
     setup(engine);
+    if (solverOptions) engine._setRigidSolverOptions(
+      solverOptions.mode,
+      solverOptions.tolerance,
+      solverOptions.minIterations,
+    );
+    if (forceFullSolveBodies)
+      engine._setRigidForceFullSolveBodies(forceFullSolveBodies);
     for (let i = 0; i < WARMUP; i++) engine.stepWorld();
     const repeatSteps = [];
     for (let i = 0; i < sampleSteps; i++) {
@@ -259,10 +289,14 @@ for (const [name, setup] of selectedSetups) {
     + ` ${result.worstWindowP50.toFixed(3)} ms`,
   );
   console.log(`  phase p50 (ms): ${phase}`);
-  console.log(`  rigid mean: ${rigidKeys.map((key) =>
-    `${key} ${result.rigid[key].mean.toFixed(1)}`).join('  ')}`);
-  console.log(`  rigid p95: ${rigidKeys.map((key) =>
-    `${key} ${result.rigid[key].p95.toFixed(0)}`).join('  ')}`);
+  console.log(`  rigid mean: ${rigidKeys.map((key) => {
+    const digits = rigidTimingKeys.includes(key) ? 3 : 1;
+    return `${key} ${result.rigid[key].mean.toFixed(digits)}`;
+  }).join('  ')}`);
+  console.log(`  rigid p95: ${rigidKeys.map((key) => {
+    const digits = rigidTimingKeys.includes(key) ? 3 : 0;
+    return `${key} ${result.rigid[key].p95.toFixed(digits)}`;
+  }).join('  ')}`);
 }
 console.log(`\nwall ${(performance.now() - started).toFixed(0)} ms, ${repeats} repeats`);
 

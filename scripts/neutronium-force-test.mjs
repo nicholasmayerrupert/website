@@ -678,6 +678,7 @@ for (const [label, sourceLayer] of [['foreground', 0], ['background', 1]]) {
   engine.syncComponents();
   for (const [x, y, radius] of [
     [90, 92, 7], [90, 65, 5], [90, 43, 4], [90, 25, 3], [90, 10, 2],
+    [90, 3, 1],
   ]) {
     engine.spawnBox(x, y, radius, radius, MAT.NEUTRONIUM);
   }

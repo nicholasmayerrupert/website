@@ -129,6 +129,7 @@ class RigidBodySystem {
   void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);
   void erodeBodies(std::vector<int>& cells);
   int bodyFootprintBlocked(Body* b);
+  int bodyTerrainBlocked(Body* b);
   bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
   bool findTerrainClearAdjustment(Body* b, double& dx, double& dy);

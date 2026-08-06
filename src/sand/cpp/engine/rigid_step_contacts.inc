@@ -423,6 +423,9 @@
   std::vector<ChildEvent> childEventScratch;
   std::vector<int> activeChildrenA, activeChildrenB;
   std::vector<std::pair<int, int>> childPairScratch;
+  std::vector<std::pair<int, int>> childTreeStack;
+  std::vector<uint8_t> childTreeValidCurrentA, childTreeValidCurrentB;
+  std::vector<uint8_t> childTreeValidNextA, childTreeValidNextB;
   auto childPose = [](Body* body, double time) {
     double angle = body->angle + body->omega * time;
     double ux = std::cos(angle), uy = std::sin(angle);
@@ -432,30 +435,51 @@
       ux, uy, -uy, ux,
     };
   };
+  auto makeChildFrame = [&](Body* body, const ChildPose& pose, int child,
+                            ChildFrame& frame) {
+    frame.body = body;
+    frame.rect = &body->collisionRects[child];
+    frame.child = child;
+    frame.ux = pose.ux;
+    frame.uy = pose.uy;
+    frame.vx = pose.vx;
+    frame.vy = pose.vy;
+    frame.px = pose.px;
+    frame.py = pose.py;
+    double lx = body->offsetX
+      + (frame.rect->x0 + frame.rect->x1 - 1) * 0.5;
+    double ly = body->offsetY
+      + (frame.rect->y0 + frame.rect->y1 - 1) * 0.5;
+    frame.cx = pose.px + lx * pose.ux + ly * pose.vx;
+    frame.cy = pose.py + lx * pose.uy + ly * pose.vy;
+    frame.hx = (frame.rect->x1 - frame.rect->x0) * 0.5;
+    frame.hy = (frame.rect->y1 - frame.rect->y0) * 0.5;
+    rigidChildTransforms++;
+  };
   auto collectChildFrames = [&](Body* body, const ChildPose& pose,
-                                std::vector<ChildFrame>& frames) {
+                                 std::vector<ChildFrame>& frames) {
     frames.resize(body->collisionRects.size());
-    rigidChildTransforms += (int)frames.size();
     for (int child = 0; child < (int)frames.size(); child++) {
-      ChildFrame& frame = frames[child];
-      frame.body = body;
-      frame.rect = &body->collisionRects[child];
-      frame.child = child;
-      frame.ux = pose.ux;
-      frame.uy = pose.uy;
-      frame.vx = pose.vx;
-      frame.vy = pose.vy;
-      frame.px = pose.px;
-      frame.py = pose.py;
-      double lx = body->offsetX
-        + (frame.rect->x0 + frame.rect->x1 - 1) * 0.5;
-      double ly = body->offsetY
-        + (frame.rect->y0 + frame.rect->y1 - 1) * 0.5;
-      frame.cx = pose.px + lx * pose.ux + ly * pose.vx;
-      frame.cy = pose.py + lx * pose.uy + ly * pose.vy;
-      frame.hx = (frame.rect->x1 - frame.rect->x0) * 0.5;
-      frame.hy = (frame.rect->y1 - frame.rect->y0) * 0.5;
+      makeChildFrame(body, pose, child, frames[child]);
     }
+  };
+  auto makeNodeFrame = [&](Body* body, const ChildPose& pose,
+                           const BodyCollisionNode& node) {
+    ChildFrame frame;
+    frame.body = body;
+    frame.ux = pose.ux;
+    frame.uy = pose.uy;
+    frame.vx = pose.vx;
+    frame.vy = pose.vy;
+    frame.px = pose.px;
+    frame.py = pose.py;
+    double lx = body->offsetX + (node.x0 + node.x1 - 1) * 0.5;
+    double ly = body->offsetY + (node.y0 + node.y1 - 1) * 0.5;
+    frame.cx = pose.px + lx * pose.ux + ly * pose.vx;
+    frame.cy = pose.py + lx * pose.uy + ly * pose.vy;
+    frame.hx = (node.x1 - node.x0) * 0.5;
+    frame.hy = (node.y1 - node.y0) * 0.5;
+    return frame;
   };
   auto childFramesOverlap = [](const ChildFrame& a, const ChildFrame& b) {
     double aExtentX = std::fabs(a.ux) * a.hx + std::fabs(a.vx) * a.hy;
@@ -494,6 +518,94 @@
                                const ChildBounds& b) {
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
+  };
+  auto collectChildTreePairCandidates = [&](Body* bodyA, Body* bodyB,
+      double dt, const ChildPose& currentPoseA,
+      const ChildPose& currentPoseB, const ChildPose& nextPoseA,
+      const ChildPose& nextPoseB,
+      std::vector<ChildFrame>& currentFramesA,
+      std::vector<ChildFrame>& currentFramesB,
+      std::vector<ChildFrame>& nextFramesA,
+      std::vector<ChildFrame>& nextFramesB) {
+    int countA = (int)bodyA->collisionRects.size();
+    int countB = (int)bodyB->collisionRects.size();
+    currentFramesA.resize(countA);
+    currentFramesB.resize(countB);
+    nextFramesA.resize(countA);
+    nextFramesB.resize(countB);
+    childTreeValidCurrentA.assign(countA, 0);
+    childTreeValidCurrentB.assign(countB, 0);
+    childTreeValidNextA.assign(countA, 0);
+    childTreeValidNextB.assign(countB, 0);
+    auto ensureFrames = [&](Body* body, int child,
+        const ChildPose& currentPose, const ChildPose& nextPose,
+        std::vector<ChildFrame>& currentFrames,
+        std::vector<ChildFrame>& nextFrames,
+        std::vector<uint8_t>& currentValid,
+        std::vector<uint8_t>& nextValid) {
+      if (!currentValid[child]) {
+        makeChildFrame(body, currentPose, child, currentFrames[child]);
+        currentValid[child] = 1;
+      }
+      if (!nextValid[child]) {
+        makeChildFrame(body, nextPose, child, nextFrames[child]);
+        nextValid[child] = 1;
+      }
+    };
+    bool sweptCandidate = false;
+    childPairScratch.clear();
+    childTreeStack.clear();
+    childTreeStack.push_back({bodyA->collisionTreeRoot,
+                              bodyB->collisionTreeRoot});
+    while (!childTreeStack.empty()) {
+      auto pair = childTreeStack.back();
+      childTreeStack.pop_back();
+      const BodyCollisionNode& nodeA = bodyA->collisionTree[pair.first];
+      const BodyCollisionNode& nodeB = bodyB->collisionTree[pair.second];
+      ChildFrame currentNodeA = makeNodeFrame(bodyA, currentPoseA, nodeA);
+      ChildFrame currentNodeB = makeNodeFrame(bodyB, currentPoseB, nodeB);
+      ChildFrame nextNodeA = makeNodeFrame(bodyA, nextPoseA, nodeA);
+      ChildFrame nextNodeB = makeNodeFrame(bodyB, nextPoseB, nodeB);
+      ChildBounds boundsA = childBoundsAtBothPoses(
+        bodyA, currentNodeA, nextNodeA, dt);
+      ChildBounds boundsB = childBoundsAtBothPoses(
+        bodyB, currentNodeB, nextNodeB, dt);
+      if (!childBoundsOverlap(boundsA, boundsB)) continue;
+      bool leafA = nodeA.child >= 0;
+      bool leafB = nodeB.child >= 0;
+      if (leafA && leafB) {
+        sweptCandidate = true;
+        ensureFrames(bodyA, nodeA.child, currentPoseA, nextPoseA,
+          currentFramesA, nextFramesA,
+          childTreeValidCurrentA, childTreeValidNextA);
+        ensureFrames(bodyB, nodeB.child, currentPoseB, nextPoseB,
+          currentFramesB, nextFramesB,
+          childTreeValidCurrentB, childTreeValidNextB);
+        if (childFramesOverlap(currentFramesA[nodeA.child],
+                               currentFramesB[nodeB.child])
+            || childFramesOverlap(nextFramesA[nodeA.child],
+                                  nextFramesB[nodeB.child]))
+          childPairScratch.push_back({nodeA.child, nodeB.child});
+        continue;
+      }
+      int areaA = (nodeA.x1 - nodeA.x0) * (nodeA.y1 - nodeA.y0);
+      int areaB = (nodeB.x1 - nodeB.x0) * (nodeB.y1 - nodeB.y0);
+      if (!leafA && (leafB || areaA >= areaB)) {
+        childTreeStack.push_back({nodeA.right, pair.second});
+        childTreeStack.push_back({nodeA.left, pair.second});
+      } else {
+        childTreeStack.push_back({pair.first, nodeB.right});
+        childTreeStack.push_back({pair.first, nodeB.left});
+      }
+    }
+    ensureFrames(bodyA, 0, currentPoseA, nextPoseA,
+      currentFramesA, nextFramesA,
+      childTreeValidCurrentA, childTreeValidNextA);
+    ensureFrames(bodyB, 0, currentPoseB, nextPoseB,
+      currentFramesB, nextFramesB,
+      childTreeValidCurrentB, childTreeValidNextB);
+    std::sort(childPairScratch.begin(), childPairScratch.end());
+    return sweptCandidate;
   };
   auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB, double dt,
       const std::vector<ChildFrame>& currentFramesA,
@@ -926,20 +1038,48 @@
       }
       return nextChildFrames[bodyIndex];
     };
-    const std::vector<ChildFrame>& currentFramesA = currentFrames(
-      a, bodyIndexA, currentChildFrameScratchA);
-    const std::vector<ChildFrame>& currentFramesB = currentFrames(
-      b, bodyIndexB, currentChildFrameScratchB);
-    const std::vector<ChildFrame>& nextFramesA = framesAtDt(
-      a, bodyIndexA, nextChildFrameScratchA);
-    const std::vector<ChildFrame>& nextFramesB = framesAtDt(
-      b, bodyIndexB, nextChildFrameScratchB);
+    const std::vector<ChildFrame>* currentFramesAPtr;
+    const std::vector<ChildFrame>* currentFramesBPtr;
+    const std::vector<ChildFrame>* nextFramesAPtr;
+    const std::vector<ChildFrame>* nextFramesBPtr;
+    bool useCollisionTree =
+      a->collisionTreeRoot >= 0 && b->collisionTreeRoot >= 0
+      && a->collisionRects.size() + b->collisionRects.size() >= 64;
+    bool sweptCandidate;
+    if (useCollisionTree) {
+      ChildPose currentPoseA = childPose(a, 0);
+      ChildPose currentPoseB = childPose(b, 0);
+      ChildPose nextPoseA = childPose(a, dt);
+      ChildPose nextPoseB = childPose(b, dt);
+      sweptCandidate = collectChildTreePairCandidates(
+        a, b, dt, currentPoseA, currentPoseB, nextPoseA, nextPoseB,
+        currentChildFrameScratchA, currentChildFrameScratchB,
+        nextChildFrameScratchA, nextChildFrameScratchB);
+      currentFramesAPtr = &currentChildFrameScratchA;
+      currentFramesBPtr = &currentChildFrameScratchB;
+      nextFramesAPtr = &nextChildFrameScratchA;
+      nextFramesBPtr = &nextChildFrameScratchB;
+    } else {
+      currentFramesAPtr = &currentFrames(
+        a, bodyIndexA, currentChildFrameScratchA);
+      currentFramesBPtr = &currentFrames(
+        b, bodyIndexB, currentChildFrameScratchB);
+      nextFramesAPtr = &framesAtDt(
+        a, bodyIndexA, nextChildFrameScratchA);
+      nextFramesBPtr = &framesAtDt(
+        b, bodyIndexB, nextChildFrameScratchB);
+      sweptCandidate = collectChildPairCandidates(
+        a, b, dt, *currentFramesAPtr, *currentFramesBPtr,
+        *nextFramesAPtr, *nextFramesBPtr);
+    }
+    const std::vector<ChildFrame>& currentFramesA = *currentFramesAPtr;
+    const std::vector<ChildFrame>& currentFramesB = *currentFramesBPtr;
+    const std::vector<ChildFrame>& nextFramesA = *nextFramesAPtr;
+    const std::vector<ChildFrame>& nextFramesB = *nextFramesBPtr;
     activeCurrentChildFramesA = &currentFramesA;
     activeCurrentChildFramesB = &currentFramesB;
     activeNextChildFramesA = &nextFramesA;
     activeNextChildFramesB = &nextFramesB;
-    bool sweptCandidate = collectChildPairCandidates(
-      a, b, dt, currentFramesA, currentFramesB, nextFramesA, nextFramesB);
     bool currentContact = false;
     for (const auto& pair : childPairScratch) {
       int ai = pair.first, bi = pair.second;

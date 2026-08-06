@@ -45,6 +45,7 @@ export const UNIT_SUITES = [
   ['rigid-fluid-accuracy', 'rigid-fluid-accuracy-test.mjs'],
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-large-body', 'rigid-large-body-test.mjs'],
+  ['rigid-terrain-contact', 'rigid-terrain-contact-test.mjs'],
   ['rigid-shape-stress', 'rigid-shape-stress-test.mjs'],
   ['rigid-sliver', 'rigid-sliver-test.mjs'],
   ['house-blast-float', 'house-blast-float-test.mjs'],

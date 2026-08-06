@@ -19,6 +19,7 @@ function table() {
     mod: M.mod,
     bodyCount: c('engine_test_body_count', 'number', ['number']),
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
+    bodyTerrainBlocked: c('engine_test_body_terrain_blocked', 'number', ['number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
     bodyChildCount: c('engine_test_body_child_count', 'number', ['number', 'number']),
@@ -73,6 +74,7 @@ export function attachTestHooks(engine) {
   const ptr = engine.ptr;
   engine._bodyCount = () => t.bodyCount(ptr);
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
+  engine._bodyTerrainBlocked = (i) => t.bodyTerrainBlocked(ptr, i);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
   engine._bodyChildCount = (i) => t.bodyChildCount(ptr, i);

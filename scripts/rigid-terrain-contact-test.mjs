@@ -1,0 +1,145 @@
+// Large, terrain-carved masks must land on uneven ground without penetrating,
+// persistent jitter, or raster damage.
+
+import {
+  initSandWasm,
+  createEngineWasm as createEngineWasmRaw,
+  MAT,
+} from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+import { makeChecker } from './sand-test-util.mjs';
+
+await initSandWasm();
+const { check, done } = makeChecker('large rigid terrain contact');
+
+const makeEngine = () => attachTestHooks(createEngineWasmRaw({
+  cols: 480,
+  rows: 340,
+  worldSeed: 0x726f7567,
+  sinksOn: false,
+  infinite: false,
+}));
+
+const paintGround = (engine) => {
+  for (let x = 0; x < 480; x++) {
+    const wave = Math.round(3 * Math.sin(x * 0.12));
+    const tooth = (x * 19 + 7) % 23 < 3 ? -2 : 0;
+    const top = 292 + wave + tooth;
+    for (let y = top; y < 340; y++)
+      engine.paintDisc(x, y, 0, MAT.STONE, true);
+  }
+  engine.syncComponents();
+};
+
+const carvedBody = (centerX, topY, width = 230, height = 92) => {
+  const cells = [];
+  const left = centerX - Math.floor(width / 2);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const chamberA = ((x - width * 0.28) / (width * 0.18)) ** 2
+        + ((y - height * 0.43) / (height * 0.28)) ** 2 < 1;
+      const chamberB = ((x - width * 0.70) / (width * 0.21)) ** 2
+        + ((y - height * 0.42) / (height * 0.25)) ** 2 < 1;
+      const bottomNotch = y > height * 0.68
+        && Math.abs(x - width * 0.5) < (y - height * 0.68) * 1.15;
+      const scallop = y > height * 0.80
+        && (x + Math.floor(y / 3)) % 29 < 9;
+      if (!chamberA && !chamberB && !bottomNotch && !scallop)
+        cells.push([left + x, topY + y]);
+    }
+  }
+  return cells;
+};
+
+const runCase = (bodies) => {
+  const engine = makeEngine();
+  paintGround(engine);
+  for (const body of bodies) {
+    engine.spawnBody(carvedBody(body.x, body.y, body.width, body.height));
+    engine._setBodyMotion(engine._bodyCount() - 1,
+      body.vx ?? 0, body.vy ?? 0, body.omega ?? 0);
+  }
+
+  let firstContact = -1;
+  let peakCells = 0;
+  let peakChildren = 0;
+  let maxTerrainBlocked = 0;
+  let maxRejected = 0;
+  let maxDepenetrations = 0;
+  let latePeakSpeed = 0;
+  let lateAwakeTicks = 0;
+  let lateTerrainBlockedTicks = 0;
+  for (let tick = 0; tick < 620; tick++) {
+    engine.stepWorld();
+    const rigid = engine.getRigidDebug();
+    const solver = engine.getRigidSolverDebug();
+    let terrainBlocked = 0;
+    let speed = 0;
+    let awake = 0;
+    for (let body = 0; body < engine._bodyCount(); body++) {
+      const state = engine._bodyState(body);
+      peakCells = Math.max(peakCells, state?.nPts ?? 0);
+      peakChildren = Math.max(peakChildren, engine._bodyChildCount(body));
+      terrainBlocked += Math.max(0, engine._bodyTerrainBlocked(body));
+      speed = Math.max(speed,
+        Math.hypot(state.vx, state.vy) + Math.abs(state.omega) * state.maxR);
+      awake += engine._bodyAwake(body) > 0;
+    }
+    if (firstContact < 0 && solver.contacts > 0) firstContact = tick;
+    maxTerrainBlocked = Math.max(maxTerrainBlocked, terrainBlocked);
+    maxRejected = Math.max(maxRejected, rigid.rejectedCells);
+    maxDepenetrations = Math.max(maxDepenetrations, rigid.depenetrations);
+    if (tick >= 430) {
+      latePeakSpeed = Math.max(latePeakSpeed, speed);
+      lateAwakeTicks += awake > 0;
+      lateTerrainBlockedTicks += terrainBlocked > 0;
+    }
+  }
+  engine.destroy();
+  return {
+    firstContact,
+    peakCells,
+    peakChildren,
+    maxTerrainBlocked,
+    maxRejected,
+    maxDepenetrations,
+    latePeakSpeed,
+    lateAwakeTicks,
+    lateTerrainBlockedTicks,
+  };
+};
+
+const single = runCase([
+  { x: 240, y: 45, vy: 0.4, omega: 0.006 },
+]);
+check(`12k-cell carved body uses detailed collision geometry `
+    + `(${single.peakCells} cells, ${single.peakChildren} children)`,
+  single.peakCells >= 12000 && single.peakChildren >= 180);
+check(`single carved body reaches rough ground (tick ${single.firstContact})`,
+  single.firstContact >= 0);
+check(`single carved body never enters terrain `
+    + `(${single.maxTerrainBlocked} blocked, ${single.maxRejected} rejected, `
+    + `${single.maxDepenetrations} depenetrations)`,
+  single.maxTerrainBlocked === 0 && single.maxRejected === 0
+    && single.maxDepenetrations === 0);
+check(`single carved body sleeps without late jitter `
+    + `(${single.latePeakSpeed.toFixed(6)} peak, `
+    + `${single.lateAwakeTicks} awake ticks)`,
+  single.latePeakSpeed <= 0.001 && single.lateAwakeTicks === 0);
+
+const pair = runCase([
+  { x: 185, y: 30, width: 190, height: 76, vx: 0.08, omega: 0.005 },
+  { x: 295, y: 112, width: 170, height: 70, vx: -0.06, omega: -0.006 },
+]);
+check(`two irregular bodies reach contact (tick ${pair.firstContact})`,
+  pair.firstContact >= 0);
+check(`interacting bodies never enter terrain `
+    + `(${pair.maxTerrainBlocked} blocked, ${pair.maxRejected} rejected, `
+    + `${pair.maxDepenetrations} depenetrations)`,
+  pair.maxTerrainBlocked === 0 && pair.maxRejected === 0
+    && pair.maxDepenetrations === 0 && pair.lateTerrainBlockedTicks === 0);
+check(`interacting bodies settle without persistent jitter `
+    + `(${pair.latePeakSpeed.toFixed(6)} peak, ${pair.lateAwakeTicks} awake ticks)`,
+  pair.latePeakSpeed <= 0.001 && pair.lateAwakeTicks === 0);
+
+process.exitCode = done();

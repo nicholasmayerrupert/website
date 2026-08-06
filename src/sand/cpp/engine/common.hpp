@@ -232,6 +232,11 @@ struct BodyCollisionRect {
   std::array<int, 4> spanCount{{0, 0, 0, 0}};
 };
 
+struct BodyCollisionNode {
+  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  int left = -1, right = -1, child = -1;
+};
+
 struct BodyRasterCell {
   int x = 0, y = 0, local = -1;
 };
@@ -277,6 +282,11 @@ struct Body {
   // exposed sub-spans so contacts cannot originate from decomposition seams.
   std::vector<BodyCollisionRect> collisionRects;
   std::vector<BodyCollisionSpan> collisionSpans;
+  // Local-space hierarchy over the exact rectangle cover. Broad-phase traversal
+  // transforms only branches near another body instead of every rectangle in a
+  // large, irregular mask on every substep.
+  std::vector<BodyCollisionNode> collisionTree;
+  int collisionTreeRoot = -1;
   uint32_t geometryRevision = 0;
   // Exact inverse-raster result for one pose. Multiple systems query an
   // unchanged pose in the same tick; the pose/revision/grid key prevents reuse

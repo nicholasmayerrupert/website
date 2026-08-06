@@ -350,6 +350,12 @@
     markLayerRowSpan(layer, y, k - y * cols, k - y * cols);
   }
 
+  inline void markLayerSimCell(Layer* layer, int k) {
+    if (k < 0 || k >= cols * rows) return;
+    int y = k / cols, x = k - y * cols;
+    mergeRowSpan(layer->simOnlyRowMarkSpans[y], x, x);
+  }
+
   inline void activateRowSpanNow(int y, int x0, int x1) {
     if (y < 0 || y >= rows) return;
     x0 = imax(0, x0); x1 = imin(cols - 1, x1);
@@ -698,6 +704,7 @@
   void clearAllDirty() {
     for (int y = 0; y < rows; y++) {
       L->rowMarkSpans[y].clear();
+      L->simOnlyRowMarkSpans[y].clear();
     }
     memset(L->dirtyRender.data(), 0, (size_t)chunkCols * chunkRows); L->dirtyRenderCount = 0;
   }
@@ -762,16 +769,20 @@
       L->activeRowSpans[y].clear();
     }
     bool hasActive = false;
-    for (int y = 0; y < rows; y++) {
-      if (L->rowMarkSpans[y].empty()) continue;
+    auto activateMarks = [&](int y, auto& spans) {
+      if (spans.empty()) return;
       hasActive = true;
       int py0 = imax(0, y - DIRTY_PAD_Y), py1 = imin(rows - 1, y + DIRTY_PAD_Y);
-      for (const auto& span : L->rowMarkSpans[y]) {
+      for (const auto& span : spans) {
         int px0 = imax(0, (int)span.first - DIRTY_PAD_X);
         int px1 = imin(cols - 1, (int)span.second + DIRTY_PAD_X);
         for (int yy = py0; yy <= py1; yy++) activateRowSpanNow(yy, px0, px1);
       }
-      L->rowMarkSpans[y].clear();
+      spans.clear();
+    };
+    for (int y = 0; y < rows; y++) {
+      activateMarks(y, L->rowMarkSpans[y]);
+      activateMarks(y, L->simOnlyRowMarkSpans[y]);
     }
     if (!hasActive) return false;
     stepSerial++;

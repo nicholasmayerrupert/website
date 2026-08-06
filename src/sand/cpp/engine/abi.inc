@@ -655,8 +655,8 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int cou
 EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->net.gridHashFNV(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->useLayer(&e->fg); e->clearAllDirty(); e->useLayer(&e->bg); e->clearAllDirty(); e->useLayer(&e->fg); }
 // A replication consumer has copied the current dirty rectangles. Clear only
-// the accumulated packet/render chunks: rowMarkSpans are also the cellular
-// scheduler's next-active regions and must survive until beginStepDirty().
+// the accumulated packet/render chunks: row scheduler marks are also the
+// cellular scheduler's next-active regions and must survive until beginStepDirty().
 EMSCRIPTEN_KEEPALIVE void engine_clear_replica_dirty(Engine* e) {
   memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0;
   memset(e->bg.dirtyRender.data(), 0, e->bg.dirtyRender.size()); e->bg.dirtyRenderCount = 0;
@@ -671,6 +671,7 @@ EMSCRIPTEN_KEEPALIVE void engine_reset_simulation_activity(Engine* e, int preser
       e->foldRowMarksToRender();
     }
     for (auto& spans : lay.rowMarkSpans) spans.clear();
+    for (auto& spans : lay.simOnlyRowMarkSpans) spans.clear();
     for (auto& spans : lay.activeRowSpans) spans.clear();
   };
   reset(e->fg);

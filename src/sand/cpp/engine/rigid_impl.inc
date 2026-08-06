@@ -165,6 +165,28 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     }
     pi++;
   }
+  b->boundarySampleBlocks.clear();
+  static constexpr int BOUNDARY_SAMPLES_PER_BLOCK = 32;
+  int sampleCount = (int)b->boundarySampleRadii.size();
+  for (int first = 0; first < sampleCount;
+       first += BOUNDARY_SAMPLES_PER_BLOCK) {
+    BodyBoundarySampleBlock block;
+    block.first = first;
+    block.count = imin(BOUNDARY_SAMPLES_PER_BLOCK, sampleCount - first);
+    block.minX = block.minY = std::numeric_limits<float>::max();
+    block.maxX = block.maxY = std::numeric_limits<float>::lowest();
+    for (int sample = first; sample < first + block.count; sample++) {
+      float x = b->boundarySamples[sample * 2];
+      float y = b->boundarySamples[sample * 2 + 1];
+      block.minX = std::fmin(block.minX, x);
+      block.minY = std::fmin(block.minY, y);
+      block.maxX = std::fmax(block.maxX, x);
+      block.maxY = std::fmax(block.maxY, y);
+      block.maxRadius = std::fmax(
+        block.maxRadius, b->boundarySampleRadii[sample]);
+    }
+    b->boundarySampleBlocks.push_back(block);
+  }
   double mass = b->cellMaterials.empty() && !b->jointRole ? b->density * nPts : totalMass;
   if (!b->cellMaterials.empty() || b->jointRole) b->density = mass / nPts;
   bool coversMajorAxis = true;
@@ -1650,6 +1672,27 @@ int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   if (b->jointRole == 1 && b->jointPeer) forEachBodyCell(b->jointPeer, probe);
   return blocked;
 }
+bool RigidBodySystem::bodyFootprintOverlapsSolid(Body* b) {
+  auto blockedIn = [&](Layer& layer, int k) {
+    if (layer.bodyOwner[k] == b->id) return false;
+    uint8_t material = layer.grid[k];
+    return material != EMPTY && !E.isGasMaterial(material)
+      && !E.isBuoyantMedium(material);
+  };
+  auto blockedBody = [&](Body* member) {
+    forEachBodyCell(member, [](int, int, int) {});
+    for (const BodyRasterCell& cell : member->rasterFootprint) {
+      if (E.L->infinite && (cell.x == 0 || cell.x == E.cols - 1))
+        continue;
+      int k = cell.y * E.cols + cell.x;
+      if (blockedIn(*E.L, k)
+          || (b->jointRole == 1 && blockedIn(E.bg, k))) return true;
+    }
+    return false;
+  };
+  return blockedBody(b)
+      || (b->jointRole == 1 && b->jointPeer && blockedBody(b->jointPeer));
+}
 int RigidBodySystem::bodyTerrainBlocked(Body* b) {
   int blocked = 0;
   forEachBodyCell(b, [&](int x, int y, int) {
@@ -1734,13 +1777,13 @@ bool RigidBodySystem::findTerrainClearAdjustment(
   auto clearAlong = [&](const double* direction) {
     for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
       place(direction[0] * radius, direction[1] * radius);
-      if (bodyFootprintBlocked(b) != 0) continue;
+      if (bodyFootprintOverlapsSolid(b)) continue;
       double blockedRadius = radius - step;
       double clearRadius = radius;
       for (int iteration = 0; iteration < 6; iteration++) {
         double middle = (blockedRadius + clearRadius) * 0.5;
         place(direction[0] * middle, direction[1] * middle);
-        if (bodyFootprintBlocked(b) == 0) clearRadius = middle;
+        if (!bodyFootprintOverlapsSolid(b)) clearRadius = middle;
         else blockedRadius = middle;
       }
       place(0, 0);
@@ -1802,13 +1845,13 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     double bestRadius = radius, bestX = 0, bestY = 0;
     for (const auto& direction : directions) {
       place(direction[0] * radius, direction[1] * radius);
-      if (bodyFootprintBlocked(b) != 0) continue;
+      if (bodyFootprintOverlapsSolid(b)) continue;
       double blockedRadius = radius - step;
       double clearRadius = radius;
       for (int iteration = 0; iteration < 6; iteration++) {
         double middle = (blockedRadius + clearRadius) * 0.5;
         place(direction[0] * middle, direction[1] * middle);
-        if (bodyFootprintBlocked(b) == 0) clearRadius = middle;
+        if (!bodyFootprintOverlapsSolid(b)) clearRadius = middle;
         else blockedRadius = middle;
       }
       if (!found || clearRadius < bestRadius) {
@@ -1982,7 +2025,7 @@ void RigidBodySystem::bakeRestingBodies() {
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
-    if (canBake && bodyFootprintBlocked(b) != 0) canBake = false;
+    if (canBake && bodyFootprintOverlapsSolid(b)) canBake = false;
     bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
     bool peerGroundedContact = false;
     if (canBake && b->jointRole == 1 && b->jointPeer) {
@@ -2264,7 +2307,7 @@ void RigidBodySystem::moveBodies() {
       E.L->fallSpeed[k] = 0;
       E.L->liquidVel[k] = 0;
       E.L->bodyOwner[k] = -1;
-      E.markCellIndex(k);
+      E.markLayerSimCell(E.L, k);
     } else {
       if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY);
       E.L->bodyOwner[k] = -1;
@@ -2319,7 +2362,7 @@ void RigidBodySystem::moveBodies() {
       int slot = moveBodySlotById.find(body->id)->second;
       int root = adjustmentRoot(slot);
       if (!adjustmentRootActive[root]
-          || bodyFootprintBlocked(body) == 0) continue;
+          || !bodyFootprintOverlapsSolid(body)) continue;
       double dx = 0, dy = 0;
       if (!findTerrainClearAdjustment(body, dx, dy)) continue;
       for (Body* member : E.L->bodies) {
@@ -2340,7 +2383,7 @@ void RigidBodySystem::moveBodies() {
     if (body->jointRole == 2) continue;
     int slot = moveBodySlotById.find(body->id)->second;
     if (!adjustmentRootActive[adjustmentRoot(slot)]
-        || bodyFootprintBlocked(body) == 0) continue;
+        || !bodyFootprintOverlapsSolid(body)) continue;
     body->awake = true;
     body->stillTicks = 0;
   }
@@ -2393,6 +2436,10 @@ void RigidBodySystem::moveBodies() {
   }
   if (batchRasterRestore)
     for (int k : E.L->bodyCells) {
+      if (E.L->grid[k] != movePreviousMaterialGrid[k]
+          || E.L->bodyOwner[k] != movePreviousOwnerGrid[k])
+        E.markCellIndex(k);
+      movePreviousMaterialGrid[k] = EMPTY;
       movePreviousOwnerGrid[k] = -1;
     }
   double stampElapsed = emscripten_get_now() - stampStart;

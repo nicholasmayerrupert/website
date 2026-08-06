@@ -25,7 +25,8 @@ struct Layer {
   std::vector<int32_t> dirtyRects;
   std::vector<int32_t> chunkStamp, vacatedStamp, assemblyWakeStamp, blastGasStamp;
   // Sorted, merged inclusive spans retain disjoint activity on each row.
-  std::vector<std::vector<std::pair<int32_t, int32_t>>> rowMarkSpans, activeRowSpans;
+  std::vector<std::vector<std::pair<int32_t, int32_t>>> rowMarkSpans,
+    simOnlyRowMarkSpans, activeRowSpans;
   // A locally-proven cave blast starts from synchronized buffers (its fuse ticks
   // paid the ordinary full carry). Once proven, gas/rigid-only ticks may keep
   // component carry local until a buffer replacement/stream invalidates the proof;
@@ -198,6 +199,7 @@ struct Layer {
     grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
     rowMarkSpans.clear(); rowMarkSpans.resize(rows);
+    simOnlyRowMarkSpans.clear(); simOnlyRowMarkSpans.resize(rows);
     growingPlantComponents.clear(); myceliumComponents.clear(); iceComponents.clear();
     componentRegistryDirty = true;
 
@@ -259,7 +261,7 @@ struct Layer {
       release(gridA); release(gridB); release(fallSpeedA); release(fallSpeedB);
       release(liquidVelA); release(liquidVelB);
       release(dirtyRender); release(dirtyRects);
-      release(rowMarkSpans); release(chunkStamp);
+      release(rowMarkSpans); release(simOnlyRowMarkSpans); release(chunkStamp);
       release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
@@ -332,12 +334,14 @@ struct Layer {
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(dirtyRender); release(dirtyRects); release(rowMarkSpans);
+      release(simOnlyRowMarkSpans);
       release(light); release(lightBase); release(skyLight); release(skyTopInput);
       release(skyDownValue); release(skyDownDepth); release(renderPixels);
     }
     dirtyRender.assign((size_t)newChunkCols * newChunkRows, 0);
     dirtyRects.clear();
     rowMarkSpans.clear(); rowMarkSpans.resize(newRows);
+    simOnlyRowMarkSpans.clear(); simOnlyRowMarkSpans.resize(newRows);
     light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(newCols, 0);
     skyDownValue.assign(newCols, 0); skyDownDepth.assign(newCols, -1);
     renderPixels.assign(n * 4, 0);

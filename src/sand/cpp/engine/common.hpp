@@ -5,6 +5,7 @@
 #include <cstring>
 #include <climits>
 #include <cmath>
+#include <limits>
 #include <array>
 #include <vector>
 #include <unordered_set>
@@ -237,6 +238,12 @@ struct BodyCollisionNode {
   int left = -1, right = -1, child = -1;
 };
 
+struct BodyBoundarySampleBlock {
+  int first = 0, count = 0;
+  float minX = 0, minY = 0, maxX = 0, maxY = 0;
+  double maxRadius = 0;
+};
+
 struct BodyRasterCell {
   int x = 0, y = 0, local = -1;
 };
@@ -278,6 +285,9 @@ struct Body {
   // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
   std::vector<double> boundarySampleRadii;
+  // Spatially coherent sample ranges let terrain bins reject whole boundary
+  // regions before the exact per-sample sweep.
+  std::vector<BodyBoundarySampleBlock> boundarySampleBlocks;
   std::vector<uint8_t> erosionBoundaryMask;
   // Exact non-overlapping rectangle cover of `occ`. Each face indexes its
   // exposed sub-spans so contacts cannot originate from decomposition seams.

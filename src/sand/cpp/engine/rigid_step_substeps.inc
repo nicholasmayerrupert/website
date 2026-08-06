@@ -379,16 +379,17 @@
               return true;
         return false;
       };
-      for (size_t si = 0; si + 1 < S.size(); si += 2) {
+      auto collectTerrainSample = [&](size_t sample) {
+        size_t si = sample * 2;
         double lx = S[si], ly = S[si + 1];
         double sx = b->px + lx * b->cs - ly * b->sn, sy = b->py + lx * b->sn + ly * b->cs;
-        double pointTravel = (linearSpeed + angularSpeed * radii[si / 2]) * dt
+        double pointTravel = (linearSpeed + angularSpeed * radii[sample]) * dt
                            + R_CONTACT_SKIN;
         rigidTerrainSamples++;
         if (!terrainMayOccupy(sx - pointTravel, sy - pointTravel,
                               sx + pointTravel, sy + pointTravel)) {
           rigidTerrainSamplesSkipped++;
-          continue;
+          return;
         }
         int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
         if (solid(cx, cy)) {
@@ -398,14 +399,14 @@
           terrAcc.push_back({sx, sy, nx_, ny_, depth, 0});
           if (bodyHasPeerContacts)
             terrPeers.push_back(peerDynamicBodyAt(b, cx, cy));
-          continue;
+          return;
         }
         if (!exactAngular) {
           double rx = sx - b->px, ry = sy - b->py;
           double mvx = (b->vx - b->omega * ry) * dt;
           double mvy = (b->vy + b->omega * rx) * dt;
           double mlen = std::sqrt(mvx * mvx + mvy * mvy);
-          if (mlen < 1e-9) continue;
+          if (mlen < 1e-9) return;
           double dirx = mvx / mlen, diry = mvy / mlen;
           double total = mlen + R_CONTACT_SKIN;
           int steps = (int)std::ceil(total / R_SWEEP_STEP);
@@ -438,11 +439,11 @@
               terrPeers.push_back(peerDynamicBodyAt(b, hxx, hyy));
             break;
           }
-          continue;
+          return;
         }
-        double pointRadius = radii[si / 2];
+        double pointRadius = radii[sample];
         double speedBound = linearSpeed + angularSpeed * pointRadius;
-        if (speedBound < 1e-9) continue;
+        if (speedBound < 1e-9) return;
         double timeEnd = dt + R_CONTACT_SKIN / speedBound;
         double total = speedBound * timeEnd;
         int steps = (int)std::ceil(total / R_SWEEP_STEP);
@@ -474,6 +475,39 @@
             terrPeers.push_back(peerDynamicBodyAt(b, hxx, hyy));
           break;
         }
+      };
+      auto collectTerrainBlock = [&](const BodyBoundarySampleBlock& block) {
+        double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+        auto includeCorner = [&](double lx, double ly) {
+          double x = b->px + lx * b->cs - ly * b->sn;
+          double y = b->py + lx * b->sn + ly * b->cs;
+          minX = std::fmin(minX, x);
+          minY = std::fmin(minY, y);
+          maxX = std::fmax(maxX, x);
+          maxY = std::fmax(maxY, y);
+        };
+        includeCorner(block.minX, block.minY);
+        includeCorner(block.minX, block.maxY);
+        includeCorner(block.maxX, block.minY);
+        includeCorner(block.maxX, block.maxY);
+        double travel = (linearSpeed + angularSpeed * block.maxRadius) * dt
+                      + R_CONTACT_SKIN;
+        if (!terrainMayOccupy(minX - travel, minY - travel,
+                              maxX + travel, maxY + travel)) {
+          rigidTerrainSamples += block.count;
+          rigidTerrainSamplesSkipped += block.count;
+          return;
+        }
+        for (int sample = block.first;
+             sample < block.first + block.count; sample++)
+          collectTerrainSample((size_t)sample);
+      };
+      if (b->boundarySampleBlocks.empty()) {
+        for (size_t sample = 0; sample < radii.size(); sample++)
+          collectTerrainSample(sample);
+      } else {
+        for (const BodyBoundarySampleBlock& block : b->boundarySampleBlocks)
+          collectTerrainBlock(block);
       }
     };
     // Reduce raw samples into a small contact manifold. Samples are bucketed by

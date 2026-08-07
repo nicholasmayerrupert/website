@@ -142,4 +142,63 @@ check(`interacting bodies settle without persistent jitter `
     + `(${pair.latePeakSpeed.toFixed(6)} peak, ${pair.lateAwakeTicks} awake ticks)`,
   pair.latePeakSpeed <= 0.001 && pair.lateAwakeTicks === 0);
 
+{
+  const cols = 480, rows = 340, floorY = 292;
+  const engine = makeEngine();
+  engine.setBgEnabled(true);
+  for (let y = floorY; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      engine.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  engine.syncComponentsLayer(1);
+  for (const [x, y] of carvedBody(240, 45)) {
+    engine.paintDiscLayer(0, x, y, 0, MAT.BRICK, true);
+    engine.paintDiscLayer(1, x, y, 0, MAT.IRON_ORE, true);
+  }
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+
+  const findRole = (layer, role) => {
+    for (let body = 0; body < engine._bodyCountLayer(layer); body++)
+      if (engine._bodyJointRoleLayer(layer, body) === role) return body;
+    return -1;
+  };
+  let leader = findRole(0, 1);
+  const follower = findRole(1, 2);
+  check('large irregular assembly starts as one cross-layer body',
+    leader >= 0 && follower >= 0);
+  if (leader >= 0) engine._setBodyMotion(leader, 0.12, 0.35, 0.006);
+
+  let firstContact = -1;
+  let maxTerrainBlocked = 0;
+  let maxRejected = 0;
+  let maxDepenetrations = 0;
+  let maxBakedCells = 0;
+  for (let tick = 0; tick < 620; tick++) {
+    engine.stepWorld();
+    const solver = engine.getRigidSolverDebug();
+    const rigid = engine.getRigidDebug();
+    if (firstContact < 0 && solver.contacts > 0) firstContact = tick;
+    maxRejected = Math.max(maxRejected, rigid.rejectedCells);
+    maxDepenetrations = Math.max(maxDepenetrations, rigid.depenetrations);
+    maxBakedCells = Math.max(maxBakedCells, solver.rigidBakedCells);
+    leader = findRole(0, 1);
+    if (leader >= 0)
+      maxTerrainBlocked = Math.max(maxTerrainBlocked,
+        engine._bodyTerrainBlocked(leader));
+  }
+  check(`cross-layer body reaches background-only ground (tick ${firstContact})`,
+    firstContact >= 0);
+  check(`cross-layer body never enters background-only ground `
+      + `(${maxTerrainBlocked} blocked, ${maxRejected} rejected, `
+      + `${maxDepenetrations} depenetrations)`,
+    maxTerrainBlocked === 0 && maxRejected === 0 && maxDepenetrations === 0);
+  check(`cross-layer body settles on background-only ground `
+      + `(${maxBakedCells} baked cells)`,
+    maxBakedCells >= 24000
+      && engine._bodyCountLayer(0) === 0
+      && engine._bodyCountLayer(1) === 0);
+  engine.destroy();
+}
+
 process.exitCode = done();

@@ -328,30 +328,36 @@
                           (int)std::floor(maxX - 0.5 + 1e-9));
             if (x0 > x1) continue;
             const uint8_t* row = E.L->grid + y * E.cols;
-            int x = x0;
-            for (; x + 7 <= x1; x += 8) {
-              uint64_t materials = 0;
-              memcpy(&materials, row + x, sizeof(materials));
-              if (materials == 0) continue;
-              for (int lane = 0; lane < 8; lane++) {
-                uint8_t material = row[x + lane];
+            const uint8_t* peerRow = b->jointRole == 1 && b->jointPeer
+              ? E.bg.grid + y * E.cols : nullptr;
+            auto scanRow = [&](const uint8_t* scan) {
+              int x = x0;
+              for (; x + 7 <= x1; x += 8) {
+                uint64_t materials = 0;
+                memcpy(&materials, scan + x, sizeof(materials));
+                if (materials == 0) continue;
+                for (int lane = 0; lane < 8; lane++) {
+                  uint8_t material = scan[x + lane];
+                  if (material != EMPTY && !E.isGasMaterial(material)
+                      && !E.isBuoyantMedium(material))
+                    b->rasterMayOverlapSolid = true;
+                  if (E.isRigidMaterialClass(material)) {
+                    occupied = true;
+                    break;
+                  }
+                }
+                if (occupied) break;
+              }
+              for (; x <= x1 && !occupied; x++) {
+                uint8_t material = scan[x];
                 if (material != EMPTY && !E.isGasMaterial(material)
                     && !E.isBuoyantMedium(material))
                   b->rasterMayOverlapSolid = true;
-                if (E.isRigidMaterialClass(material)) {
-                  occupied = true;
-                  break;
-                }
+                occupied = E.isRigidMaterialClass(material);
               }
-              if (occupied) break;
-            }
-            for (; x <= x1 && !occupied; x++) {
-              uint8_t material = row[x];
-              if (material != EMPTY && !E.isGasMaterial(material)
-                  && !E.isBuoyantMedium(material))
-                b->rasterMayOverlapSolid = true;
-              occupied = E.isRigidMaterialClass(material);
-            }
+            };
+            scanRow(row);
+            if (!occupied && peerRow) scanRow(peerRow);
           }
           if (!occupied) return;
         }

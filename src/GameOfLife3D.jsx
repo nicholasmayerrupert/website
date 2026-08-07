@@ -102,8 +102,7 @@ export default function GameOfLife3D({
   const [seedInput, setSeedInput] = useState(DEFAULT_SEED);
   const [controlsOpen, setControlsOpen] = useState(() => {
     if (typeof defaultControlsOpen === "boolean") return defaultControlsOpen;
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(min-width: 768px)").matches;
+    return true;
   });
   const [drawMode, setDrawMode] = useState("draw");
   const [gridSize, setGridSize] = useState(16);

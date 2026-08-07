@@ -21,6 +21,11 @@ static bool rigidPreciseContact(const Contact& contact) {
 }
 
 static double rigidContactSlop(const Contact& contact) {
+  if (!contact.b && contact.a->jointRole == 1) {
+    double pointSpeed = std::hypot(contact.a->vx, contact.a->vy)
+      + std::fabs(contact.a->omega) * contact.a->maxR;
+    if (pointSpeed < R_SETTLE_LIN) return R_PEN_SLOP;
+  }
   return rigidPreciseContact(contact) ? R_BODY_PEN_SLOP : R_PEN_SLOP;
 }
 

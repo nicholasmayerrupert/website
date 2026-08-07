@@ -223,6 +223,7 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int 
   out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx;
   out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
   out[8] = b->invMass; out[9] = b->invInertia;
+  out[10] = b->pvx; out[11] = b->pvy; out[12] = b->pw;
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_box_layer(
@@ -314,13 +315,15 @@ EMSCRIPTEN_KEEPALIVE int engine_test_collect_dynamic_lights(Engine* e) {
   return (int)e->renderer.dynamicLights.size();
 }
 // Read continuous body state for tests/tools:
-// [px,py,angle,vx,vy,omega,nPts,maxR,invMass,invInertia].
+// [px,py,angle,vx,vy,omega,nPts,maxR,invMass,invInertia,
+//  pvx,pvy,pw].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
   out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx;
   out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
   out[8] = b->invMass; out[9] = b->invInertia;
+  out[10] = b->pvx; out[11] = b->pvy; out[12] = b->pw;
   return 1;
 }
 // Set continuous body motion (test/tool hook): wakes the body.

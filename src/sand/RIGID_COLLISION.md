@@ -92,11 +92,14 @@ lives in `rigid_impl.inc`.
   penetration bias, and a fixed impact restitution target. Ice contacts select a
   lower material-pair friction. Each contact's fixed inverse normal, tangent,
   and positional effective masses are prepared after the substep's wake
-  decisions and reused for every solver iteration. Cross-layer bodies use the
-  tighter positional slop against terrain as well as other bodies so both layer
-  rasters remain outside the ground. Two well-separated contacts on one face use
-  a coupled two-point normal solve, which prevents a long resting face from
-  alternating support between its endpoints.
+  decisions and reused for every solver iteration. Moving cross-layer bodies use
+  the tighter positional slop against terrain as well as other bodies so both
+  layer rasters remain outside the ground. After a terrain-supported body enters
+  the existing settle band, its terrain contacts use the ordinary raster slop so
+  half-cell contact depths do not alternate positional correction. Two
+  well-separated contacts on one face use a coupled two-point normal solve,
+  which prevents a long resting face from alternating support between its
+  endpoints.
 - Contact islands are ordered from the lowest contact upward for the first
   passes, then alternate direction. Iteration budgets scale with island size,
   retain a minimum for large bodies, and use the full cap for impacts. Islands

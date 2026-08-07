@@ -110,7 +110,7 @@ export function attachTestHooks(engine) {
     t.spawnNaturalAt(ptr, species | 0, worldX, worldY);
   // Continuous body state, including inverse mass and rotational inertia.
   engine._bodyState = (i) => {
-    const buf = mod._malloc(10 * 8);
+    const buf = mod._malloc(13 * 8);
     const ok = t.bodyState(ptr, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -119,12 +119,14 @@ export function attachTestHooks(engine) {
       vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
       nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
       invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
+      pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
+      pw: mod.HEAPF64[base + 12],
     };
     mod._free(buf);
     return s;
   };
   engine._bodyStateLayer = (layer, i) => {
-    const buf = mod._malloc(10 * 8);
+    const buf = mod._malloc(13 * 8);
     const ok = t.bodyStateLayer(ptr, layer ? 1 : 0, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -133,6 +135,8 @@ export function attachTestHooks(engine) {
       vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
       nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
       invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
+      pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
+      pw: mod.HEAPF64[base + 12],
     };
     mod._free(buf);
     return s;

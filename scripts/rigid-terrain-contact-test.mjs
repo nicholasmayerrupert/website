@@ -201,4 +201,64 @@ check(`interacting bodies settle without persistent jitter `
   engine.destroy();
 }
 
+{
+  const cols = 480, rows = 340, floorY = 292;
+  const engine = makeEngine();
+  engine.setBgEnabled(true);
+  for (let x = 0; x < cols; x++) {
+    const top = floorY + Math.round(3 * Math.sin(x * 0.12))
+      + ((x * 19 + 7) % 23 < 3 ? -2 : 0);
+    for (let y = top; y < rows; y++) {
+      engine.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+      engine.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+    }
+  }
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+
+  // The foreground contributes only a one-cell floor; the background carries
+  // the large bonded structure and most of the joint body's mass.
+  for (let x = 90; x <= 389; x++)
+    engine.paintDiscLayer(0, x, 105, 0, MAT.BRICK, true);
+  for (let y = 35; y <= 105; y++)
+    for (let x = 90; x <= 389; x++)
+      engine.paintDiscLayer(1, x, y, 0, MAT.CLAY, true);
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+
+  const findLeader = () => {
+    for (let body = 0; body < engine._bodyCountLayer(0); body++)
+      if (engine._bodyJointRoleLayer(0, body) === 1) return body;
+    return -1;
+  };
+  const leader = findLeader();
+  check('thin-floor/background-heavy structure starts as one cross-layer body',
+    leader >= 0);
+  if (leader >= 0) engine._setBodyMotion(leader, -0.8, 0.5, 0.025);
+
+  let firstContact = -1;
+  let maxBlocked = 0;
+  let maxRejected = 0;
+  let maxDepenetrations = 0;
+  for (let tick = 0; tick < 100; tick++) {
+    engine.stepWorld();
+    const solver = engine.getRigidSolverDebug();
+    const rigid = engine.getRigidDebug();
+    if (firstContact < 0 && solver.contacts > 0) firstContact = tick;
+    const currentLeader = findLeader();
+    if (currentLeader >= 0)
+      maxBlocked = Math.max(maxBlocked, engine._bodyBlocked(currentLeader));
+    maxRejected = Math.max(maxRejected, rigid.rejectedCells);
+    maxDepenetrations = Math.max(maxDepenetrations, rigid.depenetrations);
+  }
+  check(`thin-floor/background-heavy body reaches rough ground (tick ${firstContact})`,
+    firstContact >= 0);
+  check(`thin-floor/background-heavy body never enters ground `
+      + `(${maxBlocked} blocked, ${maxRejected} rejected, `
+      + `${maxDepenetrations} depenetrations)`,
+    maxBlocked === 0 && maxRejected === 0 && maxDepenetrations === 0);
+  engine.destroy();
+}
+
 process.exitCode = done();

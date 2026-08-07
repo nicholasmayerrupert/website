@@ -13,10 +13,11 @@ static bool rigidTightSlenderBounds(const Body* body) {
 }
 
 static bool rigidPreciseContact(const Contact& contact) {
-  return contact.b && (!contact.bIntegrated
-    || contact.a->jointRole == 1 || contact.b->jointRole == 1
-    || (rigidLargeSlenderBody(contact.a)
-      && rigidLargeSlenderBody(contact.b)));
+  return contact.a->jointRole == 1
+    || (contact.b && (!contact.bIntegrated
+      || contact.b->jointRole == 1
+      || (rigidLargeSlenderBody(contact.a)
+        && rigidLargeSlenderBody(contact.b))));
 }
 
 static double rigidContactSlop(const Contact& contact) {

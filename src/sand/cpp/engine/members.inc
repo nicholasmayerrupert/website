@@ -194,10 +194,6 @@
   inline double scaledGravity(double earthGravity) const {
     return gravityScale == 1.0 ? earthGravity : earthGravity * gravityScale;
   }
-  inline bool focusedSimulationLod() const {
-    return simulationActivityLimited
-      && (int64_t)cols * rows >= FOCUSED_STATIC_EROSION_MIN_CELLS;
-  }
   void advanceGravityCadence() {
     if (gravityCadenceStep >= GRAVITY_CADENCE_ONE) {
       gravityCellStep = true;
@@ -456,27 +452,12 @@
 
   inline void refreshMobileComponentRegistry(Layer* layer) {
     layer->mobileComponents.clear();
-    bool bounded = focusedSimulationLod();
-    size_t dynamicCells = bounded
-      ? std::min(layer->bodyCells.size(), (size_t)R_DYNAMIC_CELL_BUDGET)
-      : 0;
     for (int i = 0; i < (int)layer->components.size(); i++) {
       Comp& component = layer->components[i];
       if (component.grounded) {
         component.detachedByBreak = false;
       } else {
-        bool bakedSeed = component.cells.size() == 1
-          && layer->grid[component.cells[0]] == SEED;
-        bool withinBudget = dynamicCells < (size_t)R_DYNAMIC_CELL_BUDGET
-          && component.cells.size()
-             <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells;
-        // A baked seed is already a one-cell object. An unrelated saturated
-        // body budget must not strand it as unsupported static terrain.
-        if (bounded && !bakedSeed && !withinBudget) continue;
         layer->mobileComponents.push_back(i);
-        if (bounded)
-          dynamicCells = std::min((size_t)R_DYNAMIC_CELL_BUDGET,
-                                  dynamicCells + component.cells.size());
       }
     }
   }

@@ -14,22 +14,6 @@
     if (!comps.jointGroundReady) comps.ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     perfGroundingMs += emscripten_get_now() - t0;
 
-    // Focused simulation keeps destructive reactions ahead of rigid motion so
-    // they can patch the settled component index locally. A moving assembly
-    // invalidates that index for the rest of the tick and would otherwise turn
-    // a small fire or acid edit into a loaded-window topology rebuild.
-    bool focusedDestruction = focusedSimulationLod();
-    if (focusedDestruction) {
-      double tR = emscripten_get_now();
-      reactions.prepareActiveLists();
-      reactions.applyReactions();
-      reactions.applyAcid();
-#ifdef SAND_INVARIANT_CHECKS
-      validateInvariants("post-focused-destruction");
-#endif
-      perfReactMs += emscripten_get_now() - tR;
-    }
-
     double tA = emscripten_get_now();
     comps.moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
@@ -48,11 +32,9 @@
     double tR = emscripten_get_now();
     growth.growPlantComponents();
     growth.growMyceliumComponents();
-    if (!focusedDestruction) {
-      reactions.prepareActiveLists();
-      reactions.applyReactions();
-      reactions.applyAcid();
-    }
+    reactions.prepareActiveLists();
+    reactions.applyReactions();
+    reactions.applyAcid();
     reactions.applyLava();
     reactions.applyIce(); reactions.applySalt(); explosives.applyExplosives();
 #ifdef SAND_INVARIANT_CHECKS

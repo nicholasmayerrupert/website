@@ -164,8 +164,6 @@ void ReactionSystem::applyAcid() {
       else E.writeGridIndex(target, EMPTY);
       if (E.rand() < ACID_DECAY_P) E.writeGridIndex(k, EMPTY);
   }
-  if (dissolvedStructural && cellCompExact
-      && E.comps.finishFocusedStaticErosion(erasedStructural)) return;
   if (!crossBondMayBreak) for (int64_t pair : crossPairs) {
     if (!touchedCrossBondSurvives(pair)) { crossBondMayBreak = true; break; }
   }

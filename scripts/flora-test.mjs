@@ -231,11 +231,12 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   e.destroy();
 }
 
-// Focused worlds cap ordinary dynamic component cells. A baked seed keeps
-// diagonal support, but once every neighbouring support cell is gone it must
-// still re-enter the body solver even when that general budget is saturated.
+// Unrelated rigid-body load cannot change structural support. A baked seed keeps
+// diagonal support; once every neighbouring support cell is gone, both it and
+// any other isolated component must enter the body solver.
 {
   const C = 720, R = 520, sx = 350, sy = 299, seedK = sy * C + sx;
+  const solidK = sy * C + sx - 2;
   const e = createEngineWasm({ cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: false });
   e.setBgEnabled(false);
   for (let x = 300; x < 400; x++) for (let y = 490; y < R; y++) e.addDiscToStoneDraft(x, y, 0);
@@ -243,6 +244,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   for (let y = 298; y < 490; y++) e.paintDisc(349, y, 0, MAT.WOOD, true);
   for (const [x, y] of [[350, 298], [351, 298], [351, 299], [350, 300], [351, 300]])
     e.paintDisc(x, y, 0, MAT.WOOD, true);
+  e.paintDisc(sx - 2, sy, 0, MAT.BRICK, true);
   e.syncComponents();
   e.placeSeedAt(sx, sy);
   let t = 0, bakedAt = -1;
@@ -267,9 +269,10 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   }
   t += 16;
   e.step(t);
-  const released = e._bodyCount() === 2 && e._bodyOwnerGrid()[seedK] >= 0;
+  const released = e._bodyCount() === 3
+    && e._bodyOwnerGrid()[seedK] >= 0 && e._bodyOwnerGrid()[solidK] >= 0;
   check(
-    `baked seed keeps diagonal support, then escapes a saturated body budget (baked ${bakedAt}, bodies ${e._bodyCount()})`,
+    `diagonal support remains physical under unrelated body load (baked ${bakedAt}, bodies ${e._bodyCount()})`,
     bakedAt >= 0 && keptDiagonalSupport && released,
   );
   e.destroy();

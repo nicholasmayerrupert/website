@@ -55,9 +55,6 @@ static const int   LIQUID_SURFACE_LOOKAHEAD = 64, LIQUID_SURFACE_FLOW_PASSES = 2
 static const int   LIQUID_DISP_VISIT_BASE = 4096, LIQUID_DISP_VISIT_PER = 128;
 static const float STEAM_DECAY_P = 0.018f, FIRE_DECAY_P = 0.008f;
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
-// Beyond roughly twice the authority worker's live focus, destructive edits use
-// static topology LOD so support work stays proportional to simulated area.
-static const int   FOCUSED_STATIC_EROSION_MIN_CELLS = 360000;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
@@ -711,10 +708,6 @@ static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
-// In focused simulation LOD, bound the combined occupancy of free bodies and
-// components admitted to rigid motion. Excess detached terrain waits until
-// earlier debris settles instead of turning the loaded world into hot bodies.
-static const int    R_DYNAMIC_CELL_BUDGET = 8192;
 static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_RADIUS = 4;

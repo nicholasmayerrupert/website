@@ -4,13 +4,13 @@
 // remain in ComponentSystem.
 bool GrowthSystem::growStraight() { return gGrowType == PT_PINE || gGrowType == PT_WILLOW || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE; }
 bool GrowthSystem::compHasSeed(Comp& comp) {
-  for (int k : comp.cells) if (E.L->grid[k] == SEED) return true;
+  for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) return true;
   return false;
 }
 bool GrowthSystem::findWaterTouching(Comp& comp, int count, std::vector<int>& picked) {
   std::vector<int> candidates; std::unordered_set<int> seen;
   auto consider = [&](int nk) { if (E.L->grid[nk] != WATER || seen.count(nk)) return; seen.insert(nk); candidates.push_back(nk); };
-  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (m != SEED && !E.isPlantWood(m)) continue; int x = k % E.cols, y = k / E.cols; if (x < E.cols - 2) consider(k + 1); if (x > 1) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 1) consider(k - E.cols); }
+  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (!E.isSeedMaterial(m) && !E.isPlantWood(m)) continue; int x = k % E.cols, y = k / E.cols; if (x < E.cols - 2) consider(k + 1); if (x > 1) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 1) consider(k - E.cols); }
   if ((int)candidates.size() < count) return false;
   picked.clear();
   while ((int)picked.size() < count && !candidates.empty()) { int i = (int)(E.rand() * candidates.size()); picked.push_back(candidates[i]); candidates.erase(candidates.begin() + i); }
@@ -24,7 +24,7 @@ static inline uint32_t plantGrowthTrait(uint32_t signature, uint32_t slot) {
 static inline int oakTargetHeight(uint32_t signature) { return 40 + (int)(plantGrowthTrait(signature, 0) % 9u); }
 uint32_t GrowthSystem::plantGrowthSignature(Comp& comp) {
   int seed = comp.cells.empty() ? 0 : comp.cells.front();
-  for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+  for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
   int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
   uint32_t wx = (uint32_t)(E.L->worldOffsetX + seedX);
   uint32_t wy = (uint32_t)(E.L->worldOffsetY + seedY);
@@ -33,7 +33,7 @@ uint32_t GrowthSystem::plantGrowthSignature(Comp& comp) {
 void GrowthSystem::refreshPlantCache(Comp& comp) {
   if (!comp.cacheDirty && !comp.woodCells.empty()) return; // approximates the JS guard
   comp.woodCells.clear(); comp.seedWoodCells.clear();
-  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { comp.woodCells.push_back(k); comp.seedWoodCells.push_back(k); } else if (m == SEED) comp.seedWoodCells.push_back(k); }
+  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { comp.woodCells.push_back(k); comp.seedWoodCells.push_back(k); } else if (E.isSeedMaterial(m)) comp.seedWoodCells.push_back(k); }
   auto byRow = [this](int a, int b) { return (a / E.cols) < (b / E.cols); };
   std::stable_sort(comp.woodCells.begin(), comp.woodCells.end(), byRow);
   std::stable_sort(comp.seedWoodCells.begin(), comp.seedWoodCells.end(), byRow);
@@ -63,7 +63,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     // upper third. The stable plan makes each tree distinct without letting
     // early random branches consume the trunk's height budget.
     int seed = sources.back();
-    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
     int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     uint32_t signature = plantGrowthSignature(comp);
     int targetHeight = oakTargetHeight(signature);
@@ -152,7 +152,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     // Their remaining wood still preserves the species silhouette: tapered pine
     // tiers and broad, arching willow limbs.
     int seed = sources.back();
-    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
     int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     int topY = !comp.woodCells.empty() ? comp.woodCells.front() / E.cols : seedY;
     uint32_t signature = plantGrowthSignature(comp);
@@ -361,7 +361,7 @@ void GrowthSystem::thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<i
     // irregular base tapers to a single-cell crown so pines and willows gain the
     // oak's visual weight without losing their characteristic outlines.
     int seed = comp.cells.empty() ? k : comp.cells.front();
-    for (int ck : comp.cells) if (E.L->grid[ck] == SEED) { seed = ck; break; }
+    for (int ck : comp.cells) if (E.isSeedMaterial(E.L->grid[ck])) { seed = ck; break; }
     int seedY = seed / E.cols, y = k / E.cols, x = k - y * E.cols;
     int currentTopY = comp.woodCells.empty() ? seedY : comp.woodCells.front() / E.cols;
     int height = seedY - y, thickHeight = gGrowType == PT_OAK ? 23 : gGrowType == PT_PINE ? 19 : 24;
@@ -423,7 +423,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     // through existing leaves lengthens individual strands instead of packing
     // a generic round canopy around the trunk.
     int seed = comp.woodCells.back();
-    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
     int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     uint32_t signature = plantGrowthSignature(comp);
     int targetHeight = 40 + (int)(plantGrowthTrait(signature, 0) % 9u);
@@ -507,7 +507,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     // from existing crown cells keeps every addition connected while producing
     // one large, dense green crown instead of leaves scattered down the trunk.
     int seed = comp.cells.front();
-    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
     int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     uint32_t signature = plantGrowthSignature(comp);
     int targetHeight = oakTargetHeight(signature);

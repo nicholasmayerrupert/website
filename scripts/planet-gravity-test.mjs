@@ -49,7 +49,7 @@ check('default engine is explicit Earth',
 check(`Earth foreground checksum remains frozen (0x${earth.foreground.toString(16)})`,
   earth.foreground === 0x400dc742);
 check(`Earth background checksum remains frozen (0x${earth.background.toString(16)})`,
-  earth.background === 0x4b2c4787);
+  earth.background === 0x4a88ebda);
 check('Moon generation repeats for the same seed',
   JSON.stringify(moonA) === JSON.stringify(moonB));
 check('Mars generation repeats for the same seed',

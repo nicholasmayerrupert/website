@@ -68,7 +68,7 @@ void ItemSystem::floatItem(Item& it) {
   if (it.vy > 0 && itemCellLiquidAt(x, (int)std::floor(it.py) + 1)) it.vy = 0; // resting on the surface
 }
 bool ItemSystem::seedItemCanPlant(const Item& it, int& x, int& y) {
-  if (it.kind != IT_ITEM || it.itemKind != IK_MATERIAL || it.material != SEED || it.count == 0) return false;
+  if (it.kind != IT_ITEM || it.itemKind != IK_MATERIAL || !E.isSeedMaterial(it.material) || it.count == 0) return false;
   x = (int)std::floor(it.px); y = (int)std::floor(it.py);
   if (!E.isInBounds(x, y) || E.L->grid[E.I(x, y)] != EMPTY) return false;
   return itemCellLiquidAt(x, y + 1) || itemCellLiquidAt(x - 1, y) || itemCellLiquidAt(x + 1, y) || itemCellLiquidAt(x, y - 1);
@@ -93,24 +93,27 @@ void ItemSystem::ensureItemCapacity() {
   for (size_t i = 0; i < items.size(); i++) if (items[i].kind == IT_ITEM) { items.erase(items.begin() + i); return; }
 }
 int ItemSystem::spawnItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType) {
+  E.canonicalizeSeed(mat, plantType);
   InvSlot stack; stack.itemKind = IK_MATERIAL; stack.material = mat; stack.count = count; stack.plantType = plantType;
   return spawnStack(stack, px, py, vx, vy, IT_PICKUP_DELAY);
 }
 int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx, double vy,
                            int delay, bool coagulate) {
-  const int limit = inventoryStackLimit(stack.itemKind);
-  int incoming = std::max(1, std::min(limit, stack.count));
+  InvSlot canonical = stack;
+  E.canonicalizeSeed(canonical.material, canonical.plantType);
+  const int limit = inventoryStackLimit(canonical.itemKind);
+  int incoming = std::max(1, std::min(limit, canonical.count));
   // Mining can create scores of adjacent drops in one stroke. Keep the visual
   // flecks independent, but fold compatible collectible materials into nearby
   // stacks so actor work scales with resource piles rather than destroyed cells.
-  if (coagulate && stack.itemKind == IK_MATERIAL && !stack.isTool && stack.material != EMPTY) {
+  if (coagulate && canonical.itemKind == IK_MATERIAL && !canonical.isTool && canonical.material != EMPTY) {
     const double r2 = IT_COAGULATE_R * IT_COAGULATE_R;
     int mergedId = 0;
     for (auto& it : items) {
       if (incoming <= 0) break;
       if (it.kind != IT_ITEM || it.count <= 0 || it.itemKind != IK_MATERIAL ||
-          it.isTool || it.material != stack.material ||
-          (stack.material == SEED && it.plantType != stack.plantType) ||
+          it.isTool || it.material != canonical.material ||
+          (E.isSeedMaterial(canonical.material) && it.plantType != canonical.plantType) ||
           it.count >= limit) continue;
       const double dx = it.px - px, dy = it.py - py;
       if (dx * dx + dy * dy > r2) continue;
@@ -128,14 +131,15 @@ int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx
     if (incoming <= 0) return mergedId;
   }
   ensureItemCapacity();
-  Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.itemKind = stack.itemKind; it.material = stack.material;
-  it.isTool = stack.isTool; it.toolClass = stack.toolClass; it.toolTier = stack.toolTier; it.plantType = stack.plantType;
+  Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.itemKind = canonical.itemKind; it.material = canonical.material;
+  it.isTool = canonical.isTool; it.toolClass = canonical.toolClass; it.toolTier = canonical.toolTier; it.plantType = canonical.plantType;
   it.count = incoming;
   it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = std::max(0, delay);
   items.push_back(it); return it.id;
 }
 // Thrown items get a longer pickup delay so they escape the magnet before homing back.
 int ItemSystem::throwItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType) {
+  E.canonicalizeSeed(mat, plantType);
   InvSlot stack; stack.itemKind = IK_MATERIAL; stack.material = mat; stack.count = count; stack.plantType = plantType;
   return spawnStack(stack, px, py, vx, vy, IT_THROW_PICKUP_DELAY, false);
 }

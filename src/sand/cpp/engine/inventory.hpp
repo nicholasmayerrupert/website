@@ -17,8 +17,8 @@ class InventorySystem {
   void setSelectedSlot(Player& p, int slot);
   void setSelectedSlot(int id, int slot);
   void cycleSelectedSlot(int id, int delta);
-  bool addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType = PT_OAK);
-  bool addToInventory(int id, uint8_t mat, int count, uint8_t plantType = PT_OAK);
+  bool addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType = PT_STANDARD);
+  bool addToInventory(int id, uint8_t mat, int count, uint8_t plantType = PT_STANDARD);
   bool addStack(Player& p, const InvSlot& stack);
   bool addStack(int id, const InvSlot& stack);
   bool addSpecialItem(int id, uint8_t itemKind, int count);

@@ -66,7 +66,7 @@ const MAIN_TAIL_LABELS = [
   'brine', 'steam', 'acrid_smoke', 'ice',
   'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed', 'vine seed',
   'grass', 'dirt', 'snow', 'mud', 'salt', 'gold_ore', 'iron_ore', 'copper_ore', 'coal_ore',
-  'brick', 'clay', 'sandstone', 'moss', 'wood', 'pine_wood', 'pine_needles', 'willow_leaf', 'bush_leaf', 'cactus', 'mush_cap', 'mush_stem',
+  'brick', 'clay', 'sandstone', 'moss', 'wood', 'oak_wood', 'pine_wood', 'oak_leaf', 'pine_needles', 'willow_leaf', 'bush_leaf', 'cactus', 'mush_cap', 'mush_stem',
   'vine', 'plant', 'driftwood', 'debris',
 ];
 const MAIN_ORDER_LABELS = [...FEATURED_LABELS, ...MAIN_TAIL_LABELS];
@@ -80,7 +80,7 @@ const PALETTE_SECTIONS = [
   ] },
   { id: 'fluids', label: 'Fluids', accent: '#70bfff', labels: ['water', 'oil', 'acid', 'lava', 'ice', 'steam', 'brine'] },
   { id: 'flora', label: 'Flora', accent: '#7dd88a', labels: [
-    'seed', 'wood', 'plant', 'driftwood', 'moss', 'pine_wood', 'cactus', 'mush_stem',
+    'seed', 'wood', 'plant', 'oak_wood', 'oak_leaf', 'driftwood', 'moss', 'pine_wood', 'cactus', 'mush_stem',
     'mush_cap', 'pine_needles', 'willow_leaf', 'bush_leaf', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
   ], kinds: [CK_SEED] },
   { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
@@ -98,7 +98,7 @@ const entryInSection = (entry, section) =>
 export function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
-    if (m.id === 0) continue; // EMPTY
+    if (m.id === 0 || m.name === 'OAK_SEED') continue; // EMPTY; Oak Seed is represented by its species entry
     entries.push({
       key: `mat-${m.id}`,
       label: m.name.toLowerCase(),

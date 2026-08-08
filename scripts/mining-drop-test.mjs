@@ -85,16 +85,16 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 3, sinksOn: false, infinite: false });
   const id = e.spawnPlayer(40, 40);
   e.setPlayerTool(id, TC.dig, TT.wood);
-  e.placeMaterial(60, 50, 5, MAT.PLANT);
+  e.placeMaterial(60, 50, 5, MAT.OAK_LEAF);
   for (let i = 0; i < 200; i++) e.playerMine(id, 60, 50);
   const items = e.getItems();
-  const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.PLANT)
+  const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.OAK_LEAF)
     .reduce((count, it) => count + it.count, 0);
-  const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.SEED)
+  const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.OAK_SEED)
     .reduce((count, it) => count + it.count, 0);
   check(`dig-harvested leaves usually drop leaf items (${leafDrops})`, leafDrops > seedDrops);
   check(`dig-harvested leaves sometimes drop seeds (${seedDrops})`, seedDrops > 0);
-  check('mined oak seeds retain their species', items.filter((it) => it.kind === 0 && it.material === MAT.SEED).every((it) => it.plantType === 0));
+  check('mined oak seeds retain their material and species', items.filter((it) => it.kind === 0 && it.material === MAT.OAK_SEED).every((it) => it.plantType === 0));
   e.destroy();
 }
 

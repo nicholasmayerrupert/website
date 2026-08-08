@@ -14,9 +14,10 @@ const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 
 await initSandWasm();
 const { check, done } = makeChecker('flora types');
 
-const LEAF = new Set([MAT.PLANT, MAT.PINE_NEEDLES, MAT.WILLOW_LEAF, MAT.BUSH_LEAF, MAT.MUSH_CAP, MAT.GLOWBERRY]);
-const WOOD = new Set([MAT.WOOD, MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.VINE]);
-const PLANTISH = new Set([MAT.SEED, ...WOOD, ...LEAF]);
+const SEEDS = new Set([MAT.SEED, MAT.OAK_SEED]);
+const LEAF = new Set([MAT.PLANT, MAT.OAK_LEAF, MAT.PINE_NEEDLES, MAT.WILLOW_LEAF, MAT.BUSH_LEAF, MAT.MUSH_CAP, MAT.GLOWBERRY]);
+const WOOD = new Set([MAT.WOOD, MAT.OAK_WOOD, MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.VINE]);
+const PLANTISH = new Set([...SEEDS, ...WOOD, ...LEAF]);
 
 // Grow one seeded tree on a stone floor. `water` is retained so this harness can
 // still exercise the dormant water path if the growth requirement is restored.
@@ -51,7 +52,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
     if (!PLANTISH.has(g[i])) continue;
     const x = i % COLS, y = (i / COLS) | 0;
     plantCells++;
-    if (g[i] === MAT.SEED) seedIndex = i;
+    if (SEEDS.has(g[i])) seedIndex = i;
     minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
     cnt[g[i]] = (cnt[g[i]] || 0) + 1;
     if (LEAF.has(g[i])) {
@@ -115,7 +116,8 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
 }
 
 const oak = grow(PT.OAK, false);
-check(`oak grows WITHOUT water (${oak.cnt[MAT.WOOD]}w ${oak.cnt[MAT.PLANT]}l)`, oak.cnt[MAT.WOOD] > 10 && oak.cnt[MAT.PLANT] > 10);
+check(`oak grows WITHOUT water (${oak.cnt[MAT.OAK_WOOD]}w ${oak.cnt[MAT.OAK_LEAF]}l)`, oak.cnt[MAT.OAK_WOOD] > 10 && oak.cnt[MAT.OAK_LEAF] > 10);
+check('Oak Seed and its tree use only oak material identities', oak.cnt[MAT.OAK_SEED] === 1 && !oak.cnt[MAT.SEED] && !oak.cnt[MAT.WOOD] && !oak.cnt[MAT.PLANT]);
 check(`oak is medium-tall with a broad crown (${oak.w}w x ${oak.h}h, ${oak.leaves} leaves)`, oak.h >= 54 && oak.h <= 62 && oak.w >= 30 && oak.leaves >= 400);
 check(`oak growth stays connected to its seed (${oak.disconnectedWood}w+${oak.disconnectedLeaves}l)`, oak.disconnectedCells === 0);
 check(`oak trunk has no missing rows (${oak.trunkGapRows} gaps)`, oak.trunkGapRows === 0);
@@ -123,6 +125,7 @@ check(`oak trunk has no missing rows (${oak.trunkGapRows} gaps)`, oak.trunkGapRo
 const standard = grow(PT.STANDARD, false);
 check(`plain Seed retains its growth budget (${standard.woodCells} wood, ${standard.leaves} leaves)`, standard.woodCells === 120 && standard.leaves === 105);
 check(`plain Seed remains distinct from Oak Seed (${standard.w}w x ${standard.h}h)`, standard.w < oak.w && standard.leaves < oak.leaves / 3);
+check('plain Seed and its tree never become oak materials', standard.cnt[MAT.SEED] === 1 && !standard.cnt[MAT.OAK_SEED] && !standard.cnt[MAT.OAK_WOOD] && !standard.cnt[MAT.OAK_LEAF]);
 
 const pine = grow(PT.PINE, false);
 check(`pine grows WITHOUT water as PINE_WOOD (${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
@@ -195,6 +198,44 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   }
   check(`vine grows downward (${vine} cells, y ${minY}..${maxY})`, vine >= 25 && maxY - minY >= 20);
   check(`vine grows glowberries (${berries})`, berries >= 3);
+  e.destroy();
+}
+
+// A plain seed can fall as a rigid, bake, and grow without being reclassified as
+// oak anywhere in the component/body lifecycle.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 17, sinksOn: false, infinite: false });
+  for (let x = 30; x < 130; x++) for (let y = 100; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.placeSeedAt(70, 65);
+  let t = 0;
+  for (let s = 0; s < 1100; s++) { t += 16; e.step(t); }
+  const cnt = {};
+  for (const m of e.getGrid()) cnt[m] = (cnt[m] || 0) + 1;
+  check(
+    `plain Seed keeps its species through rigid fall and bake (${cnt[MAT.WOOD] || 0}w ${cnt[MAT.PLANT] || 0}l)`,
+    cnt[MAT.SEED] === 1 && (cnt[MAT.WOOD] || 0) > 20 && (cnt[MAT.PLANT] || 0) > 20
+      && !cnt[MAT.OAK_SEED] && !cnt[MAT.OAK_WOOD] && !cnt[MAT.OAK_LEAF],
+  );
+  e.destroy();
+}
+
+// Reaching a cap makes a tree dormant. Removing foliage from the seeded
+// component re-arms growth, while the remaining cap still bounds the repair.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
+  for (let x = 20; x < 140; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.placeSeedTyped(70, 88, PT.OAK);
+  let t = 0;
+  for (let s = 0; s < 1100; s++) { t += 16; e.step(t); }
+  const before = [...e.getGrid()].reduce((n, m) => n + (m === MAT.OAK_LEAF), 0);
+  const leaf = [...e.getGrid()].findIndex((m) => m === MAT.OAK_LEAF);
+  e.eraseDisc(leaf % COLS, (leaf / COLS) | 0, 0);
+  const damaged = [...e.getGrid()].reduce((n, m) => n + (m === MAT.OAK_LEAF), 0);
+  for (let s = 0; s < 500; s++) { t += 16; e.step(t); }
+  const repaired = [...e.getGrid()].reduce((n, m) => n + (m === MAT.OAK_LEAF), 0);
+  check(`dormant mature tree resumes growth after damage (${before} -> ${damaged} -> ${repaired})`, damaged < before && repaired > damaged && repaired <= before);
   e.destroy();
 }
 
@@ -284,7 +325,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   for (let i = 0; i < 40; i++) {
     const g = e.getGridBg();
     for (const v of g) {
-      if (v === MAT.WOOD || v === MAT.PINE_WOOD || v === MAT.CACTUS) woods.add(v);
+      if (v === MAT.OAK_WOOD || v === MAT.PINE_WOOD || v === MAT.CACTUS) woods.add(v);
       if (v === MAT.WILLOW_LEAF) willowLeaves++;
     }
     e.shiftWorldXY(128, 0);

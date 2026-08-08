@@ -10,7 +10,7 @@ class GrowthSystem {
 
   // Per-tree growth scratch: set at the top of each comp in growPlantComponents
   // so the growth helpers emit the right species materials.
-  uint8_t gGrowType = PT_OAK, gWoodMat = WOOD, gLeafMat = PLANT;
+  uint8_t gGrowType = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
 
   bool growStraight();
   bool compHasSeed(Comp& comp);

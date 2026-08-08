@@ -670,7 +670,7 @@ void PlayerSystem::resolveMineDrops(Player& p) {
     bool drop = false;
     if (E.isPlantLeaf(m) && p.heldToolClass == TC_DIG) {
       double r = whash2(((uint32_t)E.actorTick ^ 0x51ED5EEDu), cxk, cyk);
-      if (r < LEAF_SEED_DROP_P) E.spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35, mc.plantType);
+      if (r < LEAF_SEED_DROP_P) E.spawnItem(E.plantSeedMat(mc.plantType), 1, cxk + 0.5, cyk + 0.5, 0, -0.35, mc.plantType);
       else drop = true;
     } else if (E.isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {

@@ -174,7 +174,7 @@ enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROO
 
 struct Comp {
   int id = 0;
-  uint8_t plantType = PT_OAK; // flora species (plant comps only); survives shifts/splits/streaming
+  uint8_t plantType = PT_STANDARD; // flora species (plant comps only); survives shifts/splits/streaming
   // Cell membership as a flat vector (NOT a hash set): components are iterated far
   // more than queried, and a world shift must re-index every cell — an in-place
   // vector offset is ~10x cheaper than rebuilding an unordered_set (the periodic
@@ -270,7 +270,7 @@ struct Body {
   bool awake = true; int stillTicks = 0;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
-  uint8_t plantType = PT_OAK; // seed species restored when a settled body bakes
+  uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
   // Local-space collision samples (interleaved lx,ly): the cell centre and
@@ -390,7 +390,7 @@ struct Item {
   uint8_t material = 0;
   uint8_t isTool = 0, toolClass = 0, toolTier = 0;
   int count = 1;           // stack carried by this dropped item (merged at pickup)
-  uint8_t plantType = PT_OAK; // species carried by SEED items
+  uint8_t plantType = PT_STANDARD; // species carried by seed items
   double px = 0, py = 0;   // buffer-local cell coords (a point), +y down
   double vx = 0, vy = 0;   // cells per step
   int life = 0;            // PARTICLE: steps remaining
@@ -510,7 +510,7 @@ struct InvSlot {
   uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
   uint8_t toolClass = 0;  // ToolClass when isTool
   uint8_t toolTier = 0;   // ToolTier when isTool
-  uint8_t plantType = PT_OAK; // species carried by SEED stacks
+  uint8_t plantType = PT_STANDARD; // species carried by seed stacks
   int count = 0;          // stack size (tools = 1); 0 = empty
 };
 // Survival tool footprints are engine-defined shape masks. v1 ships square presets,

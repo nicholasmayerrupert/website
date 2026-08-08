@@ -98,7 +98,7 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
-// 4) Seed species: a pine seed drafts + places SEED cells.
+// 4) Seed species use their canonical seed material identity.
 {
   const e = mk();
   e.setCreativeMaterial(CK.SEED, PT.PINE);
@@ -106,6 +106,14 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.pointerUp(0);
   let seeds = 0; for (const v of e.getGrid()) if (v === MAT.SEED) seeds++;
   check(`pine seed placed one SEED cell (${seeds})`, seeds === 1);
+  e.destroy();
+}
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.SEED, PT.OAK);
+  e.pointerDown(50, 40, 0);
+  e.pointerUp(0);
+  check('oak seed places OAK_SEED rather than plain SEED', count(e.getGrid(), MAT.OAK_SEED) === 1 && count(e.getGrid(), MAT.SEED) === 0);
   e.destroy();
 }
 

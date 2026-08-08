@@ -52,13 +52,14 @@ void InventorySystem::cycleSelectedSlot(int id, int delta) {
 // fill empty slots. Returns false (and adds nothing more) if it cannot all fit, so
 // the caller can leave the remainder in the world (no silent loss).
 bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType) {
+  E.canonicalizeSeed(mat, plantType);
   InvSlot stack; stack.itemKind = IK_MATERIAL; stack.material = mat;
   stack.plantType = plantType; stack.count = count;
   return addStack(p, stack);
 }
 bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
   if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
-  if (a.itemKind == IK_MATERIAL) return a.material == b.material && (a.material != SEED || a.plantType == b.plantType);
+  if (a.itemKind == IK_MATERIAL) return a.material == b.material && ((a.material != SEED && a.material != OAK_SEED) || a.plantType == b.plantType);
   if (a.itemKind == IK_ARROW) return true;
   return isFiniteAmmoWeapon(a.itemKind);
 }
@@ -322,7 +323,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (sel.itemKind == IK_MINIGUN) { E.projectiles.applyMinigunInput(p); return; }
   if (sel.itemKind == IK_RESCUE_BEAM) { E.projectiles.applyRescueBeamInput(p); return; }
   if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
-  bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
+  bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && E.isSeedMaterial(sel.material);
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);
   if (!primary && !secondary) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 
@@ -351,10 +352,11 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       if (toBg) E.bgEnabled = true;
       int x0, y0;
       E.useLayer(toBg ? &E.bg : &E.fg);
-      bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAtTyped(x0, y0, sel.plantType);
+      uint8_t plantType = sel.material == OAK_SEED ? PT_OAK : sel.plantType;
+      bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAtTyped(x0, y0, plantType);
       E.useLayer(&E.fg);
       if (placed) {
-        E.audio.emit(SE_PLACE, x0, y0, 0.6, SEED, toBg ? 1 : 0);
+        E.audio.emit(SE_PLACE, x0, y0, 0.6, E.plantSeedMat(plantType), toBg ? 1 : 0);
         sel.count--;
         if (sel.count <= 0) sel = InvSlot();
         E.playerActionCount++;

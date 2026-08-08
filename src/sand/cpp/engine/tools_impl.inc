@@ -169,7 +169,7 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
 void ToolSystem::registerComponentCells(
     uint8_t mat, std::unordered_set<int>& cells, uint8_t plantType) {
   if (cells.empty()) return;
-  if (mat == SEED || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
+  if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
   if (E.isPlantMaterial(mat)) {
     int yMax = 0;
     for (int k : cells) yMax = imax(yMax, k / E.cols);
@@ -182,13 +182,13 @@ void ToolSystem::registerComponentCells(
     E.L->myceliumActive = true;
     E.L->myceliumSporePresent = true;
   }
-  if (mat == SEED || mat == MYCELIUM_SPORE) {
+  if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
     for (auto& component : E.L->components) {
       for (int k : cells) {
         if (std::find(component.cells.begin(), component.cells.end(), k) == component.cells.end()) continue;
         component.growing = true;
         component.cacheDirty = true;
-        if (mat == SEED) {
+        if (E.isSeedMaterial(mat)) {
           component.plantType = plantType;
           component.requiresCellGrounding = true;
         }
@@ -260,7 +260,7 @@ void ToolSystem::finalizeStructuralPlacement(
     }
     if (!touchesStatic) {
       Body* body = E.finishSpawn(island, mat);
-      if (body && mat == SEED) body->plantType = plantType;
+      if (body && E.isSeedMaterial(mat)) body->plantType = plantType;
       continue;
     }
     if (E.rigid.anchorPlacementToStatic(island, mat, plantType)) continue;
@@ -479,7 +479,7 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
     E.L->mineDamage[k] = E.L->mineDamage[k] > power ? E.L->mineDamage[k] - power : 0;
     if (E.L->mineDamage[k] > 0) return true;
   }
-  uint8_t pt = PT_OAK;
+  uint8_t pt = E.materialEncodesPlantType(m) ? E.plantTypeFromMaterial(m) : PT_STANDARD;
   if (E.isPlantLeaf(m)) for (const Comp& c : E.L->components) {
     if (std::find(c.cells.begin(), c.cells.end(), k) != c.cells.end()) { pt = c.plantType; break; }
   }
@@ -611,7 +611,7 @@ bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, P
 // structure creates a component, while an unsupported seed enters rigid motion.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  finalizeStructuralPlacement({{x0, y0}}, SEED, pt);
+  finalizeStructuralPlacement({{x0, y0}}, E.plantSeedMat(pt), pt);
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;
@@ -657,7 +657,7 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
       uint8_t m = (uint8_t)value;
       if (m == EMPTY) creativeMode = CM_ERASE;
       else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
-      else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_STANDARD; creativeMaterial = m; }
+      else if (E.isSeedMaterial(m)) { creativeMode = CM_SEED; creativeSeed = m == OAK_SEED ? PT_OAK : PT_STANDARD; creativeMaterial = m; }
       else if (m == MYCELIUM_SPORE) { creativeMode = CM_MYCELIUM_SPORE; creativeMaterial = m; }
       else if (E.isComponentMaterial(m)) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
       else { creativeMode = CM_PAINT; creativeMaterial = m; }
@@ -670,7 +670,7 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
       if (m == RIGID || E.isComponentMaterial(m)) cubeMaterial = m;
       break;
     }
-    case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; break;
+    case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; creativeMaterial = E.plantSeedMat(creativeSeed); break;
     case CK_ERASER: creativeMode = CM_ERASE; break;
     case CK_CUBE: creativeMode = CM_CUBE; break;
     case CK_CREATURE:
@@ -785,7 +785,7 @@ int ToolSystem::pointerUp(int button) {
         ? placeMyceliumSporeAt(seedOriginX, seedOriginY)
         : placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed);
       if (placed) E.audio.emit(SE_PLACE, seedOriginX, seedOriginY, 0.6,
-                               creativeMode == CM_MYCELIUM_SPORE ? MYCELIUM_SPORE : SEED, draftLayer);
+                               creativeMode == CM_MYCELIUM_SPORE ? MYCELIUM_SPORE : E.plantSeedMat(creativeSeed), draftLayer);
     }
     draftingSeed = false; hasSeedOrigin = false; changed = 1;
   }

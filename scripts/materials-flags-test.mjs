@@ -46,7 +46,7 @@ const CLASS_EXPECTED = {
     'STONE', 'CLAY', 'SANDSTONE', 'MOSS', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'BRICK', 'DEBRIS',
     'CRYSTAL', 'MYCELIUM', 'MYCELIUM_SPORE',
     'ICE', 'RIGID', 'TNT', 'DEEPSTONE', 'GLASS', 'LIGHT', 'NEUTRONIUM',
-    'SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
+    'SEED', 'WOOD', 'PLANT', 'OAK_SEED', 'OAK_WOOD', 'OAK_LEAF', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
     'GLOWBERRY', 'GLOWSHROOM', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF',
   ],
 };
@@ -91,7 +91,7 @@ check('every liquid is non-rigid and non-structural',
 check('every loose solid is solid class and non-structural',
   MATERIALS.every((m) => !isLooseSolid(m.id) || (MAT_CLASS[m.id] === MC.SOLID && m.kind !== KIND.COMPONENT)));
 check('every plant/wood material is a flagged rigid component',
-  ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
+  ['SEED', 'WOOD', 'PLANT', 'OAK_SEED', 'OAK_WOOD', 'OAK_LEAF', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
     'GLOWBERRY', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF']
     .every((n) => isRigid(MAT[n])
       && MATERIALS.find((m) => m.id === MAT[n])?.kind === KIND.COMPONENT

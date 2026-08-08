@@ -1759,7 +1759,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     std::vector<std::pair<int, int>> cells;
     std::vector<uint8_t> materials;
     int fuseTicks = 0;
-    uint8_t plantType = PT_OAK;
+    uint8_t plantType = PT_STANDARD;
   };
   std::vector<PendingBody> pending;
   std::unordered_set<int> detached;
@@ -1795,7 +1795,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
         body.cells.push_back({x, y});
         body.materials.push_back(lay.grid[k]);
         int slot = lay.cellComp[k];
-        if (lay.grid[k] == SEED && slot >= 0 && slot < (int)lay.components.size())
+        if (E.isSeedMaterial(lay.grid[k]) && slot >= 0 && slot < (int)lay.components.size())
           body.plantType = lay.components[slot].plantType;
         auto fuse = lay.pendingDetonations.find(k);
         if (fuse != lay.pendingDetonations.end()) {
@@ -1880,7 +1880,7 @@ void ComponentSystem::detachCrossLayerComponentGroups(
     std::vector<std::pair<int, int>> fgCells, bgCells;
     std::vector<uint8_t> fgMaterials, bgMaterials;
     int fuseTicks = 0;
-    uint8_t fgPlantType = PT_OAK, bgPlantType = PT_OAK;
+    uint8_t fgPlantType = PT_STANDARD, bgPlantType = PT_STANDARD;
   };
   std::vector<PendingJoint> pending;
   std::unordered_set<int> detachedFg, detachedBg;
@@ -1900,7 +1900,7 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       for (int k : component->cells) {
         if (k < 0 || k >= E.cols * E.rows || lay.bodyOwner[k] >= 0) continue;
         indexed.push_back({k, lay.grid[k]});
-        if (lay.grid[k] == SEED) plantType = component->plantType;
+        if (E.isSeedMaterial(lay.grid[k])) plantType = component->plantType;
       }
     }
     std::sort(indexed.begin(), indexed.end(),
@@ -2334,9 +2334,8 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       std::vector<int> cells; int yMax;
       floodComponent(sx, sy, seen, gen, false, cells, yMax, &ComponentSystem::isPlantMat);
       Comp c; c.id = E.L->nextComponentId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
-      // Re-derive the species from the trunk material (so a streamed-in / restored
-      // tree keeps its type — the cells ARE the persistence) and count generically.
-      for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) { c.leafCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromLeaf(m); } }
+      // Re-derive species from encoded seed/trunk/foliage materials and count cells.
+      for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; if (E.materialEncodesPlantType(m)) c.plantType = E.plantTypeFromMaterial(m); }
       E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       c.cells = std::move(cells); E.L->components.push_back(std::move(c));
     }
@@ -2411,8 +2410,8 @@ void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, u
 void ComponentSystem::registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) {
   registerRigidCells(E.L->components, E.L->nextComponentId, mat, cells, yMax, false);
   Comp& c = E.L->components.back();
-  c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_OAK;
-  for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) { c.leafCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromLeaf(m); } }
+  c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_STANDARD;
+  for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; if (E.materialEncodesPlantType(m)) c.plantType = E.plantTypeFromMaterial(m); }
 }
 
 // Split the freshly-placed `cells` into 8-connected groups and register each as
@@ -2496,13 +2495,11 @@ void ComponentSystem::registerBakedCells(
       uint8_t material = E.L->grid[k];
       if (E.isPlantWood(material)) {
         component.woodCount++;
-        if (component.plantType == PT_OAK)
-          component.plantType = E.plantTypeFromWood(material);
       } else if (E.isPlantLeaf(material)) {
         component.leafCount++;
-        if (component.plantType == PT_OAK)
-          component.plantType = E.plantTypeFromLeaf(material);
       }
+      if (E.materialEncodesPlantType(material))
+        component.plantType = E.plantTypeFromMaterial(material);
       for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue;
         int nx = x + ox, ny = y + oy;
@@ -2513,9 +2510,9 @@ void ComponentSystem::registerBakedCells(
         stack.push_back(nk);
       }
     }
-    if (mat == SEED || mat == MYCELIUM_SPORE) {
+    if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
       component.growing = true;
-      if (mat == SEED) component.requiresCellGrounding = true;
+      if (E.isSeedMaterial(mat)) component.requiresCellGrounding = true;
       jointSleepBlocked = true;
     }
     if (mat == MYCELIUM_SPORE) {
@@ -2676,11 +2673,12 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       if (splitErased.empty()) { updated.push_back(std::move(comp)); continue; }
       if (comp.grounded && componentRemovalLocallyConnected(splitErased, splitSurvivors,
                                                              indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
-        comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true;
+        comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true; comp.growing = false;
         comp.detachedByBreak = true;
         comp.settledBody = false;
         comp.settledLooseSupport = false;
-        for (int k : comp.cells) { int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(E.L->grid[k])) comp.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) comp.leafCount++; }
+        for (int k : comp.cells) { uint8_t m = E.L->grid[k]; int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(m)) comp.woodCount++; else if (E.isPlantLeaf(m)) comp.leafCount++; else if (E.isSeedMaterial(m)) comp.growing = true; }
+        if (comp.growing) jointSleepBlocked = true;
         updated.push_back(std::move(comp)); continue;
       }
       // The caller requested the cache-preserving path, but this component needs
@@ -2700,13 +2698,16 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       }
       if (reused) E.L->compsReshaped = true;
       Comp c; c.id = reused ? E.L->nextComponentId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
-      c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
+      c.plantType = comp.plantType; c.growing = comp.growing;
       c.requiresCellGrounding = comp.requiresCellGrounding;
       c.bakedAssemblyId = comp.bakedAssemblyId;
       c.detachedByBreak = comp.detachedByBreak || componentChanged;
       c.settledBody = componentChanged ? false : comp.settledBody;
       c.settledLooseSupport = componentChanged ? false : comp.settledLooseSupport;
-      for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }
+      bool hasSeed = false;
+      for (int k : part) { uint8_t m = E.L->grid[k]; int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; else if (E.isSeedMaterial(m)) hasSeed = true; }
+      if (componentChanged) c.growing = hasSeed;
+      if (c.growing) jointSleepBlocked = true;
       c.cells = part; updated.push_back(std::move(c)); reused = true;
     }
     if (!reused) E.L->compsReshaped = true;
@@ -2818,7 +2819,16 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       comp.detachedByBreak = true;
       comp.settledBody = false;
       comp.settledLooseSupport = false;
-      for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
+      if (comp.requiresCellGrounding) { comp.woodCount = comp.leafCount = 0; comp.growing = false; }
+      for (int k : comp.cells) {
+        uint8_t material = E.L->grid[k];
+        comp.yMax = imax(comp.yMax, k / E.cols);
+        if (!comp.requiresCellGrounding) continue;
+        if (E.isPlantWood(material)) comp.woodCount++;
+        else if (E.isPlantLeaf(material)) comp.leafCount++;
+        else if (E.isSeedMaterial(material)) comp.growing = true;
+      }
+      if (comp.growing) jointSleepBlocked = true;
       updated.push_back(std::move(comp));
       continue;
     }
@@ -2840,12 +2850,16 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       c.requiresCellGrounding = comp.requiresCellGrounding;
       c.bakedAssemblyId = comp.bakedAssemblyId;
       c.detachedByBreak = true;
+      bool hasSeed = false;
       for (int k : part) {
         int y = k / E.cols; if (y > c.yMax) c.yMax = y;
         uint8_t material = E.L->grid[k];
         if (E.isPlantWood(material)) c.woodCount++;
         else if (E.isPlantLeaf(material)) c.leafCount++;
+        else if (E.isSeedMaterial(material)) hasSeed = true;
       }
+      if (c.requiresCellGrounding) c.growing = hasSeed;
+      if (c.growing) jointSleepBlocked = true;
       c.cells = part; updated.push_back(std::move(c));
       reused = true;
     }

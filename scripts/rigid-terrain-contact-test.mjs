@@ -202,6 +202,72 @@ check(`interacting bodies settle without persistent jitter `
 }
 
 {
+  const engine = attachTestHooks(createEngineWasmRaw({
+    cols: 240,
+    rows: 200,
+    worldSeed: 29,
+    sinksOn: false,
+    infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  for (let layer = 0; layer < 2; layer++) {
+    for (let y = 175; y < 200; y++)
+      for (let x = 0; x < 240; x++)
+        engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    engine.syncComponentsLayer(layer);
+  }
+  engine._spawnBoxLayer(1, 120, 150, 60, 2, MAT.RIGID);
+
+  const shape = [];
+  for (let y = 0; y < 18; y++) {
+    for (let x = 0; x < 48; x++) {
+      if (x < 4 || y >= 14 || (x > 18 && x < 23 && y > 3))
+        shape.push([96 + x, 60 + y]);
+    }
+  }
+  for (const [x, y] of shape) {
+    engine.paintDiscLayer(0, x, y, 0, MAT.BRICK, true);
+    engine.paintDiscLayer(1, x, y, 0, MAT.IRON_ORE, true);
+  }
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+
+  const findRole = (layer, role) => {
+    for (let body = 0; body < engine._bodyCountLayer(layer); body++)
+      if (engine._bodyJointRoleLayer(layer, body) === role) return body;
+    return -1;
+  };
+  let leader = findRole(0, 1);
+  const follower = findRole(1, 2);
+  check('cross-layer irregular body starts above a rigid support',
+    leader >= 0 && follower >= 0);
+
+  let latePeakSpeed = 0;
+  let latePeakCorrection = 0;
+  for (let tick = 0; tick < 500; tick++) {
+    engine.stepWorld();
+    leader = findRole(0, 1);
+    if (leader < 0) continue;
+    const state = engine._bodyStateLayer(0, leader);
+    const speed = Math.hypot(state.vx, state.vy)
+      + Math.abs(state.omega) * state.maxR;
+    const correction = Math.hypot(state.pvx, state.pvy, state.pw * state.maxR);
+    if (tick >= 350) {
+      latePeakSpeed = Math.max(latePeakSpeed, speed);
+      latePeakCorrection = Math.max(latePeakCorrection, correction);
+    }
+  }
+  check(`cross-layer body settles on another rigid without shaking `
+      + `(${latePeakSpeed.toFixed(6)} speed, `
+      + `${latePeakCorrection.toFixed(6)} correction)`,
+    latePeakSpeed <= 0.25 && latePeakCorrection <= 0.25
+      && engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 2);
+  engine.destroy();
+}
+
+{
   const cols = 480, rows = 340, floorY = 292;
   const engine = makeEngine();
   engine.setBgEnabled(true);

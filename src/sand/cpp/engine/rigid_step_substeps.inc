@@ -889,7 +889,28 @@
           if (!b->awake && !peer->awake) continue;
           double fbx, fby;
           pairSeparatingDirection(b, peer, fbx, fby);
-          reduceManifold(group.points, b, peer, fbx, fby, contactDt);
+          bool hasDeepPeerContact = false;
+          for (const PenPt& point : group.points)
+            if (point.depth > R_PEN_SLOP) {
+              hasDeepPeerContact = true;
+              break;
+            }
+          if (b->jointRole != 1 || !hasDeepPeerContact
+              || (b->nPts < 200 && peer->nPts < 200)) {
+            reduceManifold(group.points, b, peer, fbx, fby, contactDt);
+            continue;
+          }
+          currentChildPoses[bi] = childPose(b, 0);
+          currentChildFramesValid[bi] = 0;
+          nextChildPoseDt[bi] = -1;
+          ChildContactState peerContact = collectChildContacts(
+            b, peer, contactDt, bi, -1);
+          if (peerContact == CCS_SEPARATED) continue;
+          penAcc.clear();
+          for (const ChildManifold& manifold : childManifoldScratch)
+            for (int pi = 0; pi < manifold.count; pi++)
+              penAcc.push_back(manifold.points[pi]);
+          reduceManifold(penAcc, b, peer, fbx, fby, contactDt);
         } else {
           reduceManifold(group.points, b, nullptr, 0, -1, contactDt);
         }

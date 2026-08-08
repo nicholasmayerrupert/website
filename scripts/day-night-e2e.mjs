@@ -153,7 +153,7 @@ try {
     !desktopAuto.overridden && desktopAuto.skyLight < NOON_SKY_LIGHT &&
     await desktopTime.getAttribute('data-mode') === 'auto');
 
-  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const mobileContext = await browser.newContext({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true });
   const mobilePage = await mobileContext.newPage();
   await mobilePage.goto(URL, { waitUntil: 'domcontentloaded' });
   await mobilePage.waitForFunction(() => window.__sandTest?.info().cols > 0, null, { timeout: 60000 });
@@ -173,17 +173,15 @@ try {
     return state.overridden && Math.abs(state.phase - 0.75) < 1e-6;
   });
   check('mobile slider selects dusk', await mobileTime.locator('.sg-time-value').textContent() === '6:00 PM');
-  const alignment = await mobilePage.locator('sand-game').evaluate((host) => {
+  const spacing = await mobilePage.locator('sand-game').evaluate((host) => {
     const root = host.shadowRoot;
-    const center = (selector) => {
-      const rect = root.querySelector(selector).getBoundingClientRect();
-      return rect.top + rect.height / 2;
-    };
-    const palette = center('.sg-palette');
-    return { zoom: center('.sg-zoom') - palette, stick: center('.sg-stick') - palette };
+    const palette = root.querySelector('.sg-palette').getBoundingClientRect();
+    const zoom = root.querySelector('.sg-zoom').getBoundingClientRect();
+    const stick = root.querySelector('.sg-stick').getBoundingClientRect();
+    return { zoom: zoom.top - palette.bottom, stick: stick.top - palette.bottom };
   });
-  check(`mobile side controls align with the taller center palette (${alignment.zoom.toFixed(1)}px/${alignment.stick.toFixed(1)}px)`,
-    Math.abs(alignment.zoom) <= 20 && Math.abs(alignment.stick) <= 20);
+  check(`narrow mobile side controls clear the center palette (${spacing.zoom.toFixed(1)}px/${spacing.stick.toFixed(1)}px)`,
+    spacing.zoom >= 6 && spacing.stick >= 6);
   await mobileContext.close();
 } finally {
   await browser?.close().catch(() => {});

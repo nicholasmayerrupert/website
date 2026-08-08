@@ -235,6 +235,9 @@ const STYLE = `
 .sg-palette.bottom .sg-list { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(340px, calc(100vw - 2.5rem));
   max-height: min(34svh, 230px); }
 .sg-palette.bottom .sg-sections { width: min(340px, calc(100vw - 2.5rem)); }
+@media (max-width: 400px) {
+  .sg-palette.bottom { bottom: calc(138px + env(safe-area-inset-bottom, 0px)); }
+}
 @keyframes sg-dropdown-mobile-in {
   from { opacity: 0; transform: translate(-50%, 7px) scale(.985); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }

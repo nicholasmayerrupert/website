@@ -289,67 +289,6 @@ void ExplosivesSystem::buildBlastDamage(const BlastBatch& bb) {
   }
 }
 
-void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
-  if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return;
-  Layer* own = E.L;
-  Layer* peer = own == &E.fg ? &E.bg : &E.fg;
-  if (!E.isRigidMaterialClass(own->grid[k]) || !E.isRigidMaterialClass(peer->grid[k])) return;
-  if (E.isIceMaterial(own->grid[k]) != E.isIceMaterial(peer->grid[k])) return;
-  int ownId = own->cellComp[k], peerId = peer->cellComp[k];
-  int ownN = E.compCount(*own), peerN = E.compCount(*peer);
-  if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN
-      || own->groundBaseFlags.size() != (size_t)ownN
-      || peer->groundBaseFlags.size() != (size_t)peerN) {
-    bb.crossSupportUncertain = true;
-    return;
-  }
-  // Independently grounded endpoints do not depend on this contact. Generated
-  // cave terrain overwhelmingly exits here, keeping its blast path unchanged.
-  uint8_t dependentMask = (own->groundBaseFlags[ownId] ? 0 : 1)
-                        | (peer->groundBaseFlags[peerId] ? 0 : 2);
-  if (!dependentMask) return;
-  bb.structuralLayer = own;
-  for (auto& pair : bb.touchedCrossPairs) if (pair.ownId == ownId && pair.peerId == peerId) {
-    pair.dependentMask |= dependentMask;
-    return;
-  }
-  bb.touchedCrossPairs.push_back({ownId, peerId, dependentMask});
-}
-
-bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
-  if (bb.crossSupportUncertain) return false;
-  if (bb.touchedCrossPairs.empty()) return true;
-  if (!bb.structuralLayer) return false;
-  Layer& own = *bb.structuralLayer;
-  Layer& peer = bb.structuralLayer == &E.fg ? E.bg : E.fg;
-  int ownN = E.compCount(own), peerN = E.compCount(peer);
-  for (const BlastCrossPair& pair : bb.touchedCrossPairs) {
-    int ownId = pair.ownId, peerId = pair.peerId;
-    if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) return false;
-    Comp* a = E.compById(own, ownId);
-    Comp* b = E.compById(peer, peerId);
-    bool survives = false;
-    if (a->cells.size() <= b->cells.size()) {
-      for (int q : a->cells) if (E.isRigidMaterialClass(own.grid[q])
-          && peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])
-          && E.isIceMaterial(own.grid[q]) == E.isIceMaterial(peer.grid[q])) { survives = true; break; }
-    } else {
-      for (int q : b->cells) if (E.isRigidMaterialClass(peer.grid[q])
-          && own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])
-          && E.isIceMaterial(own.grid[q]) == E.isIceMaterial(peer.grid[q])) { survives = true; break; }
-    }
-    if (!survives) {
-      // Losing a contact matters only while at least one endpoint that depended
-      // on it survived the blast. Cave TNT itself is commonly supported by the
-      // solid background; once that TNT component is gone, rebuilding the whole
-      // joint closure would repair nothing.
-      if ((pair.dependentMask & 1) && !a->cells.empty()) return false;
-      if ((pair.dependentMask & 2) && !b->cells.empty()) return false;
-    }
-  }
-  return true;
-}
-
 void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb,
                                              BlastBatch* otherBb, bool massFront) {
   if (cells.empty()) return;
@@ -446,7 +385,6 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
     markRemoval(k);
     bb.staticCuts.push_back({k, material});
     if (E.isComponentMaterial(material)) {
-      noteCrossSupportRemoval(k, bb);
       bb.erasedStructural.push_back(k);
     }
     if (collectAftermath && bb.debrisStepCap > 0
@@ -582,33 +520,7 @@ void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
 
 void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   if (!bb.any) return;
-  const std::vector<int>& erased = bb.erasedStructural;
-  bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
-  // Preserve the cached support graph only when the bounded removal proof can
-  // reconnect every edge of the crater through surviving rigid material.
-  // Genuine cuts fall back to a full split and support reflood.
-  bool localConnectivityFastPath = indexesExact
-    && E.removalsKeepGroundingValid(erased);
-  E.L->compsReshaped = false;
-  E.splitRigidAfterErase(E.L->components, bb.erasedStructural, E.L->nextComponentId, false, false,
-                         indexesExact ? 0 : -1, localConnectivityFastPath
-                           ? ConnectivitySplitMode::GLOBAL_EQUIVALENT
-                           : ConnectivitySplitMode::FULL);
-  if (!localConnectivityFastPath) {
-    E.L->groundDirty = true;
-  } else if (E.L->compsReshaped) {
-    E.L->groundContentDirty = true;
-  } else {
-    // Component ordering is unchanged, so clearing the removed index entries
-    // leaves the cached rigid support exact.
-    for (int k : erased) E.L->cellComp[k] = -1;
-  }
-  bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
-  if (E.L->componentTombstones >= 256) {
-    E.L->groundDirty = true;
-    bb.structurePreserved = false;
-  }
-  if (bb.structurePreserved) E.L->blastSparseCarryReady = true;
+  E.comps.splitRigidAfterBlast(bb.erasedStructural);
 }
 
 void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
@@ -784,8 +696,21 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   Layer* src = E.L;
   Engine::ActiveLayerScope layerScope(E, src);
   Layer* other = E.bgEnabled && otherBb ? (src == &E.fg ? &E.bg : &E.fg) : nullptr;
-  bool jointDirtyBefore = E.comps.jointDirty;
-  bool jointBondsInvalidBefore = E.comps.jointBondsInvalid;
+  // Every blast transaction starts from one exact component graph. Normal step
+  // ordering already satisfies this; direct ABI/actor detonations establish it
+  // here before any cut is classified.
+  if (!src->componentIndexExact || (other && !other->componentIndexExact)) {
+    if (other) {
+      E.fg.groundDirty = E.bg.groundDirty = true;
+      E.comps.computeGroundedBoth();
+      E.comps.jointGroundReady = true;
+      E.comps.jointDirty = false;
+      E.comps.jointBondsInvalid = false;
+    } else {
+      src->groundDirty = true;
+      E.comps.ensureGroundedSingleLayer();
+    }
+  }
   if (!bb.waves.empty()) buildBlastDamage(bb);
   else if (otherBb) buildBlastDamage(*otherBb);
   // Plan both layers from the same pre-cut snapshot, then advance the
@@ -815,31 +740,6 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   if (other) { E.useLayer(other); applyBlastAftermath(*otherBb); }
   E.useLayer(src);
   applyBlastAftermath(bb);
-  // A settled cave crater commonly removes only a trailing, isolated TNT
-  // component and locally bores two still-grounded terrain components. The
-  // per-layer proofs above leave every surviving positional component id and
-  // grounded bit exact. In that case the generic erase hook's joint invalidation
-  // is unnecessary when every touched support contact either survives or has no
-  // surviving dependent endpoint; the remaining cache change is only trimming
-  // now-dead trailing entries.
-  bool otherPreserved = !E.bgEnabled || !otherBb || !otherBb->any || otherBb->structurePreserved;
-  bool crossSupportPreserved = touchedCrossSupportSurvives(bb)
-    && (!otherBb || touchedCrossSupportSurvives(*otherBb));
-  if (E.bgEnabled && bb.structurePreserved && otherPreserved && crossSupportPreserved
-      && E.comps.jointSupportValid && E.comps.cgBonds.empty()) {
-    auto trimTrailingCaches = [&](Layer& lay) {
-      size_t count = lay.components.size();
-      if (lay.groundBaseFlags.size() > count) lay.groundBaseFlags.resize(count);
-      if (lay.crossBondedComp.size() > count) lay.crossBondedComp.resize(count);
-      lay.compAdjPairs.erase(std::remove_if(lay.compAdjPairs.begin(), lay.compAdjPairs.end(), [&](uint64_t packed) {
-        return (size_t)(packed >> 32) >= count || (size_t)(uint32_t)packed >= count;
-      }), lay.compAdjPairs.end());
-    };
-    trimTrailingCaches(E.fg);
-    trimTrailingCaches(E.bg);
-    E.comps.jointDirty = jointDirtyBefore;
-    E.comps.jointBondsInvalid = jointBondsInvalidBefore;
-  }
 }
 
 // Single-blast convenience wrapper (one crater, its own finalize).

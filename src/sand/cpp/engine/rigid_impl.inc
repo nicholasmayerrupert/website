@@ -1992,7 +1992,7 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
   for (int material = 0; material < TABLE; material++) {
     if (baked[material].empty()) continue;
     E.comps.registerBakedCells((uint8_t)material, baked[material], assemblyId,
-                               E.isIceMaterial(material), looseSupport);
+                               E.isIceMaterial(material), looseSupport, b->plantType);
   }
   rigidBakeRegisterMs += emscripten_get_now() - registerStart;
   if (b->fuseTicks > 0)
@@ -2377,6 +2377,7 @@ void RigidBodySystem::moveBodies() {
       moveBodyIds.push_back(b->id);
       moveBodySlotById[b->id] = slot;
     }
+    movePreviousPoses.resize(simulatedBodyCount);
     movePreviousFootprints.resize(simulatedBodyCount);
     moveDisplaced.resize(simulatedBodyCount);
     moveStamped.resize(simulatedBodyCount);
@@ -2385,6 +2386,13 @@ void RigidBodySystem::moveBodies() {
     movePreviousFootprints[slot].clear();
     moveDisplaced[slot].clear();
     moveStamped[slot].clear();
+  }
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2) continue;
+    int slot = moveBodySlotById.find(body->id)->second;
+    movePreviousPoses[slot] = {
+      body->px, body->py, body->angle,
+    };
   }
   bool batchRasterRestore = E.L->bodyCells.size()
                          >= (size_t)R_BODY_RASTER_BATCH_THRESHOLD;
@@ -2548,6 +2556,35 @@ void RigidBodySystem::moveBodies() {
     }
   double stampElapsed = emscripten_get_now() - stampStart;
   rigidStampMs = rigidStampMs + stampElapsed;
+  // A sub-cell body can have its entire proposed raster rejected at a solid or
+  // fluid boundary. Restore its last accepted pose and raster; deleting it here
+  // would make one-cell bodies such as seeds vanish on first contact.
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2) continue;
+    int slot = moveBodySlotById.find(body->id)->second;
+    if (!moveStamped[slot].empty() || movePreviousFootprints[slot].empty()) continue;
+    const MovePose& pose = movePreviousPoses[slot];
+    body->px = pose.px; body->py = pose.py; body->angle = pose.angle;
+    body->vx = body->vy = body->omega = 0;
+    body->awake = false;
+    body->stillTicks = 0;
+    body->cs = std::cos(body->angle); body->sn = std::sin(body->angle);
+    if (body->jointRole == 1) syncJointFollower(body);
+    for (int k : movePreviousFootprints[slot]) {
+      if (k < 0 || k >= E.cols * E.rows
+          || E.L->bodyOwner[k] >= 0 || E.L->grid[k] != EMPTY) continue;
+      int y = k / E.cols, x = k - y * E.cols;
+      int local = localCellAt(body, x + 0.5, y + 0.5);
+      if (local < 0) continue;
+      uint8_t material = bodyMaterialAt(body, local);
+      E.writeGridIndex(k, material);
+      E.L->bodyOwner[k] = body->id;
+      moveCells.push_back(k);
+      moveFootprint.push_back(k);
+      moveStamped[slot].push_back(k);
+    }
+    if (!moveStamped[slot].empty()) rigidRecoveryBodies++;
+  }
   {
     std::vector<Body*> keep;
     keep.reserve(E.L->bodies.size());
@@ -2603,157 +2640,6 @@ void RigidBodySystem::moveBodies() {
   erodeBodies(moveCells);
   rigidFinalizeMs = rigidFinalizeMs
                   + (emscripten_get_now() - finalizeStart);
-}
-
-template <class Cells>
-bool RigidBodySystem::planAssemblyBodyPush(const Cells& assemblyCells, int dir,
-                                           AssemblyBodyPush& plan) {
-  plan = AssemblyBodyPush{};
-  plan.layer = E.L;
-  // Components only push with gravity. Rising/floating components still treat
-  // rigid bodies as ordinary solid blockers.
-  if (dir != E.cols || E.L->bodies.empty() || E.L->bodyCells.empty()) return true;
-
-  std::unordered_map<int, Body*> byId;
-  byId.reserve(E.L->bodies.size() * 2);
-  for (Body* b : E.L->bodies) byId[b->id] = b;
-
-  std::unordered_map<int, std::vector<int>> cellsById;
-  cellsById.reserve(E.L->bodies.size() * 2);
-  for (int k : E.L->bodyCells) {
-    if (k < 0 || k >= E.cols * E.rows) continue;
-    int id = E.L->bodyOwner[k];
-    if (id >= 0 && byId.count(id)) cellsById[id].push_back(k);
-  }
-
-  std::unordered_set<int> selected, crushed;
-  std::vector<int> queue;
-  occStamp.reset((size_t)E.cols * E.rows);
-  for (int k : assemblyCells) occStamp.add(k);
-  for (int k : assemblyCells) {
-    int lead = k + dir;
-    if (lead < 0 || lead >= E.cols * E.rows) continue;
-    if (occStamp.has(lead)) continue;
-    int id = E.L->bodyOwner[lead];
-    if (id < 0) continue;
-    if (E.L->passiveBodyIds.count(id)) return false;
-    auto it = byId.find(id);
-    if (it == byId.end()) return false;
-    if (!bodyFullyInsideLoadedWindow(it->second)) return false;
-    if (it->second->blastDebris) crushed.insert(id);
-    else if (selected.insert(id).second) queue.push_back(id);
-  }
-  if (queue.empty() && crushed.empty()) return true;
-
-  // A body may be resting on another body. Move the entire downward stack or
-  // none of it; otherwise the first body would simply overwrite/pin the next.
-  // Tiny blast rubble yields instead of transmitting the stack's load.
-  for (size_t qi = 0; qi < queue.size(); qi++) {
-    int id = queue[qi];
-    auto bodyIt = byId.find(id);
-    auto cellsIt = cellsById.find(id);
-    if (bodyIt == byId.end() || cellsIt == cellsById.end() || cellsIt->second.empty()) return false;
-    for (int k : cellsIt->second) {
-      int nk = k + dir;
-      if (nk < E.cols || nk >= E.cols * E.rows) return false;
-      int nextId = E.L->bodyOwner[nk];
-      if (nextId < 0 || selected.count(nextId) || crushed.count(nextId)) continue;
-      auto nextIt = byId.find(nextId);
-      if (nextIt == byId.end()) return false;
-      if (!bodyFullyInsideLoadedWindow(nextIt->second)) return false;
-      if (nextIt->second->blastDebris) crushed.insert(nextId);
-      else if (selected.insert(nextId).second) queue.push_back(nextId);
-    }
-  }
-
-  for (Body* b : E.L->bodies) {
-    if (selected.count(b->id)) plan.bodies.push_back(b);
-    else if (crushed.count(b->id)) plan.crushedBodies.push_back(b);
-  }
-  for (int k : E.L->bodyCells) {
-    if (k < 0 || k >= E.cols * E.rows) continue;
-    int id = E.L->bodyOwner[k];
-    if (crushed.count(id)) {
-      plan.vacated.insert(k);
-      plan.overlay[k] = EMPTY;
-      continue;
-    }
-    if (!selected.count(id)) continue;
-    plan.oldCells.push_back(k);
-    plan.newCells.push_back(k + dir);
-    plan.owners.push_back(id);
-    plan.vacated.insert(k);
-  }
-  if (plan.oldCells.empty() && plan.crushedBodies.empty()) return false;
-
-  for (size_t i = 0; i < plan.newCells.size(); i++) {
-    int nk = plan.newCells[i];
-    if (nk < E.cols || nk >= E.cols * E.rows || occStamp.has(nk)) return false;
-    int owner = E.L->bodyOwner[nk];
-    if (owner >= 0) {
-      if (!selected.count(owner) && !crushed.count(owner)) return false;
-    } else {
-      uint8_t m = E.L->grid[nk];
-      Body* b = byId[plan.owners[i]];
-      if (!b || !canBodyOccupy(m, nk, b->density)) return false;
-    }
-    plan.occupied.insert(nk);
-  }
-
-  for (int k : plan.oldCells) plan.overlay[k] = EMPTY;
-  for (size_t i = 0; i < plan.newCells.size(); i++) {
-    Body* b = byId[plan.owners[i]];
-    int old = plan.oldCells[i], y = old / E.cols, x = old - y * E.cols;
-    plan.overlay[plan.newCells[i]] = bodyMaterialAt(b, localCellAt(b, x + 0.5, y + 0.5));
-  }
-  return true;
-}
-
-void RigidBodySystem::applyAssemblyBodyPush(AssemblyBodyPush& plan) {
-  if (plan.empty()) return;
-  Engine::ActiveLayerScope layerScope(E, plan.layer);
-  std::unordered_set<int> selected;
-  selected.reserve((plan.bodies.size() + plan.crushedBodies.size()) * 2);
-  for (Body* b : plan.bodies) selected.insert(b->id);
-  for (Body* b : plan.crushedBodies) selected.insert(b->id);
-
-  std::vector<int> kept;
-  kept.reserve(E.L->bodyCells.size());
-  for (int k : E.L->bodyCells) {
-    int owner = (k >= 0 && k < E.cols * E.rows) ? E.L->bodyOwner[k] : -1;
-    if (selected.count(owner)) {
-      E.writeGridIndex(k, EMPTY);
-      E.L->bodyOwner[k] = -1;
-    } else kept.push_back(k);
-  }
-  for (Body* b : plan.bodies) {
-    b->py += 1.0;
-    if (b->vy < 0) b->vy = 0;
-    wakeBody(b);
-  }
-  for (size_t i = 0; i < plan.newCells.size(); i++) {
-    int k = plan.newCells[i], id = plan.owners[i];
-    Body* b = nullptr;
-    for (Body* candidate : plan.bodies) if (candidate->id == id) { b = candidate; break; }
-    if (!b) continue;
-    int y = k / E.cols, x = k - y * E.cols;
-    E.writeGridIndex(k, bodyMaterialAt(b, localCellAt(b, x + 0.5, y + 0.5)));
-    E.L->bodyOwner[k] = id;
-    kept.push_back(k);
-  }
-  E.L->bodyCells = std::move(kept);
-  if (!plan.crushedBodies.empty()) {
-    std::unordered_set<int> crushed;
-    crushed.reserve(plan.crushedBodies.size() * 2);
-    for (Body* b : plan.crushedBodies) crushed.insert(b->id);
-    std::vector<Body*> survivors;
-    survivors.reserve(E.L->bodies.size() - plan.crushedBodies.size());
-    for (Body* b : E.L->bodies) {
-      if (crushed.count(b->id)) delete b;
-      else survivors.push_back(b);
-    }
-    E.L->bodies = std::move(survivors);
-  }
 }
 
 void RigidBodySystem::collectPlacementTouchingBodyIds(

@@ -292,11 +292,32 @@ void ReactionSystem::applyIce() {
       }
       if (E.rand() < ICE_FREEZE_P) {
         int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
-        if (waterK >= 0) { E.writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); E.noteComponentIndexAddition(componentIndex, waterK); int wy = waterK / E.cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; E.L->componentCarryDirty = true; } // waterK was WATER (live grid read) -> not already in comp; new ICE cell -> reflood
+        if (waterK >= 0) {
+          E.writeGridIndex(waterK, ICE);
+          // A cell melted earlier in this same pass still has its component
+          // membership until the batch split below. Refreezing restores its
+          // material; only genuinely external water needs a new membership.
+          if (E.L->cellComp[waterK] != componentIndex) {
+            comp.cells.push_back(waterK);
+            E.noteComponentIndexAddition(componentIndex, waterK);
+          }
+          int wy = waterK / E.cols;
+          if (wy > comp.yMax) comp.yMax = wy;
+          comp.cacheDirty = true;
+          E.L->componentCarryDirty = true;
+        }
       }
     }
   }
-  if (melted) E.splitRigidAfterErase(E.L->components, meltedCells, E.L->nextComponentId, true);
+  if (melted) {
+    meltedCells.erase(
+      std::remove_if(meltedCells.begin(), meltedCells.end(),
+                     [&](int k) { return E.L->grid[k] == ICE; }),
+      meltedCells.end());
+    if (!meltedCells.empty())
+      E.splitRigidAfterErase(E.L->components, meltedCells,
+                             E.L->nextComponentId, true);
+  }
 
   // Free ice bodies remain material-identical ICE cells in the live grid. Water
   // frozen by one extends that body's local occupancy so the new ice shares its

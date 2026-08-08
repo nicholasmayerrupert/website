@@ -7,22 +7,6 @@ struct Engine;
 // One displaced loose cell (material + source index) pending relocation.
 struct Disp { uint8_t material; int from; };
 
-// Exact one-cell translation of the free-body stack in front of a descending
-// static assembly. Planning is read-only so the component mover can finish all
-// of its normal displacement/buoyancy checks before either side is mutated.
-struct AssemblyBodyPush {
-  Layer* layer = nullptr;
-  std::vector<Body*> bodies;
-  std::vector<Body*> crushedBodies;
-  std::vector<int> oldCells;
-  std::vector<int> newCells;
-  std::vector<int> owners;
-  std::unordered_set<int> vacated;
-  std::unordered_set<int> occupied;
-  std::unordered_map<int, uint8_t> overlay;
-  bool empty() const { return bodies.empty() && crushedBodies.empty(); }
-};
-
 class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
@@ -163,9 +147,6 @@ class RigidBodySystem {
   void stampJointFollower(Body* leader);
   void restampBodiesAfterStream();
   void bakeRestingBodies();
-  template <class Cells>
-  bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
-  void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
   void collectPlacementTouchingBodyIds(
     const std::vector<std::pair<int, int>>& cells,
@@ -312,6 +293,10 @@ class RigidBodySystem {
   std::vector<uint8_t> fluidBodySurface, fluidBodyDensityEquilibrium;
   std::vector<int> moveBodyIds;
   std::unordered_map<int, int> moveBodySlotById;
+  struct MovePose {
+    double px = 0, py = 0, angle = 0;
+  };
+  std::vector<MovePose> movePreviousPoses;
   std::vector<std::vector<int>> movePreviousFootprints;
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;

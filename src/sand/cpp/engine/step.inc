@@ -31,7 +31,6 @@
     }
 
     double tA = emscripten_get_now();
-    L->assemblyRelocatedCells.clear();
     comps.moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
@@ -64,11 +63,10 @@
     double tC = emscripten_get_now();
     prepareNextBuffer();
     bool blastLocalCarry = L->blastSparseCarryReady
-      && !L->looseGroundDirty && L->assemblyRelocatedCells.empty();
+      && !L->looseGroundDirty;
     bool indexedLocalCarry = L->groundBaseValid
       && !L->groundDirty && !L->groundContentDirty
-      && !L->componentCarryDirty
-      && L->assemblyRelocatedCells.empty();
+      && !L->componentCarryDirty;
     bool localRigidCarry = blastLocalCarry || indexedLocalCarry;
     if (localRigidCarry) {
       auto carryRigidSpan = [&](int y, int minX, int maxX) {
@@ -87,7 +85,7 @@
         for (const auto& span : L->rowMarkSpans[y])
           carryRigidSpan(y, span.first, span.second);
       }
-      if (indexedLocalCarry) {
+      if (localRigidCarry) {
         L->curBodyCells.clear();
         auto noteBody = [&](int k) {
           L->compOccStamp[k] = tick;
@@ -96,12 +94,12 @@
         for (int k : L->bodyCells) noteBody(k);
         for (int k : L->passiveBodyCells) noteBody(k);
         for (int k : L->prevBodyCells) {
-          if (L->compOccStamp[k] == tick) continue;
-          if (L->grid[k] == EMPTY) {
+          if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
+          if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
+            L->grid[k] = EMPTY;
             L->next[k] = EMPTY;
             markCellIndex(k);
-          } else if (!isRigidMaterialClass(L->grid[k])
-                     && isRigidMaterialClass(L->next[k])) {
+          } else if (isRigidMaterialClass(L->next[k])) {
             L->next[k] = L->grid[k];
             markCellIndex(k);
           }
@@ -115,27 +113,24 @@
       for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
       for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
       for (int k : L->prevCompCells) {
-        if (L->compOccStamp[k] == tick) continue;
-        if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
-        else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+        if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
+        if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
+          L->grid[k] = EMPTY; L->next[k] = EMPTY; markCellIndex(k);
+        } else if (isRigidMaterialClass(L->next[k])) {
+          L->next[k] = L->grid[k]; markCellIndex(k);
+        }
       }
       for (int k : L->prevBodyCells) {
-        if (L->compOccStamp[k] == tick) continue;
-        if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
-        else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+        if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
+        if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
+          L->grid[k] = EMPTY; L->next[k] = EMPTY; markCellIndex(k);
+        } else if (isRigidMaterialClass(L->next[k])) {
+          L->next[k] = L->grid[k]; markCellIndex(k);
+        }
       }
       std::swap(L->prevCompCells, L->curCompCells);
       std::swap(L->prevBodyCells, L->curBodyCells);
       L->componentCarryDirty = false;
-    }
-    // Component displacement already moved these media once in the live grid.
-    // Carry them through the freshly blanked next buffer and stamp them so the
-    // loose pass cannot move the same volume a second time this tick.
-    for (int k : L->assemblyRelocatedCells) {
-      uint8_t m = L->grid[k];
-      if (m == EMPTY || isRigidMaterialClass(m)) continue;
-      L->next[k] = m;
-      L->vacatedStamp[k] = tick;
     }
     perfCarryMs += emscripten_get_now() - tC;
 
@@ -275,20 +270,6 @@
       comps.jointDirty = true;
       comps.jointDirtyDeferred = false;
     }
-    bool reuseTranslatedJoint = bgEnabled && comps.jointTranslationReady
-      && !comps.groundForceFull && !comps.jointSleepBlocked
-      && !comps.jointDirty && !comps.jointBondsInvalid
-      && !fg.groundDirty && !bg.groundDirty
-      && !fg.groundContentDirty && !bg.groundContentDirty
-      && !comps.cgBonds.empty();
-    comps.jointTranslationReady = false;
-    if (reuseTranslatedJoint) {
-      double tReuse = emscripten_get_now();
-      comps.refreshLooseOverlayPreservingJoint(&fg);
-      comps.refreshLooseOverlayPreservingJoint(&bg);
-      perfGroundingMs += emscripten_get_now() - tReuse;
-      comps.jointGroundReady = true;
-    }
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // structural components or residual static powder exist. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -304,7 +285,7 @@
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
     bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
-    if (bgEnabled && needJoint && !reuseTranslatedJoint) {
+    if (bgEnabled && needJoint) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
       comps.computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;

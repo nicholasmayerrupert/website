@@ -203,9 +203,6 @@ struct Comp {
   // A topology-changing erase marks the affected support closure for rigid-body
   // conversion if grounding shows that it lost its last static support.
   bool detachedByBreak = false;
-  // Last committed vertical component move. A prior buoyant rise supplies
-  // surface hysteresis while liquid still supports the underside.
-  int8_t buoyancyDirection = 0;
   // Only SEEDED plants actively grow. Worldgen-stamped trees (and restored/streamed
   // comps) are inert scenery (growing=false) so they never self-activate the sim.
   // Cleared once a growing plant reaches its species' size cap.
@@ -276,6 +273,7 @@ struct Body {
   bool awake = true; int stillTicks = 0;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
+  uint8_t plantType = PT_OAK; // seed species restored when a settled body bakes
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
   // Local-space collision samples (interleaved lx,ly): the cell centre and

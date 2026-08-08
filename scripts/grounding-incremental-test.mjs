@@ -36,7 +36,11 @@ function buildScript(seed) {
   ops.push({ t: 'paint', x: 120, y: 120, r: 8, m: PLANT });
   ops.push({ t: 'sync' });
   // interleave step markers (null) with random material drops / erases
-  const mats = [ACID, LAVA, WATER, SAND, OIL, STONE, ICE];
+  // Structural mutation comes from the seeded stone/ice shapes and erases.
+  // Runtime structural placement creates free bodies when unsupported, so
+  // keep this grounding comparison focused on cells whose motion is bit-exact
+  // between incremental and forced-full grounding.
+  const mats = [ACID, LAVA, WATER, SAND, OIL];
   for (let round = 0; round < 240; round++) {
     if (rand() < 0.5) ops.push({ t: 'paint', x: ri(10, 150), y: ri(10, 60), r: ri(2, 7), m: mats[ri(0, mats.length - 1)] });
     if (rand() < 0.25) ops.push({ t: 'erase', x: ri(10, 150), y: ri(60, 150), r: ri(2, 6) });

@@ -46,19 +46,11 @@
     }
     return false;
   }
-  bool layerHasFallingComponents(Layer* lay) {
-    for (const Comp& component : lay->components)
-      if (!component.cells.empty() && component.buoyancyDirection > 0)
-        return true;
-    return false;
-  }
-  bool bodyBakeRetryDeferred(Layer* lay, Body* body) {
+  bool bodyBakeRetryDeferred(Layer* lay, Body*) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
       if (bodyContainsMaterial(b, TNT)) return true;
-    // Blast debris completes its local stable-raster/support proof while
-    // unrelated static components are still settling elsewhere in the layer.
-    return !body->blastDebris && layerHasFallingComponents(lay);
+    return false;
   }
   bool bodyNeedsBakeTick(Layer* lay, Body* b) {
     if (b->jointRole == 2 || b->awake || bodyBakeRetryDeferred(lay, b)
@@ -440,11 +432,16 @@
   }
 
   inline void invalidateComponentIndexPatches(Layer* layer) {
+    layer->componentIndexExact = false;
     layer->componentIndexPatchOnly = false;
     layer->componentIndexPatches.clear();
   }
 
   inline void noteComponentIndexAddition(int componentIndex, int k) {
+    if (L->componentIndexExact && componentIndex >= 0
+        && componentIndex < (int)L->components.size()
+        && k >= 0 && k < cols * rows)
+      L->cellComp[k] = componentIndex;
     if (!L->componentIndexPatchOnly) {
       if (L->groundDirty || L->groundContentDirty || !L->groundBaseValid
           || L->groundBaseFlags.size() != L->components.size()) {
@@ -459,7 +456,6 @@
 
   inline void refreshMobileComponentRegistry(Layer* layer) {
     layer->mobileComponents.clear();
-    layer->landedComponents.clear();
     bool bounded = focusedSimulationLod();
     size_t dynamicCells = bounded
       ? std::min(layer->bodyCells.size(), (size_t)R_DYNAMIC_CELL_BUDGET)
@@ -468,14 +464,10 @@
       Comp& component = layer->components[i];
       if (component.grounded) {
         component.detachedByBreak = false;
-        if (component.buoyancyDirection > 0 && !component.cells.empty())
-          layer->landedComponents.push_back(i);
       } else if (!bounded || component.cells.size()
                  <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells) {
         layer->mobileComponents.push_back(i);
         if (bounded) dynamicCells += component.cells.size();
-      } else {
-        component.buoyancyDirection = 0;
       }
     }
   }
@@ -490,12 +482,17 @@
   //   B. COMPONENT-CELL: every component cell must hold a component material,
   //      must not be body-owned, and must appear in exactly one component
   //      (comp.cells dedup-by-construction).
-  //   C. BODY-COLLISION: collision rectangles cover each occupied body cell
+  //   C. STATIC-MEMBERSHIP: every non-body component material belongs to a
+  //      component; no structural pixel can survive as an unowned grid orphan.
+  //   D. BODY-COLLISION: collision rectangles cover each occupied body cell
   //      exactly once, and their stored face spans match original-mask exposure.
   void validateInvariants(const char* where) {
     auto fail = [&](const char* what, int k, int mat, int extra) {
-      char buf[200];
-      snprintf(buf, sizeof(buf), "SAND INVARIANT VIOLATION [%s] %s at k=%d (x=%d,y=%d) mat=%d extra=%d", where, what, k, k % cols, k / cols, mat, extra);
+      char buf[240];
+      snprintf(buf, sizeof(buf),
+        "SAND INVARIANT VIOLATION [%s] %s tick=%d active=%s at k=%d (x=%d,y=%d) mat=%d extra=%d",
+        where, what, tick, L == &bg ? "bg" : "fg", k, k % cols,
+        k / cols, mat, extra);
       emscripten_console_error(buf);
       abort();
     };
@@ -557,15 +554,31 @@
         if (listed[k] != expected)
           fail("body-owned cell missing from body cell roster", (int)k, lay.grid[k], listed[k]);
       }
-      lay.seenGen++;
-      for (Comp& component : lay.components) for (int k : component.cells) {
-        if (k < 0 || k >= (int)n) fail("component cell out of bounds", k, -1, 0);
-        uint8_t material = lay.grid[k];
-        if (!isComponentMaterial(material)) fail("component cell has non-component material", k, material, 0);
-        if (lay.bodyOwner[k] != -1) fail("component cell is body-owned", k, material, lay.bodyOwner[k]);
-        if (lay.seenStamp[k] == lay.seenGen) fail("cell in two components / duplicated", k, material, 0);
-        lay.seenStamp[k] = lay.seenGen;
+      std::vector<uint8_t> componentListed(n, 0);
+      for (int componentIndex = 0;
+           componentIndex < (int)lay.components.size(); componentIndex++) {
+        Comp& component = lay.components[componentIndex];
+        for (int k : component.cells) {
+          if (k < 0 || k >= (int)n)
+            fail("component cell out of bounds", k, -1, 0);
+          uint8_t material = lay.grid[k];
+          if (!isComponentMaterial(material))
+            fail("component cell has non-component material", k, material, 0);
+          if (lay.bodyOwner[k] != -1)
+            fail("component cell is body-owned", k, material, lay.bodyOwner[k]);
+          if (lay.componentIndexExact && lay.cellComp[k] != componentIndex)
+            fail("component cell index disagrees with membership", k,
+                 material, lay.cellComp[k]);
+          if (componentListed[k])
+            fail("cell in two components / duplicated", k, material, 0);
+          componentListed[k] = 1;
+        }
       }
+      for (size_t k = 0; k < n; k++)
+        if (lay.bodyOwner[k] < 0 && isComponentMaterial(lay.grid[k])
+            && !componentListed[k])
+          fail("static component material has no membership", (int)k,
+               lay.grid[k], lay.cellComp[k]);
       for (Body* body : lay.bodies) {
         std::vector<uint8_t> coverage(body->occ.size(), 0);
         int coveredCells = 0;

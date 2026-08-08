@@ -55,7 +55,7 @@ match. Checksums and work-volume counters remain comparable across environments.
 | `groundingMs` | Per-layer grounding and joint base floods | `components_impl.inc` |
 | `crossLayerGroundingMs` | Cross-layer bond collection and union | `components_impl.inc` |
 | `componentIndexMs` | Component index and adjacency rebuild | `components_impl.inc` |
-| `assemblyUnionMs` | Static and cross-layer assembly movement | `components_impl.inc`, `step.inc` |
+| `assemblyUnionMs` | Static support grouping and rigid-body detachment | `components_impl.inc`, `step.inc` |
 | `carryMs` | Component/body double-buffer carry | `step.inc` |
 | `bodyMs` | Free rigid-body simulation | `rigid_impl.inc` |
 | `sandMs` | Density interface and powder movement | `core.inc` |
@@ -98,13 +98,10 @@ component registration, and generation/restoration. Browser presentation exposes
   the cell flood.
 - Rigid grounding and loose support are cached and invalidated separately.
 - A settled cross-layer support closure can sleep during loose-only motion.
-- Collision-free cross-layer assembly translations patch component indices and
-  grounding caches in place; their movement planner keeps ordered cell vectors
-  with generation-stamped membership instead of whole-mass hash tables. Contact
-  probes use stamped sparse overlays/open-air caches, and translated masses batch
-  exact persistence-tile dirt instead of hashing once per moved cell. Grid
-  mutation writes the shifted snapshot once and clears only its trailing
-  boundary instead of clearing and rewriting the full island.
+- Unsupported static groups have one motion path: stable component slots are
+  retired directly into same-layer or joint rigid bodies. Settled bodies that
+  still have accepted rigid, powder, or liquid support remain baked; all actual
+  motion, displacement, rotation, and later rebaking belong to the body solver.
 - Component adjacency edges use dense-id counting passes, so the duplicate-heavy
   edge list produced by a blast cut is sorted in linear time.
 - Joint support loss compares packed grounding bytes and expands only exact
@@ -156,10 +153,9 @@ component registration, and generation/restoration. Browser presentation exposes
   physical or cosmetic aftermath is emitted. Cross-layer structural damage and
   shock are mirrored, while gas, flecks, and physical rubble remain
   source-layer-owned.
-- A blast whose structural removals pass the bounded exact-connectivity proof
-  keeps its support cache and double-buffer carry sparse. Genuine cuts rebuild
-  exact support; loose support, assembly movement, snapshots, resize, and world
-  shifts still invalidate sparse carry.
+- Blast repair splits only the exact touched component slots and patches their
+  incident adjacency edges. Genuine cuts rebuild support; loose support, rigid
+  detachment, snapshots, resize, and world shifts still invalidate sparse carry.
 - Live blast rubble stays body-owned, does not bear structural load, and does not
   invalidate cached cave grounding. Settled rubble bakes into ordinary static
   material once structural motion in its layer clears. Dense TNT fronts emit a

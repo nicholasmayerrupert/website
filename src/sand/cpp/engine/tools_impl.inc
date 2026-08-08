@@ -601,38 +601,21 @@ bool ToolSystem::canPlaceSeedAt(int x0, int y0) {
   return E.L->grid[E.I(x0, y0)] == EMPTY;
 }
 bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_STANDARD); }
-// Place a seed of a given species. The comp carries the plantType so growth.inc
-// dispatches the right shape/material; the grown wood material then re-encodes
-// the type so it survives streaming.
+// A placed seed starts as a one-cell rigid body. Once it comes to rest, body
+// baking restores the seed component and its species so growth begins in soil,
+// not while the seed is falling.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  // Growth runs before joint grounding and can finish a newly placed seed in
-  // that first tick. Latch here so the sleeping path cannot miss the transient.
-  E.comps.jointSleepBlocked = true;
-  Comp c; c.id = E.L->nextComponentId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true; c.requiresCellGrounding = true;
-  { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
-  E.L->components.push_back(std::move(c));
-  E.L->componentCarryDirty = true;
-  E.L->componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(E.L);
+  Body* body = E.finishSpawn({{x0, y0}}, SEED, false);
+  if (!body) return false;
+  body->plantType = pt;
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;
 }
 bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  E.comps.jointSleepBlocked = true;
-  Comp c; c.id = E.L->nextComponentId++; c.yMax = y0; c.age = 0; c.growing = true;
-  int k = E.I(x0, y0);
-  E.L->grid[k] = MYCELIUM_SPORE;
-  c.cells.push_back(k);
-  E.L->components.push_back(std::move(c));
-  E.L->componentCarryDirty = true;
-  E.L->componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(E.L);
-  E.L->myceliumActive = true;
-  E.L->myceliumSporePresent = true;
-  E.L->groundDirty = true;
+  if (!E.finishSpawn({{x0, y0}}, MYCELIUM_SPORE, false)) return false;
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;

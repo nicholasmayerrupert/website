@@ -257,7 +257,6 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.myceliumComponents.clear();
     lay.iceComponents.clear();
     lay.mobileComponents.clear();
-    lay.landedComponents.clear();
     lay.componentRegistryDirty = true;
     lay.componentCarryDirty = true;
     lay.componentIndexPatchOnly = false;

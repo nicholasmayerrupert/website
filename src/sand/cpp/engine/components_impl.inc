@@ -8,16 +8,14 @@ void ComponentSystem::prepareAssemblyScratch(size_t gridLen) {
     set.gen = 0;
   };
   prepareStamp(asmCells);
-  prepareStamp(asmPlanned);
+  prepareStamp(detachVisited);
   prepareStamp(asmExterior);
   prepareStamp(asmOpenAir);
-  asmPlannedMat.resize(gridLen);
   asmExteriorValue.resize(gridLen);
   asmOpenAirValue.resize(gridLen);
   asmExteriorRegion.reserve((size_t)(E.cols + E.rows) * 4);
   asmAirFaces.reserve((size_t)(E.cols + E.rows) * 4);
   asmOpenAirPath.reserve((size_t)E.rows);
-  asmVacatedBits.reserve((size_t)E.rows * ((E.cols + 63) >> 6));
 }
 
 bool ComponentSystem::isKestrelFrameAnchor(const Layer& lay, int x, int y) const {
@@ -97,6 +95,7 @@ void ComponentSystem::indexComponents() {
     lay->compAdjPairs.erase(std::unique(lay->compAdjPairs.begin(), lay->compAdjPairs.end()), lay->compAdjPairs.end());
   }
   E.invalidateComponentIndexPatches(lay);
+  lay->componentIndexExact = true;
   E.perfComponentIndexMs += emscripten_get_now() - t0;
 }
 
@@ -139,6 +138,7 @@ bool ComponentSystem::patchComponentIndexAdditions() {
         lay->compAdjPairs.insert(it, edge);
     }
   }
+  lay->componentIndexExact = true;
   return true;
 }
 
@@ -207,7 +207,14 @@ void ComponentSystem::computeStaticGraphGrounded() {
   uint8_t* const grounded = lay->groundedCell.data();
   for (int i = 0; i < count; i++) {
     Comp* c = cgComps[i];
+    bool wasGrounded = i < (int)lay->groundBaseFlags.size()
+      && lay->groundBaseFlags[i] != 0;
     c->grounded = c->cells.empty() || cgVisited[ufFind(parent, i)] != 0;
+    if (wasGrounded && !c->grounded) {
+      c->detachedByBreak = true;
+      c->settledBody = false;
+      c->settledLooseSupport = false;
+    }
     if (c->grounded)
       for (int k : c->cells) grounded[k] = 1;
   }
@@ -443,14 +450,14 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         updated.push_back(std::move(comp));
         continue;
       }
-      int32_t gen = ++lay->seenGen;
+      splitRemovedSet.reset((size_t)E.cols * E.rows);
       for (int k : comp.cells)
         if (k >= 0 && k < E.cols * E.rows && E.isComponentMaterial(lay->grid[k]))
-          lay->seenStamp[k] = gen;
+          splitRemovedSet.add(k);
       bool reused = false;
       for (int seed : comp.cells) {
-        if (seed < 0 || seed >= E.cols * E.rows || lay->seenStamp[seed] != gen) continue;
-        splitPart.clear(); splitPart.push_back(seed); lay->seenStamp[seed] = 0;
+        if (!splitRemovedSet.has(seed)) continue;
+        splitPart.clear(); splitPart.push_back(seed); splitRemovedSet.remove(seed);
         for (size_t qi = 0; qi < splitPart.size(); qi++) {
           int cur = splitPart[qi], y = cur / E.cols, x = cur - y * E.cols;
           for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
@@ -458,7 +465,10 @@ void ComponentSystem::normalizeDeferredConnectivity() {
             int nx = x + ox, ny = y + oy;
             if (!E.isInBounds(nx, ny)) continue;
             int nk = ny * E.cols + nx;
-            if (lay->seenStamp[nk] == gen) { lay->seenStamp[nk] = 0; splitPart.push_back(nk); }
+            if (splitRemovedSet.has(nk)) {
+              splitRemovedSet.remove(nk);
+              splitPart.push_back(nk);
+            }
           }
         }
         Comp c;
@@ -469,8 +479,8 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         c.settledBody = comp.settledBody;
         c.settledLooseSupport = comp.settledLooseSupport;
         c.detachedByBreak = comp.detachedByBreak;
-        c.buoyancyDirection = comp.buoyancyDirection; c.cacheDirty = comp.cacheDirty;
-        c.cells = std::move(splitPart); c.yMax = 0;
+        c.cacheDirty = comp.cacheDirty;
+        c.cells = splitPart; c.yMax = 0;
         for (int k : c.cells) {
           c.yMax = imax(c.yMax, k / E.cols);
           uint8_t material = lay->grid[k];
@@ -498,7 +508,8 @@ void ComponentSystem::computeGrounded() {
   // Fully stable: rigid base + last loose overlay still match the live grid.
   // Powder's mere presence does NOT force a pass — only looseGroundDirty (a
   // powder/liquid write since the last successful overlay) does.
-  if (!groundForceFull && lay->groundBaseValid && !lay->groundDirty && !lay->groundContentDirty
+  if (!groundForceFull && lay->componentIndexExact
+      && lay->groundBaseValid && !lay->groundDirty && !lay->groundContentDirty
       && !lay->looseGroundDirty && lay->groundBaseFlags.size() == totalComps) {
     return;
   }
@@ -507,7 +518,8 @@ void ComponentSystem::computeGrounded() {
   // the rigid flood + indexComponents are skipped. Bodies stamp rigid material
   // into the grid without routing through rigid dirty hooks. Body-owned cells
   // are excluded from the static graph, so their motion leaves this base valid.
-  bool reuse = !groundForceFull && lay->groundBaseValid && !lay->groundDirty
+  bool reuse = !groundForceFull && lay->componentIndexExact
+               && lay->groundBaseValid && !lay->groundDirty
                && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);
   if (reuse) {
     if (lay->groundContentDirty) {
@@ -568,9 +580,8 @@ void ComponentSystem::computeGrounded() {
     bool patchedComponentIndex = !groundForceFull && lay->groundDirty
       && !lay->groundContentDirty && patchComponentIndexAdditions();
     bool componentIndexExact = patchedComponentIndex
-      || (!groundForceFull && lay->groundBaseValid
-      && !lay->groundDirty && !lay->groundContentDirty
-      && lay->groundBaseFlags.size() == totalComps);
+      || (!groundForceFull && lay->componentIndexExact
+          && lay->groundBaseFlags.size() == totalComps);
     computeRigidGrounded(componentIndexExact);
     lay->groundRigidBase.assign(lay->groundedCell.begin(), lay->groundedCell.end());
     lay->groundBaseFlags.clear();
@@ -580,6 +591,7 @@ void ComponentSystem::computeGrounded() {
     lay->groundDirty = false;
     lay->groundContentDirty = false;
     E.invalidateComponentIndexPatches(lay);
+    lay->componentIndexExact = true;
     lay->groundBaseReplay = false;
     lay->looseDirtyFull = true;
     lay->looseDirtyX0 = 0; lay->looseDirtyX1 = E.cols - 1;
@@ -719,7 +731,7 @@ void ComponentSystem::computeGrounded() {
 
 // Rebuild component bookkeeping after a removal that preserved cached grounding.
 void ComponentSystem::incrementalGroundingRefresh() {
-  if (!E.L->compsReshaped
+  if (E.L->componentIndexExact && !E.L->compsReshaped
       && E.L->groundBaseFlags.size() == E.L->components.size()) {
     cgComps.clear();
     for (size_t i = 0; i < E.L->components.size(); i++) {
@@ -1056,10 +1068,12 @@ void ComponentSystem::computeGroundedBoth() {
   // Snapshot prev grounded only when rigid grounding may change (wake needs the
   // 1->0 transition). A pure loose-overlay refresh cannot unground rigid cells.
   auto rigidMayChange = [&](Layer& lay) {
-    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid;
+    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
+      || !lay.componentIndexExact;
   };
   auto staticMayChange = [](Layer& lay) {
-    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid;
+    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
+      || !lay.componentIndexExact;
   };
   auto structureCanSelfActivate = [](Layer& lay) {
     if (lay.myceliumActive) return true;
@@ -1305,76 +1319,12 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
   return false;
 }
 
-// Match a displaced leading-face cell to the nearest unclaimed trailing-face
-// vacancy by Manhattan distance. Each row is a packed bitset, so predecessor and
-// successor lookup stays bounded by the grid width without allocating tree nodes
-// for every boundary cell. The row/x tie order matches the spatial BFS order.
-int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
-                                          std::vector<uint64_t>& vacatedBits) {
-  int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
-  int firstY = dir > 0 ? imax(1, minTargetY)
-                       : (sourceSideOnly ? imax(sourceY + 1, minTargetY) : imax(1, minTargetY));
-  int lastY = dir > 0 ? sourceY - 1 : E.rows - 1;
-  int best = -1, bestDist = INT_MAX;
-  const int words = (E.cols + 63) >> 6;
-  for (int y = firstY; y <= lastY; y++) {
-    int dy = std::abs(y - sourceY);
-    if (dy > bestDist) continue;
-    const int base = y * words;
-    const int sourceWord = sourceX >> 6;
-    const int sourceBit = sourceX & 63;
-    int rightX = -1;
-    uint64_t rightWord = vacatedBits[base + sourceWord] & (~uint64_t{0} << sourceBit);
-    if (rightWord) {
-      rightX = (sourceWord << 6) + __builtin_ctzll(rightWord);
-    } else {
-      for (int wi = sourceWord + 1; wi < words; wi++) {
-        uint64_t word = vacatedBits[base + wi];
-        if (!word) continue;
-        rightX = (wi << 6) + __builtin_ctzll(word);
-        break;
-      }
-    }
-    int leftX = -1;
-    uint64_t leftMask = sourceBit == 0 ? 0 : ((uint64_t{1} << sourceBit) - 1);
-    uint64_t leftWord = vacatedBits[base + sourceWord] & leftMask;
-    if (leftWord) {
-      leftX = (sourceWord << 6) + 63 - __builtin_clzll(leftWord);
-    } else {
-      for (int wi = sourceWord - 1; wi >= 0; wi--) {
-        uint64_t word = vacatedBits[base + wi];
-        if (!word) continue;
-        leftX = (wi << 6) + 63 - __builtin_clzll(word);
-        break;
-      }
-    }
-    auto consider = [&](int x) {
-      if (x < 0 || x >= E.cols) return;
-      int dist = dy + std::abs(x - sourceX);
-      int k = y * E.cols + x;
-      int bestY = best < 0 ? -1 : best / E.cols;
-      bool earlierBfsTie = best >= 0 && (dir > 0 ? y < bestY : y > bestY);
-      if (dist < bestDist || (dist == bestDist && (earlierBfsTie || (y == bestY && k < best)))) {
-        best = k; bestDist = dist;
-      }
-    };
-    consider(rightX);
-    consider(leftX);
-  }
-  if (best < 0) return -1;
-  int bestX = best % E.cols, bestY = best / E.cols;
-  vacatedBits[bestY * words + (bestX >> 6)] &= ~(uint64_t{1} << (bestX & 63));
-  return best;
-}
-
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
-// purpose: top liquid never creates support/lift). Shared by the single-layer
-// buoyancy decision (moveRigidAssemblies) and the cross-layer descend decision
-// (moveCrossLayerBondedAssemblies) — the latter accumulates over both layers
-// and ignores the `faces` total.
+// purpose: top liquid never creates support/lift). Used only to decide whether a
+// previously baked body still has accepted support or must re-enter the body
+// solver; cross-layer groups accumulate the contact from both layers.
 template <class Cells>
 void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
-                                            const std::vector<std::pair<int, uint8_t>>* planned,
                                             bool collectBearing) {
   // Iteration order of `cells` feeds the double accumulators below; only the
   // per-neighbour membership test moves to the stamp mirror.
@@ -1390,22 +1340,11 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
     minX = imin(minX, x); minY = imin(minY, y);
     maxX = imax(maxX, x); maxY = imax(maxY, y);
   }
-  if (planned) {
-    asmPlanned.reset((size_t)gridLen);
-    if (asmPlannedMat.size() < (size_t)gridLen) asmPlannedMat.resize((size_t)gridLen);
-    for (const auto& entry : *planned) {
-      asmPlanned.add(entry.first);
-      if ((unsigned)entry.first < asmPlannedMat.size()) asmPlannedMat[entry.first] = entry.second;
-    }
-  }
-  auto materialAt = [&](int k) {
-    return planned && asmPlanned.has(k) ? asmPlannedMat[k] : g[k];
-  };
+  auto materialAt = [&](int k) { return g[k]; };
   Layer& contactLayer = g == E.fg.grid ? E.fg : E.bg;
   auto isExternalBearing = [&](int k) {
     uint8_t m = materialAt(k);
     if (!E.isRigidMaterialClass(m)) return false;
-    if (planned && asmPlanned.has(k)) return true;
     return isGroundingRigidCell(contactLayer, k);
   };
   // Only media outside the assembly can support or buoy it. A cave enclosed by
@@ -1595,6 +1534,204 @@ int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, doub
   return 1;
 }
 
+void ComponentSystem::trimTrailingComponentTombstones(Layer& lay) {
+  while (!lay.components.empty() && lay.components.back().cells.empty()) {
+    lay.components.pop_back();
+    if (lay.componentTombstones > 0) lay.componentTombstones--;
+  }
+  lay.groundBaseFlags.resize(lay.components.size());
+  lay.crossBondedComp.resize(lay.components.size());
+}
+
+// Stable component slots make structural edits proportional to the edited
+// topology. The caller has already patched cellComp for every changed member.
+// Remove only incident graph edges, discover the changed slots' new contacts,
+// and leave every untouched component index intact.
+void ComponentSystem::patchStableComponentTopology(
+    Layer& lay, const std::vector<int>& changedSlots) {
+  std::vector<uint8_t> changed(lay.components.size(), 0);
+  for (int slot : changedSlots)
+    if (slot >= 0 && slot < (int)changed.size()) changed[slot] = 1;
+  lay.compAdjPairs.erase(
+    std::remove_if(lay.compAdjPairs.begin(), lay.compAdjPairs.end(),
+      [&](uint64_t packed) {
+        int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
+        return (a >= 0 && a < (int)changed.size() && changed[a])
+          || (b >= 0 && b < (int)changed.size() && changed[b]);
+      }),
+    lay.compAdjPairs.end());
+
+  trimTrailingComponentTombstones(lay);
+  lay.groundBaseFlags.resize(lay.components.size(), 0);
+  lay.crossBondedComp.resize(lay.components.size(), 0);
+
+  std::vector<uint64_t> edges;
+  const int32_t* const cc = lay.cellComp.data();
+  for (int slot : changedSlots) {
+    if (slot < 0 || slot >= (int)lay.components.size()) continue;
+    for (int k : lay.components[slot].cells) {
+      int y = k / E.cols, x = k - y * E.cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+        int nk = ny * E.cols + nx, other = cc[nk];
+        if (other < 0 || other == slot || other >= (int)lay.components.size()) continue;
+        if (lay.infinite && (x == 0 || x == E.cols - 1
+                            || nx == 0 || nx == E.cols - 1)
+            && (E.isIceMaterial(lay.grid[k]) || E.isIceMaterial(lay.grid[nk]))) continue;
+        uint32_t lo = (uint32_t)imin(slot, other);
+        uint32_t hi = (uint32_t)imax(slot, other);
+        edges.push_back(((uint64_t)lo << 32) | hi);
+      }
+    }
+  }
+  std::sort(edges.begin(), edges.end());
+  edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
+  for (uint64_t edge : edges) {
+    auto it = std::lower_bound(lay.compAdjPairs.begin(), lay.compAdjPairs.end(), edge);
+    if (it == lay.compAdjPairs.end() || *it != edge)
+      lay.compAdjPairs.insert(it, edge);
+  }
+
+  lay.groundHasDirectedBoundaryComp = false;
+  for (int x = 0; x < E.cols && !lay.groundHasDirectedBoundaryComp; x++)
+    lay.groundHasDirectedBoundaryComp = cc[x] >= 0;
+  for (int y = 1; y < E.rows && !lay.groundHasDirectedBoundaryComp; y++) {
+    int k = y * E.cols;
+    lay.groundHasDirectedBoundaryComp = cc[k] >= 0 || cc[k + E.cols - 1] >= 0;
+  }
+  lay.componentIndexExact = true;
+  lay.compsReshaped = false;
+}
+
+// Blast repair has one topology path. The pre-cut cell index is exact; each
+// touched slot is rebuilt into its real connected pieces, with the first piece
+// retaining the slot and additional pieces using tombstones or appended slots.
+void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
+  if (erased.empty()) return;
+#ifdef SAND_INVARIANT_CHECKS
+  if (!E.L->componentIndexExact) {
+    emscripten_console_error("BLAST REPAIR REQUIRES AN EXACT COMPONENT INDEX");
+    abort();
+  }
+#endif
+  Layer& lay = *E.L;
+  const bool groundingPreserved = !groundForceFull
+    && lay.groundBaseValid && !lay.groundDirty && !lay.groundContentDirty
+    && removalsKeepGroundingValid(erased);
+  lay.componentRegistryDirty = true;
+  lay.componentIndexPatchOnly = false;
+  lay.componentIndexPatches.clear();
+
+  splitTouched.assign(lay.components.size(), 0);
+  std::vector<int> touchedSlots;
+  for (int k : erased) {
+    if (k < 0 || k >= E.cols * E.rows) continue;
+    int slot = lay.cellComp[k];
+    if (slot >= 0 && slot < (int)lay.components.size() && !splitTouched[slot]) {
+      splitTouched[slot] = 1;
+      touchedSlots.push_back(slot);
+    }
+    lay.cellComp[k] = -1;
+    lay.groundedCell[k] = 0;
+    lay.next[k] = lay.grid[k];
+    if (lay.groundBaseValid && k < (int)lay.groundRigidBase.size())
+      lay.groundRigidBase[k] = 0;
+  }
+
+  std::vector<int> changedSlots = touchedSlots;
+  const int gridLen = E.cols * E.rows;
+  for (int slot : touchedSlots) {
+    Comp source = std::move(lay.components[slot]);
+    const bool baseGrounded = groundingPreserved
+      && slot < (int)lay.groundBaseFlags.size()
+      && lay.groundBaseFlags[slot];
+    int32_t survivorGen = ++lay.seenGen;
+    for (int k : source.cells)
+      if (k >= 0 && k < gridLen && E.isComponentMaterial(lay.grid[k]))
+        lay.seenStamp[k] = survivorGen;
+
+    auto makeFragment = [&](std::vector<int>& cells, int id) {
+      Comp fragment;
+      fragment.id = id;
+      fragment.plantType = source.plantType;
+      fragment.age = source.age;
+      fragment.growing = source.growing;
+      fragment.requiresCellGrounding = source.requiresCellGrounding;
+      fragment.bakedAssemblyId = source.bakedAssemblyId;
+      fragment.detachedByBreak = true;
+      fragment.cacheDirty = source.cacheDirty;
+      fragment.grounded = baseGrounded;
+      fragment.cells = std::move(cells);
+      for (int k : fragment.cells) {
+        fragment.yMax = imax(fragment.yMax, k / E.cols);
+        uint8_t material = lay.grid[k];
+        if (E.isPlantWood(material)) fragment.woodCount++;
+        else if (E.isPlantLeaf(material)) fragment.leafCount++;
+      }
+      return fragment;
+    };
+    auto freeSlot = [&]() {
+      for (int i = 0; i < (int)lay.components.size(); i++)
+        if (lay.components[i].cells.empty() && !splitTouched[i]) return i;
+      lay.components.push_back({});
+      lay.groundBaseFlags.push_back(1);
+      lay.crossBondedComp.push_back(0);
+      splitTouched.push_back(0);
+      return (int)lay.components.size() - 1;
+    };
+
+    bool first = true;
+    for (int seed : source.cells) {
+      if (seed < 0 || seed >= gridLen || lay.seenStamp[seed] != survivorGen) continue;
+      splitPart.clear();
+      splitPart.push_back(seed);
+      lay.seenStamp[seed] = 0;
+      for (size_t qi = 0; qi < splitPart.size(); qi++) {
+        int k = splitPart[qi], y = k / E.cols, x = k - y * E.cols;
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = x + ox, ny = y + oy;
+          if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+          int nk = ny * E.cols + nx;
+          if (lay.seenStamp[nk] != survivorGen) continue;
+          lay.seenStamp[nk] = 0;
+          splitPart.push_back(nk);
+        }
+      }
+      int previousSize = (int)lay.components.size();
+      int target = first ? slot : freeSlot();
+      int id = first ? source.id : lay.nextComponentId++;
+      if (!first && target < previousSize && lay.componentTombstones > 0)
+        lay.componentTombstones--;
+      lay.components[target] = makeFragment(splitPart, id);
+      lay.groundBaseFlags[target] = baseGrounded ? 1 : 0;
+      lay.crossBondedComp[target] = 0;
+      for (int k : lay.components[target].cells) lay.cellComp[k] = target;
+      if (!first) changedSlots.push_back(target);
+      first = false;
+    }
+    if (first) {
+      lay.components[slot] = {};
+      lay.components[slot].grounded = true;
+      lay.groundBaseFlags[slot] = 1;
+      lay.crossBondedComp[slot] = 0;
+      lay.componentTombstones++;
+    }
+  }
+
+  patchStableComponentTopology(lay, changedSlots);
+  lay.groundDirty = !groundingPreserved;
+  lay.groundContentDirty = false;
+  lay.blastSparseCarryReady = !lay.componentCarryDirty;
+  if (E.bgEnabled) {
+    jointDirty = true;
+    jointBondsInvalid = true;
+    jointSupportSleeping = false;
+  }
+}
+
 void ComponentSystem::markBreakCandidates() {
   // Snapshot the supported closure before an erase split invalidates grounding.
   // After the next fresh grounding pass, assembly classification clears
@@ -1611,27 +1748,33 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
                                             const std::vector<std::vector<int>>& groups) {
   if (groups.empty()) return;
   Engine::ActiveLayerScope layerScope(E, &lay);
+#ifdef SAND_INVARIANT_CHECKS
+  if (!lay.componentIndexExact) {
+    emscripten_console_error("BODY EXTRACTION REQUIRES AN EXACT COMPONENT INDEX");
+    abort();
+  }
+#endif
 
   struct PendingBody {
     std::vector<std::pair<int, int>> cells;
     std::vector<uint8_t> materials;
+    int fuseTicks = 0;
+    uint8_t plantType = PT_OAK;
   };
   std::vector<PendingBody> pending;
-  std::unordered_set<Comp*> detached;
+  std::unordered_set<int> detached;
   for (const auto& ids : groups) {
-    std::vector<Comp*> components;
     std::vector<int> cells;
-    for (int id : ids) {
-      Comp* component = compById(lay, id);
-      if (!component || detached.count(component)) continue;
-      components.push_back(component);
+    for (int slot : ids) {
+      Comp* component = compById(lay, slot);
+      if (!component || detached.count(slot)) continue;
+      detached.insert(slot);
       for (int k : component->cells) {
         if (k < 0 || k >= E.cols * E.rows || E.isBodyCell(k)) continue;
         cells.push_back(k);
       }
     }
     if (cells.empty()) continue;
-    for (Comp* component : components) detached.insert(component);
 
     // A cross-layer support group can connect several pieces only through its
     // peer layer. Once detached, each layer-local connected piece is its own
@@ -1640,24 +1783,33 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     std::sort(cells.begin(), cells.end());
     cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
     asmCells.reset((size_t)E.cols * E.rows);
-    asmPlanned.reset((size_t)E.cols * E.rows);
+    detachVisited.reset((size_t)E.cols * E.rows);
     for (int k : cells) asmCells.add(k);
     for (int seed : cells) {
-      if (asmPlanned.has(seed)) continue;
+      if (detachVisited.has(seed)) continue;
       PendingBody body;
       std::vector<int> queue{seed};
-      asmPlanned.add(seed);
+      detachVisited.add(seed);
       for (size_t qi = 0; qi < queue.size(); qi++) {
         int k = queue[qi], y = k / E.cols, x = k - y * E.cols;
         body.cells.push_back({x, y});
         body.materials.push_back(lay.grid[k]);
+        int slot = lay.cellComp[k];
+        if (lay.grid[k] == SEED && slot >= 0 && slot < (int)lay.components.size())
+          body.plantType = lay.components[slot].plantType;
+        auto fuse = lay.pendingDetonations.find(k);
+        if (fuse != lay.pendingDetonations.end()) {
+          if (!body.fuseTicks || fuse->second < body.fuseTicks)
+            body.fuseTicks = fuse->second;
+          lay.pendingDetonations.erase(fuse);
+        }
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
           if (!ox && !oy) continue;
           int nx = x + ox, ny = y + oy;
           if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
           int nk = ny * E.cols + nx;
-          if (!asmCells.has(nk) || asmPlanned.has(nk)) continue;
-          asmPlanned.add(nk);
+          if (!asmCells.has(nk) || detachVisited.has(nk)) continue;
+          detachVisited.add(nk);
           queue.push_back(nk);
         }
       }
@@ -1667,18 +1819,36 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   if (pending.empty()) return;
   lay.componentCarryDirty = true;
   lay.componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(&lay);
+  lay.blastSparseCarryReady = false;
+  lay.componentIndexPatchOnly = false;
+  lay.componentIndexPatches.clear();
 
-  std::vector<Comp> remaining;
-  remaining.reserve(lay.components.size());
-  for (Comp& component : lay.components)
-    if (!detached.count(&component)) remaining.push_back(std::move(component));
-  lay.components = std::move(remaining);
+  std::vector<int> changedSlots;
+  changedSlots.reserve(detached.size());
+  for (int slot : detached) {
+    if (slot < 0 || slot >= (int)lay.components.size()) continue;
+    for (int k : lay.components[slot].cells) {
+      if (k < 0 || k >= E.cols * E.rows) continue;
+      lay.cellComp[k] = -1;
+      lay.groundedCell[k] = 0;
+      if (lay.groundBaseValid && k < (int)lay.groundRigidBase.size())
+        lay.groundRigidBase[k] = 0;
+    }
+    lay.components[slot] = {};
+    lay.components[slot].grounded = true;
+    if (slot < (int)lay.groundBaseFlags.size()) lay.groundBaseFlags[slot] = 1;
+    if (slot < (int)lay.crossBondedComp.size()) lay.crossBondedComp[slot] = 0;
+    lay.componentTombstones++;
+    changedSlots.push_back(slot);
+  }
+  patchStableComponentTopology(lay, changedSlots);
 
   for (PendingBody& source : pending) {
     E.rigid.wakeBodiesTouchingCells(lay, source.cells);
     Body* body = E.rigid.spawnBodyImpl(source.cells, source.materials);
     if (!body) continue;
+    body->fuseTicks = source.fuseTicks;
+    body->plantType = source.plantType;
     for (size_t i = 0; i < source.cells.size(); i++) {
       int k = source.cells[i].second * E.cols + source.cells[i].first;
       lay.bodyOwner[k] = body->id;
@@ -1687,11 +1857,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     }
   }
 
-  lay.groundDirty = true;
-  lay.groundContentDirty = true;
-  lay.groundBaseValid = false;
-  lay.compsReshaped = true;
-  lay.deferredSplitIds.clear();
+  lay.sleepingBodySupportDirty = true;
   lay.myceliumActive = false;
   lay.myceliumSporePresent = false;
   for (const Comp& component : lay.components) {
@@ -1699,34 +1865,42 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     for (int k : component.cells)
       if (lay.grid[k] == MYCELIUM_SPORE) { lay.myceliumSporePresent = true; break; }
   }
-  jointDirty = true;
-  jointBondsInvalid = true;
-  jointSupportValid = false;
-  jointSupportSleeping = false;
-  jointTranslationReady = false;
 }
 
 void ComponentSystem::detachCrossLayerComponentGroups(
     const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups) {
   if (groups.empty()) return;
+#ifdef SAND_INVARIANT_CHECKS
+  if (!E.fg.componentIndexExact || !E.bg.componentIndexExact) {
+    emscripten_console_error("JOINT BODY EXTRACTION REQUIRES EXACT COMPONENT INDEXES");
+    abort();
+  }
+#endif
   struct PendingJoint {
     std::vector<std::pair<int, int>> fgCells, bgCells;
     std::vector<uint8_t> fgMaterials, bgMaterials;
+    int fuseTicks = 0;
+    uint8_t fgPlantType = PT_OAK, bgPlantType = PT_OAK;
   };
   std::vector<PendingJoint> pending;
-  std::unordered_set<Comp*> detachedFg, detachedBg;
+  std::unordered_set<int> detachedFg, detachedBg;
   auto collect = [&](Layer& lay, const std::vector<int>& ids,
-                     std::unordered_set<Comp*>& detached,
+                     const std::unordered_set<int>& detached,
+                     std::unordered_set<int>& groupSlots,
                      std::vector<std::pair<int, int>>& cells,
-                     std::vector<uint8_t>& materials) {
+                     std::vector<uint8_t>& materials,
+                     uint8_t& plantType) {
     std::vector<std::pair<int, uint8_t>> indexed;
-    for (int id : ids) {
-      Comp* component = compById(lay, id);
-      if (!component || detached.count(component)) continue;
-      detached.insert(component);
+    for (int slot : ids) {
+      Comp* component = compById(lay, slot);
+      if (!component || component->cells.empty() || detached.count(slot)
+          || groupSlots.count(slot))
+        continue;
+      groupSlots.insert(slot);
       for (int k : component->cells) {
         if (k < 0 || k >= E.cols * E.rows || lay.bodyOwner[k] >= 0) continue;
         indexed.push_back({k, lay.grid[k]});
+        if (lay.grid[k] == SEED) plantType = component->plantType;
       }
     }
     std::sort(indexed.begin(), indexed.end(),
@@ -1745,30 +1919,65 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   };
   for (const auto& group : groups) {
     PendingJoint joint;
-    collect(E.fg, group.first, detachedFg, joint.fgCells, joint.fgMaterials);
-    collect(E.bg, group.second, detachedBg, joint.bgCells, joint.bgMaterials);
-    if (!joint.fgCells.empty() && !joint.bgCells.empty())
+    std::unordered_set<int> groupFg, groupBg;
+    collect(E.fg, group.first, detachedFg, groupFg, joint.fgCells,
+            joint.fgMaterials, joint.fgPlantType);
+    collect(E.bg, group.second, detachedBg, groupBg, joint.bgCells,
+            joint.bgMaterials, joint.bgPlantType);
+    if (!joint.fgCells.empty() && !joint.bgCells.empty()) {
+      detachedFg.insert(groupFg.begin(), groupFg.end());
+      detachedBg.insert(groupBg.begin(), groupBg.end());
+      auto takeFuses = [&](Layer& lay,
+                           const std::vector<std::pair<int, int>>& cells) {
+        for (const auto& cell : cells) {
+          int k = cell.second * E.cols + cell.first;
+          auto fuse = lay.pendingDetonations.find(k);
+          if (fuse == lay.pendingDetonations.end()) continue;
+          if (!joint.fuseTicks || fuse->second < joint.fuseTicks)
+            joint.fuseTicks = fuse->second;
+          lay.pendingDetonations.erase(fuse);
+        }
+      };
+      takeFuses(E.fg, joint.fgCells);
+      takeFuses(E.bg, joint.bgCells);
       pending.push_back(std::move(joint));
+    }
   }
   if (pending.empty()) return;
 
   E.fg.componentCarryDirty = true;
   E.bg.componentCarryDirty = true;
+  E.fg.blastSparseCarryReady = false;
+  E.bg.blastSparseCarryReady = false;
   E.fg.componentRegistryDirty = true;
   E.bg.componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(&E.fg);
-  E.invalidateComponentIndexPatches(&E.bg);
+  E.fg.componentIndexPatchOnly = E.bg.componentIndexPatchOnly = false;
+  E.fg.componentIndexPatches.clear();
+  E.bg.componentIndexPatches.clear();
 
-  auto removeDetached = [](Layer& lay,
-                           const std::unordered_set<Comp*>& detached) {
-    std::vector<Comp> keep;
-    keep.reserve(lay.components.size());
-    for (Comp& component : lay.components)
-      if (!detached.count(&component)) keep.push_back(std::move(component));
-    lay.components = std::move(keep);
+  auto retire = [&](Layer& lay, const std::unordered_set<int>& detached) {
+    std::vector<int> changedSlots;
+    changedSlots.reserve(detached.size());
+    for (int slot : detached) {
+      if (slot < 0 || slot >= (int)lay.components.size()) continue;
+      for (int k : lay.components[slot].cells) {
+        if (k < 0 || k >= E.cols * E.rows) continue;
+        lay.cellComp[k] = -1;
+        lay.groundedCell[k] = 0;
+        if (lay.groundBaseValid && k < (int)lay.groundRigidBase.size())
+          lay.groundRigidBase[k] = 0;
+      }
+      lay.components[slot] = {};
+      lay.components[slot].grounded = true;
+      if (slot < (int)lay.groundBaseFlags.size()) lay.groundBaseFlags[slot] = 1;
+      if (slot < (int)lay.crossBondedComp.size()) lay.crossBondedComp[slot] = 0;
+      lay.componentTombstones++;
+      changedSlots.push_back(slot);
+    }
+    patchStableComponentTopology(lay, changedSlots);
   };
-  removeDetached(E.fg, detachedFg);
-  removeDetached(E.bg, detachedBg);
+  retire(E.fg, detachedFg);
+  retire(E.bg, detachedBg);
 
   for (PendingJoint& source : pending) {
     E.rigid.wakeBodiesTouchingCells(E.fg, source.fgCells);
@@ -1777,6 +1986,9 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       source.fgCells, source.fgMaterials, source.bgCells, source.bgMaterials);
     if (!leader || !leader->jointPeer) continue;
     Body* follower = leader->jointPeer;
+    leader->fuseTicks = follower->fuseTicks = source.fuseTicks;
+    leader->plantType = source.fgPlantType;
+    follower->plantType = source.bgPlantType;
     for (const auto& cell : source.fgCells) {
       int k = cell.second * E.cols + cell.first;
       E.fg.bodyOwner[k] = leader->id;
@@ -1793,12 +2005,8 @@ void ComponentSystem::detachCrossLayerComponentGroups(
     }
   }
 
-  auto dirty = [&](Layer& lay) {
-    lay.groundDirty = true;
-    lay.groundContentDirty = true;
-    lay.groundBaseValid = false;
-    lay.compsReshaped = true;
-    lay.deferredSplitIds.clear();
+  auto refresh = [&](Layer& lay) {
+    lay.sleepingBodySupportDirty = true;
     lay.myceliumActive = false;
     lay.myceliumSporePresent = false;
     for (const Comp& component : lay.components) {
@@ -1810,339 +2018,105 @@ void ComponentSystem::detachCrossLayerComponentGroups(
         }
     }
   };
-  dirty(E.fg);
-  dirty(E.bg);
-  jointDirty = true;
-  jointBondsInvalid = true;
-  jointSupportValid = false;
-  jointSupportSleeping = false;
-  jointTranslationReady = false;
+  refresh(E.fg);
+  refresh(E.bg);
+  cgBonds.erase(std::remove_if(cgBonds.begin(), cgBonds.end(), [&](const CrossLayerBond& bond) {
+    return detachedFg.count(bond.fgComp) || detachedBg.count(bond.bgComp);
+  }), cgBonds.end());
   E.useLayer(&E.fg);
 }
 
 void ComponentSystem::moveCrossLayerBondedAssemblies() {
-  int nf = compCount(E.fg), nb = compCount(E.bg);
+  const int nf = compCount(E.fg), nb = compCount(E.bg);
   if (cgBonds.empty() || nf == 0 || nb == 0) return;
-  // Do NOT pre-dirty both layers: a fully-grounded (or blocked) bonded cluster
-  // may run this path without relocating anything. Dirt only when a group moves.
+
   std::vector<int>& parent = cgParent;
-  parent.assign(nf + nb, 0);
+  parent.resize(nf + nb);
   for (int i = 0; i < nf + nb; i++) parent[i] = i;
-  for (auto& b : cgBonds) {
-    if (b.fgComp < 0 || b.fgComp >= nf || b.bgComp < 0 || b.bgComp >= nb) continue;
-    ufUnite(parent, b.fgComp, nf + b.bgComp);
+  for (const auto& bond : cgBonds) {
+    if (bond.fgComp < 0 || bond.fgComp >= nf
+        || bond.bgComp < 0 || bond.bgComp >= nb) continue;
+    ufUnite(parent, bond.fgComp, nf + bond.bgComp);
   }
-  // Bounded same-layer union-find (replaces the old full-grid uniteLayerAdj),
-  // seeded from ungrounded cross-bonded comps; operates on cgParent so the
-  // helper's internal find/unite share this same array.
   unionCrossBondedClusters(parent, nullptr, nf, nb);
 
   struct JointGroup {
     std::vector<int> fgComps, bgComps;
-    bool grounded = false, settledBody = false, settledLooseSupport = false;
-    bool detachedByBreak = false, growingStructure = false;
+    bool grounded = false;
+    bool settledBody = false;
+    bool detachedByBreak = false;
     int maxY = 0;
     int minComp = INT_MAX;
   };
   std::unordered_map<int, JointGroup> groups;
-  for (int i = 0; i < nf; i++) if (i < (int)E.fg.crossBondedComp.size() && E.fg.crossBondedComp[i]) {
-    int r = ufFind(parent, i); JointGroup& g = groups[r]; g.fgComps.push_back(i);
-    Comp* c = compById(E.fg, i);
-    if (c->grounded) g.grounded = true;
-    if (c->settledBody) g.settledBody = true;
-    if (c->settledLooseSupport) g.settledLooseSupport = true;
-    if (c->detachedByBreak) g.detachedByBreak = true;
-    if (c->growing) g.growingStructure = true;
-    if (c->yMax > g.maxY) g.maxY = c->yMax;
-    if (i < g.minComp) g.minComp = i;
-  }
-  for (int i = 0; i < nb; i++) if (i < (int)E.bg.crossBondedComp.size() && E.bg.crossBondedComp[i]) {
-    int r = ufFind(parent, nf + i); JointGroup& g = groups[r]; g.bgComps.push_back(i);
-    Comp* c = compById(E.bg, i);
-    if (c->grounded) g.grounded = true;
-    if (c->settledBody) g.settledBody = true;
-    if (c->settledLooseSupport) g.settledLooseSupport = true;
-    if (c->detachedByBreak) g.detachedByBreak = true;
-    if (c->growing) g.growingStructure = true;
-    if (c->yMax > g.maxY) g.maxY = c->yMax;
-    if (nf + i < g.minComp) g.minComp = nf + i;
-  }
-  std::vector<JointGroup*> order; order.reserve(groups.size());
-  for (auto& kv : groups) order.push_back(&kv.second);
+  auto add = [&](Layer& lay, int componentIndex, int parentIndex,
+                 std::vector<int> JointGroup::*members) {
+    JointGroup& group = groups[ufFind(parent, parentIndex)];
+    (group.*members).push_back(componentIndex);
+    Comp* component = compById(lay, componentIndex);
+    group.grounded = group.grounded || component->grounded;
+    group.settledBody = group.settledBody || component->settledBody;
+    group.detachedByBreak =
+      group.detachedByBreak || component->detachedByBreak;
+    group.maxY = imax(group.maxY, component->yMax);
+    group.minComp = imin(group.minComp, parentIndex);
+  };
+  for (int i = 0; i < nf; i++)
+    if (i < (int)E.fg.crossBondedComp.size() && E.fg.crossBondedComp[i])
+      add(E.fg, i, i, &JointGroup::fgComps);
+  for (int i = 0; i < nb; i++)
+    if (i < (int)E.bg.crossBondedComp.size() && E.bg.crossBondedComp[i])
+      add(E.bg, i, nf + i, &JointGroup::bgComps);
+
+  std::vector<JointGroup*> order;
+  order.reserve(groups.size());
+  for (auto& entry : groups) order.push_back(&entry.second);
   std::sort(order.begin(), order.end(), [](JointGroup* a, JointGroup* b) {
     if (a->maxY != b->maxY) return a->maxY > b->maxY;
     return a->minComp < b->minComp;
   });
 
-  std::vector<int>& fgCells = jointFgCells;
-  std::vector<int>& bgCells = jointBgCells;
-  std::vector<AssemblyCellMat>& fgMats = jointFgMats;
-  std::vector<AssemblyCellMat>& bgMats = jointBgMats;
-  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::vector<int>& cells,
-                     std::vector<AssemblyCellMat>& mats) {
-    cells.clear(); mats.clear();
-    for (int id : ids) {
-      Comp* c = compById(lay, id);
-      cells.insert(cells.end(), c->cells.begin(), c->cells.end());
-      for (int k : c->cells) mats.push_back({k, lay.grid[k]});
-    }
-  };
-  // Build the exact one-cell result for one half of a joint assembly. The same
-  // plan feeds both the post-move buoyancy probe and the eventual writes, so the
-  // anti-jitter decision cannot observe a different world from the mover.
-  auto planLayerMove = [&](Layer& lay, const std::vector<int>& own, int dir,
-                           const AssemblyBodyPush& bodyPush, AssemblyLayerMovePlan& plan) -> bool {
-    plan.relocate.clear(); plan.shifted.clear(); plan.vacated.clear(); plan.materials.clear();
-    // Treat a free-body stack pushed by this assembly as part of the same
-    // one-cell translation. Its leading loose medium and trailing vacancies
-    // must participate in this exact plan; otherwise the body preflight either
-    // pins the assembly on water/powder or overwrites that volume.
-    std::vector<int> combined;
-    const std::vector<int>* moving = &own;
-    if (!bodyPush.empty()) {
-      combined = own;
-      combined.insert(combined.end(), bodyPush.oldCells.begin(), bodyPush.oldCells.end());
-      moving = &combined;
-    }
-    asmCells.reset((size_t)E.cols * E.rows);
-    for (int k : *moving) asmCells.add(k);
-    auto materialAt = [&](int k) -> uint8_t {
-      return bodyPush.vacated.count(k) ? EMPTY : lay.grid[k];
-    };
-    struct PendingRelocate { int source; uint8_t material; };
-    std::vector<PendingRelocate> pending;
-    std::vector<int> vacated;
-    for (int k : *moving) {
-      int nk = k + dir;
-      if (nk < E.cols || nk >= E.cols * E.rows) return false;
-      if (asmCells.has(nk)) continue;
-      uint8_t lead = materialAt(nk);
-      if (lead == EMPTY) continue;
-      if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
-      pending.push_back({nk, lead});
-    }
-    for (int k : *moving) if (!asmCells.has(k - dir)) vacated.push_back(k);
-    if (pending.size() > vacated.size()) return false;
-    const int vacatedWords = (E.cols + 63) >> 6;
-    asmVacatedBits.assign(E.rows * vacatedWords, 0);
-    for (int k : vacated) {
-      int y = k / E.cols, x = k - y * E.cols;
-      asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
-    }
-    std::unordered_map<uint8_t, std::vector<int>> sourceRows;
-    for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
-    std::unordered_map<uint8_t, int> contactFloorRow;
-    for (auto& entry : sourceRows) {
-      auto& rows = entry.second;
-      std::sort(rows.begin(), rows.end());
-      contactFloorRow[entry.first] = rows[(rows.size() * 3) / 4];
-    }
-    std::sort(pending.begin(), pending.end(), [](const PendingRelocate& a, const PendingRelocate& b) {
-      return a.source < b.source;
-    });
-    for (const auto& p : pending) {
-      int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
-      int target = nearestVacatedTarget(p.source, dir, minTargetY, true, asmVacatedBits);
-      // The contact floor is a preference, not a hard capacity limit. Concave
-      // assemblies can have several vertical runs and fewer trailing vacancies
-      // below the median contact row than displaced leading-face cells. Use the
-      // remaining upper vacancies before declaring an otherwise valid rise pinned.
-      if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, asmVacatedBits);
-      if (target < 0) return false;
-      plan.relocate.push_back({target, p.material});
-    }
-    plan.shifted.reserve(own.size());
-    plan.materials.reserve(bodyPush.overlay.size() + plan.relocate.size() + pending.size() * 2);
-    for (int k : own) plan.shifted.push_back(k + dir);
-    for (auto& entry : bodyPush.overlay) plan.materials.push_back(entry);
-    // The live grid already contains every overlap between the old and shifted
-    // footprints. Only the trailing and leading boundaries differ in the
-    // hypothetical post-move view used by the equilibrium probe.
-    asmCells.reset((size_t)E.cols * E.rows);
-    for (int k : own) asmCells.add(k);
-    for (int k : own) {
-      if (!asmCells.has(k - dir)) {
-        plan.vacated.push_back(k);
-        plan.materials.push_back({k, EMPTY});
-      }
-      if (!asmCells.has(k + dir)) plan.materials.push_back({k + dir, lay.grid[k]});
-    }
-    for (auto& r : plan.relocate) plan.materials.push_back(r);
-    return true;
-  };
-  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids,
-                        const std::vector<AssemblyCellMat>& mats,
-                        const AssemblyLayerMovePlan& plan, int dir,
-                        bool updateGroundCache) {
-    E.useLayer(&lay);
-    lay.componentCarryDirty = true;
-    const bool trackWorldTiles = lay.infinite && lay.storageRole != ESR_PRESENTATION;
-    const int tileX0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetX, CHUNK_SIZE) : 0;
-    const int tileY0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetY, CHUNK_SIZE) : 0;
-    const int tileCols = trackWorldTiles
-      ? E.floorDiv(lay.worldOffsetX + E.cols - 1, CHUNK_SIZE) - tileX0 + 1 : 0;
-    const int tileRows = trackWorldTiles
-      ? E.floorDiv(lay.worldOffsetY + E.rows - 1, CHUNK_SIZE) - tileY0 + 1 : 0;
-    if (trackWorldTiles) asmDirtyTiles.reset((size_t)tileCols * tileRows);
-    asmDirtyTileList.clear();
-    auto writeAssemblyIndex = [&](int k, uint8_t material) {
-      if (k < 0 || k >= E.cols * E.rows || lay.grid[k] == material) return;
-      int y = k / E.cols, x = k - y * E.cols;
-      uint8_t old = lay.grid[k];
-      E.noteLooseGroundTouch2At(k, old, material);
-      E.adjustLooseColCount(x, old, material);
-      if ((material == FIRE || material == LAVA) && old != FIRE && old != LAVA)
-        lay.heatAddedAfterPrepare = true;
-      lay.grid[k] = material;
-      E.markLayerRowSpan(&lay, y, x, x);
-      if (trackWorldTiles) {
-        int tx = E.floorDiv(lay.worldOffsetX + x, CHUNK_SIZE) - tileX0;
-        int ty = E.floorDiv(lay.worldOffsetY + y, CHUNK_SIZE) - tileY0;
-        int tile = ty * tileCols + tx;
-        if (!asmDirtyTiles.has(tile)) {
-          asmDirtyTiles.add(tile);
-          asmDirtyTileList.push_back(tile);
-        }
-      }
-    };
-    size_t materialIndex = 0;
-    for (int id : ids) {
-      Comp* c = compById(lay, id);
-      bool isPlant = compIdIsPlant(lay, id);
-      for (int& k : c->cells) {
-        const AssemblyCellMat& cm = mats[materialIndex++];
-        k += dir;
-        int y = k / E.cols, x = k - y * E.cols;
-        E.markLayerRowSpan(&lay, y, x, x);
-        writeAssemblyIndex(k, cm.material);
-        if (updateGroundCache) {
-          lay.cellComp[k] = id;
-          lay.groundRigidBase[k] = 0;
-          lay.groundedCell[k] = 0;
-        }
-      }
-      // A one-cell translation preserves material counts and shifts the exact
-      // maximum row by one, so plant metadata needs no full-cell rescan.
-      c->yMax = imax(0, imin(E.rows - 1, c->yMax + (dir < 0 ? -1 : 1)));
-      if (isPlant) c->cacheDirty = true;
-    }
-#ifdef SAND_INVARIANT_CHECKS
-    if (materialIndex != mats.size()) {
-      emscripten_console_error("ASSEMBLY MATERIAL SNAPSHOT SIZE MISMATCH");
-      abort();
-    }
-#endif
-    for (int k : plan.vacated) {
-      writeAssemblyIndex(k, EMPTY);
-      if (updateGroundCache) {
-        lay.cellComp[k] = -1;
-        lay.groundRigidBase[k] = 0;
-        lay.groundedCell[k] = 0;
-      }
-    }
-    for (auto& r : plan.relocate) writeAssemblyIndex(r.first, r.second);
-    for (int tile : asmDirtyTileList) {
-      int ty = tile / tileCols, tx = tile - ty * tileCols;
-      lay.dirtyWorldTiles.insert(E.tileKey(tileX0 + tx, tileY0 + ty));
-    }
-  };
-
-  AssemblyLayerMovePlan& fgPlan = jointFgPlan;
-  AssemblyLayerMovePlan& bgPlan = jointBgPlan;
-  bool translated = false;
   std::vector<std::pair<std::vector<int>, std::vector<int>>> detachGroups;
-  bool translationCacheExact = E.fg.groundBaseValid && E.bg.groundBaseValid
-    && E.fg.groundRigidBase.size() == (size_t)E.cols * E.rows
-    && E.bg.groundRigidBase.size() == (size_t)E.cols * E.rows;
-  for (JointGroup* g : order) {
-    if (g->grounded) {
-      for (int id : g->fgComps) compById(E.fg, id)->detachedByBreak = false;
-      for (int id : g->bgComps) compById(E.bg, id)->detachedByBreak = false;
+  for (JointGroup* group : order) {
+    if (group->grounded) {
+      for (int id : group->fgComps)
+        compById(E.fg, id)->detachedByBreak = false;
+      for (int id : group->bgComps)
+        compById(E.bg, id)->detachedByBreak = false;
       continue;
     }
-    if (g->fgComps.empty() || g->bgComps.empty()) continue;
-    collect(E.fg, g->fgComps, fgCells, fgMats);
-    collect(E.bg, g->bgComps, bgCells, bgMats);
-    auto hasLiveFuse = [&](Layer& lay, const std::vector<int>& cells) {
-      for (int k : cells) if (lay.pendingDetonations.count(k)) return true;
-      return false;
-    };
-    double sum = 0;
-    for (auto& cm : fgMats) sum += DENSITY[cm.material];
-    for (auto& cm : bgMats) sum += DENSITY[cm.material];
-    FaceContact before;
-    accumulateFaceContact(E.fg.grid, fgCells, before);
-    accumulateFaceContact(E.bg.grid, bgCells, before);
-    int decision = motionDecision(before, fgCells.size() + bgCells.size(), sum);
-    // An intact baked powder stack retains the body-by-body support accepted
-    // while it settled. After a structural break, the remaining footprint must
-    // carry the full detached assembly. Complete support loss restores the
-    // baked group to the body solver instead of lightweight component motion.
-    bool bakedPowderSupported = g->settledBody && before.bottomPowderFaces > 0
-      && sum <= before.bottomPowderDensityArea * R_GRANULAR_BEARING_DEPTH + 1e-6;
-    bool unchangedBakedPowderStack = g->settledBody && !g->detachedByBreak
-      && before.bottomPowderFaces > 0;
-    if (g->settledBody
-        && (decision == 0 || bakedPowderSupported || unchangedBakedPowderStack)) continue;
-    // A structural break creates one optional cross-layer body: the two masks
-    // share a pose only because this same detachment event produced both.
-    // A lit static fuse keeps the one-cell assembly path until it detonates so
-    // its buffer-local countdown remains attached to the TNT cell.
-    // Every unsupported, inert structural assembly enters the rigid solver.
-    // Only a live per-cell TNT fuse or an active growth source stays in the
-    // component path long enough to finish that material-specific behavior.
-    if (!g->growingStructure && !hasLiveFuse(E.fg, fgCells) && !hasLiveFuse(E.bg, bgCells)) {
-      detachGroups.push_back({g->fgComps, g->bgComps});
-      continue;
+    if (group->fgComps.empty() || group->bgComps.empty()) continue;
+
+    if (group->settledBody) {
+      std::vector<int> fgCells, bgCells;
+      double mass = 0;
+      for (int id : group->fgComps) {
+        Comp* component = compById(E.fg, id);
+        fgCells.insert(fgCells.end(), component->cells.begin(),
+                       component->cells.end());
+        for (int k : component->cells) mass += DENSITY[E.fg.grid[k]];
+      }
+      for (int id : group->bgComps) {
+        Comp* component = compById(E.bg, id);
+        bgCells.insert(bgCells.end(), component->cells.begin(),
+                       component->cells.end());
+        for (int k : component->cells) mass += DENSITY[E.bg.grid[k]];
+      }
+      FaceContact contact;
+      accumulateFaceContact(E.fg.grid, fgCells, contact);
+      accumulateFaceContact(E.bg.grid, bgCells, contact);
+      const size_t cellCount = fgCells.size() + bgCells.size();
+      bool powderSupported = contact.bottomPowderFaces > 0
+        && mass <= contact.bottomPowderDensityArea
+                 * R_GRANULAR_BEARING_DEPTH + 1e-6;
+      bool unchangedPowderStack = !group->detachedByBreak
+        && contact.bottomPowderFaces > 0;
+      if (motionDecision(contact, cellCount, mass) == 0
+          || powderSupported || unchangedPowderStack) continue;
     }
-    if (decision == 0) continue;
-    if (!E.gravityCellStep) {
-      E.useLayer(&E.fg);
-      if (!fgCells.empty()) E.markCellIndex(fgCells[0]);
-      E.useLayer(&E.bg);
-      if (!bgCells.empty()) E.markCellIndex(bgCells[0]);
-      E.useLayer(&E.fg);
-      continue;
-    }
-    int dir = decision > 0 ? E.cols : -E.cols;
-    AssemblyBodyPush fgBodyPush, bgBodyPush;
-    E.useLayer(&E.fg);
-    bool fgPushable = E.planAssemblyBodyPush(fgCells, dir, fgBodyPush);
-    E.useLayer(&E.bg);
-    bool bgPushable = E.planAssemblyBodyPush(bgCells, dir, bgBodyPush);
-    E.useLayer(&E.fg);
-    if (!fgPushable || !bgPushable) continue;
-    // A joint moves only when both layer-local halves can execute the same plan.
-    if (!planLayerMove(E.fg, fgCells, dir, fgBodyPush, fgPlan)
-        || !planLayerMove(E.bg, bgCells, dir, bgBodyPush, bgPlan)) continue;
-    FaceContact after;
-    accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials, true);
-    accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials, true);
-    if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), sum) == -decision) continue;
-    if (!fgBodyPush.bodies.empty() || !bgBodyPush.bodies.empty()) translationCacheExact = false;
-    E.applyAssemblyBodyPush(fgBodyPush);
-    E.applyAssemblyBodyPush(bgBodyPush);
-    applyLayer(E.fg, g->fgComps, fgMats, fgPlan, dir, translationCacheExact);
-    applyLayer(E.bg, g->bgComps, bgMats, bgPlan, dir, translationCacheExact);
-    translated = true;
-    // New contact with bearing terrain changes same-layer adjacency. The
-    // translation remains valid, but grounding must be rebuilt before another
-    // movement decision.
-    if (translationCacheExact && after.bearingFaces > 0)
-      translationCacheExact = false;
-    int8_t moveDir = dir < 0 ? -1 : 1;
-    for (int id : g->fgComps) compById(E.fg, id)->buoyancyDirection = moveDir;
-    for (int id : g->bgComps) compById(E.bg, id)->buoyancyDirection = moveDir;
+    detachGroups.push_back({group->fgComps, group->bgComps});
   }
-  if (translated) {
-    if (translationCacheExact) {
-      jointTranslationReady = true;
-    } else {
-      E.fg.groundDirty = true;
-      E.bg.groundDirty = true;
-      jointTranslationReady = false;
-    }
-  }
+
   if (!detachGroups.empty()) {
     detachCrossLayerComponentGroups(detachGroups);
     cgBonds.clear();
@@ -2153,680 +2127,129 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
 }
 
 void ComponentSystem::moveRigidAssemblies() {
-  // Only UNGROUNDED assemblies can move (fall/float) — grounded terrain stays
-  // put (the per-group loop below `continue`s on grounded). computeGrounded
-  // floods grounded-ness through rigid contact, so an ungrounded component is
-  // never 8-connected to a grounded one. So we process only ungrounded
-  // components here, making the whole pass O(ungrounded cells) instead of
-  // O(all solids) every step. `E.L->cellComp` holds layer-local component
-  // indices; localOf maps those to our filtered
-  // ungrounded `all` array (or -1 for grounded/none).
-  int totalComps = (int)E.L->components.size();
-  if (totalComps == 0) return;
-  if (E.L->mobileComponents.empty() && E.L->landedComponents.empty()) return;
-  std::vector<Comp*> all;
-  std::vector<int> allGlobalIds;
-  std::vector<uint8_t> allImminentTnt;
+  const int totalComps = (int)E.L->components.size();
+  if (totalComps == 0 || E.L->mobileComponents.empty()) return;
+
+  std::vector<Comp*> mobile;
+  std::vector<int> globalIds;
   std::vector<int> localOf(totalComps, -1);
-  std::vector<uint8_t> imminentTnt(totalComps, 0);
-  for (const auto& fuse : E.L->pendingDetonations) {
-    if (fuse.second > ExplosivesSystem::TNT_FINAL_FUSE_TICK) continue;
-    int k = fuse.first;
-    if (k < 0 || k >= E.cols * E.rows) continue;
-    int comp = E.L->cellComp[k];
-    if (comp >= 0 && comp < totalComps) imminentTnt[comp] = 1;
-  }
-  for (int componentIndex : E.L->landedComponents) {
-    if (componentIndex < 0 || componentIndex >= totalComps) continue;
-    Comp& component = E.L->components[componentIndex];
-    if (!component.grounded || component.buoyancyDirection <= 0
-        || component.cells.empty()) continue;
-    double x = 0, y = 0;
-    for (int k : component.cells) { x += k % E.cols; y += k / E.cols; }
-    uint8_t material = E.L->grid[component.cells[0]];
-    E.audio.emit(SE_SOLID_LAND, x / component.cells.size(),
-                 y / component.cells.size(),
-                 std::min(1.6, 0.28
-                   + std::sqrt((double)component.cells.size()) * 0.065),
-                 material);
-    component.buoyancyDirection = 0;
-  }
   for (int componentIndex : E.L->mobileComponents) {
     if (componentIndex < 0 || componentIndex >= totalComps) continue;
     Comp& component = E.L->components[componentIndex];
-    // Due TNT stays in a mixed falling assembly so it cannot pin adjacent
-    // detached terrain for its final fuse tick. A due-only front is skipped
-    // below because it disappears in this tick's reaction pass.
-    if (!component.grounded
-        && (!jointGroundReady
-            || componentIndex >= (int)E.L->crossBondedComp.size()
-            || !E.L->crossBondedComp[componentIndex])) {
-      localOf[componentIndex] = (int)all.size();
-      all.push_back(&component);
-      allGlobalIds.push_back(componentIndex);
-      allImminentTnt.push_back(imminentTnt[componentIndex]);
+    if (component.grounded
+        || (jointGroundReady
+            && componentIndex < (int)E.L->crossBondedComp.size()
+            && E.L->crossBondedComp[componentIndex]))
+      continue;
+    localOf[componentIndex] = (int)mobile.size();
+    mobile.push_back(&component);
+    globalIds.push_back(componentIndex);
+  }
+  const int count = (int)mobile.size();
+  if (count == 0) return;
+
+  std::vector<int> parent(count);
+  for (int i = 0; i < count; i++) parent[i] = i;
+  std::vector<uint8_t> anchored(count, 0);
+  for (int i = 0; i < count; i++) {
+    for (int k : mobile[i]->cells) {
+      int y = k / E.cols, x = k - y * E.cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = x + ox, ny = y + oy;
+        if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue;
+        int neighbour = E.L->cellComp[ny * E.cols + nx];
+        if (neighbour < 0 || neighbour >= totalComps) continue;
+        int local = localOf[neighbour];
+        if (local >= 0) ufUnite(parent, i, local);
+        else anchored[i] = 1;
+      }
     }
   }
-  int n = (int)all.size();
-  if (n == 0) return; // everything is grounded (settled) -> nothing to move
-  for (auto* comp : all) { int ym = 0; for (int k : comp->cells) { int y = k / E.cols; if (y > ym) ym = y; } comp->yMax = ym; }
-  std::vector<int> parent(n); for (int i = 0; i < n; i++) parent[i] = i;
-  // anchored[i]: this ungrounded comp is 8-adjacent to a GROUNDED comp, so it
-  // is attached to supported terrain and must not move. (In the original full
-  // union-find such a comp joined a grounded group and was skipped; this
-  // reproduces that exactly while only scanning ungrounded cells.)
-  std::vector<uint8_t> anchored(n, 0);
-  for (int i = 0; i < n; i++) for (int k : all[i]->cells) {
-    if (k < 0 || k >= E.cols * E.rows) continue;
-    int y = k / E.cols, x = k - y * E.cols;
-    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-      if (!ox && !oy) continue;
-      int nx = x + ox, ny = y + oy;
-      if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue;
-      int gj = E.L->cellComp[ny * E.cols + nx];
-      // cellComp can lag a re-index if a prior erase split comps without a full
-      // flood; never index localOf with a stale id (WASM OOB / segfault).
-      if (gj < 0 || gj >= totalComps) continue;
-      int j = localOf[gj];
-      if (j >= 0) ufUnite(parent, i, j);
-      else anchored[i] = 1;
-    }
-  }
+
   struct Group {
     std::vector<int> comps;
-    bool grounded = false, dueTntOnly = true, settledBody = false;
-    bool settledLooseSupport = false, detachedByBreak = false;
+    bool grounded = false;
+    bool settledBody = false;
+    bool detachedByBreak = false;
     int maxY = 0;
     int minComp = INT_MAX;
   };
   std::unordered_map<int, Group> groups;
-  for (int i = 0; i < n; i++) {
-    int r = ufFind(parent, i); Group& g = groups[r]; g.comps.push_back(i);
-    if (all[i]->grounded || anchored[i]) g.grounded = true;
-    if (!allImminentTnt[i]) g.dueTntOnly = false;
-    if (all[i]->settledBody) g.settledBody = true;
-    if (all[i]->settledLooseSupport) g.settledLooseSupport = true;
-    if (all[i]->detachedByBreak) g.detachedByBreak = true;
-    if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax;
-    if (allGlobalIds[i] < g.minComp) g.minComp = allGlobalIds[i];
+  for (int i = 0; i < count; i++) {
+    Group& group = groups[ufFind(parent, i)];
+    group.comps.push_back(i);
+    group.grounded = group.grounded || anchored[i] || mobile[i]->grounded;
+    group.settledBody = group.settledBody || mobile[i]->settledBody;
+    group.detachedByBreak =
+      group.detachedByBreak || mobile[i]->detachedByBreak;
+    group.maxY = imax(group.maxY, mobile[i]->yMax);
+    group.minComp = imin(group.minComp, globalIds[i]);
   }
-  std::vector<Group*> order; order.reserve(groups.size());
-  for (auto& kv : groups) order.push_back(&kv.second);
+
+  std::vector<Group*> order;
+  order.reserve(groups.size());
+  for (auto& entry : groups) order.push_back(&entry.second);
   std::sort(order.begin(), order.end(), [](Group* a, Group* b) {
     if (a->maxY != b->maxY) return a->maxY > b->maxY;
     return a->minComp < b->minComp;
   });
 
-  // The live grid is the exact per-cell material map for every component.
-  auto matOf = [&](int, int k) -> uint8_t { return E.L->grid[k]; };
-
-  auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir,
-                               int decision, double solidMass, bool fullySubmerged) -> bool {
-    int dy = dir > 0 ? 1 : -1;
-    bool hasIce = false;
-    for (int ci : grp->comps) for (int k : all[ci]->cells)
-      if (E.isIceMaterial(E.L->grid[k])) { hasIce = true; break; }
-    const int gridLen = E.cols * E.rows;
-    auto emitBlockedLanding = [&]() {
-      bool wasFalling = decision > 0;
-      for (int ci : grp->comps) wasFalling = wasFalling && all[ci]->buoyancyDirection > 0;
-      if (!wasFalling || cells.empty()) return;
-      double x = 0, y = 0;
-      for (int k : cells) { x += k % E.cols; y += k / E.cols; }
-      int ci = grp->comps[0], k = all[ci]->cells[0];
-      E.audio.emit(SE_SOLID_LAND, x / cells.size(), y / cells.size(),
-                   std::min(1.6, 0.28 + std::sqrt((double)cells.size()) * 0.065),
-                   matOf(ci, k));
-      for (int groupCi : grp->comps) all[groupCi]->buoyancyDirection = 0;
-    };
-    AssemblyBodyPush bodyPush;
-    if (!E.planAssemblyBodyPush(cells, dir, bodyPush)) { emitBlockedLanding(); return false; }
-    // The component and every body it pushes translate as one occupancy union.
-    // Plan loose displacement against that union so body-leading water/powder
-    // can use the combined trailing vacancies without being lost or pinning the
-    // component. Preserve the old component-only container/order when no body
-    // is selected so ordinary assembly behavior remains byte-identical.
-    std::unordered_set<int> combined;
-    const std::unordered_set<int>* moving = &cells;
-    if (!bodyPush.empty()) {
-      combined = cells;
-      combined.insert(bodyPush.oldCells.begin(), bodyPush.oldCells.end());
-      moving = &combined;
-    }
-    asmCells.reset((size_t)gridLen);
-    for (int k : *moving) asmCells.add(k);
-    auto materialAt = [&](int k) -> uint8_t {
-      return bodyPush.vacated.count(k) ? EMPTY : E.L->grid[k];
-    };
-    auto componentDisplaceableForAssembly = [&](uint8_t m) {
-      return m == EMPTY || E.isGasMaterial(m) || E.isBuoyantMedium(m);
-    };
-    for (int k : *moving) {
-      int leadK = k + dir; int leadY = leadK / E.cols;
-      if (leadY < 1 || leadY >= E.rows) { emitBlockedLanding(); return false; }
-      if (asmCells.has(leadK)) continue;
-      uint8_t lead = materialAt(leadK);
-      if (!componentDisplaceableForAssembly(lead)) { emitBlockedLanding(); return false; }
-    }
-    struct Disp { uint8_t material; int from; };
-    std::vector<Disp> displaced; std::vector<int> vacated;
-    for (int k : *moving) {
-      int leadK = k + dir; uint8_t lead = materialAt(leadK);
-      if (!asmCells.has(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
-      int trailK = k - dir; // may be out of bounds at the world edge (the old set .count was safe on any int; the stamp array is not)
-      if (trailK < 0 || trailK >= gridLen || !asmCells.has(trailK)) vacated.push_back(k);
-    }
-    int liquidDisplacedCount = 0, powderDisplacedCount = 0;
-    for (auto& d : displaced) { if (E.isLiquidMaterial(d.material)) liquidDisplacedCount++; else if (E.isLooseSolidMaterial(d.material)) powderDisplacedCount++; }
-    // Liquids and powders are relocated volume-preservingly. Liquids use a
-    // density chain: dense fluid claims nearby lighter fluid first, then that
-    // lighter fluid continues the same search until the chain reaches a surface.
-    // The cells the assembly vacates are valid free volume for this planning
-    // step; large slanted solids otherwise need too many distant surface cells
-    // and can pin in full liquid stacks. Powders use a spill BFS to nearby free
-    // room. Gas swaps into the same vertical run's trailing vacancy whenever
-    // possible, then falls back to the nearest remaining trailing cell.
-    struct LiquidWrite { int target; uint8_t material; };
-    std::vector<LiquidWrite> liquidWrites;
-    std::vector<int> powderTargets;
-    std::vector<int> gasTargets;
-    trReserved.reset(gridLen); // cells already claimed by loose-material relocation
-    if (!displaced.empty()) {
-      trVacated.reset(gridLen);
-      for (int k : vacated) trVacated.add(k);
-    }
-    if (liquidDisplacedCount > 0 || powderDisplacedCount > 0) {
-      // Cells the assembly is about to occupy — a spill target must not be one of
-      // them. Built lazily here (only when liquid/powder is displaced) so a large
-      // slab falling through air/empty skips the O(area) stamp fill per step.
-      trMoved.reset(gridLen);
-      for (int k : *moving) trMoved.add(k + dir);
-      const int vacatedWords = (E.cols + 63) >> 6;
-      asmVacatedBits.assign(E.rows * vacatedWords, 0);
-      for (int k : vacated) {
-        int y = k / E.cols, x = k - y * E.cols;
-        asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
-      }
-      int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
-      auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : materialAt(k); };
-      // Bound the total volume-preserving liquid search for this one assembly move.
-      // Each displaced liquid cell BFS-floods the reachable liquid body to find a
-      // surface; for a large rigid slab sinking through a big ENCLOSED pool (e.g.
-      // acid/water quenching a lava lake into a sinking STONE island) that is
-      // O(displaced * poolArea) per step and froze the E.tick for seconds. Once the
-      // shared budget is spent, planLiquidChain fails over to planVacatedLiquidDump —
-      // the volume the slab just vacated directly above it, which is the natural
-      // destination for a fully-immersed slab anyway. Small slabs / shallow pools
-      // never approach the cap, so their realistic surface-seeking flow is unchanged.
-      const long LIQUID_PLAN_VISIT_BUDGET = 100000;
-      long liquidPlanVisits = 0;
-      auto planLiquidChain = [&](uint8_t startMaterial, int startFrom) -> bool {
-        size_t writeBase = liquidWrites.size();
-        std::vector<int> claimed;
-        auto fail = [&]() {
-          liquidWrites.resize(writeBase);
-          for (int k : claimed) trReserved.remove(k);
-          return false;
-        };
-        uint8_t moving = startMaterial;
-        int origin = startFrom;
-        for (int chain = 0; chain < TABLE + 2; chain++) {
-          trSeen.reset((size_t)gridLen); std::vector<int> queue;
-          auto canVisit = [&](int k) {
-            if (liquidPlanVisits >= LIQUID_PLAN_VISIT_BUDGET) return false; // budget spent -> stop flooding, fall back to vacated dump
-            if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false;
-            int y = k / E.cols, x = k - y * E.cols;
-            if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
-            // Search the external fluid domain. Vacated component cells are
-            // reserved fallback volume, not shortcuts or surface targets;
-            // traversing them makes displaced liquid erupt through the top wake.
-            if (trMoved.has(k) || asmCells.has(k)) return false;
-            uint8_t m = plannedMaterialAt(k);
-            return m == EMPTY || E.isLiquidMaterial(m);
-          };
-          auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); liquidPlanVisits++; };
-          for (int off : offs) enqueue(origin + off);
-          for (size_t qi = 0; qi < queue.size();) {
-            size_t levelEnd = queue.size();
-            int lighterTarget = -1, emptyTarget = -1;
-            for (; qi < levelEnd; qi++) {
-              int k = queue[qi];
-              uint8_t m = plannedMaterialAt(k);
-              if (E.isLiquidMaterial(m) && DENSITY[m] < DENSITY[moving]) {
-                if (lighterTarget < 0) lighterTarget = k;
-                continue;
-              }
-              if (m == EMPTY) {
-                if (emptyTarget < 0) emptyTarget = k;
-                continue;
-              }
-              for (int off : offs) enqueue(k + off);
-            }
-            int target = lighterTarget >= 0 ? lighterTarget : emptyTarget;
-            if (target < 0) continue;
-            uint8_t displacedLiquid = plannedMaterialAt(target);
-            liquidWrites.push_back({target, moving});
-            trReserved.add(target);
-            claimed.push_back(target);
-            if (E.isLiquidMaterial(displacedLiquid)) {
-              moving = displacedLiquid;
-              origin = target;
-              break;
-            }
-            return true;
-          }
-          if (queue.empty()) return fail();
-        }
-        return fail();
-      };
-      std::array<int, TABLE> minLiquidTargetY{};
-      if (dir < 0) {
-        std::array<std::vector<int>, TABLE> sourceRows;
-        for (const auto& d : displaced) if (E.isLiquidMaterial(d.material)) sourceRows[d.material].push_back(d.from / E.cols);
-        for (int m = 0; m < TABLE; m++) if (!sourceRows[m].empty()) {
-          auto& rows = sourceRows[m];
-          std::sort(rows.begin(), rows.end());
-          minLiquidTargetY[m] = rows[rows.size() / 2];
-        }
-      }
-      auto planVacatedLiquidDump = [&](uint8_t material, int source) {
-        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], true, asmVacatedBits);
-        if (target < 0 && minLiquidTargetY[material] > 0)
-          target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], false, asmVacatedBits);
-        if (target < 0) return false;
-        liquidWrites.push_back({target, material});
-        trReserved.add(target);
-        return true;
-      };
-      std::vector<uint8_t> liquidPlaced(displaced.size(), 0);
-      // A descending wide face can displace hundreds of same-material cells.
-      // Resolve external free volume with one multi-source BFS per material;
-      // per-cell searches exhausted the shared budget and dumped the
-      // remainder into distant top-wake vacancies. Mixed-liquid chains and
-      // genuinely enclosed residuals continue through the exact fallback below.
-      if (dir > 0 && liquidDisplacedCount > 0) {
-        std::vector<int> indices;
-        for (int i = 0; i < (int)displaced.size(); i++) {
-          if (E.isLiquidMaterial(displaced[i].material) && !liquidPlaced[i]) indices.push_back(i);
-        }
-        std::sort(indices.begin(), indices.end(), [&](int a, int b) {
-          uint8_t am = displaced[a].material, bm = displaced[b].material;
-          if (DENSITY[am] != DENSITY[bm]) return DENSITY[am] > DENSITY[bm];
-          if (am != bm) return am < bm;
-          return displaced[a].from < displaced[b].from;
-        });
-        for (size_t gi = 0; gi < indices.size();) {
-          uint8_t material = displaced[indices[gi]].material;
-          size_t gj = gi + 1;
-          while (gj < indices.size() && displaced[indices[gj]].material == material) gj++;
-          int need = (int)(gj - gi);
-          trSeen.reset((size_t)gridLen);
-          std::vector<int> queue, targets;
-          auto canVisit = [&](int k) {
-            if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false;
-            int y = k / E.cols, x = k - y * E.cols;
-            if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
-            if (trMoved.has(k) || asmCells.has(k)) return false;
-            uint8_t m = plannedMaterialAt(k);
-            return m == EMPTY || m == material;
-          };
-          auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); };
-          for (size_t i = gi; i < gj; i++) for (int off : offs) enqueue(displaced[indices[i]].from + off);
-          int visitBudget = imin(gridLen, imax(4096, need * 128));
-          int visits = 0;
-          for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget;) {
-            size_t levelEnd = queue.size();
-            for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
-              int k = queue[qi];
-              uint8_t m = plannedMaterialAt(k);
-              if (m == EMPTY && !trReserved.has(k)) {
-                trReserved.add(k);
-                targets.push_back(k);
-                if ((int)targets.size() >= need) break;
-              }
-              for (int off : offs) enqueue(k + off);
-            }
-          }
-          int placed = imin(need, (int)targets.size());
-          for (int i = 0; i < placed; i++) {
-            int di = indices[gi + i];
-            liquidWrites.push_back({targets[i], displaced[di].material});
-            liquidPlaced[di] = 1;
-          }
-          gi = gj;
-        }
-      }
-      bool exactRiseFallback = false;
-      for (int di = 0; di < (int)displaced.size(); di++) {
-        auto& d = displaced[di];
-        if (!E.isLiquidMaterial(d.material)) continue;
-        if (liquidPlaced[di]) continue;
-        // A rising submerged assembly leaves volume directly beneath itself;
-        // fill that trailing volume first so it does not create an artificial
-        // cavity and immediately fall back. A descending assembly keeps the
-        // surface-seeking density chain, with vacated volume as its fallback.
-        bool placed = dir < 0
-          ? (planVacatedLiquidDump(d.material, d.from) || planLiquidChain(d.material, d.from))
-          : (planLiquidChain(d.material, d.from) || (!hasIce && planVacatedLiquidDump(d.material, d.from)));
-        if (!placed) {
-          if (dir < 0 && fullySubmerged) { exactRiseFallback = true; break; }
-          return false;
-        }
-      }
-      if (exactRiseFallback) {
-        // Greedy spatial matching can consume another vertical run's only
-        // vacancy and falsely pin a sparse or concave rising body. Roll the
-        // incomplete plan back and use the guaranteed bijection: each vertical
-        // solid run has exactly one leading liquid cell and one trailing cell.
-        liquidWrites.clear();
-        trReserved.reset(gridLen);
-        std::fill(liquidPlaced.begin(), liquidPlaced.end(), 0);
-        for (int i = 0; i < (int)displaced.size(); i++) {
-          const auto& d = displaced[i];
-          if (!E.isLiquidMaterial(d.material)) continue;
-          int target = d.from - dir;
-          while (target - dir >= 0 && target - dir < gridLen && asmCells.has(target - dir)) target -= dir;
-          if (!trVacated.has(target) || trReserved.has(target)) return false;
-          liquidWrites.push_back({target, d.material});
-          trReserved.add(target);
-          liquidPlaced[i] = 1;
-        }
-      }
-
-      auto runPowderSpill = [&](int need, std::vector<int>& out) -> bool {
-        if (need <= 0) return true;
-        trSeen.reset((size_t)gridLen); std::vector<int> queue;
-        auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false; int y = k / E.cols, x = k - y * E.cols; if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false; if (trMoved.has(k) || (asmCells.has(k) && !trVacated.has(k))) return false; uint8_t m = plannedMaterialAt(k); return m == EMPTY || E.isLiquidMaterial(m) || E.isLooseSolidMaterial(m); };
-        auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); };
-        for (auto& d : displaced) { if (!E.isLooseSolidMaterial(d.material)) continue; for (int off : offs) enqueue(d.from + off); }
-        for (size_t qi = 0; qi < queue.size() && (int)out.size() < need; qi++) {
-          int k = queue[qi];
-          if (plannedMaterialAt(k) == EMPTY) { if (!trReserved.has(k)) { trReserved.add(k); out.push_back(k); } continue; }
-          for (int off : offs) enqueue(k + off);
-        }
-        return (int)out.size() >= need;
-      };
-      if (!runPowderSpill(powderDisplacedCount, powderTargets)) return false;
-    }
-    // Every leading gas cell has an exact trailing partner on the same vertical
-    // run of the assembly. Preserve that local swap first; only use a nearest
-    // unclaimed vacancy when a liquid fallback already reserved the partner.
-    bool gasFallback = false;
-    for (int i = 0; i < (int)displaced.size(); i++) {
-      const auto& d = displaced[i];
-      if (!E.isGasMaterial(d.material)) continue;
-      int target = d.from - dir;
-      while (target - dir >= 0 && target - dir < gridLen && asmCells.has(target - dir)) target -= dir;
-      if (trVacated.has(target) && !trReserved.has(target)) {
-        trReserved.add(target);
-        gasTargets.push_back(target);
-      } else {
-        gasTargets.push_back(-1);
-        gasFallback = true;
-      }
-    }
-    if (gasFallback) {
-      const int vacatedWords = (E.cols + 63) >> 6;
-      asmVacatedBits.assign(E.rows * vacatedWords, 0);
-      for (int k : vacated) if (!trReserved.has(k)) {
-        int y = k / E.cols, x = k - y * E.cols;
-        asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
-      }
-      int gasIndex = 0;
-      for (const auto& d : displaced) {
-        if (!E.isGasMaterial(d.material)) continue;
-        if (gasTargets[gasIndex] >= 0) { gasIndex++; continue; }
-        int target = nearestVacatedTarget(d.from, dir, 0, true, asmVacatedBits);
-        if (target < 0) target = nearestVacatedTarget(d.from, dir, 0, false, asmVacatedBits);
-        if (target < 0) return false;
-        trReserved.add(target);
-        gasTargets[gasIndex++] = target;
-      }
-    }
-    // Materialize the exact post-translation overlay before mutating the grid.
-    // The equilibrium probe reads this same plan (including liquid-chain and
-    // powder spill targets), eliminating stale-grid and approximate-vacated-cell
-    // disagreements for irregular submerged assemblies.
-    std::unordered_map<int, uint8_t> planned;
-    planned.reserve(cells.size() * 2 + liquidWrites.size() + powderTargets.size());
-    std::unordered_set<int> shifted; shifted.reserve(cells.size());
-    for (auto& entry : bodyPush.overlay) planned[entry.first] = entry.second;
-    for (int k : cells) planned[k] = EMPTY;
-    for (int ci : grp->comps) for (int k : all[ci]->cells) {
-      shifted.insert(k + dir);
-      planned[k + dir] = matOf(ci, k);
-    }
-    for (auto& w : liquidWrites) planned[w.target] = w.material;
-    int plannedPowder = 0;
-    for (auto& d : displaced) if (E.isLooseSolidMaterial(d.material)) {
-      planned[powderTargets[plannedPowder++]] = d.material;
-    }
-    int plannedGas = 0;
-    for (auto& d : displaced) if (E.isGasMaterial(d.material)) {
-      planned[gasTargets[plannedGas++]] = d.material;
-    }
-    std::vector<std::pair<int, uint8_t>> plannedView;
-    plannedView.reserve(planned.size());
-    for (const auto& entry : planned) plannedView.push_back(entry);
-    FaceContact postMove;
-    accumulateFaceContact(E.L->grid, shifted, postMove, &plannedView);
-    int postDecision = motionDecision(postMove, shifted.size(), solidMass);
-    if (postDecision == -decision) return false;
-    bool landed = false;
-    if (decision > 0 && postDecision == 0) {
-      for (int k : shifted) {
-        int below = k + E.cols;
-        if (below >= gridLen || shifted.count(below)) continue;
-        auto it = planned.find(below);
-        uint8_t support = it == planned.end() ? E.L->grid[below] : it->second;
-        if (support != EMPTY && !E.isGasMaterial(support) && !E.isLiquidMaterial(support)
-            && !bodyPush.occupied.count(below)) {
-          landed = true;
-          break;
-        }
-      }
-    }
-    double landX = 0, landY = 0;
-    for (int k : shifted) { landX += k % E.cols; landY += k / E.cols; }
-    if (!shifted.empty()) { landX /= shifted.size(); landY /= shifted.size(); }
-    uint8_t landMaterial = EMPTY;
-    if (!grp->comps.empty() && !all[grp->comps[0]]->cells.empty()) {
-      int ci = grp->comps[0], k = all[ci]->cells[0];
-      landMaterial = matOf(ci, k);
-    }
-
-    struct Move { Comp* comp; bool hasPlant; std::vector<std::pair<int, uint8_t>> mats; int wood, leaf; };
-    std::vector<Move> moves;
-    for (int ci : grp->comps) {
-      Comp* comp = all[ci]; bool hasPlant = false;
-      std::vector<std::pair<int, uint8_t>> mats; int wood = 0, leaf = 0;
-      for (int k : comp->cells) {
-        uint8_t m = matOf(ci, k);
-        mats.push_back({k + dir, m});
-        if (E.isPlantMaterial(m)) hasPlant = true;
-        if (E.isPlantWood(m)) wood++;
-        else if (E.isPlantLeaf(m)) leaf++;
-      }
-      moves.push_back({comp, hasPlant, std::move(mats), wood, leaf});
-    }
-    std::vector<std::pair<int, int>> movedFuses;
-    if (!E.L->pendingDetonations.empty()) {
-      movedFuses.reserve(E.L->pendingDetonations.size());
-      for (int k : cells) {
-        auto it = E.L->pendingDetonations.find(k);
-        if (it == E.L->pendingDetonations.end()) continue;
-        movedFuses.push_back({k + dir, it->second});
-        E.L->pendingDetonations.erase(it);
-      }
-    }
-    E.applyAssemblyBodyPush(bodyPush);
-    E.L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
-    E.L->componentCarryDirty = true;
-    E.invalidateComponentIndexPatches(E.L);
-    for (int k : cells) E.writeGridIndex(k, EMPTY);
-    for (auto& mv : moves) {
-      std::vector<int> newCells; newCells.reserve(mv.mats.size());
-      for (auto& pr : mv.mats) { E.writeGridIndex(pr.first, pr.second); newCells.push_back(pr.first); } // mats are distinct (k+dir over distinct k)
-      mv.comp->cells = std::move(newCells);
-      mv.comp->yMax = imax(0, imin(E.rows - 1, mv.comp->yMax + dy));
-      if (mv.hasPlant) { mv.comp->woodCount = mv.wood; mv.comp->leafCount = mv.leaf; mv.comp->cacheDirty = true; }
-    }
-    // The loose pass and surface leveler run later this tick. Keep genuinely
-    // empty trailing cells unavailable until the next tick so displaced liquid
-    // placed outside the footprint cannot immediately sweep back through the
-    // iceberg's top wake after the relocation planner has finished.
-    if (hasIce) for (int k : vacated) E.L->assemblyWakeStamp[k] = E.tick;
-    for (auto& pr : movedFuses) {
-      auto it = E.L->pendingDetonations.find(pr.first);
-      if (it == E.L->pendingDetonations.end() || pr.second < it->second) E.L->pendingDetonations[pr.first] = pr.second;
-    }
-    // Relocate every displaced cell using the plan above.
-    int pi = 0, gi = 0;
-    for (auto& d : displaced) {
-      if (E.isLiquidMaterial(d.material)) continue;
-      if (E.isLooseSolidMaterial(d.material)) {
-        int target = powderTargets[pi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
-      } else {
-        int target = gasTargets[gi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
-      }
-    }
-    for (auto& w : liquidWrites) { E.writeGridIndex(w.target, w.material); E.L->assemblyRelocatedCells.push_back(w.target); }
-#ifdef SAND_INVARIANT_CHECKS
-    {
-      // Dev probe: no relocation target may land inside ANY component's cells.
-      std::unordered_set<int> allCompCells;
-      for (auto& component : E.L->components)
-        for (int k : component.cells) allCompCells.insert(k);
-      auto probe = [&](int t, uint8_t m, const char* what) {
-        if (!allCompCells.count(t)) return;
-        char buf[200];
-        snprintf(buf, sizeof(buf), "TRANSLATE PROBE: %s wrote mat=%d into comp cell k=%d (x=%d,y=%d) dir=%d vacated=%d",
-                 what, (int)m, t, t % E.cols, t / E.cols, dir > 0 ? 1 : -1, (int)std::count(vacated.begin(), vacated.end(), t));
-        emscripten_console_error(buf);
-        abort();
-      };
-      for (auto& w : liquidWrites) probe(w.target, w.material, "liquidWrite");
-      for (size_t i2 = 0; i2 < powderTargets.size(); i2++) probe(powderTargets[i2], 0, "powderSpill");
-    }
-#endif
-    int8_t moveDir = landed ? 0 : (dir < 0 ? -1 : 1);
-    for (int ci : grp->comps) all[ci]->buoyancyDirection = moveDir;
-    if (landed) E.audio.emit(SE_SOLID_LAND, landX, landY,
-                             std::min(1.6, 0.28 + std::sqrt((double)shifted.size()) * 0.065),
-                             landMaterial);
-    return true;
-  };
-
   std::vector<std::vector<int>> detachGroups;
-  for (Group* grp : order) {
-    if (grp->grounded) {
-      for (int ci : grp->comps) all[ci]->detachedByBreak = false;
+  for (Group* group : order) {
+    if (group->grounded) {
+      for (int index : group->comps)
+        mobile[index]->detachedByBreak = false;
       continue;
     }
-    if (grp->dueTntOnly) continue;
-    std::unordered_set<int> cells;
-    for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
-    // Same-cell static terrain in the peer layer is a structural bond. A
-    // missing transient bond bit cannot admit either half to the single-layer
-    // detacher: rebuild exact component indexes and let the joint mover create
-    // both body rasters atomically.
-    int peerOverlap = 0, firstPeerOverlap = -1;
+
+    std::vector<int> cells;
+    for (int index : group->comps)
+      cells.insert(cells.end(), mobile[index]->cells.begin(),
+                   mobile[index]->cells.end());
+
     if (E.bgEnabled) {
       Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+      bool peerOverlap = false;
       for (int k : cells) {
         uint8_t own = E.L->grid[k], other = peer.grid[k];
         if (peer.bodyOwner[k] < 0
-            && E.isRigidMaterialClass(own) && E.isRigidMaterialClass(other)
+            && E.isRigidMaterialClass(own)
+            && E.isRigidMaterialClass(other)
             && E.isIceMaterial(own) == E.isIceMaterial(other)) {
-          if (firstPeerOverlap < 0) firstPeerOverlap = k;
-#ifdef SAND_INVARIANT_CHECKS
-          peerOverlap++;
-#else
-          peerOverlap = 1;
+          peerOverlap = true;
           break;
-#endif
         }
       }
-    }
-    if (peerOverlap) {
-#ifdef SAND_INVARIANT_CHECKS
-      if (!jointDirty && !jointBondsInvalid) {
-        Layer& peer = E.L == &E.fg ? E.bg : E.fg;
-        int ownComp = E.L->cellComp[firstPeerOverlap];
-        int peerComp = peer.cellComp[firstPeerOverlap];
-        int fgComp = E.L == &E.fg ? ownComp : peerComp;
-        int bgComp = E.L == &E.bg ? ownComp : peerComp;
-        char buf[640];
-        snprintf(buf, sizeof(buf),
-                 "JOINT BOND REPAIR: tick=%d layer=%s groupComp=%d ownComp=%d peerComp=%d "
-                 "jointReady=%d jointDirty=%d bondsInvalid=%d supportValid=%d "
-                 "fgDirty=%d/%d bgDirty=%d/%d crossSize=%d/%d crossValue=%d/%d "
-                 "grounded=%d/%d groupCells=%d overlap=%d cell=%d",
-                 E.tick, E.L == &E.fg ? "fg" : "bg",
-                 grp->comps.empty() ? -1 : allGlobalIds[grp->comps[0]],
-                 ownComp, peerComp, (int)jointGroundReady, (int)jointDirty,
-                 (int)jointBondsInvalid, (int)jointSupportValid,
-                 (int)E.fg.groundDirty, (int)E.fg.groundContentDirty,
-                 (int)E.bg.groundDirty, (int)E.bg.groundContentDirty,
-                 (int)E.fg.crossBondedComp.size(), (int)E.bg.crossBondedComp.size(),
-                 fgComp >= 0 && fgComp < (int)E.fg.crossBondedComp.size()
-                   ? (int)E.fg.crossBondedComp[fgComp] : -1,
-                 bgComp >= 0 && bgComp < (int)E.bg.crossBondedComp.size()
-                   ? (int)E.bg.crossBondedComp[bgComp] : -1,
-                 (int)E.L->groundedCell[firstPeerOverlap],
-                 (int)peer.groundedCell[firstPeerOverlap],
-                 (int)cells.size(), peerOverlap, firstPeerOverlap);
-        emscripten_console_error(buf);
-      }
-#endif
-      E.fg.groundDirty = true;
-      E.bg.groundDirty = true;
-      jointSupportValid = false;
-      jointSupportSleeping = false;
-      jointTranslationReady = false;
-      jointBondsInvalid = true;
-      jointDirty = true;
-      continue;
-    }
-    double weight = 0;
-    for (int ci : grp->comps)
-      for (int k : all[ci]->cells) weight += DENSITY[matOf(ci, k)];
-    FaceContact current;
-    accumulateFaceContact(E.L->grid, cells, current);
-    int decision = motionDecision(current, cells.size(), weight);
-    // Component grounding deliberately excludes loose cells. An intact baked
-    // powder stack retains its settled support; a structural break rechecks the
-    // full detached mass, and complete support loss restores the body solver.
-    bool bakedPowderSupported = grp->settledBody && current.bottomPowderFaces > 0
-      && weight <= current.bottomPowderDensityArea * R_GRANULAR_BEARING_DEPTH + 1e-6;
-    bool unchangedBakedPowderStack = grp->settledBody && !grp->detachedByBreak
-      && current.bottomPowderFaces > 0;
-    if (grp->settledBody
-        && (decision == 0 || bakedPowderSupported || unchangedBakedPowderStack)) continue;
-    bool hasLiveFuse = false;
-    for (int k : cells) if (E.L->pendingDetonations.count(k)) { hasLiveFuse = true; break; }
-    bool hasActiveGrowthSource = false;
-    for (int ci : grp->comps) {
-      if (all[ci]->growing) {
-        hasActiveGrowthSource = true;
-        break;
+      if (peerOverlap) {
+        E.fg.groundDirty = true;
+        E.bg.groundDirty = true;
+        jointSupportValid = false;
+        jointSupportSleeping = false;
+        jointBondsInvalid = true;
+        jointDirty = true;
+        continue;
       }
     }
-    if (!hasLiveFuse && !hasActiveGrowthSource) {
-      std::vector<int> ids;
-      ids.reserve(grp->comps.size());
-      for (int ci : grp->comps) ids.push_back(allGlobalIds[ci]);
-      detachGroups.push_back(std::move(ids));
-      continue;
+
+    if (group->settledBody) {
+      double mass = 0;
+      for (int k : cells) mass += DENSITY[E.L->grid[k]];
+      FaceContact contact;
+      accumulateFaceContact(E.L->grid, cells, contact);
+      bool powderSupported = contact.bottomPowderFaces > 0
+        && mass <= contact.bottomPowderDensityArea
+                 * R_GRANULAR_BEARING_DEPTH + 1e-6;
+      bool unchangedPowderStack = !group->detachedByBreak
+        && contact.bottomPowderFaces > 0;
+      if (motionDecision(contact, cells.size(), mass) == 0
+          || powderSupported || unchangedPowderStack) continue;
     }
-    if (decision == 0) continue;
-    if (!E.gravityCellStep) {
-      E.markCellIndex(all[grp->comps[0]]->cells[0]);
-      continue;
-    }
-    int dirK = decision > 0 ? E.cols : -E.cols;
-    bool fullySubmerged = current.liquidFaces > 0 && current.openAirFaces == 0;
-    translateAssembly(grp, cells, dirK, decision, weight, fullySubmerged);
+
+    std::vector<int> ids;
+    ids.reserve(group->comps.size());
+    for (int index : group->comps) ids.push_back(globalIds[index]);
+    detachGroups.push_back(std::move(ids));
   }
   if (!detachGroups.empty()) detachComponentGroups(*E.L, detachGroups);
 }
@@ -3032,16 +2455,26 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 // boundary preserves the exact object that produced the bake.
 void ComponentSystem::registerBakedCells(
     uint8_t mat, const std::vector<int>& cells, int assemblyId,
-    bool iceCache, bool looseSupport) {
+    bool iceCache, bool looseSupport, uint8_t plantType) {
   if (cells.empty()) return;
+  Layer& lay = *E.L;
+  const bool stableSlots = lay.componentIndexExact
+    && lay.groundBaseFlags.size() == lay.components.size()
+    && lay.crossBondedComp.size() == lay.components.size();
   E.L->componentCarryDirty = true;
   E.L->componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(E.L);
+  if (stableSlots) {
+    lay.componentIndexPatchOnly = false;
+    lay.componentIndexPatches.clear();
+  } else {
+    E.invalidateComponentIndexPatches(E.L);
+  }
   E.L->groundDirty = true;
   regCells.reset((size_t)E.cols * E.rows);
   for (int k : cells) regCells.add(k);
   std::vector<int> stack;
   stack.reserve(cells.size());
+  std::vector<int> changedSlots;
   for (int seed : cells) {
     if (!regCells.has(seed)) continue;
     regCells.remove(seed);
@@ -3051,7 +2484,7 @@ void ComponentSystem::registerBakedCells(
     component.settledBody = true;
     component.settledLooseSupport = looseSupport;
     component.cacheDirty = iceCache || E.isPlantMaterial(mat);
-    component.plantType = PT_OAK;
+    component.plantType = plantType;
     stack.clear();
     stack.push_back(seed);
     while (!stack.empty()) {
@@ -3089,8 +2522,28 @@ void ComponentSystem::registerBakedCells(
       E.L->myceliumActive = true;
       E.L->myceliumSporePresent = true;
     }
-    E.L->components.push_back(std::move(component));
+    if (!stableSlots) {
+      lay.components.push_back(std::move(component));
+      continue;
+    }
+    int slot = -1;
+    for (int i = 0; i < (int)lay.components.size(); i++)
+      if (lay.components[i].cells.empty()) { slot = i; break; }
+    if (slot < 0) {
+      slot = (int)lay.components.size();
+      lay.components.push_back({});
+      lay.groundBaseFlags.push_back(0);
+      lay.crossBondedComp.push_back(0);
+    } else if (lay.componentTombstones > 0) {
+      lay.componentTombstones--;
+    }
+    lay.components[slot] = std::move(component);
+    lay.groundBaseFlags[slot] = 0;
+    lay.crossBondedComp[slot] = 0;
+    for (int k : lay.components[slot].cells) lay.cellComp[k] = slot;
+    changedSlots.push_back(slot);
   }
+  if (stableSlots) patchStableComponentTopology(lay, changedSlots);
 }
 
 // split a plant-family component list keeping only cells still of plant material
@@ -3308,7 +2761,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       c.settledBody = componentChanged ? false : comp.settledBody;
       c.settledLooseSupport = componentChanged ? false : comp.settledLooseSupport;
       for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }
-      c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
+      c.cells = part; updated.push_back(std::move(c)); reused = true;
     }
     if (!reused) E.L->compsReshaped = true;
   }
@@ -3357,7 +2810,6 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
   if (markGroundDirty && !erased.empty()) E.L->groundDirty = true;
   if (erased.empty() || list.empty()) return;
   markBreakCandidates();
-  std::vector<int32_t>& seen = E.L->seenStamp;
   splitRemovedSet.reset((size_t)E.cols * E.rows);
   for (int k : erased) splitRemovedSet.add(k);
   std::vector<uint8_t>& touchedByIndex = splitTouched;
@@ -3387,32 +2839,20 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     bool touched = false;
     std::vector<int>& removedCells = splitErased;
     survivors.clear(); survivors.reserve(comp.cells.size()); removedCells.clear();
-    for (int k : comp.cells) { if (splitRemovedSet.has(k)) { touched = true; removedCells.push_back(k); } else survivors.push_back(k); }
+    for (int k : comp.cells) {
+      if (splitRemovedSet.has(k)) {
+        touched = true;
+        removedCells.push_back(k);
+      } else {
+        survivors.push_back(k);
+      }
+    }
     if (!touched) {
       if (removedBefore) E.L->compsReshaped = true;
       updated.push_back(std::move(comp)); continue;
     }
-    // On an exact, locally-proven blast removal, retain an empty grounded slot
-    // instead of compacting the positional component array. Cave terrain is
-    // registered in many adjacent chunks, so deleting one isolated TNT slot
-    // otherwise shifts and re-indexes almost the entire loaded world. Empty slots
-    // are inert, survive future index rebuilds as grounded no-ops, and disappear
-    // naturally on the next full component sync/world stream.
-    if (survivors.empty() && splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT
-        && indexedOffset >= 0) {
-      int dead = indexedOffset + (int)compIndex;
-      comp.cells.clear(); comp.yMax = 0; comp.grounded = true; comp.cacheDirty = iceCache;
-      if (dead >= 0 && dead < (int)E.L->groundBaseFlags.size()) E.L->groundBaseFlags[dead] = 1;
-      if (dead >= 0 && dead < (int)E.L->crossBondedComp.size()) E.L->crossBondedComp[dead] = 0;
-      E.L->compAdjPairs.erase(std::remove_if(E.L->compAdjPairs.begin(), E.L->compAdjPairs.end(), [&](uint64_t packed) {
-        return (int)(packed >> 32) == dead || (int)(uint32_t)packed == dead;
-      }), E.L->compAdjPairs.end());
-      updated.push_back(std::move(comp));
-      E.L->componentTombstones++;
-      continue;
-    }
-    // Outside that exact fast path, compact normally and invalidate only if a
-    // later positional component really shifts.
+    // Compact an erased slot and invalidate only if a later positional
+    // component really shifts.
     if (survivors.empty()) { removedBefore = true; continue; }
     if (removedBefore) E.L->compsReshaped = true;
     int indexedComp = indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1;
@@ -3437,33 +2877,15 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       updated.push_back(std::move(comp));
       continue;
     }
-    // removalsKeepGroundingValid already proved every boundary of the whole
-    // erased batch reconnects through surviving rigid material. Generated cave
-    // terrain is deliberately partitioned into many adjacent components, so a
-    // per-component-only reconnect test can falsely fail at large window sizes
-    // even though the surrounding rigid graph is unchanged. Keep the touched
-    // grounded slot and filter its cells; adjacent component unions preserve the
-    // same global structural group.
-    if (splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT && comp.grounded) {
-      std::vector<int>& deferred = E.L->deferredSplitIds;
-      if (std::find(deferred.begin(), deferred.end(), comp.id) == deferred.end()) deferred.push_back(comp.id);
-      comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
-      comp.detachedByBreak = true;
-      comp.settledBody = false;
-      comp.settledLooseSupport = false;
-      for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
-      updated.push_back(std::move(comp)); continue;
-    }
-    if (splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT) E.L->compsReshaped = true;
-    int32_t remGen = ++E.L->seenGen;
-    for (int k : survivors) seen[k] = remGen;
+    splitMembers.reset((size_t)E.cols * E.rows);
+    for (int k : survivors) splitMembers.add(k);
     bool reused = false;
     for (int start : survivors) {
-      if (seen[start] != remGen) continue;
-      part.clear(); part.push_back(start); seen[start] = 0; // part doubles as the BFS queue
+      if (!splitMembers.has(start)) continue;
+      part.clear(); part.push_back(start); splitMembers.remove(start);
       for (size_t qi = 0; qi < part.size(); qi++) {
         int cur = part[qi]; int y = cur / E.cols, x = cur - y * E.cols;
-        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx; if (seen[nk] == remGen) { seen[nk] = 0; part.push_back(nk); } }
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx; if (splitMembers.has(nk)) { splitMembers.remove(nk); part.push_back(nk); } }
       }
       if (reused) E.L->compsReshaped = true; // a 2nd+ surviving piece -> a split: ids shift
       Comp c; c.id = reused ? nextId++ : comp.id; c.yMax = 0; c.cacheDirty = iceCache;
@@ -3479,7 +2901,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
         if (E.isPlantWood(material)) c.woodCount++;
         else if (E.isPlantLeaf(material)) c.leafCount++;
       }
-      c.cells = std::move(part); updated.push_back(std::move(c));
+      c.cells = part; updated.push_back(std::move(c));
       reused = true;
     }
   }

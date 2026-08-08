@@ -74,23 +74,20 @@ class ExplosivesSystem {
     uint8_t material;
     double x, y, vx, vy;
   };
-  struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
   struct BlastBatch {
     std::vector<int> forcedStaticTnt;
     std::vector<BlastCellRemoval> staticCuts;
     std::vector<int> gasCuts, bodyCuts, staticTntIgnitions;
     std::vector<int> erasedStructural;
     std::vector<BlastParticlePlan> particlePlans;
-    std::vector<BlastCrossPair> touchedCrossPairs;
     std::vector<BlastWave> waves;
     std::unordered_set<Body*> sourceBodies, tntBodyIgnitions;
-    Layer* structuralLayer = nullptr;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
     int particles = 0, debrisSpawned = 0, debrisStepCap = BLAST_DEBRIS_STEP_CAP;
     int gasWaveCap = INT_MAX;
-    bool any = false, structurePreserved = false, crossSupportUncertain = false;
+    bool any = false;
     bool emitGas = true, emitParticles = true;
   };
 
@@ -107,8 +104,6 @@ class ExplosivesSystem {
                            int sx0, int sy, int count, int salt, BlastBatch& bb,
                            const BlastDebrisEjection& fallback, int tries = -1);
   void buildBlastDamage(const BlastBatch& bb);
-  void noteCrossSupportRemoval(int k, BlastBatch& bb);
-  bool touchedCrossSupportSurvives(const BlastBatch& bb);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb,
                              bool massFront = false);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,

@@ -47,9 +47,6 @@ struct Layer {
   std::vector<int32_t> rigidSpillFootprint, rigidSpillReserved;
   std::vector<int> prevCompCells, curCompCells, prevBodyCells, curBodyCells;
   std::vector<int> bodyCells, passiveBodyCells;
-  // Loose/gas cells relocated by static-component motion before prepareNextBuffer.
-  // They are carried once into next[] and skipped by the loose pass that tick.
-  std::vector<int> assemblyRelocatedCells;
   std::vector<uint8_t> reactionFlags;
   std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
   // Set when a reaction creates new heat after prepareActiveLists. Existing heat
@@ -81,7 +78,7 @@ struct Layer {
   // exact id/flags; component partitions are only a topology/performance detail.
   std::vector<Comp> components;
   std::vector<int32_t> growingPlantComponents, myceliumComponents, iceComponents;
-  std::vector<int32_t> mobileComponents, landedComponents;
+  std::vector<int32_t> mobileComponents;
   bool componentRegistryDirty = true;
   int nextComponentId = 1;
   bool myceliumActive = false;
@@ -111,6 +108,10 @@ struct Layer {
   // Additions to existing components preserve positional ids. Record those
   // exact cells so the next rigid refresh can patch cellComp and local graph
   // edges without re-indexing every loaded component.
+  // True exactly when cellComp matches the current stable component slots.
+  // Structural cuts and body extraction patch it in place; bulk registration
+  // clears the flag until indexComponents runs.
+  bool componentIndexExact = false;
   bool componentIndexPatchOnly = false;
   std::vector<std::pair<int32_t, int32_t>> componentIndexPatches;
   bool looseGroundDirty = true;
@@ -262,7 +263,7 @@ struct Layer {
       release(liquidVelA); release(liquidVelB);
       release(dirtyRender); release(dirtyRects);
       release(rowMarkSpans); release(simOnlyRowMarkSpans); release(chunkStamp);
-      release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
+      release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(prevBodyCells); release(curBodyCells);
@@ -272,7 +273,7 @@ struct Layer {
       release(skyTopInput); release(skyDownValue); release(skyDownDepth);
       release(components);
       release(growingPlantComponents); release(myceliumComponents); release(iceComponents);
-      release(mobileComponents); release(landedComponents);
+      release(mobileComponents);
       release(deferredSplitIds);
       release(componentIndexPatches);
       release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
@@ -282,7 +283,7 @@ struct Layer {
     alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
     components.clear();
     growingPlantComponents.clear(); myceliumComponents.clear(); iceComponents.clear();
-    mobileComponents.clear(); landedComponents.clear();
+    mobileComponents.clear();
     componentRegistryDirty = true;
     deferredSplitIds.clear(); componentTombstones = 0;
     nextComponentId = 1;
@@ -292,6 +293,7 @@ struct Layer {
     forceActive = false;
     forceWakePending = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
+    componentIndexExact = false;
     componentIndexPatchOnly = false; componentIndexPatches.clear();
     looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;

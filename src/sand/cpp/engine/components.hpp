@@ -1,13 +1,11 @@
 #pragma once
-// Static component membership, grounding, splitting, and assembly movement.
-// Assembly order consumes shared RNG and is part of deterministic behavior.
+// Static component membership, grounding, splitting, and body detachment.
 
 struct Engine;
 
 enum class ConnectivitySplitMode : uint8_t {
-  FULL,               // rebuild every surviving connected piece
-  GLOBAL_EQUIVALENT,  // preserve a grounded slot while the rigid graph is unchanged
-  LOCAL_EXACT,        // preserve only when the touched component remains connected
+  FULL,        // rebuild every surviving connected piece
+  LOCAL_EXACT, // preserve only when the touched component remains connected
 };
 
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
@@ -24,14 +22,6 @@ class ComponentSystem {
  public:
   explicit ComponentSystem(Engine& e) : E(e) {}
 
-  struct AssemblyCellMat { int k; uint8_t material; };
-  struct AssemblyLayerMovePlan {
-    std::vector<std::pair<int, uint8_t>> relocate;
-    std::vector<int> shifted;
-    std::vector<int> vacated;
-    std::vector<std::pair<int, uint8_t>> materials;
-  };
-
   // One downward powder-contact cell bears this many cell-depths of material
   // at the powder's density. This keeps small light solids on the surface while
   // allowing a tall/concentrated load to overload the same footprint.
@@ -45,10 +35,6 @@ class ComponentSystem {
   // support closure first so the background never classifies those new pieces
   // from stale layer-local topology.
   bool jointBakeNeedsGroundRefresh = false;
-  // A collision-free joint assembly translation preserves component ids,
-  // adjacency, cross-layer bonds, and ungrounded flags. The next tick may reuse
-  // that closure after refreshing only the loose overlay.
-  bool jointTranslationReady = false;
   // Fire completes component membership cleanup immediately, but may defer the
   // expensive joint-graph rebuild to the start of the next tick.
   bool jointDirtyDeferred = false;
@@ -91,12 +77,11 @@ class ComponentSystem {
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
   std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
   int32_t cgCompGen = 0;
-  // Membership mirrors for assembly-displacement planning.
+  // Membership mirrors for assembly contact probes.
   // The real unordered_sets are kept wherever their ITERATION order feeds cell
   // writes or FP sums; these only replace the .count() hashing.
-  StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)
-  StampSet asmPlanned;                        // sparse hypothetical material overlay for assembly contact probes
-  std::vector<uint8_t> asmPlannedMat;
+  StampSet asmCells;                          // current assembly's cell set
+  StampSet detachVisited;
   StampSet asmExterior;
   std::vector<uint8_t> asmExteriorValue;
   std::vector<int> asmExteriorRegion;
@@ -104,13 +89,6 @@ class ComponentSystem {
   StampSet asmOpenAir;
   std::vector<uint8_t> asmOpenAirValue;
   std::vector<int> asmOpenAirPath;
-  std::vector<uint64_t> asmVacatedBits;
-  StampSet asmDirtyTiles;
-  std::vector<int> asmDirtyTileList;
-  std::vector<int> jointFgCells, jointBgCells;
-  std::vector<AssemblyCellMat> jointFgMats, jointBgMats;
-  AssemblyLayerMovePlan jointFgPlan, jointBgPlan;
-  StampSet trMoved, trVacated, trReserved, trSeen; // translateAssembly relocation planning
   StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
   std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
   std::vector<uint8_t> splitTouched;           // acid split: indexed touched-component mask
@@ -143,16 +121,16 @@ class ComponentSystem {
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);
   bool compIdIsPlant(Layer& lay, int id);
-  int nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
-                           std::vector<uint64_t>& vacatedBits);
   template <class Cells>
   void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
-                             const std::vector<std::pair<int, uint8_t>>* planned = nullptr,
                              bool collectBearing = false);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void detachComponentGroups(Layer& lay, const std::vector<std::vector<int>>& groups);
   void detachCrossLayerComponentGroups(
     const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups);
+  void patchStableComponentTopology(Layer& lay, const std::vector<int>& changedSlots);
+  void trimTrailingComponentTombstones(Layer& lay);
+  void splitRigidAfterBlast(const std::vector<int>& erased);
   void markBreakCandidates();
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();
@@ -166,7 +144,8 @@ class ComponentSystem {
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
   void registerBakedCells(uint8_t mat, const std::vector<int>& cells,
-                          int assemblyId, bool iceCache, bool looseSupport);
+                          int assemblyId, bool iceCache, bool looseSupport,
+                          uint8_t plantType = PT_OAK);
   bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors, int indexedComp = -1);
   bool finishFocusedStaticErosion(const std::vector<int>& erased);
   void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false, bool deferJointRefresh = false);

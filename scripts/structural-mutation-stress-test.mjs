@@ -95,7 +95,9 @@ function run(seed) {
       engine.eraseDiscLayer(layer, x, y, 1 + Math.floor(random() * 4));
     } else if (operation === 3) {
       const material = loose[Math.floor(random() * loose.length)];
-      engine.paintDiscLayer(layer, x, y, 1 + Math.floor(random() * 3), material, true);
+      const radius = 1 + Math.floor(random() * 3);
+      if (material === MAT.TNT) engine.placeMaterial(x, y, radius, material, layer);
+      else engine.paintDiscLayer(layer, x, y, radius, material, true);
     } else if (operation === 4) {
       engine._spawnBoxLayer(layer, x, y, 1 + Math.floor(random() * 4),
         1 + Math.floor(random() * 3),

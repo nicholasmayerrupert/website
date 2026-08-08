@@ -464,10 +464,19 @@
       Comp& component = layer->components[i];
       if (component.grounded) {
         component.detachedByBreak = false;
-      } else if (!bounded || component.cells.size()
-                 <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells) {
+      } else {
+        bool bakedSeed = component.cells.size() == 1
+          && layer->grid[component.cells[0]] == SEED;
+        bool withinBudget = dynamicCells < (size_t)R_DYNAMIC_CELL_BUDGET
+          && component.cells.size()
+             <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells;
+        // A baked seed is already a one-cell object. An unrelated saturated
+        // body budget must not strand it as unsupported static terrain.
+        if (bounded && !bakedSeed && !withinBudget) continue;
         layer->mobileComponents.push_back(i);
-        if (bounded) dynamicCells += component.cells.size();
+        if (bounded)
+          dynamicCells = std::min((size_t)R_DYNAMIC_CELL_BUDGET,
+                                  dynamicCells + component.cells.size());
       }
     }
   }

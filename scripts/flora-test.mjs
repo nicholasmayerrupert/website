@@ -2,9 +2,12 @@
 // Vines descend and produce emissive glowberries.
 // Run: node scripts/flora-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
+
+const createEngineWasm = (options) => attachTestHooks(createEngineWasmRaw(options));
 
 const COLS = 160, ROWS = 120;
 const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6, STANDARD: 7 };
@@ -225,6 +228,50 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   let itemSeeds = 0;
   for (const it of e.getItems()) if (it.kind === 0 && it.material === MAT.SEED) itemSeeds += it.count;
   check(`dropped seed enters the rigid path (seen ${sawSeedBody}, item ${itemSeeds})`, sawSeedBody && itemSeeds === 0);
+  e.destroy();
+}
+
+// Focused worlds cap ordinary dynamic component cells. A baked seed keeps
+// diagonal support, but once every neighbouring support cell is gone it must
+// still re-enter the body solver even when that general budget is saturated.
+{
+  const C = 720, R = 520, sx = 350, sy = 299, seedK = sy * C + sx;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: false });
+  e.setBgEnabled(false);
+  for (let x = 300; x < 400; x++) for (let y = 490; y < R; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let y = 298; y < 490; y++) e.paintDisc(349, y, 0, MAT.WOOD, true);
+  for (const [x, y] of [[350, 298], [351, 298], [351, 299], [350, 300], [351, 300]])
+    e.paintDisc(x, y, 0, MAT.WOOD, true);
+  e.syncComponents();
+  e.placeSeedAt(sx, sy);
+  let t = 0, bakedAt = -1;
+  for (let s = 0; s < 200; s++) {
+    t += 16;
+    e.step(t);
+    if (e._bodyCount() === 0) { bakedAt = s; break; }
+  }
+  e.eraseDisc(sx, sy + 1, 0);
+  for (let s = 0; s < 5; s++) { t += 16; e.step(t); }
+  const keptDiagonalSupport = e._bodyCount() === 0
+    && e.getGrid()[seedK] === MAT.SEED && e._groundedGrid()[seedK] === 1;
+
+  const saturatedBody = [];
+  for (let y = 50; y < 140; y++) for (let x = 50; x < 150; x++) saturatedBody.push([x, y]);
+  e.spawnBody(saturatedBody);
+  e.resetSimulationActivity();
+  e.activateSimulationRect(280, 270, 420, 510);
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    if (!ox && !oy) continue;
+    e.eraseDisc(sx + ox, sy + oy, 0);
+  }
+  t += 16;
+  e.step(t);
+  const released = e._bodyCount() === 2 && e._bodyOwnerGrid()[seedK] >= 0;
+  check(
+    `baked seed keeps diagonal support, then escapes a saturated body budget (baked ${bakedAt}, bodies ${e._bodyCount()})`,
+    bakedAt >= 0 && keptDiagonalSupport && released,
+  );
   e.destroy();
 }
 

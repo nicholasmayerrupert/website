@@ -246,13 +246,12 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
     e.paintDisc(x, y, 0, MAT.WOOD, true);
   e.paintDisc(sx - 2, sy, 0, MAT.BRICK, true);
   e.syncComponents();
+  const bodiesBeforeSeed = e._bodyCount();
   e.placeSeedAt(sx, sy);
-  let t = 0, bakedAt = -1;
-  for (let s = 0; s < 200; s++) {
-    t += 16;
-    e.step(t);
-    if (e._bodyCount() === 0) { bakedAt = s; break; }
-  }
+  const placedStatic = e._bodyCount() === bodiesBeforeSeed
+    && e.getGrid()[seedK] === MAT.SEED && e._bodyOwnerGrid()[seedK] < 0;
+  let t = 0;
+  for (let s = 0; s < 40; s++) { t += 16; e.step(t); }
   e.eraseDisc(sx, sy + 1, 0);
   for (let s = 0; s < 5; s++) { t += 16; e.step(t); }
   const keptDiagonalSupport = e._bodyCount() === 0
@@ -272,8 +271,8 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   const released = e._bodyCount() === 3
     && e._bodyOwnerGrid()[seedK] >= 0 && e._bodyOwnerGrid()[solidK] >= 0;
   check(
-    `diagonal support remains physical under unrelated body load (baked ${bakedAt}, bodies ${e._bodyCount()})`,
-    bakedAt >= 0 && keptDiagonalSupport && released,
+    `supported seed is static and diagonal support remains physical under unrelated body load (placed ${placedStatic}, diagonal ${keptDiagonalSupport}, released ${released}, bodies ${e._bodyCount()})`,
+    placedStatic && keptDiagonalSupport && released,
   );
   e.destroy();
 }

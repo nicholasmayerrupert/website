@@ -2703,7 +2703,8 @@ void RigidBodySystem::collectPlacementTouchingBodyIds(
 }
 
 bool RigidBodySystem::anchorPlacementToStatic(
-    const std::vector<std::pair<int, int>>& cells, uint8_t material) {
+    const std::vector<std::pair<int, int>>& cells, uint8_t material,
+    uint8_t plantType) {
   // Static contact anchors the whole touched component-backed assembly. The
   // placed cells share its baked assembly id across both simulated layers.
   std::unordered_set<int> touchingIds;
@@ -2781,7 +2782,7 @@ bool RigidBodySystem::anchorPlacementToStatic(
       placed.push_back(k);
     }
     E.comps.registerBakedCells(material, placed, assemblyId,
-                               E.isIceMaterial(material), false);
+                               E.isIceMaterial(material), false, plantType);
   }
 
   for (int layerIndex = 0; layerIndex < 2; layerIndex++) {

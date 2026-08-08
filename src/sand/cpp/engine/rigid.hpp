@@ -152,7 +152,8 @@ class RigidBodySystem {
     const std::vector<std::pair<int, int>>& cells,
     std::unordered_set<int>& touchingIds);
   bool anchorPlacementToStatic(
-    const std::vector<std::pair<int, int>>& cells, uint8_t material);
+    const std::vector<std::pair<int, int>>& cells, uint8_t material,
+    uint8_t plantType);
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material,
                     bool attachTouchingBodies = true);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);

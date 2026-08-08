@@ -61,8 +61,10 @@ class ToolSystem {
   bool footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint& fp);
   int paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite);
   int placeMaterialAt(int cx, int cy, int radius, uint8_t mat);
-  void registerComponentCells(uint8_t mat, std::unordered_set<int>& cells);
-  void finalizeStructuralPlacement(const std::vector<std::pair<int, int>>& cells, uint8_t mat);
+  void registerComponentCells(uint8_t mat, std::unordered_set<int>& cells,
+                              uint8_t plantType = PT_OAK);
+  void finalizeStructuralPlacement(const std::vector<std::pair<int, int>>& cells,
+                                   uint8_t mat, uint8_t plantType = PT_OAK);
   int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr);
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr);
   const std::vector<std::pair<int, int>>& discOffsets(int radius);

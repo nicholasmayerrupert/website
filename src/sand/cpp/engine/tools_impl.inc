@@ -166,7 +166,8 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
 }
 // Shared component registration for runtime structural edits. Exact material
 // traits supply growth/reaction behavior; physical storage is unified.
-void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& cells) {
+void ToolSystem::registerComponentCells(
+    uint8_t mat, std::unordered_set<int>& cells, uint8_t plantType) {
   if (cells.empty()) return;
   if (mat == SEED || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
   if (E.isPlantMaterial(mat)) {
@@ -187,7 +188,10 @@ void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& ce
         if (std::find(component.cells.begin(), component.cells.end(), k) == component.cells.end()) continue;
         component.growing = true;
         component.cacheDirty = true;
-        if (mat == SEED) component.requiresCellGrounding = true;
+        if (mat == SEED) {
+          component.plantType = plantType;
+          component.requiresCellGrounding = true;
+        }
         break;
       }
     }
@@ -198,7 +202,8 @@ void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& ce
 // Contact with static structure makes the island static; otherwise the rigid
 // spawn path either welds it to contacted bodies or creates a free body.
 void ToolSystem::finalizeStructuralPlacement(
-    const std::vector<std::pair<int, int>>& cells, uint8_t mat) {
+    const std::vector<std::pair<int, int>>& cells, uint8_t mat,
+    uint8_t plantType) {
   if (cells.empty()) return;
   E.L->skyDirty = true;
   if (!E.isComponentMaterial(mat)) {
@@ -254,10 +259,11 @@ void ToolSystem::finalizeStructuralPlacement(
       if (touchesStatic) break;
     }
     if (!touchesStatic) {
-      E.finishSpawn(island, mat);
+      Body* body = E.finishSpawn(island, mat);
+      if (body && mat == SEED) body->plantType = plantType;
       continue;
     }
-    if (E.rigid.anchorPlacementToStatic(island, mat)) continue;
+    if (E.rigid.anchorPlacementToStatic(island, mat, plantType)) continue;
 
     std::unordered_set<int> staticCells;
     staticCells.reserve(island.size() * 2);
@@ -267,7 +273,7 @@ void ToolSystem::finalizeStructuralPlacement(
       E.writeGridIndex(k, mat);
       staticCells.insert(k);
     }
-    registerComponentCells(mat, staticCells);
+    registerComponentCells(mat, staticCells, plantType);
   }
 }
 
@@ -601,14 +607,11 @@ bool ToolSystem::canPlaceSeedAt(int x0, int y0) {
   return E.L->grid[E.I(x0, y0)] == EMPTY;
 }
 bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_STANDARD); }
-// A placed seed starts as a one-cell rigid body. Once it comes to rest, body
-// baking restores the seed component and its species so growth begins in soil,
-// not while the seed is falling.
+// Seed placement follows the structural-material path: contact with static
+// structure creates a component, while an unsupported seed enters rigid motion.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  Body* body = E.finishSpawn({{x0, y0}}, SEED, false);
-  if (!body) return false;
-  body->plantType = pt;
+  finalizeStructuralPlacement({{x0, y0}}, SEED, pt);
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;

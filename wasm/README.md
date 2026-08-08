@@ -1,104 +1,96 @@
-# Sand WASM Builds
+# WebAssembly builds
 
-## Build
+The repository uses Emscripten 6.0.0 from the official `emsdk` for both C++
+engines. The pinned version is stored in `emscripten-version.txt`, and both
+build commands reject a different active version.
 
-From the repository root, on macOS, Linux, Windows, or WSL:
+The generated JavaScript and WebAssembly artifacts are committed. Ordinary
+development, site builds, and deployments do not require Emscripten.
+
+## Install the toolchain
+
+Install and activate the pinned SDK on macOS or Linux:
+
+```sh
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install 6.0.0
+./emsdk activate 6.0.0
+source ./emsdk_env.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+git clone https://github.com/emscripten-core/emsdk.git
+Set-Location emsdk
+.\emsdk.ps1 install 6.0.0
+.\emsdk.ps1 activate 6.0.0
+. .\emsdk_env.ps1
+```
+
+On Windows Command Prompt:
+
+```bat
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+emsdk.bat install 6.0.0
+emsdk.bat activate 6.0.0
+emsdk_env.bat
+```
+
+Run `emcc --version` in the active terminal to verify the installation. WSL
+uses the Linux commands.
+
+## Sand engine
+
+From the repository root:
 
 ```text
 npm run build:sand
 ```
 
-Emscripten must be installed and active in the terminal. The build prints a link
-to this file when it is not. Add `-- --dev` for the post-step invariant validator:
+The build checks the generated material and ABI headers, compiles the unity
+translation unit at `src/sand/cpp/sand.cpp`, and writes:
+
+- `src/sand/wasm/sandEngine.js` — Emscripten ES module loader.
+- `src/sand/wasm/sandEngine.wasm` — external SIMD-enabled engine binary.
+- `src/sand/wasm/build-info.json` — source, toolchain, size, and hash provenance.
+
+Use the invariant-checking build while diagnosing component or body ownership:
 
 ```text
 npm run build:sand -- --dev
 ```
 
-A development build writes to the production paths. Rebuild without `--dev`
-before committing.
+The development variant writes to the production artifact paths. Run the
+production command before committing generated artifacts.
 
-## Install Emscripten
+Material or ABI schema edits require generated sources before compilation:
 
-Skip this section if `emcc --version` already works in the terminal.
-
-### macOS
-
-The shortest route uses Homebrew:
-
-```sh
-brew install emscripten
+```text
+npm run generate
 npm run build:sand
 ```
 
-The build detects Homebrew Emscripten and uses its bundled LLVM, Binaryen, and a
-gitignored cache at `wasm/.cache/emscripten`. It does not change a configured
-emsdk or custom Emscripten environment. The official emsdk route described under
-Linux also works on macOS.
+## Game of Life engine
 
-### Linux
+From the repository root:
 
-Install the [official emsdk](https://emscripten.org/docs/getting_started/downloads.html),
-then activate it in the current terminal:
-
-```sh
-git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk
-./emsdk install latest
-./emsdk activate latest
-source ./emsdk_env.sh
-cd /path/to/website
-npm run build:sand
+```text
+npm run build:life
 ```
 
-### Windows
+The build writes the self-contained ES module at
+`src/life/wasm/lifeSearch.js` and embeds its source-provenance marker.
 
-In PowerShell, install and activate the official emsdk:
+## Site commands
 
-```powershell
-git clone https://github.com/emscripten-core/emsdk.git
-Set-Location emsdk
-.\emsdk.ps1 install latest
-.\emsdk.ps1 activate latest
-. .\emsdk_env.ps1
-Set-Location C:\path\to\website
-npm run build:sand
-```
+`npm run dev` consumes the committed artifacts directly. `npm run build`
+checks generated sources and both committed WASM artifacts, runs Vite, and
+creates a quality-11 Brotli sibling for every WebAssembly file in `dist`.
+Cloudflare serves those precompressed bytes at the fingerprinted `.wasm` URL.
 
-In Command Prompt, after cloning and entering the emsdk directory:
-
-```bat
-emsdk.bat install latest
-emsdk.bat activate latest
-emsdk_env.bat
-cd C:\path\to\website
-npm run build:sand
-```
-
-WSL follows the Linux instructions. The repository build command is the same in
-every shell.
-
-## Output
-
-The build emits:
-
-- `src/sand/wasm/sandEngine.js` — the Emscripten ES module loader.
-- `src/sand/wasm/sandEngine.wasm` — the external engine binary. Vite fingerprints
-  it once, and the browser presentation realm and authority worker share that URL.
-- `src/sand/wasm/build-info.json` — provenance for both emitted artifacts: output
-  sizes/hashes, source commit, source dirty state, and Emscripten identity.
-
-`build-info.json` treats the generated WASM outputs as build products when
-calculating `source.dirty`, so a clean source tree can produce a clean provenance
-record even though the build just rewrote `sandEngine.js` and `sandEngine.wasm`.
-
-After changing simulation or rendering behavior, rebuild and run the relevant
-benchmark comparison, for example:
-
-```sh
-node scripts/bench-sand.mjs --compare bench/baseline.json
-```
-
-`./wasm/build.sh` remains a POSIX-shell wrapper for existing scripts. If needed,
-`source wasm/emenv.sh` activates emsdk from `$EMSDK` or `$HOME/emsdk` and applies
-the same isolated Homebrew setup. Neither shell file is required on Windows.
+`npm run build:full` rebuilds both committed engines with the pinned Emscripten
+toolchain and then runs the production site build. `npm run deploy` uses the
+committed engines, performs the production site build, and invokes Wrangler.

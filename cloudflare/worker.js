@@ -5,6 +5,8 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const isAsset = url.pathname.startsWith('/assets/');
+    const isWasm = isAsset && url.pathname.endsWith('.wasm');
     // Dedicated Vite HTML entries resolve internally so visitors keep canonical
     // extensionless URLs without paying for redirect round trips.
     let assetRequest = request;
@@ -16,10 +18,17 @@ export default {
       assetUrl.pathname = entryPath;
       assetRequest = new Request(assetUrl, request);
     }
+    // Production builds include a quality-11 Brotli sibling for each WASM file.
+    // The public URL stays fingerprinted with the uncompressed module hash.
+    if (isWasm) {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname += '.br';
+      assetRequest = new Request(assetUrl, request);
+      assetRequest.headers.set('accept-encoding', 'identity');
+    }
     const response = await env.ASSETS.fetch(assetRequest);
     const type = response.headers.get('content-type') || '';
     const isHtml = type.includes('text/html');
-    const isAsset = url.pathname.startsWith('/assets/');
 
     const headers = new Headers(response.headers);
     if (!response.ok) headers.set('cache-control', 'no-store');
@@ -35,10 +44,17 @@ export default {
       return new Response(null, { status: 404, headers });
     }
 
+    if (isWasm) {
+      headers.set('content-type', 'application/wasm');
+      headers.set('content-encoding', 'br');
+      headers.set('cache-control', 'public, max-age=31556952, immutable, no-transform');
+    }
+
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers,
+      ...(isWasm ? { encodeBody: 'manual' } : {}),
     });
   },
 };

@@ -11,9 +11,10 @@ Component you can drop into any page (`npm run build:embed`). See
 
 ```
 npm install
-npm run dev      # local dev server
-npm run build    # production build into dist/
-npm run deploy   # build and deploy to Cloudflare
+npm run dev        # local dev server
+npm run build      # production build into dist/
+npm run build:full # rebuild both WASM engines, then build the site
+npm run deploy     # build and deploy to Cloudflare
 ```
 
 ## Layout

@@ -24,16 +24,18 @@ const sourcePathPrefixes = [
   'src/sand/materials.schema.json',
   'src/sand/materials.generated.js',
   'src/sand/abi.schema.json',
-  'wasm/build.sh',
   'wasm/build.mjs',
+  'wasm/emscripten.mjs',
+  'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
 ];
 const sourceRoots = [
   'src/sand/cpp',
   'src/sand/materials.schema.json',
   'src/sand/abi.schema.json',
-  'wasm/build.sh',
   'wasm/build.mjs',
+  'wasm/emscripten.mjs',
+  'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
 ];
 
@@ -73,7 +75,7 @@ const sourceHash = () => {
   for (const path of files.sort()) {
     hash.update(relative(root, path).split('\\').join('/'));
     hash.update('\0');
-    hash.update(readFileSync(path));
+    hash.update(readFileSync(path, 'utf8').replaceAll('\r\n', '\n'));
     hash.update('\0');
   }
   return hash.digest('hex');

@@ -10,11 +10,13 @@ const html = '<!doctype html><div id="root"></div>';
 const gameHtml = '<!doctype html><title>Sand Game</title><div id="root"></div>';
 const caseStudyHtml = '<!doctype html><title>Falling Sand Engineering Case Study</title><div id="root"></div>';
 let lastAssetPath = '';
+let lastAssetEncoding = '';
 const env = {
   ASSETS: {
     async fetch(request) {
       const path = new URL(request.url).pathname;
       lastAssetPath = path;
+      lastAssetEncoding = request.headers.get('accept-encoding') || '';
       if (path === '/') {
         return new Response(html, { headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=0, must-revalidate' } });
       }
@@ -27,8 +29,8 @@ const env = {
       if (path === '/assets/index-abc123.js') {
         return new Response('export default true', { headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate' } });
       }
-      if (path === '/assets/sandEngine-abc123.wasm') {
-        return new Response(new Uint8Array([0, 97, 115, 109]), { headers: { 'content-type': 'application/wasm' } });
+      if (path === '/assets/sandEngine-abc123.wasm.br') {
+        return new Response(new Uint8Array([27, 3, 0, 0]), { headers: { 'content-type': 'application/octet-stream' } });
       }
       if (path === '/favicon.svg') {
         return new Response('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
@@ -54,8 +56,11 @@ check('asset responses do not force cross-origin isolation',
   && asset.headers.get('cross-origin-resource-policy') === null);
 
 const wasm = await get('/assets/sandEngine-abc123.wasm');
-check('fingerprinted WASM is immutable', wasm.headers.get('cache-control') === 'public, max-age=31556952, immutable', wasm.headers.get('cache-control'));
+check('WASM resolves to its precompressed asset', lastAssetPath === '/assets/sandEngine-abc123.wasm.br', lastAssetPath);
+check('precompressed WASM is read without a second encoding', lastAssetEncoding === 'identity', lastAssetEncoding);
+check('fingerprinted WASM is immutable and byte-preserving', wasm.headers.get('cache-control') === 'public, max-age=31556952, immutable, no-transform', wasm.headers.get('cache-control'));
 check('WASM keeps its streaming MIME type', wasm.headers.get('content-type') === 'application/wasm', wasm.headers.get('content-type'));
+check('WASM is served as Brotli', wasm.headers.get('content-encoding') === 'br', wasm.headers.get('content-encoding'));
 
 const game = await get('/game');
 check('/game resolves its dedicated HTML entry without a redirect', game.status === 200 && (await game.text()).includes('Sand Game'));

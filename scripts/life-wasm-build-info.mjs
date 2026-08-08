@@ -6,7 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(root, 'src/life/wasm/lifeSearch.js');
-const roots = [resolve(root, 'src/life/cpp'), resolve(root, 'wasm/build-life.sh')];
+const roots = [
+  resolve(root, 'src/life/cpp'),
+  resolve(root, 'wasm/build-life.mjs'),
+  resolve(root, 'wasm/emscripten.mjs'),
+  resolve(root, 'wasm/emscripten-version.txt'),
+];
 
 async function collect(path, out = []) {
   const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
@@ -28,7 +33,7 @@ const hash = createHash('sha256');
 for (const path of files.sort()) {
   hash.update(relative(root, path).replaceAll('\\', '/'));
   hash.update('\0');
-  hash.update(await readFile(path));
+  hash.update((await readFile(path, 'utf8')).replaceAll('\r\n', '\n'));
   hash.update('\0');
 }
 const digest = hash.digest('hex');
@@ -40,7 +45,7 @@ if (process.argv.includes('--write')) {
 } else {
   const current = await readFile(output, 'utf8').catch(() => '');
   if (!current.includes(marker)) {
-    console.error('Life WASM is stale. Run: source wasm/emenv.sh && wasm/build-life.sh');
+    console.error('Life WASM is stale. Run: npm run build:life');
     process.exit(1);
   }
 }

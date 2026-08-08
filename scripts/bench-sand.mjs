@@ -26,6 +26,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform, release } from 'node:os';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { compatibleSandBenchmarkConfig, compatibleSandTimingEnvironment } from './bench-sand-environment.mjs';
+import { commandPath } from '../wasm/emscripten.mjs';
 
 // --- args ---
 const args = process.argv.slice(2);
@@ -112,7 +113,7 @@ const wasmMeta = () => {
       fnv1a: fileHash(loaderPath),
     },
     emcc: safeExec('emcc', ['--version'])?.split('\n')[0] || null,
-    emccPath: safeExec('which', ['emcc']),
+    emccPath: commandPath('emcc'),
     buildInfo: readJson('src/sand/wasm/build-info.json'),
   };
 };

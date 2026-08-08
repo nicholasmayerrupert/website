@@ -482,7 +482,7 @@
 
 
 #ifdef SAND_INVARIANT_CHECKS
-  // Dev-build post-step validator (wasm/build.sh --dev; NEVER commit a dev
+  // Dev-build post-step validator (npm run build:sand -- --dev; NEVER commit a dev
   // artifact). Aborts loudly when a structural invariant is broken instead of
   // letting it surface later as flicker/invisible collision.
   //   A. BODY-MATERIAL: a body-owned cell (L->bodyOwner[k] != -1) must hold a

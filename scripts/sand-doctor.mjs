@@ -8,6 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { commandPath } from '../wasm/emscripten.mjs';
 
 const safeExec = (cmd, argv = []) => {
   try { return execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); } catch (e) { return e.stdout?.toString().trim() || e.stderr?.toString().trim() || null; }
@@ -32,7 +33,7 @@ const tmpJson = join(tmpdir(), `sand-doctor-${Date.now()}.json`);
 
 const gitCommit = safeExec('git', ['rev-parse', '--short', 'HEAD']);
 const gitDirty = spawnSync('git', ['diff', '--quiet']).status !== 0 || spawnSync('git', ['diff', '--cached', '--quiet']).status !== 0;
-const emccPath = safeExec('which', ['emcc']);
+const emccPath = commandPath('emcc');
 const materialCheck = spawnSync(process.execPath, ['scripts/generate-materials.mjs', '--check'], { encoding: 'utf8' });
 const wasmCheck = spawnSync(process.execPath, ['scripts/write-wasm-build-info.mjs', '--check'], { encoding: 'utf8' });
 const bench = spawnSync(process.execPath, ['scripts/bench-sand.mjs', '--checksum-only', '--json', tmpJson], { encoding: 'utf8' });

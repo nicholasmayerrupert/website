@@ -396,6 +396,57 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   e.destroy();
 }
 
+// A willow growing on deep powder can overload its support several times. Each
+// rigid bake changes the trunk raster, but resumed growth still turns upward and
+// rebuilds the species' broad upper limbs and hanging foliage.
+{
+  const C = 180, R = 160;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 11, sinksOn: false, infinite: false });
+  e.setBgEnabled(false);
+  for (let x = 20; x < 160; x++) for (let y = 120; y < R; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let s = 0; s < 80; s++) e.stepWorld();
+  for (let x = 45; x < 135; x++) for (let y = 100; y < 120; y++) e.paintDisc(x, y, 0, MAT.DIRT, false);
+  for (let s = 0; s < 200; s++) e.stepWorld();
+  e.placeSeedTyped(90, 70, PT.WILLOW);
+
+  let sawGrowingBody = false;
+  for (let s = 0; s < 1400; s++) {
+    e.stepWorld();
+    if (e._bodyCount() > 0) sawGrowingBody = true;
+  }
+  const grid = e.getGrid();
+  let seed = -1, wood = 0, leaves = 0, plainLeaves = 0;
+  let minX = C, maxX = -1, minY = R, maxY = -1, wideWoodRows = 0;
+  for (let k = 0; k < grid.length; k++) {
+    const material = grid[k];
+    if (material === MAT.SEED) seed = k;
+    else if (material === MAT.WOOD) wood++;
+    else if (material === MAT.WILLOW_LEAF) leaves++;
+    else if (material === MAT.PLANT) plainLeaves++;
+    if (material === MAT.SEED || material === MAT.WOOD || material === MAT.WILLOW_LEAF) {
+      const x = k % C, y = (k / C) | 0;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+  }
+  for (let y = minY; y <= maxY; y++) {
+    let lo = C, hi = -1;
+    for (let x = minX; x <= maxX; x++) if (grid[y * C + x] === MAT.WOOD) {
+      lo = Math.min(lo, x); hi = Math.max(hi, x);
+    }
+    if (hi - lo >= 7) wideWoodRows++;
+  }
+  const seedY = seed >= 0 ? (seed / C) | 0 : -1;
+  check(
+    `rebaked willow turns upward and restores its crown (${wood} wood, ${leaves} leaves, ${maxX - minX + 1}w x ${maxY - minY + 1}h, ${wideWoodRows} wide rows)`,
+    sawGrowingBody && seedY >= 112 && wood >= 190 && leaves >= 240
+      && maxX - minX + 1 >= 22 && maxY - minY + 1 >= 45
+      && wideWoodRows >= 12 && plainLeaves === 0,
+  );
+  e.destroy();
+}
+
 // Fracturing a falling typed tree preserves species on every rigid piece. The
 // seed-bearing half can regrow after it settles, but it must remain willow.
 {

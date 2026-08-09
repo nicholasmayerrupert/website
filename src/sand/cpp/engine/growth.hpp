@@ -12,11 +12,14 @@ class GrowthSystem {
   // so the growth helpers emit the right species materials.
   uint8_t gGrowType = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
   StampSet gPlantCells;
+  bool gWillowGravity = false;
+  std::vector<int> gWillowLeader;
 
   bool growStraight();
   bool findWaterTouching(Comp& comp, int count, std::vector<int>& picked);
   uint32_t plantGrowthSignature(Comp& comp);
   void refreshPlantCache(Comp& comp);
+  bool willowGravityLeader(Comp& comp, int seed, std::vector<int>& leader);
   int tryGrowWood(Comp& comp, std::unordered_set<int>& reserved);
   bool plantTargetOpen(int k, const std::unordered_set<int>& reserved);
   bool addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);

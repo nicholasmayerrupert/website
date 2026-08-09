@@ -184,6 +184,9 @@ struct Comp {
   int yMax = 0;
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
+  // A seed-bearing tree that has baked from a rigid body grows against gravity
+  // from its actual raster rather than its pre-fall seed axis.
+  bool gravityGrowth = false;
   bool grounded = false;
   // Nonzero for material partitions created by one rigid-body bake. The tag
   // prevents later registration from merging the partition into unrelated

@@ -464,6 +464,7 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         Comp c;
         c.id = reused ? nextId++ : comp.id;
         c.plantType = comp.plantType; c.age = comp.age; c.growing = comp.growing;
+        c.gravityGrowth = comp.gravityGrowth;
         c.bakedAssemblyId = comp.bakedAssemblyId;
         c.cacheDirty = comp.cacheDirty;
         c.cells = splitPart; c.yMax = 0;
@@ -476,7 +477,10 @@ void ComponentSystem::normalizeDeferredConnectivity() {
           if (E.isPlantWood(material)) c.woodCount++;
           else if (E.isPlantLeaf(material)) c.leafCount++;
         }
-        if (plant) c.growing = hasSeed;
+        if (plant) {
+          c.growing = hasSeed;
+          if (hasSeed && c.woodCount == 0) c.gravityGrowth = false;
+        }
         updated.push_back(std::move(c));
         reused = true;
       }
@@ -1616,6 +1620,7 @@ void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
       fragment.plantType = source.plantType;
       fragment.age = source.age;
       fragment.growing = source.growing;
+      fragment.gravityGrowth = source.gravityGrowth;
       fragment.bakedAssemblyId = source.bakedAssemblyId;
       fragment.cacheDirty = source.cacheDirty;
       fragment.grounded = baseGrounded;
@@ -1629,7 +1634,11 @@ void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
         if (E.isPlantWood(material)) fragment.woodCount++;
         else if (E.isPlantLeaf(material)) fragment.leafCount++;
       }
-      if (plant) fragment.growing = hasSeed;
+      if (plant) {
+        fragment.growing = hasSeed;
+        if (hasSeed && fragment.woodCount == 0)
+          fragment.gravityGrowth = false;
+      }
       return fragment;
     };
     auto freeSlot = [&]() {
@@ -2425,6 +2434,7 @@ void ComponentSystem::registerBakedCells(
     }
     component.cacheDirty = component.cacheDirty || hasPlant;
     component.growing = hasSeed || hasSpore;
+    component.gravityGrowth = hasSeed && component.woodCount > 0;
     if (hasSpore) {
       E.L->myceliumActive = true;
       E.L->myceliumSporePresent = true;
@@ -2584,6 +2594,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
                                                              indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
         comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true; comp.growing = false;
         for (int k : comp.cells) { uint8_t m = E.L->grid[k]; int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(m)) comp.woodCount++; else if (E.isPlantLeaf(m)) comp.leafCount++; else if (E.isSeedMaterial(m)) comp.growing = true; }
+        if (comp.growing && comp.woodCount == 0) comp.gravityGrowth = false;
         updated.push_back(std::move(comp)); continue;
       }
       // The caller requested the cache-preserving path, but this component needs
@@ -2604,10 +2615,12 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       if (reused) E.L->compsReshaped = true;
       Comp c; c.id = reused ? E.L->nextComponentId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
       c.plantType = comp.plantType; c.growing = comp.growing;
+      c.gravityGrowth = comp.gravityGrowth;
       c.bakedAssemblyId = comp.bakedAssemblyId;
       bool hasSeed = false;
       for (int k : part) { uint8_t m = E.L->grid[k]; int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; else if (E.isSeedMaterial(m)) hasSeed = true; }
       if (componentChanged) c.growing = hasSeed;
+      if (hasSeed && c.woodCount == 0) c.gravityGrowth = false;
       c.cells = part; updated.push_back(std::move(c)); reused = true;
     }
     if (!reused) E.L->compsReshaped = true;
@@ -2727,6 +2740,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
         else if (E.isPlantLeaf(material)) comp.leafCount++;
         else if (E.isSeedMaterial(material)) comp.growing = true;
       }
+      if (comp.growing && comp.woodCount == 0) comp.gravityGrowth = false;
       updated.push_back(std::move(comp));
       continue;
     }
@@ -2745,6 +2759,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       c.plantType = comp.plantType;
       c.age = comp.age;
       c.growing = comp.growing;
+      c.gravityGrowth = comp.gravityGrowth;
       c.bakedAssemblyId = comp.bakedAssemblyId;
       bool plantComponent = false, hasSeed = false;
       for (int k : part) {
@@ -2755,7 +2770,10 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
         else if (E.isPlantLeaf(material)) c.leafCount++;
         else if (E.isSeedMaterial(material)) hasSeed = true;
       }
-      if (plantComponent) c.growing = hasSeed;
+      if (plantComponent) {
+        c.growing = hasSeed;
+        if (hasSeed && c.woodCount == 0) c.gravityGrowth = false;
+      }
       c.cells = part; updated.push_back(std::move(c));
       reused = true;
     }

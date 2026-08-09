@@ -35,6 +35,70 @@ void GrowthSystem::refreshPlantCache(Comp& comp) {
   std::stable_sort(comp.seedWoodCells.begin(), comp.seedWoodCells.end(), byRow);
   comp.cacheDirty = false;
 }
+bool GrowthSystem::willowGravityLeader(
+    Comp& comp, int seed, std::vector<int>& leader) {
+  leader.clear();
+  if (comp.woodCells.empty()) return false;
+  int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
+  // Recover the longest upward run from the actual raster. Its lower endpoint
+  // is the stable bend point after a fall, while an upright tree naturally
+  // yields its original trunk. Branch tips cannot steal the leader merely by
+  // rising a few cells above it because the longest connected run wins.
+  std::unordered_map<int, int> downLength;
+  downLength.reserve(comp.woodCells.size() * 2);
+  int minX = E.cols, maxX = -1, minY = E.rows, maxY = -1;
+  for (auto it = comp.woodCells.rbegin(); it != comp.woodCells.rend(); ++it) {
+    int k = *it, y = k / E.cols, x = k - y * E.cols, length = 1;
+    minX = imin(minX, x); maxX = imax(maxX, x);
+    minY = imin(minY, y); maxY = imax(maxY, y);
+    if (y + 1 < E.rows) for (int dx = -1; dx <= 1; dx++) {
+      int nx = x + dx;
+      if (nx < 0 || nx >= E.cols) continue;
+      auto below = downLength.find(E.I(nx, y + 1));
+      if (below != downLength.end()) length = imax(length, below->second + 1);
+    }
+    downLength[k] = length;
+  }
+  bool fallenSideways = maxX - minX > maxY - minY;
+  int maxRun = 0;
+  for (const auto& entry : downLength) maxRun = imax(maxRun, entry.second);
+  bool startingSideways = fallenSideways && maxRun < 8;
+  int top = -1, topScore = startingSideways ? -1 : INT32_MAX;
+  for (int k : comp.woodCells) {
+    int run = downLength[k];
+    if (run + 2 < maxRun) continue;
+    int y = k / E.cols;
+    int x = k - y * E.cols, dx = x - seedX, dy = y - seedY;
+    int score = startingSideways ? dx * dx + dy * dy
+                                 : y * 4 + std::abs(dx) * 2;
+    if ((startingSideways && score > topScore)
+        || (!startingSideways && score < topScore)) {
+      top = k;
+      topScore = score;
+    }
+  }
+  if (top < 0) return false;
+  leader.push_back(top);
+  while (downLength[top] > 1) {
+    int y = top / E.cols, x = top - y * E.cols;
+    int next = -1, want = downLength[top] - 1;
+    for (int dx = -1; dx <= 1; dx++) {
+      int nx = x + dx;
+      if (nx < 0 || nx >= E.cols || y + 1 >= E.rows) continue;
+      int candidate = E.I(nx, y + 1);
+      auto below = downLength.find(candidate);
+      if (below != downLength.end() && below->second == want) {
+        next = candidate;
+        break;
+      }
+    }
+    if (next < 0) break;
+    top = next;
+    leader.push_back(top);
+  }
+  std::reverse(leader.begin(), leader.end());
+  return true;
+}
 int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
   refreshPlantCache(comp);
   std::vector<int>& sources = !comp.woodCells.empty() ? comp.woodCells : comp.seedWoodCells;
@@ -187,8 +251,32 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
       if (!found) break;
       leaderHeight = height;
     }
-    topY = seedY - leaderHeight;
+    bool recovering = gGrowType == PT_WILLOW && gWillowGravity;
+    if (recovering) {
+      leaderHeight = (int)gWillowLeader.size() - 1;
+      topY = gWillowLeader.back() / E.cols;
+    } else {
+      topY = seedY - leaderHeight;
+    }
     auto growLeader = [&]() -> int {
+      if (recovering) {
+        int top = gWillowLeader.back();
+        int y = top / E.cols, x = top - y * E.cols;
+        int nextHeight = leaderHeight + 1, bend = 0;
+        if ((nextHeight & 3) == 0) {
+          uint32_t turn = plantGrowthTrait(signature, 70 + nextHeight / 4);
+          bend = turn % 7u < 2u ? -1 : turn % 7u > 4u ? 1 : 0;
+        }
+        int offsets[3] = {bend, bend < 0 ? 0 : -1, bend > 0 ? 0 : 1};
+        for (int i = 0; i < 3; i++) {
+          int tx = x + offsets[i], ty = y - 1;
+          if (!E.isInBounds(tx, ty)) continue;
+          int tk = E.I(tx, ty);
+          if (i == 0 && reserved.count(tk)) return -1;
+          if (plantTargetOpen(tk, reserved)) return tk;
+        }
+        return -1;
+      }
       int nextHeight = leaderHeight + 1, centerX = trunkXAt(nextHeight);
       int previousX = trunkXAt(leaderHeight);
       int away = centerX >= previousX ? 1 : -1;
@@ -283,7 +371,15 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
           if (reach <= 0) continue;
           int branchLevel = b.level;
           if (branchLevel > leaderHeight) continue;
-          int baseX = trunkWoodXAt(branchLevel), baseY = seedY - branchLevel;
+          int baseX, baseY;
+          if (recovering) {
+            int base = gWillowLeader[branchLevel];
+            baseY = base / E.cols;
+            baseX = base - baseY * E.cols;
+          } else {
+            baseX = trunkWoodXAt(branchLevel);
+            baseY = seedY - branchLevel;
+          }
           bool branchComplete = true;
           for (int d = 1; d <= reach; d++) {
             int lift = imin(3, (d + 1) / 3);
@@ -306,6 +402,34 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
             if (E.L->grid[tk] == WOOD || reserved.count(tk)) continue;
             if (plantTargetOpen(tk, reserved)) return tk;
             break;
+          }
+        }
+      }
+      if (recovering) {
+        // A fall can leave the newly planned limb coordinates occupied by the
+        // old crown. Continue from exposed upper wood instead, biased outward
+        // and bounded to the willow's normal crown width.
+        int frameBase = gWillowLeader.front();
+        int frameBaseY = frameBase / E.cols;
+        int frameBaseX = frameBase - frameBaseY * E.cols;
+        int startCell = (int)(E.rand() * comp.woodCells.size())
+          % (int)comp.woodCells.size();
+        int step = E.rand() < 0.5 ? 1 : -1;
+        for (int ci = 0; ci < (int)comp.woodCells.size(); ci++) {
+          int source = comp.woodCells[
+            ((startCell + ci * step) % (int)comp.woodCells.size()
+              + (int)comp.woodCells.size()) % (int)comp.woodCells.size()];
+          int y = source / E.cols, x = source - y * E.cols;
+          if (y > frameBaseY - targetHeight / 2) continue;
+          int offset = x - frameBaseX;
+          if (std::abs(offset) >= 14) continue;
+          int dir = offset ? (offset < 0 ? -1 : 1)
+                           : (plantGrowthTrait(signature, (uint32_t)source) & 1u ? 1 : -1);
+          int cand[3][2] = {{x + dir, y}, {x + dir, y - 1}, {x + dir, y + 1}};
+          for (auto& pos : cand) {
+            if (!E.isInBounds(pos[0], pos[1])) continue;
+            int tk = E.I(pos[0], pos[1]);
+            if (plantTargetOpen(tk, reserved)) return tk;
           }
         }
       }
@@ -435,10 +559,12 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     // a generic round canopy around the trunk.
     int seed = comp.woodCells.back();
     for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
-    int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     uint32_t signature = plantGrowthSignature(comp);
     int targetHeight = 40 + (int)(plantGrowthTrait(signature, 0) % 9u);
-    int branchSourceY = seedY - targetHeight / 2;
+    int frameBase = gWillowGravity ? gWillowLeader.front() : seed;
+    int frameBaseY = frameBase / E.cols;
+    int frameBaseX = frameBase - frameBaseY * E.cols;
+    int branchSourceY = frameBaseY - targetHeight / 2;
     int start = (int)(E.rand() * comp.woodCells.size()) % comp.woodCells.size();
     int step = E.rand() < 0.5 ? 1 : -1;
     if (E.rand() < 0.18) {
@@ -449,7 +575,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
         int source = comp.woodCells[((start + ci * step) % comp.woodCells.size() + comp.woodCells.size()) % comp.woodCells.size()];
         int y = source / E.cols, x = source - y * E.cols;
         if (y > branchSourceY) continue;
-        if (std::abs(x - seedX) < 2 && y > crownY + 7) continue;
+        if (std::abs(x - frameBaseX) < 2 && y > crownY + 7) continue;
         int cand[8][2] = {{x - 1, y}, {x + 1, y}, {x - 1, y - 1}, {x + 1, y - 1}, {x, y - 1}, {x - 1, y + 1}, {x + 1, y + 1}, {x, y + 1}};
         int first = (int)(E.rand() * 8.0) % 8;
         for (int i = 0; i < 8; i++) {
@@ -465,7 +591,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
       int source = comp.woodCells[((start + ci * step) % comp.woodCells.size() + comp.woodCells.size()) % comp.woodCells.size()];
       int y = source / E.cols, x = source - y * E.cols;
       if (y > branchSourceY) continue;
-      int outward = std::abs(x - seedX);
+      int outward = std::abs(x - frameBaseX);
       if (outward < 6) continue;
       uint32_t strand = plantGrowthTrait(signature,
         (uint32_t)(E.L->worldOffsetX + x) * 31u + (uint32_t)(E.L->worldOffsetY + y) * 17u);
@@ -569,6 +695,15 @@ void GrowthSystem::growPlantComponents() {
     for (int k : comp.cells) gPlantCells.add(k);
     // Species materials + per-type caps. PT_STANDARD keeps the original caps.
     gGrowType = comp.plantType; gWoodMat = E.plantWoodMat(gGrowType); gLeafMat = E.plantLeafMat(gGrowType);
+    gWillowGravity = false;
+    gWillowLeader.clear();
+    if (gGrowType == PT_WILLOW && comp.gravityGrowth) {
+      refreshPlantCache(comp);
+      int willowSeed = comp.cells.front();
+      for (int k : comp.cells)
+        if (E.isSeedMaterial(E.L->grid[k])) { willowSeed = k; break; }
+      gWillowGravity = willowGravityLeader(comp, willowSeed, gWillowLeader);
+    }
     uint32_t growthSignature = plantGrowthSignature(comp);
     int maxWood = gGrowType == PT_BUSH ? 14 : gGrowType == PT_MUSHROOM ? 13 : gGrowType == PT_CACTUS ? 34 : gGrowType == PT_VINE ? 40 : gGrowType == PT_OAK ? 220 + (int)(plantGrowthTrait(growthSignature, 2) % 31u) : gGrowType == PT_PINE ? 104 + (int)(plantGrowthTrait(growthSignature, 2) % 30u) : gGrowType == PT_WILLOW ? 205 + (int)(plantGrowthTrait(growthSignature, 2) % 31u) : MAX_WOOD_CELLS;
     int maxLeaf = gGrowType == PT_MUSHROOM ? 28 : gGrowType == PT_BUSH ? 38 : gGrowType == PT_VINE ? 9 : gGrowType == PT_OAK ? 480 + (int)(plantGrowthTrait(growthSignature, 3) % 71u) : gGrowType == PT_PINE ? 230 + (int)(plantGrowthTrait(growthSignature, 3) % 81u) : gGrowType == PT_WILLOW ? 240 + (int)(plantGrowthTrait(growthSignature, 3) % 61u) : MAX_LEAF_CELLS;

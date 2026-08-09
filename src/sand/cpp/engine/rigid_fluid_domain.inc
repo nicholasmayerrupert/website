@@ -5,27 +5,18 @@
   if (bodies.empty() || cellCount == 0) return false;
   const int activeLayer = E.L == &E.bg ? 1 : 0;
   auto touchesLiquid = [&](Body* body, Layer& layer) {
-    bool found = false;
-    forEachBodyCell(body, [&](int x, int y, int local) {
-      if (found) return;
-      int lx = local - (local / body->w) * body->w;
-      int ly = local / body->w;
-      auto occupied = [&](int xx, int yy) {
-        return xx >= 0 && xx < body->w && yy >= 0 && yy < body->h
-            && body->occ[yy * body->w + xx];
-      };
-      if (occupied(lx - 1, ly) && occupied(lx + 1, ly)
-          && occupied(lx, ly - 1) && occupied(lx, ly + 1))
-        return;
+    ensureBodyRaster(body);
+    for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
+      int x = cell.x, y = cell.y;
       int k = y * E.cols + x;
       if ((x > 0 && E.isLiquidMaterial(layer.grid[k - 1]))
           || (x + 1 < E.cols && E.isLiquidMaterial(layer.grid[k + 1]))
           || (y > 0 && E.isLiquidMaterial(layer.grid[k - E.cols]))
           || (y + 1 < E.rows
-              && E.isLiquidMaterial(layer.grid[k + E.cols])))
-        found = true;
-    });
-    return found;
+               && E.isLiquidMaterial(layer.grid[k + E.cols])))
+        return true;
+    }
+    return false;
   };
   bool liquidCandidate = false;
   for (Body* body : bodies) {
@@ -61,13 +52,17 @@
       fluidPressureWorldY[layer] = cacheLayer->worldOffsetY;
     }
   }
-  if (++fluidNodeGeneration <= 0) {
+  if (fluidNodeGeneration == INT32_MAX) {
     fluidNodeGeneration = 1;
     for (auto& stamp : fluidNodeStamp) std::fill(stamp.begin(), stamp.end(), 0);
+  } else {
+    fluidNodeGeneration++;
   }
-  if (++fluidBodyGeneration <= 0) {
+  if (fluidBodyGeneration == INT32_MAX) {
     fluidBodyGeneration = 1;
     for (auto& stamp : fluidBodyStamp) std::fill(stamp.begin(), stamp.end(), 0);
+  } else {
+    fluidBodyGeneration++;
   }
 
   fluidQueue.clear();
@@ -158,4 +153,3 @@
                   return a.packedCell == b.packedCell;
                 }),
     fluidSeeds.end());
-

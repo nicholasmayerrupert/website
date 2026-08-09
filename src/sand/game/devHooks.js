@@ -179,6 +179,7 @@ export function installDevHooks(ctx, {
       ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
     },
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
+    retryAuthority() { ctx.worldWorker?.retry(); },
     setCreatureRuntime(simulate, naturalSpawn = false) {
       engine()?.setCreatureRuntime(!!simulate, !!naturalSpawn);
       ctx.worldWorker?.testCreatureRuntime(!!simulate, !!naturalSpawn);
@@ -193,6 +194,9 @@ export function installDevHooks(ctx, {
     },
     spawnNatural(species, salt = 0, forceBreach = false) {
       ctx.worldWorker?.testNaturalSpawn(species | 0, salt | 0, !!forceBreach);
+    },
+    stepAuthorityActors(steps = 1) {
+      ctx.worldWorker?.testStepActors(steps | 0);
     },
     flushAuthorityControl() { ctx.worldWorker?.updateControl(); },
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },

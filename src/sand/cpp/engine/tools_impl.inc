@@ -2,6 +2,38 @@
 // (nearest-to-center-first) as (ox,oy) offsets from (cx,cy), skip out-of-bounds
 // cells and the player's own AABB, and invoke act(k) until `cap` cells acted
 // (act returns whether it consumed a cell). getOff maps an element to (ox,oy).
+struct ToolDiscBounds {
+  int x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+};
+
+static ToolDiscBounds clippedToolDiscBounds(
+    int cols, int rows, int cx, int cy, int radius, int yMaxExclusive) {
+  if (radius < 0) return {};
+  int64_t minX = std::max<int64_t>(1, (int64_t)cx - radius);
+  int64_t maxX = std::min<int64_t>(cols - 2, (int64_t)cx + radius);
+  int64_t minY = std::max<int64_t>(1, (int64_t)cy - radius);
+  int64_t maxY = std::min<int64_t>(
+    std::min<int64_t>(rows, yMaxExclusive) - 1, (int64_t)cy + radius);
+  if (minX > maxX || minY > maxY) return {};
+  return {(int)minX, (int)minY, (int)maxX, (int)maxY};
+}
+
+template <class Visit>
+static void forEachClippedToolDiscCell(
+    int cols, int rows, int cx, int cy, int radius, int yMaxExclusive,
+    Visit&& visit) {
+  ToolDiscBounds bounds = clippedToolDiscBounds(
+    cols, rows, cx, cy, radius, yMaxExclusive);
+  int64_t radius2 = (int64_t)radius * radius;
+  for (int y = bounds.y0; y <= bounds.y1; y++) {
+    int64_t dy = (int64_t)y - cy;
+    for (int x = bounds.x0; x <= bounds.x1; x++) {
+      int64_t dx = (int64_t)x - cx;
+      if (dx * dx + dy * dy <= radius2) visit(x, y);
+    }
+  }
+}
+
 template <class Offs, class GetOff, class Act>
 int ToolSystem::cappedOffsetScan(int cx, int cy, const Offs& offs, GetOff getOff, int yMaxExcl, int cap, const Player* p, Act act) {
   if (cap <= 0) return 0;
@@ -30,13 +62,9 @@ void ToolSystem::strokeScan(int x0, int y0, int x1, int y1, int spacing, Stamp s
   }
   if (wantMore()) stamp(x1, y1);
 }
-// Per-pixel placement: write at most `maxCells` cells, NEAREST-TO-CENTER first, so
-// an inventory stack places exactly as many pixels as it can afford. Deterministic
-// (static distance-sorted offset order). Returns cells written. EMPTY erases (no cap).
-// Optional `p` excludes the player's own AABB cell-by-cell (mirrors
-// addDiscToDraftCapped) so a build disc that grazes the player still places its
-// non-overlapping cells instead of being rejected wholesale — you can build right
-// up against yourself and hold to place continuously without trapping the body.
+// Capped survival placement walks the selected fixed footprint in its
+// deterministic center-first order. Optional `p` excludes the player's AABB so
+// a footprint that grazes the player can still place its other cells.
 
 // Tool semantics and player/world edits.
 //
@@ -130,23 +158,30 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
   std::vector<int> erasedStructural;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   bool destroyedAny = false;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.L->grid[k] == EMPTY) && E.L->grid[k] != material) {
-    uint8_t old = E.L->grid[k];
-    // Overwriting a component or body cell must free it from its owner first,
-    // or the comp/body keeps an invisible phantom cell (the component-cell
-    // destroy invariant — found by the --dev validator via overwrite paints).
-    if (old != EMPTY && (E.isComponentMaterial(old) || E.isBodyCell(k))) {
-      destroyCellAt(k, old, erasedStructural, bodyById, dirtyBodies);
-      destroyedAny = true;
-    }
-    E.noteLooseGroundTouch2(old, material);
-    E.L->grid[k] = material; changed++;
-  } } }
+  forEachClippedToolDiscCell(
+    E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
+      int k = E.I(xx, yy);
+      if (!(overwrite || E.L->grid[k] == EMPTY)) return;
+      uint8_t old = E.L->grid[k];
+      if (old == material) { E.writeGridIndex(k, material); return; }
+      // Release structural ownership before replacing its grid material so the
+      // component or body cannot retain an invisible cell.
+      if (old != EMPTY && (E.isComponentMaterial(old) || E.isBodyCell(k))) {
+        destroyCellAt(k, old, erasedStructural, bodyById, dirtyBodies);
+        destroyedAny = true;
+      }
+      E.writeGridIndex(k, material);
+      changed++;
+  });
   if (destroyedAny) {
     E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
     splitComponentsAfterDestroy(erasedStructural);
   }
-  if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+  if (changed) {
+    ToolDiscBounds bounds = clippedToolDiscBounds(
+      E.cols, E.rows, cx, cy, radius, E.rows);
+    E.markDirtyRect(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+  }
   return changed;
 }
 // Generic material placement by id — the inventory-forward path. Loose media
@@ -156,9 +191,11 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
   if (mat == EMPTY) return eraseDisc(cx, cy, radius);
   if (!E.isComponentMaterial(mat)) return paintDisc(cx, cy, radius, mat, false);
   std::vector<std::pair<int, int>> cells;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue;
-    for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
-      int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY) cells.push_back({xx, yy}); } }
+  forEachClippedToolDiscCell(
+    E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
+      int k = E.I(xx, yy);
+      if (E.L->grid[k] == EMPTY) cells.push_back({xx, yy});
+    });
   if (cells.empty()) return 0;
   E.L->skyDirty = true;
   finalizeStructuralPlacement(cells, mat);
@@ -280,21 +317,6 @@ void ToolSystem::finalizeStructuralPlacement(
   }
 }
 
-int ToolSystem::placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p) {
-  if (mat == EMPTY) return eraseDisc(cx, cy, radius);
-  bool comp = E.isComponentMaterial(mat);
-  std::vector<std::pair<int, int>> cells;
-  int placed = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, E.rows, maxCells, p,
-    [&](int k) {
-      if (E.L->grid[k] != EMPTY) return false;
-      if (comp) cells.push_back({k % E.cols, k / E.cols});
-      else E.writeGridIndex(k, mat);
-      return true;
-    });
-  if (placed) { E.L->skyDirty = true; E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
-  if (comp) finalizeStructuralPlacement(cells, mat);
-  return placed;
-}
 int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p) {
   bool comp = E.isComponentMaterial(mat);
   std::vector<std::pair<int, int>> cells;
@@ -312,18 +334,6 @@ int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFoo
   }
   if (comp) finalizeStructuralPlacement(cells, mat);
   return placed;
-}
-// Disc cell offsets ordered by distance from center (cached per radius). Tie-break
-// on (oy,ox) keeps the order stable/deterministic across calls and peers.
-const std::vector<std::pair<int, int>>& ToolSystem::discOffsets(int radius) {
-  auto it = discOffsetCache.find(radius);
-  if (it != discOffsetCache.end()) return it->second;
-  std::vector<std::pair<int, int>> offs;
-  for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) if (ox * ox + oy * oy <= radius * radius) offs.push_back({ox, oy});
-  std::stable_sort(offs.begin(), offs.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
-    int da = a.first * a.first + a.second * a.second, db = b.first * b.first + b.second * b.second;
-    if (da != db) return da < db; if (a.second != b.second) return a.second < b.second; return a.first < b.first; });
-  return discOffsetCache.emplace(radius, std::move(offs)).first->second;
 }
 // ---- shared destroy/erase plumbing ----
 // Destroy the (non-EMPTY) cell at k with material m: a body cell routes to the
@@ -351,13 +361,19 @@ void ToolSystem::splitComponentsAfterDestroy(std::vector<int>& erasedStructural)
 int ToolSystem::eraseDisc(int cx, int cy, int radius) {
   std::vector<int> erasedStructural; bool changed = false; int cleared = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy);
-    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; }
-    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
-    if (draft.erase(k)) changed = true;
-  } }
+  forEachClippedToolDiscCell(
+    E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
+      int k = E.I(xx, yy);
+      if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; }
+      else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
+      if (draft.erase(k)) changed = true;
+    });
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
-  if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+  if (changed) {
+    ToolDiscBounds bounds = clippedToolDiscBounds(
+      E.cols, E.rows, cx, cy, radius, E.rows);
+    E.markDirtyRect(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+  }
   splitComponentsAfterDestroy(erasedStructural);
   return cleared;
 }
@@ -535,18 +551,20 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
 }
 int ToolSystem::addDiscToDraft(std::unordered_set<int>& cells, int cx, int cy, int radius, int yLimit) {
   int changed = 0;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY && !cells.count(k)) { cells.insert(k); changed = 1; } } }
-  if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+  forEachClippedToolDiscCell(
+    E.cols, E.rows, cx, cy, radius, yLimit, [&](int xx, int yy) {
+      int k = E.I(xx, yy);
+      if (E.L->grid[k] == EMPTY && !cells.count(k)) {
+        cells.insert(k);
+        changed = 1;
+      }
+    });
+  if (changed) {
+    ToolDiscBounds bounds = clippedToolDiscBounds(
+      E.cols, E.rows, cx, cy, radius, yLimit);
+    E.markDirtyRect(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+  }
   return changed;
-}
-// Survival draft: stage up to `maxAdd` NEW empty cells (nearest-center first) into the
-// draft, skipping the player's own AABB (so you don't build on yourself). Returns the
-// number staged — the caller consumes that many inventory units as the preview grows.
-int ToolSystem::addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p) {
-  int added = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, yLimit, maxAdd, p,
-    [&](int k) { if (E.L->grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
-  if (added) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-  return added;
 }
 int ToolSystem::addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, int radius, int yLimit) {
   int changed = 0;
@@ -659,6 +677,7 @@ void ToolSystem::setTool(int tool) {
 void ToolSystem::setCreativeMaterial(int kind, int value) {
   switch (kind) {
     case CK_MATERIAL: {
+      if (value < 0 || value >= MATERIAL_COUNT) return;
       uint8_t m = (uint8_t)value;
       if (m == EMPTY) creativeMode = CM_ERASE;
       else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
@@ -675,7 +694,10 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
       if (m == RIGID || E.isComponentMaterial(m)) cubeMaterial = m;
       break;
     }
-    case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; creativeMaterial = E.plantSeedMat(creativeSeed); break;
+    case CK_SEED:
+      if (value < PT_OAK || value > PT_STANDARD) return;
+      creativeMode = CM_SEED; creativeSeed = (uint8_t)value;
+      creativeMaterial = E.plantSeedMat(creativeSeed); break;
     case CK_ERASER: creativeMode = CM_ERASE; break;
     case CK_CUBE: creativeMode = CM_CUBE; break;
     case CK_CREATURE:

@@ -6,6 +6,7 @@
 // browser event normalization.
 
 import { TOOL } from '../wasmBridge/abi.generated.js';
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
 
 export const DEFAULT_TOOL = 'cube';
 
@@ -26,8 +27,6 @@ export const SIZING = Object.freeze({
   minViewportRows: 28,
   viewportCellBucket: 4,
   stableHeightThresholdPx: 48,
-  // Soft advisory only — the view may exceed this when zoomed out (perf hit accepted).
-  maxViewportCells: 130000,
   toolCollapseWidth: 1300,
   chunkSize: 32,
   worldHeightFactor: 2.5,
@@ -40,10 +39,14 @@ export const SIZING = Object.freeze({
   minBufferMarginRows: 48,
   // Soft threshold for reducing vertical off-screen depth at extreme zoom.
   bufferMaxCells: 520000,
+  // Absolute engine allocation limits. Viewport fitting raises the effective
+  // zoom floor when the loaded window would exceed either one.
+  bufferHardMaxDimension: ENGINE_MAX_DIMENSION,
+  bufferHardMaxCells: ENGINE_MAX_CELLS,
   // Continuous zoom: multiplier on cellPx. 1 = default density; >1 = zoomed in
   // (fewer, larger cells); <1 = zoomed out (more cells, larger sim buffer).
-  // Viewport fitting raises the effective floor only when a layer would exceed
-  // the device's WebGL texture-dimension limit.
+  // Viewport fitting raises the effective floor when a loaded layer would
+  // exceed the engine's allocation limits or the device's texture limit.
   zoomDefault: 1.0,
   zoomInMax: 8,
   zoomOutMin: 0.05,
@@ -53,8 +56,6 @@ export const SIZING = Object.freeze({
   // every +/- click while still tracking zoom for sim cost.
   bufferResizeHysteresis: 0.12,
 });
-
-export const STEP_MS = 16;
 
 // Physical browser keys -> Engine InputKey codes.
 export const KEY_CODES = Object.freeze({

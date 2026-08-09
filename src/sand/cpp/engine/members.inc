@@ -51,15 +51,15 @@
         || bodyContainsMaterial(b, OAK_SEED)
         || bodyContainsMaterial(b, MYCELIUM_SPORE);
   }
-  bool bodyBakeRetryDeferred(Layer* lay, Body*) {
+  bool layerBakeRetryDeferred(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
       if (bodyContainsMaterial(b, TNT)) return true;
     return false;
   }
-  bool bodyNeedsBakeTick(Layer* lay, Body* b) {
-    if (b->jointRole == 2 || b->awake || bodyBakeRetryDeferred(lay, b)
-        || !bodySolidifiesToComponents(b)) return false;
+  bool bodyNeedsBakeTick(Body* b) {
+    if (b->jointRole == 2 || b->awake || !bodySolidifiesToComponents(b))
+      return false;
     // Keep one transition tick after the last stability sample so a quiet
     // layer reaches bakeRestingBodies() instead of going inactive at the gate.
     bool rasterPending = b->bakeRasterStableTicks <= R_BAKE_RASTER_TICKS;
@@ -68,15 +68,19 @@
         || b->jointPeer->bakeRasterStableTicks <= R_BAKE_RASTER_TICKS;
     return rasterPending;
   }
-  // Non-consuming check: does a layer have any active row marks this step?
+  // Non-consuming check: does a layer have scheduled simulation work?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
+    bool bakeRetryDeferred = layerBakeRetryDeferred(lay);
     for (Body* b : lay->bodies)
       if (b->jointRole != 2
           && (b->awake || b->fuseTicks > 0
-              || bodyNeedsBakeTick(lay, b)))
+              || (!bakeRetryDeferred && bodyNeedsBakeTick(b))))
         return true;
-    for (int y = 0; y < rows; y++) if (!lay->rowMarkSpans[y].empty()) return true;
+    for (int y = 0; y < rows; y++)
+      if (!lay->rowMarkSpans[y].empty()
+          || !lay->simOnlyRowMarkSpans[y].empty())
+        return true;
     return false;
   }
 
@@ -89,8 +93,9 @@
   double gravityScale;
   // Cell materials can only move in whole-cell increments. A fixed-point
   // cadence turns fractional planetary gravity into deterministic settle turns
-  // without consuming the shared simulation RNG. The cadence advances once per
-  // world tick and is shared by foreground and background.
+  // without consuming the shared simulation RNG. Loose cells use stable
+  // world-column phase offsets so a broad fall is distributed across frames;
+  // gravityCellStep retains the shared pulse for whole-domain maintenance.
   static constexpr uint32_t GRAVITY_CADENCE_ONE = 1u << 16;
   uint32_t gravityCadenceStep = GRAVITY_CADENCE_ONE;
   uint32_t gravityCadencePhase = 0;
@@ -103,7 +108,8 @@
   // Present-path sub-phase timers (gl.inc glRenderFrame): the full-buffer lighting
   // solve, the windowed pixel fill, and the windowed texture upload. Render-only.
   double perfLightMs = 0, perfFillMs = 0, perfUploadMs = 0;
-  double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
+  double perfShiftSave = 0, perfShiftBuffers = 0, perfShiftTranslate = 0;
+  double perfShiftRegister = 0, perfShiftFill = 0;
   // Predictive worldgen prefetch (worldgen.inc): amortize the shift's fillRect over
   // the off-screen frames before the boundary is crossed. Generates the upcoming
   // stream-in band into the tileStore a slice per frame so the shift can skip
@@ -198,6 +204,20 @@
   }
   inline double scaledGravity(double earthGravity) const {
     return gravityScale == 1.0 ? earthGravity : earthGravity * gravityScale;
+  }
+  inline bool gravityCellStepAt(int x) const {
+    if (gravityCadenceStep >= GRAVITY_CADENCE_ONE) return true;
+    uint32_t column = (uint32_t)L->worldOffsetX + (uint32_t)x;
+    column ^= L->worldSeed ^ 0xA511E9B3u;
+    column ^= column >> 16;
+    column *= 0x7feb352du;
+    column ^= column >> 15;
+    column *= 0x846ca68bu;
+    column ^= column >> 16;
+    uint32_t phase = (gravityCadencePhase
+                    + (column & (GRAVITY_CADENCE_ONE - 1)))
+                   & (GRAVITY_CADENCE_ONE - 1);
+    return phase < gravityCadenceStep;
   }
   void advanceGravityCadence() {
     if (gravityCadenceStep >= GRAVITY_CADENCE_ONE) {
@@ -324,17 +344,36 @@
       std::vector<std::pair<int32_t, int32_t>>& spans, int x0, int x1,
       int mergeGap = 0) {
     if (x1 < x0) return;
+    if (spans.empty()) {
+      spans.push_back({(int32_t)x0, (int32_t)x1});
+      return;
+    }
+    if (spans.back().second + mergeGap + 1 < x0) {
+      spans.push_back({(int32_t)x0, (int32_t)x1});
+      return;
+    }
     auto it = std::lower_bound(
       spans.begin(), spans.end(), x0,
       [mergeGap](const auto& span, int x) {
         return span.second + mergeGap + 1 < x;
       });
-    while (it != spans.end() && it->first <= x1 + mergeGap + 1) {
-      x0 = imin(x0, (int)it->first);
-      x1 = imax(x1, (int)it->second);
-      it = spans.erase(it);
+    if (it == spans.end()) {
+      spans.push_back({(int32_t)x0, (int32_t)x1});
+      return;
     }
-    spans.insert(it, {(int32_t)x0, (int32_t)x1});
+    if (it->first > x1 + mergeGap + 1) {
+      spans.insert(it, {(int32_t)x0, (int32_t)x1});
+      return;
+    }
+    x0 = imin(x0, (int)it->first);
+    x1 = imax(x1, (int)it->second);
+    auto end = it + 1;
+    while (end != spans.end() && end->first <= x1 + mergeGap + 1) {
+      x1 = imax(x1, (int)end->second);
+      ++end;
+    }
+    *it = {(int32_t)x0, (int32_t)x1};
+    spans.erase(it + 1, end);
   }
 
   inline void markLayerRowSpan(Layer* layer, int y, int x0, int x1) {
@@ -350,10 +389,18 @@
     markLayerRowSpan(layer, y, k - y * cols, k - y * cols);
   }
 
+  inline void markLayerSimRowSpan(
+      Layer* layer, int y, int x0, int x1) {
+    if (y < 0 || y >= rows) return;
+    x0 = imax(0, x0); x1 = imin(cols - 1, x1);
+    if (x1 < x0) return;
+    mergeRowSpan(layer->simOnlyRowMarkSpans[y], x0, x1);
+  }
+
   inline void markLayerSimCell(Layer* layer, int k) {
     if (k < 0 || k >= cols * rows) return;
-    int y = k / cols, x = k - y * cols;
-    mergeRowSpan(layer->simOnlyRowMarkSpans[y], x, x);
+    int y = k / cols;
+    markLayerSimRowSpan(layer, y, k - y * cols, k - y * cols);
   }
 
   inline void activateRowSpanNow(int y, int x0, int x1) {
@@ -397,19 +444,39 @@
                                      int y, int clampMin, int clampMax,
                                      bool leftToRight, Fn&& fn) {
     activeSpanUnionScratch.clear();
-    if (useA) for (const auto& span : a->activeRowSpans[y])
-      mergeRowSpan(activeSpanUnionScratch, span.first, span.second);
-    if (useB) for (const auto& span : b->activeRowSpans[y])
-      mergeRowSpan(activeSpanUnionScratch, span.first, span.second);
+    const auto& spansA = a->activeRowSpans[y];
+    const auto& spansB = b->activeRowSpans[y];
+    const std::vector<std::pair<int32_t, int32_t>>* unionSpans =
+      &activeSpanUnionScratch;
+    if (useA && !useB) unionSpans = &spansA;
+    else if (useB && !useA) unionSpans = &spansB;
+    size_t indexA = 0, indexB = 0;
+    auto append = [&](const std::pair<int32_t, int32_t>& span) {
+      if (!activeSpanUnionScratch.empty()
+          && span.first <= activeSpanUnionScratch.back().second + 1) {
+        activeSpanUnionScratch.back().second = imax(
+          activeSpanUnionScratch.back().second, span.second);
+      } else {
+        activeSpanUnionScratch.push_back(span);
+      }
+    };
+    if (useA && useB) {
+      while (indexA < spansA.size() || indexB < spansB.size()) {
+        bool takeA = indexA < spansA.size()
+          && (indexB >= spansB.size()
+              || spansA[indexA].first <= spansB[indexB].first);
+        append(takeA ? spansA[indexA++] : spansB[indexB++]);
+      }
+    }
     if (leftToRight) {
-      for (const auto& span : activeSpanUnionScratch) {
+      for (const auto& span : *unionSpans) {
         int x0 = imax(clampMin, (int)span.first);
         int x1 = imin(clampMax, (int)span.second);
         if (x1 >= x0) fn(x0, x1);
       }
     } else {
-      for (auto it = activeSpanUnionScratch.rbegin();
-           it != activeSpanUnionScratch.rend(); ++it) {
+      for (auto it = unionSpans->rbegin();
+           it != unionSpans->rend(); ++it) {
         int x0 = imax(clampMin, (int)it->first);
         int x1 = imin(clampMax, (int)it->second);
         if (x1 >= x0) fn(x0, x1);
@@ -425,14 +492,17 @@
     for (int i = 0; i < (int)L->components.size(); i++) {
       Comp& component = L->components[i];
       if (component.cells.empty()) continue;
-      uint8_t material = L->grid[component.cells[0]];
-      if (material == ICE) L->iceComponents.push_back(i);
-      if (isMyceliumMaterial(material)) {
-        for (int k : component.cells) if (L->grid[k] == MYCELIUM_SPORE) {
-          L->myceliumComponents.push_back(i);
-          break;
-        }
-      } else if (component.growing && isPlantMaterial(material)) {
+      bool hasIce = false, hasMyceliumSpore = false, hasPlant = false;
+      for (int k : component.cells) {
+        uint8_t material = L->grid[k];
+        hasIce = hasIce || material == ICE;
+        hasMyceliumSpore = hasMyceliumSpore || material == MYCELIUM_SPORE;
+        hasPlant = hasPlant || isPlantMaterial(material);
+      }
+      if (hasIce) L->iceComponents.push_back(i);
+      if (hasMyceliumSpore) {
+        L->myceliumComponents.push_back(i);
+      } else if (component.growing && hasPlant) {
         L->growingPlantComponents.push_back(i);
       }
     }
@@ -716,6 +786,7 @@
   }
   // Fully reset dirty tracking (row marks + render chunk flags) for the active layer.
   void clearAllDirty() {
+    forces.invalidateLooseCandidateCache(L);
     for (int y = 0; y < rows; y++) {
       L->rowMarkSpans[y].clear();
       L->simOnlyRowMarkSpans[y].clear();
@@ -773,11 +844,12 @@
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       markLayerRowSpan(L, y, x, x);
     }
-    for (Body* b : L->bodies) if (bodyNeedsBakeTick(L, b)) {
-      int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
-      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
-      markLayerRowSpan(L, y, x, x);
-    }
+    if (!layerBakeRetryDeferred(L))
+      for (Body* b : L->bodies) if (bodyNeedsBakeTick(b)) {
+        int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
+        if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+        markLayerRowSpan(L, y, x, x);
+      }
     foldRowMarksToRender();
     for (int y = 0; y < rows; y++) {
       L->activeRowSpans[y].clear();
@@ -904,25 +976,24 @@
     if (isLooseOverlayMat(a) || isLooseOverlayMat(b))
       noteLooseDirtyCol(k - (k / cols) * cols);
   }
-  // Keep looseColCount in sync with LIVE grid[] (not next[]).
-  inline void adjustLooseColCount(int x, uint8_t oldM, uint8_t newM) {
-    if (x < 0 || x >= cols || (int)L->looseColCount.size() != cols) return;
-    if (isLooseOverlayMat(oldM)) L->looseColCount[x]--;
-    if (isLooseOverlayMat(newM)) L->looseColCount[x]++;
-  }
   inline void writeGridIndex(int k, uint8_t m) {
     if (k < 0 || k >= cols * rows) return;
+    if (L->grid[k] == m) {
+      bool momentumChanged = (L->fallSpeed && L->fallSpeed[k] != 0)
+        || (L->liquidVel && L->liquidVel[k] != 0);
+      if (L->fallSpeed) L->fallSpeed[k] = 0;
+      if (L->liquidVel) L->liquidVel[k] = 0;
+      if (momentumChanged) markCellIndex(k);
+      return;
+    }
     if (L->fallSpeed) L->fallSpeed[k] = 0;
-    if (L->grid[k] == m) return;
     if (L->liquidVel) L->liquidVel[k] = 0;
-    int x = k - (k / cols) * cols;
     uint8_t old = L->grid[k];
     if (m == NEUTRONIUM) L->forceSourcePresent = true;
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
-      fg.forceWakePending = bg.forceWakePending = true;
+      forces.noteNeutroniumWrite(L, k, old, m);
     }
     noteLooseGroundTouch2At(k, old, m);
-    adjustLooseColCount(x, old, m);
     if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;
     L->grid[k] = m;
     markCellIndex(k);

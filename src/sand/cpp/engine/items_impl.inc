@@ -3,7 +3,6 @@
 // toward nearby players. Particles are cosmetic mining debris. Neither writes the
 // grid, enters the tile store, or consumes the simulation RNG.
 
-int ItemSystem::itemCell(const Item& it) { int x = (int)std::floor(it.px), y = (int)std::floor(it.py); return y * E.cols + x; }
 // A grid cell is "solid" to an item exactly as it is to a player (settled powder +
 // rigids block; liquids/gas/empty do not). Below the buffer = floor.
 bool ItemSystem::itemGridSolid(int x, int y) {

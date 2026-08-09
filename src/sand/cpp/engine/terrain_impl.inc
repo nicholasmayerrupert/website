@@ -318,16 +318,6 @@ TerrainGen::DeepCavernPlan TerrainGen::deepCavernPlan(int gx, int gy) {
   return plan;
 }
 
-bool TerrainGen::segmentContains(int x, int y, int ax, int ay, int bx, int by, double radius) {
-  double vx = bx - ax, vy = by - ay;
-  double wx = x - ax, wy = y - ay;
-  double vv = vx * vx + vy * vy;
-  double t = vv > 0 ? (wx * vx + wy * vy) / vv : 0.0;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  double dx = x - (ax + vx * t), dy = y - (ay + vy * t);
-  return dx * dx + dy * dy <= radius * radius;
-}
-
 bool TerrainGen::taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
                                         double startRadius, double endRadius, uint32_t salt) {
   double reach = std::fmax(startRadius, endRadius) + 1.1;

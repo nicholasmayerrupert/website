@@ -2,6 +2,14 @@
 // local render engine, plus the shared base64 helpers. The host-side encode
 // half lives in server/worldEncode.js so it never ships in the browser bundle.
 
+import {
+  isValidWorldRle,
+  maxWorldDiffBytes,
+  maxWorldRleBytes,
+  worldRleHash,
+} from '../worldPacketValidation.js';
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
+
 // base64 <-> Uint8Array, chunked so large snapshots don't overflow the call
 // stack (String.fromCharCode(...big) throws). Node uses Buffer when available.
 const hasBuffer = typeof globalThis.Buffer !== 'undefined';
@@ -23,78 +31,53 @@ export function b64ToBytes(s) {
   return u8;
 }
 
-const readU16 = (b, p) => b[p] | (b[p + 1] << 8);
-const readU32 = (b, p) => (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0;
-
-function validWorldRle(bytes, cells) {
-  let p = 0;
-  for (let layer = 0; layer < 2; layer++) {
-    let filled = 0;
-    while (filled < cells) {
-      if (p + 5 > bytes.length) return false;
-      const run = readU32(bytes, p);
-      p += 5;
-      if (run === 0 || run > cells - filled) return false;
-      filled += run;
-    }
-  }
-  return p === bytes.length;
-}
-
-function validDiff(bytes, cols, rows) {
-  let p = 0;
-  for (let layer = 0; layer < 2; layer++) {
-    if (p + 2 > bytes.length) return false;
-    const rects = readU16(bytes, p); p += 2;
-    for (let i = 0; i < rects; i++) {
-      if (p + 8 > bytes.length) return false;
-      const x0 = readU16(bytes, p), y0 = readU16(bytes, p + 2);
-      const x1 = readU16(bytes, p + 4), y1 = readU16(bytes, p + 6);
-      p += 8;
-      if (x1 < x0 || y1 < y0 || x1 > cols || y1 > rows) return false;
-      const area = (x1 - x0) * (y1 - y0);
-      if (p + area > bytes.length) return false;
-      p += area;
-    }
-  }
-  return p === bytes.length;
-}
-
-export function validateWorldMessage(m) {
+export function validateWorldMessage(m, { verifyHash = false } = {}) {
   const cells = m?.cols * m?.rows;
   if (!Number.isInteger(m?.cols) || !Number.isInteger(m?.rows) || m.cols <= 0 || m.rows <= 0 ||
-      m.cols > 16384 || m.rows > 16384 || !Number.isSafeInteger(cells) || cells > 8_000_000 ||
-      typeof m.data !== 'string') return null;
+      m.cols > ENGINE_MAX_DIMENSION || m.rows > ENGINE_MAX_DIMENSION
+      || !Number.isSafeInteger(cells) || cells > ENGINE_MAX_CELLS ||
+      typeof m.data !== 'string' || !Number.isInteger(m.hash)
+      || m.hash < 0 || m.hash > 0xffffffff) return null;
   // Alternating cells are the largest legal RLE stream: five bytes per cell,
   // for each of the two layers. Reject oversized input before allocating it.
-  if (m.data.length > Math.ceil((cells * 10) / 3) * 4 + 4) return null;
+  if (m.data.length > Math.ceil(maxWorldRleBytes(cells) / 3) * 4 + 4) return null;
   try {
     const bytes = b64ToBytes(m.data);
-    return validWorldRle(bytes, cells) ? bytes : null;
+    if (verifyHash)
+      return worldRleHash(bytes, cells) === (m.hash >>> 0) ? bytes : null;
+    return isValidWorldRle(bytes, cells) ? bytes : null;
   } catch { return null; }
 }
 
 // Client: apply a world / diff message. Returns whether the post-apply grid hash
 // matches the host's stated hash (a mismatch on a diff means a lost packet -> the
 // client should request a resync).
-export function applyWorldMessage(engine, m, { mirror = false, bytes = null } = {}) {
-  if (!engine || engine.cols !== m.cols || engine.rows !== m.rows) return false;
-  const payload = bytes ?? validateWorldMessage(m);
-  if (!payload) return false;
+export function applyWorldMessage(engine, m, { mirror = false, validatedBytes = null } = {}) {
+  if (!engine || engine.cols !== m?.cols || engine.rows !== m?.rows) return false;
+  // `validatedBytes` is an internal fast path for callers that just received
+  // this array from validateWorldMessage. Direct callers still take the full JS
+  // boundary validation below; the native decoder validates transactionally in
+  // both cases before mutating the engine.
+  const payload = validatedBytes ?? validateWorldMessage(m);
+  if (!(payload instanceof Uint8Array)) return false;
+  let applied;
   if (mirror) {
-    engine.applyWorldMirror(payload, m.offsetX, m.offsetY);
-    engine.setMirrorWorldTick?.(m.tick);
-  } else engine.applyWorld(payload);
-  return engine.gridHash() === (m.hash >>> 0);
+    applied = engine.applyWorldMirror(payload, m.offsetX, m.offsetY);
+    if (applied === false) return false;
+  } else if (engine.applyWorld(payload) === false) return false;
+  if (engine.gridHash() !== (m.hash >>> 0)) return false;
+  if (mirror) engine.setMirrorWorldTick?.(m.tick);
+  return true;
 }
 export function applyDiffMessage(engine, m, { mirror = false } = {}) {
-  if (!engine || typeof m?.data !== 'string' || m.data.length > Math.ceil((engine.cols * engine.rows * 18) / 3) * 4 + 16) return false;
+  if (!engine || typeof m?.data !== 'string'
+      || m.data.length > Math.ceil(maxWorldDiffBytes(engine.cols * engine.rows) / 3) * 4 + 4) return false;
   let bytes;
   try { bytes = b64ToBytes(m.data); } catch { return false; }
-  if (!validDiff(bytes, engine.cols, engine.rows)) return false;
   if (mirror) {
-    engine.applyDiffMirror(bytes);
-    engine.setMirrorWorldTick?.(m.tick);
-  } else engine.applyDiff(bytes);
-  return engine.gridHash() === (m.hash >>> 0);
+    if (engine.applyDiffMirror(bytes) === false) return false;
+  } else if (engine.applyDiff(bytes) === false) return false;
+  if (engine.gridHash() !== (m.hash >>> 0)) return false;
+  if (mirror) engine.setMirrorWorldTick?.(m.tick);
+  return true;
 }

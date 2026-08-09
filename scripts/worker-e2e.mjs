@@ -85,6 +85,89 @@ try {
     return [before, window.__sandPerf().workerEdges];
   });
   check('auxiliary pointer release does not alter creative draft edges', auxiliaryEdges[0] === auxiliaryEdges[1], auxiliaryEdges.join(' -> '));
+  await page.evaluate(() => window.__sandTest.retryAuthority());
+  await page.waitForFunction(() => {
+    const perf = window.__sandPerf();
+    return perf.workerControls > 0 && perf.worldTick > 2;
+  }, null, { timeout: 30000 });
+  check('a ready authority retry resumes control and world stepping',
+    await page.evaluate(() => {
+      const perf = window.__sandPerf();
+      return perf.workerControls > 0 && perf.worldTick > 2;
+    }));
+  const retryResize = await page.evaluate(() => {
+    const test = window.__sandTest;
+    const beforeCols = test.info().cols;
+    test.retryAuthority();
+    document.querySelector('sand-game')._game.zoomOut();
+    return beforeCols;
+  });
+  await page.waitForFunction((beforeCols) => {
+    const perf = window.__sandPerf();
+    return window.__sandTest.info().cols > beforeCols
+      && !perf.workerResizePending && perf.workerControls > 0 && perf.worldTick > 2;
+  }, retryResize, { timeout: 30000 });
+  check('a resize issued during authority retry accepts its requested world',
+    await page.evaluate((beforeCols) => {
+      const perf = window.__sandPerf();
+      return window.__sandTest.info().cols > beforeCols
+        && !perf.workerResizePending && perf.workerControls > 0 && perf.worldTick > 2;
+    }, retryResize));
+  await page.evaluate(() => {
+    window.__sandTest.retryAuthority();
+    window.__sandTest.setPaused(true);
+  });
+  await page.waitForFunction(() => {
+    const perf = window.__sandPerf();
+    return perf.mirrorPacketType === 'full' && perf.worldTick === 0
+      && perf.workerControls === 0;
+  }, null, { timeout: 30000 });
+  const pausedTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  await page.waitForTimeout(300);
+  const pausedTickAfterRetry = await page.evaluate(() => window.__sandPerf().worldTick);
+  check('authority retry preserves an active simulation pause',
+    pausedTickAfterRetry === pausedTick, `${pausedTick} -> ${pausedTickAfterRetry}`);
+  await page.evaluate(() => window.__sandTest.setPaused(false));
+  await page.waitForFunction((tick) => {
+    const perf = window.__sandPerf();
+    return perf.workerControls > 0 && perf.worldTick > tick;
+  }, pausedTick, { timeout: 30000 });
+
+  // Runtime tool/material configuration sent during worker initialization is
+  // applied before the replacement starts stepping.
+  await page.evaluate(() => {
+    window.__sandTest.retryAuthority();
+    window.__sandTest.setCreativeMaterial(0, 1); // SAND
+  });
+  await page.waitForFunction(() => {
+    const perf = window.__sandPerf();
+    return perf.workerControls > 0 && perf.worldTick > 2;
+  }, null, { timeout: 30000 });
+  const configuredPaint = await page.evaluate(() => {
+    const t = window.__sandTest;
+    const rect = document.querySelector('sand-game').shadowRoot
+      .querySelector('#sand-main').getBoundingClientRect();
+    const px = Math.floor(rect.width * 0.5);
+    const py = Math.floor(rect.height * 0.14);
+    return {
+      x: rect.left + px,
+      y: rect.top + py,
+      before: t.materialCountBoth(1),
+    };
+  });
+  // Paint/erase are continuous tools. Hold across an authority turn so this
+  // assertion tests startup config replay rather than press/release coalescing.
+  await page.mouse.move(configuredPaint.x, configuredPaint.y);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(250);
+  await page.mouse.up({ button: 'left' });
+  await page.waitForFunction((before) => window.__sandTest.materialCountBoth(1) > before,
+    configuredPaint.before, { timeout: 10000 });
+  check('authority retry preserves the selected creative material',
+    await page.evaluate((before) => window.__sandTest.materialCountBoth(1) > before,
+      configuredPaint.before));
+  await page.evaluate(() => window.__sandTest.setCreativeMaterial(3, 0)); // CUBE
+  await page.waitForTimeout(50);
   const desktopAudioUi = await page.locator('sand-game').evaluate((host) => ({
     buttons: host.shadowRoot.querySelectorAll('.sg-sound').length,
     enabled: host._game.getAudioState().enabled,
@@ -348,18 +431,55 @@ try {
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
-  await page.evaluate(() => window.__sandTest.setPlayMode(false));
-  const baselineRafHz = await countRaf(1000);
-  await page.evaluate(() => window.__sandTest.setWorldDelay(22));
+  const stressPaint = await page.evaluate(() => {
+    const test = window.__sandTest;
+    test.setPlayMode(false);
+    test.setDrawMode(true);
+    test.setCreativeMaterial(0, 1); // SAND keeps the cellular clock active.
+    const rect = document.querySelector('sand-game').shadowRoot
+      .querySelector('#sand-main').getBoundingClientRect();
+    return {
+      x: rect.left + Math.floor(rect.width * 0.5),
+      y: rect.top + Math.floor(rect.height * 0.14),
+      sand: test.materialCountBoth(1),
+      edges: window.__sandPerf().workerEdges,
+    };
+  });
+  const baselineRafFrames = await countRaf(1000);
+  await page.mouse.move(stressPaint.x, stressPaint.y);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForFunction(({ sand, edges }) =>
+    window.__sandTest.materialCountBoth(1) > sand && window.__sandPerf().workerEdges > edges,
+    stressPaint, { timeout: 10000 });
+  const pairedStart = await page.evaluate(() => {
+    window.__sandTest.setWorldDelay(22);
+    const perf = window.__sandPerf();
+    return { actorTick: perf.actorTick, worldTick: perf.worldTick };
+  });
   const cam0 = await page.evaluate(() => window.__sandTest.getCam().x);
   const rafFrames = await countRaf(2000);
   await page.keyboard.down('d');
   await page.waitForTimeout(750);
   await page.keyboard.up('d');
   const result = await page.evaluate(() => ({ perf: window.__sandPerf(), camX: window.__sandTest.getCam().x }));
+  await page.mouse.up({ button: 'left' });
   const rafHz = rafFrames / 2;
-  check('main-thread RAF remains independent of the slow world', rafHz >= Math.max(2, baselineRafHz * 0.5), `${baselineRafHz.toFixed(1)} -> ${rafHz.toFixed(1)} Hz; apply ${result.perf.mirrorApplyMs?.toFixed(1)}ms, render ${result.perf.renderMs?.toFixed(1)}ms, packet ${result.perf.mirrorPacketBytes}`);
+  // The one-second baseline and two-second stress windows produce the same raw
+  // frame count at exactly half cadence. Permit one boundary callback of
+  // quantization at the very low rates seen on a loaded headless test host.
+  const minStressRafFrames = Math.max(4, baselineRafFrames - 1);
+  const actorDelta = result.perf.actorTick - pairedStart.actorTick;
+  const worldDelta = result.perf.worldTick - pairedStart.worldTick;
+  check('main-thread RAF remains independent of the slow world',
+    rafFrames >= minStressRafFrames,
+    `${baselineRafFrames.toFixed(1)} -> ${rafHz.toFixed(1)} Hz; ` +
+      `${rafFrames}/${minStressRafFrames} stress frames; ` +
+      `apply ${result.perf.mirrorApplyMs?.toFixed(1)}ms, ` +
+      `render ${result.perf.renderMs?.toFixed(1)}ms, packet ${result.perf.mirrorPacketBytes}`);
   check('stress hook reduced worker world TPS', result.perf.worldTps < 55, `${result.perf.worldTps.toFixed(1)} TPS`);
+  check('slow authority keeps actor and world ticks paired',
+    actorDelta > 0 && actorDelta === worldDelta,
+    `+${actorDelta} / +${worldDelta}`);
   check('creative camera keeps moving while world is slow', result.camX > cam0 + 5, `${cam0.toFixed(1)} -> ${result.camX.toFixed(1)}`);
   await page.evaluate(() => window.__sandTest.setWorldDelay(0));
 

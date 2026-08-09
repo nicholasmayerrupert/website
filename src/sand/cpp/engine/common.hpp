@@ -34,6 +34,8 @@
 
 // Simulation tunables.
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5;
+static const int   ENGINE_MAX_DIMENSION = 16384;
+static const uint64_t ENGINE_MAX_CELLS = 8000000ull;
 // Runtime storage profiles. The browser presentation mirror never advances the
 // cellular simulation, while the authority worker never creates a GL context.
 // Keeping those roles explicit avoids allocating both halves of the engine in
@@ -129,8 +131,7 @@ static const int    CAM_SHIFT_EDGE_MARGIN = 40;    // slide the world this near 
 // budget bounds the prefetch's own frame cost (~1.5ms; spread over several frames).
 static const int    PREFETCH_LOOKAHEAD = 96;
 static const int    PREFETCH_CELLS_PER_FRAME = 9000;
-static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1, BRUSH_ACID = 2,
-                 BRUSH_LAVA = 2, BRUSH_ICE = 2, BRUSH_STONE = 2, BRUSH_DRIFTWOOD = 1, BRUSH_ERASE = 3, CUBE_HALF = 6;
+static const int BRUSH_ERASE = 3, CUBE_HALF = 6;
 static const double EMIT_INTERVAL_MS = 18.0;
 // How far the infinite world slides per streaming shift (cells).
 static const int WORLD_SHIFT_COLS = 128;
@@ -198,6 +199,22 @@ struct Comp {
   // Cleared once a growing plant reaches its species' size cap.
   bool growing = false;
   std::vector<int> woodCells, seedWoodCells;
+};
+
+// Stateful components keep one authoritative metadata record by persistent id.
+// Tile fragments carry only membership, so restore order cannot select an older
+// copy of a component's clocks or growth state.
+struct StoredCompState {
+  uint8_t plantType = PT_STANDARD;
+  int age = 0;
+  int bakedAssemblyId = 0;
+  bool gravityGrowth = false;
+  bool growing = false;
+};
+
+struct StoredCompFragment {
+  int id = 0;
+  std::vector<uint16_t> cellOffsets;
 };
 
 enum BodyCollisionFace : uint8_t {
@@ -462,7 +479,6 @@ static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_D
 // visible hotbar; the rest are the openable grid. A slot holds either a material
 // stack (placeable) or a tool (mines; never stacks). count 0 = empty.
 // INV_HOTBAR / INV_SLOTS live in abi.generated.hpp (shared with the JS HUD).
-static const int INV_GRID = INV_SLOTS - INV_HOTBAR; // 27
 static const int INV_STACK_MAX = 999;
 // Captured weapons carry their remaining ammunition in InvSlot::count. The
 // starter blast gun is deliberately absent: its singleton count is ownership,
@@ -726,6 +742,7 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_BODY_RASTER_CLEARANCE = 0.02;
 static const int    R_BODY_POSITION_ITERS = 6;
+static const int    R_BODY_POSITION_SLENDER_ITERS = 8;
 static const double R_SLENDER_PARALLEL_COS = 0.75;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
 static const int    R_IMPACT_SOUND_SEPARATION_TICKS = 12;

@@ -16,19 +16,9 @@ const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath),
 const pngArg = process.argv.indexOf('--png');
 const pngPath = pngArg >= 0 ? process.argv[pngArg + 1] : null;
 const baseURL = `http://localhost:${PORT}/`;
+const WORLD_SEED = 0xD1EC70;
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
-const waitForWorkerPause = async (page) => {
-  let lastTick = -1, stableSamples = 0;
-  for (let i = 0; i < 20; i++) {
-    await page.waitForTimeout(100);
-    const tick = await page.evaluate(() => window.__sandPerf().worldTick);
-    stableSamples = tick === lastTick ? stableSamples + 1 : 0;
-    if (stableSamples >= 2) return;
-    lastTick = tick;
-  }
-  throw new Error('world worker did not pause');
-};
 
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
@@ -55,6 +45,9 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: 'no-preference' });
   const page = await context.newPage();
+  // Keep viewport-dependent population and pixel probes on one terrain fixture;
+  // the headless creature suites cover spawning across varied world seeds.
+  await page.addInitScript((seed) => { Math.random = () => seed / 0x100000000; }, WORLD_SEED);
   await page.goto(`${baseURL}fps`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForTimeout(1500);
@@ -116,21 +109,26 @@ try {
   // into view at once.
   await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
-  await page.waitForFunction(() => {
-    return window.__sandTest.getCreatures().some((c) =>
-      c.species >= 7 && (c.alive || c.spawnProgress > 0));
-  }, null, { timeout: 12000 });
-  const survival = await page.evaluate(() => {
+  // The presentation engine installs the test hook before its independently
+  // initialized authority worker receives a viewport and starts actor time.
+  await page.waitForFunction(() => window.__sandPerf().actorTick > 0,
+    null, { timeout: 60000 });
+  const survivalHandle = await page.waitForFunction(() => {
     const T = window.__sandTest;
     const host = document.querySelector('sand-game');
     const population = T.getCreatures().filter((c) => c.alive || c.spawnProgress > 0);
+    const armed = population.filter((c) => c.species >= 7 && c.species <= 11);
+    if (!armed.length) return false;
     return {
       species: population.map((c) => c.species),
-      armed: population.filter((c) => c.species >= 7 && c.species <= 11).length,
+      armed: armed.length,
       ambient: population.filter((c) => c.species <= 6).length,
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
-  });
+  }, null, { timeout: 30000 });
+  // Keep every population assertion on the same qualifying worker snapshot.
+  const survival = await survivalHandle.jsonValue();
+  await survivalHandle.dispose();
   console.log('\n/game creature spawning');
   check(`survival begins with a paced armed encounter (${survival.armed} reserved)`,
     survival.armed >= 1 && survival.armed < 5);
@@ -145,8 +143,10 @@ try {
   await page.evaluate(() => {
     window.__sandTest.setCreatureRuntime(true, false);
     window.__sandTest.setPaused(true);
+    // This zero-step authority command is ordered before every spawn request and
+    // atomically takes ownership of the worker actor clock.
+    window.__sandTest.stepAuthorityActors(0);
   });
-  await waitForWorkerPause(page);
   const existingSpecies = new Set(survival.species);
   const breachChoices = [7, 9, 10, 8, 11].filter((id) => !existingSpecies.has(id));
   let portal = null;
@@ -157,29 +157,32 @@ try {
       }, { species: breachChoices[i], salt: 700 + i * 997 + attempt * 131 });
       await page.waitForFunction((species) => window.__sandTest.getCreatures()
         .some((c) => c.species === species && c.spawnProgress > 0),
-      breachChoices[i], { timeout: 250 }).catch(() => null);
+      breachChoices[i], { timeout: 2000 }).catch(() => null);
       portal = await page.evaluate((species) => window.__sandTest.getCreatures()
         .find((c) => c.species === species && c.spawnProgress > 0) || null,
       breachChoices[i]);
     }
   }
   if (portal) {
-    // Advance into the readable middle of the portal animation, then freeze
-    // again before sampling pixels. Its minimum 54-tick warning cannot finish
-    // during this short window.
-    await page.evaluate(() => window.__sandTest.setPaused(false));
-    await page.waitForTimeout(400);
-    await page.evaluate(() => window.__sandTest.setPaused(true));
-    await waitForWorkerPause(page);
+    // Advance by an exact count into the readable middle of the portal. Every
+    // warning lasts at least 54 actor turns, so 24 cannot materialize it.
+    const initialProgress = portal.spawnProgress;
+    await page.evaluate(() => window.__sandTest.stepAuthorityActors(24));
+    const progressedHandle = await page.waitForFunction(({ id, progress }) => {
+      const c = window.__sandTest.getCreatures()
+        .find((candidate) => candidate.id === id && candidate.spawnProgress > progress);
+      return c && !c.alive ? c : false;
+    }, { id: portal.id, progress: initialProgress }, { timeout: 5000 });
+    portal = await progressedHandle.jsonValue();
+    await progressedHandle.dispose();
   }
   const portalPixels = await page.evaluate((portalId) => {
     const T = window.__sandTest, info = T.info();
     const c = T.getCreatures().find((x) => x.id === portalId && x.spawnProgress > 0);
     if (!c) {
-      T.setPaused(false);
-      return { visible: false, colored: 0, id: 0 };
+      return { visible: false, colored: 0, id: 0, progress: 0 };
     }
-    T.setPaused(true); T.render();
+    T.render();
     const r = T.cellRect(c.x, c.y);
     const pad = Math.ceil(r.size * 7);
     const x = Math.max(0, Math.floor(r.x - pad));
@@ -193,23 +196,24 @@ try {
       if ((blue > 175 && blue > red * 1.25 && green > 65) ||
           (blue > 220 && green > 190 && red < 225)) colored++;
     }
-    T.setPaused(false);
     return {
       visible: r.x + c.w * r.size > 0 && r.y + c.h * r.size > 0 &&
         r.x < info.canvasW && r.y < info.canvasH,
-      colored, id: c.id,
+      colored, id: c.id, progress: c.spawnProgress,
+      rect: [Math.round(r.x), Math.round(r.y), Math.round(r.size)],
     };
   }, portal?.id || 0);
-  check('visible fallback is replicated as a non-materialized portal',
+  check(`visible fallback is replicated as a non-materialized portal (progress ${portalPixels.progress.toFixed(2)}, rect ${portalPixels.rect?.join(',') || 'none'})`,
     !!portal && !portal.alive && portal.spawnProgress > 0 && portalPixels.visible);
   check(`breach portal renders its cyan/violet pixel animation (${portalPixels.colored} pixels)`,
     portalPixels.colored > 0);
 
   let portalMaterialized = false;
   if (portalPixels.id) {
+    await page.evaluate(() => window.__sandTest.stepAuthorityActors(90));
     await page.waitForFunction((id) => window.__sandTest.getCreatures()
       .some((c) => c.id === id && c.alive && c.spawnProgress === 0),
-    portalPixels.id, { timeout: 2500 }).catch(() => null);
+    portalPixels.id, { timeout: 5000 }).catch(() => null);
     portalMaterialized = await page.evaluate((id) => window.__sandTest.getCreatures()
       .some((c) => c.id === id && c.alive && c.spawnProgress === 0),
     portalPixels.id);

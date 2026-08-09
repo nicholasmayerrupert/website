@@ -24,7 +24,6 @@ class TerrainGen {
   static constexpr int DEEP_CAVERN_HEIGHT = 208;
   static constexpr double SURFACE_FREQ = 0.008;
   static constexpr double CAVE_FREQ = 0.01;    // lower frequency produces larger features
-  static constexpr double CAVE_THRESH = 0.66;
   static constexpr double TREE_PROB = 0.05;
   static constexpr double BIOME_FREQ = 0.0018; // broad climate regions with smaller moisture pockets
   static constexpr double ORE_FREQ = 0.11;     // ore-vein noise wavelength (small clusters)
@@ -113,7 +112,6 @@ class TerrainGen {
   static int floorDiv(int value, int divisor);
   int classifyBiomeAt(int worldX);
   CaveRegionPlan cavePlan(int region);
-  static bool segmentContains(int x, int y, int ax, int ay, int bx, int by, double radius);
   bool taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
                               double startRadius, double endRadius, uint32_t salt);
 };

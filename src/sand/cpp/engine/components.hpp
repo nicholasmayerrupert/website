@@ -11,9 +11,9 @@ enum class ConnectivitySplitMode : uint8_t {
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
-  int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
+  int liquidFaces = 0, bottomLiquidFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
   double liquidDensityArea = 0, bottomPowderDensityArea = 0;
-  double displacedArea = 0, displacedLiquidMass = 0;
+  double displacedLiquidMass = 0;
 };
 
 
@@ -49,7 +49,7 @@ class ComponentSystem {
   bool jointDirty = false;
   // Reusable scratch for computeGroundedBoth() (sized to cols*rows once).
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgVisited;
-  std::vector<int> cgStack, cgIsland;
+  std::vector<int> cgIsland;
   // Parallel x-coordinate stack for computeGrounded's flood.
   std::vector<int32_t> groundStackX;
   // cellComp index -> Comp* map (rebuilt by indexComponents()).
@@ -62,14 +62,16 @@ class ComponentSystem {
   std::vector<uint8_t> gvGrounded;
   std::vector<int32_t> gvCellComp;
   std::vector<int> cgRemovedCells, cgBlobN, cgRemovedComp;
-  struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
+  struct CrossLayerBond { int fgComp = -1, bgComp = -1; };
   std::vector<CrossLayerBond> cgBonds;
-  std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
+  std::vector<int> cgParent, cgGroundParent;
   std::vector<int> cgAdjCounts;
-  std::vector<uint64_t> cgAdjScratch;
+  std::vector<uint64_t> cgAdjScratch, cgPatchEdges;
+  std::vector<uint8_t> cgRootBonded, cgRootGrounded, cgChangedComponents;
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
-  std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
-  int32_t cgCompGen = 0;
+  std::vector<Comp*> mobileScratch;
+  std::vector<int> mobileGlobalIds, mobileLocalOf;
+  std::vector<uint8_t> mobileAnchored;
   // Membership mirrors for assembly contact probes.
   // The real unordered_sets are kept wherever their ITERATION order feeds cell
   // writes or FP sums; these only replace the .count() hashing.
@@ -113,7 +115,6 @@ class ComponentSystem {
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev);
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);
-  bool compIdIsPlant(Layer& lay, int id);
   template <class Cells>
   void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);

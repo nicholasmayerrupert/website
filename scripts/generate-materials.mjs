@@ -170,6 +170,7 @@ enum ToolTier : uint8_t { ${cppEnumToolTier} };
 // Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
 ${cppFlagConsts}
 
+static const int MATERIAL_COUNT = ${materials.length};
 static const int TABLE = ${tableSize};
 static const float    DENSITY[TABLE]        = {${col((m) => m.density, fnum)}};
 static const uint8_t  DENSITY_SORTED[TABLE] = {${col((m) => (m.looseSorted ? 1 : 0), u8)}};

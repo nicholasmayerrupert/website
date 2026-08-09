@@ -78,6 +78,33 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('nothing transferred to the bg target cell', e.getGridBg()[k(30, 49)] === MAT.EMPTY);
 }
 
+// A cross-layer write is authoritative world state in both layers. Streaming the
+// destination tile away and back must restore the transferred material instead
+// of the procedural background that was cached before the transfer.
+{
+  console.log('transfer: background destination survives streaming');
+  const cols = 256, rows = 256, x = 48, y = 48;
+  const e = createEngineWasm({ cols, rows, worldSeed: 2, sinksOn: false, infinite: true });
+  e.setBgEnabled(true);
+  for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 2; xx <= x + 2; xx++) {
+    e.paintDiscLayer(0, xx, yy, 0, MAT.EMPTY, true);
+    e.paintDiscLayer(1, xx, yy, 0, MAT.EMPTY, true);
+  }
+  for (let yy = y + 1; yy < rows; yy++) for (let xx = x - 1; xx <= x + 1; xx++)
+    e.paintDiscLayer(0, xx, yy, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  e.paintDiscLayer(0, x, y, 0, MAT.SAND, true);
+  e.stepWorld();
+  check('stream fixture transferred into background',
+    e.getGrid()[y * cols + x] === MAT.EMPTY
+      && e.getGridBg()[y * cols + x] === MAT.SAND);
+  e.shiftWorldXY(128, 0);
+  e.shiftWorldXY(-128, 0);
+  check('streaming restores the transferred background cell',
+    e.getGridBg()[y * cols + x] === MAT.SAND);
+  e.destroy();
+}
+
 // 4. No oscillation + conservation: once transferred, the grain falls in the bg
 //    and never bounces back to the foreground.
 {

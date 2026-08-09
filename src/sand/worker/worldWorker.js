@@ -8,9 +8,8 @@ import {
 } from '../wasmBridge/abi.generated.js';
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
-import { createFixedRateClock } from '../timing/fixedRateClock.js';
+import { createTurnDeadline, SIM_STEP_MS } from '../timing/fixedRateClock.js';
 
-const WORLD_STEP_MS = 16;
 const STREAM_MARGIN = 40;
 const LIVE_SIM_COLS = 512;
 const LIVE_SIM_ROWS = 352;
@@ -50,9 +49,25 @@ let localPlayerId = 0;
 let missionId = MISSION.NONE;
 let activePlanetId = PLANET.EARTH;
 let latestInput = null;
-let actorClock = null;
 let lastInventoryHash = -1;
 let liveSimulationFocus = null;
+let closing = false;
+let initGeneration = 0;
+let pendingRuntimeConfig = null;
+let pendingResize = null;
+const turnDeadline = createTurnDeadline({ now: performance.now() });
+
+function shutdown() {
+  if (closing) return;
+  closing = true;
+  initGeneration++;
+  clearTimeout(timer);
+  const doomed = engine;
+  engine = null;
+  try { doomed?.destroy(); } catch { /* the worker is closing regardless */ }
+  try { self.postMessage({ type: 'destroyed' }); } catch { /* the worker is closing */ }
+  self.close();
+}
 
 function noteLightEdit(x, radius = 4) {
   if (!Number.isFinite(x)) return;
@@ -175,6 +190,54 @@ function applyCreatureRuntime() {
   engine.setCreatureRuntime(creatureNaturalSpawning || creatureSimulationRequested, creatureNaturalSpawning);
 }
 
+function applyRuntimeConfig(data) {
+  if (data.tool !== undefined) engine.setTool(data.tool | 0);
+  if (data.drawMode !== undefined) engine.setDrawMode(!!data.drawMode);
+  if (data.paused !== undefined) paused = !!data.paused;
+  if (data.artificialDelayMs !== undefined)
+    artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
+  if (data.creativeKind !== undefined) {
+    creativeKind = data.creativeKind | 0;
+    creativeValue = data.creativeValue | 0;
+    engine.setCreativeMaterial(creativeKind, creativeValue);
+  }
+  if (data.creatureNaturalSpawning !== undefined)
+    creatureNaturalSpawning = !!data.creatureNaturalSpawning;
+  if (!survival && (data.creativeKind !== undefined
+      || data.creatureNaturalSpawning !== undefined)) applyCreatureRuntime();
+}
+
+function applyResize(data) {
+  awaitingAck = false;
+  fullResyncRequested = false;
+  resizeId = data.resizeId | 0;
+  if (survival) {
+    survivalSpawnViewReady = false;
+    engine.setCreatureRuntime(true, false);
+  }
+  // The authority does not render, so its internal camera normally remains at
+  // startup. Give resizeLoadedWindow the presentation's exact world center.
+  if (Number.isFinite(data.worldCenterX) && Number.isFinite(data.worldCenterY)) {
+    engine.setViewport(1, 1, 1, 1);
+    engine.cameraSet(
+      data.worldCenterX - engine.getWorldOffsetX() - 0.5,
+      data.worldCenterY - engine.getWorldOffsetY() - 0.5,
+    );
+  }
+  // The last control describes the pre-resize viewport. Wait for a fresh one
+  // from the main thread after it accepts this full snapshot.
+  control = null;
+  liveSimulationFocus = null;
+  if (engine.resizeLoadedWindow(data.cols | 0, data.rows | 0)) {
+    epoch++;
+    sequence = 0;
+  }
+  postFull('resize');
+  // Coordinate-free inventory/cursor updates must cross the resized actor
+  // frame after their one-shot inventory hash was consumed.
+  postActors(true);
+}
+
 function postFull(reason) {
   sequence++;
   awaitingAck = true;
@@ -241,7 +304,10 @@ function toLocal(worldX, worldY) {
 }
 
 function streamForControl() {
-  if (!control || control.suspendStreaming) return false;
+  // A partial shift contains only dirtiness accumulated after the last packet.
+  // Keep its coordinate frame behind the unacknowledged diff that owns earlier
+  // edits, otherwise the presentation's latest-packet queue could drop them.
+  if (!control || control.suspendStreaming || awaitingAck) return false;
   // A viewport must fit inside the loaded window before edge streaming has a
   // meaningful answer. This also makes the worker robust to a resize/control
   // message reordering: an oversized view otherwise satisfies an edge test on
@@ -360,16 +426,17 @@ function applyContinuous(now) {
   if (!(control.buttons | 0)) lastToolWriteX = null;
 }
 
-function schedule(delay = WORLD_STEP_MS) {
+function schedule(delay = null) {
   clearTimeout(timer);
-  timer = setTimeout(run, delay);
+  const wait = delay ?? turnDeadline.nextDelay(performance.now());
+  timer = setTimeout(run, wait);
 }
 
 function run() {
-  if (!engine) return;
+  if (closing || !engine) return;
   const started = performance.now();
-  if (paused) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
-  if (!control) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
+  if (paused) { schedule(); return; }
+  if (!control) { schedule(); return; }
   const fromWorldOffsetX = engine.getWorldOffsetX();
   const fromWorldOffsetY = engine.getWorldOffsetY();
   const shifted = streamForControl();
@@ -402,17 +469,17 @@ function run() {
     applyContinuous(started);
   }
   const stepStart = performance.now();
-  actorClock?.advance(started, () => {
-    if (survival && latestInput && localPlayerId) {
-      const aimX = Math.floor(latestInput.worldAimX - engine.getWorldOffsetX());
-      const aimY = Math.floor(latestInput.worldAimY - engine.getWorldOffsetY());
-      engine.setPlayerInput(localPlayerId, { ...latestInput, aimX, aimY });
-    }
-    engine.stepActors();
-  });
+  if (survival && latestInput && localPlayerId) {
+    const aimX = Math.floor(latestInput.worldAimX - engine.getWorldOffsetX());
+    const aimY = Math.floor(latestInput.worldAimY - engine.getWorldOffsetY());
+    engine.setPlayerInput(localPlayerId, { ...latestInput, aimX, aimY });
+  }
+  // Authority time advances as one coherent tick. An over-budget world slows
+  // actors by the same amount instead of letting an actor catch-up loop race ahead.
+  engine.stepActors();
+  engine.stepWorld();
   // The DEV delay hook isolates scheduling without burning a browser CPU core.
-  if (artificialDelayMs <= 0) engine.stepWorld();
-  lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
+  lastStepMs = performance.now() - stepStart;
   rateSteps++;
   // Establish the new mirror coordinate frame before publishing any payload
   // whose local coordinates were translated by the stream. A requested full
@@ -436,87 +503,128 @@ function run() {
   // was posted immediately before the shift.
   postActors(shifted);
   if (!shifted && !postedFull) postDiffIfReady();
-  const targetTurnMs = artificialDelayMs > 0 ? artificialDelayMs : WORLD_STEP_MS;
-  schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
+  const targetTurnMs = Math.max(SIM_STEP_MS, artificialDelayMs);
+  if (targetTurnMs > SIM_STEP_MS)
+    schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
+  else schedule();
 }
 
 self.onmessage = async ({ data }) => {
   if (!data) return;
+  if (data.type === 'destroy') {
+    shutdown();
+    return;
+  }
+  if (closing) return;
   if (data.type === 'init') {
+    const generation = ++initGeneration;
     clearTimeout(timer);
     try {
       await initSandWasm();
     } catch (error) {
+      if (closing || generation !== initGeneration) return;
       self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
       return;
     }
-    engine?.destroy();
-    engine = createEngineWasm({
-      cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
-      infinite: true, sinksOn: false, storageRole: 'authority',
-      planetId: data.planetId,
-      gravityScale: data.gravityScale,
-    });
-    survival = !!data.survival;
-    engine.setPlayMode(survival);
-    engine.setSurvivalInventory(survival);
-    engine.setDrawMode(!!data.drawMode);
-    creativeKind = data.creativeKind | 0;
-    creativeValue = data.creativeValue | 0;
-    creatureNaturalSpawning = !!data.creatureNaturalSpawning;
-    creatureSimulationRequested = false;
-    engine.setCreativeMaterial(creativeKind, creativeValue);
-    // Wait for the first presentation control before natural spawning so the
-    // initial encounter also observes the real viewport, not camera defaults.
-    if (survival) engine.setCreatureRuntime(true, false);
-    else applyCreatureRuntime();
-    // Preserve the selected startup tool. The initial creative selection is an
-    // EMPTY placeholder until the palette emits a real material selection.
-    engine.setTool(data.tool | 0);
-    localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
-    missionId = survival ? data.missionId | 0 : MISSION.NONE;
-    activePlanetId = data.planetId | 0;
-    if (localPlayerId && activePlanetId === PLANET.SHIP) {
-      engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
-      engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
-      engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
-    }
-    if (localPlayerId && Array.isArray(data.loadout)) {
-      for (const stack of data.loadout.slice(0, 16)) {
-        const count = Math.max(0, Math.min(5000, stack?.count | 0));
-        const itemKind = stack?.itemKind | 0;
-        if (!count) continue;
-        if (itemKind === ITEM_KIND.MATERIAL) {
-          const material = stack?.material | 0;
-          if (material > MAT.EMPTY && material < MATERIALS.length) {
-            engine.addToInventory(localPlayerId, material, count);
+    if (closing || generation !== initGeneration) return;
+    try {
+      const previous = engine;
+      engine = null;
+      previous?.destroy();
+      engine = createEngineWasm({
+        cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
+        infinite: true, sinksOn: false, storageRole: 'authority',
+        planetId: data.planetId,
+        gravityScale: data.gravityScale,
+      });
+      survival = !!data.survival;
+      paused = !!data.paused;
+      artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
+      engine.setPlayMode(survival);
+      engine.setSurvivalInventory(survival);
+      engine.setDrawMode(!!data.drawMode);
+      creativeKind = data.creativeKind | 0;
+      creativeValue = data.creativeValue | 0;
+      creatureNaturalSpawning = !!data.creatureNaturalSpawning;
+      creatureSimulationRequested = false;
+      engine.setCreativeMaterial(creativeKind, creativeValue);
+      // Wait for the first presentation control before natural spawning so the
+      // initial encounter also observes the real viewport, not camera defaults.
+      if (survival) engine.setCreatureRuntime(true, false);
+      else applyCreatureRuntime();
+      // Preserve the selected startup tool. The initial creative selection is an
+      // EMPTY placeholder until the palette emits a real material selection.
+      engine.setTool(data.tool | 0);
+      if (pendingRuntimeConfig) {
+        const config = pendingRuntimeConfig;
+        pendingRuntimeConfig = null;
+        applyRuntimeConfig(config);
+      }
+      localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
+      missionId = survival ? data.missionId | 0 : MISSION.NONE;
+      activePlanetId = data.planetId | 0;
+      if (localPlayerId && activePlanetId === PLANET.SHIP) {
+        engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
+        engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
+        engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
+      }
+      if (localPlayerId && Array.isArray(data.loadout)) {
+        for (const stack of data.loadout.slice(0, 16)) {
+          const count = Math.max(0, Math.min(5000, stack?.count | 0));
+          const itemKind = stack?.itemKind | 0;
+          if (!count) continue;
+          if (itemKind === ITEM_KIND.MATERIAL) {
+            const material = stack?.material | 0;
+            if (material > MAT.EMPTY && material < MATERIALS.length) {
+              engine.addToInventory(localPlayerId, material, count);
+            }
+          } else if (itemKind >= ITEM_KIND.DYNAMITE_SATCHEL
+                     && itemKind <= ITEM_KIND.MINIGUN) {
+            engine.addSpecialItem(localPlayerId, itemKind, count);
           }
-        } else if (itemKind >= ITEM_KIND.DYNAMITE_SATCHEL &&
-                   itemKind <= ITEM_KIND.MINIGUN) {
-          engine.addSpecialItem(localPlayerId, itemKind, count);
         }
       }
-    }
-    if (missionId && !engine.startMission(missionId, localPlayerId)) {
-      self.postMessage({
-        type: 'error',
-        phase: 'mission',
-        message: 'The selected campaign mission could not start on this planet.',
-      });
-      engine.destroy();
+      if (missionId && !engine.startMission(missionId, localPlayerId)) {
+        self.postMessage({
+          type: 'error',
+          phase: 'mission',
+          message: 'The selected campaign mission could not start on this planet.',
+        });
+        engine.destroy();
+        engine = null;
+        return;
+      }
+      latestInput = null;
+      lastInventoryHash = -1;
+      epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null;
+      lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
+      survivalSpawnViewReady = false;
+      rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
+      turnDeadline.reset(performance.now());
+      if (pendingResize) {
+        const resize = pendingResize;
+        pendingResize = null;
+        applyResize(resize);
+      } else {
+        postFull('init');
+        postActors(true);
+      }
+      schedule();
+    } catch (error) {
+      engine?.destroy();
       engine = null;
-      return;
+      if (!closing && generation === initGeneration) {
+        self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
+      }
     }
-    latestInput = null;
-    actorClock = createFixedRateClock({ now: performance.now() });
-    lastInventoryHash = -1;
-    epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null;
-    lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
-    survivalSpawnViewReady = false;
-    rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
-    postFull('init');
-    postActors(true);
-    schedule();
+    return;
+  }
+  if (data.type === 'config' && !engine) {
+    pendingRuntimeConfig = { ...pendingRuntimeConfig, ...data };
+    return;
+  }
+  if (data.type === 'resize' && !engine) {
+    pendingResize = data;
     return;
   }
   if (!engine) return;
@@ -559,17 +667,7 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'edge') {
     edges.push(data);
   } else if (data.type === 'config') {
-    if (data.tool !== undefined) engine.setTool(data.tool | 0);
-    if (data.drawMode !== undefined) engine.setDrawMode(!!data.drawMode);
-    if (data.paused !== undefined) paused = !!data.paused;
-    if (data.artificialDelayMs !== undefined) artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
-    if (data.creativeKind !== undefined) {
-      creativeKind = data.creativeKind | 0;
-      creativeValue = data.creativeValue | 0;
-      engine.setCreativeMaterial(creativeKind, creativeValue);
-    }
-    if (data.creatureNaturalSpawning !== undefined) creatureNaturalSpawning = !!data.creatureNaturalSpawning;
-    if (!survival && (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined)) applyCreatureRuntime();
+    applyRuntimeConfig(data);
   } else if (data.type === 'test-paint-disc') {
     const p = toLocal(data.worldX, data.worldY);
     const radius = Math.max(1, data.radius | 0);
@@ -588,43 +686,17 @@ self.onmessage = async ({ data }) => {
     postSounds();
     postCreatures();
     postActors(true);
-  } else if (data.type === 'resize') {
-    awaitingAck = false;
-    fullResyncRequested = false;
-    resizeId = data.resizeId | 0;
-    if (survival) {
-      survivalSpawnViewReady = false;
-      engine.setCreatureRuntime(true, false);
-    }
-    // The authority does not render, so its internal camera normally remains at
-    // startup. Give resizeLoadedWindow the presentation's exact world center;
-    // otherwise its full snapshot can be re-anchored around that stale camera
-    // and clamp the visible mirror after a second mobile zoom.
-    if (Number.isFinite(data.worldCenterX) && Number.isFinite(data.worldCenterY)) {
-      engine.setViewport(1, 1, 1, 1);
-      engine.cameraSet(
-        data.worldCenterX - engine.getWorldOffsetX() - 0.5,
-        data.worldCenterY - engine.getWorldOffsetY() - 0.5,
-      );
-    }
-    // The last control describes the pre-resize viewport. Wait for a fresh one
-    // from the main thread after it accepts this full snapshot.
-    control = null;
-    liveSimulationFocus = null;
-    if (engine.resizeLoadedWindow(data.cols | 0, data.rows | 0)) {
-      epoch++;
-      sequence = 0;
-      postFull('resize');
-    } else postFull('resize');
-    // Coordinate-free inventory/cursor updates must cross the epoch with the
-    // resized actor frame. Otherwise an old pending packet can be superseded
-    // after its one-shot inventory hash was already consumed.
+  } else if (data.type === 'test-step-actors') {
+    // Test-driven actor turns own the worker clock while they run. Keeping the
+    // authority paused makes the requested count exact even on a loaded host.
+    paused = true;
+    const steps = Math.max(0, Math.min(240, data.steps | 0));
+    for (let i = 0; i < steps; i++) engine.stepActors();
+    postSounds();
+    postCreatures();
     postActors(true);
-  } else if (data.type === 'destroy') {
-    clearTimeout(timer);
-    engine.destroy();
-    engine = null;
-    self.postMessage({ type: 'destroyed' });
-    self.close();
+    postDiffIfReady();
+  } else if (data.type === 'resize') {
+    applyResize(data);
   }
 };

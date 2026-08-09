@@ -613,6 +613,9 @@ three deployment configurations.
 The runner checks that every `*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is
 declared before running suites. Headless tests use two workers; browser suites
 stay serial because their real-time rendering checks are contention-sensitive.
+CPU/memory-heavy headless suites and every browser suite declare exclusive
+concurrency in the manifest, so the runner drains active jobs before starting
+them even when `--jobs` is overridden. Suite metadata also owns timeout values.
 Pass `--jobs N` to `scripts/run-tests.mjs` or set `TEST_JOBS=N` to override that.
 Passing suites are summarized by default; add `--verbose` for their full output.
 Browser suites allocate strict ports and have per-suite timeouts.

@@ -19,6 +19,7 @@ import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/en
 import { gridHash } from './sand-test-util.mjs';
 import { getAvailablePort } from './test-port.mjs';
 import { WebSocket } from 'ws';
+import { worldRleHash } from '../src/sand/worldPacketValidation.js';
 
 const COLS = 200, ROWS = 120;
 const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
@@ -68,6 +69,110 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   globalThis.WebSocket = RealWebSocket;
 }
 
+// A dimension-changing WORLD rebuild is transactional all the way through the
+// prediction layer: invalid data and replacement construction failures both
+// leave the old prediction player on the retained presentation engine.
+{
+  console.log('presentation rebuild failure rollback');
+  const RealWebSocket = globalThis.WebSocket;
+  let socket;
+  const players = new Map();
+  let removedPlayers = 0;
+  const initialWorld = Uint8Array.of(
+    4, 0, 0, 0, 0,
+    4, 0, 0, 0, 0,
+  );
+  const resizedWorld = Uint8Array.of(
+    6, 0, 0, 0, 0,
+    6, 0, 0, 0, 0,
+  );
+  const initialHash = worldRleHash(initialWorld, 4);
+  const resizedHash = worldRleHash(resizedWorld, 6);
+  const engine = {
+    cols: 2, rows: 2, offX: 0, offY: 0,
+    applyWorldMirror(_bytes, x = 0, y = 0) { this.offX = x; this.offY = y; return true; },
+    setMirrorWorldTick() {},
+    getWorldOffsetX() { return this.offX; },
+    getWorldOffsetY() { return this.offY; },
+    getCam: () => ({ x: 0, y: 0 }),
+    cameraSet() {},
+    gridHash: () => initialHash,
+    resetDirty() {},
+    getActorTick: () => 0,
+    getPlayerSize: () => ({ w: 4, h: 8 }),
+    spawnPlayer(x, y) {
+      const id = 91;
+      players.set(id, { id, x, y, vx: 0, vy: 0, alive: true });
+      return id;
+    },
+    removePlayer(id) { removedPlayers++; players.delete(id); },
+    getPlayer: (id) => players.get(id) || null,
+    setPlayerState(id, state) { players.set(id, { ...players.get(id), ...state, id }); },
+    setPlayerInput() {},
+    stepPlayerOnly() {},
+    syncActorTick() {},
+  };
+  class RebuildWebSocket {
+    constructor() {
+      socket = this;
+      this.readyState = 0;
+      queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });
+    }
+    send(raw) {
+      const m = decode(raw);
+      if (m?.t === MSG.RESYNC) resyncRequests++;
+      if (m?.t === MSG.JOIN) queueMicrotask(() => {
+        this.onmessage?.({ data: encode(makeAssign(m.room, m.client, 7)) });
+        this.onmessage?.({
+          data: encode(makeWorld(1, 2, 2, initialHash, bytesToB64(initialWorld))),
+        });
+      });
+    }
+    close() { this.readyState = 3; }
+  }
+  globalThis.WebSocket = RebuildWebSocket;
+  let resyncRequests = 0;
+  let rebuildCalls = 0;
+  const net = createGameNet({
+    getEngine: () => engine,
+    getLocalInput: () => ({ bits: 0, aimX: 0, aimY: 0, tool: 0 }),
+    rebuildEngine: () => {
+      if (++rebuildCalls === 1) return engine;
+      throw new Error('injected replacement failure');
+    },
+  });
+  await net.joinRoom('ws://test', 'main');
+  socket.onmessage({ data: encode(makeSnapshot(2, [{
+    id: 7, x: 1, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 0,
+    animState: 0, animFrame: 0, aimX: 1, aimY: 1,
+  }])) });
+  net.update();
+  check('prediction player exists before replacement failure', players.has(91));
+  socket.onmessage({
+    data: encode(makeWorld(3, 3, 2, resizedHash ^ 1, bytesToB64(resizedWorld))),
+  });
+  net.update();
+  check('hash-invalid replacement is rejected before rebuilding', rebuildCalls === 1);
+  check('hash-invalid replacement retains the old prediction player',
+    removedPlayers === 0 && players.has(91));
+  socket.onmessage({
+    data: encode(makeWorld(4, 3, 2, resizedHash, bytesToB64(resizedWorld))),
+  });
+  net.update();
+  check('replacement failure is contained and reported',
+    rebuildCalls === 2 && net.status === 'world rebuild failed');
+  check('unbuildable server dimensions end the connection without a resync loop',
+    !net.connected && resyncRequests === 1);
+  check('replacement failure retains the old prediction player',
+    removedPlayers === 0 && players.has(91));
+  net.update();
+  check('rejected replacement is drained instead of retried every frame',
+    rebuildCalls === 2);
+  net.disconnect();
+  globalThis.WebSocket = RealWebSocket;
+}
+
 // A join resolves only after ASSIGN + a validated mirror WORLD, even while the
 // presentation loop is paused. Paused diffs stay bounded and trigger one resync.
 {
@@ -75,6 +180,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const RealWebSocket = globalThis.WebSocket;
   let socket;
   const worldBytes = Uint8Array.from([4, 0, 0, 0, 0, 4, 0, 0, 0, 0]);
+  const worldHash = worldRleHash(worldBytes, 4);
   const engine = {
     cols: 2, rows: 2, mirrorApplies: 0, mirrorTick: -1,
     offX: 0, offY: 0, cam: { x: 0, y: 0 },
@@ -87,7 +193,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     getWorldOffsetY() { return this.offY; },
     getCam() { return { ...this.cam }; },
     cameraSet(x, y) { this.cam = { x, y }; },
-    gridHash() { return 123; },
+    gridHash() { return worldHash; },
     resetDirty() {},
   };
   class HandshakeWebSocket {
@@ -97,7 +203,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
       const m = decode(raw);
       if (m?.t === MSG.JOIN) queueMicrotask(() => {
         this.onmessage?.({ data: encode(makeAssign(m.room, m.client, 7)) });
-        this.onmessage?.({ data: encode(makeWorld(3, 2, 2, 123, bytesToB64(worldBytes))) });
+        this.onmessage?.({ data: encode(makeWorld(3, 2, 2, worldHash, bytesToB64(worldBytes))) });
       });
     }
     close() { this.readyState = 3; queueMicrotask(() => this.onclose?.()); }
@@ -138,7 +244,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   // actor packets ordered after that WORLD.
   const remoteWorldX = engine.offX + wardRemote.x;
   net.setPaused(true);
-  socket.onmessage({ data: encode(makeWorld(5, 2, 2, 123, bytesToB64(worldBytes), 128, 0)) });
+  socket.onmessage({ data: encode(makeWorld(5, 2, 2, worldHash, bytesToB64(worldBytes), 128, 0)) });
   socket.onmessage({ data: encode(makeSnapshot(5, [{
     id: 8, x: -127, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
     tool: 0, health: 100, alive: true, inputSeq: 1, animState: 0, animFrame: 0,
@@ -149,7 +255,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const quarantined = net.getPlayersForRender().find((p) => p.id === 8);
   check('shifted actors stay quarantined while resync WORLD is pending',
     engine.offX === 0 && quarantined.x === wardRemote.x);
-  socket.onmessage({ data: encode(makeWorld(6, 2, 2, 123, bytesToB64(worldBytes), 128, 0)) });
+  socket.onmessage({ data: encode(makeWorld(6, 2, 2, worldHash, bytesToB64(worldBytes), 128, 0)) });
   socket.onmessage({ data: encode(makeSnapshot(6, [{
     id: 8, x: -127, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
     tool: 0, health: 100, alive: true, inputSeq: 2, animState: 0, animFrame: 0,
@@ -163,13 +269,13 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   // Two full shifts can overtake one slow presentation tick. The actor packet
   // between them belongs to the first new frame and must be discarded when the
   // second WORLD supersedes it.
-  socket.onmessage({ data: encode(makeWorld(7, 2, 2, 123, bytesToB64(worldBytes), 256, 0)) });
+  socket.onmessage({ data: encode(makeWorld(7, 2, 2, worldHash, bytesToB64(worldBytes), 256, 0)) });
   socket.onmessage({ data: encode(makeSnapshot(7, [{
     id: 8, x: -255, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
     tool: 0, health: 100, alive: true, inputSeq: 3, animState: 0, animFrame: 0,
     aimX: -248, aimY: 1,
   }])) });
-  socket.onmessage({ data: encode(makeWorld(8, 2, 2, 123, bytesToB64(worldBytes), 384, 0)) });
+  socket.onmessage({ data: encode(makeWorld(8, 2, 2, worldHash, bytesToB64(worldBytes), 384, 0)) });
   net.update();
   const twiceShiftedRemote = net.getPlayersForRender().find((p) => p.id === 8);
   check('a second queued WORLD discards actors from the superseded frame',
@@ -178,7 +284,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   // A rejected WORLD never establishes its advertised coordinate frame. Actor
   // packets ordered after it must wait for the requested valid replacement.
   socket.onmessage({
-    data: encode(makeWorld(9, 2, 2, 123, bytesToB64(Uint8Array.of(0)), 512, 0)),
+    data: encode(makeWorld(9, 2, 2, worldHash, bytesToB64(Uint8Array.of(0)), 512, 0)),
   });
   socket.onmessage({ data: encode(makeSnapshot(9, [{
     id: 8, x: -511, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
@@ -189,7 +295,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const afterRejectedWorld = net.getPlayersForRender().find((p) => p.id === 8);
   check('actors after a rejected WORLD remain quarantined in the installed frame',
     engine.offX === 384 && Math.abs(engine.offX + afterRejectedWorld.x - remoteWorldX) < 1e-6);
-  socket.onmessage({ data: encode(makeWorld(10, 2, 2, 123, bytesToB64(worldBytes), 512, 0)) });
+  socket.onmessage({ data: encode(makeWorld(10, 2, 2, worldHash, bytesToB64(worldBytes), 512, 0)) });
   socket.onmessage({ data: encode(makeSnapshot(10, [{
     id: 8, x: -511, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
     tool: 0, health: 100, alive: true, inputSeq: 5, animState: 0, animFrame: 0,
@@ -352,11 +458,22 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('deterministic replay');
   await initSandWasm();
-  for (const [cols, rows] of [[0, 10], [10.5, 10], [16385, 1], [10, Number.NaN]]) {
+  for (const [cols, rows] of [[0, 10], [10.5, 10], [16385, 1], [16384, 16384], [10, Number.NaN]]) {
     let rejected = false;
     try { createEngineWasm({ cols, rows, sinksOn: false }); } catch (e) { rejected = e instanceof RangeError; }
     check(`unsafe engine dimensions rejected (${cols}x${rows})`, rejected);
   }
+  const resizeProbe = createEngineWasm({ cols: 128, rows: 96, sinksOn: false });
+  for (const [cols, rows] of [[128.5, 96], [Number.POSITIVE_INFINITY, 96], [16385, 96], [16384, 488], [16384, 16384]]) {
+    let rejected = false;
+    try { resizeProbe.resizeLoadedWindow(cols, rows); } catch (error) { rejected = error instanceof RangeError; }
+    check(`unsafe resize dimensions rejected (${cols}x${rows})`,
+      rejected && resizeProbe.cols === 128 && resizeProbe.rows === 96);
+  }
+  let invalidBodyRejected = false;
+  try { resizeProbe.spawnBody([[-1, 0]]); } catch (error) { invalidBodyRejected = error instanceof RangeError; }
+  check('out-of-bounds rigid body coordinates are rejected', invalidBodyRejected);
+  resizeProbe.destroy();
   const COLS = 200, ROWS = 120, SEED = 0xABCDEF;
   const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
   // a fixed input program, encoded as protocol messages
@@ -480,6 +597,37 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const w = decode(encode(encodeWorld(host, 0)));
   const okW = applyWorldMessage(client, w);
   check(`full snapshot syncs client (host ${host.gridHash().toString(16)})`, okW && host.gridHash() === client.gridHash());
+  const directBefore = client.gridHash();
+  const directWorld = host.serializeWorld();
+  check('direct empty replication packets are rejected without allocating',
+    client.applyWorld(new Uint8Array()) === false
+      && client.applyDiff(new Uint8Array()) === false
+      && client.gridHash() === directBefore);
+  check('direct truncated snapshot is rejected transactionally',
+    client.applyWorld(directWorld.subarray(0, 5)) === false
+      && client.gridHash() === directBefore);
+  const invalidMaterialWorld = directWorld.slice();
+  invalidMaterialWorld[4] = 255;
+  check('direct snapshot rejects out-of-range material ids',
+    client.applyWorld(invalidMaterialWorld) === false
+      && client.gridHash() === directBefore);
+  check('world message rejects out-of-range material ids',
+    applyWorldMessage(client, { ...w, data: bytesToB64(invalidMaterialWorld) }) === false
+      && client.gridHash() === directBefore);
+  check('direct truncated diff is rejected transactionally',
+    client.applyDiff(Uint8Array.of(1, 0, 0)) === false
+      && client.gridHash() === directBefore);
+  const invalidMaterialDiff = Uint8Array.of(
+    1, 0,
+    0, 0, 0, 0, 1, 0, 1, 0, 255,
+    0, 0,
+  );
+  check('direct diff rejects out-of-range material ids',
+    client.applyDiff(invalidMaterialDiff) === false
+      && client.gridHash() === directBefore);
+  check('diff message rejects out-of-range material ids',
+    applyDiffMessage(client, makeDiff(1, directBefore, bytesToB64(invalidMaterialDiff))) === false
+      && client.gridHash() === directBefore);
   const mirror = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x7777, sinksOn: false, storageRole: 'presentation' });
   check('presentation mirror accepts the authoritative world', applyWorldMessage(mirror, w, { mirror: true }) && mirror.gridHash() === host.gridHash());
   check('full snapshot carries the authority window offset', mirror.getWorldOffsetX() === host.getWorldOffsetX() && mirror.getWorldOffsetY() === host.getWorldOffsetY());
@@ -487,6 +635,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const beforeBad = mirror.gridHash();
   check('truncated world is rejected without mutating the mirror', !applyWorldMessage(mirror, truncated, { mirror: true }) && mirror.gridHash() === beforeBad);
   host.resetDirty();
+  check('quiet authority skips the two empty layer diff headers', encodeDiff(host, 1) === null);
 
   // a sequence of incremental diffs reconstructs the host hash on the client.
   for (let i = 0; i < 4; i++) {

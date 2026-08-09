@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { NOON_SKY_LIGHT, SUNRISE_PHASE, SUNSET_PHASE } from '../src/sand/game/dayNightCycle.js';
+import { SURFACE_CAM_Y } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { getAvailablePort } from './test-port.mjs';
 
@@ -35,8 +36,20 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandTest.materialCount(3) > 0, null, { timeout: 60000 });
-  await page.evaluate(() => window.__sandTest.setPaused(true));
+  // Celestial bodies intentionally leave the viewport underground. Sample the
+  // settled authority frame from the backdrop's canonical surface camera.
+  await page.waitForFunction(() => {
+    const test = window.__sandTest;
+    return test?.info().cols > 0 && test.materialCount(3) > 0 &&
+      window.__sandPerf?.().mirrorPacketType === 'full';
+  }, null, { timeout: 60000 });
+  await page.evaluate((surfaceCamY) => {
+    const test = window.__sandTest;
+    test.setPaused(true);
+    const camera = test.getCam();
+    const offset = test.worldOffset();
+    test.setCam(camera.x, surfaceCamY - offset.y);
+  }, SURFACE_CAM_Y);
 
   const sample = async (phase) => page.evaluate((forcedPhase) => {
     const T = window.__sandTest;

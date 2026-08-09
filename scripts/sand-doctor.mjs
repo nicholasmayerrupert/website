@@ -36,7 +36,9 @@ const gitDirty = spawnSync('git', ['diff', '--quiet']).status !== 0 || spawnSync
 const emccPath = commandPath('emcc');
 const materialCheck = spawnSync(process.execPath, ['scripts/generate-materials.mjs', '--check'], { encoding: 'utf8' });
 const wasmCheck = spawnSync(process.execPath, ['scripts/write-wasm-build-info.mjs', '--check'], { encoding: 'utf8' });
-const bench = spawnSync(process.execPath, ['scripts/bench-sand.mjs', '--checksum-only', '--json', tmpJson], { encoding: 'utf8' });
+const bench = spawnSync(process.execPath, [
+  'scripts/bench-sand.mjs', '--checksum-only', '--repeat', '3', '--json', tmpJson,
+], { encoding: 'utf8' });
 
 let benchResult = null;
 try { benchResult = JSON.parse(readFileSync(tmpJson, 'utf8')); } catch { /* benchmark failed before writing */ }
@@ -46,7 +48,11 @@ try { baseline = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch { /* mi
 const loaderStat = statSync(loaderPath);
 const wasmStat = statSync(wasmPath);
 const wasmInfo = readJson(wasmInfoPath);
-const checksumMatches = benchResult && baseline && benchResult.checksum === baseline.checksum;
+const checksumStable = benchResult?.checksumStable === true;
+const checksumScopeMatches = benchResult && baseline
+  && benchResult.config?.checksumScope === baseline.config?.checksumScope;
+const checksumMatches = checksumStable && checksumScopeMatches
+  && benchResult.checksum === baseline.checksum;
 
 console.log('\nsand doctor');
 console.log(`  git: ${gitCommit || 'unknown'}${gitDirty ? ' dirty' : ' clean'}`);
@@ -65,6 +71,7 @@ if (wasmInfo) {
 if (benchResult) {
   console.log(`  current checksum: ${fmtHex(benchResult.checksum)}  stable: ${benchResult.checksumStable ? 'yes' : 'no'}`);
   console.log(`  baseline checksum: ${baseline ? fmtHex(baseline.checksum) : 'missing'}`);
+  console.log(`  checksum scope: ${status(!!checksumScopeMatches)} (${benchResult.config?.checksumScope || 'missing'})`);
   console.log(`  checksum vs baseline: ${status(!!checksumMatches)}`);
 } else {
   console.log(`  checksum benchmark: FAIL`);
@@ -80,4 +87,5 @@ if (!checksumMatches) {
   console.log('  node scripts/bench-pan.mjs --compare bench/pan-baseline.json');
 }
 
-process.exit(materialCheck.status === 0 && wasmCheck.status === 0 && bench.status === 0 ? 0 : 1);
+process.exit(materialCheck.status === 0 && wasmCheck.status === 0
+  && bench.status === 0 && checksumMatches ? 0 : 1);

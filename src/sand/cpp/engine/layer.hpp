@@ -38,9 +38,9 @@ struct Layer {
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
-  std::vector<int32_t> cellComp, groundStack, compOccStamp;
-  // generation-stamped "seen" scratch for component flood fills (reused across
-  // calls; a cell is "seen" iff seenStamp[k] == seenGen, so a clear is just gen++).
+  std::vector<int32_t> cellComp, groundStack;
+  // Generation-stamped "seen" scratch for component flood fills. All buffers
+  // keyed by seenGen are cleared together before the signed generation wraps.
   std::vector<int32_t> seenStamp; int32_t seenGen = 0;
   // Free rigid-body displacement spill scratch. Footprint and reserved targets
   // must be live at the same time as a BFS seen set, so they use separate stamps.
@@ -89,12 +89,9 @@ struct Layer {
   // ForceSystem clears it after rebuilding finds no remaining source.
   bool forceSourcePresent = false;
   bool forceActive = false;
-  bool forceWakePending = false;
   // Incremental-grounding cache state (see members near cgComps). groundDirty
   // true => the next grounding pass must be a full reflood; it is set true by any
   // component add/move/split/growth/sync.
-  // groundSawPowder records whether the last overlay saw any powder (diagnostics /
-  // fallback gates; the hot path does not reflood solely because powder exists).
   // groundContentDirty: a rigid component change that did NOT set groundDirty (the
   // acid fast-path removal) happened since the last grounding pass, so the cached
   // cellComp/groundedCell must be refreshed even though no full reflood is forced.
@@ -104,7 +101,7 @@ struct Layer {
   // powder. When groundDirty, groundContentDirty, and looseGroundDirty are all
   // clear (and the rigid base is valid), the cached grounding is the exact
   // grounding of the current grid and the whole pass can be skipped.
-  bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
+  bool groundDirty = true, groundContentDirty = true;
   // Additions to existing components preserve positional ids. Record those
   // exact cells so the next rigid refresh can patch cellComp and local graph
   // edges without re-indexing every loaded component.
@@ -123,15 +120,6 @@ struct Layer {
   // looseDirtyFull forces every column (unknown write site / post-rigid flood).
   std::vector<uint8_t> looseDirtyCol;
   bool looseDirtyFull = true;
-  // Per-column count of loose-solid + liquid cells (optional sparse skip aid).
-  std::vector<int32_t> looseColCount;
-  // After a world stream, grounding caches are shifted with the grid and only the
-  // entering band (+ edge seams) must be re-seeded. -1 => no stream band (full).
-  int groundStreamX0 = -1, groundStreamX1 = -1; // half-open [x0,x1) when x0 >= 0
-  int groundStreamY0 = -1, groundStreamY1 = -1; // half-open [y0,y1) when y0 >= 0
-  // When the peer layer is rigid-dirty, this layer replays groundRigidBase (drop
-  // joint patches) without a full rigid DFS.
-  bool groundBaseReplay = false;
   // Rigid-grounding base cache (Perf 7b): groundedCell as of the last fresh
   // computeRigidGrounded (R bits only, taken BEFORE the loose overlay) plus the
   // comp grounded flags in stone|plant|ice order. computeGrounded reuses it
@@ -187,11 +175,35 @@ struct Layer {
   // Payloads use compact RLE when it beats the raw CHUNK*CHUNK bytes.
   std::unordered_map<int64_t, std::vector<uint8_t>> tileStore;
   std::unordered_map<int64_t, std::vector<uint8_t>> prefetchStore;
+  std::unordered_map<int64_t, std::vector<uint8_t>> fallSpeedStore;
+  std::unordered_map<int64_t, std::vector<uint32_t>> liquidVelocityStore;
+  std::unordered_map<int64_t, std::vector<StoredCompFragment>> componentStore;
+  std::unordered_map<int, StoredCompState> componentStateStore;
+  std::unordered_map<int, int> componentFragmentRefs;
+  std::unordered_set<int> componentStateGcCandidates;
   std::unordered_set<int64_t> dirtyWorldTiles;
   std::unordered_map<int64_t, std::vector<std::pair<Body*, std::pair<double, double>>>> bodyStore; // tile -> [(body, (worldPx,worldPy))]
   std::unordered_map<int64_t, std::vector<StoredFuse>> fuseStore;
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;
+
+  void reserveSeenGenerations(size_t count) {
+    if (count <= (size_t)(INT32_MAX - seenGen)) return;
+    std::fill(seenStamp.begin(), seenStamp.end(), 0);
+    std::fill(rigidSpillFootprint.begin(), rigidSpillFootprint.end(), 0);
+    std::fill(rigidSpillReserved.begin(), rigidSpillReserved.end(), 0);
+    seenGen = 0;
+  }
+
+  int32_t nextSeenGeneration() {
+    if (seenGen == INT32_MAX) {
+      std::fill(seenStamp.begin(), seenStamp.end(), 0);
+      std::fill(rigidSpillFootprint.begin(), rigidSpillFootprint.end(), 0);
+      std::fill(rigidSpillReserved.begin(), rigidSpillReserved.end(), 0);
+      seenGen = 0;
+    }
+    return ++seenGen;
+  }
 
   void alloc(int cols, int rows, int chunkCols, int chunkRows, EngineStorageRole role = ESR_FULL) {
     storageRole = role;
@@ -233,9 +245,6 @@ struct Layer {
     groundRigidBase.clear(); groundBaseFlags.clear(); groundBaseValid = false;
     looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(cols, 0); looseDirtyFull = true;
-    looseColCount.assign(cols, 0);
-    groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
-    compOccStamp.assign(n, -1);
     seenStamp.assign(n, 0); seenGen = 0;
     rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
     reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
@@ -250,8 +259,8 @@ struct Layer {
     skyWorldReachY.clear();
     skyOffsetX = skyOffsetY = 0; skyInputLevel = -1; skyValid = false; skyDirty = true;
   }
-  // Reallocate per-cell sim/render arrays for a new buffer size while PRESERVING
-  // tileStore/bodyStore/worldgen seeds/params (used by resizeLoadedWindow).
+  // Reallocate per-cell sim/render arrays for a new buffer size while preserving
+  // persistent world stores and worldgen seeds/params (used by resizeLoadedWindow).
   // Callers must have already persisted live buffer content into the stores and
   // emptied bodies/components that were buffer-indexed.
   void reallocSim(int newCols, int newRows, int newChunkCols, int newChunkRows) {
@@ -264,7 +273,7 @@ struct Layer {
       release(dirtyRender); release(dirtyRects);
       release(rowMarkSpans); release(simOnlyRowMarkSpans); release(chunkStamp);
       release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp);
-      release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
+      release(groundedCell); release(cellComp); release(groundStack);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(prevBodyCells); release(curBodyCells);
       release(bodyCells); release(passiveBodyCells);
@@ -276,7 +285,7 @@ struct Layer {
       release(mobileComponents);
       release(deferredSplitIds);
       release(componentIndexPatches);
-      release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
+      release(looseDirtyCol); release(groundRigidBase);
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
       release(compAdjPairs);
     }
@@ -291,13 +300,11 @@ struct Layer {
     myceliumSporePresent = false;
     forceSourcePresent = false;
     forceActive = false;
-    forceWakePending = false;
-    groundDirty = true; groundSawPowder = false; groundContentDirty = true;
+    groundDirty = true; groundContentDirty = true;
     componentIndexExact = false;
     componentIndexPatchOnly = false; componentIndexPatches.clear();
     looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;
-    groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
     groundBaseValid = false;
     bodies.clear(); bodyCells.clear(); passiveBodyCells.clear(); passiveBodyIds.clear();
     pendingDetonations.clear();

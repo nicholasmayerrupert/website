@@ -19,20 +19,14 @@ enum CreatureLocomotion : uint8_t {
   CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING, CL_STATIONARY
 };
 enum CreatureTarget : uint8_t { CT_NONE = 0, CT_PLAYER = 1, CT_PREY = 2 };
-enum CreatureSpawnMode : uint8_t { CSM_REGION = 0, CSM_CONTINUOUS };
 enum CreatureHabitat : uint8_t { CH_WATER = 0, CH_SURFACE, CH_CAVE, CH_AIR };
 static constexpr int CREATURE_BORE_RADIUS = 5;
 
 struct CreatureSpawnRule {
-  CreatureSpawnMode mode;
   CreatureHabitat habitat;
-  int regionSize;
-  int maxPerRegion;
   int maxActive;
   int densityRadius;
   int densityCap;
-  int intervalTicks;
-  double chance;
   int minPlayerDistance;
   int maxPlayerDistance;
 };
@@ -77,7 +71,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.70, .sightRange=34, .attackRange=0,
    .damage=0, .attackCooldown=18, .scanInterval=18, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_CONTINUOUS, CH_WATER, 160, 2, 3, 84, 2, 420, 0.60, 20, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_WATER, 3, 84, 2, 20, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.preferredSurfaceBiomes=(1u << BIOME_PLAINS)
              | (1u << BIOME_SWAMP)}},
   {.name="pike", .locomotion=CL_AQUATIC, .w=7, .h=3, .maxHealth=55,
@@ -85,14 +79,14 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.64, .sightRange=58, .attackRange=0.6,
    .damage=12, .attackCooldown=14, .scanInterval=14, .hopPeriod=0,
    .targetMask=(uint8_t)(CT_PREY | CT_PLAYER), .preyMask=(1u << CS_MINNOW), .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_WATER, 224, 1, 2, 130, 1, 720, 0.45, 28, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_WATER, 2, 130, 1, 28, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.preferredSurfaceBiomes=(1u << BIOME_SWAMP)}},
   {.name="fox", .locomotion=CL_AMPHIBIOUS, .w=7, .h=4, .maxHealth=42,
    .walkSpeed=0.34, .swimSpeed=0.30, .accel=0.060, .gravity=0.075, .jumpSpeed=1.15,
    .fluidThreshold=0.30, .sightRange=62, .attackRange=0.5,
    .damage=7, .attackCooldown=16, .scanInterval=16, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 192, 1, 1, 96, 1, 660, 0.45, 28, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_SURFACE, 1, 96, 1, 28, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredSurfaceBiomes=(1u << BIOME_PLAINS)
              | (1u << BIOME_FOREST) | (1u << BIOME_TUNDRA)}},
@@ -101,7 +95,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.30, .sightRange=44, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=20, .hopPeriod=46,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 160, 1, 2, 88, 1, 540, 0.60, 22, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_SURFACE, 2, 88, 1, 22, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredSurfaceBiomes=(1u << BIOME_PLAINS)
              | (1u << BIOME_FOREST) | (1u << BIOME_TUNDRA)}},
@@ -110,7 +104,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.34, .sightRange=70, .attackRange=0.7,
    .damage=8, .attackCooldown=20, .scanInterval=18, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 160, 1, 1, 104, 1, 720, 0.45, 30, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_CAVE, 1, 104, 1, 30, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_UNDERGROUND, .excludedTags=WA_SETTLEMENT,
            .preferredTags=WA_DEEP,
            .preferredCaveBiomes=(1u << CAVE_MUSHROOM)
@@ -120,7 +114,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.36, .sightRange=40, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=22, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 176, 1, 1, 112, 1, 780, 0.45, 34, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_CAVE, 1, 112, 1, 34, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_UNDERGROUND, .excludedTags=WA_SETTLEMENT,
            .preferredTags=WA_MINE,
            .preferredCaveBiomes=(1u << CAVE_DEFAULT)
@@ -130,7 +124,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0, .sightRange=54, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=20, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_CONTINUOUS, CH_AIR, 176, 1, 2, 96, 1, 600, 0.55, 20, AMBIENT_SPAWN_MAX_DISTANCE},
+   .spawn={CH_AIR, 2, 96, 1, 20, AMBIENT_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredSurfaceBiomes=(1u << BIOME_PLAINS)
              | (1u << BIOME_FOREST) | (1u << BIOME_JUNGLE)}},
@@ -139,7 +133,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.30, .sightRange=92, .attackRange=72,
    .damage=18, .attackCooldown=135, .scanInterval=12, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .spawn={CH_SURFACE, 1, 128, 1, 34, SURVIVAL_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredTags=WA_SETTLEMENT,
            .preferredSurfaceBiomes=(1u << BIOME_PLAINS) | (1u << BIOME_DESERT)
@@ -149,7 +143,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=42, .attackCooldown=260, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .spawn={CH_CAVE, 1, 156, 1, 46, SURVIVAL_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_UNDERGROUND, .excludedTags=WA_SETTLEMENT,
            .preferredTags=WA_MINE | WA_DEEP,
            .preferredCaveBiomes=(1u << CAVE_DEEP_GEODE)
@@ -159,7 +153,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.32, .sightRange=112, .attackRange=92,
    .damage=16, .attackCooldown=180, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 240, 1, 1, 144, 1, 900, 0.55, 40, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .spawn={CH_SURFACE, 1, 144, 1, 40, SURVIVAL_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredSurfaceBiomes=(1u << BIOME_DESERT) | (1u << BIOME_SWAMP)}},
   {.name="cluster wasp", .locomotion=CL_FLYING, .w=7, .h=5, .maxHealth=68,
@@ -167,7 +161,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0, .sightRange=124, .attackRange=104,
    .damage=0, .attackCooldown=210, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .spawn={CH_AIR, 1, 144, 1, 38, SURVIVAL_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_SURFACE, .excludedTags=WA_INDOOR,
            .preferredSurfaceBiomes=(1u << BIOME_FOREST)
              | (1u << BIOME_JUNGLE) | (1u << BIOME_SWAMP)}},
@@ -176,7 +170,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=0, .attackCooldown=270, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .spawn={CH_CAVE, 1, 156, 1, 44, SURVIVAL_SPAWN_MAX_DISTANCE},
    .world={.requiredTags=WA_UNDERGROUND, .excludedTags=WA_SETTLEMENT,
            .preferredTags=WA_MINE | WA_FACILITY | WA_DEEP,
            .preferredCaveBiomes=(1u << CAVE_CRYSTAL)
@@ -186,56 +180,56 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.34, .sightRange=36, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=24, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .spawn={CH_CAVE, 0, 96, 0, 0, 0},
    .world={}},
   {.name="shield anchor", .locomotion=CL_STATIONARY, .w=7, .h=7, .maxHealth=210,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .spawn={CH_CAVE, 0, 96, 0, 0, 0},
    .world={}},
   {.name="quarry foreman", .locomotion=CL_AMPHIBIOUS, .w=10, .h=7, .maxHealth=520,
    .walkSpeed=0.19, .swimSpeed=0.14, .accel=0.038, .gravity=0.075, .jumpSpeed=0.92,
    .fluidThreshold=0.32, .sightRange=148, .attackRange=112,
    .damage=30, .attackCooldown=105, .scanInterval=8, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 160, 0, 0, 0.0, 0, 0},
+   .spawn={CH_CAVE, 0, 160, 0, 0, 0},
    .world={}},
   {.name="reactor warden", .locomotion=CL_AMPHIBIOUS, .w=11, .h=8, .maxHealth=760,
    .walkSpeed=0.13, .swimSpeed=0.10, .accel=0.028, .gravity=0.075, .jumpSpeed=0.72,
    .fluidThreshold=0.34, .sightRange=162, .attackRange=132,
    .damage=0, .attackCooldown=190, .scanInterval=5, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 180, 0, 0, 0.0, 0, 0},
+   .spawn={CH_CAVE, 0, 180, 0, 0, 0},
    .world={}},
   {.name="reactor core", .locomotion=CL_STATIONARY, .w=9, .h=12, .maxHealth=460,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .spawn={CH_CAVE, 0, 96, 0, 0, 0},
    .world={}},
   {.name="IRIS commander", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .spawn={CH_SURFACE, 0, 96, 0, 0, 0},
    .world={}},
   {.name="IRIS engineer", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .spawn={CH_SURFACE, 0, 96, 0, 0, 0},
    .world={}},
   {.name="villager", .locomotion=CL_AMPHIBIOUS, .w=4, .h=8, .maxHealth=60,
    .walkSpeed=0.10, .swimSpeed=0.14, .accel=0.030, .gravity=0.075, .jumpSpeed=0.70,
    .fluidThreshold=0.34, .sightRange=28, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=28, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 72, 0, 0, 0.0, 0, 0},
+   .spawn={CH_SURFACE, 0, 72, 0, 0, 0},
    .world={.requiredTags=WA_SETTLEMENT}},
 };
 
@@ -312,7 +306,6 @@ class CreatureSystem {
   // Hibernation is bucketed by absolute 128-cell region, so restoring a window
   // touches only nearby buckets instead of scanning all previously explored life.
   std::unordered_map<uint64_t, std::vector<Creature>> dormantRegions;
-  std::unordered_set<uint64_t> spawnedRegions;
   std::unordered_set<uint64_t> spawnedVillageResidentSites;
   std::vector<CreatureSpawnTelegraph> pendingSpawns;
   std::vector<float> snapshot;
@@ -358,8 +351,6 @@ class CreatureSystem {
   int addCreature(uint8_t speciesId, double wx, double wy, int id);
   int spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat = true);
   int spawnCreatureNatural(uint8_t speciesId, double wx, double wy);
-  bool spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt);
-  void spawnRegion(uint8_t speciesId, int regionX, int regionY);
   void maintainPopulation();
   void updateVillageResidents();
   void updateNaturalPopulation();

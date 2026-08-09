@@ -1,33 +1,41 @@
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
-import { createFixedRateClock, createNoCatchupGate } from '../src/sand/timing/fixedRateClock.js';
+import {
+  SIM_STEP_MS,
+  createFixedRateClock,
+  createTurnDeadline,
+} from '../src/sand/timing/fixedRateClock.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('split actor/world timing');
 
-// A sustained 20 ms frame cadence is 50 FPS. Actors repay the small remainder
-// and reach 60 Hz; world work is admitted at most once per frame.
+check(`shared simulation interval is exactly 1000/60ms (${SIM_STEP_MS})`,
+  SIM_STEP_MS === 1000 / 60);
+
 {
-  const actors = createFixedRateClock({ now: 0 });
-  const world = createNoCatchupGate({ stepMs: 16, now: 0 });
-  let actorSteps = 0, worldSteps = 0, maxWorldPerFrame = 0;
-  for (let frame = 1; frame <= 50; frame++) {
-    const now = frame * 20;
-    actors.advance(now, () => actorSteps++);
-    let thisFrame = 0;
-    if (world.take(now)) { worldSteps++; thisFrame++; }
-    maxWorldPerFrame = Math.max(maxWorldPerFrame, thisFrame);
+  const turns = createTurnDeadline({ now: 0 });
+  let now = 0;
+  for (let i = 0; i < 120; i++) {
+    const delay = turns.nextDelay(now);
+    now += Math.max(1, Math.trunc(delay));
   }
-  check(`20ms frames keep actors at 60Hz (${actorSteps})`, actorSteps === 60);
-  check(`20ms frames run 50 world steps (${worldSteps})`, worldSteps === 50);
-  check('world never runs twice in one frame', maxWorldPerFrame === 1);
+  check(`fractional deadlines average exactly 60 turns/sec (${now}ms/120)`,
+    Math.abs(now - 2000) <= 1);
+
+  const overrun = createTurnDeadline({ now: 0 });
+  const first = Math.trunc(overrun.nextDelay(0));
+  const afterWork = first + 25;
+  check('a true turn overrun schedules one immediate recovery turn',
+    overrun.nextDelay(afterWork) === 0);
+  check('an overrun does not queue a second catch-up turn',
+    overrun.nextDelay(afterWork) >= SIM_STEP_MS - 0.01);
 }
 
 {
   const actors = createFixedRateClock({ now: 0 });
   let n = 0;
   const stats = actors.advance(1000, () => n++);
-  check(`long stall caps actor recovery at three steps (${n})`, n === 3);
+  check(`presentation clock caps recovery at three steps (${n})`, n === 3);
   check(`long stall reports dropped actor debt (${stats.droppedDebtMs.toFixed(1)}ms)`, stats.droppedDebtMs >= 900);
 }
 

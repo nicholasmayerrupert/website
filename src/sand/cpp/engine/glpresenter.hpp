@@ -8,9 +8,6 @@ class GLPresenter {
  public:
   explicit GLPresenter(Engine& e) : E(e) {}
 
-  // Dirty ratio above which a full texture upload is cheaper.
-  static constexpr double GL_FULL_UPLOAD_DIRTY_RATIO = 0.38;
-
   sandgl::Ctx* glc = nullptr;
   std::string glTarget;
   GLuint glTex = 0, glTexBg = 0, glTex2 = 0, glReadFBO = 0, glDrawFBO = 0;

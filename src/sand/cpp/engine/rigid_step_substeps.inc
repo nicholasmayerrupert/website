@@ -1399,11 +1399,19 @@
       positionPairs.erase(
         std::unique(positionPairs.begin(), positionPairs.end()),
         positionPairs.end());
-      for (int iteration = 0; iteration < R_BODY_POSITION_ITERS; iteration++) {
+      for (int iteration = 0; iteration < R_BODY_POSITION_SLENDER_ITERS;
+           iteration++) {
         bool corrected = false;
         for (const auto& pair : positionPairs) {
           Body* A = solverBodies[pair.first];
           Body* B = solverBodies[pair.second];
+          // Large slender pairs receive two extra projection passes because
+          // their long angular lever arms make scalar correction converge more
+          // slowly.
+          if (iteration >= R_BODY_POSITION_ITERS
+              && (!rigidLargeSlenderBody(A)
+                  || !rigidLargeSlenderBody(B)))
+            continue;
           currentChildPoses[pair.first] = childPose(A, 0);
           currentChildPoses[pair.second] = childPose(B, 0);
           currentChildFramesValid[pair.first] = 0;
@@ -1415,17 +1423,33 @@
             continue;
           PenPt deepest{};
           bool hasPenetration = false;
+          double deepestX = 0, deepestY = 0;
+          int deepestCount = 0;
+          // Co-depth, co-normal samples describe one contact face. Project at
+          // their centroid so correction does not depend on an endpoint.
           for (const ChildManifold& manifold : childManifoldScratch) {
             for (int pi = 0; pi < manifold.count; pi++) {
               const PenPt& point = manifold.points[pi];
-              if (point.depth <= 0
-                  || (hasPenetration && point.depth <= deepest.depth))
-                continue;
-              deepest = point;
-              hasPenetration = true;
+              if (point.depth <= 0) continue;
+              if (!hasPenetration
+                  || point.depth > deepest.depth + 1e-6) {
+                deepest = point;
+                deepestX = point.wx;
+                deepestY = point.wy;
+                deepestCount = 1;
+                hasPenetration = true;
+              } else if (std::fabs(point.depth - deepest.depth) <= 1e-6
+                         && point.nx * deepest.nx
+                              + point.ny * deepest.ny > 0.999) {
+                deepestX += point.wx;
+                deepestY += point.wy;
+                deepestCount++;
+              }
             }
           }
           if (!hasPenetration) continue;
+          deepest.wx = deepestX / deepestCount;
+          deepest.wy = deepestY / deepestCount;
           double aInvM = A->awake && !terrainAnchored[pair.first]
             ? A->invMass : 0;
           double aInvI = A->awake && !terrainAnchored[pair.first]

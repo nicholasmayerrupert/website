@@ -71,7 +71,6 @@
       if (localRigidCarry) {
         L->curBodyCells.clear();
         auto noteBody = [&](int k) {
-          L->compOccStamp[k] = tick;
           L->curBodyCells.push_back(k);
         };
         for (int k : L->bodyCells) noteBody(k);
@@ -91,10 +90,10 @@
       }
     } else {
       L->curCompCells.clear();
-      for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->curCompCells.push_back(k); }
       L->curBodyCells.clear();
-      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
-      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
+      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
+      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
       for (int k : L->prevCompCells) {
         if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
         if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
@@ -545,6 +544,8 @@
       }
       markLayerRowSpan(to, y, x, x);
       markLayerRowSpan(from, y, x, x);
+      markWorldTileDirty(to, k);
+      markWorldTileDirty(from, k);
       return true;
     }
     // Powders AND liquids cross layers when stuck. The transfer only fires when the
@@ -605,6 +606,8 @@
     // mark both layers dirty at (x,y) so render + net + L->next-step settle pick it up
     markLayerRowSpan(to, y, x, x);
     markLayerRowSpan(from, y, x, x);
+    markWorldTileDirty(to, k);
+    markWorldTileDirty(from, k);
     return true;
   }
   void transferPass(bool fgA, bool bgA) {

@@ -34,7 +34,7 @@
     if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) return;
     if (L->forceActive && forces.overridesGravity(x, y, m)) return;
-    if (!gravityCellStep) return;
+    if (!gravityCellStepAt(x)) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
     // Liquid↔liquid density is handled by settleLiquid (deep sink through lighter
@@ -63,7 +63,7 @@
     if (L->forceActive && forces.tryMoveLoose(x, y, k, self)) return;
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
-    if (!gravityCellStep && y + 1 < rows) {
+    if (!gravityCellStepAt(x) && y + 1 < rows) {
       auto canFallInto = [&](int ik) {
         uint8_t target = L->grid[ik];
         return L->next[ik] == EMPTY
@@ -133,7 +133,7 @@
         return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
-    if (!gravityCellStep && y + 1 < rows) {
+    if (!gravityCellStepAt(x) && y + 1 < rows) {
       bool gravityPath = liquidColumnPassable(belowK, m);
       if (!gravityPath) {
         for (int dx : {-1, 1}) {
@@ -280,7 +280,7 @@
     // Viscosity limits lava's spreading, not its straight gravitational fall.
     // Downward movement and sinking use the ordinary liquid cadence while
     // diagonal, lateral, and surface flow retain lava's lower mobility.
-    bool straightGravityPath = gravityCellStep && y + 1 < rows
+    bool straightGravityPath = gravityCellStepAt(x) && y + 1 < rows
       && liquidColumnPassable(belowK, LAVA)
       && !(L->forceActive && forces.overridesGravity(x, y, LAVA));
     if (straightGravityPath) {
@@ -321,7 +321,8 @@
     std::vector<char> usedFallback; // parallel to a material group during resolve
     // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
     // reserved-stamp buffer (separate gen from seenStamp).
-    int32_t reservedGen = ++L->seenGen;
+    L->reserveSeenGenerations((size_t)(TABLE + 4) * TABLE + 2);
+    int32_t reservedGen = L->nextSeenGeneration();
 
     auto plannedAt = [&](int k) -> uint8_t {
       if (L->assemblyWakeStamp[k] == tick) return STONE;
@@ -384,7 +385,7 @@
 
         // Pass 2: BFS only for liquids that could not take their fallback.
         queue.clear(); targets.clear();
-        int32_t seenGen = ++L->seenGen;
+        int32_t seenGen = L->nextSeenGeneration();
         auto canVisit = [&](int k) {
           if (k <= 0 || k >= gridLen || L->seenStamp[k] == seenGen) return false;
           int y = k / cols, x = k - y * cols;

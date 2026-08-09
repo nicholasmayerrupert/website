@@ -25,7 +25,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform, release } from 'node:os';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
-import { compatibleSandBenchmarkConfig, compatibleSandTimingEnvironment } from './bench-sand-environment.mjs';
+import {
+  compatibleSandBenchmarkConfig,
+  compatibleSandTimingEnvironment,
+  sandBenchmarkGateMetric,
+} from './bench-sand-environment.mjs';
 import { commandPath } from '../wasm/emscripten.mjs';
 
 // --- args ---
@@ -38,6 +42,8 @@ const jsonPath = flag('--json');
 const repeat = Math.max(1, Number(flag('--repeat') || 1) | 0);
 const checksumOnly = hasFlag('--checksum-only');
 const scenarioArg = flag('--scenario') || 'pan-stream';
+if (comparePath && updatePath)
+  throw new Error('--compare and --update cannot be used in the same run');
 
 // --- config (defaults mirror a ~1080p viewport buffer; override for zoom sweeps) ---
 const COLS = Math.max(64, Number(flag('--cols') || 768) | 0);
@@ -48,6 +54,7 @@ const WARMUP_STEPS = 120;
 const SHIFTS_EACH_WAY = 16;    // distinct shift bursts to sample
 const STEPS_PER_SHIFT = 8;     // sim steps between shifts (settling)
 const SCENARIOS = ['pan-stream', 'liquid-active', 'components-active', 'survival-actions', 'net-apply'];
+const CHECKSUM_SCOPE = 'foreground+background';
 
 // --- stats helpers ---
 const pct = (sorted, p) => {
@@ -67,8 +74,6 @@ const summarize = (samples) => {
     max: +(s[s.length - 1] || 0).toFixed(4),
   };
 };
-// FNV-1a over the grid: a cheap deterministic terrain checksum.
-const checksum = (g) => { let h = 0x811c9dc5; for (let i = 0; i < g.length; i++) { h ^= g[i]; h = Math.imul(h, 0x01000193); } return h >>> 0; };
 const fileHash = (path) => {
   const bytes = readFileSync(path);
   let h = 0x811c9dc5;
@@ -117,6 +122,15 @@ const wasmMeta = () => {
     buildInfo: readJson('src/sand/wasm/build-info.json'),
   };
 };
+const requireCurrentProductionWasm = () => {
+  const provenance = spawnSync(
+    process.execPath, ['scripts/write-wasm-build-info.mjs', '--check'], { encoding: 'utf8' },
+  );
+  if (provenance.status !== 0) {
+    const detail = (provenance.stderr || provenance.stdout || '').trim();
+    throw new Error(`benchmark comparison/update requires a current production WASM build: ${detail}`);
+  }
+};
 const metadata = () => ({
   generatedAt: new Date().toISOString(),
   node: process.version,
@@ -129,6 +143,7 @@ const metadata = () => ({
 
 const now = () => performance.now();
 
+if (comparePath || updatePath) requireCurrentProductionWasm();
 await initSandWasm();
 
 // Fine step phases from getStepPerf() (perfSnapshot v2). Order is roughly the
@@ -148,7 +163,7 @@ const STEP_VOLUME_KEYS = [
   'dirtyChunks', 'dirtyRows', 'dirtyCells',
   'componentCount', 'componentCellCount', 'crossBondCount',
 ];
-const SHIFT_PHASE_KEYS = ['buffers', 'translate', 'register', 'fill'];
+const SHIFT_PHASE_KEYS = ['save', 'buffers', 'translate', 'register', 'fill'];
 
 const emptySamples = () => ({
   stepMs: [], renderMs: [], shiftMissMs: [], shiftHitMs: [],
@@ -277,10 +292,9 @@ function runScenario(name) {
     samples.shiftHits.push(stats.hit); samples.shiftMisses.push(stats.miss);
   }
 
-  const grid = e.getGrid();
   const out = {
     scenario: name,
-    checksum: checksum(grid),
+    checksum: e.gridHash(),
     worldOffsetX: e.getWorldOffsetX(),
     worldOffsetY: e.getWorldOffsetY(),
     samples,
@@ -309,7 +323,7 @@ function runBenchmark(name) {
   const checksums = [...new Set(runs.map((r) => r.checksum))];
   return {
     scenario: name,
-    config: { COLS, ROWS, SEED, SHIFT_COLS, WARMUP_STEPS, SHIFTS_EACH_WAY, STEPS_PER_SHIFT, repeat, checksumOnly, scenario: name },
+    config: { COLS, ROWS, SEED, SHIFT_COLS, WARMUP_STEPS, SHIFTS_EACH_WAY, STEPS_PER_SHIFT, repeat, checksumOnly, scenario: name, checksumScope: CHECKSUM_SCOPE },
     metadata: metadata(),
     checksum: runs[0].checksum,
     checksumStable: checksums.length === 1,
@@ -325,10 +339,12 @@ const scenarioNames = scenarioArg === 'all' ? SCENARIOS : [scenarioArg];
 for (const name of scenarioNames) if (!SCENARIOS.includes(name)) throw new Error(`unknown scenario "${name}". expected one of: ${SCENARIOS.join(', ')}, all`);
 const scenarioResults = Object.fromEntries(scenarioNames.map((name) => [name, runBenchmark(name)]));
 const result = scenarioArg === 'all' ? {
-  config: { repeat, checksumOnly, scenario: 'all', scenarios: SCENARIOS },
+  config: { repeat, checksumOnly, scenario: 'all', scenarios: SCENARIOS, checksumScope: CHECKSUM_SCOPE },
   metadata: metadata(),
   scenarios: scenarioResults,
 } : scenarioResults[scenarioArg];
+const completedRuns = scenarioArg === 'all' ? Object.values(result.scenarios) : [result];
+const allChecksumsStable = completedRuns.every((run) => run.checksumStable);
 
 // --- report ---
 const fmt = (s) => `mean ${s.mean.toFixed(3)}  p50 ${s.p50.toFixed(3)}  p95 ${s.p95.toFixed(3)}  p99 ${s.p99.toFixed(3)}  max ${s.max.toFixed(3)}  (n=${s.n})`;
@@ -398,7 +414,7 @@ function printOne(r) {
   console.log(`  step phases p95 (ms): ${hot.map((k) => `${k.replace(/Ms$/, '')} ${stp[k] ? stp[k].p95.toFixed(3) : '-'}`).join('  ')}`);
   // Legacy aggregates (still in JSON) for scripts that still think in old names.
   console.log(`  step aggregates p50: joint ${fmtP50(stp.joint)}  settle ${fmtP50(stp.settle)}  rigid ${fmtP50(stp.rigid)}  [joint mean ${stp.joint?.mean ?? '-'} p95 ${stp.joint?.p95 ?? '-'}]`);
-  console.log(`  shift phases (median ms): translate ${fmtP50(sp.translate)}  register ${fmtP50(sp.register)}  buffers ${fmtP50(sp.buffers)}  fill ${fmtP50(sp.fill)}`);
+  console.log(`  shift hit phases (median ms): save ${fmtP50(sp.save)}  translate ${fmtP50(sp.translate)}  register ${fmtP50(sp.register)}  buffers ${fmtP50(sp.buffers)}  fill ${fmtP50(sp.fill)}`);
   console.log(`  volume p50: dirtyChunks ${fmtP50(vol.dirtyChunks ?? r.dirtyChunks)}  dirtyRows ${fmtP50(vol.dirtyRows)}  dirtyCells ${fmtP50(vol.dirtyCells)}  comps ${fmtP50(vol.componentCount)}  compCells ${fmtP50(vol.componentCellCount)}  xBonds ${fmtP50(vol.crossBondCount)}`);
   console.log(`  dirty chunks p95 ${r.dirtyChunks.p95}  heap ${(r.heapBytes.p50 / (1024 * 1024)).toFixed(1)}MB  shift fill hit/miss p50 ${r.shiftFill.hit.p50}/${r.shiftFill.miss.p50}`);
 }
@@ -406,17 +422,30 @@ if (scenarioArg === 'all') for (const name of scenarioNames) printOne(result.sce
 else printOne(result);
 
 if (jsonPath) { writeFileSync(jsonPath, JSON.stringify(result, null, 2)); console.log(`\nwrote ${jsonPath}`); }
-if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); console.log(`\nupdated baseline ${updatePath}`); }
+if (updatePath) {
+  if (repeat < 2) throw new Error('baseline updates require --repeat 2 or greater');
+  if (!allChecksumsStable)
+    throw new Error('refusing to update a baseline with unstable checksums');
+  writeFileSync(updatePath, JSON.stringify(result, null, 2));
+  console.log(`\nupdated baseline ${updatePath}`);
+}
 
-let exit = 0;
+let exit = allChecksumsStable ? 0 : 1;
+if (!allChecksumsStable)
+  console.log('\nCHECKSUM UNSTABLE: repeated deterministic runs produced different results');
 if (comparePath) {
   if (scenarioArg === 'all') {
     console.log('\ncompare skipped for --scenario all; compare individual scenario baselines instead.');
-    process.exit(0);
+    process.exit(exit);
   }
   const base = JSON.parse(readFileSync(comparePath, 'utf8'));
   console.log(`\ncompare vs ${comparePath}`);
-  if (base.checksum !== result.checksum) {
+  const baseChecksumScope = base.config?.checksumScope || 'foreground';
+  const resultChecksumScope = result.config?.checksumScope || CHECKSUM_SCOPE;
+  if (baseChecksumScope !== resultChecksumScope) {
+    console.log(`  CHECKSUM SCOPE CHANGED ${baseChecksumScope} -> ${resultChecksumScope}; values are not directly comparable`);
+    exit = 1;
+  } else if (base.checksum !== result.checksum) {
     console.log(`  CHECKSUM CHANGED 0x${base.checksum.toString(16)} -> 0x${result.checksum.toString(16)} (behavior changed; not a pure refactor)`);
     console.log(`    inspect: worldgen.inc, generated material tables, C++ toolchain/WASM rebuild provenance`);
     exit = 1;
@@ -438,10 +467,18 @@ if (comparePath) {
     const rows = checksumOnly ? [['step', 'mean']] : [['step', 'p99'], ['renderFull', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['renderFull', 'mean']];
     for (const [k, m] of rows) {
       if (!base[k] || !result[k]) continue;
-      const b = base[k][m], r = result[k][m];
+      const rawB = base[k][m], rawR = result[k][m];
+      const gate = sandBenchmarkGateMetric(base, result, k, m);
+      const b = gate.baseline, r = gate.current;
       const d = b ? ((r - b) / b) * 100 : 0;
       const tag = d > 15 ? ' REGRESSION' : d < -10 ? ' improved' : '';
-      console.log(`  ${k}.${m}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
+      if (gate.method === 'median-run') {
+        const rawD = rawB ? ((rawR - rawB) / rawB) * 100 : 0;
+        console.log(`  ${k}.${m} raw: ${rawB.toFixed(3)} -> ${rawR.toFixed(3)}  (${rawD >= 0 ? '+' : ''}${rawD.toFixed(1)}%)`);
+        console.log(`    median-run gate: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
+      } else {
+        console.log(`  ${k}.${m}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
+      }
       if (d > 15) {
         console.log(`    inspect: ${PHASE_HINTS[k] || 'owning subsystem'}`);
         exit = 1;
@@ -472,6 +509,18 @@ if (comparePath) {
     for (const k of FINE_PHASE_KEYS) {
       if (!resPh[k]) continue;
       console.log(`    ${k}: ${resPh[k].p50.toFixed(3)}`);
+    }
+  }
+  const baseShiftPh = base.shiftPhases || {};
+  const resShiftPh = result.shiftPhases || {};
+  const shiftPhaseRows = SHIFT_PHASE_KEYS.filter((k) => baseShiftPh[k] && resShiftPh[k]);
+  if (timingComparable && shiftPhaseRows.length) {
+    console.log('  shift hit phase p50 deltas (informational):');
+    for (const k of shiftPhaseRows) {
+      const b = baseShiftPh[k].p50, r = resShiftPh[k].p50;
+      const d = b ? ((r - b) / b) * 100 : (r ? 100 : 0);
+      const abs = r - b;
+      console.log(`    ${k}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${abs >= 0 ? '+' : ''}${abs.toFixed(3)}ms, ${d >= 0 ? '+' : ''}${d.toFixed(1)}%)`);
     }
   }
   const baseVol = base.stepVolume || {};

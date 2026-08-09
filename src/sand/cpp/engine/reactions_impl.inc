@@ -3,6 +3,32 @@
 // Runs after growth/rigid movement inside each layer step. This file owns
 // local transformations such as water/fire steam, ignition, freezing/melting,
 // acid erosion, and lava cooling. It should not own broad movement order.
+static int reactionWorldCoordinate(int origin, int local) {
+  return (int)((uint32_t)origin + (uint32_t)local);
+}
+
+template <class Predicate>
+static int reactionCardinalMatch(
+    Engine& engine, int k, uint32_t channel, Predicate&& predicate) {
+  int y = k / engine.cols, x = k - y * engine.cols;
+  static constexpr int DX[4] = {1, 0, -1, 0};
+  static constexpr int DY[4] = {0, 1, 0, -1};
+  uint32_t phase = engine.L->worldSeed ^ channel
+    ^ ((uint32_t)engine.tick * 0x9E3779B9u)
+    ^ (engine.L->isBackground ? 0xB6A4D5u : 0u);
+  int start = ((int)(whash2(
+    phase, reactionWorldCoordinate(engine.L->worldOffsetX, x),
+    reactionWorldCoordinate(engine.L->worldOffsetY, y)) * 4.0)) & 3;
+  for (int offset = 0; offset < 4; offset++) {
+    int direction = (start + offset) & 3;
+    int nx = x + DX[direction], ny = y + DY[direction];
+    if (nx < 0 || nx >= engine.cols || ny < 0 || ny >= engine.rows) continue;
+    int candidate = ny * engine.cols + nx;
+    if (predicate(candidate)) return candidate;
+  }
+  return -1;
+}
+
 void ReactionSystem::prepareActiveLists() {
   E.activeWaterCells.clear(); E.activeFireCells.clear(); E.activeAcidCells.clear();
   E.activeLavaCells.clear(); E.activeSaltCells.clear(); E.activeHeatCells.clear();
@@ -147,9 +173,7 @@ void ReactionSystem::applyAcid() {
       E.markCellIndex(k);
       if (!reactNow) continue;
       if (E.rand() >= ACID_BATCH_DISSOLVE_P) continue;
-      bool hf = E.rand() < 0.5; int a = hf ? right : down, b = hf ? left : up, c = hf ? down : right, d = hf ? up : left;
-      int target = -1;
-      if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
+      int target = reactionCardinalMatch(E, k, 0xAC1D01u, acidEats);
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
       E.audio.noteAcidDissolve(target % E.cols, target / E.cols);
@@ -236,21 +260,21 @@ void ReactionSystem::applyLava() {
   std::vector<int> burnedPlant;
   for (int k : E.activeLavaCells) {
       if (E.L->grid[k] != LAVA) continue;
-      int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
-      int snowK = -1;
-      if (E.L->grid[right] == SNOW) snowK = right; else if (E.L->grid[left] == SNOW) snowK = left; else if (E.L->grid[down] == SNOW) snowK = down; else if (E.L->grid[up] == SNOW) snowK = up;
+      int right = k + 1, left = k - 1, up = k - E.cols;
+      int snowK = reactionCardinalMatch(
+        E, k, 0x1A7A01u, [&](int q) { return E.L->grid[q] == SNOW; });
       if (snowK >= 0) { E.writeGridIndex(snowK, WATER); E.markCellIndex(k); continue; }
       int burnK = -1;
       // body-material invariant: lava disintegrates a flammable body via erodeBodies, not in-place ignition.
       auto lavaBurns = [&](int q) { return E.isFlammable(E.L->grid[q]) && !E.isBodyCell(q); };
-      if (lavaBurns(right)) burnK = right; else if (lavaBurns(left)) burnK = left; else if (lavaBurns(down)) burnK = down; else if (lavaBurns(up)) burnK = up;
+      burnK = reactionCardinalMatch(E, k, 0x1A7A02u, lavaBurns);
       if (burnK >= 0) { if (E.isPlantMaterial(E.L->grid[burnK])) burnedPlant.push_back(burnK); E.writeGridIndex(burnK, FIRE); continue; }
       int liquidK = -1;
       // Flag-driven (quenchesLava: water/acid/brine) -> steam + loose stone dust.
       // Keeping disconnected quench residue granular avoids creating a rigid body
       // for every isolated lava cell along a turbulent liquid boundary.
       auto quenches = [&](int q) { return E.isLavaQuencher(E.L->grid[q]); };
-      if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
+      liquidK = reactionCardinalMatch(E, k, 0x1A7A03u, quenches);
       if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE_DUST); continue; }
       if (E.rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (E.L->grid[up] == EMPTY) airK = up; else if (E.L->grid[right] == EMPTY) airK = right; else if (E.L->grid[left] == EMPTY) airK = left; if (airK >= 0) E.writeGridIndex(airK, FIRE); }
   }
@@ -263,14 +287,19 @@ void ReactionSystem::applyBodyIce() {
                  ^ ((uint32_t)E.tick * 0x9E3779B9u)
                  ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
   for (Body* body : E.L->bodies) {
-    E.rigid.forEachBodyCell(body, [](int, int, int) {});
+    E.rigid.ensureBodyRaster(body);
     for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
       if (E.rigid.bodyMaterialAt(body, cell.local) != ICE) continue;
-      const int nx[4] = { cell.x + 1, cell.x - 1, cell.x, cell.x };
-      const int ny[4] = { cell.y, cell.y, cell.y + 1, cell.y - 1 };
       int waterK = -1;
-      for (int direction = 0; direction < 4; direction++) {
-        int x = nx[direction], y = ny[direction];
+      int start = ((int)(whash2(
+        phase ^ 0xD1AEC7u,
+        reactionWorldCoordinate(E.L->worldOffsetX, cell.x),
+        reactionWorldCoordinate(E.L->worldOffsetY, cell.y)) * 4.0)) & 3;
+      static constexpr int DX[4] = {1, 0, -1, 0};
+      static constexpr int DY[4] = {0, 1, 0, -1};
+      for (int offset = 0; offset < 4; offset++) {
+        int direction = (start + offset) & 3;
+        int x = cell.x + DX[direction], y = cell.y + DY[direction];
         if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
         int k = y * E.cols + x;
         if (E.L->grid[k] != WATER || E.L->bodyOwner[k] >= 0) continue;
@@ -278,8 +307,10 @@ void ReactionSystem::applyBodyIce() {
         break;
       }
       if (waterK < 0
-          || whash2(phase, E.L->worldOffsetX + cell.x,
-                    E.L->worldOffsetY + cell.y) >= ICE_FREEZE_P) continue;
+          || whash2(
+            phase, reactionWorldCoordinate(E.L->worldOffsetX, cell.x),
+            reactionWorldCoordinate(E.L->worldOffsetY, cell.y))
+             >= ICE_FREEZE_P) continue;
       frozen.push_back({body->id, waterK});
     }
   }
@@ -324,12 +355,20 @@ void ReactionSystem::applyIce() {
       // check below only targets WATER, so the melt sticks. Deterministic (no rand):
       // an ice-free / salt-free scene consumes no RNG here, so checksums are stable.
       if (rm == SALT || lm == SALT || dm == SALT || um == SALT) {
-        int saltK = rm == SALT ? right : lm == SALT ? left : dm == SALT ? down : up;
+        int saltK = reactionCardinalMatch(
+          E, k, 0x1CE5A17u, [&](int q) { return E.L->grid[q] == SALT; });
         E.writeGridIndex(k, BRINE); E.writeGridIndex(saltK, BRINE); meltedCells.push_back(k); melted = true; continue;
       }
-      if (E.rand() < ICE_FREEZE_P) {
-        int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
-        if (waterK >= 0) {
+      // The preloaded cardinal materials also prove whether randomized water
+      // selection has a candidate. Inert ice needs no hash or second grid scan.
+      if (rm != WATER && lm != WATER && dm != WATER && um != WATER) continue;
+      int waterK = reactionCardinalMatch(
+        E, k, 0x1CEF12Eu, [&](int q) { return E.L->grid[q] == WATER; });
+      if (waterK >= 0) {
+        // A quiet ice/water boundary remains a live probabilistic reaction. Keep
+        // the ice cell scheduled without marking an unchanged world tile dirty.
+        E.markLayerSimCell(E.L, k);
+        if (E.rand() < ICE_FREEZE_P) {
           E.writeGridIndex(waterK, ICE);
           // A cell melted earlier in this same pass still has its component
           // membership until the batch split below. Refreezing restores its
@@ -368,17 +407,16 @@ void ReactionSystem::applyIce() {
 void ReactionSystem::applySalt() {
   for (int k : E.activeSaltCells) {
       if (E.L->grid[k] != SALT) continue;
-      int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
-      int waterK = -1;
-      if (E.L->grid[right] == WATER) waterK = right; else if (E.L->grid[left] == WATER) waterK = left; else if (E.L->grid[down] == WATER) waterK = down; else if (E.L->grid[up] == WATER) waterK = up;
+      int waterK = reactionCardinalMatch(
+        E, k, 0x5A1701u, [&](int q) { return E.L->grid[q] == WATER; });
       if (waterK >= 0) { E.writeGridIndex(waterK, BRINE); E.writeGridIndex(k, BRINE); continue; }
       // NOTE: salt does NOT dissolve on contact with existing brine — a denser salt
       // grain sinks THROUGH meltwater/brine to reach fresh ice below and keep
       // de-icing (applyIce runs first and consumes any grain adjacent to ice). The
       // tradeoff is a rare undissolved grain stranded in a deep brine pool, which
       // reads fine (a pinch of un-dissolved salt at the bottom).
-      int snowK = -1;
-      if (E.L->grid[right] == SNOW) snowK = right; else if (E.L->grid[left] == SNOW) snowK = left; else if (E.L->grid[down] == SNOW) snowK = down; else if (E.L->grid[up] == SNOW) snowK = up;
+      int snowK = reactionCardinalMatch(
+        E, k, 0x5A1702u, [&](int q) { return E.L->grid[q] == SNOW; });
       if (snowK >= 0) { E.writeGridIndex(snowK, BRINE); E.writeGridIndex(k, BRINE); }
   }
 }

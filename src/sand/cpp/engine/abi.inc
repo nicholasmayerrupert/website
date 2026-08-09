@@ -4,12 +4,28 @@
 // create engines, step/render/stream worlds, forward browser input, read packed
 // snapshots, and apply multiplayer state. Gameplay policy belongs in the
 // subsystem files below, not in the bridge.
+static inline bool abiMaterialValid(int material) {
+  return material >= 0 && material < MATERIAL_COUNT;
+}
+static inline bool abiRadiusValid(const Engine* e, int radius) {
+  return e && radius >= 0 && radius <= imax(e->cols, e->rows)
+      && radius <= 46340;
+}
+static inline bool abiHalfExtentsValid(
+    const Engine* e, int halfW, int halfH) {
+  return e && halfW > 0 && halfH > 0
+      && halfW <= e->cols && halfH <= e->rows;
+}
 extern "C" {
 // ABI version stamp (abi.generated.hpp). initSandWasm() refuses a module whose
 // version mismatches the JS manifest — catches stale committed sandEngine artifacts.
 EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
 EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite,
                                           int storageRole, int planetId) {
+  if (cols <= 0 || rows <= 0
+      || cols > ENGINE_MAX_DIMENSION || rows > ENGINE_MAX_DIMENSION
+      || (uint64_t)cols * (uint64_t)rows > ENGINE_MAX_CELLS)
+    return nullptr;
   EngineStorageRole role = storageRole == ESR_PRESENTATION ? ESR_PRESENTATION
                          : (storageRole == ESR_AUTHORITY ? ESR_AUTHORITY : ESR_FULL);
   Engine* e = new Engine(cols, rows, seed, sinks != 0, role, planetId);
@@ -81,14 +97,27 @@ EMSCRIPTEN_KEEPALIVE void engine_render_full_layer(Engine* e, int layer) {
 EMSCRIPTEN_KEEPALIVE void engine_render_dirty_rects(Engine* e) { e->useLayer(&e->fg); e->renderer.renderDirtyRects(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->fg.renderPixels.data(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels_layer(Engine* e, int layer) { return (layer ? e->bg.renderPixels : e->fg.renderPixels).data(); }
-EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->fg.renderPixels.size(); }
 EMSCRIPTEN_KEEPALIVE void engine_set_sky_light(Engine* e, int v) { e->renderer.renderSkyLight = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); }
-EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
-EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }
+EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) {
+  if (!abiMaterialValid(mat) || !abiRadiusValid(e, r)) return 0;
+  e->useLayer(&e->fg);
+  return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0);
+}
+EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) {
+  if (!abiRadiusValid(e, r)) return 0;
+  e->useLayer(&e->fg);
+  return e->eraseDisc(cx, cy, r);
+}
 // Generic material placement by id (inventory-forward): routes by kind/group so
 // any material is placeable without a per-material tool. 0=fg, 1=bg.
-EMSCRIPTEN_KEEPALIVE int engine_place_material(Engine* e, int cx, int cy, int r, int mat) { return e->placeMaterialAt(cx, cy, r, (uint8_t)mat); }
+EMSCRIPTEN_KEEPALIVE int engine_place_material(Engine* e, int cx, int cy, int r, int mat) {
+  if (!abiMaterialValid(mat) || !abiRadiusValid(e, r)) return 0;
+  e->useLayer(&e->fg);
+  return e->placeMaterialAt(cx, cy, r, (uint8_t)mat);
+}
 EMSCRIPTEN_KEEPALIVE int engine_place_material_layer(Engine* e, int layer, int cx, int cy, int r, int mat) {
+  if ((layer != 0 && layer != 1) || !abiMaterialValid(mat)
+      || !abiRadiusValid(e, r)) return 0;
   e->useLayer(layer ? &e->bg : &e->fg);
   if (layer) e->bgEnabled = true;
   int n = e->placeMaterialAt(cx, cy, r, (uint8_t)mat);
@@ -110,6 +139,7 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_LIGHT_MS] = e->perfLightMs;
   out[PF_FILL_MS] = e->perfFillMs;
   out[PF_UPLOAD_MS] = e->perfUploadMs;
+  out[PF_SHIFT_SAVE] = e->perfShiftSave;
   out[PF_SHIFT_BUFFERS] = e->perfShiftBuffers;
   out[PF_SHIFT_TRANSLATE] = e->perfShiftTranslate;
   out[PF_SHIFT_REGISTER] = e->perfShiftRegister;
@@ -150,22 +180,22 @@ EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) {
 // drafts / seed
 // One material-parameterized draft set; ice excludes the bottom row.
 EMSCRIPTEN_KEEPALIVE int engine_add_draft(Engine* e, int cx, int cy, int r, int mat) {
+  if (!abiMaterialValid(mat) || !abiRadiusValid(e, r)) return 0;
   e->tools.draftMaterial = (uint8_t)mat;
   return e->addDiscToDraft(e->tools.draft, cx, cy, r, mat == ICE ? e->rows - 1 : e->rows);
 }
 EMSCRIPTEN_KEEPALIVE void engine_finalize_draft(Engine* e, int mat) {
+  if (!abiMaterialValid(mat)) return;
   e->tools.draftMaterial = (uint8_t)mat;
   e->finalizeDraft();
   e->tools.draft.clear();
   e->tools.draftStrokeActive = false;
 }
-EMSCRIPTEN_KEEPALIVE void engine_clear_draft(Engine* e) { e->tools.draft.clear(); e->tools.draftStrokeActive = false; }
 EMSCRIPTEN_KEEPALIVE int engine_draft_snapshot(Engine* e) { e->tools.draftSnapshot.assign(e->tools.draft.begin(), e->tools.draft.end()); return (int)e->tools.draftSnapshot.size(); }
 EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->tools.draftSnapshot.data(); }
 // Creative palette: select any material / seed species / eraser / cube (CreativeKind).
 EMSCRIPTEN_KEEPALIVE void engine_set_creative_material(Engine* e, int kind, int value) { e->setCreativeMaterial(kind, value); }
 EMSCRIPTEN_KEEPALIVE int engine_get_seed_origin(Engine* e, int cx, int cy, int* out) { int x0, y0; if (!e->getSeedOrigin(cx, cy, x0, y0)) return 0; out[0] = x0; out[1] = y0; return 1; }
-EMSCRIPTEN_KEEPALIVE int engine_can_place_seed(Engine* e, int x0, int y0) { return e->canPlaceSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed(Engine* e, int x0, int y0) { return e->placeSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed_typed(Engine* e, int x0, int y0, int pt) { return e->placeSeedAtTyped(x0, y0, (uint8_t)pt) ? 1 : 0; }
 
@@ -176,7 +206,6 @@ EMSCRIPTEN_KEEPALIVE int engine_pointer_draft(Engine* e, int cx, int cy) { retur
 EMSCRIPTEN_KEEPALIVE void engine_pointer_buttons(Engine* e, int buttons) { e->pointerButtons(buttons); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_up(Engine* e, int button) { return e->pointerUp(button); }
 EMSCRIPTEN_KEEPALIVE int engine_apply_tool(Engine* e, int cx, int cy, double now, int inside, int drawMode) { return e->applyTool(cx, cy, now, inside != 0, drawMode != 0); }
-EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->tools.draftMaterial == DRIFTWOOD ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_seed_draft(Engine* e, int* out) {
   if (!e->tools.draftingSeed || !e->tools.hasSeedOrigin) return 0;
   out[0] = e->tools.seedOriginX; out[1] = e->tools.seedOriginY; out[2] = e->canPlaceSeedAt(e->tools.seedOriginX, e->tools.seedOriginY) ? 1 : 0;
@@ -185,16 +214,40 @@ EMSCRIPTEN_KEEPALIVE int engine_seed_draft(Engine* e, int* out) {
 
 // free rigid bodies
 EMSCRIPTEN_KEEPALIVE void engine_spawn_body(Engine* e, int* xy, int count) {
+  if (!e || !xy || count <= 0 || count > e->cols * e->rows) return;
   std::vector<std::pair<int, int>> cells; cells.reserve(count);
-  for (int i = 0; i < count; i++) cells.push_back({xy[i * 2], xy[i * 2 + 1]});
+  for (int i = 0; i < count; i++) {
+    int x = xy[i * 2], y = xy[i * 2 + 1];
+    if (!e->isInBounds(x, y)) return;
+    cells.push_back({x, y});
+  }
   e->spawnBody(cells);
 }
-EMSCRIPTEN_KEEPALIVE void engine_spawn_box(Engine* e, int cx, int cy, int halfW, int halfH, int material) { e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material); }
-EMSCRIPTEN_KEEPALIVE void engine_spawn_disc(Engine* e, int cx, int cy, int radius, int material) { e->spawnDisc(cx, cy, radius, (uint8_t)material); }
+EMSCRIPTEN_KEEPALIVE void engine_spawn_box(Engine* e, int cx, int cy, int halfW, int halfH, int material) {
+  if (!abiMaterialValid(material)
+      || !abiHalfExtentsValid(e, halfW, halfH)) return;
+  e->useLayer(&e->fg);
+  e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material);
+}
+EMSCRIPTEN_KEEPALIVE void engine_spawn_disc(Engine* e, int cx, int cy, int radius, int material) {
+  if (!abiMaterialValid(material) || !abiRadiusValid(e, radius)) return;
+  e->useLayer(&e->fg);
+  e->spawnDisc(cx, cy, radius, (uint8_t)material);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_count(Engine* e) { return (int)e->fg.bodies.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_test_world_dirty_tile_count(Engine* e) {
+  return (int)(e->fg.dirtyWorldTiles.size() + e->bg.dirtyWorldTiles.size());
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_component_state_count(Engine* e, int layer) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return (int)lay.componentStateStore.size();
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_terrain_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyTerrainBlocked(e->fg.bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_force_diag(Engine* e, int metric) {
+  return e->forces.debugMetric(metric);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_child_count(Engine* e, int i) {
   return (i >= 0 && i < (int)e->fg.bodies.size())
@@ -228,6 +281,8 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int 
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_box_layer(
     Engine* e, int layer, int cx, int cy, int halfW, int halfH, int material) {
+  if ((layer != 0 && layer != 1) || !abiMaterialValid(material)
+      || !abiHalfExtentsValid(e, halfW, halfH)) return -1;
   e->useLayer(layer ? &e->bg : &e->fg);
   Body* body = e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material);
   e->useLayer(&e->fg);
@@ -244,6 +299,11 @@ EMSCRIPTEN_KEEPALIVE int32_t* engine_test_body_owner_ptr(Engine* e, int layer) {
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_test_fall_speed_ptr(Engine* e, int layer) {
   Layer& lay = layer ? e->bg : e->fg;
   return lay.fallSpeed;
+}
+EMSCRIPTEN_KEEPALIVE uint32_t* engine_test_liquid_velocity_ptr(
+    Engine* e, int layer) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return lay.liquidVel;
 }
 EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
   auto reset = [&](Layer& lay) {
@@ -267,6 +327,10 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.curBodyCells.clear();
     lay.pendingDetonations.clear();
     lay.fuseStore.clear();
+    lay.componentStore.clear();
+    lay.componentStateStore.clear();
+    lay.componentFragmentRefs.clear();
+    lay.componentStateGcCandidates.clear();
     std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
     lay.nextComponentId = lay.nextBodyId = 1;
     lay.myceliumActive = false;
@@ -304,6 +368,13 @@ EMSCRIPTEN_KEEPALIVE void engine_test_detonate_tnt(Engine* e, int cx, int cy) {
   e->useLayer(&e->fg);
   e->detonate(cx, cy, ExplosivesSystem::TNT_BLAST_RADIUS, ExplosivesSystem::TNT_BLAST_POWER);
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_apply_blast_impulse(
+    Engine* e, int bodyIndex, int cx, int cy, int radius, double power) {
+  if (bodyIndex < 0 || bodyIndex >= (int)e->fg.bodies.size()) return 0;
+  e->useLayer(&e->fg);
+  return e->explosives.applyBlastImpulse(
+    e->fg.bodies[bodyIndex], cx, cy, radius, power) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_damage_player(Engine* e, int id, int damage,
                                                    double sourceX, double sourceY) {
   Player* p = e->findPlayer(id);
@@ -335,6 +406,18 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
   int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
   if (x >= 0 && x < e->cols && y >= 0 && y < e->rows)
     e->markCellIndex(y * e->cols + x);
+  return 1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_freeze_body_cell(
+    Engine* e, int sourceLayer, int bodyIndex, int targetLayer, int x, int y) {
+  Layer& source = sourceLayer ? e->bg : e->fg;
+  Layer& target = targetLayer ? e->bg : e->fg;
+  if (bodyIndex < 0 || bodyIndex >= (int)source.bodies.size()
+      || x < 0 || x >= e->cols || y < 0 || y >= e->rows) return 0;
+  int bodyId = source.bodies[bodyIndex]->id;
+  std::vector<int> cells{y * e->cols + x};
+  e->rigid.freezeCellsOntoBody(source, bodyId, target, cells);
+  e->useLayer(&e->fg);
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_set_liquid_velocity(
@@ -458,10 +541,11 @@ EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_force_full_solve_bodies(
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_spill_probe(Engine* e, int sourceX, int sourceY,
                                                        int x0, int y0, int x1, int y1, int material) {
   e->useLayer(&e->fg);
-  if (!e->isInBounds(sourceX, sourceY) || x0 < 1 || y0 < 1 || x1 >= e->cols - 1 || y1 >= e->rows ||
+  if (!abiMaterialValid(material) || !e->isInBounds(sourceX, sourceY) || x0 < 1 || y0 < 1 || x1 >= e->cols - 1 || y1 >= e->rows ||
       sourceX < x0 || sourceX > x1 || sourceY < y0 || sourceY > y1) return -1;
   const int bodyId = INT_MAX;
-  const int32_t footprintGen = ++e->fg.seenGen;
+  e->fg.reserveSeenGenerations(RigidBodySystem::SPILL_GENERATION_BUDGET);
+  const int32_t footprintGen = e->fg.nextSeenGeneration();
   std::vector<int> footprint;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     int k = y * e->cols + x;
@@ -519,8 +603,12 @@ EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, d
 }
 
 // Dropped-item and particle hooks plus the packed replication/render snapshot.
-EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }
-EMSCRIPTEN_KEEPALIVE void engine_test_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
+EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) {
+  return abiMaterialValid(mat) ? e->spawnItem((uint8_t)mat, count, px, py, vx, vy) : -1;
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) {
+  if (abiMaterialValid(mat)) e->spawnParticle((uint8_t)mat, px, py, vx, vy, life);
+}
 EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->itemsys.items.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->itemsys.buildItemSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemsys.snapshot.data(); }
@@ -558,7 +646,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_spawn_breach_near_focus(Engine* e, int spec
   return e->creatures.spawnVisibleBreachNearFocus(
     (uint8_t)species, (uint32_t)salt) ? 1 : 0;
 }
-EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int radius, int damage) { return e->damageCreaturesAt(x, y, radius, damage) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int radius, int damage) {
+  if (!abiRadiusValid(e, radius)) return 0;
+  return e->damageCreaturesAt(x, y, radius, damage) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->creatures.snapshot.data(); }
@@ -606,7 +697,9 @@ EMSCRIPTEN_KEEPALIVE void engine_set_creature_runtime(Engine* e, int simulate, i
   e->creatureNaturalSpawning = e->creaturesEnabled && naturalSpawn != 0;
 }
 EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seedStarterTools(id); }
-EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) {
+  return abiMaterialValid(mat) && e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_add_special_item(Engine* e, int id, int itemKind, int count) {
   return e->inv.addSpecialItem(id, (uint8_t)itemKind, count) ? 1 : 0;
 }
@@ -636,12 +729,12 @@ EMSCRIPTEN_KEEPALIVE int engine_respawn_player(Engine* e, int playerId) { return
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->net.serializeWorld(); }
 EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->net.serializeDiff(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->net.blob.data(); }
-EMSCRIPTEN_KEEPALIVE void engine_apply_world(Engine* e, uint8_t* buf, int len) { e->net.applyWorld(buf, len); }
-EMSCRIPTEN_KEEPALIVE void engine_apply_diff(Engine* e, uint8_t* buf, int len) { e->net.applyDiff(buf, len); }
-EMSCRIPTEN_KEEPALIVE void engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { e->net.applyWorldMirror(buf, len); }
-EMSCRIPTEN_KEEPALIVE void engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len,
+EMSCRIPTEN_KEEPALIVE int engine_apply_world(Engine* e, uint8_t* buf, int len) { return e->net.applyWorld(buf, len) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_apply_diff(Engine* e, uint8_t* buf, int len) { return e->net.applyDiff(buf, len) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { return e->net.applyWorldMirror(buf, len) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len,
                                                    int lightEditX0, int lightEditX1) {
-  e->net.applyDiffMirror(buf, len, lightEditX0, lightEditX1);
+  return e->net.applyDiffMirror(buf, len, lightEditX0, lightEditX1) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y) {
   e->fg.worldOffsetX = e->bg.worldOffsetX = x;
@@ -652,6 +745,8 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_tick(Engine* e, int tick) { e->tick = tick; }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int count, int material) {
+  if (!e || !abiMaterialValid(material) || count < 0
+      || count > e->cols * e->rows || (count > 0 && !cells)) return;
   e->tools.draft.clear();
   for (int i = 0; i < count; i++) {
     int k = cells[i];
@@ -680,6 +775,7 @@ EMSCRIPTEN_KEEPALIVE void engine_reset_simulation_activity(Engine* e, int preser
     for (auto& spans : lay.rowMarkSpans) spans.clear();
     for (auto& spans : lay.simOnlyRowMarkSpans) spans.clear();
     for (auto& spans : lay.activeRowSpans) spans.clear();
+    e->forces.invalidateLooseCandidateCache(&lay);
   };
   reset(e->fg);
   reset(e->bg);
@@ -695,7 +791,7 @@ EMSCRIPTEN_KEEPALIVE void engine_activate_simulation_rect(
     e->simulationActivityLimited = true;
   for (Layer* lay : {&e->fg, &e->bg})
     for (int y = y0; y < y1; y++)
-      e->markLayerRowSpan(lay, y, x0, x1 - 1);
+      e->markLayerSimRowSpan(lay, y, x0, x1 - 1);
 }
 
 // ---- two-layer access (background = layer 1) ----
@@ -711,6 +807,8 @@ EMSCRIPTEN_KEEPALIVE void engine_set_bg_enabled(Engine* e, int on) {
 }
 // Paint a disc into a specific layer (0=fg, 1=bg). Enables the background on bg paint.
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc_layer(Engine* e, int layer, int cx, int cy, int r, int mat, int ow) {
+  if ((layer != 0 && layer != 1) || !abiMaterialValid(mat)
+      || !abiRadiusValid(e, r)) return 0;
   e->useLayer(layer ? &e->bg : &e->fg);
   if (layer) e->bgEnabled = true;
   int n = e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0);
@@ -718,6 +816,7 @@ EMSCRIPTEN_KEEPALIVE int engine_paint_disc_layer(Engine* e, int layer, int cx, i
   return n;
 }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc_layer(Engine* e, int layer, int cx, int cy, int r) {
+  if ((layer != 0 && layer != 1) || !abiRadiusValid(e, r)) return 0;
   e->useLayer(layer ? &e->bg : &e->fg);
   if (layer) e->bgEnabled = true;
   int n = e->eraseDisc(cx, cy, r);
@@ -758,7 +857,9 @@ EMSCRIPTEN_KEEPALIVE float engine_gl_actor_light(Engine* e, double x, double y, 
 // semantics; JS forwards raw DOM events and drives the loop.
 EMSCRIPTEN_KEEPALIVE void engine_set_viewport(Engine* e, double dpr, double cellDev, int vCols, int vRows) { e->setViewport(dpr, cellDev, vCols, vRows); }
 // Grow/shrink the loaded sim window while keeping world content (tile/body stores).
-EMSCRIPTEN_KEEPALIVE int engine_resize_loaded_window(Engine* e, int newCols, int newRows) { return e->resizeLoadedWindow(newCols, newRows); }
+EMSCRIPTEN_KEEPALIVE int engine_resize_loaded_window(Engine* e, int newCols, int newRows) {
+  return e ? e->resizeLoadedWindow(newCols, newRows) : 0;
+}
 EMSCRIPTEN_KEEPALIVE void engine_camera_set(Engine* e, double x, double y) { e->cameraSet(x, y); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->cam.camX; out[1] = e->cam.camY; }
 EMSCRIPTEN_KEEPALIVE int engine_camera_col_x(Engine* e) { return e->cameraColX(); }

@@ -42,6 +42,7 @@ int GLPresenter::glInit(const char* target) {
   } else {
     glCheapFirstPresent = true;
   }
+  E.useLayer(&E.fg);
   return 1;
 }
 
@@ -370,6 +371,7 @@ void GLPresenter::glShift(int dx) {
   if (dx >= E.cols || -dx >= E.cols) {
     E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
     E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+    E.useLayer(&E.fg);
     return;
   }
   // The browser mirror receives already-shifted authority snapshots, so this
@@ -405,6 +407,7 @@ void GLPresenter::glShiftV(int dy) {
   if (dy >= E.rows || -dy >= E.rows) {
     E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
     E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+    E.useLayer(&E.fg);
     return;
   }
   if (!glTex2 && !glAllocateCellTexture(glTex2, E.cols, E.rows)) {
@@ -2236,17 +2239,23 @@ int GLPresenter::glRenderFrame(int forceFull) {
 
 void GLPresenter::glGetOffset(int* out) { glSyncCamera(); out[0] = (int)std::lround(glOffX); out[1] = (int)std::lround(glOffY); }
 
-// Read back a top-down RGBA region of the canvas (bench flicker probe). glReadPixels
-// is bottom-up, so flip E.rows into `out`.
+// Read back a top-down RGBA region of the canvas (bench flicker probe).
+// glReadPixels is bottom-up, so flip its rows in place.
 int GLPresenter::glReadback(int x, int y, int w, int h, uint8_t* out) {
-  if (!glReady() || w <= 0 || h <= 0) return 0;
+  if (!glReady() || !out || x < 0 || y < 0 || w <= 0 || h <= 0
+      || w > glDevW || h > glDevH
+      || x > glDevW - w || y > glDevH - h)
+    return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
-  std::vector<uint8_t> tmp((size_t)w * h * 4);
   int gy = glDevH - (y + h);
-  glReadPixels(x, gy, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp.data());
+  glReadPixels(x, gy, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out);
   size_t row = (size_t)w * 4;
-  for (int r = 0; r < h; r++) memcpy(out + (size_t)r * row, tmp.data() + (size_t)(h - 1 - r) * row, row);
+  for (int r = 0; r < h / 2; r++) {
+    uint8_t* top = out + (size_t)r * row;
+    uint8_t* bottom = out + (size_t)(h - 1 - r) * row;
+    std::swap_ranges(top, top + row, bottom);
+  }
   return 1;
 }

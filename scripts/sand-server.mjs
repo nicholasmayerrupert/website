@@ -11,14 +11,14 @@ import { decode, encode, MSG, makeAssign, makeReject } from '../src/sand/net/pro
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodePlayers, encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
-import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
+import { createTurnDeadline } from '../src/sand/timing/fixedRateClock.js';
 import { syncWorldWindow } from '../src/sand/net/server/worldWindow.js';
 import { canSendBufferLocalFrame } from '../src/sand/net/server/frameGate.js';
 
 // Bootstrap size only. Connected clients report their survival viewport needs;
 // the shared authority window then streams/resizes around the player group.
 const DEFAULTS = { port: 5191, cols: 320, rows: 192, seed: 0xC0FFEE, room: 'main' };
-const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
+const STREAM_CHUNK_SIZE = 32;
 const SNAPSHOT_INTERVAL = 1;   // player state follows the 60 Hz actor clock
 const ITEMS_INTERVAL = 2;      // dropped items update at ~30 Hz
 const MAX_PLAYERS = 8;
@@ -26,6 +26,8 @@ const MAX_BUFFERED_BYTES = 1 << 20;
 
 export async function startSandServer(opts = {}) {
   const cfg = { ...DEFAULTS, ...opts };
+  cfg.cols = Math.ceil(cfg.cols / STREAM_CHUNK_SIZE) * STREAM_CHUNK_SIZE;
+  cfg.rows = Math.ceil(cfg.rows / STREAM_CHUNK_SIZE) * STREAM_CHUNK_SIZE;
   await initSandWasm();
   const engine = createEngineWasm({
     cols: cfg.cols, rows: cfg.rows, infinite: true, worldSeed: cfg.seed >>> 0,
@@ -182,21 +184,19 @@ export async function startSandServer(opts = {}) {
     stepWorldOnce();
   }
 
-  // Actors repay small timing debt at 60 Hz; the expensive world is attempted
-  // exactly once per turn. The next turn accounts for work time but never queues
-  // missed world ticks.
-  const actorClock = createFixedRateClock({ now: Date.now() });
+  // Authority actors and cells advance together once per turn. The next turn
+  // accounts for work time but never queues missed simulation ticks.
   let timer = null;
+  const turnDeadline = createTurnDeadline({ now: performance.now() });
   const runLoop = () => {
-    const started = Date.now();
-    actorClock.advance(started, () => stepActorsOnce(started));
-    stepWorldOnce();
-    const delay = Math.max(0, STEP_MS - (Date.now() - started));
-    timer = setTimeout(runLoop, delay);
+    stepOnce(Date.now());
+    timer = setTimeout(runLoop, turnDeadline.nextDelay(performance.now()));
     timer.unref?.();
   };
-  timer = setTimeout(runLoop, STEP_MS);
-  timer.unref?.(); // don't keep the process alive purely for the loop in tests
+  if (cfg.autoStart !== false) {
+    timer = setTimeout(runLoop, turnDeadline.nextDelay(performance.now()));
+    timer.unref?.(); // don't keep the process alive purely for the loop in tests
+  }
 
   return {
     wss,
@@ -208,7 +208,14 @@ export async function startSandServer(opts = {}) {
     seed: cfg.seed >>> 0,
     peerCount: () => peers.size,
     step: stepOnce, // tests can drive the sim deterministically
-    close: () => new Promise((resolve) => { clearTimeout(timer); wss.close(() => { try { engine.destroy(); } catch { /* already gone */ } resolve(); }); }),
+    close: () => new Promise((resolve) => {
+      clearTimeout(timer);
+      for (const ws of wss.clients) ws.terminate();
+      wss.close(() => {
+        try { engine.destroy(); } catch { /* already gone */ }
+        resolve();
+      });
+    }),
   };
 }
 

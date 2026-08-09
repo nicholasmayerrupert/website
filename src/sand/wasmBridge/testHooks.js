@@ -18,9 +18,13 @@ function table() {
   T = {
     mod: M.mod,
     bodyCount: c('engine_test_body_count', 'number', ['number']),
+    worldDirtyTileCount: c('engine_test_world_dirty_tile_count', 'number', ['number']),
+    componentStateCount: c('engine_test_component_state_count', 'number',
+      ['number', 'number']),
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyTerrainBlocked: c('engine_test_body_terrain_blocked', 'number', ['number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
+    forceDiag: c('engine_test_force_diag', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
     bodyChildCount: c('engine_test_body_child_count', 'number', ['number', 'number']),
     bodyBlastDebris: c('engine_test_body_blast_debris', 'number', ['number', 'number']),
@@ -34,10 +38,14 @@ function table() {
     groundedPtr: c('engine_test_grounded_ptr', 'number', ['number', 'number']),
     bodyOwnerPtr: c('engine_test_body_owner_ptr', 'number', ['number', 'number']),
     fallSpeedPtr: c('engine_test_fall_speed_ptr', 'number', ['number', 'number']),
+    liquidVelocityPtr: c('engine_test_liquid_velocity_ptr', 'number',
+      ['number', 'number']),
     resetTopology: c('engine_test_reset_topology', null, ['number']),
     dropJointBondCache: c('engine_test_drop_joint_bond_cache', null, ['number']),
     setBodyBlastDebris: c('engine_test_set_body_blast_debris', 'number', ['number', 'number', 'number']),
     detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
+    applyBlastImpulse: c('engine_test_apply_blast_impulse', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number']),
     damagePlayer: c('engine_test_damage_player', 'number',
       ['number', 'number', 'number', 'number', 'number']),
     collectDynamicLights: c('engine_test_collect_dynamic_lights', 'number', ['number']),
@@ -51,6 +59,8 @@ function table() {
       ['number', 'number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
+    freezeBodyCell: c('engine_test_freeze_body_cell', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number']),
     setLiquidVelocity: c('engine_test_set_liquid_velocity', 'number',
       ['number', 'number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
@@ -76,9 +86,21 @@ export function attachTestHooks(engine) {
   const { mod } = t;
   const ptr = engine.ptr;
   engine._bodyCount = () => t.bodyCount(ptr);
+  engine._worldDirtyTileCount = () => t.worldDirtyTileCount(ptr);
+  engine._componentStateCount = (layer = 0) =>
+    t.componentStateCount(ptr, layer ? 1 : 0);
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyTerrainBlocked = (i) => t.bodyTerrainBlocked(ptr, i);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
+  engine.getForceDebug = () => ({
+    fullCoveragePasses: t.forceDiag(ptr, 0),
+    candidateBinBuilds: t.forceDiag(ptr, 1),
+    candidateCellsVisited: t.forceDiag(ptr, 2),
+    staticSourceBuilds: t.forceDiag(ptr, 3),
+    staticSourceReuses: t.forceDiag(ptr, 4),
+    selectedBins: t.forceDiag(ptr, 5),
+    neutroniumIndexBuilds: t.forceDiag(ptr, 6),
+  });
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
   engine._bodyChildCount = (i) => t.bodyChildCount(ptr, i);
   engine._bodyBlastDebris = (i) => t.bodyBlastDebris(ptr, i);
@@ -92,11 +114,16 @@ export function attachTestHooks(engine) {
     new Int32Array(mod.HEAP32.buffer, t.bodyOwnerPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._fallSpeedGrid = (layer = 0) =>
     new Uint8Array(mod.HEAPU8.buffer, t.fallSpeedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
+  engine._liquidVelocityGrid = (layer = 0) =>
+    new Uint32Array(mod.HEAPU8.buffer,
+      t.liquidVelocityPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._resetTopology = () => t.resetTopology(ptr);
   engine._dropJointBondCache = () => t.dropJointBondCache(ptr);
   engine._setBodyBlastDebris = (i, enabled = true) =>
     t.setBodyBlastDebris(ptr, i | 0, enabled ? 1 : 0) > 0;
   engine._detonateTnt = (cx, cy) => t.detonateTnt(ptr, cx | 0, cy | 0);
+  engine._applyBlastImpulse = (body, cx, cy, radius, power) =>
+    t.applyBlastImpulse(ptr, body | 0, cx | 0, cy | 0, radius | 0, power) > 0;
   engine._damagePlayer = (id, damage, sourceX = NaN, sourceY = NaN) =>
     t.damagePlayer(ptr, id | 0, damage | 0, sourceX, sourceY);
   engine._collectDynamicLights = () => t.collectDynamicLights(ptr);
@@ -144,6 +171,9 @@ export function attachTestHooks(engine) {
   engine._spawnBoxLayer = (layer, cx, cy, halfW, halfH, material) =>
     t.spawnBoxLayer(ptr, layer ? 1 : 0, cx | 0, cy | 0, halfW | 0, halfH | 0, material | 0);
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
+  engine._freezeBodyCell = (sourceLayer, bodyIndex, targetLayer, x, y) =>
+    t.freezeBodyCell(ptr, sourceLayer ? 1 : 0, bodyIndex | 0,
+      targetLayer ? 1 : 0, x | 0, y | 0) > 0;
   engine._setLiquidVelocity = (layer, x, y, vx, vy) =>
     t.setLiquidVelocity(ptr, layer ? 1 : 0, x | 0, y | 0, vx, vy) > 0;
   engine.getRigidDebug = () => ({ rejectedCells: t.rigidRejected(ptr), depenetrations: t.rigidDepen(ptr) });

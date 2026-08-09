@@ -1,6 +1,6 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { MAT } from '../src/sand/materials.js';
+import { MAT, MATERIALS } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, SEED = 0xC0FFEE;
@@ -13,6 +13,8 @@ const createEngine = () => attachTestHooks(createEngineWasmRaw({
 const step = (engine, count) => {
   for (let i = 1; i <= count; i++) engine.step(i * 16);
 };
+const close = (actual, expected, tolerance = 1e-9) =>
+  Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected));
 const iceOwnership = (engine, layer) => {
   const grid = layer ? engine.getGridBg() : engine.getGrid();
   const owners = engine._bodyOwnerGrid(layer);
@@ -26,6 +28,67 @@ const iceOwnership = (engine, layer) => {
   }
   return { cells, ownerless, bodyIds };
 };
+
+{
+  const engine = createEngine();
+  engine.setBgEnabled(false);
+  engine._spawnBoxLayer(0, 60, 52, 2, 2, MAT.ICE);
+  const waterX = 62, waterY = 51;
+  engine.paintDisc(waterX, waterY, 0, MAT.WATER, true);
+  const waterVx = 0.25, waterVy = -0.125;
+  engine._setLiquidVelocity(0, waterX, waterY, waterVx, waterVy);
+  engine._setBodyMotion(0, 1.25, -0.4, 0.13);
+  const before = engine._bodyState(0);
+  const bodyMass = 1 / before.invMass;
+  const waterMass = MATERIALS[MAT.WATER].density;
+  const bodyMomentumX = bodyMass * before.vx;
+  const bodyMomentumY = bodyMass * before.vy;
+  const momentumX = bodyMomentumX + waterMass * waterVx;
+  const momentumY = bodyMomentumY + waterMass * waterVy;
+  const angularMomentum = before.omega / before.invInertia
+    + before.px * bodyMomentumY - before.py * bodyMomentumX
+    + (waterX + 0.5) * waterMass * waterVy
+    - (waterY + 0.5) * waterMass * waterVx;
+
+  engine._freezeBodyCell(0, 0, 0, waterX, waterY);
+  const after = engine._bodyState(0);
+  const afterMass = 1 / after.invMass;
+  const afterMomentumX = afterMass * after.vx;
+  const afterMomentumY = afterMass * after.vy;
+  const afterAngularMomentum = after.omega / after.invInertia
+    + after.px * afterMomentumY - after.py * afterMomentumX;
+  check('direct ice accretion adds the adjacent water cell',
+    after.nPts === before.nPts + 1);
+  check('ice accretion conserves linear momentum',
+    close(afterMomentumX, momentumX) && close(afterMomentumY, momentumY));
+  check('ice accretion conserves angular momentum',
+    close(afterAngularMomentum, angularMomentum));
+  engine.destroy();
+}
+
+// A settled static boundary keeps retrying its probabilistic freeze reaction.
+{
+  const engine = attachTestHooks(createEngineWasmRaw({
+    cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(false);
+  for (let y = 82; y < ROWS; y++)
+    for (let x = 45; x <= 75; x++)
+      engine.paintDisc(x, y, 0, MAT.STONE, true);
+  engine.paintDisc(62, 81, 0, MAT.STONE, true);
+  engine.syncComponents();
+  engine.paintDisc(60, 81, 0, MAT.ICE, true);
+  engine.syncComponents();
+  engine.paintDisc(61, 81, 0, MAT.WATER, true);
+  const firstStepActive = engine.stepWorld();
+  check('settled ice/water boundary survives an unsuccessful freeze roll',
+    firstStepActive && engine.getGrid()[81 * COLS + 61] === MAT.WATER);
+  for (let tick = 1; tick < 500; tick++) engine.stepWorld();
+  let ice = 0;
+  for (const material of engine.getGrid()) if (material === MAT.ICE) ice++;
+  check('settled ice/water boundary retries until water freezes', ice >= 2);
+  engine.destroy();
+}
 
 {
   const engine = createEngine();

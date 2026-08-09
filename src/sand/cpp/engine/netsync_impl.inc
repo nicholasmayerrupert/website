@@ -27,7 +27,26 @@ int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
   }
   return p;
 }
-void NetSync::applyWorld(const uint8_t* buf, int len) {
+int NetSync::rleValidate(const uint8_t* buf, int len, int p) const {
+  size_t idx = 0, n = (size_t)E.cols * E.rows;
+  while (idx < n) {
+    if (p < 0 || p + 5 > len) return -1;
+    uint32_t run = (uint32_t)buf[p]
+      | ((uint32_t)buf[p + 1] << 8)
+      | ((uint32_t)buf[p + 2] << 16)
+      | ((uint32_t)buf[p + 3] << 24);
+    uint8_t material = buf[p + 4];
+    if (run == 0 || run > n - idx || material >= MATERIAL_COUNT) return -1;
+    idx += run;
+    p += 5;
+  }
+  return p;
+}
+bool NetSync::applyWorld(const uint8_t* buf, int len) {
+  if (!buf || len <= 0) return false;
+  int fgEnd = rleValidate(buf, len, 0);
+  int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
+  if (bgEnd != len) return false;
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
   if (E.fg.fallSpeed) {
@@ -49,12 +68,17 @@ void NetSync::applyWorld(const uint8_t* buf, int len) {
   E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols); E.markAllDirty();
   E.useLayer(&E.bg); E.registerSeededComponents(0, E.cols); E.markAllDirty();
   E.useLayer(&E.fg);
+  return true;
 }
 
 // Presentation mirrors do not simulate their cellular world, so rebuilding all
 // component topology after every packet is wasted main-thread work. Keep only
 // the render/lighting dirty state required by WebGL and actor collision reads.
-void NetSync::applyWorldMirror(const uint8_t* buf, int len) {
+bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
+  if (!buf || len <= 0) return false;
+  int fgEnd = rleValidate(buf, len, 0);
+  int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
+  if (bgEnd != len) return false;
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
   // Preserve absolute-world skylight reach across worker streaming snapshots.
@@ -68,6 +92,7 @@ void NetSync::applyWorldMirror(const uint8_t* buf, int len) {
   E.useLayer(&E.bg); E.markAllDirty();
   E.bgEnabled = true;
   E.useLayer(&E.fg);
+  return true;
 }
 
 // Diff per layer: [u16 rectCount] then per rect [u16 x0,y0,x1,y1][raw cells,
@@ -127,7 +152,8 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
           for (int x = 0; x < width; x++) {
             uint8_t oldM = current[x], newM = incoming[x];
             bool immediateLightChange = oldM != newM &&
-              (MAT_CLASS[oldM] == MC_RIGID || MAT_CLASS[newM] == MC_RIGID ||
+              ((oldM < TABLE && MAT_CLASS[oldM] == MC_RIGID)
+               || MAT_CLASS[newM] == MC_RIGID ||
                (x0 + x >= lightEditX0 && x0 + x <= lightEditX1));
             if (immediateLightChange && runX0 < 0) runX0 = x0 + x;
             if ((!immediateLightChange || x + 1 == width) && runX0 >= 0) {
@@ -152,23 +178,47 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
   }
   return p;
 }
-void NetSync::applyDiff(const uint8_t* buf, int len) {
-  if (len < 2) return;
+int NetSync::validateDiffLayer(const uint8_t* buf, int len, int p) const {
+  if (!buf || p < 0 || p + 2 > len) return -1;
+  int rectCount = readLE16(buf, p);
+  p += 2;
+  for (int rect = 0; rect < rectCount; rect++) {
+    if (p + 8 > len) return -1;
+    int x0 = readLE16(buf, p), y0 = readLE16(buf, p + 2);
+    int x1 = readLE16(buf, p + 4), y1 = readLE16(buf, p + 6);
+    p += 8;
+    if (x1 < x0 || y1 < y0 || x1 > E.cols || y1 > E.rows) return -1;
+    size_t area = (size_t)(x1 - x0) * (size_t)(y1 - y0);
+    if (area > (size_t)(len - p)) return -1;
+    for (size_t i = 0; i < area; i++)
+      if (buf[p + i] >= MATERIAL_COUNT) return -1;
+    p += (int)area;
+  }
+  return p;
+}
+bool NetSync::applyDiff(const uint8_t* buf, int len) {
+  int fgEnd = validateDiffLayer(buf, len, 0);
+  int bgEnd = fgEnd >= 0 ? validateDiffLayer(buf, len, fgEnd) : -1;
+  if (bgEnd != len) return false;
   int p = readDiffLayer(buf, len, 0, false);
   readDiffLayer(buf, len, p, true);
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols);
   E.useLayer(&E.bg); E.registerSeededComponents(0, E.cols);
   E.useLayer(&E.fg);
+  return true;
 }
 
-void NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
-  if (len < 2) return;
+bool NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
+  int fgEnd = validateDiffLayer(buf, len, 0);
+  int bgEnd = fgEnd >= 0 ? validateDiffLayer(buf, len, fgEnd) : -1;
+  if (bgEnd != len) return false;
   int p = readDiffLayer(buf, len, 0, false, lightEditX0, lightEditX1);
   readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.bgEnabled = true;
   E.useLayer(&E.fg);
+  return true;
 }
 
 // FNV-1a over BOTH grids (divergence / resync check). Host + client fold the

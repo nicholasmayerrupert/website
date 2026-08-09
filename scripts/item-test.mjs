@@ -127,15 +127,15 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
 {
   const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 9, sinksOn: false, infinite: true });
   e.spawnItem(MAT.WOOD, 1, 150, 30, 0, 0);
-  e.shiftWorldXY(40, 0); // 150 -> 110, stays in buffer
+  e.shiftWorldXY(32, 0); // 150 -> 118, stays in buffer
   let it = e.getItems();
-  check(`item remaps with the world shift (x ${it[0]?.x.toFixed(1)})`, e.itemCount() === 1 && Math.abs(it[0].x - 110) < 1.5);
-  e.shiftWorldXY(128, 0); // 110 -> -18, off buffer -> tile store
+  check(`item remaps with the world shift (x ${it[0]?.x.toFixed(1)})`, e.itemCount() === 1 && Math.abs(it[0].x - 118) < 1.5);
+  e.shiftWorldXY(128, 0); // 118 -> -10, off buffer -> tile store
   check(`item leaves the live actor set off-buffer (count ${e.itemCount()})`, e.itemCount() === 0);
   e.shiftWorldXY(-128, 0);
   it = e.getItems();
   check(`stored item returns at its world position (x ${it[0]?.x.toFixed(1)})`,
-    e.itemCount() === 1 && Math.abs(it[0].x - 110) < 1.5);
+    e.itemCount() === 1 && Math.abs(it[0].x - 118) < 1.5);
   e.destroy();
 }
 

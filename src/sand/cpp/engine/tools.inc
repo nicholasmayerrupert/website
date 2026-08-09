@@ -20,9 +20,7 @@
   int paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) { return tools.paintDisc(cx, cy, radius, material, overwrite); }
   int placeMaterialAt(int cx, int cy, int radius, uint8_t mat) { return tools.placeMaterialAt(cx, cy, radius, mat); }
   void registerComponentCells(uint8_t mat, std::unordered_set<int>& cells) { tools.registerComponentCells(mat, cells); }
-  int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr) { return tools.placeMaterialAtCapped(cx, cy, radius, mat, maxCells, p); }
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) { return tools.placeMaterialAtFootprintCapped(cx, cy, fp, mat, maxCells, p); }
-  const std::vector<std::pair<int, int>>& discOffsets(int radius) { return tools.discOffsets(radius); }
   void splitComponentsAfterDestroy(std::vector<int>& erasedStructural) { tools.splitComponentsAfterDestroy(erasedStructural); }
   int eraseDisc(int cx, int cy, int radius) { return tools.eraseDisc(cx, cy, radius); }
   int eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, int x1, int y1) { return tools.eraseStrokeCells(cells, x0, y0, x1, y1); }
@@ -35,7 +33,6 @@
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) { return tools.mineDamageDisc(cx, cy, radius, miner, scaledSpeed); }
   int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed) { return tools.mineDamageFootprint(cx, cy, fp, miner, scaledSpeed); }
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) { return tools.addDiscToDraft(draft, cx, cy, radius, yLimit); }
-  int addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p) { return tools.addDiscToDraftCapped(d, cx, cy, radius, yLimit, maxAdd, p); }
   int addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, int radius, int yLimit) { return tools.addDiscStrokeToDraft(d, x0, y0, x1, y1, radius, yLimit); }
   int addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) { return tools.addFootprintToDraftCapped(d, cx, cy, fp, yLimit, maxAdd, p); }
   int footprintStrokeSpacing(const SurvivalFootprint& fp) const { return tools.footprintStrokeSpacing(fp); }

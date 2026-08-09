@@ -32,12 +32,8 @@ function fitCells(cssW, cssH, logicalCellPx, cfg) {
 // pixels). Sizing the visible window off that physical-pixel width instead of raw
 // CSS px makes the sim IGNORE browser zoom entirely: only the container size and
 // the in-game zoom change how many cells are shown. Defaults to `dpr` (no
-// correction) so legacy callers/tests are unchanged.
-//
-// The 6th argument was previously `minZoom` (buffer pinned to most-zoomed-out).
-// It is ignored when present so old call sites keep working.
-export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _minZoomIgnored = zoom, dprBaseline = dpr, maxBufferDimension = 0) {
-  void _minZoomIgnored; // retained only to preserve the legacy positional API
+// correction) when it is omitted.
+export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, dprBaseline = dpr, maxBufferDimension = 0) {
   const safeDpr = dpr > 0 ? dpr : 1;
   const pageZoom = safeDpr / (dprBaseline > 0 ? dprBaseline : safeDpr); // 1 at load
   // Zoom-corrected ("unzoomed") CSS box used only for choosing how many cells to
@@ -84,15 +80,30 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
   let effectiveZoom = Math.max(1e-6, zoom);
   let fitted = sizeAtZoom(effectiveZoom);
   const textureLimit = Math.floor(maxBufferDimension / chunkSize) * chunkSize;
-  // Each layer is one cols x rows WebGL texture. Stop zooming out only when a
-  // dimension would exceed the device's actual texture limit.
-  if (textureLimit >= chunkSize) {
-    const exceedsLimit = () => fitted.bufCols > textureLimit || fitted.worldRows > textureLimit;
-    for (let i = 0; i < 8 && exceedsLimit(); i++) {
-      const scale = Math.max(fitted.bufCols / textureLimit, fitted.worldRows / textureLimit);
-      effectiveZoom *= Math.max(1.01, scale * 1.002);
-      fitted = sizeAtZoom(effectiveZoom);
-    }
+  const engineDimensionLimit = Math.floor(
+    (cfg.bufferHardMaxDimension ?? 0) / chunkSize,
+  ) * chunkSize;
+  const dimensionLimit = textureLimit >= chunkSize && engineDimensionLimit >= chunkSize
+    ? Math.min(textureLimit, engineDimensionLimit)
+    : Math.max(textureLimit, engineDimensionLimit);
+  const hardMaxCells = Math.floor(cfg.bufferHardMaxCells ?? 0);
+  // Each layer is one cols x rows WebGL texture, and the engine has a separate
+  // total-cell allocation limit. Raise the effective zoom floor until the
+  // loaded window satisfies both constraints.
+  const exceedsLimit = () => (
+    (dimensionLimit >= chunkSize
+      && (fitted.bufCols > dimensionLimit || fitted.worldRows > dimensionLimit))
+    || (hardMaxCells > 0 && fitted.bufCols * fitted.worldRows > hardMaxCells)
+  );
+  for (let i = 0; i < 12 && exceedsLimit(); i++) {
+    const dimensionScale = dimensionLimit >= chunkSize
+      ? Math.max(fitted.bufCols / dimensionLimit, fitted.worldRows / dimensionLimit)
+      : 1;
+    const cellScale = hardMaxCells > 0
+      ? Math.sqrt(fitted.bufCols * fitted.worldRows / hardMaxCells)
+      : 1;
+    effectiveZoom *= Math.max(1.01, dimensionScale, cellScale) * 1.002;
+    fitted = sizeAtZoom(effectiveZoom);
   }
   const { viewCols, viewRows, bufCols, worldRows } = fitted;
 

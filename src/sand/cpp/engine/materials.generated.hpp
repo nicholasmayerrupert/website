@@ -21,6 +21,7 @@ static const uint16_t MF_RELAXESGAPS = 1u << 6;
 static const uint16_t MF_PLANTWOOD = 1u << 7;
 static const uint16_t MF_PLANTLEAF = 1u << 8;
 
+static const int MATERIAL_COUNT = 55;
 static const int TABLE = 64;
 static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 1.5f, 0.4f, 1.7f, 2, 2.3f, 0.9f, 2.7f, 2.8f, 2.6f, 3, 2.4f, 0.6f, 0.7f, 0.5f, 0.45f, 0.4f, 0, 1.5f, 1.05f, 1.2f, 1.6f, 2.4f, 2.5f, 1.2f, 1.1f, 0.4f, 0.45f, 1.4f, 0.4f, 0.4f, 0.4f, 0.4f, 2.9f, 2.1f, 1.8f, 32, 2.6f, 0.5f, 0.6f, 0.4f, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};

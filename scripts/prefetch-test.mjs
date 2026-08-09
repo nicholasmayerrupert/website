@@ -1,7 +1,8 @@
 // Predictive worldgen must preserve both layers byte-for-byte while turning
 // horizontal and vertical stream shifts into cache hits.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
 // Chunk-aligned buffer (cols/rows multiples of 32) so whole tiles persist — the
 // game's buffer is chunk-rounded; a partial-tile buffer never caches, so prefetch
@@ -15,7 +16,9 @@ let failures = 0;
 const check = (name, cond, extra = '') => { console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); if (!cond) failures++; };
 
 await initSandWasm();
-const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
+const mk = () => attachTestHooks(createEngineWasm({
+  cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true,
+}));
 
 // Drive a one-axis pan of `shiftsWanted` shifts; B runs prefetchAdvance each frame,
 // A does not. Compare fg+bg checksums after every shift. Returns the two engines'
@@ -102,6 +105,24 @@ console.log('perpendicular shift invalidates an in-flight foreground prefetch');
   A.destroy(); B.destroy();
 }
 
+console.log('invalid public shifts leave the loaded world untouched');
+{
+  const e = mk();
+  const before = {
+    hash: e.gridHash(), x: e.getWorldOffsetX(), y: e.getWorldOffsetY(),
+    shifts: e.getWorldShiftCount(),
+  };
+  e.shiftWorldXY(32, 32);
+  e.shiftWorldXY(COLS, 0);
+  e.shiftWorldXY(0, -2147483648);
+  e.shiftWorldXY(1, 0);
+  check('diagonal, oversized, unaligned, and INT_MIN shifts have no side effects',
+    e.gridHash() === before.hash
+      && e.getWorldOffsetX() === before.x && e.getWorldOffsetY() === before.y
+      && e.getWorldShiftCount() === before.shifts);
+  e.destroy();
+}
+
 // Re-entering a region the camera already left is ALSO a hit (the leaving band was
 // saved to the tileStore) — prefetch must coexist with that without clobbering it.
 console.log('prefetch coexists with saved (revisited) tiles');
@@ -158,6 +179,21 @@ console.log('pristine exploration keeps only a bounded baseline cache');
     `max prefetch=${maxPrefetchTiles}`);
   check('compressed baseline cache remains compact', maxBytes < 100_000,
     `max bytes=${maxBytes}`);
+  e.destroy();
+}
+
+console.log('persisted leaving tiles retire loaded-window dirty keys');
+{
+  const e = mk();
+  let edits = 0, maxDirtyAfterShift = 0;
+  for (let i = 0; i < 24; i++) {
+    if (e.paintDisc(8, 8, 1, MAT.SAND, true)) edits++;
+    e.shiftWorld(32);
+    maxDirtyAfterShift = Math.max(maxDirtyAfterShift, e._worldDirtyTileCount());
+  }
+  check('each leaving band received an edit', edits === 24, `edits=${edits}`);
+  check('off-screen persistence does not retain dirty keys', maxDirtyAfterShift === 0,
+    `max dirty after shift=${maxDirtyAfterShift}`);
   e.destroy();
 }
 

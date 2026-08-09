@@ -1,5 +1,6 @@
 import { SIZING } from '../src/sand/game/runtimeConfig.js';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from '../src/sand/game/viewportSizing.js';
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../src/sand/engineLimits.js';
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
@@ -39,9 +40,9 @@ console.log('viewport sizing');
   // Browser page zoom couples a CSS-px shrink with a dpr grow (cssPx*dpr ~ const).
   // With the load dpr as the baseline, the visible cell window must NOT change.
   const baseDpr = 1;
-  const load = computeViewportSizing(1200, 800, baseDpr, SIZING, 1, 1, baseDpr);
-  const zoomedIn = computeViewportSizing(1200 / 1.5, 800 / 1.5, baseDpr * 1.5, SIZING, 1, 1, baseDpr);
-  const zoomedOut = computeViewportSizing(1200 / 0.8, 800 / 0.8, baseDpr * 0.8, SIZING, 1, 1, baseDpr);
+  const load = computeViewportSizing(1200, 800, baseDpr, SIZING, 1, baseDpr);
+  const zoomedIn = computeViewportSizing(1200 / 1.5, 800 / 1.5, baseDpr * 1.5, SIZING, 1, baseDpr);
+  const zoomedOut = computeViewportSizing(1200 / 0.8, 800 / 0.8, baseDpr * 0.8, SIZING, 1, baseDpr);
   check(`browser zoom-in keeps the same visible cells (${load.viewCols} == ${zoomedIn.viewCols})`, load.viewCols === zoomedIn.viewCols && load.viewRows === zoomedIn.viewRows);
   check(`browser zoom-out keeps the same visible cells (${load.viewCols} == ${zoomedOut.viewCols})`, load.viewCols === zoomedOut.viewCols && load.viewRows === zoomedOut.viewRows);
 }
@@ -55,9 +56,11 @@ console.log('viewport sizing');
 }
 
 {
-  // Extreme zoom-out is allowed (no hard maxViewportCells floor).
+  // Extreme zoom-out remains continuous rather than hitting a fixed cell-count floor.
+  const normal = computeViewportSizing(900, 700, 1, SIZING, 1);
   const far = computeViewportSizing(900, 700, 1, SIZING, 0.1);
-  check(`extreme zoom-out can exceed old maxViewportCells (${far.viewCols * far.viewRows})`, far.viewCols * far.viewRows > SIZING.maxViewportCells);
+  check(`extreme zoom-out expands the visible area (${far.viewCols * far.viewRows})`,
+    far.viewCols * far.viewRows > normal.viewCols * normal.viewRows * 20);
   check(`fractional cellDev remains supported below one device px (${far.cellDev})`, far.cellDev < 1);
   check(`buffer dimensions stay chunk-aligned (${far.bufCols}x${far.worldRows})`, far.bufCols % SIZING.chunkSize === 0 && far.worldRows % SIZING.chunkSize === 0);
   const fullRunwayRows = Math.ceil(
@@ -73,13 +76,44 @@ console.log('viewport sizing');
 
 {
   const textureLimit = 2048;
-  const capped = computeViewportSizing(2560, 1440, 1, SIZING, 0.05, 0.05, 1, textureLimit);
+  const capped = computeViewportSizing(2560, 1440, 1, SIZING, 0.05, 1, textureLimit);
   check(`GPU-limited zoom keeps both texture dimensions renderable (${capped.bufCols}x${capped.worldRows})`,
     capped.bufCols <= textureLimit && capped.worldRows <= textureLimit);
-  check(`GPU-limited zoom has no fixed total-cell ceiling (${capped.bufCols * capped.worldRows})`,
+  check(`GPU-limited zoom retains a useful loaded area (${capped.bufCols * capped.worldRows})`,
     capped.bufCols * capped.worldRows > 1200000);
   check(`GPU-limited zoom reports its effective floor (${capped.zoom.toFixed(3)} > 0.05)`, capped.zoom > 0.05);
   check('GPU-limited visible window still fits inside the buffer',
+    capped.viewCols <= capped.bufCols && capped.viewRows <= capped.worldRows);
+}
+
+{
+  const cases = [
+    ['ordinary', 900, 700],
+    ['large desktop', 2560, 1440],
+  ];
+  for (const [label, width, height] of cases) {
+    const capped = computeViewportSizing(
+      width, height, 1, SIZING, SIZING.zoomOutMin, 1, 16384,
+    );
+    check(`${label} minimum zoom respects the engine cell cap (${capped.bufCols * capped.worldRows})`,
+      capped.bufCols * capped.worldRows <= ENGINE_MAX_CELLS);
+    check(`${label} capped view remains usable (${capped.viewCols}x${capped.viewRows})`,
+      capped.viewCols <= capped.bufCols && capped.viewRows <= capped.worldRows
+        && capped.viewCols >= SIZING.minViewportCols
+        && capped.viewRows >= SIZING.minViewportRows);
+  }
+}
+
+{
+  const capped = computeViewportSizing(
+    100_000, 300, 1, SIZING, SIZING.zoomOutMin,
+  );
+  check(`extreme aspect ratio respects the engine dimension cap (${capped.bufCols}x${capped.worldRows})`,
+    capped.bufCols <= ENGINE_MAX_DIMENSION
+      && capped.worldRows <= ENGINE_MAX_DIMENSION);
+  check(`extreme aspect ratio also respects the engine cell cap (${capped.bufCols * capped.worldRows})`,
+    capped.bufCols * capped.worldRows <= ENGINE_MAX_CELLS);
+  check('extreme-aspect visible window remains inside the buffer',
     capped.viewCols <= capped.bufCols && capped.viewRows <= capped.worldRows);
 }
 

@@ -64,6 +64,41 @@ check(`loose cells remain cellular materials (bodies ${e._bodyCount()})`,
 
 e.destroy();
 
+{
+  const cols = 256, rows = 256;
+  const streamed = createEngineWasm({
+    cols, rows, worldSeed: 3, sinksOn: false, infinite: true,
+  });
+  streamed.setBgEnabled(false);
+  const x = 48;
+  for (let y = 16; y <= 40; y++) streamed.paintDisc(x, y, 0, MAT.EMPTY, true);
+  streamed.paintDisc(x, 18, 0, MAT.SAND, true);
+  for (let tick = 0; tick < 3; tick++) streamed.stepWorld();
+  const grid = streamed.getGrid();
+  let sandCell = -1;
+  for (let y = 16; y <= 40; y++) if (grid[y * cols + x] === MAT.SAND) sandCell = y * cols + x;
+  const speedBefore = sandCell >= 0 ? streamed._fallSpeedGrid()[sandCell] : -1;
+  const waterX = 60, waterY = 50, waterCell = waterY * cols + waterX;
+  streamed.paintDisc(waterX, waterY, 0, MAT.WATER, true);
+  streamed._setLiquidVelocity(0, waterX, waterY, 0.375, -0.25);
+  const velocityBefore = streamed._liquidVelocityGrid()[waterCell];
+  streamed.shiftWorldXY(128, 0);
+  streamed.shiftWorldXY(-128, 0);
+  const speedAfter = sandCell >= 0 ? streamed._fallSpeedGrid()[sandCell] : -1;
+  const velocityAfter = streamed._liquidVelocityGrid()[waterCell];
+  check(`streamed loose material retains fall speed (${speedBefore} -> ${speedAfter})`,
+    speedBefore > 0 && speedAfter === speedBefore);
+  check(`streamed liquid retains packed velocity (${velocityBefore} -> ${velocityAfter})`,
+    velocityBefore !== 0 && velocityAfter === velocityBefore);
+  streamed.paintDisc(x, Math.floor(sandCell / cols), 0, MAT.SAND, true);
+  streamed.paintDisc(waterX, waterY, 0, MAT.WATER, true);
+  check('repainting a powder clears its inherited fall speed',
+    streamed._fallSpeedGrid()[sandCell] === 0);
+  check('repainting a liquid clears its inherited velocity',
+    streamed._liquidVelocityGrid()[waterCell] === 0);
+  streamed.destroy();
+}
+
 const viscosity = createEngineWasm({
   cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false,
 });

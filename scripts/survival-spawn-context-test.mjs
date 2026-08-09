@@ -69,13 +69,15 @@ function findContext(engine, predicate, {
 }
 
 function moveWindowTo(engine, worldX, worldY, localX, localY) {
-  while (engine.getWorldOffsetX() + localX !== worldX) {
-    const remaining = worldX - (engine.getWorldOffsetX() + localX);
+  const targetOffsetX = Math.floor((worldX - localX) / 32) * 32;
+  const targetOffsetY = Math.floor((worldY - localY) / 32) * 32;
+  while (engine.getWorldOffsetX() !== targetOffsetX) {
+    const remaining = targetOffsetX - engine.getWorldOffsetX();
     engine.shiftWorldXY(
       Math.sign(remaining) * Math.min(128, Math.abs(remaining)), 0);
   }
-  while (engine.getWorldOffsetY() + localY !== worldY) {
-    const remaining = worldY - (engine.getWorldOffsetY() + localY);
+  while (engine.getWorldOffsetY() !== targetOffsetY) {
+    const remaining = targetOffsetY - engine.getWorldOffsetY();
     engine.shiftWorldXY(
       0, Math.sign(remaining) * Math.min(128, Math.abs(remaining)));
   }

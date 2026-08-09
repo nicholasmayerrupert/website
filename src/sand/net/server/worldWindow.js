@@ -3,9 +3,9 @@
 // store, so moving/resizing this shared window is the same operation used by the
 // offline authority worker.
 
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../../engineLimits.js';
+
 const CHUNK = 32;
-const MAX_DIM = 16384;
-const MAX_CELLS = 8_000_000;
 const SHRINK_HYSTERESIS = 0.12;
 
 const alignUp = (n) => Math.ceil((n - 1e-6) / CHUNK) * CHUNK;
@@ -40,7 +40,8 @@ export function syncWorldWindow(engine, peers) {
     );
   };
   const wantedCols = alignUp(right - left), wantedRows = alignUp(bottom - top);
-  if (wantedCols > MAX_DIM || wantedRows > MAX_DIM || wantedCols * wantedRows > MAX_CELLS) return false;
+  if (wantedCols > ENGINE_MAX_DIMENSION || wantedRows > ENGINE_MAX_DIMENSION
+      || wantedCols * wantedRows > ENGINE_MAX_CELLS) return false;
   const grow = wantedCols > engine.cols || wantedRows > engine.rows;
   const shrink = engine.cols - wantedCols > Math.max(CHUNK, engine.cols * SHRINK_HYSTERESIS) ||
     engine.rows - wantedRows > Math.max(CHUNK, engine.rows * SHRINK_HYSTERESIS);

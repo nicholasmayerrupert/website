@@ -18,7 +18,6 @@ class ToolSystem {
   bool draftStrokeActive = false;
   std::vector<SurvivalFootprint> survivalFootprints;
   std::vector<int32_t> survivalFootprintSnapshot; // packed FP_STRIDE ints
-  std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache; // center-first disc offsets per radius
   std::vector<int> draftSnapshot;
   bool drafting = false, draftingSeed = false;
   uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_STANDARD, creativeCreature = CS_MINNOW;
@@ -65,9 +64,7 @@ class ToolSystem {
                               uint8_t plantType = PT_STANDARD);
   void finalizeStructuralPlacement(const std::vector<std::pair<int, int>>& cells,
                                    uint8_t mat, uint8_t plantType = PT_STANDARD);
-  int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr);
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr);
-  const std::vector<std::pair<int, int>>& discOffsets(int radius);
   void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructural,
                      std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies);
   void splitComponentsAfterDestroy(std::vector<int>& erasedStructural);
@@ -85,7 +82,6 @@ class ToolSystem {
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed);
   int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed);
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit);
-  int addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p);
   int addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, int radius, int yLimit);
   int addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p);
   int footprintStrokeSpacing(const SurvivalFootprint& fp) const;

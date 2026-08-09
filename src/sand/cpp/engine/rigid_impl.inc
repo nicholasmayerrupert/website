@@ -613,6 +613,32 @@ void RigidBodySystem::freezeCellsOntoBody(
   }
   if (!target) return;
 
+  Body* leader = target->jointRole == 2 ? target->jointPeer : target;
+  Body* follower = leader && leader->jointRole == 1 ? leader->jointPeer : nullptr;
+  Body* physical = leader ? leader : target;
+  double momentumX = 0, momentumY = 0, angularMomentumOrigin = 0;
+  if (physical->invMass > 0 && physical->invInertia > 0) {
+    double oldMass = 1.0 / physical->invMass;
+    momentumX = oldMass * physical->vx;
+    momentumY = oldMass * physical->vy;
+    angularMomentumOrigin = physical->omega / physical->invInertia
+      + physical->px * momentumY - physical->py * momentumX;
+  }
+  for (const FreezeCandidate& candidate : candidates) {
+    uint32_t packedVelocity = targetLayer.liquidVel
+      ? targetLayer.liquidVel[candidate.waterK] : 0;
+    double waterMomentumX = DENSITY[WATER]
+      * E.liquidVelocityX(packedVelocity);
+    double waterMomentumY = DENSITY[WATER]
+      * E.liquidVelocityY(packedVelocity);
+    int waterY = candidate.waterK / E.cols;
+    int waterX = candidate.waterK - waterY * E.cols;
+    momentumX += waterMomentumX;
+    momentumY += waterMomentumY;
+    angularMomentumOrigin += (waterX + 0.5) * waterMomentumY
+                           - (waterY + 0.5) * waterMomentumX;
+  }
+
   int minI = 0, minJ = 0, maxI = target->w - 1, maxJ = target->h - 1;
   for (const FreezeCandidate& candidate : candidates) {
     minI = imin(minI, candidate.i); minJ = imin(minJ, candidate.j);
@@ -643,8 +669,6 @@ void RigidBodySystem::freezeCellsOntoBody(
     body->w = newW; body->h = newH;
     body->offsetX -= addLeft; body->offsetY -= addTop;
   };
-  Body* leader = target->jointRole == 2 ? target->jointPeer : target;
-  Body* follower = leader && leader->jointRole == 1 ? leader->jointPeer : nullptr;
   resize(target);
   if (follower) resize(target == leader ? follower : leader);
 
@@ -665,9 +689,19 @@ void RigidBodySystem::freezeCellsOntoBody(
   if (follower) {
     computeDerived(leader, true);
     computeDerived(follower, true);
+    leader->vx = momentumX * leader->invMass;
+    leader->vy = momentumY * leader->invMass;
+    leader->omega = (angularMomentumOrigin
+      - leader->px * momentumY + leader->py * momentumX)
+      * leader->invInertia;
     syncJointFollower(leader);
   } else {
     computeDerived(target, true);
+    target->vx = momentumX * target->invMass;
+    target->vy = momentumY * target->invMass;
+    target->omega = (angularMomentumOrigin
+      - target->px * momentumY + target->py * momentumX)
+      * target->invInertia;
   }
 
   Engine::ActiveLayerScope layerScope(E, &targetLayer);
@@ -996,7 +1030,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     for (const auto& entry : peerJointLeaders)
       syncJointFollower(entry.second);
 }
-template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
+void RigidBodySystem::ensureBodyRaster(Body* b) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
   // center back into occ space and stamp if filled. This is hole-free for
   // rotated E.L->bodies (forward occ->world point-sampling instead leaves gaps
@@ -1008,11 +1042,7 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
     && b->rasterGeometryRevision == b->geometryRevision
     && b->rasterCols == E.cols
     && b->rasterRows == E.rows;
-  if (cacheValid) {
-    for (const BodyRasterCell& cell : b->rasterFootprint)
-      cb(cell.x, cell.y, cell.local);
-    return;
-  }
+  if (cacheValid) return;
   double sn = std::sin(b->angle), cs = std::cos(b->angle);
   double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5, ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
   double minWX = 1e18, minWY = 1e18, maxWX = -1e18, maxWY = -1e18;
@@ -1041,6 +1071,10 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   b->rasterCols = E.cols;
   b->rasterRows = E.rows;
   b->rasterFootprintValid = true;
+}
+
+template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
+  ensureBodyRaster(b);
   for (const BodyRasterCell& cell : b->rasterFootprint)
     cb(cell.x, cell.y, cell.local);
 }
@@ -1092,13 +1126,11 @@ double RigidBodySystem::granularMediumDensityAt(int x, int y) {
   uint8_t material = E.L->grid[y * E.cols + x];
   return E.isLooseSolidMaterial(material) ? DENSITY[material] : 0;
 }
-// Any loose medium is relocatable: a body submerging into liquid or powder
-// displaces it (spilled around the body) rather than being blocked at the surface.
-// Only liquids provide upward buoyancy; powders can support, but only by
-// cancelling gravity.
-bool RigidBodySystem::isBodyRelocatable(uint8_t m, int k, double bodyDensity) { (void)k; (void)bodyDensity; return E.isBuoyantMedium(m); }
-// Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
-// through them and they vanish on commit.
+// Loose media are relocatable: a body submerging into liquid or powder, or
+// sweeping through gas, spills that cell around its new footprint. Only liquids
+// provide upward buoyancy; powders can support, but only by cancelling gravity.
+bool RigidBodySystem::isBodyRelocatable(uint8_t m, int k, double bodyDensity) { (void)k; (void)bodyDensity; return E.isBuoyantMedium(m) || E.isGasMaterial(m); }
+// Gas never supports or blocks a body, but is still relocated by the commit.
 bool RigidBodySystem::canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || E.isGasMaterial(m) || isBodyRelocatable(m, k, bodyDensity); }
 void RigidBodySystem::spillDisplacedBodyMaterial(
     std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint,
@@ -1107,11 +1139,13 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
   if (displaced.empty()) return;
   rigidSpillDisplaced += (int)displaced.size();
   (void)bodyDensity;
-  // Spread displaced fluid sideways and downward before upward (lateral, down,
-  // then up last) — same priority the component-body spill uses. A body plunging
-  // into a pool then distributes the rise across the surface instead of firing a
-  // narrow fountain straight up out of the entry column ("lava out the top").
-  int offs[4] = {-1, 1, E.cols, -E.cols}; int gridLen = E.cols * E.rows;
+  // Spread displaced liquid/powder laterally and downward before upward; gas
+  // searches upward first. A body plunging into a pool then distributes the rise
+  // across the surface instead of firing a narrow fountain straight up out of
+  // the entry column ("lava out the top").
+  int offs[4] = {-1, 1, E.cols, -E.cols};
+  int gasOffs[4] = {-E.cols, -1, 1, E.cols};
+  int gridLen = E.cols * E.rows;
   uint8_t footprintLiquid = EMPTY;
   bool mixedLiquidFootprint = false;
   auto noteFootprintLiquid = [&](uint8_t material) {
@@ -1148,7 +1182,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
   // into a local cone at the body's entry column.
   double curD = 0;
   auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || E.isGasMaterial(m) || (E.isLiquidMaterial(m) && DENSITY[m] <= curD) || (E.isLooseSolidMaterial(m) && (E.L->groundedCell[k] != 1 || DENSITY[m] <= curD)); };
-  int32_t reservedGen = ++E.L->seenGen;
+  int32_t reservedGen = E.L->nextSeenGeneration();
   auto inFootprint = [&](int k) { return E.L->rigidSpillFootprint[k] == footprintGen; };
   auto inOwnFootprint = [&](int k) { return inFootprint(k) && E.L->bodyOwner[k] == bodyId; };
   auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.isBodyCell(k)) return false; uint8_t m = E.L->grid[k]; if (m == EMPTY) return true; return (E.isLiquidMaterial(m) || E.isGasMaterial(m) || E.isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
@@ -1161,7 +1195,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
   auto buildFootprintEdgeStarts = [&]() {
     if (footprintEdgesBuilt) return;
     footprintEdgesBuilt = true;
-    int32_t edgeGen = ++E.L->seenGen;
+    int32_t edgeGen = E.L->nextSeenGeneration();
     std::vector<int> sortedFootprint(
       edgeFootprint.begin(), edgeFootprint.end());
     std::sort(sortedFootprint.begin(), sortedFootprint.end());
@@ -1200,6 +1234,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       size_t gj = gi + 1;
       while (gj < pending.size() && pending[gj].material == mat) gj++;
       curD = DENSITY[mat];
+      const int* searchOffs = E.isGasMaterial(mat) ? gasOffs : offs;
       int need = (int)(gj - gi);
       queue.clear(); targets.clear(); surfaceTargets.clear();
       fallbackTargets.clear();
@@ -1237,7 +1272,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
         }
       }
       if ((int)targets.size() < need) rigidSpillSearches++;
-      int32_t seenGen = ++E.L->seenGen;
+      int32_t seenGen = E.L->nextSeenGeneration();
       auto canVisit = [&](int k) {
         if (k <= 0 || k >= gridLen || E.L->rigidSpillReserved[k] == reservedGen || E.L->seenStamp[k] == seenGen) return false;
         int y = k / E.cols, x = k - y * E.cols;
@@ -1255,7 +1290,8 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       for (size_t di = gi; di < gj; di++) {
         int from = pending[di].from;
         if (inOwnFootprint(from)) enqueue(from);
-        else for (int off : offs) enqueue(from + off); // density-chain eviction outside the body
+        else for (int oi = 0; oi < 4; oi++)
+          enqueue(from + searchOffs[oi]); // density-chain eviction outside the body
       }
       if (queue.empty()) {
         buildFootprintEdgeStarts();
@@ -1264,9 +1300,8 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       int visitBudget = imin(gridLen, imax(4096, need * 128));
       int surfaceGoal = imax(64, need * 8);
       int visits = 0;
-      for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need
-           && visits < visitBudget; qi++, visits++) {
-        int k = queue[qi];
+      size_t qi = 0;
+      auto visitCell = [&](int k) {
         if (isDropTarget(k, mat)) {
           // Liquid exits at a supported free-surface cell when one is reachable.
           // Dry cells bordering the body remain a volume-preserving fallback.
@@ -1283,13 +1318,31 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
               surfaceTargets.push_back(k);
             else if ((int)fallbackTargets.size() < need)
               fallbackTargets.push_back(k);
-            if ((int)surfaceTargets.size() >= surfaceGoal) break;
-            continue;
+            return;
           }
           E.L->rigidSpillReserved[k] = reservedGen;
           targets.push_back(k);
         }
-        for (int off : offs) enqueue(k + off);
+        for (int oi = 0; oi < 4; oi++) enqueue(k + searchOffs[oi]);
+      };
+      for (; qi < queue.size() && (int)targets.size() < need
+           && visits < visitBudget; qi++, visits++) {
+        visitCell(queue[qi]);
+        if ((int)surfaceTargets.size() >= surfaceGoal) { qi++; break; }
+      }
+      // The visit cap is a normal-case performance bound, not a volume-loss
+      // policy. Deep submersion can put the nearest free surface just beyond it;
+      // continue the same deterministic search only when the capped pass has not
+      // found enough destinations for every displaced cell.
+      if ((int)(targets.size() + surfaceTargets.size()
+                + fallbackTargets.size()) < need) {
+        for (; qi < queue.size()
+             && (int)(targets.size() + surfaceTargets.size()
+                      + fallbackTargets.size()) < need;
+             qi++, visits++) {
+          visitCell(queue[qi]);
+          if ((int)surfaceTargets.size() >= surfaceGoal) { qi++; break; }
+        }
       }
       // Fill the lowest reachable surface row first, distributing a partial row
       // across its width so repeated body motion cannot build a narrow mound.
@@ -1512,10 +1565,12 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
     splitClaimedStamp.add(k);
     kept.push_back(k);
   };
-  for (Body* b : E.L->bodies)
+  for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) continue;
     forEachBodyCell(b, [&](int x, int y, int) {
       claim(b, y * E.cols + x);
     });
+  }
   for (int k : cells) if (!splitClaimedStamp.has(k)) { E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; }
   E.L->bodyCells = kept;
   if (splitJointBodies) finishErasedJointBodies(dirtyJoints);
@@ -1779,7 +1834,7 @@ bool RigidBodySystem::bodyFootprintOverlapsSolid(Body* b) {
       && !E.isBuoyantMedium(material);
   };
   auto blockedBody = [&](Body* member) {
-    forEachBodyCell(member, [](int, int, int) {});
+    ensureBodyRaster(member);
     for (const BodyRasterCell& cell : member->rasterFootprint) {
       if (E.L->infinite && (cell.x == 0 || cell.x == E.cols - 1))
         continue;
@@ -2043,7 +2098,6 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
       E.L->grid[k] = material;
       if (material == NEUTRONIUM) {
         E.L->forceSourcePresent = true;
-        E.fg.forceWakePending = E.bg.forceWakePending = true;
       }
     } else {
       E.writeGridIndex(k, material);
@@ -2118,7 +2172,7 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
   return mediumBelow > 0 && mediumBelow > solidBelow;
 }
 bool RigidBodySystem::rasterStableForBake(Body* b) {
-  forEachBodyCell(b, [](int, int, int) {});
+  ensureBodyRaster(b);
   uint8_t sampleTag = (uint8_t)E.tick;
   if (b->bakeRasterSampleTag == sampleTag)
     return b->bakeRasterStableTicks >= R_BAKE_RASTER_TICKS;
@@ -2279,7 +2333,8 @@ void RigidBodySystem::stampJointFollower(Body* leader) {
     E.bg.passiveBodyCells.push_back(k);
     footprint.push_back(k);
   });
-  int32_t footprintGen = ++E.bg.seenGen;
+  E.bg.reserveSeenGenerations(SPILL_GENERATION_BUDGET);
+  int32_t footprintGen = E.bg.nextSeenGeneration();
   for (int k : footprint) E.bg.rigidSpillFootprint[k] = footprintGen;
   spillDisplacedBodyMaterial(displaced, footprint, footprintGen,
                              follower->id, follower->density);
@@ -2309,7 +2364,9 @@ void RigidBodySystem::restampBodiesAfterStream() {
       stamped.second.push_back(k);
     });
   }
-  int32_t footprintGen = ++E.L->seenGen;
+  E.L->reserveSeenGenerations(
+    SPILL_GENERATION_BUDGET * std::max<size_t>(1, perBody.size()));
+  int32_t footprintGen = E.L->nextSeenGeneration();
   for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
@@ -2363,18 +2420,19 @@ void RigidBodySystem::moveBodies() {
   bool hasSleepingBody = false;
   bool hasAwakeBody = false;
   bool hasPendingBakeRaster = false;
+  bool bakeRetryDeferred = E.layerBakeRetryDeferred(E.L);
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     if (b->awake) hasAwakeBody = true;
     else hasSleepingBody = true;
-    if (E.bodyNeedsBakeTick(E.L, b))
+    if (!bakeRetryDeferred && E.bodyNeedsBakeTick(b))
       hasPendingBakeRaster = true;
   }
   bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
   auto awaitingStableBakeRaster = [&]() {
     bool awaiting = false;
     for (Body* b : E.L->bodies) {
-      if (!E.bodyNeedsBakeTick(E.L, b)) continue;
+      if (bakeRetryDeferred || !E.bodyNeedsBakeTick(b)) continue;
       if (!rasterStableForBake(b)) awaiting = true;
       if (b->jointRole == 1 && b->jointPeer) {
         Engine::ActiveLayerScope layerScope(E, &E.bg);
@@ -2612,7 +2670,6 @@ void RigidBodySystem::moveBodies() {
         E.L->bodyOwner[k] = b->id;
         if (material == NEUTRONIUM) {
           E.L->forceSourcePresent = true;
-          E.fg.forceWakePending = E.bg.forceWakePending = true;
         }
         E.noteLooseGroundTouch2At(k, material, EMPTY);
         if (material == FIRE || material == LAVA)
@@ -2703,7 +2760,9 @@ void RigidBodySystem::moveBodies() {
     }
     if (keep.size() != E.L->bodies.size()) E.L->bodies = std::move(keep);
   }
-  int32_t footprintGen = ++E.L->seenGen;
+  E.L->reserveSeenGenerations(
+    SPILL_GENERATION_BUDGET * std::max<size_t>(1, E.L->bodies.size()));
+  int32_t footprintGen = E.L->nextSeenGeneration();
   for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
   double spillStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
@@ -2962,6 +3021,36 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
 
   Layer* placementLayer = E.L;
   Body* body = nullptr;
+  struct WeldMotion {
+    double mass, inertia, px, py, vx, vy, omega;
+  };
+  auto captureWeldMotion = [](Body* source,
+                              std::vector<WeldMotion>& motion) {
+    if (!source || source->invMass <= 0 || source->invInertia <= 0) return;
+    motion.push_back({1.0 / source->invMass, 1.0 / source->invInertia,
+                      source->px, source->py, source->vx, source->vy,
+                      source->omega});
+  };
+  auto applyWeldMotion = [](Body* merged,
+                            const std::vector<WeldMotion>& motion) {
+    if (!merged || merged->invMass <= 0 || merged->invInertia <= 0) return;
+    double momentumX = 0, momentumY = 0;
+    for (const WeldMotion& source : motion) {
+      momentumX += source.mass * source.vx;
+      momentumY += source.mass * source.vy;
+    }
+    merged->vx = momentumX * merged->invMass;
+    merged->vy = momentumY * merged->invMass;
+    double angularMomentum = 0;
+    for (const WeldMotion& source : motion) {
+      double sourceMomentumX = source.mass * source.vx;
+      double sourceMomentumY = source.mass * source.vy;
+      angularMomentum += source.inertia * source.omega
+        + (source.px - merged->px) * sourceMomentumY
+        - (source.py - merged->py) * sourceMomentumX;
+    }
+    merged->omega = angularMomentum * merged->invInertia;
+  };
   if (touching.empty()) {
     body = spawnBodyImpl(spawnCells, material, DENSITY[material]);
   } else if (touchesJoint) {
@@ -2973,7 +3062,8 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     std::array<std::unordered_set<Body*>, 2> removedBodies;
     int activeLayer = placementLayer == &E.bg ? 1 : 0;
     int peerLayer = 1 - activeLayer;
-    double momentumX = 0, momentumY = 0, spin = 0;
+    std::vector<WeldMotion> motion;
+    std::unordered_set<Body*> capturedPhysical;
     int fuseTicks = 0;
     auto collectRaster = [&](Body* source, std::map<int, uint8_t>& materialAt) {
       forEachBodyCell(source, [&](int x, int y, int local) {
@@ -2982,12 +3072,9 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     };
     for (Body* source : touching) {
       Body* physical = source->jointRole == 2 ? source->jointPeer : source;
-      double mass = physical && physical->invMass > 0
-        ? 1.0 / physical->invMass : 0;
       if (physical) {
-        momentumX += physical->vx * mass;
-        momentumY += physical->vy * mass;
-        spin += physical->omega * mass;
+        if (capturedPhysical.insert(physical).second)
+          captureWeldMotion(physical, motion);
         if (physical->fuseTicks > 0
             && (!fuseTicks || physical->fuseTicks < fuseTicks))
           fuseTicks = physical->fuseTicks;
@@ -3057,12 +3144,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       : spawnJointBodyImpl(peerCells, peerMaterials,
                            activeCells, activeMaterials);
     if (leader && leader->jointPeer) {
-      double totalMass = leader->invMass > 0 ? 1.0 / leader->invMass : 0;
-      if (totalMass > 0) {
-        leader->vx = momentumX / totalMass;
-        leader->vy = momentumY / totalMass;
-        leader->omega = spin / totalMass;
-      }
+      applyWeldMotion(leader, motion);
       leader->blastDebris = false;
       leader->fuseTicks = fuseTicks;
       leader->jointPeer->blastDebris = false;
@@ -3075,14 +3157,10 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     // Existing bodies may be rotated, so their current world raster is the
     // authoritative shape at the instant of attachment.
     std::map<int, uint8_t> materialAt;
-    double momentumX = 0, momentumY = 0, spin = 0, oldMass = 0;
+    std::vector<WeldMotion> motion;
     int fuseTicks = 0;
     for (Body* source : touching) {
-      double mass = source->invMass > 0 ? 1.0 / source->invMass : 0;
-      momentumX += source->vx * mass;
-      momentumY += source->vy * mass;
-      spin += source->omega * mass;
-      oldMass += mass;
+      captureWeldMotion(source, motion);
       if (source->fuseTicks > 0 && (!fuseTicks || source->fuseTicks < fuseTicks))
         fuseTicks = source->fuseTicks;
       forEachBodyCell(source, [&](int x, int y, int local) {
@@ -3126,13 +3204,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     }
     body = spawnBodyImpl(mergedCells, mergedMaterials);
     if (body) {
-      double addedMass = DENSITY[material] * spawnCells.size();
-      double totalMass = oldMass + addedMass;
-      if (totalMass > 0) {
-        body->vx = momentumX / totalMass;
-        body->vy = momentumY / totalMass;
-        body->omega = spin / totalMass;
-      }
+      applyWeldMotion(body, motion);
       body->blastDebris = false;
       body->fuseTicks = fuseTicks;
     }
@@ -3159,7 +3231,8 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       maxX = imax(maxX, x); maxY = imax(maxY, y);
     });
     if (!footprint.empty()) {
-      int32_t footprintGen = ++layer.seenGen;
+      layer.reserveSeenGenerations(SPILL_GENERATION_BUDGET);
+      int32_t footprintGen = layer.nextSeenGeneration();
       for (int k : footprint) layer.rigidSpillFootprint[k] = footprintGen;
       spillDisplacedBodyMaterial(displaced, footprint, footprintGen,
                                  spawned->id, spawned->density);
@@ -3189,23 +3262,30 @@ Body* RigidBodySystem::spawnBody(const std::vector<std::pair<int, int>>& cells) 
 Body* RigidBodySystem::spawnBox(int cx, int cy, int halfW, int halfH, uint8_t material) {
   if (material >= TABLE) material = RIGID;
   std::vector<std::pair<int, int>> cells;
-  cells.reserve((size_t)imax(0, 2 * halfW) * imax(0, 2 * halfH));
-  for (int dx = -halfW; dx < halfW; dx++)
-    for (int dy = -halfH; dy < halfH; dy++) {
-      int x = cx + dx, y = cy + dy;
-      if (x >= 1 && x < E.cols - 1 && y >= 1 && y < E.rows - 1) cells.push_back({x, y});
-    }
+  int x0 = (int)std::max<int64_t>(1, (int64_t)cx - halfW);
+  int x1 = (int)std::min<int64_t>(E.cols - 1, (int64_t)cx + halfW);
+  int y0 = (int)std::max<int64_t>(1, (int64_t)cy - halfH);
+  int y1 = (int)std::min<int64_t>(E.rows - 1, (int64_t)cy + halfH);
+  if (x1 > x0 && y1 > y0)
+    cells.reserve((size_t)(x1 - x0) * (size_t)(y1 - y0));
+  for (int x = x0; x < x1; x++)
+    for (int y = y0; y < y1; y++) cells.push_back({x, y});
   return finishSpawn(cells, material);
 }
 Body* RigidBodySystem::spawnDisc(int cx, int cy, int radius, uint8_t material) {
   if (material >= TABLE) material = RIGID;
   std::vector<std::pair<int, int>> cells;
-  int r2 = radius * radius;
-  for (int dy = -radius; dy <= radius; dy++)
-    for (int dx = -radius; dx <= radius; dx++) {
-      if (dx * dx + dy * dy > r2) continue;
-      int x = cx + dx, y = cy + dy;
-      if (x >= 1 && x < E.cols - 1 && y >= 1 && y < E.rows - 1) cells.push_back({x, y});
+  int y0 = (int)std::max<int64_t>(1, (int64_t)cy - radius);
+  int y1 = (int)std::min<int64_t>(E.rows - 2, (int64_t)cy + radius);
+  int x0 = (int)std::max<int64_t>(1, (int64_t)cx - radius);
+  int x1 = (int)std::min<int64_t>(E.cols - 2, (int64_t)cx + radius);
+  int64_t radius2 = (int64_t)radius * radius;
+  for (int y = y0; y <= y1; y++) {
+    int64_t dy = (int64_t)y - cy;
+    for (int x = x0; x <= x1; x++) {
+      int64_t dx = (int64_t)x - cx;
+      if (dx * dx + dy * dy <= radius2) cells.push_back({x, y});
     }
+  }
   return finishSpawn(cells, material);
 }

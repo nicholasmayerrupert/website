@@ -57,10 +57,14 @@ class ForceSystem {
                         int sourceBodyId = -1);
   void prepareWorldTick();
   void applyBodyForces();
+  void noteNeutroniumWrite(Layer* layer, int k,
+                           uint8_t oldMaterial, uint8_t newMaterial);
+  void invalidateLooseCandidateCache(Layer* layer);
   bool sampleActor(double x, double y,
                    double& forceX, double& forceY) const;
   bool overridesGravity(int x, int y, uint8_t material);
   bool tryMoveLoose(int x, int y, int k, uint8_t material);
+  int debugMetric(int metric) const;
 
  private:
   struct BinLink { int emitter = -1, next = -1; };
@@ -80,6 +84,26 @@ class ForceSystem {
   struct LooseForceCache {
     std::vector<int32_t> binOffsets;
     std::vector<CachedLooseForce> cells;
+  };
+  struct LooseCandidateBin {
+    std::vector<uint16_t> offsets;
+    bool valid = false;
+  };
+  struct LooseCandidateCache {
+    std::vector<LooseCandidateBin> bins;
+    int cols = 0, rows = 0;
+    int chunkCols = 0, chunkRows = 0;
+    int worldOffsetX = 0, worldOffsetY = 0;
+    bool populated = false;
+  };
+  struct StaticNeutroniumSource {
+    ForceEmitter emitter;
+    std::vector<GeometryPoint> points;
+    std::vector<int> cells;
+    size_t componentCellCount = 0;
+    int firstCell = -1, lastCell = -1;
+    int yMax = 0, bakedAssemblyId = 0;
+    uint32_t seenSerial = 0;
   };
   struct NeutroniumSeed {
     float x = 0, y = 0;
@@ -107,14 +131,22 @@ class ForceSystem {
   std::array<int, 2> looseCoverageTick = {{-1, -1}};
   std::array<bool, 2> dynamicField = {};
   LooseForceCache looseForceCaches[2];
+  LooseCandidateCache looseCandidateCaches[2];
+  std::unordered_map<int, StaticNeutroniumSource> staticNeutroniumSources[2];
+  std::unordered_map<int, int> staticNeutroniumOwners[2];
+  std::vector<int> dirtyNeutroniumCells[2];
+  uint32_t staticSourceSerial = 0;
   uint32_t looseCacheSerial = 0;
   std::vector<uint64_t> previousBinSignatures[2];
   std::vector<uint64_t> currentBinSignatures[2];
   std::vector<uint8_t> changedBins[2];
   std::vector<NeutroniumSeed> neutroniumSeeds;
+  std::vector<GeometryPoint> dynamicNeutroniumPoints;
   std::vector<int> neutroniumKdOrder;
   std::vector<NeutroniumKdNode> neutroniumKdNodes;
   int neutroniumKdRoot = -1;
+  uint64_t neutroniumIndexHash = 0;
+  bool neutroniumIndexValid = false;
   std::vector<int> nearestSeedAt, nearestVertical, nearestNeutroniumField;
   std::vector<int> edtLocations;
   std::vector<double> edtBreaks;
@@ -123,6 +155,13 @@ class ForceSystem {
   int nearestFieldX0 = 0, nearestFieldY0 = 0;
   int nearestFieldX1 = -1, nearestFieldY1 = -1;
   bool nearestFieldValid = false;
+  int debugFullCoveragePasses = 0;
+  int debugCandidateBinBuilds = 0;
+  int debugCandidateCellsVisited = 0;
+  int debugStaticSourceBuilds = 0;
+  int debugStaticSourceReuses = 0;
+  int debugSelectedBins = 0;
+  int debugNeutroniumIndexBuilds = 0;
 
   int layerIndex(const Layer* layer) const;
   uint8_t layerBit(const Layer* layer) const;
@@ -150,6 +189,10 @@ class ForceSystem {
                             uint8_t targetLayer) const;
   uint64_t forceBinSignature(int bin, uint8_t targetLayer) const;
   void prepareLooseCachesAndDirtyBins();
+  void invalidateLooseCandidateBins(Layer* layer);
+  uint8_t looseTargetForMaterial(uint8_t material) const;
+  LooseCandidateBin& ensureLooseCandidateBin(Layer* layer, int bin);
+  bool affectedBinsContainLoose(Layer* layer);
   void wakeAffectedTargets(Layer* layer, const std::vector<uint8_t>* bins,
                            bool updateCoverage, bool wakeReleased,
                            const std::vector<uint8_t>* releasedBins = nullptr);

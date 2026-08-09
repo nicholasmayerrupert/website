@@ -110,6 +110,9 @@
   }
   for (FluidNode& node : fluidNodes) {
     uint32_t velocity = E.packedLiquidVelocity(node.vx, node.vy);
+    if (node.layer->liquidVel[node.cell] != velocity
+        || node.layer->nextLiquidVel[node.cell] != velocity)
+      E.markWorldTileDirty(node.layer, node.cell);
     node.layer->liquidVel[node.cell] = velocity;
     node.layer->nextLiquidVel[node.cell] = velocity;
     int layer = node.layer == &E.bg ? 1 : 0;

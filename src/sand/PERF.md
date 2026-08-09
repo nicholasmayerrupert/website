@@ -33,8 +33,11 @@ mapping, and pan stability.
 | `node scripts/acid-lava-lag-bench.mjs` | Compare an idle lava lake with repeated acid quenching and report rigid/reaction phase spikes. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
 
-Timing gates apply only when the baseline environment and benchmark dimensions
-match. Checksums and work-volume counters remain comparable across environments.
+The main engine and pan benchmarks gate timings only when their recorded
+environment and dimensions match. The rigid-brutal and actor-rigid tools are
+behavior/fingerprint checks across machines; use same-host repeated runs for
+their timing comparisons. Checksums and work-volume counters remain comparable
+across environments.
 
 ## Engine scenarios
 
@@ -72,8 +75,9 @@ Legacy aggregates remain for older scripts: `joint` combines grounding phases,
 `settle` combines sand/liquid/gas, and `rigid` combines assembly/body work.
 
 `stepVolume` explains phase cost through active rows/cells, component counts, and
-cross-layer bond counts. `shiftPhases` separates buffer movement, translation,
-component registration, and generation/restoration. Browser presentation exposes
+cross-layer bond counts. `shiftPhases` measures the cached return half of the
+streaming loop and separates persistence, buffer movement, translation,
+component registration, and restoration. Browser presentation exposes
 `lightMs`, `fillMs`, and `uploadMs`.
 
 ## Current structural optimizations
@@ -274,16 +278,22 @@ component registration, and generation/restoration. Browser presentation exposes
   smaller than the raw payload.
 
 These optimizations preserve deterministic output except accepted behavior
-changes. The recorded checksum includes compound rigid-body contacts, the
-cave-blast carry change, and exceptionally broad TNT fronts. Broad fronts
-consume live TNT over additional ticks, so their timing and aftermath checksum
-intentionally differ.
+changes. The recorded checksum uses the native foreground-plus-background grid
+hash. Earlier foreground-only records therefore differ even when the foreground
+is unchanged. Current simulation hashes also reflect restored loose momentum
+and stateful component continuity across streamed tiles, world-coordinate
+reaction ordering, staggered world-column gravity, compound rigid contacts,
+cave-blast carry, and bounded broad TNT fronts. Those changes can alter the
+foreground itself, so a checksum transition is not solely a measurement-scope
+change.
 
 ## Baseline policy
 
 - A pure refactor must preserve the deterministic checksum.
 - Explain a checksum change before updating a baseline.
-- Confirm timing changes with repeated runs and phase medians; isolated p99
-  movement is usually host noise.
+- Confirm timing changes with repeated runs and phase medians. When both sides
+  have at least three runs, the timing gate uses the median of their per-run
+  metrics while still reporting the pooled raw values. Isolated host scheduling
+  spikes do not fail the comparison, while a regression across most runs does.
 - Update a committed baseline only when the behavior or measurement definition
   intentionally changed and the current environment is compatible.

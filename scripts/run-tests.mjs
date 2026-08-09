@@ -11,6 +11,12 @@ import { BROWSER_SUITES, EXCLUDED_TESTS, UNIT_SUITES } from './test-manifest.mjs
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const suiteSettings = ([, , rawSettings]) => {
+  return {
+    timeoutMs: rawSettings?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    concurrency: rawSettings?.concurrency ?? 'parallel',
+  };
+};
 
 const executableTests = readdirSync(resolve(root, 'scripts'))
   .filter((file) => /(?:-test|-e2e|-repro)\.mjs$/.test(file));
@@ -23,18 +29,43 @@ if (missing.length || stale.length) {
   if (stale.length) console.error(`Test manifest has stale entries: ${stale.join(', ')}`);
   process.exit(2);
 }
+const malformed = [...UNIT_SUITES, ...BROWSER_SUITES].filter((suite) => {
+  const { timeoutMs, concurrency } = suiteSettings(suite);
+  return !Number.isInteger(timeoutMs) || timeoutMs <= 0
+    || (concurrency !== 'parallel' && concurrency !== 'exclusive');
+});
+if (malformed.length) {
+  console.error(`Test manifest has invalid metadata: ${malformed.map(([name]) => name).join(', ')}`);
+  process.exit(2);
+}
 
 const args = process.argv.slice(2);
-function argValue(flag) {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : null;
+const valueFlags = new Set(['--only', '--from', '--jobs']);
+const booleanFlags = new Set(['--browser', '--verbose', '--list']);
+const parsed = new Map();
+for (let i = 0; i < args.length; i++) {
+  const flag = args[i];
+  if (valueFlags.has(flag)) {
+    const value = args[++i];
+    if (value === undefined || value.startsWith('--')) {
+      console.error(`${flag} requires a value`);
+      process.exit(2);
+    }
+    parsed.set(flag, value);
+  } else if (booleanFlags.has(flag)) {
+    parsed.set(flag, true);
+  } else {
+    console.error(`Unknown argument: ${flag}`);
+    process.exit(2);
+  }
 }
-const only = argValue('--only');
-const from = argValue('--from');
-const browser = args.includes('--browser');
-const verbose = args.includes('--verbose');
+const only = parsed.get('--only') ?? null;
+const from = parsed.get('--from') ?? null;
+const browser = parsed.has('--browser');
+const verbose = parsed.has('--verbose');
+const listOnly = parsed.has('--list');
 const defaultJobs = browser ? 1 : 2;
-const jobsArg = argValue('--jobs') ?? process.env.TEST_JOBS;
+const jobsArg = parsed.get('--jobs') ?? process.env.TEST_JOBS;
 const jobs = jobsArg === null || jobsArg === undefined ? defaultJobs : Number(jobsArg);
 if (!Number.isInteger(jobs) || jobs < 1) {
   console.error(`--jobs must be a positive integer (got "${jobsArg}")`);
@@ -56,6 +87,14 @@ if (only) {
     console.error(`--only: no suite matches "${only}"`);
     process.exit(2);
   }
+}
+if (listOnly) {
+  for (const suite of suites) {
+    const [name, file] = suite;
+    const { timeoutMs, concurrency } = suiteSettings(suite);
+    console.log(`${name}\t${file}\t${concurrency}\t${timeoutMs}`);
+  }
+  process.exit(0);
 }
 
 const results = new Array(suites.length);
@@ -141,27 +180,45 @@ const printOutput = ({ name, output }) => {
 const wallStarted = Date.now();
 const workerCount = Math.min(jobs, Math.max(1, suites.length));
 let nextSuite = 0;
-console.log(`Running ${suites.length} ${browser ? 'browser' : 'headless'} suites with ${workerCount} jobs`);
+const exclusiveCount = suites.filter((suite) => suiteSettings(suite).concurrency === 'exclusive').length;
+console.log(`Running ${suites.length} ${browser ? 'browser' : 'headless'} suites with ${workerCount} jobs (${exclusiveCount} exclusive)`);
 
-const runWorker = async () => {
-  while (!stoppingSignal) {
-    const index = nextSuite++;
-    if (index >= suites.length) return;
-    const [name, file, timeoutMs = DEFAULT_TIMEOUT_MS] = suites[index];
-    const started = Date.now();
-    console.log(`[RUN ] ${name}`);
-    const r = await runSuite(file, timeoutMs);
-    const ms = Date.now() - started;
-    const failed = r.status !== 0 || r.timedOut;
-    const result = { name, file, ms, failed, ...r };
-    results[index] = result;
-    if (verbose || failed) printOutput(result);
-    if (r.timedOut) console.error(`TIMEOUT: ${name} exceeded ${Math.round(timeoutMs / 1000)}s`);
-    if (r.error) console.error(`Failed to start ${name}: ${r.error.message}`);
-    console.log(`[${failed ? 'FAIL' : ' ok '}] ${name} ${(ms / 1000).toFixed(1)}s`);
-  }
+const runOne = async (index) => {
+  const [name, file] = suites[index];
+  const { timeoutMs } = suiteSettings(suites[index]);
+  const started = Date.now();
+  console.log(`[RUN ] ${name}`);
+  const r = await runSuite(file, timeoutMs);
+  const ms = Date.now() - started;
+  const failed = r.status !== 0 || r.timedOut;
+  const result = { name, file, ms, failed, ...r };
+  results[index] = result;
+  if (verbose || failed) printOutput(result);
+  if (r.timedOut) console.error(`TIMEOUT: ${name} exceeded ${Math.round(timeoutMs / 1000)}s`);
+  if (r.error) console.error(`Failed to start ${name}: ${r.error.message}`);
+  console.log(`[${failed ? 'FAIL' : ' ok '}] ${name} ${(ms / 1000).toFixed(1)}s`);
 };
-await Promise.all(Array.from({ length: workerCount }, runWorker));
+
+const active = new Set();
+const startParallel = (index) => {
+  const running = runOne(index).finally(() => active.delete(running));
+  active.add(running);
+};
+while (!stoppingSignal && (nextSuite < suites.length || active.size)) {
+  if (nextSuite < suites.length
+      && suiteSettings(suites[nextSuite]).concurrency === 'exclusive') {
+    if (active.size) await Promise.all(active);
+    if (stoppingSignal) break;
+    await runOne(nextSuite++);
+    continue;
+  }
+  while (nextSuite < suites.length && active.size < workerCount
+      && suiteSettings(suites[nextSuite]).concurrency !== 'exclusive') {
+    startParallel(nextSuite++);
+  }
+  if (active.size) await Promise.race(active);
+}
+if (active.size) await Promise.all(active);
 
 const completed = results.filter(Boolean);
 const failures = completed.filter((r) => r.failed);

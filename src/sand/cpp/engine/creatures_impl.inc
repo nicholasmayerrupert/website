@@ -389,40 +389,6 @@ int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy
   return spawnCreature(speciesId, wx, wy, false);
 }
 
-bool CreatureSystem::spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt) {
-  const CreatureSpecies& s = CREATURE_SPECIES[speciesId];
-  const CreatureSpawnRule& r = s.spawn;
-  uint32_t seed = E.fg.worldSeed ^ 0xC4EA7000u ^ ((uint32_t)speciesId * 0x9e3779b9u) ^ salt;
-  for (int attempt = 0; attempt < 18; attempt++) {
-    double rx = whash2(seed ^ 0x11u, regionX, regionY * 37 + attempt);
-    double ry = whash2(seed ^ 0x22u, regionX * 41 + attempt, regionY);
-    double wx = regionX * r.regionSize + 4 + rx * (r.regionSize - s.w - 8);
-    double wy;
-    int surface = E.terrain.genSurfaceAbs((int)std::floor(wx + s.w * 0.5));
-    if (r.habitat == CH_SURFACE) wy = surface - s.h - 1;
-    else if (r.habitat == CH_AIR) wy = surface - s.h - 10 - ry * 34;
-    else if (r.habitat == CH_CAVE) wy = surface + 12 + ry * 72;
-    else wy = regionY * r.regionSize + 4 + ry * (r.regionSize - s.h - 8);
-    Creature probe; probe.species = speciesId; probe.wx = wx; probe.wy = wy;
-    if (!inLoadedWindow(probe, 0) || !farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
-    if (spawnCreatureNatural(speciesId, wx, wy)) return true;
-  }
-  return false;
-}
-
-void CreatureSystem::spawnRegion(uint8_t speciesId, int regionX, int regionY) {
-  const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
-  uint64_t key = ((uint64_t)speciesId << 56) |
-                 (((uint64_t)(uint32_t)regionX & 0x0fffffffu) << 28) |
-                 ((uint32_t)regionY & 0x0fffffffu);
-  if (!spawnedRegions.insert(key).second) return;
-  double roll = whash2(E.fg.worldSeed ^ 0xC4EA7100u ^ speciesId, regionX, regionY);
-  if (roll >= r.chance) return;
-  int count = 1 + (int)(whash2(E.fg.worldSeed ^ 0xC4EA7200u ^ speciesId, regionX, regionY) * r.maxPerRegion);
-  if (count > r.maxPerRegion) count = r.maxPerRegion;
-  for (int i = 0; i < count; i++) spawnCandidate(speciesId, regionX, regionY, (uint32_t)i * 1013u);
-}
-
 void CreatureSystem::maintainPopulation() {
   const int HIBERNATE_REGION = 128;
   auto regionKey = [&](int rx, int ry) {
@@ -1244,7 +1210,7 @@ void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, in
   // The complete cell list is built before eraseStrokeCells can reuse this scratch,
   // so no full-window allocation or clear is needed for each bore shot.
   std::vector<int32_t>& seen = E.fg.seenStamp;
-  int32_t seenGen = ++E.fg.seenGen;
+  int32_t seenGen = E.fg.nextSeenGeneration();
   std::vector<int> cells;
   int x0 = E.cols, y0 = E.rows, x1 = 0, y1 = 0;
   int samples = imax(1, (int)std::ceil(length * 2.0));

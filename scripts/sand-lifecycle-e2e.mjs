@@ -41,6 +41,42 @@ try {
   await waitForServer();
   browser = await chromium.launch({ headless: true });
 
+  console.log('worker teardown during startup');
+  const racePage = await browser.newPage();
+  const raceErrors = [];
+  racePage.on('pageerror', (error) => raceErrors.push(error.message));
+  let resolveWorkerStarted;
+  let resolveWorkerClosed;
+  const workerStarted = new Promise((resolve) => { resolveWorkerStarted = resolve; });
+  const workerClosed = new Promise((resolve) => { resolveWorkerClosed = resolve; });
+  racePage.once('worker', (worker) => {
+    worker.once('close', resolveWorkerClosed);
+    resolveWorkerStarted(worker);
+  });
+  const navigation = racePage.goto(baseURL, { waitUntil: 'load' });
+  await workerStarted;
+  await racePage.evaluate(() => {
+    const host = document.querySelector('sand-game');
+    const canvas = host.shadowRoot.getElementById('sand-main');
+    const contextCount = window.__sandTest.sharedGlContextProbe();
+    host.remove();
+    window.__sandStartupTeardown = { canvas, contextCount };
+  });
+  await navigation;
+  const workerDidClose = await Promise.race([
+    workerClosed.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
+  ]);
+  check('startup worker closes after its host is removed', workerDidClose);
+  const startupCleanup = await racePage.evaluate(() => ({
+    contexts: window.__sandStartupTeardown.contextCount(),
+    targetRemoved: window.__sandStartupTeardown.canvas.__sandGlKey === undefined,
+  }));
+  check('startup teardown releases the shared context', startupCleanup.contexts === 0, String(startupCleanup.contexts));
+  check('startup teardown unregisters the canvas target', startupCleanup.targetRemoved);
+  check('startup teardown produces no page exceptions', raceErrors.length === 0, raceErrors.join('; '));
+  await racePage.close();
+
   const guardBrowserPrototypes = async (targetPage) => {
     await targetPage.addInitScript(() => {
       const webgl = WebGLRenderingContext.prototype;

@@ -401,21 +401,28 @@ check('rigid-body freefall orders Earth > Mars > Moon',
     infinite: false,
     gravityScale: 0.05,
   });
-  for (let y = 31; y < engine.rows; y++) engine.addDiscToStoneDraft(48, y, 0);
+  const columns = Array.from({ length: 32 }, (_, index) => 8 + index * 2);
+  for (let x = 5; x <= 75; x++) engine.addDiscToStoneDraft(x, 31, 0);
+  for (let x = 7; x <= 71; x += 2) {
+    engine.addDiscToStoneDraft(x, 29, 0);
+    engine.addDiscToStoneDraft(x, 30, 0);
+  }
   engine.finalizeStoneDraft();
-  engine.paintDisc(48, 29, 0, MAT.WATER, true);
-  const waterRow = () => {
+  for (const x of columns) engine.paintDisc(x, 29, 0, MAT.WATER, true);
+  const waterRow = (x) => {
     const grid = engine.getGrid();
     for (let y = 1; y < engine.rows; y++)
-      if (grid[y * engine.cols + 48] === MAT.WATER) return y;
+      if (grid[y * engine.cols + x] === MAT.WATER) return y;
     return -1;
   };
-  for (let tick = 0; tick < 19; tick++) engine.stepWorld();
-  check('fractional gravity keeps vertical liquid gaps parked before its pulse',
-    waterRow() === 29);
-  engine.stepWorld();
-  check('fractional gravity advances the liquid on its fixed-point pulse',
-    waterRow() === 30);
+  for (let tick = 0; tick < 10; tick++) engine.stepWorld();
+  const halfwayMoved = columns.filter((x) => waterRow(x) === 30).length;
+  check(`fractional gravity distributes loose-cell motion across frames (${halfwayMoved}/${columns.length} halfway)`,
+    halfwayMoved > 0 && halfwayMoved < columns.length);
+  for (let tick = 10; tick < 20; tick++) engine.stepWorld();
+  const fullCycleMoved = columns.filter((x) => waterRow(x) === 30).length;
+  check(`fractional gravity advances every column once per fixed-point cycle (${fullCycleMoved}/${columns.length})`,
+    fullCycleMoved === columns.length);
   engine.destroy();
 }
 

@@ -541,14 +541,405 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   }
   const placed = e.placeSeedTyped(SX, top - 3, PT.CACTUS);
   check('cactus seed placed in the infinite world', placed);
-  let t = 0; for (let s = 0; s < 900; s++) { t += 16; e.step(t); }
   const count = (en) => { const g = en.getGrid(); let n = 0; for (const v of g) if (v === MAT.CACTUS) n++; return n; };
+  let t = 0;
+  for (let s = 0; s < 300 && count(e) < 6; s++) { t += 16; e.step(t); }
   const before = count(e);
   e.shiftWorldXY(128, 0); // stream the cactus off the left edge
   const offEdge = count(e);
   e.shiftWorldXY(-128, 0); // stream it back in from the tile store
   const after = count(e);
-  check(`grown cactus persists across streaming (${before} -> off ${offEdge} -> ${after})`, before > 8 && offEdge === 0 && after === before);
+  for (let s = 0; s < 900; s++) { t += 16; e.step(t); }
+  const resumed = count(e);
+  check(`growing cactus persists across streaming (${before} -> off ${offEdge} -> ${after})`,
+    before >= 3 && offEdge === 0 && after === before);
+  check(`streamed cactus resumes its growth clock (${after} -> ${resumed})`,
+    resumed > after && resumed > 8);
+  e.destroy();
+}
+
+// Persistent metadata retires after its last stored fragment and loaded
+// component disappear; revisiting the same tiles must not retain one record per
+// plant that used to exist there.
+{
+  const C = 224, R = 160;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 1, sinksOn: false, infinite: true,
+  });
+  e.setBgEnabled(false);
+  e.shiftWorldXY(128, 0);
+  e.shiftWorldXY(-128, 0);
+  const baseline = e._componentStateCount();
+  for (let x = 20; x <= 80; x++) for (let y = 4; y <= 46; y++)
+    if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
+  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
+  e.finalizeStoneDraft();
+  const seedX = 50, seedY = 45;
+  const placed = e.placeSeedTyped(seedX, seedY, PT.CACTUS);
+  let cactusCells = 0;
+  for (let step = 0; step < 60; step++) {
+    e.stepWorld();
+    cactusCells = 0;
+    for (const material of e.getGrid()) if (material === MAT.CACTUS) cactusCells++;
+  }
+  e.shiftWorldXY(128, 0);
+  const stored = e._componentStateCount();
+  e.shiftWorldXY(-128, 0);
+  const grid = e.getGrid();
+  let start = -1, nearest = Infinity;
+  for (let k = 0; k < grid.length; k++) if (SEEDS.has(grid[k])) {
+    const x = k % C, y = (k / C) | 0;
+    const distance = Math.abs(x - seedX) + Math.abs(y - seedY);
+    if (distance < nearest) { nearest = distance; start = k; }
+  }
+  const seen = new Uint8Array(grid.length), cells = start >= 0 ? [start] : [];
+  if (start >= 0) seen[start] = 1;
+  for (let i = 0; i < cells.length; i++) {
+    const k = cells[i], x = k % C, y = (k / C) | 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      const nx = x + ox, ny = y + oy;
+      if (nx < 0 || nx >= C || ny < 0 || ny >= R) continue;
+      const next = ny * C + nx;
+      if (!seen[next] && (grid[next] === MAT.CACTUS || SEEDS.has(grid[next]))) {
+        seen[next] = 1;
+        cells.push(next);
+      }
+    }
+  }
+  for (const k of cells) e.eraseDisc(k % C, (k / C) | 0, 0);
+  e.syncComponents();
+  e.shiftWorldXY(128, 0);
+  const retired = e._componentStateCount();
+  check(`streamed component metadata is retired (${baseline} -> ${stored} -> ${retired}; seed distance ${nearest}, erased ${cells.length})`,
+    placed && cactusCells >= 3 && cells.length >= 3
+      && stored > baseline && retired === stored - 1);
+  e.destroy();
+}
+
+// A loaded crown is inert while its seed is outside the window. Restoring that
+// seed reapplies the component's persistent growth clock before growth resumes.
+{
+  const C = 192, R = 160, cutoff = R - 32;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 31, sinksOn: false, infinite: true,
+  });
+  for (let y = 82; y <= 135; y++) for (let x = 20; x <= 80; x++) {
+    if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
+  }
+  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 136, 0);
+  for (let y = 136; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
+  e.finalizeStoneDraft();
+  check('partial-stream cactus seed placed', e.placeSeedTyped(50, 135, PT.CACTUS));
+
+  const componentAtWorld = (worldX, worldY) => {
+    const grid = e.getGrid();
+    const sx = worldX - e.getWorldOffsetX();
+    const sy = worldY - e.getWorldOffsetY();
+    if (sx < 0 || sx >= C || sy < 0 || sy >= R) return { cells: [], count: 0, minY: R, maxY: -1 };
+    const start = sy * C + sx;
+    if (grid[start] !== MAT.CACTUS && !SEEDS.has(grid[start]))
+      return { cells: [], count: 0, minY: R, maxY: -1 };
+    const seen = new Uint8Array(grid.length), cells = [start];
+    seen[start] = 1;
+    for (let i = 0; i < cells.length; i++) {
+      const k = cells[i], x = k % C, y = (k / C) | 0;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= C || ny < 0 || ny >= R) continue;
+        const neighbour = ny * C + nx;
+        if (!seen[neighbour]
+            && (grid[neighbour] === MAT.CACTUS || SEEDS.has(grid[neighbour]))) {
+          seen[neighbour] = 1;
+          cells.push(neighbour);
+        }
+      }
+    }
+    let minY = R, maxY = -1;
+    for (const k of cells) {
+      const y = (k / C) | 0;
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    return { cells, count: cells.length, minY, maxY };
+  };
+  const findSeed = () => {
+    const grid = e.getGrid();
+    for (let y = 82; y < R; y++) for (let x = 20; x <= 80; x++) {
+      const k = y * C + x;
+      if (SEEDS.has(grid[k])) return k;
+    }
+    return -1;
+  };
+
+  let t = 0, seed = -1;
+  let staged = { cells: [], count: 0, minY: R, maxY: -1 };
+  let seedWorldX = 0, seedWorldY = 0;
+  for (let s = 0; s < 600; s++) {
+    t += 16;
+    e.step(t);
+    seed = findSeed();
+    if (seed < 0) continue;
+    seedWorldX = e.getWorldOffsetX() + seed % C;
+    seedWorldY = e.getWorldOffsetY() + ((seed / C) | 0);
+    staged = componentAtWorld(seedWorldX, seedWorldY);
+    if (staged.minY < cutoff && staged.maxY >= cutoff && staged.count < 30) break;
+  }
+  check(`cactus spans the outgoing seed band (${staged.count} cells, y ${staged.minY}..${staged.maxY})`,
+    staged.minY < cutoff && staged.maxY >= cutoff && staged.count < 30);
+
+  const anchor = staged.cells
+    .filter((k) => ((k / C) | 0) < cutoff)
+    .sort((a, b) => b - a)[0] ?? seed;
+  const anchorWorldX = e.getWorldOffsetX() + anchor % C;
+  const anchorWorldY = e.getWorldOffsetY() + ((anchor / C) | 0);
+  e.shiftWorldXY(0, -32);
+  const seedless = componentAtWorld(anchorWorldX, anchorWorldY);
+  check(`seed streams out while its crown stays loaded (${staged.count} -> ${seedless.count})`,
+    seedless.count > 0 && seedless.count < staged.count
+      && componentAtWorld(seedWorldX, seedWorldY).count === 0);
+  for (let s = 0; s < 8; s++) { t += 16; e.step(t); }
+
+  e.shiftWorldXY(0, 32);
+  const restored = componentAtWorld(seedWorldX, seedWorldY);
+  let resumed = restored.count;
+  for (let s = 0; s < 400 && resumed === restored.count; s++) {
+    t += 16;
+    e.step(t);
+    resumed = componentAtWorld(seedWorldX, seedWorldY).count;
+  }
+  check(`restored seed rejoins its crown (${restored.count} cells)`,
+    restored.count === staged.count);
+  check(`restored seed resumes the authoritative growth clock (${restored.count} -> ${resumed})`,
+    resumed > restored.count);
+  e.destroy();
+}
+
+// A returned fragment keeps its persistent identity only when it is still
+// connected to the loaded piece. A cut made while the crown is off-screen must
+// leave that crown ungrounded even though the seed-bearing remainder is supported.
+{
+  const C = 192, R = 128;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 37, sinksOn: false, infinite: true,
+  });
+  e.setBgEnabled(false);
+  e.shiftWorldXY(0, -64);
+  for (let y = 4; y <= 45; y++) for (let x = 20; x <= 80; x++) {
+    if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
+  }
+  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
+  for (let y = 46; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
+  e.finalizeStoneDraft();
+  check('cut-stream cactus seed placed', e.placeSeedTyped(50, 45, PT.CACTUS));
+
+  const cactusFrom = (start) => {
+    const grid = e.getGrid();
+    if (start < 0 || start >= grid.length
+        || (grid[start] !== MAT.CACTUS && !SEEDS.has(grid[start]))) return [];
+    const seen = new Uint8Array(grid.length), cells = [start];
+    seen[start] = 1;
+    for (let i = 0; i < cells.length; i++) {
+      const k = cells[i], x = k % C, y = (k / C) | 0;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= C || ny < 0 || ny >= R) continue;
+        const neighbour = ny * C + nx;
+        if (!seen[neighbour]
+            && (grid[neighbour] === MAT.CACTUS || SEEDS.has(grid[neighbour]))) {
+          seen[neighbour] = 1;
+          cells.push(neighbour);
+        }
+      }
+    }
+    return cells;
+  };
+
+  let t = 0, staged = [];
+  const seedK = 45 * C + 50;
+  for (let s = 0; s < 500; s++) {
+    t += 16;
+    e.step(t);
+    staged = cactusFrom(seedK);
+    const rows = new Set(staged.map((k) => (k / C) | 0));
+    if (rows.has(30) && rows.has(32) && rows.has(37)) break;
+  }
+  const stagedRows = new Set(staged.map((k) => (k / C) | 0));
+  check(`cut-stream cactus crosses the saved band (${staged.length} cells)`,
+    stagedRows.has(30) && stagedRows.has(32) && stagedRows.has(37));
+  const crownProbe = staged.find((k) => ((k / C) | 0) === 30) ?? -1;
+  const crownWorldX = e.getWorldOffsetX() + crownProbe % C;
+  const crownWorldY = e.getWorldOffsetY() + ((crownProbe / C) | 0);
+  const seedWorldX = e.getWorldOffsetX() + seedK % C;
+  const seedWorldY = e.getWorldOffsetY() + ((seedK / C) | 0);
+
+  e.shiftWorldXY(0, 32);
+  const cut = [];
+  for (let x = 1; x < C - 1; x++) {
+    const k = 5 * C + x;
+    if (e.getGrid()[k] === MAT.CACTUS || SEEDS.has(e.getGrid()[k])) cut.push(k);
+  }
+  for (const k of cut) e.eraseDisc(k % C, (k / C) | 0, 0);
+  e.shiftWorldXY(0, -32);
+
+  const crownX = crownWorldX - e.getWorldOffsetX();
+  const crownY = crownWorldY - e.getWorldOffsetY();
+  const restoredCrownK = crownY * C + crownX;
+  const seedX = seedWorldX - e.getWorldOffsetX();
+  const seedY = seedWorldY - e.getWorldOffsetY();
+  const restoredSeedK = seedY * C + seedX;
+  const crownRestored = e.getGrid()[restoredCrownK] === MAT.CACTUS;
+  e.stepWorld();
+  const grounded = e._groundedGrid();
+  check(
+    `cut returned crown does not inherit seed support (seed ${grounded[restoredSeedK]}, crown ${grounded[restoredCrownK]})`,
+    cut.length > 0 && crownRestored
+      && grounded[restoredSeedK] === 1 && grounded[restoredCrownK] === 0,
+  );
+  e.destroy();
+}
+
+// A component can leave in several tile bands while its growth state changes.
+// Restore it through the perpendicular axis so the oldest fragment is visited
+// first; that fragment must not override the component's final dormant state.
+{
+  const C = 224, R = 160;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 1, sinksOn: false, infinite: true,
+  });
+
+  // Build a deterministic platform in clear sky with the seed near the first
+  // horizontal tile boundary while its cactus is still young.
+  for (let y = 4; y <= 45; y++) for (let x = 20; x <= 80; x++) {
+    if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
+  }
+  for (let y = 46; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
+  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
+  e.finalizeStoneDraft();
+  check('staged streaming cactus seed placed', e.placeSeedTyped(50, 45, PT.CACTUS));
+
+  let seedWorldX = 0, seedWorldY = 0;
+  let seedTrackingLocked = false;
+  const cactusComponent = () => {
+    const grid = e.getGrid();
+    let seed = -1;
+    const expectedX = seedWorldX - e.getWorldOffsetX();
+    const expectedY = seedWorldY - e.getWorldOffsetY();
+    if (seedWorldX || seedWorldY) {
+      if (expectedX >= 0 && expectedX < C && expectedY >= 0 && expectedY < R) {
+        const expected = expectedY * C + expectedX;
+        if (SEEDS.has(grid[expected])) seed = expected;
+      }
+    }
+    if (seed < 0 && !seedTrackingLocked) {
+      for (let y = 40; y <= 48 && seed < 0; y++) for (let x = 46; x <= 54; x++) {
+        const k = y * C + x;
+        if (SEEDS.has(grid[k])) { seed = k; break; }
+      }
+      if (seed >= 0) {
+        seedWorldX = e.getWorldOffsetX() + seed % C;
+        seedWorldY = e.getWorldOffsetY() + ((seed / C) | 0);
+      }
+    }
+    if (seed < 0) return { cells: [], count: 0, minX: C, maxX: -1, minY: R, maxY: -1 };
+    const seen = new Uint8Array(grid.length), cells = [seed];
+    seen[seed] = 1;
+    for (let i = 0; i < cells.length; i++) {
+      const k = cells[i], x = k % C, y = (k / C) | 0;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= C || ny < 0 || ny >= R) continue;
+        const nk = ny * C + nx;
+        if (!seen[nk] && (grid[nk] === MAT.CACTUS || SEEDS.has(grid[nk]))) {
+          seen[nk] = 1;
+          cells.push(nk);
+        }
+      }
+    }
+    let minX = C, maxX = -1, minY = R, maxY = -1;
+    for (const k of cells) {
+      const x = k % C, y = (k / C) | 0;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    return { cells, count: cells.length, minX, maxX, minY, maxY };
+  };
+
+  let t = 0, staged = cactusComponent();
+  for (let s = 0; s < 500; s++) {
+    t += 16;
+    e.step(t);
+    staged = cactusComponent();
+    if (staged.minY < 32 && staged.maxY >= 32 && staged.count < 32) break;
+  }
+  seedTrackingLocked = staged.count > 0 && e._bodyCount() === 0;
+  const stagedReady = seedTrackingLocked && staged.minY < 32
+    && staged.maxY >= 32 && staged.count < 32;
+  check(`growing cactus spans the staged tile boundary (${staged.count} cells, y ${staged.minY}..${staged.maxY})`, stagedReady);
+
+  // Save the upper fragment while growth is active, leaving the seed and lower
+  // fragment loaded. Enclose that remainder until it records growing=false.
+  e.shiftWorldXY(0, 32);
+  const afterFirstBand = cactusComponent();
+  check(`first stream leaves a live cactus remainder (${staged.count} -> ${afterFirstBand.count})`,
+    stagedReady && afterFirstBand.count > 0 && afterFirstBand.count < staged.count);
+  const blockers = [];
+  for (let y = Math.max(1, afterFirstBand.minY - 3);
+       y <= Math.min(R - 2, afterFirstBand.maxY + 3); y++) {
+    for (let x = Math.max(1, afterFirstBand.minX - 4);
+         x <= Math.min(C - 2, afterFirstBand.maxX + 4); x++) {
+      const k = y * C + x;
+      if (e.getGrid()[k] !== MAT.EMPTY) continue;
+      e.paintDisc(x, y, 0, MAT.STONE, true);
+      blockers.push({
+        x: e.getWorldOffsetX() + x,
+        y: e.getWorldOffsetY() + y,
+      });
+    }
+  }
+  e.syncComponents();
+  for (let s = 0; s < 350; s++) { t += 16; e.step(t); }
+  const dormant = cactusComponent();
+  for (let s = 0; s < 120; s++) { t += 16; e.step(t); }
+  const dormantAgain = cactusComponent();
+  check(`enclosed cactus becomes dormant (${dormant.count} -> ${dormantAgain.count})`,
+    stagedReady && dormant.count > 0 && dormant.count === dormantAgain.count);
+
+  // Save the newer dormant fragment, move around the stored world with the
+  // cactus outside both intervening windows, then restore horizontally. The
+  // vertical tile walk encounters the old upper fragment before the newer one.
+  e.shiftWorldXY(0, 32);
+  e.shiftWorldXY(128, 0);
+  e.shiftWorldXY(0, -64);
+  e.shiftWorldXY(-128, 0);
+  const restored = cactusComponent();
+  check(`multi-axis restore rejoins every cactus fragment (${restored.count})`,
+    stagedReady && restored.count > 0
+      && restored.count === staged.count - afterFirstBand.count + dormantAgain.count);
+
+  // Move the restored top row into the editable interior before removing the
+  // enclosure; this preserves the component while making every blocker erasable.
+  e.shiftWorldXY(0, -32);
+  for (const blocker of blockers) {
+    const x = blocker.x - e.getWorldOffsetX(), y = blocker.y - e.getWorldOffsetY();
+    if (x > 0 && x < C - 1 && y > 0 && y < R && e.getGrid()[y * C + x] === MAT.STONE) {
+      e.eraseDisc(x, y, 0);
+    }
+  }
+  const blockersRemoved = blockers.length > 0 && blockers.every((blocker) => {
+    const x = blocker.x - e.getWorldOffsetX(), y = blocker.y - e.getWorldOffsetY();
+    return x > 0 && x < C - 1 && y > 0 && y < R
+      && e.getGrid()[y * C + x] !== MAT.STONE;
+  });
+  check(`dormancy enclosure is fully removed (${blockers.length} cells)`, blockersRemoved);
+  const released = cactusComponent().count;
+  for (let s = 0; s < 400; s++) { t += 16; e.step(t); }
+  const afterRelease = cactusComponent().count;
+  check(`restored cactus keeps the authoritative dormant state (${released} -> ${afterRelease})`,
+    stagedReady && blockersRemoved && released > 0
+      && released === restored.count && afterRelease === released);
   e.destroy();
 }
 

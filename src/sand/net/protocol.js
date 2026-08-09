@@ -2,6 +2,8 @@
 // packed actor arrays and base64-encoded binary world snapshots/diffs.
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
+import { isValidMaterialId } from '../worldPacketValidation.js';
 
 export const PROTOCOL_VERSION = 19;
 export { INV_SLOTS };
@@ -50,6 +52,7 @@ export const SOUND_FIELDS = STRIDES.soundEvent;
 export const INV_FIELDS = STRIDES.inventorySlot - 1;  // wire slots omit the `selected` flag (sent separately)
 const MAX_SNAPSHOT_ITEMS = 1024; // IT_MAX_ITEMS in items.inc
 const MAX_SNAPSHOT_CREATURES = 128;
+const MAX_CREATURE_DIMENSION = 32;
 const MAX_SOUND_EVENTS = 192;
 
 const isInt = (v) => Number.isInteger(v);
@@ -223,7 +226,7 @@ export function decode(str) {
     case MSG.INPUT: return validateInput(m);
     case MSG.VIEW: return validateView(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);
-    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && m.cols > 0 && m.cols <= 16384 && isNonNegInt(m.rows) && m.rows > 0 && m.rows <= 16384 && m.cols * m.rows <= 8_000_000 && isI32(m.offsetX) && isI32(m.offsetY) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
+    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && m.cols > 0 && m.cols <= ENGINE_MAX_DIMENSION && isNonNegInt(m.rows) && m.rows > 0 && m.rows <= ENGINE_MAX_DIMENSION && m.cols * m.rows <= ENGINE_MAX_CELLS && isI32(m.offsetX) && isI32(m.offsetY) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.DIFF: return (isNonNegInt(m.tick) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ITEMS: return validateItems(m);
@@ -250,8 +253,9 @@ const isI32 = (v) => isInt(v) && v >= -2147483648 && v <= 2147483647;
 function validateView(m) {
   if (!isRoom(m.room) || !isId(m.client)) return null;
   const dims = [m.viewCols, m.viewRows, m.bufferCols, m.bufferRows];
-  if (dims.some((v) => !isInt(v) || v <= 0 || v > 16384)) return null;
-  if (m.viewCols > m.bufferCols || m.viewRows > m.bufferRows || m.bufferCols * m.bufferRows > 8_000_000) return null;
+  if (dims.some((v) => !isInt(v) || v <= 0 || v > ENGINE_MAX_DIMENSION)) return null;
+  if (m.viewCols > m.bufferCols || m.viewRows > m.bufferRows
+      || m.bufferCols * m.bufferRows > ENGINE_MAX_CELLS) return null;
   return m;
 }
 
@@ -264,6 +268,7 @@ function validateItems(m) {
     // fields 4,5 are x,y (any finite); the rest are integers.
     if (f === 4 || f === 5) { if (!isFiniteNum(m.data[i])) return null; }
     else if (!isInt(m.data[i])) return null;
+    else if (f === O.material && !isValidMaterialId(m.data[i])) return null;
     else if (f === O.itemKind && (m.data[i] < 0 || m.data[i] > ITEM_KIND_MAX)) return null;
   }
   return m;
@@ -283,6 +288,8 @@ function validateCreatures(m) {
     }
     else if (!isInt(m.data[i])) return null;
     else if (f === O.species && (m.data[i] < 0 || m.data[i] > CREATURE_MAX)) return null;
+    else if ((f === O.w || f === O.h)
+        && (m.data[i] <= 0 || m.data[i] > MAX_CREATURE_DIMENSION)) return null;
     else if (f === O.attackState && (m.data[i] < 0 || m.data[i] > CREATURE_ATTACK_STATE_MAX)) return null;
     else if (f === O.attackPattern && (m.data[i] < 0 || m.data[i] > 2)) return null;
   }
@@ -310,7 +317,7 @@ function validateSounds(m) {
       if (!isFiniteNum(m.data[i])) return null;
     } else if (!isInt(m.data[i])) return null;
     else if (field === O.type && (m.data[i] < 0 || m.data[i] > SOUND_EVENT_MAX)) return null;
-    else if (field === O.material && (m.data[i] < 0 || m.data[i] > 255)) return null;
+    else if (field === O.material && !isValidMaterialId(m.data[i])) return null;
     else if (field === O.layer && !isBit(m.data[i])) return null;
   }
   return m;
@@ -322,7 +329,9 @@ function validateInventory(m) {
   const O = OFF.inventorySlot;
   for (let i = 0; i < m.data.length; i++) {
     const v = m.data[i]; if (!isInt(v)) return null;
-    if (i % INV_FIELDS === O.itemKind && (v < 0 || v > ITEM_KIND_MAX)) return null;
+    const field = i % INV_FIELDS;
+    if (field === O.material && !isValidMaterialId(v)) return null;
+    if (field === O.itemKind && (v < 0 || v > ITEM_KIND_MAX)) return null;
   }
   if (!isInt(m.selected) || m.selected < 0 || m.selected >= INV_SLOTS) return null;
   if (!isNonNegInt(m.selectedFootprint) || m.selectedFootprint > 255) return null;
@@ -334,7 +343,7 @@ function validateCursor(m) {
   if (m.cur === null) return m;
   const c = m.cur;
   if (!c || typeof c !== 'object') return null;
-  if (!isInt(c.material) || !isBit(c.isTool) || !isInt(c.toolClass) || !isInt(c.toolTier) || !isInt(c.count) || !isNonNegInt(c.itemKind) || c.itemKind > ITEM_KIND_MAX) return null;
+  if (!isValidMaterialId(c.material) || !isBit(c.isTool) || !isInt(c.toolClass) || !isInt(c.toolTier) || !isInt(c.count) || !isNonNegInt(c.itemKind) || c.itemKind > ITEM_KIND_MAX) return null;
   return m;
 }
 

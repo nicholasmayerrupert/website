@@ -82,6 +82,7 @@
     "test:rigid-dense-pile": "node scripts/rigid-dense-pile-test.mjs",
     "test:rigid-large-body": "node scripts/rigid-large-body-test.mjs",
     "test:rigid-terrain-contact": "node scripts/rigid-terrain-contact-test.mjs",
+    "test:rigid-blast-impulse": "node scripts/rigid-blast-impulse-test.mjs",
     "test:rigid-blast-settle": "node scripts/rigid-blast-settle-test.mjs",
     "test:rigid-placement-weld": "node scripts/rigid-placement-weld-test.mjs",
     "test:rigid-shape-stress": "node scripts/rigid-shape-stress-test.mjs",

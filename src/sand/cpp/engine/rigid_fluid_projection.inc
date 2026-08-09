@@ -10,6 +10,15 @@
       fluidReferencePressure[layer].resize(cellCount);
     fluidReferenceColumnState[layer].assign(E.cols, 0);
   }
+  fluidBodyIceCoupling.assign(bodies.size(), 0);
+  bool iceCoupling = false;
+  for (int bodyIndex = 0; bodyIndex < (int)bodies.size(); bodyIndex++) {
+    if (bodyMinLiquidDensity[bodyIndex] >= 1e30
+        || !E.bodyContainsMaterial(bodies[bodyIndex], ICE))
+      continue;
+    fluidBodyIceCoupling[bodyIndex] = 1;
+    iceCoupling = true;
+  }
   auto buildReferenceColumn = [&](int layer, int x) {
     if (x < 0 || x >= E.cols) return false;
     uint8_t& columnState = fluidReferenceColumnState[layer][x];
@@ -80,7 +89,7 @@
       const std::array<int, 4>& bounds =
         fluidBodyBounds[bodyIndex * 2 + layer];
       if (bounds[2] < bounds[0]) continue;
-      if (E.isIceMaterial(bodies[bodyIndex]->material)) {
+      if (fluidBodyIceCoupling[bodyIndex]) {
         selectSideReference(layer, bounds[0], -1, reference.leftX);
         selectSideReference(layer, bounds[2], 1, reference.rightX);
       } else {
@@ -125,24 +134,20 @@
   fluidQueue.clear();
   std::vector<uint8_t> bodyFluidMaterial(bodies.size(), EMPTY);
   std::vector<uint8_t> bodyMixedFluid(bodies.size(), 0);
-  bool iceCoupling = false;
-  for (Body* body : bodies) {
-    if (E.isIceMaterial(body->material)
-        || (body->jointPeer
-            && E.isIceMaterial(body->jointPeer->material))) {
-      iceCoupling = true;
-      break;
-    }
-  }
-  const int fluidDomainRadius = iceCoupling
-    ? R_FLUID_ICE_DOMAIN_RADIUS
-    : wetBodyCount >= R_FLUID_DENSE_BATCH_BODIES
+  const int ordinaryFluidDomainRadius =
+    wetBodyCount >= R_FLUID_DENSE_BATCH_BODIES
       ? R_FLUID_DENSE_DOMAIN_RADIUS
       : wetBodyCount >= R_FLUID_CORRECTOR_BATCH_BODIES
         ? R_FLUID_BATCH_DOMAIN_RADIUS
         : R_FLUID_DOMAIN_RADIUS;
-  // A deterministic multi-source flood extends a uniform near-field band from
-  // wet body surfaces. Remote cells remain in the cellular solver.
+  auto fluidDomainRadiusFor = [&](int sourceBody) {
+    return sourceBody >= 0 && sourceBody < (int)fluidBodyIceCoupling.size()
+        && fluidBodyIceCoupling[sourceBody]
+      ? R_FLUID_ICE_DOMAIN_RADIUS : ordinaryFluidDomainRadius;
+  };
+  // A deterministic multi-source flood extends the material-appropriate
+  // near-field band from each wet body surface. Remote cells remain in the
+  // cellular solver.
   auto addNode = [&](int layer, int k, int depth, int sourceBody) {
     if (fluidNodeStamp[layer][k] == fluidNodeGeneration) return false;
     if (fluidBodyStamp[layer][k] == fluidBodyGeneration) return false;
@@ -179,6 +184,7 @@
     int nodeIndex = fluidNodeIndex[qLayer][qk];
     int depth = fluidNodeDepth[nodeIndex];
     int sourceBody = fluidNodes[nodeIndex].sourceBody;
+    int fluidDomainRadius = fluidDomainRadiusFor(sourceBody);
     if (depth >= fluidDomainRadius) continue;
     int y = qk / E.cols, x = qk - y * E.cols;
     if (x > 0) addNode(qLayer, qk - 1, depth + 1, sourceBody);
@@ -334,7 +340,8 @@
         2.0 / (DENSITY[node.material] + DENSITY[material]);
       // The lateral Robin coefficient represents the pressure response of the
       // unresolved reservoir between this face and the far field.
-      if (nx) face.inverseDensity /= fluidDomainRadius;
+      if (nx)
+        face.inverseDensity /= fluidDomainRadiusFor(node.sourceBody);
       face.boundaryPressure =
         referencePressureAt(node.sourceBody, layer, nk);
       fluidFaces.push_back(face);

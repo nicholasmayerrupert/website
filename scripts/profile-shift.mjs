@@ -21,13 +21,13 @@ console.log('shiftWorld phase breakdown (cols=768 rows=320, dx=128, median over 
 {
   const e = createEngineWasm({ cols: 768, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
   for (let i = 0; i < 60; i++) e.step();
-  const ph = { buffers: [], translate: [], register: [], fill: [], total: [] };
+  const ph = { save: [], buffers: [], translate: [], register: [], fill: [], total: [] };
   for (let k = 0; k < 20; k++) {
     const t = now(); e.shiftWorld(k % 2 ? -128 : 128); ph.total.push(now() - t);
-    const p = e.getShiftPerf(); ph.buffers.push(p.buffers); ph.translate.push(p.translate); ph.register.push(p.register); ph.fill.push(p.fill);
+    const p = e.getShiftPerf(); ph.save.push(p.save); ph.buffers.push(p.buffers); ph.translate.push(p.translate); ph.register.push(p.register); ph.fill.push(p.fill);
     for (let i = 0; i < 2; i++) e.step();
   }
-  for (const k of ['buffers', 'translate', 'register', 'fill', 'total']) console.log(`  ${k}: ${med(ph[k]).toFixed(3)}`);
+  for (const k of ['save', 'buffers', 'translate', 'register', 'fill', 'total']) console.log(`  ${k}: ${med(ph[k]).toFixed(3)}`);
   e.destroy();
 }
 

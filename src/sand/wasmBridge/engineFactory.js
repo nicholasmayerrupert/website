@@ -17,6 +17,8 @@ import {
   withPatchedCanvasWebGLContext,
   withResizableTextDecoder,
 } from './resizableBrowserBuffers.js';
+import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
+import { maxWorldDiffBytes, maxWorldRleBytes } from '../worldPacketValidation.js';
 
 export {
   MAT, PLANET, BIOME, CAVE_BIOME,
@@ -25,7 +27,18 @@ export {
 // Player input bitmask + snapshot layouts come from the generated ABI manifest
 // (abi.generated.js) — one schema edit changes both sides.
 export { INPUT };
-export const CHUNK_SIZE = 32;
+
+const STREAM_CHUNK_SIZE = 32;
+
+function assertEngineDimensions(cols, rows) {
+  const cells = cols * rows;
+  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0
+      || cols > ENGINE_MAX_DIMENSION || rows > ENGINE_MAX_DIMENSION
+      || !Number.isSafeInteger(cells) || cells > ENGINE_MAX_CELLS) {
+    throw new RangeError(`invalid sand engine dimensions ${cols}x${rows}`);
+  }
+  return cells;
+}
 
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
@@ -89,7 +102,6 @@ export function initSandWasm() {
         renderDirtyRects: c('engine_render_dirty_rects', null, ['number']),
         renderPixels: c('engine_render_pixels', 'number', ['number']),
         renderPixelsLayer: c('engine_render_pixels_layer', 'number', ['number', 'number']),
-        renderPixelsLen: c('engine_render_pixels_len', 'number', ['number']),
         setSkyLight: c('engine_set_sky_light', null, ['number', 'number']),
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
@@ -102,15 +114,13 @@ export function initSandWasm() {
         setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
         finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
-        clearDraft: c('engine_clear_draft', null, ['number']),
         draftSnapshot: c('engine_draft_snapshot', 'number', ['number']),
         draftPtr: c('engine_draft_ptr', 'number', ['number']),
         getSeedOrigin: c('engine_get_seed_origin', 'number', ['number', 'number', 'number', 'number']),
-        canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
         placeSeed: c('engine_place_seed', 'number', ['number', 'number', 'number']),
         placeSeedTyped: c('engine_place_seed_typed', 'number', ['number', 'number', 'number', 'number']),
         spawnBody: c('engine_spawn_body', null, ['number', 'number', 'number']),
-        spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number']),
+        spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number', 'number']),
         spawnDisc: c('engine_spawn_disc', null, ['number', 'number', 'number', 'number', 'number']),
         setTool: c('engine_set_tool', null, ['number', 'number']),
         setCreativeMaterial: c('engine_set_creative_material', null, ['number', 'number', 'number']),
@@ -119,7 +129,6 @@ export function initSandWasm() {
         pointerButtons: c('engine_pointer_buttons', null, ['number', 'number']),
         pointerUp: c('engine_pointer_up', 'number', ['number', 'number']),
         applyTool: c('engine_apply_tool', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
-        draftIsDriftwood: c('engine_draft_is_driftwood', 'number', ['number']),
         seedDraft: c('engine_seed_draft', 'number', ['number', 'number']),
         spawnPlayer: c('engine_spawn_player', 'number', ['number', 'number', 'number']),
         spawnPlayerSurface: c('engine_spawn_player_surface', 'number', ['number', 'number']),
@@ -186,10 +195,10 @@ export function initSandWasm() {
         serializeWorld: c('engine_serialize_world', 'number', ['number']),
         serializeDiff: c('engine_serialize_diff', 'number', ['number']),
         netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
-        applyWorld: c('engine_apply_world', null, ['number', 'number', 'number']),
-        applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
-        applyWorldMirror: c('engine_apply_world_mirror', null, ['number', 'number', 'number']),
-        applyDiffMirror: c('engine_apply_diff_mirror', null, ['number', 'number', 'number', 'number', 'number']),
+        applyWorld: c('engine_apply_world', 'number', ['number', 'number', 'number']),
+        applyDiff: c('engine_apply_diff', 'number', ['number', 'number', 'number']),
+        applyWorldMirror: c('engine_apply_world_mirror', 'number', ['number', 'number', 'number']),
+        applyDiffMirror: c('engine_apply_diff_mirror', 'number', ['number', 'number', 'number', 'number', 'number']),
         setMirrorWorldOffset: c('engine_set_mirror_world_offset', null, ['number', 'number', 'number']),
         setMirrorWorldTick: c('engine_set_mirror_world_tick', null, ['number', 'number']),
         setMirrorDraft: c('engine_set_mirror_draft', null, ['number', 'number', 'number', 'number']),
@@ -254,7 +263,6 @@ export function initSandWasm() {
   return modPromise;
 }
 
-export function isSandWasmReady() { return M !== null; }
 // Internal accessor for wasmBridge/testHooks.js (test-only cwraps live there,
 // out of the browser bundle). Not part of the public engine API.
 export function _wasmInternals() { return M; }
@@ -271,11 +279,7 @@ export function createEngineWasm({
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
-  const cells = cols * rows;
-  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0 ||
-      cols > 16384 || rows > 16384 || !Number.isSafeInteger(cells) || cells > 0x7fffffff) {
-    throw new RangeError(`invalid sand engine dimensions ${cols}x${rows}`);
-  }
+  assertEngineDimensions(cols, rows);
   if (planetId !== PLANET.EARTH && planetId !== PLANET.MOON &&
       planetId !== PLANET.MARS && planetId !== PLANET.SHIP) {
     throw new RangeError(`invalid sand engine planet ${planetId}`);
@@ -289,6 +293,7 @@ export function createEngineWasm({
   const ptr = M.create(
     cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role, planetId,
   );
+  if (!ptr) throw new Error('sand engine allocation failed');
   if (gravityScale !== undefined) M.setGravityScale(ptr, gravityScale);
   // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).
   let liveCols = cols;
@@ -304,6 +309,20 @@ export function createEngineWasm({
       throw new RangeError(`${label}: invalid WASM view offset=${byteOffset} length=${length} bytes=${bytes} heap=${buffer.byteLength}`);
     }
     return new Ctor(buffer, byteOffset, length);
+  };
+  const mallocOrThrow = (bytes, label) => {
+    const allocation = mod._malloc(bytes);
+    if (!allocation) throw new Error(`${label}: WASM allocation failed for ${bytes} bytes`);
+    return allocation;
+  };
+  const withTemporaryBytes = (bytes, label, apply) => {
+    const allocation = mallocOrThrow(bytes.length, label);
+    try {
+      mod.HEAPU8.set(bytes, allocation);
+      return apply(allocation);
+    } finally {
+      mod._free(allocation);
+    }
   };
 const renderStrides = Object.freeze({
   player: STRIDES.glPlayerExt,
@@ -331,23 +350,39 @@ const renderStrides = Object.freeze({
 
   // Scratch buffers in wasm memory: getSeedOrigin (2 ints), seedDraft (3 ints),
   // glGetOffset (2 ints).
-  const seedOut = mod._malloc(8);
-  const seedDraftOut = mod._malloc(12);
-  const glOffOut = mod._malloc(8);
-  const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
-  const perfOut = mod._malloc(STRIDES.perfSnapshot * 8); // doubles for engine_perf_snapshot
-  const ambienceOut = mod._malloc(12 * 4); // 4 groups × [amount, worldX, worldY]
-  const worldContextOut = mod._malloc(STRIDES.worldContext * 4);
+  const fixedScratch = [];
+  const fixedAlloc = (bytes, label) => {
+    const allocation = mallocOrThrow(bytes, label);
+    fixedScratch.push(allocation);
+    return allocation;
+  };
+  let seedOut, seedDraftOut, glOffOut, camOut, perfOut, ambienceOut, worldContextOut;
+  try {
+    seedOut = fixedAlloc(8, 'seed result');
+    seedDraftOut = fixedAlloc(12, 'seed draft result');
+    glOffOut = fixedAlloc(8, 'GL offset result');
+    camOut = fixedAlloc(16, 'camera result'); // 2 doubles: cameraGet / aimCell
+    perfOut = fixedAlloc(STRIDES.perfSnapshot * 8, 'performance result');
+    ambienceOut = fixedAlloc(12 * 4, 'ambience result'); // 4 groups × [amount, worldX, worldY]
+    worldContextOut = fixedAlloc(STRIDES.worldContext * 4, 'world context result');
+  } catch (error) {
+    for (const allocation of fixedScratch) mod._free(allocation);
+    M.destroy(ptr);
+    throw error;
+  }
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
   let mirrorDraftPtr = 0, mirrorDraftCap = 0, mirrorCreaturePtr = 0, mirrorCreatureCap = 0;
-  let glTargetKey = null, glCanvas = null, destroyed = false;
+  let glTargetKey = null, glCanvas = null, glDevW = 0, glDevH = 0;
+  let destroyed = false;
   const glScratch = (floats) => {
     if (floats > glScratchCap) {
+      const nextCap = Math.max(floats, glScratchCap * 2, 64);
+      const nextPtr = mallocOrThrow(nextCap * 4, 'GL actor scratch');
       if (glScratchPtr) mod._free(glScratchPtr);
-      glScratchCap = Math.max(floats, glScratchCap * 2, 64);
-      glScratchPtr = mod._malloc(glScratchCap * 4);
+      glScratchCap = nextCap;
+      glScratchPtr = nextPtr;
     }
     return glScratchPtr;
   };
@@ -441,7 +476,6 @@ const renderStrides = Object.freeze({
     pointerButtons(buttons) { M.pointerButtons(ptr, buttons); },
     pointerUp(button) { return M.pointerUp(ptr, button) === 1; },
     applyTool(cx, cy, now, inside, drawMode) { return M.applyTool(ptr, cx, cy, now, inside ? 1 : 0, drawMode ? 1 : 0) === 1; },
-    isDraftDriftwood() { return M.draftIsDriftwood(ptr) === 1; },
     getSeedDraft() {
       if (M.seedDraft(ptr, seedDraftOut) !== 1) return null;
       const o = seedDraftOut >> 2;
@@ -473,7 +507,11 @@ const renderStrides = Object.freeze({
     glRestore() {
       return withResizableTextDecoder(() => M.glRestore(ptr) === 1);
     },
-    glResize(devW, devH) { M.glResize(ptr, devW, devH); },
+    glResize(devW, devH) {
+      M.glResize(ptr, devW, devH);
+      glDevW = devW | 0;
+      glDevH = devH | 0;
+    },
     glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
     // Players to overlay. Host/local draws the engine's own players (own = the
     // local id, blue). A client passes a packed [x,y,w,h,facing,own] Float32Array
@@ -546,7 +584,12 @@ const renderStrides = Object.freeze({
     setViewport(dpr, cellDev, viewCols, viewRows) { M.setViewport(ptr, dpr, +cellDev, viewCols | 0, viewRows | 0); },
     // Grow/shrink the loaded sim window while preserving world content. Returns true if dims changed.
     resizeLoadedWindow(newCols, newRows) {
-      const ok = M.resizeLoadedWindow(ptr, newCols | 0, newRows | 0) === 1;
+      assertEngineDimensions(newCols, newRows);
+      assertEngineDimensions(
+        Math.ceil(newCols / STREAM_CHUNK_SIZE) * STREAM_CHUNK_SIZE,
+        Math.ceil(newRows / STREAM_CHUNK_SIZE) * STREAM_CHUNK_SIZE,
+      );
+      const ok = M.resizeLoadedWindow(ptr, newCols, newRows) === 1;
       if (ok) refreshDims();
       return ok;
     },
@@ -569,12 +612,28 @@ const renderStrides = Object.freeze({
     pointerDraftAtAim() { return M.pointerDraftAtAim(ptr) === 1; },
     pointerDownAtAim(button) { return M.pointerDownAtAim(ptr, button | 0) === 1; },
     glReadPixels(x, y, w, h) {
+      if (![x, y, w, h].every(Number.isInteger)
+          || x < 0 || y < 0 || w < 0 || h < 0) {
+        throw new RangeError(`invalid GL readback rectangle ${x},${y} ${w}x${h}`);
+      }
+      if (w > glDevW || h > glDevH
+          || x > glDevW - w || y > glDevH - h) {
+        throw new RangeError(`GL readback rectangle ${x},${y} ${w}x${h} exceeds ${glDevW}x${glDevH}`);
+      }
       const n = w * h * 4;
-      const buf = mod._malloc(n);
-      const ok = M.glReadPixels(ptr, x, y, w, h, buf) === 1;
-      const out = ok ? new Uint8ClampedArray(mod.HEAPU8.buffer, buf, n).slice() : new Uint8ClampedArray(n);
-      mod._free(buf);
-      return out;
+      if (!Number.isSafeInteger(n) || n > 0x7fffffff) {
+        throw new RangeError(`invalid GL readback size ${w}x${h}`);
+      }
+      if (!n) return new Uint8ClampedArray();
+      const buf = mallocOrThrow(n, 'GL readback');
+      try {
+        const ok = M.glReadPixels(ptr, x, y, w, h, buf) === 1;
+        return ok
+          ? new Uint8ClampedArray(mod.HEAPU8.buffer, buf, n).slice()
+          : new Uint8ClampedArray(n);
+      } finally {
+        mod._free(buf);
+      }
     },
     // One batched FFI read for all perf timers (PF layout from the manifest);
     // the three views below slice it for their callers.
@@ -618,7 +677,14 @@ const renderStrides = Object.freeze({
         phases: {},
       };
     },
-    getShiftPerf() { const { d, F } = this.readPerf(); return { buffers: d[F.shiftBuffers], translate: d[F.shiftTranslate], register: d[F.shiftRegister], fill: d[F.shiftFill] }; },
+    getShiftPerf() {
+      const { d, F } = this.readPerf();
+      return {
+        save: d[F.shiftSave], buffers: d[F.shiftBuffers],
+        translate: d[F.shiftTranslate], register: d[F.shiftRegister],
+        fill: d[F.shiftFill],
+      };
+    },
     // Fine phases + legacy aggregate aliases used by bench-sand / profile scripts.
     // Fine keys are the source of truth; legacy keys are stable aliases so older
     // benches keep working after the perfSnapshot v2 expansion.
@@ -699,23 +765,17 @@ const renderStrides = Object.freeze({
       glCanvas = null;
     },
 
-    // Component drafts + seeds. One material-parameterized draft set; the
-    // per-material method names remain for the tests/tools that use them.
+    // Component drafts + seeds.
     addDiscToStoneDraft(cx, cy, r) { return M.addDraft(ptr, cx, cy, r, MAT.STONE) === 1; },
     addDiscToIceDraft(cx, cy, r) { return M.addDraft(ptr, cx, cy, r, MAT.ICE) === 1; },
     finalizeStoneDraft() { M.finalizeDraft(ptr, MAT.STONE); },
     finalizeIceDraft() { M.finalizeDraft(ptr, MAT.ICE); },
-    finalizeDriftwoodDraft() { M.finalizeDraft(ptr, MAT.DRIFTWOOD); },
-    clearStoneDraft() { M.clearDraft(ptr); },
-    clearIceDraft() { M.clearDraft(ptr); },
     getStoneDraftCells() { return draftCells(M.draftSnapshot(ptr)); },
-    getIceDraftCells() { return draftCells(M.draftSnapshot(ptr)); },
     getSeedOrigin(cx, cy) {
       if (M.getSeedOrigin(ptr, cx, cy, seedOut) !== 1) return null;
       const o = seedOut >> 2;
       return [mod.HEAP32[o], mod.HEAP32[o + 1]];
     },
-    canPlaceSeedAt(x0, y0) { return M.canPlaceSeed(ptr, x0, y0) === 1; },
     placeSeedAt(x0, y0) { return M.placeSeed(ptr, x0, y0) === 1; },
     placeSeedTyped(x0, y0, plantType) { return M.placeSeedTyped(ptr, x0, y0, plantType) === 1; },
 
@@ -774,11 +834,26 @@ const renderStrides = Object.freeze({
     spawnBody(cells) {
       const nn = cells.length;
       if (!nn) return null;
-      const buf = mod._malloc(nn * 8);
-      const base = buf >> 2;
-      for (let i = 0; i < nn; i++) { mod.HEAP32[base + i * 2] = cells[i][0]; mod.HEAP32[base + i * 2 + 1] = cells[i][1]; }
-      M.spawnBody(ptr, buf, nn);
-      mod._free(buf);
+      const bytes = nn * 8;
+      if (!Number.isSafeInteger(bytes) || nn > cellCount) {
+        throw new RangeError(`invalid rigid body cell count ${nn}`);
+      }
+      const buf = mallocOrThrow(bytes, 'rigid body cells');
+      try {
+        const base = buf >> 2;
+        for (let i = 0; i < nn; i++) {
+          const x = cells[i]?.[0], y = cells[i]?.[1];
+          if (!Number.isInteger(x) || !Number.isInteger(y)
+              || x < 0 || x >= liveCols || y < 0 || y >= liveRows) {
+            throw new RangeError(`invalid rigid body cell ${x},${y}`);
+          }
+          mod.HEAP32[base + i * 2] = x;
+          mod.HEAP32[base + i * 2 + 1] = y;
+        }
+        M.spawnBody(ptr, buf, nn);
+      } finally {
+        mod._free(buf);
+      }
       return {}; // opaque handle; the engine owns the body
     },
     // Primitive bodies built engine-side (no coordinate array marshalling).
@@ -1058,9 +1133,11 @@ const renderStrides = Object.freeze({
       const values = data instanceof Float32Array ? data : new Float32Array(data || 0);
       if (values.length % STRIDES.creatureSnapshot) throw new Error('invalid creature mirror snapshot');
       if (values.length > mirrorCreatureCap) {
+        const nextCap = Math.max(values.length, mirrorCreatureCap * 2, STRIDES.creatureSnapshot * 8);
+        const nextPtr = mallocOrThrow(nextCap * 4, 'creature mirror snapshot');
         if (mirrorCreaturePtr) mod._free(mirrorCreaturePtr);
-        mirrorCreatureCap = Math.max(values.length, mirrorCreatureCap * 2, STRIDES.creatureSnapshot * 8);
-        mirrorCreaturePtr = mod._malloc(mirrorCreatureCap * 4);
+        mirrorCreatureCap = nextCap;
+        mirrorCreaturePtr = nextPtr;
       }
       if (values.length) mod.HEAPF32.set(values, mirrorCreaturePtr >> 2);
       M.setMirrorCreatures(ptr, mirrorCreaturePtr, values.length / STRIDES.creatureSnapshot, sourceOffsetX | 0, sourceOffsetY | 0);
@@ -1093,21 +1170,42 @@ const renderStrides = Object.freeze({
     // Uint8Array and write it into wasm memory. gridHash detects divergence.
     serializeWorld() { const n = M.serializeWorld(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeWorld').slice(); },
     serializeDiff() { const n = M.serializeDiff(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeDiff').slice(); },
-    applyWorld(bytes) { const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyWorld(ptr, buf, bytes.length); mod._free(buf); },
-    applyDiff(bytes) { if (!bytes.length) return; const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyDiff(ptr, buf, bytes.length); mod._free(buf); },
+    applyWorld(bytes) {
+      if (!(bytes instanceof Uint8Array)
+          || bytes.length === 0
+          || bytes.length > maxWorldRleBytes(cellCount)) return false;
+      return withTemporaryBytes(bytes, 'world snapshot', (buf) => (
+        M.applyWorld(ptr, buf, bytes.length) === 1
+      ));
+    },
+    applyDiff(bytes) {
+      if (!(bytes instanceof Uint8Array)
+          || bytes.length === 0
+          || bytes.length > maxWorldDiffBytes(cellCount)) return false;
+      return withTemporaryBytes(bytes, 'world diff', (buf) => (
+        M.applyDiff(ptr, buf, bytes.length) === 1
+      ));
+    },
     applyWorldMirror(bytes, worldOffsetX, worldOffsetY) {
-      const buf = mod._malloc(bytes.length);
-      mod.HEAPU8.set(bytes, buf);
-      M.setMirrorWorldOffset(ptr, worldOffsetX | 0, worldOffsetY | 0);
-      M.applyWorldMirror(ptr, buf, bytes.length);
-      mod._free(buf);
+      if (!(bytes instanceof Uint8Array)
+          || bytes.length === 0
+          || bytes.length > maxWorldRleBytes(cellCount)) return false;
+      const oldOffsetX = M.worldOffsetX(ptr);
+      const oldOffsetY = M.worldOffsetY(ptr);
+      return withTemporaryBytes(bytes, 'mirror world snapshot', (buf) => {
+        M.setMirrorWorldOffset(ptr, worldOffsetX | 0, worldOffsetY | 0);
+        const applied = M.applyWorldMirror(ptr, buf, bytes.length) === 1;
+        if (!applied) M.setMirrorWorldOffset(ptr, oldOffsetX, oldOffsetY);
+        return applied;
+      });
     },
     applyDiffMirror(bytes, lightEditX0 = 1, lightEditX1 = 0) {
-      if (!bytes.length) return;
-      const buf = mod._malloc(bytes.length);
-      mod.HEAPU8.set(bytes, buf);
-      M.applyDiffMirror(ptr, buf, bytes.length, lightEditX0 | 0, lightEditX1 | 0);
-      mod._free(buf);
+      if (!(bytes instanceof Uint8Array)
+          || bytes.length === 0
+          || bytes.length > maxWorldDiffBytes(cellCount)) return false;
+      return withTemporaryBytes(bytes, 'mirror world diff', (buf) => (
+        M.applyDiffMirror(ptr, buf, bytes.length, lightEditX0 | 0, lightEditX1 | 0) === 1
+      ));
     },
     setMirrorWorldOffset(worldOffsetX, worldOffsetY) {
       M.setMirrorWorldOffset(ptr, worldOffsetX | 0, worldOffsetY | 0);
@@ -1116,9 +1214,11 @@ const renderStrides = Object.freeze({
     setMirrorDraft(cells, material = 0) {
       const n = cells?.length || 0;
       if (n > mirrorDraftCap) {
+        const nextCap = Math.max(n, mirrorDraftCap * 2, 64);
+        const nextPtr = mallocOrThrow(nextCap * 4, 'mirror draft');
         if (mirrorDraftPtr) mod._free(mirrorDraftPtr);
-        mirrorDraftCap = Math.max(n, mirrorDraftCap * 2, 64);
-        mirrorDraftPtr = mod._malloc(mirrorDraftCap * 4);
+        mirrorDraftCap = nextCap;
+        mirrorDraftPtr = nextPtr;
       }
       if (n) mod.HEAP32.set(cells, mirrorDraftPtr >> 2);
       M.setMirrorDraft(ptr, mirrorDraftPtr, n, material | 0);

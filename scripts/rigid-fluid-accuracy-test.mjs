@@ -54,6 +54,37 @@ const countMaterial = (engine, material) => {
 };
 
 {
+  console.log('mixed-material ice coupling stays local to the bodies that contain ice');
+  const measureDomain = (ordinary, mixed) => {
+    const engine = makeEngine();
+    engine.setBgEnabled(false);
+    paintRect(engine, 2, 38, COLS - 3, 108, WATER);
+    if (ordinary) engine.spawnBox(45, 72, 2, 2, RIGID);
+    let mixedBody = -1, grew = false;
+    if (mixed) {
+      mixedBody = engine._bodyCount();
+      engine.spawnBox(135, 72, 2, 2, STONE);
+      const before = engine._bodyState(mixedBody)?.nPts ?? 0;
+      engine._freezeBodyCell(0, mixedBody, 0, 137, 72);
+      grew = (engine._bodyState(mixedBody)?.nPts ?? 0) === before + 1;
+    }
+    engine.stepWorld();
+    const nodes = engine.getRigidSolverDebug().fluidNodes;
+    engine.destroy();
+    return { nodes, grew };
+  };
+  const ordinary = measureDomain(true, false);
+  const mixed = measureDomain(false, true);
+  const combined = measureDomain(true, true);
+  check('stone body accepted one frozen water cell as mixed material',
+    mixed.grew && combined.grew);
+  check(`mixed stone/ice body gets the ice pressure domain (${mixed.nodes} > ${ordinary.nodes})`,
+    mixed.nodes > ordinary.nodes + 20);
+  check(`ice does not enlarge an unrelated body's domain (${combined.nodes} vs ${ordinary.nodes} + ${mixed.nodes})`,
+    Math.abs(combined.nodes - ordinary.nodes - mixed.nodes) <= 4);
+}
+
+{
   console.log('ice crosses an oil/brine interface with a bounded local domain');
   const engine = makeEngine();
   engine.setBgEnabled(false);

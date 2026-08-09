@@ -10,6 +10,8 @@ struct Disp { uint8_t material; int from; };
 class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
+  static constexpr size_t SPILL_GENERATION_BUDGET =
+    (size_t)(TABLE + 4) * TABLE + 2;
 
   int solverMode = 2;
   double solverResidualTolerance = 1e-4;
@@ -79,6 +81,7 @@ class RigidBodySystem {
   static constexpr double RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
 
   // Rasterize a body's occ mask to world cells (bodies in impl; instantiated there).
+  void ensureBodyRaster(Body* b);
   template <class F> void forEachBodyCell(Body* b, F cb);
 
   void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy);
@@ -291,6 +294,7 @@ class RigidBodySystem {
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
   std::vector<double> fluidBodyMaxSlip;
   std::vector<uint8_t> fluidBodySurface, fluidBodyDensityEquilibrium;
+  std::vector<uint8_t> fluidBodyIceCoupling;
   std::vector<int> moveBodyIds;
   std::unordered_map<int, int> moveBodySlotById;
   struct MovePose {

@@ -98,6 +98,68 @@ const createOpenSuspendedSource = () => {
   engine.syncComponents();
   engine.resetDirty();
   check('an isolated source does not keep the world active', engine.stepWorld() === false);
+  const initialForceDebug = engine.getForceDebug();
+  engine.stepWorld();
+  const reusedForceDebug = engine.getForceDebug();
+  check('unchanged static source geometry is reused',
+    initialForceDebug.staticSourceBuilds > 0
+      && reusedForceDebug.staticSourceBuilds === 0
+      && reusedForceDebug.staticSourceReuses > 0);
+  engine.destroy();
+}
+
+// The exact nearest-source index is stable for static geometry, but moving a
+// body by a sub-cell amount must refresh its point bounds before the next query.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  engine.paintDisc(90, 60, 5, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  engine.resetDirty();
+  engine.stepWorld();
+  const initial = engine.getForceDebug();
+  engine.stepWorld();
+  const reused = engine.getForceDebug();
+  check('unchanged static neutronium reuses its nearest-source index',
+    initial.neutroniumIndexBuilds === 1
+      && reused.neutroniumIndexBuilds === 0);
+  engine.destroy();
+}
+
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  engine.spawnBox(70, 20, 5, 5, MAT.NEUTRONIUM);
+  engine.stepWorld();
+  const initial = engine.getForceDebug();
+  engine.stepWorld();
+  const moved = engine.getForceDebug();
+  check('sub-cell neutronium motion rebuilds its nearest-source index',
+    initial.neutroniumIndexBuilds === 1
+      && moved.neutroniumIndexBuilds === 1);
+  engine.destroy();
+}
+
+// A fully blocked sand wake is simulation-only. It must still activate a world
+// whose ordinary dirty marks were cleared.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 100, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 74, 98, 76, 100, MAT.STONE);
+  engine.paintDisc(75, 99, 0, MAT.SAND, true);
+  engine.paintDisc(50, 99, 2, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  engine.resetDirty();
+  const hashBefore = engine.gridHash();
+  check('a simulation-only force wake activates a quiet world',
+    engine.stepWorld() === true);
+  const dirty = engine.getRenderDirty();
+  check('a blocked force wake leaves the simulation grid unchanged',
+    engine.gridHash() === hashBefore);
+  check('a blocked force wake does not produce render or replica dirtiness',
+    dirty.dirtyChunkCount === 0 && dirty.rectCount === 0
+      && engine.serializeDiff().length === 4);
   engine.destroy();
 }
 
@@ -524,6 +586,91 @@ for (const [label, sourceLayer] of [['foreground', 0], ['background', 1]]) {
     before && after && Math.abs(after.px - before.px) < 1e-9
       && Math.abs(after.vx) < 1e-9);
   check('the self-excluded body still obeys world gravity', after?.py > before?.py);
+  engine.destroy();
+}
+
+// Body raster maintenance may touch every neutronium cell without changing the
+// rest of the field. Exact bin signatures drive those wakes; full loose-field
+// coverage remains on its bounded cadence.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  engine.spawnBox(70, 20, 3, 3, MAT.NEUTRONIUM);
+  let fullCoveragePasses = 0;
+  let reusedCoverageBins = false;
+  for (let step = 0; step < 12; step++) {
+    engine.stepWorld();
+    const debug = engine.getForceDebug();
+    fullCoveragePasses += debug.fullCoveragePasses;
+    reusedCoverageBins ||= debug.fullCoveragePasses > 0
+      && debug.selectedBins > 0
+      && debug.candidateBinBuilds < debug.selectedBins;
+  }
+  check(`neutronium restamps keep full coverage bounded (${fullCoveragePasses})`,
+    fullCoveragePasses <= 3);
+  check('unchanged force bins reuse candidate scans', reusedCoverageBins);
+  engine.destroy();
+}
+
+// Scheduler-only force wakes do not invalidate candidate occupancy. A blocked
+// loose cell therefore leaves its nonempty bin reusable at the next coverage.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 100, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 74, 98, 76, 100, MAT.STONE);
+  engine.paintDisc(75, 99, 0, MAT.SAND, true);
+  engine.paintDisc(50, 99, 2, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  // Keep the world clock advancing outside the source's affected bins so the
+  // periodic coverage scan runs again without dirtying the cached sand bin.
+  engine.spawnBox(170, 12, 2, 2, MAT.RIGID);
+  let coveragePasses = 0;
+  let reusedNonemptyBin = false;
+  for (let step = 0; step < 24; step++) {
+    engine.stepWorld();
+    const debug = engine.getForceDebug();
+    if (debug.fullCoveragePasses === 0) continue;
+    coveragePasses += debug.fullCoveragePasses;
+    if (coveragePasses >= 2
+        && debug.candidateCellsVisited > 0
+        && debug.candidateBinBuilds === 0)
+      reusedNonemptyBin = true;
+  }
+  check('unchanged nonempty force bins reuse tracked loose occupancy',
+    coveragePasses >= 2 && reusedNonemptyBin);
+  engine.destroy();
+}
+
+// Clearing pending activity also clears candidate-cache proof. A loose cell
+// added to a cached-empty affected bin must appear in the next coverage scan
+// even when its ordinary edit mark is deliberately discarded.
+for (const [label, discardActivity] of [
+  ['dirty tracking', (engine) => engine.resetDirty()],
+  ['simulation activity', (engine) => engine.resetSimulationActivity()],
+]) {
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 100, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 74, 98, 76, 100, MAT.STONE);
+  engine.eraseDisc(75, 99, 0);
+  engine.paintDisc(50, 99, 2, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  engine.spawnBox(170, 12, 2, 2, MAT.RIGID);
+  engine.stepWorld();
+  engine.paintDisc(75, 99, 0, MAT.SAND, true);
+  discardActivity(engine);
+
+  let rebuiltNewCandidate = false;
+  for (let step = 0; step < 16; step++) {
+    engine.stepWorld();
+    const debug = engine.getForceDebug();
+    rebuiltNewCandidate ||= debug.fullCoveragePasses > 0
+      && debug.candidateBinBuilds > 0
+      && debug.candidateCellsVisited > 0;
+  }
+  check(`discarding ${label} cannot hide a new force candidate`,
+    rebuiltNewCandidate);
   engine.destroy();
 }
 

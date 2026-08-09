@@ -27,13 +27,6 @@ bool Renderer::sideRayStartsInSky(Layer* lay, int x, int y) {
   return worldY < E.terrain.genSurfaceAbs(worldX) && worldY < lay->gSeaRow;
 }
 
-bool Renderer::directSkyCurrent(Layer* lay) const {
-  int n = E.cols * E.rows;
-  return lay->skyValid && !lay->skyDirty && lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY &&
-         lay->skyInputLevel == (int)renderSkyLight &&
-         (int)lay->skyLight.size() == n && (int)lay->skyDownDepth.size() == E.cols && (int)lay->skyDownValue.size() == E.cols;
-}
-
 void Renderer::remapSkyTopInput(Layer* lay) {
   if ((int)lay->skyTopInput.size() != E.cols) lay->skyTopInput.assign(E.cols, 0);
   if (!lay->infinite) {

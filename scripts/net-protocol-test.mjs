@@ -11,6 +11,7 @@ import {
 import {
   CREATURE, CREATURE_ATTACK_STATE, ITEM_KIND, OFF, PROJECTILE_KIND, SOUND_EVENT,
 } from '../src/sand/wasmBridge/abi.generated.js';
+import { MATERIALS } from '../src/sand/materials.generated.js';
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
@@ -142,12 +143,15 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('items bad record length', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 2, 3] })) === null);
   check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.x]: Number.NaN }) })) === null);
   check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.id]: 1.5 }) })) === null);
+  check('items undefined material', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.material]: MATERIALS.length }) })) === null);
   check('items unknown item kind', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.itemKind]: 99 }) })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
   check('creatures bad record length', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 2, 3] })) === null);
   check('creatures NaN coord', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.x]: Number.NaN }) })) === null);
   check('creatures NaN aim', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.aimX]: Number.NaN }) })) === null);
   check('creatures invalid attack state', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackState]: 99 }) })) === null);
+  check('creatures zero width', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.w]: 0 }) })) === null);
+  check('creatures oversized height', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.h]: 33 }) })) === null);
   check('creatures negative attack progress', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: -0.1 }) })) === null);
   check('creatures attack progress above one', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: 1.1 }) })) === null);
   check('creatures spawn progress above one', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.spawnProgress]: 1.1 }) })) === null);
@@ -158,6 +162,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('sounds NaN intensity', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, Number.NaN, 0, 0] })) === null);
   check('sounds non-int semantic field', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0.5, 1, 2, 1, 0, 0] })) === null);
   check('sounds unknown event type', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [999, 1, 2, 1, 0, 0] })) === null);
+  check('sounds undefined material', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, MATERIALS.length, 0] })) === null);
   check('sounds invalid layer', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, 0, 2] })) === null);
   check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
   check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
@@ -165,7 +170,14 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const badInventoryKind = new Array(INV_SLOTS * INV_FIELDS).fill(0);
   badInventoryKind[OFF.inventorySlot.itemKind] = Math.max(...Object.values(ITEM_KIND)) + 1;
   check('inventory unknown item kind', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: badInventoryKind, selected: 0, selectedFootprint: 0 })) === null);
+  const badInventoryMaterial = new Array(INV_SLOTS * INV_FIELDS).fill(0);
+  badInventoryMaterial[OFF.inventorySlot.material] = MATERIALS.length;
+  check('inventory undefined material', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: badInventoryMaterial, selected: 0, selectedFootprint: 0 })) === null);
   check('cursor bad shape', decode(JSON.stringify({ t: 'cursor', tick: 0, player: 0, cur: { material: 1.2 } })) === null);
+  check('cursor undefined material', decode(JSON.stringify({
+    t: 'cursor', tick: 0, player: 0,
+    cur: { material: MATERIALS.length, isTool: 0, toolClass: 0, toolTier: 0, count: 1, itemKind: 0 },
+  })) === null);
   check('select slot >= INV_SLOTS rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: INV_SLOTS })) === null);
   check('select negative slot rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: -1 })) === null);
   check('size negative rejected', decode(JSON.stringify({ t: 'asize', room: 'r', client: 'c', footprint: -1 })) === null);

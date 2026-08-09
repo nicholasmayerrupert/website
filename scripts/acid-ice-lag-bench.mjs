@@ -1,5 +1,6 @@
 // Measures whether an inert ice component increases the cost of acid boring into
-// unrelated stone. Reports wall time and grounding/index costs across tub sizes.
+// unrelated stone. Reports wall, reaction, and grounding/index costs across tub
+// sizes.
 //
 //   node scripts/acid-ice-lag-bench.mjs          # wide acid front
 //   node scripts/acid-ice-lag-bench.mjs --narrow # narrow dropped-blob bore
@@ -33,13 +34,14 @@ function measure(build, boring) {
   build(e);
   for (let i = 0; i < WARM; i++) e.step((i + 1) * 16);
   if (boring) dropAcid(e);
-  const wall = [], ground = [], baseG = [], xlayerG = [], idx = [];
+  const wall = [], react = [], ground = [], baseG = [], xlayerG = [], idx = [];
   let t = WARM * 16;
   for (let i = 0; i < STEPS; i++) {
     if (boring && i % 18 === 0) dropAcid(e);
     t += 16;
     const a = performance.now(); e.step(t); wall.push(performance.now() - a);
     const p = e.getStepPerf();
+    react.push(p.reactMs ?? 0);
     // Total joint grounding (base floods + bond/UF); also track the fine split.
     ground.push(p.joint ?? ((p.groundingMs || 0) + (p.crossLayerGroundingMs || 0)));
     baseG.push(p.groundingMs ?? p.ground ?? 0);
@@ -51,6 +53,7 @@ function measure(build, boring) {
   const sorted = [...wall].sort((x, y) => x - y);
   return {
     wallMedian: sorted[sorted.length >> 1],
+    reactMean: sum(react) / STEPS,
     groundTot: sum(ground),
     groundMean: sum(ground) / STEPS,
     baseMean: sum(baseG) / STEPS,
@@ -61,18 +64,18 @@ function measure(build, boring) {
 
 const f = (x, n = 3) => x.toFixed(n);
 console.log(`grid ${COLS}x${ROWS}, ${STEPS} steps (after ${WARM} warmup), front=${NARROW ? 'NARROW bore' : 'WIDE lake'}\n`);
-console.log('side  scenario       wallMed  groundTot  groundMean  baseMean  xlayerMean  indexMean');
+console.log('side  scenario       wallMed  reactMean  groundTot  groundMean  baseMean  xlayerMean  indexMean');
 for (const side of [0, 60, 90, 120, 150]) {
   const a = side > 0 ? measure((e) => buildIceTub(e, side), false) : null;
   const b = measure((e) => buildStoneSlab(e), true);
   const c = measure((e) => { buildIceTub(e, side); buildStoneSlab(e); }, true);
   const row = (label, r) => console.log(
-    `${String(side).padEnd(5)} ${label.padEnd(14)} ${f(r.wallMedian).padStart(7)}  ${f(r.groundTot).padStart(9)}  ${f(r.groundMean).padStart(10)}  ${f(r.baseMean).padStart(8)}  ${f(r.xlayerMean).padStart(10)}  ${f(r.indexMean).padStart(9)}`,
+    `${String(side).padEnd(5)} ${label.padEnd(14)} ${f(r.wallMedian).padStart(7)}  ${f(r.reactMean).padStart(9)}  ${f(r.groundTot).padStart(9)}  ${f(r.groundMean).padStart(10)}  ${f(r.baseMean).padStart(8)}  ${f(r.xlayerMean).padStart(10)}  ${f(r.indexMean).padStart(9)}`,
   );
   if (a) row('a:ice', a);
   row('b:stone', b);
   row('c:both', c);
-  // The ice tub's grounding overhead while boring = c.groundMean - b.groundMean. If it
-  // grows with side, that is the super-linear blowup; the fix keeps it ~flat (narrow).
-  console.log(`        ice-tub ground overhead while boring = c-b = ${f(c.groundMean - b.groundMean)} ms/step\n`);
+  // Separating reaction and grounding overhead identifies whether component
+  // topology or inert-ice scanning dominates as the tub grows.
+  console.log(`        ice-tub overhead while boring = c-b: react ${f(c.reactMean - b.reactMean)}, ground ${f(c.groundMean - b.groundMean)} ms/step\n`);
 }

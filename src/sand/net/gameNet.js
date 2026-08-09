@@ -267,7 +267,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       }
       case MSG.WORLD: {
         const cur = engineNow();
-        const bytes = validateWorldMessage(m);
+        const bytes = validateWorldMessage(m, { verifyHash: true });
         if (!bytes) { resyncPending = false; needsResync = true; requestResync(); break; }
         const oldOffsetX = cur.getWorldOffsetX?.() || 0;
         const oldOffsetY = cur.getWorldOffsetY?.() || 0;
@@ -280,12 +280,19 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
         // render engine if ours differs). Only full snapshots (join/resync) carry
         // dims, so this is rare.
         if (rebuild) {
-          if (predId) cur.removePlayer(predId);
+          try {
+            e = rebuildEngine(m.cols, m.rows);
+          } catch {
+            failJoin(new Error('Unable to create the server world'));
+            disconnect('world rebuild failed');
+            break;
+          }
+          // Rebuild commits engine and prediction ownership together. Until it
+          // succeeds, the current presentation remains usable.
           predictor = null; predId = 0;
-          e = rebuildEngine(m.cols, m.rows);
         }
         resyncPending = false;
-        if (!applyWorldMessage(e, m, { mirror: true, bytes })) { needsResync = true; requestResync(); break; }
+        if (!applyWorldMessage(e, m, { mirror: true, validatedBytes: bytes })) { needsResync = true; requestResync(); break; }
         rebaseRenderActors(-dx, -dy);
         if (!rebuild && predictor) predictor.rebase(-dx, -dy);
         if (worldCam) e.cameraSet(worldCam.x - m.offsetX, worldCam.y - m.offsetY);

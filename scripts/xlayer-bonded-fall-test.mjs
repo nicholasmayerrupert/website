@@ -103,9 +103,9 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
     engine.syncComponentsLayer(layer);
   }
   for (let i = 0; i < 4; i++) engine.stepWorld();
-  for (let y = 38; y <= 55; y++) {
-    engine.paintDiscLayer(0, 30, y, 0, MAT.ACID, true);
-    engine.paintDiscLayer(0, 33, y, 0, MAT.ACID, true);
+  for (let layer = 0; layer <= 1; layer++) for (let y = 38; y <= 55; y++) {
+    engine.paintDiscLayer(layer, 30, y, 0, MAT.ACID, true);
+    engine.paintDiscLayer(layer, 33, y, 0, MAT.ACID, true);
   }
   let born = false, jointAtBirth = false, birthDetail = '';
   for (let i = 0; i < 500; i++) {
@@ -125,6 +125,11 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
   }
   check('aligned acid cut produces a body', born);
   check(`aligned acid-cut body contains both layers at birth (${birthDetail})`, jointAtBirth);
+  for (let layer = 0; layer <= 1; layer++) {
+    const grid = layer ? engine.getGridBg() : engine.getGrid();
+    for (let k = 0; k < grid.length; k++) if (grid[k] === MAT.ACID)
+      engine.paintDiscLayer(layer, k % cols, Math.floor(k / cols), 0, MAT.EMPTY, true);
+  }
   const bgStoneAtBirth = cnt(engine.getGridBg(), MAT.STONE);
   let minBgStone = bgStoneAtBirth, maxRejected = 0;
   for (let i = 0; i < 24; i++) {

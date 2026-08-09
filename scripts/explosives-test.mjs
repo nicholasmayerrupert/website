@@ -255,6 +255,31 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- blast ignition survives replacement of a severed mixed-material body ---
+{
+  const e = mk();
+  const cells = [];
+  for (let x = 20; x <= 115; x++) cells.push([x, 50]);
+  e.spawnBody(cells);
+  const welded = e.placeMaterial(60, 49, 0, MAT.TNT, 0);
+  e._detonateTnt(70, 50);
+  let structuralPieces = 0;
+  for (let body = 0; body < e._bodyCount(); body++)
+    if (e._bodyMaterial(body) === MAT.RIGID) structuralPieces++;
+  let detonated = false;
+  for (let tick = 0; tick < 8; tick++) {
+    e.stepWorld();
+    if (count(e.getGrid(), MAT.TNT) === 0) {
+      detonated = true;
+      break;
+    }
+  }
+  check(`blast severed the TNT-bearing mixed body (${structuralPieces} pieces)`,
+    welded && structuralPieces > 1);
+  check('severed TNT-bearing fragments inherit the chain fuse', detonated);
+  e.destroy();
+}
+
 // --- debris chunks, cosmetic particles, and shockwave ---
 {
   const e = mk();

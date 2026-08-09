@@ -13,7 +13,6 @@ class ItemSystem {
   int nextItemId = 1;
   std::vector<float> snapshot; // packed [IS_STRIDE] floats per item (ABI reads it)
 
-  int itemCell(const Item& it);
   bool itemGridSolid(int x, int y);
   bool itemCellLiquidAt(int x, int y);
   void moveItemY(Item& it, bool floats = false);

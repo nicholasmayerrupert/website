@@ -209,11 +209,17 @@ function survivalEngine() {
   const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('connect failed')); });
   const inboxOf = (ws) => { const q = []; ws.onmessage = (ev) => { const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m) q.push(m); }; return q; };
   const last = (q, t) => { for (let i = q.length - 1; i >= 0; i--) if (q[i].t === t) return q[i]; return null; };
+  let a = null, b = null;
   try {
-    const a = await open(), b = await open();
+    a = await open(); b = await open();
     const ai = inboxOf(a), bi = inboxOf(b);
-    a.send(encode(makeJoin('r', 'A', 'host'))); await wait(60);
-    b.send(encode(makeJoin('r', 'B', 'client'))); await wait(120);
+    a.send(encode(makeJoin('r', 'A', 'host')));
+    const readyA = await waitFor(() => last(ai, MSG.ASSIGN)
+      && last(ai, MSG.WORLD) && last(ai, MSG.INVENTORY), 10_000);
+    b.send(encode(makeJoin('r', 'B', 'client')));
+    const readyB = await waitFor(() => last(bi, MSG.ASSIGN)
+      && last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY), 10_000);
+    if (!readyA || !readyB) throw new Error('client bootstrap timed out');
 
     const assignA = last(ai, MSG.ASSIGN), assignB = last(bi, MSG.ASSIGN);
     const worldA = last(ai, MSG.WORLD), invA = last(ai, MSG.INVENTORY);
@@ -222,6 +228,9 @@ function survivalEngine() {
     check('client A got an initial inventory', invA && invA.data.length === 36 * INV_FIELDS);
     check('client A got an initial creature snapshot', last(ai, MSG.CREATURES) !== null);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
+    await waitFor(() => srv.host.actorTick > 0);
+    check('live authority advances actor and world clocks together',
+      srv.host.actorTick > 0 && srv.host.actorTick === srv.host.worldTick);
 
     // The browser reports the same visible/loaded dimensions used by solo
     // survival. The authority adopts them and sends the resized window to all
@@ -298,10 +307,10 @@ function survivalEngine() {
     const snap2 = last(ai, MSG.SNAPSHOT), pA = snap2?.players.find((p) => p.id === pidA);
     check('A player present + advanced in snapshots after input', pA && Number.isFinite(pA.x));
 
-    a.close(); b.close(); await wait(60);
   } catch (err) {
     check(`live server error: ${err.message}`, false);
   } finally {
+    a?.terminate(); b?.terminate();
     await srv.close();
   }
 }
@@ -319,6 +328,7 @@ function survivalEngine() {
     room: 'replica',
     maxPlayers: 1,
     creatureNaturalSpawning: true,
+    autoStart: false,
   });
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const immediate = () => new Promise((resolve) => setImmediate(resolve));

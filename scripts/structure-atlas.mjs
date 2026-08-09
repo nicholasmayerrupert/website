@@ -221,24 +221,25 @@ function captureDeepMonuments(engine) {
 
 await initSandWasm();
 const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: true });
+const alignShift = (delta) => Math.round(delta / 32) * 32;
 
 const surface = findSurfaceStructure(engine);
 if (surface) {
-  engine.shiftWorldXY(Math.round(surface.x - engine.getWorldOffsetX() - COLS / 2), 0);
+  engine.shiftWorldXY(alignShift(surface.x - engine.getWorldOffsetX() - COLS / 2), 0);
   capture(engine, 'surface settlement', surface.x, surface.y, 300, 100);
 }
 
 engine.shiftWorldXY(0, 96);
 const mine = findMine(engine);
 if (mine) {
-  engine.shiftWorldXY(Math.round(mine.x - engine.getWorldOffsetX() - COLS / 2), 0);
+  engine.shiftWorldXY(alignShift(mine.x - engine.getWorldOffsetX() - COLS / 2), 0);
   capture(engine, 'railroad mine', mine.x, mine.y, 240, 112);
 }
 
 engine.shiftWorldXY(0, 128);
 const ruin = findRuin(engine);
 if (ruin) {
-  engine.shiftWorldXY(Math.round(ruin.x - engine.getWorldOffsetX() - COLS / 2), 0);
+  engine.shiftWorldXY(alignShift(ruin.x - engine.getWorldOffsetX() - COLS / 2), 0);
   capture(engine, 'underground ruin', ruin.x, ruin.y, 180, 96);
 }
 

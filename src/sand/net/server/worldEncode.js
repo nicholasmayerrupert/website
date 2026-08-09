@@ -14,6 +14,6 @@ export function encodeWorld(engine, tick) {
 }
 export function encodeDiff(engine, tick) {
   const bytes = engine.serializeDiff();
-  if (bytes.length <= 2) return null; // header only -> no changed cells, skip
+  if (bytes.length <= 4) return null; // two empty layer headers -> no changed cells
   return makeDiff(tick, engine.gridHash(), bytesToB64(bytes));
 }

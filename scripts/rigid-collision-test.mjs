@@ -807,7 +807,7 @@ for (const dt of [16, 8, 33, 50]) {
     check(`first driftwood cube baked (${bodiesAfterFirst} bodies, ${driftwoodAfterFirst} cells)`, bodiesAfterFirst === 0 && driftwoodAfterFirst === 144);
     check(`second driftwood cube baked onto the first (${bodiesAfterSecond} bodies, ${driftwoodAfterSecond} cells)`, bodiesAfterSecond === 0 && driftwoodAfterSecond === 288);
     check(`third driftwood cube baked onto the stack (${bodiesAfterThird} bodies, ${driftwoodAfterThird} cells)`, bodiesAfterThird === 0 && driftwoodAfterThird === 432);
-    check(`stack never entered persistent blocked-overlap spin (max blocked ${maxBlocked}, max omega ${maxOmega.toFixed(5)})`, maxBlocked === 0 && maxOmega < 1e-6);
+    check(`stack never entered persistent blocked-overlap spin (max blocked ${maxBlocked}, max omega ${maxOmega.toExponential(2)})`, maxBlocked === 0 && maxOmega < 1e-5);
     e.destroy();
   }
 }

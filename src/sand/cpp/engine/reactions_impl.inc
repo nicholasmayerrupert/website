@@ -101,7 +101,7 @@ void ReactionSystem::applyAcid() {
   // against the final post-batch grid instead of once per removed cell.
   auto noteTouchedCrossBond = [&](int target) {
     if (!E.bgEnabled) return;
-    if (!E.comps.jointSupportValid || E.comps.jointSleepBlocked) { crossBondMayBreak = true; return; }
+    if (!E.comps.jointSupportValid) { crossBondMayBreak = true; return; }
     Layer& own = *E.L;
     Layer& peer = E.L == &E.fg ? E.bg : E.fg;
     if (!cellCompExact || own.groundDirty || own.groundContentDirty || peer.groundDirty || peer.groundContentDirty) { crossBondMayBreak = true; return; }
@@ -203,7 +203,7 @@ void ReactionSystem::applyAcid() {
       pureBore = true;
     }
   }
-  if (pureBore && !crossBondMayBreak && E.comps.jointSupportValid && !E.comps.jointSleepBlocked) {
+  if (pureBore && !crossBondMayBreak && E.comps.jointSupportValid) {
     // Only preserve the sleeping joint when NO component depends on cross-layer
     // stamps (every currently-grounded comp is also base-grounded). Hanging dual-
     // layer structures (BG beam held only by co-occupation with FG) keep base

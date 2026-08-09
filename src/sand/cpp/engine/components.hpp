@@ -12,7 +12,6 @@ enum class ConnectivitySplitMode : uint8_t {
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
   int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
-  int bearingFaces = 0;
   double liquidDensityArea = 0, bottomPowderDensityArea = 0;
   double displacedArea = 0, displacedLiquidMass = 0;
 };
@@ -21,11 +20,6 @@ struct FaceContact {
 class ComponentSystem {
  public:
   explicit ComponentSystem(Engine& e) : E(e) {}
-
-  // One downward powder-contact cell bears this many cell-depths of material
-  // at the powder's density. This keeps small light solids on the surface while
-  // allowing a tall/concentrated load to overload the same footprint.
-  static constexpr double GRANULAR_BEARING_DEPTH = 5.0;
 
   // ---- grounding cache and scratch ----
   bool jointGroundReady = false;
@@ -44,7 +38,6 @@ class ComponentSystem {
   // pure-loose ticks refresh dirty columns without rebuilding the joint graph.
   bool jointSupportValid = false;
   bool jointSupportSleeping = false;
-  bool jointSleepBlocked = false;
   // Sticky: bonds were invalidated (acid/erase/split) and computeGroundedBoth
   // must run on the next step even if the acid pure-bore path left groundDirty
   // and groundContentDirty false and cleared cgBonds. Without this, the joint
@@ -122,8 +115,7 @@ class ComponentSystem {
   Comp* compById(Layer& lay, int id);
   bool compIdIsPlant(Layer& lay, int id);
   template <class Cells>
-  void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
-                             bool collectBearing = false);
+  void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void detachComponentGroups(Layer& lay, const std::vector<std::vector<int>>& groups);
   void detachCrossLayerComponentGroups(
@@ -131,7 +123,6 @@ class ComponentSystem {
   void patchStableComponentTopology(Layer& lay, const std::vector<int>& changedSlots);
   void trimTrailingComponentTombstones(Layer& lay);
   void splitRigidAfterBlast(const std::vector<int>& erased);
-  void markBreakCandidates();
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();
   bool isFloodTargetMat(uint8_t m);
@@ -144,7 +135,7 @@ class ComponentSystem {
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
   void registerBakedCells(uint8_t mat, const std::vector<int>& cells,
-                          int assemblyId, bool iceCache, bool looseSupport,
+                          int assemblyId, bool iceCache,
                           uint8_t plantType = PT_STANDARD);
   bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors, int indexedComp = -1);
   void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false, bool deferJointRefresh = false);

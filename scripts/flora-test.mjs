@@ -272,9 +272,9 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   e.destroy();
 }
 
-// Unrelated rigid-body load cannot change structural support. A baked seed keeps
-// diagonal support; once every neighbouring support cell is gone, both it and
-// any other isolated component must enter the body solver.
+// Seeds always begin as bodies. After a stable bake, diagonal structural support
+// remains valid; once every neighbouring support cell is gone, both the seed and
+// any other isolated component must re-enter the body solver.
 {
   const C = 720, R = 520, sx = 350, sy = 299, seedK = sy * C + sx;
   const solidK = sy * C + sx - 2;
@@ -289,10 +289,12 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   e.syncComponents();
   const bodiesBeforeSeed = e._bodyCount();
   e.placeSeedAt(sx, sy);
-  const placedStatic = e._bodyCount() === bodiesBeforeSeed
-    && e.getGrid()[seedK] === MAT.SEED && e._bodyOwnerGrid()[seedK] < 0;
+  const placedDynamic = e._bodyCount() === bodiesBeforeSeed + 1
+    && e.getGrid()[seedK] === MAT.SEED && e._bodyOwnerGrid()[seedK] >= 0;
   let t = 0;
   for (let s = 0; s < 40; s++) { t += 16; e.step(t); }
+  const baked = e._bodyCount() === 0
+    && e.getGrid()[seedK] === MAT.SEED && e._bodyOwnerGrid()[seedK] < 0;
   e.eraseDisc(sx, sy + 1, 0);
   for (let s = 0; s < 5; s++) { t += 16; e.step(t); }
   const keptDiagonalSupport = e._bodyCount() === 0
@@ -312,8 +314,73 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   const released = e._bodyCount() === 3
     && e._bodyOwnerGrid()[seedK] >= 0 && e._bodyOwnerGrid()[solidK] >= 0;
   check(
-    `supported seed is static and diagonal support remains physical under unrelated body load (placed ${placedStatic}, diagonal ${keptDiagonalSupport}, released ${released}, bodies ${e._bodyCount()})`,
-    placedStatic && keptDiagonalSupport && released,
+    `seed falls, bakes, and keeps diagonal support under unrelated body load (placed ${placedDynamic}, baked ${baked}, diagonal ${keptDiagonalSupport}, released ${released}, bodies ${e._bodyCount()})`,
+    placedDynamic && baked && keptDiagonalSupport && released,
+  );
+  e.destroy();
+}
+
+// Removing the medium below a sleeping seed must wake its rigid body. This is a
+// generic sleeping-body support check; the seed has not baked yet.
+{
+  const C = 120, R = 120;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: false });
+  e.setBgEnabled(false);
+  for (let x = 20; x < 100; x++) for (let y = 105; y < R; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let s = 0; s < 80; s++) e.stepWorld();
+  for (let x = 35; x < 85; x++) for (let y = 80; y < 105; y++) e.paintDisc(x, y, 0, MAT.WATER, false);
+  e.placeSeedAt(60, 40);
+  let slept = false;
+  for (let s = 0; s < 180; s++) {
+    e.stepWorld();
+    if (e._bodyCount() === 1 && e._bodyMaterial(0) === MAT.SEED && e._bodyAwake(0) === 0) {
+      slept = true;
+      break;
+    }
+  }
+  const beforeY = e._bodyState(0)?.py ?? -1;
+  const snapshot = [...e.getGrid()];
+  for (let k = 0; k < snapshot.length; k++)
+    if (snapshot[k] === MAT.WATER) e.eraseDisc(k % C, (k / C) | 0, 0);
+  for (let s = 0; s < 5; s++) e.stepWorld();
+  const after = e._bodyState(0);
+  check(
+    `sleeping seed falls when water support is removed (slept ${slept}, y ${beforeY.toFixed(2)} -> ${after?.py.toFixed(2)})`,
+    slept && e._bodyCount() === 1 && e._bodyAwake(0) === 1 && after?.py > beforeY + 0.1,
+  );
+  e.destroy();
+}
+
+// A seed can initially rest and bake on a powder bed, but every growth write
+// changes the assembly load. Once the live tree exceeds the dirt footprint's
+// bearing capacity it must return to the body solver and sink on its own.
+{
+  const C = 160, R = 150;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 17, sinksOn: false, infinite: false });
+  e.setBgEnabled(false);
+  for (let x = 20; x < 140; x++) for (let y = 140; y < R; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let s = 0; s < 80; s++) e.stepWorld();
+  for (let x = 50; x < 110; x++) for (let y = 100; y < 140; y++) e.paintDisc(x, y, 0, MAT.DIRT, false);
+  for (let s = 0; s < 200; s++) e.stepWorld();
+  e.placeSeedAt(80, 70);
+  let sawGrowingBody = false, maxSeedY = -1, maxWood = 0;
+  for (let s = 0; s < 300; s++) {
+    e.stepWorld();
+    const grid = e.getGrid();
+    let seed = -1, wood = 0;
+    for (let k = 0; k < grid.length; k++) {
+      if (grid[k] === MAT.SEED) seed = k;
+      else if (grid[k] === MAT.WOOD) wood++;
+    }
+    if (seed >= 0) maxSeedY = Math.max(maxSeedY, (seed / C) | 0);
+    maxWood = Math.max(maxWood, wood);
+    if (wood > 0 && e._bodyCount() > 0) sawGrowingBody = true;
+  }
+  check(
+    `growing tree overloads dirt and sinks without an edit (${maxWood} wood, seed y ${maxSeedY})`,
+    maxWood > 0 && sawGrowingBody && maxSeedY >= 101,
   );
   e.destroy();
 }

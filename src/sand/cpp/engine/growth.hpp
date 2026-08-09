@@ -13,7 +13,6 @@ class GrowthSystem {
   uint8_t gGrowType = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
 
   bool growStraight();
-  bool compHasSeed(Comp& comp);
   bool findWaterTouching(Comp& comp, int count, std::vector<int>& picked);
   uint32_t plantGrowthSignature(Comp& comp);
   void refreshPlantCache(Comp& comp);

@@ -1736,24 +1736,29 @@ bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
   });
   return moving;
 }
-// A sleeping body keeps its support if nudging it straight down by `probe`
-// cells makes its footprint overlap solid terrain or another body. If nothing
-// is there, its ground crumbled away (erased/dissolved/sand drained) and it
-// must wake and fall. Must be called while the E.L->bodies' cells are still in the
-// grid (so other E.L->bodies count as support); the body's own cells are ignored.
+// A sleeping body keeps support only while its current underside still touches
+// a medium, terrain, another body, or the world floor. Inspecting the raster
+// directly avoids a translated probe producing stale support for tiny bodies.
 bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
+  (void)probe;
   if (bodyHasLooseSupport(b)) return true;
-  double savedPy = b->py;
-  b->py = savedPy + probe;
-  bool supported = false;
+  occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
   forEachBodyCell(b, [&](int x, int y, int) {
-    if (supported) return;
-    int k = y * E.cols + x; uint8_t m = E.L->grid[k];
-    if (E.isBodyCell(k)) { if (E.L->bodyOwner[k] != b->id) supported = true; return; } // another body underneath counts as support; our own cells are ignored
-    if (!canBodyOccupy(m, k, b->density)) supported = true; // solid terrain / another body
+    int k = y * E.cols + x;
+    if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); }
   });
-  b->py = savedPy;
-  return supported;
+  for (int k : occCells) {
+    int y = k / E.cols;
+    if (y + 1 >= E.rows) return true;
+    int below = k + E.cols;
+    if (occStamp.has(below)) continue;
+    if (E.L->bodyOwner[below] >= 0) {
+      if (E.L->bodyOwner[below] != b->id) return true;
+      continue;
+    }
+    if (!canBodyOccupy(E.L->grid[below], below, b->density)) return true;
+  }
+  return false;
 }
 bool RigidBodySystem::findTerrainClearAdjustment(
     Body* b, double& dx, double& dy) {
@@ -1954,45 +1959,11 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
     rigidBakedCells++;
   });
   rigidBakeRasterMs += emscripten_get_now() - rasterStart;
-  double supportStart = emscripten_get_now();
-  int solidBelow = 0, mediumBelow = 0;
-  bool settledLooseSupport = false;
-  const int offsets[4] = {-1, 1, -E.cols, E.cols};
-  for (const BodyRasterCell& cell : b->rasterBoundaryFootprint) {
-    int k = cell.y * E.cols + cell.x;
-    int y = cell.y, x = cell.x;
-    if (y + 1 >= E.rows) solidBelow++;
-    else if (!occStamp.has(k + E.cols)) {
-      uint8_t below = E.L->grid[k + E.cols];
-      if (E.isBuoyantMedium(below)) mediumBelow++;
-      else if (below != EMPTY && !E.isGasMaterial(below)) solidBelow++;
-    }
-    if (settledLooseSupport) continue;
-    for (int offset : offsets) {
-      if ((offset == -1 && x == 0) || (offset == 1 && x + 1 >= E.cols)
-          || (offset == -E.cols && y == 0)
-          || (offset == E.cols && y + 1 >= E.rows)) continue;
-      int neighbor = k + offset;
-      if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0
-          || !E.isComponentMaterial(E.L->grid[neighbor])) continue;
-      int componentId = E.L->cellComp[neighbor];
-      if (componentId < 0 || componentId >= E.comps.compCount(*E.L)) continue;
-      Comp* component = E.comps.compById(*E.L, componentId);
-      if (component && component->settledBody
-          && component->settledLooseSupport) {
-        settledLooseSupport = true;
-        break;
-      }
-    }
-  }
-  bool looseSupport = settledLooseSupport
-    || (mediumBelow > 0 && mediumBelow > solidBelow);
-  rigidBakeSupportMs += emscripten_get_now() - supportStart;
   double registerStart = emscripten_get_now();
   for (int material = 0; material < TABLE; material++) {
     if (baked[material].empty()) continue;
     E.comps.registerBakedCells((uint8_t)material, baked[material], assemblyId,
-                               E.isIceMaterial(material), looseSupport, b->plantType);
+                               E.isIceMaterial(material), b->plantType);
   }
   rigidBakeRegisterMs += emscripten_get_now() - registerStart;
   if (b->fuseTicks > 0)
@@ -2003,12 +1974,10 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
 bool RigidBodySystem::bodySolidifies(Body* b) {
   return E.bodySolidifiesToComponents(b);
 }
-// Baking is a structural transition, so an unchanged raster alone is insufficient:
-// buoyancy can hold a floating body still with no terrain contact. Require a
-// grounded static support below the raster (or the world floor). Side contact
-// does not bear the body's weight; liquids and other free bodies remain entirely
-// in the rigid solver.
-bool RigidBodySystem::bodyTouchesGroundedSolid(Body* b) {
+// A static component that survived this tick's assembly-motion pass is valid
+// support even when its own equilibrium comes from powder. Side contact does not
+// bear weight, and another free body is not static support.
+bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
   occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
   forEachBodyCell(b, [&](int x, int y, int) {
     int k = y * E.cols + x;
@@ -2020,36 +1989,9 @@ bool RigidBodySystem::bodyTouchesGroundedSolid(Body* b) {
     int neighbor = k + E.cols;
     if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0) continue;
     uint8_t material = E.L->grid[neighbor];
-    if ((E.isRigidMaterialClass(material) || E.isLooseSolidMaterial(material))
-        && E.L->groundedCell[neighbor]) return true;
-  }
-  return bodyTouchesSettledLooseComponent(b);
-}
-bool RigidBodySystem::bodyTouchesSettledLooseComponent(Body* b) {
-  // Powder-backed baked components are retained outside the rigid grounding
-  // flood. Propagate that support through static stacks, but never through a
-  // body-owned cell.
-  occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
-  forEachBodyCell(b, [&](int x, int y, int) {
-    int k = y * E.cols + x;
-    if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); }
-  });
-  const int offsets[4] = {-1, 1, -E.cols, E.cols};
-  for (int k : occCells) {
-    int y = k / E.cols, x = k - y * E.cols;
-    for (int offset : offsets) {
-      if ((offset == -1 && x == 0) || (offset == 1 && x + 1 >= E.cols)
-          || (offset == -E.cols && y == 0) || (offset == E.cols && y + 1 >= E.rows))
-        continue;
-      int neighbor = k + offset;
-      if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0
-          || !E.isComponentMaterial(E.L->grid[neighbor])) continue;
-      int componentId = E.L->cellComp[neighbor];
-      if (componentId < 0 || componentId >= E.comps.compCount(*E.L)) continue;
-      Comp* component = E.comps.compById(*E.L, componentId);
-      if (component && component->settledBody
-          && component->settledLooseSupport) return true;
-    }
+    if (E.isRigidMaterialClass(material)
+        || (E.isLooseSolidMaterial(material) && E.L->groundedCell[neighbor]))
+      return true;
   }
   return false;
 }
@@ -2125,13 +2067,19 @@ void RigidBodySystem::bakeRestingBodies() {
       && stableRaster && peerStableRaster
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
     if (canBake && bodyFootprintOverlapsSolid(b)) canBake = false;
-    bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
+    double supportStart = emscripten_get_now();
+    bool groundedContact = canBake && bodyTouchesStaticSupport(b);
+    bool growthOrigin = canBake && E.bodyContainsGrowthOrigin(b);
     bool peerGroundedContact = false;
+    bool peerGrowthOrigin = false;
     if (canBake && b->jointRole == 1 && b->jointPeer) {
       Engine::ActiveLayerScope layerScope(E, &E.bg);
-      peerGroundedContact = bodyTouchesGroundedSolid(b->jointPeer);
+      peerGroundedContact = bodyTouchesStaticSupport(b->jointPeer);
+      peerGrowthOrigin = E.bodyContainsGrowthOrigin(b->jointPeer);
     }
-    if (canBake && (groundedContact || peerGroundedContact)) {
+    rigidBakeSupportMs += emscripten_get_now() - supportStart;
+    if (canBake && (groundedContact || peerGroundedContact
+                    || growthOrigin || peerGrowthOrigin)) {
       int assemblyId = E.nextBakedAssemblyId++;
       if (b->jointRole == 1 && b->jointPeer) {
         Body* follower = b->jointPeer;
@@ -2321,10 +2269,10 @@ void RigidBodySystem::moveBodies() {
       movingLiquid = sleepingBodyTouchesMovingLiquid(b->jointPeer);
     }
     if (movingLiquid) {
-      bool rigidlySupported = bodyTouchesGroundedSolid(b);
+      bool rigidlySupported = bodyTouchesStaticSupport(b);
       if (!rigidlySupported && b->jointRole == 1 && b->jointPeer) {
         Engine::ActiveLayerScope layerScope(E, &E.bg);
-        rigidlySupported = bodyTouchesGroundedSolid(b->jointPeer);
+        rigidlySupported = bodyTouchesStaticSupport(b->jointPeer);
       }
       if (!rigidlySupported) {
         wakeBody(b);
@@ -2782,7 +2730,7 @@ bool RigidBodySystem::anchorPlacementToStatic(
       placed.push_back(k);
     }
     E.comps.registerBakedCells(material, placed, assemblyId,
-                               E.isIceMaterial(material), false, plantType);
+                               E.isIceMaterial(material), plantType);
   }
 
   for (int layerIndex = 0; layerIndex < 2; layerIndex++) {

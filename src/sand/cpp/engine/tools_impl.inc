@@ -169,7 +169,6 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
 void ToolSystem::registerComponentCells(
     uint8_t mat, std::unordered_set<int>& cells, uint8_t plantType) {
   if (cells.empty()) return;
-  if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
   if (E.isPlantMaterial(mat)) {
     int yMax = 0;
     for (int k : cells) yMax = imax(yMax, k / E.cols);
@@ -190,7 +189,6 @@ void ToolSystem::registerComponentCells(
         component.cacheDirty = true;
         if (E.isSeedMaterial(mat)) {
           component.plantType = plantType;
-          component.requiresCellGrounding = true;
         }
         break;
       }
@@ -199,8 +197,8 @@ void ToolSystem::registerComponentCells(
 }
 
 // Resolve each connected island from one placement gesture independently.
-// Contact with static structure makes the island static; otherwise the rigid
-// spawn path either welds it to contacted bodies or creates a free body.
+// Growth origins always enter through the rigid solver. Other structural
+// material becomes static on contact or enters as a free body.
 void ToolSystem::finalizeStructuralPlacement(
     const std::vector<std::pair<int, int>>& cells, uint8_t mat,
     uint8_t plantType) {
@@ -238,6 +236,12 @@ void ToolSystem::finalizeStructuralPlacement(
       }
     }
 
+    if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
+      Body* body = E.finishSpawn(island, mat, false);
+      if (body && E.isSeedMaterial(mat)) body->plantType = plantType;
+      continue;
+    }
+
     bool touchesStatic = false;
     Layer* peer = E.bgEnabled ? (E.L == &E.fg ? &E.bg : &E.fg) : nullptr;
     for (const auto& cell : island) {
@@ -259,8 +263,7 @@ void ToolSystem::finalizeStructuralPlacement(
       if (touchesStatic) break;
     }
     if (!touchesStatic) {
-      Body* body = E.finishSpawn(island, mat);
-      if (body && E.isSeedMaterial(mat)) body->plantType = plantType;
+      E.finishSpawn(island, mat);
       continue;
     }
     if (E.rigid.anchorPlacementToStatic(island, mat, plantType)) continue;
@@ -607,11 +610,13 @@ bool ToolSystem::canPlaceSeedAt(int x0, int y0) {
   return E.L->grid[E.I(x0, y0)] == EMPTY;
 }
 bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_STANDARD); }
-// Seed placement follows the structural-material path: contact with static
-// structure creates a component, while an unsupported seed enters rigid motion.
+// Every seed enters through the rigid solver. Growth starts only after the seed
+// reaches a stable raster and bakes into the component system.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  finalizeStructuralPlacement({{x0, y0}}, E.plantSeedMat(pt), pt);
+  Body* body = E.finishSpawn({{x0, y0}}, E.plantSeedMat(pt), false);
+  if (!body) return false;
+  body->plantType = pt;
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;

@@ -46,6 +46,11 @@
     }
     return false;
   }
+  bool bodyContainsGrowthOrigin(Body* b) {
+    return bodyContainsMaterial(b, SEED)
+        || bodyContainsMaterial(b, OAK_SEED)
+        || bodyContainsMaterial(b, MYCELIUM_SPORE);
+  }
   bool bodyBakeRetryDeferred(Layer* lay, Body*) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
@@ -277,6 +282,10 @@
   // cells are authoritative when components are reconstructed from the grid.
   // DRIFTWOOD is neither, so it never acts as a growth source.
   inline bool isSeedMaterial(uint8_t m) { return m == SEED || m == OAK_SEED; }
+  inline bool componentHasSeed(const Layer& lay, const Comp& component) {
+    for (int k : component.cells) if (isSeedMaterial(lay.grid[k])) return true;
+    return false;
+  }
   inline bool isPlantWood(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTWOOD; }
   inline bool isPlantLeaf(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTLEAF; }
   inline uint8_t plantSeedMat(uint8_t pt) { return pt == PT_OAK ? OAK_SEED : SEED; }
@@ -303,9 +312,10 @@
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
   //   * A detached structural assembly may carry a per-cell material map.
   //     Component bodies bake into isolated, assembly-tagged material
-  //     partitions after a stable raster interval and direct grounded-solid contact.
-  //     RIGID bodies never bake, and a body still floating on liquid remains
-  //     free.
+  //     partitions after a stable raster interval and real static support.
+  //     Growth origins also bake at stable fluid equilibrium so their cellular
+  //     growth can begin; the resulting component is re-evaluated dynamically.
+  //     RIGID bodies and ordinary bodies floating on liquid remain free.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
@@ -456,11 +466,8 @@
     layer->mobileComponents.clear();
     for (int i = 0; i < (int)layer->components.size(); i++) {
       Comp& component = layer->components[i];
-      if (component.grounded) {
-        component.detachedByBreak = false;
-      } else {
+      if (!component.grounded)
         layer->mobileComponents.push_back(i);
-      }
     }
   }
 
@@ -877,9 +884,11 @@
       if (x > L->looseDirtyX1) L->looseDirtyX1 = x;
     }
     L->looseGroundDirty = true;
+    L->sleepingBodySupportDirty = true;
   }
   inline void noteLooseDirtyFull() {
     L->looseGroundDirty = true;
+    L->sleepingBodySupportDirty = true;
     L->looseDirtyFull = true;
     L->looseDirtyX0 = 0; L->looseDirtyX1 = cols - 1;
   }

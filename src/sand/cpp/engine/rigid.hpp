@@ -140,8 +140,7 @@ class RigidBodySystem {
   bool findTerrainClearAdjustment(Body* b, double& dx, double& dy);
   void bakeBodyToGrid(Body* b, int assemblyId);
   bool bodySolidifies(Body* b);
-  bool bodyTouchesGroundedSolid(Body* b);
-  bool bodyTouchesSettledLooseComponent(Body* b);
+  bool bodyTouchesStaticSupport(Body* b);
   bool bodyHasLooseSupport(Body* b);
   bool rasterStableForBake(Body* b);
   void stampJointFollower(Body* leader);

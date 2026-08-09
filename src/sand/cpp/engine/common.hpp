@@ -190,23 +190,10 @@ struct Comp {
   // same-material terrain; physical connectivity still decides support,
   // detachment, and splitting.
   int bakedAssemblyId = 0;
-  // Set when this component was stamped from a sleeping rigid body. It
-  // distinguishes a stable bake from a naturally unsupported component.
-  bool settledBody = false;
-  // The sleeping body baked while loose material, rather than rigid terrain,
-  // supplied its underside support. Complete loss of that footprint restores
-  // the body solver even when no rigid component was directly cut.
-  bool settledLooseSupport = false;
-  // A topology-changing erase marks the affected support closure for rigid-body
-  // conversion if grounding shows that it lost its last static support.
-  bool detachedByBreak = false;
   // Only SEEDED plants actively grow. Worldgen-stamped trees (and restored/streamed
   // comps) are inert scenery (growing=false) so they never self-activate the sim.
   // Cleared once a growing plant reaches its species' size cap.
   bool growing = false;
-  // Procedural growth can add non-adjacent cells to one logical plant. Such a
-  // component uses cell connectivity for support instead of the component graph.
-  bool requiresCellGrounding = false;
   std::vector<int> woodCells, seedWoodCells;
 };
 

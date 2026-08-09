@@ -3,10 +3,6 @@
 // selects trunk/foliage materials and shape; component registration and grounding
 // remain in ComponentSystem.
 bool GrowthSystem::growStraight() { return gGrowType == PT_PINE || gGrowType == PT_WILLOW || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE; }
-bool GrowthSystem::compHasSeed(Comp& comp) {
-  for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) return true;
-  return false;
-}
 bool GrowthSystem::findWaterTouching(Comp& comp, int count, std::vector<int>& picked) {
   std::vector<int> candidates; std::unordered_set<int> seen;
   auto consider = [&](int nk) { if (E.L->grid[nk] != WATER || seen.count(nk)) return; seen.insert(nk); candidates.push_back(nk); };
@@ -553,8 +549,7 @@ void GrowthSystem::growPlantComponents() {
     Comp& comp = E.L->components[componentIndex];
     if (!comp.growing) continue;
     comp.age++;
-    comp.requiresCellGrounding = true;
-    if (!compHasSeed(comp)) { comp.growing = false; continue; }
+    if (!E.componentHasSeed(*E.L, comp)) { comp.growing = false; continue; }
     // Species materials + per-type caps. PT_STANDARD keeps the original caps.
     gGrowType = comp.plantType; gWoodMat = E.plantWoodMat(gGrowType); gLeafMat = E.plantLeafMat(gGrowType);
     uint32_t growthSignature = plantGrowthSignature(comp);

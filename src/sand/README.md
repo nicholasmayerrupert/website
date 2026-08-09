@@ -291,11 +291,12 @@ Existing numeric IDs are persistent save/network data and must not be renumbered
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
 materials share one component registry. Free bodies stamp their real material
 into the grid and are distinguished by `bodyOwner`. Any unsupported inert
-structural assembly converts into a continuous rigid body. Supported seeds use
-static growing components immediately; unsupported seeds and spores begin as
-one-cell bodies, then bake after settling against grounded structure. The plain
-seed grows `WOOD`/`PLANT`, while oak uses distinct `OAK_SEED`/`OAK_WOOD`/`OAK_LEAF`
-identities. Live TNT fuses remain attached to their static component or body.
+structural assembly converts into a continuous rigid body. Seeds and spores
+always begin as one-cell bodies, then bake and start growing after they settle.
+Growing components re-evaluate their current mass against liquid and powder
+support whenever their shape changes. The plain seed grows `WOOD`/`PLANT`, while
+oak uses distinct `OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live TNT fuses
+remain attached to their static component or body.
 Mixed assemblies retain a per-cell material map, so ore, masonry, timber,
 foliage, and ice rotate together without losing their identities. Foreground and
 background halves released by the same bonded structural break become one

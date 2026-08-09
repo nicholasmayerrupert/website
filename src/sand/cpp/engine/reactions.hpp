@@ -12,6 +12,7 @@ class ReactionSystem {
   void applyReactions();
   void applyAcid();
   void applyLava();
+  void applyBodyIce();
   void applyIce();
   void applySalt();
 

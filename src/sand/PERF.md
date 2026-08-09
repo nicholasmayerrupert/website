@@ -57,7 +57,7 @@ match. Checksums and work-volume counters remain comparable across environments.
 | `componentIndexMs` | Component index and adjacency rebuild | `components_impl.inc` |
 | `assemblyUnionMs` | Static support grouping and rigid-body detachment | `components_impl.inc`, `step.inc` |
 | `carryMs` | Component/body double-buffer carry | `step.inc` |
-| `bodyMs` | Free rigid-body simulation | `rigid_impl.inc` |
+| `bodyMs` | Free rigid-body simulation and ice accretion | `rigid_impl.inc`, `reactions_impl.inc` |
 | `sandMs` | Density interface and powder movement | `core.inc` |
 | `liquidMs` | Liquid movement and density displacement | `core.inc` |
 | `gasMs` | Gas movement | `core.inc` |
@@ -110,6 +110,10 @@ component registration, and generation/restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
+- Free-body ice scans its cached raster boundary before rigid integration and
+  preflights only the local cells selected to freeze. Supported ice can bake on
+  pose stability while its outline is still accreting, so grounded bodies leave
+  the solver without waiting for a quiet reaction window.
 - Liquid-quenched lava becomes loose stone dust in place. It never enters the
   component registry or rigid-body solver, so fragmented cooling fronts scale as
   ordinary powder cells rather than disconnected rigid islands.

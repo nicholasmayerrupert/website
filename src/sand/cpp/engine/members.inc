@@ -686,6 +686,8 @@
           || leader->omega != follower->omega
           || leader->awake != follower->awake
           || leader->stillTicks != follower->stillTicks
+          || leader->bakeSupportedPoseTicks
+               != follower->bakeSupportedPoseTicks
           || leader->cs != follower->cs || leader->sn != follower->sn)
         failBody("joint shared pose/motion mismatch", leader, -1,
                  follower->id);

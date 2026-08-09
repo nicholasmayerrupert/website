@@ -256,6 +256,45 @@ void ReactionSystem::applyLava() {
   }
   if (!burnedPlant.empty()) E.splitPlantAfterErase(&burnedPlant);
 }
+void ReactionSystem::applyBodyIce() {
+  std::vector<std::pair<int, int>>& frozen = E.bodyFrozenIceScratch;
+  frozen.clear();
+  uint32_t phase = E.L->worldSeed ^ 0x1CEB0D1u
+                 ^ ((uint32_t)E.tick * 0x9E3779B9u)
+                 ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
+  for (Body* body : E.L->bodies) {
+    E.rigid.forEachBodyCell(body, [](int, int, int) {});
+    for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
+      if (E.rigid.bodyMaterialAt(body, cell.local) != ICE) continue;
+      const int nx[4] = { cell.x + 1, cell.x - 1, cell.x, cell.x };
+      const int ny[4] = { cell.y, cell.y, cell.y + 1, cell.y - 1 };
+      int waterK = -1;
+      for (int direction = 0; direction < 4; direction++) {
+        int x = nx[direction], y = ny[direction];
+        if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+        int k = y * E.cols + x;
+        if (E.L->grid[k] != WATER || E.L->bodyOwner[k] >= 0) continue;
+        waterK = k;
+        break;
+      }
+      if (waterK < 0
+          || whash2(phase, E.L->worldOffsetX + cell.x,
+                    E.L->worldOffsetY + cell.y) >= ICE_FREEZE_P) continue;
+      frozen.push_back({body->id, waterK});
+    }
+  }
+  std::sort(frozen.begin(), frozen.end());
+  frozen.erase(std::unique(frozen.begin(), frozen.end()), frozen.end());
+  for (size_t begin = 0; begin < frozen.size();) {
+    size_t end = begin + 1;
+    while (end < frozen.size() && frozen[end].first == frozen[begin].first) end++;
+    std::vector<int> cells;
+    cells.reserve(end - begin);
+    for (size_t i = begin; i < end; i++) cells.push_back(frozen[i].second);
+    E.rigid.freezeCellsOntoBody(*E.L, frozen[begin].first, *E.L, cells);
+    begin = end;
+  }
+}
 void ReactionSystem::applyIce() {
   bool melted = false; std::vector<int>& meltedCells = E.iceMeltedScratch; meltedCells.clear();
   E.ensureComponentRegistries();
@@ -317,53 +356,6 @@ void ReactionSystem::applyIce() {
                              E.L->nextComponentId, true);
   }
 
-  // Free ice bodies remain material-identical ICE cells in the live grid. Water
-  // frozen by one extends that body's local occupancy so the new ice shares its
-  // pose instead of entering the static component registry as a separate island.
-  std::vector<std::pair<int, int>>& frozen = E.bodyFrozenIceScratch;
-  frozen.clear();
-  auto freezeBesideBodyIce = [&](int k) {
-    if (k < 0 || k >= E.cols * E.rows || E.L->bodyOwner[k] < 0
-        || E.L->grid[k] != ICE) return;
-    int y = k / E.cols, x = k - y * E.cols;
-    uint8_t rm = x + 1 < E.cols ? E.L->grid[k + 1] : EMPTY;
-    uint8_t lm = x > 0 ? E.L->grid[k - 1] : EMPTY;
-    uint8_t dm = y + 1 < E.rows ? E.L->grid[k + E.cols] : EMPTY;
-    uint8_t um = y > 0 ? E.L->grid[k - E.cols] : EMPTY;
-    int waterK = rm == WATER && E.L->bodyOwner[k + 1] < 0 ? k + 1
-               : lm == WATER && E.L->bodyOwner[k - 1] < 0 ? k - 1
-               : dm == WATER && E.L->bodyOwner[k + E.cols] < 0 ? k + E.cols
-               : um == WATER && E.L->bodyOwner[k - E.cols] < 0 ? k - E.cols
-               : -1;
-    if (waterK < 0) return;
-    // A world/tick hash keeps the new body reaction deterministic without
-    // advancing the shared reaction stream for unrelated materials.
-    uint32_t phase = E.L->worldSeed ^ 0x1CEB0D1u
-                   ^ ((uint32_t)E.tick * 0x9E3779B9u)
-                   ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
-    if (whash2(phase, E.L->worldOffsetX + x,
-               E.L->worldOffsetY + y) >= ICE_FREEZE_P) return;
-    frozen.push_back({waterK, E.L->bodyOwner[k]});
-  };
-  for (int k : E.L->bodyCells) freezeBesideBodyIce(k);
-  for (int k : E.L->passiveBodyCells) freezeBesideBodyIce(k);
-  std::sort(frozen.begin(), frozen.end(),
-            [](const auto& a, const auto& b) {
-              return a.second != b.second ? a.second < b.second
-                                          : a.first < b.first;
-            });
-  for (size_t begin = 0; begin < frozen.size();) {
-    size_t end = begin + 1;
-    while (end < frozen.size() && frozen[end].second == frozen[begin].second) end++;
-    std::vector<int> cells;
-    cells.reserve(end - begin);
-    for (size_t i = begin; i < end; i++) {
-      if (i > begin && frozen[i].first == frozen[i - 1].first) continue;
-      cells.push_back(frozen[i].first);
-    }
-    E.rigid.freezeCellsOntoBody(*E.L, frozen[begin].second, *E.L, cells);
-    begin = end;
-  }
 }
 // Salt is a desiccant / de-icer. A grain that touches WATER dissolves into it,
 // turning that water to BRINE (saltwater) and liquefying the grain into brine as

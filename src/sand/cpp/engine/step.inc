@@ -22,6 +22,7 @@
     perfAssemblyUnionMs += emscripten_get_now() - tA;
 
     double tB = emscripten_get_now();
+    reactions.applyBodyIce();
     forces.applyBodyForces();
     rigid.moveBodies();
 #ifdef SAND_INVARIANT_CHECKS

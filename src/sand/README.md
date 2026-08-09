@@ -313,8 +313,9 @@ to every same-layer body it touches or falling freely when unsupported. Blast
 debris opts out of this placement weld.
 
 Component-backed bodies bake after their rasterized material footprint remains
-unchanged for 20 ticks with direct contact to a grounded static solid. A mixed
-body becomes isolated, assembly-tagged material components:
+unchanged for 20 ticks with direct contact to a grounded static solid. Supported
+ice can also bake after its pose remains quiet for 20 ticks while it is still
+freezing. A mixed body becomes isolated, assembly-tagged material components:
 the component contact graph retains the original object without merging its
 stone, timber, ice, or plants into adjacent same-material terrain. Cuts rebuild
 connectivity, so separated pieces detach independently. Both halves of a
@@ -385,7 +386,9 @@ Reactions are routed through generated flags where possible:
   Static and free-body ice freeze water in their own layer and at co-occupied
   cells in the adjacent layer. Water frozen by a free body extends that body's
   occupancy; cross-layer growth promotes a single-layer body to a shared-pose
-  foreground/background body.
+  foreground/background body. Free-body accretion runs before rigid integration
+  and rejects local cells whose oriented footprint would overlap either layer's
+  blocking terrain.
 - Growth owns plant and mycelium expansion.
 - Explosives own TNT/methane fuses, staged blasts, debris, shock, and chaining.
 

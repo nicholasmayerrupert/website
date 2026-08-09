@@ -298,6 +298,7 @@ struct Body {
   bool erodible = false;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   uint8_t bakeRasterStableTicks = 0;
+  uint8_t bakeSupportedPoseTicks = 0;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;

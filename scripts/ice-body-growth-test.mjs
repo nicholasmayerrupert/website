@@ -45,6 +45,65 @@ const iceOwnership = (engine, layer) => {
   engine.destroy();
 }
 
+{
+  const engine = createEngine();
+  engine.setBgEnabled(false);
+  for (let x = 5; x < 115; x++)
+    for (let y = 82; y < ROWS; y++)
+      engine.paintDisc(x, y, 0, MAT.STONE, true);
+  engine.syncComponents();
+  for (let y = 68; y < 82; y++)
+    for (let x = 15; x < 105; x++)
+      engine.paintDisc(x, y, 0, MAT.WATER, true);
+
+  engine._spawnBoxLayer(0, 60, 74, 4, 2, MAT.ICE);
+  engine._setBodyMotion(0, 0, 0, 0.025);
+  let maxDepenetrations = 0;
+  let peakIceCells = 0;
+  let previousBodyCells = 0;
+  let lastGrowthTick = -1;
+  let bakeTick = -1;
+  for (let tick = 0; tick < 300; tick++) {
+    engine.stepWorld();
+    maxDepenetrations = Math.max(maxDepenetrations,
+      engine.getRigidDebug().depenetrations);
+    peakIceCells = Math.max(peakIceCells,
+      iceOwnership(engine, 0).cells);
+    const body = engine._bodyState(0);
+    if (body?.nPts > previousBodyCells) lastGrowthTick = tick;
+    if (body) previousBodyCells = body.nPts;
+    else if (bakeTick < 0) bakeTick = tick;
+  }
+
+  check(`rotated grounded ice accretes without terrain depenetration `
+      + `(${maxDepenetrations} corrections)`,
+    peakIceCells > 32 && maxDepenetrations === 0);
+  check('supported ice bakes while its freezing boundary is active',
+    engine._bodyCount() === 0 && bakeTick >= 0
+      && bakeTick - lastGrowthTick <= 20
+      && iceOwnership(engine, 0).ownerless === peakIceCells);
+  engine.destroy();
+}
+
+{
+  const engine = createEngine();
+  engine.setBgEnabled(true);
+  for (let y = 15; y < ROWS; y++)
+    for (let x = 45; x < 75; x++)
+      engine.paintDiscLayer(1, x, y, 0, MAT.WATER, true);
+  for (let y = 15; y < ROWS; y++)
+    engine.paintDiscLayer(1, 60, y, 0, MAT.STONE, true);
+  engine.syncComponentsLayer(1);
+  engine._spawnBoxLayer(0, 60, 52, 4, 4, MAT.ICE);
+  step(engine, 20);
+
+  check('cross-layer accretion does not promote through blocking terrain',
+    engine._bodyCountLayer(0) === 1 && engine._bodyCountLayer(1) === 0
+      && engine._bodyJointRoleLayer(0, 0) === 0
+      && iceOwnership(engine, 1).cells === 0);
+  engine.destroy();
+}
+
 for (const sourceLayer of [0, 1]) {
   const targetLayer = 1 - sourceLayer;
   const engine = createEngine();

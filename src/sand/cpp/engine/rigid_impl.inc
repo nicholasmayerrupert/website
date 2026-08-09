@@ -465,6 +465,106 @@ void RigidBodySystem::freezeCellsOntoBody(
   Body* source = findBody(sourceLayer, sourceBodyId);
   if (!source) return;
 
+  struct FreezeCandidate { int i, j, waterK; };
+  std::vector<FreezeCandidate> candidates;
+  candidates.reserve(cells.size());
+  double cs = std::cos(source->angle), sn = std::sin(source->angle);
+  auto occupied = [&](int i, int j) {
+    return i >= 0 && i < source->w && j >= 0 && j < source->h
+        && source->occ[j * source->w + i];
+  };
+  for (int k : cells) {
+    if (k < 0 || k >= E.cols * E.rows
+        || targetLayer.grid[k] != WATER || targetLayer.bodyOwner[k] >= 0)
+      continue;
+    int y = k / E.cols, x = k - y * E.cols;
+    double dx = x + 0.5 - source->px, dy = y + 0.5 - source->py;
+    double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+    int i = (int)std::lround(lx - source->offsetX);
+    int j = (int)std::lround(ly - source->offsetY);
+    if (&sourceLayer == &targetLayer && occupied(i, j)) continue;
+    if (!occupied(i, j)) {
+      bool connected = false;
+      for (int oy = -1; oy <= 1 && !connected; oy++)
+        for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          if (occupied(i + ox, j + oy)) { connected = true; break; }
+        }
+      if (!connected) continue;
+    }
+    candidates.push_back({i, j, k});
+  }
+  std::sort(candidates.begin(), candidates.end(),
+            [](const FreezeCandidate& a, const FreezeCandidate& b) {
+              if (a.j != b.j) return a.j < b.j;
+              if (a.i != b.i) return a.i < b.i;
+              return a.waterK < b.waterK;
+            });
+  candidates.erase(
+    std::unique(candidates.begin(), candidates.end(),
+                [](const FreezeCandidate& a, const FreezeCandidate& b) {
+                  return a.i == b.i && a.j == b.j;
+                }),
+    candidates.end());
+  if (candidates.empty()) return;
+
+  auto layerCellBlocks = [&](Layer& layer, int k) {
+    int owner = layer.bodyOwner[k];
+    if (owner >= 0) {
+      bool ownCell = owner == source->id
+        && (&layer == &sourceLayer || source->jointRole);
+      return !ownCell;
+    }
+    uint8_t material = layer.grid[k];
+    return material != EMPTY && !E.isGasMaterial(material)
+        && !E.isBuoyantMedium(material);
+  };
+  auto localCellBlockedIn = [&](int i, int j, Layer& layer) {
+    double lx = source->offsetX + i, ly = source->offsetY + j;
+    double wx = source->px + lx * cs - ly * sn;
+    double wy = source->py + lx * sn + ly * cs;
+    double extent = 0.5 * (std::fabs(cs) + std::fabs(sn));
+    if (wx - extent < 0 || wy - extent < 0
+        || wx + extent > E.cols || wy + extent > E.rows) return true;
+    int x0 = imax(0, (int)std::floor(wx - extent));
+    int y0 = imax(0, (int)std::floor(wy - extent));
+    int x1 = imin(E.cols - 1, (int)std::floor(wx + extent));
+    int y1 = imin(E.rows - 1, (int)std::floor(wy + extent));
+    constexpr double contactEpsilon = 1e-7;
+    for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+      int k = y * E.cols + x;
+      if (!layerCellBlocks(layer, k)) continue;
+      double dx = x + 0.5 - wx, dy = y + 0.5 - wy;
+      if (std::fabs(dx) >= extent + 0.5 - contactEpsilon
+          || std::fabs(dy) >= extent + 0.5 - contactEpsilon
+          || std::fabs(dx * cs + dy * sn)
+               >= 0.5 + extent - contactEpsilon
+          || std::fabs(-dx * sn + dy * cs)
+               >= 0.5 + extent - contactEpsilon)
+        continue;
+      return true;
+    }
+    return false;
+  };
+
+  bool usesBothLayers = source->jointRole || &sourceLayer != &targetLayer;
+  if (&sourceLayer != &targetLayer && !source->jointRole) {
+    for (int j = 0; j < source->h; j++) for (int i = 0; i < source->w; i++) {
+      if (!occupied(i, j)) continue;
+      if (localCellBlockedIn(i, j, targetLayer)) return;
+    }
+  }
+  candidates.erase(
+    std::remove_if(candidates.begin(), candidates.end(),
+      [&](const FreezeCandidate& candidate) {
+        if (localCellBlockedIn(candidate.i, candidate.j, sourceLayer)) return true;
+        if (!usesBothLayers) return false;
+        Layer& peer = &sourceLayer == &E.fg ? E.bg : E.fg;
+        return localCellBlockedIn(candidate.i, candidate.j, peer);
+      }),
+    candidates.end());
+  if (candidates.empty()) return;
+
   Body* target = source;
   if (&sourceLayer != &targetLayer) {
     if (source->jointRole) {
@@ -513,27 +613,11 @@ void RigidBodySystem::freezeCellsOntoBody(
   }
   if (!target) return;
 
-  // Quantize the frozen world cells into the body's authoritative local mask.
-  // Expanding that mask shifts its offset so every existing local cell keeps
-  // the same world-space pose.
-  std::vector<std::pair<int, int>> localCells;
-  localCells.reserve(cells.size());
-  double cs = std::cos(target->angle), sn = std::sin(target->angle);
   int minI = 0, minJ = 0, maxI = target->w - 1, maxJ = target->h - 1;
-  for (int k : cells) {
-    if (k < 0 || k >= E.cols * E.rows
-        || targetLayer.grid[k] != WATER || targetLayer.bodyOwner[k] >= 0)
-      continue;
-    int y = k / E.cols, x = k - y * E.cols;
-    double dx = x + 0.5 - target->px, dy = y + 0.5 - target->py;
-    double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
-    int i = (int)std::lround(lx - target->offsetX);
-    int j = (int)std::lround(ly - target->offsetY);
-    localCells.push_back({i, j});
-    minI = imin(minI, i); minJ = imin(minJ, j);
-    maxI = imax(maxI, i); maxJ = imax(maxJ, j);
+  for (const FreezeCandidate& candidate : candidates) {
+    minI = imin(minI, candidate.i); minJ = imin(minJ, candidate.j);
+    maxI = imax(maxI, candidate.i); maxJ = imax(maxJ, candidate.j);
   }
-  if (localCells.empty()) return;
 
   int addLeft = -minI, addTop = -minJ;
   int newW = maxI - minI + 1, newH = maxJ - minJ + 1;
@@ -564,8 +648,8 @@ void RigidBodySystem::freezeCellsOntoBody(
   resize(target);
   if (follower) resize(target == leader ? follower : leader);
 
-  for (const auto& cell : localCells) {
-    int local = (cell.second + addTop) * newW + cell.first + addLeft;
+  for (const FreezeCandidate& candidate : candidates) {
+    int local = (candidate.j + addTop) * newW + candidate.i + addLeft;
     if (target->cellMaterials.empty() && target->material != ICE) {
       target->cellMaterials.assign(target->occ.size(), EMPTY);
       for (size_t i = 0; i < target->occ.size(); i++)
@@ -589,7 +673,8 @@ void RigidBodySystem::freezeCellsOntoBody(
   Engine::ActiveLayerScope layerScope(E, &targetLayer);
   std::vector<int>& bodyCells = target->jointRole == 2
     ? targetLayer.passiveBodyCells : targetLayer.bodyCells;
-  for (int k : cells) {
+  for (const FreezeCandidate& candidate : candidates) {
+    int k = candidate.waterK;
     if (k < 0 || k >= E.cols * E.rows
         || targetLayer.grid[k] != WATER || targetLayer.bodyOwner[k] >= 0)
       continue;
@@ -858,6 +943,7 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->px = leader->px; follower->py = leader->py; follower->angle = leader->angle;
   follower->vx = leader->vx; follower->vy = leader->vy; follower->omega = leader->omega;
   follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
+  follower->bakeSupportedPoseTicks = leader->bakeSupportedPoseTicks;
   follower->cs = leader->cs; follower->sn = leader->sn;
 }
 void RigidBodySystem::breakJointBody(Body* member) {
@@ -2071,7 +2157,36 @@ void RigidBodySystem::bakeRestingBodies() {
       keep.push_back(b);
       continue;
     }
-    bool rasterBakeCandidate = !b->awake || b->rasterMayOverlapSolid;
+    double supportStart = emscripten_get_now();
+    bool iceBody = E.bodyContainsMaterial(b, ICE);
+    bool quietPose = b->vx * b->vx + b->vy * b->vy
+                       < R_SLEEP_LIN * R_SLEEP_LIN
+                  && std::fabs(b->omega) < R_SLEEP_ANG;
+    bool terrainContact = b->rasterMayOverlapSolid;
+    if (b->jointRole == 1 && b->jointPeer)
+      terrainContact = terrainContact || b->jointPeer->rasterMayOverlapSolid;
+    bool supportedOwn = false, supportedPeer = false;
+    bool sampledIceSupport = iceBody && quietPose && terrainContact;
+    if (sampledIceSupport) {
+      supportedOwn = bodyTouchesStaticSupport(b);
+      if (b->jointRole == 1 && b->jointPeer) {
+        Engine::ActiveLayerScope layerScope(E, &E.bg);
+        supportedPeer = bodyTouchesStaticSupport(b->jointPeer);
+      }
+    }
+    if (sampledIceSupport && (supportedOwn || supportedPeer)) {
+      if (b->bakeSupportedPoseTicks < R_BAKE_RASTER_TICKS)
+        b->bakeSupportedPoseTicks++;
+    } else {
+      b->bakeSupportedPoseTicks = 0;
+    }
+    if (b->jointRole == 1) syncJointFollower(b);
+    bool supportedPoseBake =
+      b->bakeSupportedPoseTicks >= R_BAKE_RASTER_TICKS;
+    rigidBakeSupportMs += emscripten_get_now() - supportStart;
+
+    bool rasterBakeCandidate = !b->awake || b->rasterMayOverlapSolid
+                            || supportedPoseBake;
     if (b->jointRole == 1 && b->jointPeer)
       rasterBakeCandidate = rasterBakeCandidate
         || !b->jointPeer->awake || b->jointPeer->rasterMayOverlapSolid;
@@ -2079,24 +2194,28 @@ void RigidBodySystem::bakeRestingBodies() {
       keep.push_back(b);
       continue;
     }
-    bool stableRaster = liveTntBody || rasterStableForBake(b);
+    bool stableRaster = liveTntBody || supportedPoseBake
+                     || rasterStableForBake(b);
     bool peerStableRaster = true;
     if (!liveTntBody && b->jointRole == 1 && b->jointPeer) {
       Engine::ActiveLayerScope layerScope(E, &E.bg);
-      peerStableRaster = rasterStableForBake(b->jointPeer);
+      peerStableRaster = supportedPoseBake
+        || rasterStableForBake(b->jointPeer);
     }
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
     if (canBake && bodyFootprintOverlapsSolid(b)) canBake = false;
-    double supportStart = emscripten_get_now();
-    bool groundedContact = canBake && bodyTouchesStaticSupport(b);
+    supportStart = emscripten_get_now();
+    bool groundedContact = canBake
+      && (sampledIceSupport ? supportedOwn : bodyTouchesStaticSupport(b));
     bool growthOrigin = canBake && E.bodyContainsGrowthOrigin(b);
     bool peerGroundedContact = false;
     bool peerGrowthOrigin = false;
     if (canBake && b->jointRole == 1 && b->jointPeer) {
       Engine::ActiveLayerScope layerScope(E, &E.bg);
-      peerGroundedContact = bodyTouchesStaticSupport(b->jointPeer);
+      peerGroundedContact = sampledIceSupport
+        ? supportedPeer : bodyTouchesStaticSupport(b->jointPeer);
       peerGrowthOrigin = E.bodyContainsGrowthOrigin(b->jointPeer);
     }
     rigidBakeSupportMs += emscripten_get_now() - supportStart;

@@ -49,7 +49,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
         int tx = pos[0], ty = pos[1];
         if (!E.isInBounds(tx, ty)) continue;
         int tk = E.I(tx, ty);
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
       }
     }
     return -1;
@@ -98,7 +98,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
         if (!E.isInBounds(tx, ty)) continue;
         int tk = E.I(tx, ty);
         if (i == 0 && reserved.count(tk)) return -1;
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
       }
       return -1;
     };
@@ -134,7 +134,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
           if (!E.isInBounds(tx, ty)) break;
           int tk = E.I(tx, ty);
           if (E.L->grid[tk] == gWoodMat || reserved.count(tk)) continue;
-          if (E.L->grid[tk] == EMPTY) return tk;
+          if (plantTargetOpen(tk, reserved)) return tk;
           break;
         }
       }
@@ -199,7 +199,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
         if (!E.isInBounds(tx, ty)) continue;
         int tk = E.I(tx, ty);
         if (i == 0 && reserved.count(tk)) return -1; // another addition already extends the leader this tick
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
       }
       return -1;
     };
@@ -252,7 +252,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
             if (!E.isInBounds(tx, ty)) break;
             int tk = E.I(tx, ty);
             if (E.L->grid[tk] == PINE_WOOD || reserved.count(tk)) continue;
-            if (E.L->grid[tk] == EMPTY) return tk;
+            if (plantTargetOpen(tk, reserved)) return tk;
             break;
           }
         }
@@ -292,7 +292,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
             if (!E.isInBounds(tx, ty)) { branchComplete = false; break; }
             int tk = E.I(tx, ty);
             if (E.L->grid[tk] == WOOD || reserved.count(tk)) continue;
-            if (E.L->grid[tk] == EMPTY) return tk;
+            if (plantTargetOpen(tk, reserved)) return tk;
             branchComplete = false; break;
           }
           if (!branchComplete) continue;
@@ -304,7 +304,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
             if (!E.isInBounds(tipX, tipY + drop)) break;
             int tk = E.I(tipX, tipY + drop);
             if (E.L->grid[tk] == WOOD || reserved.count(tk)) continue;
-            if (E.L->grid[tk] == EMPTY) return tk;
+            if (plantTargetOpen(tk, reserved)) return tk;
             break;
           }
         }
@@ -325,11 +325,11 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
         int tx = x + dir * d;
         if (!E.isInBounds(tx, y)) break;
         int tk = E.I(tx, y);
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
         if (E.L->grid[tk] != CACTUS && !reserved.count(tk)) break;
         if (d == 3 && E.isInBounds(tx, y - 1)) {
           int up = E.I(tx, y - 1);
-          if (E.L->grid[up] == EMPTY && !reserved.count(up)) return up;
+          if (plantTargetOpen(up, reserved)) return up;
         }
       }
     }
@@ -342,12 +342,27 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     if (straight) { cand[0][0] = x; cand[0][1] = y - 1; cand[1][0] = x - 1; cand[1][1] = y - 1; cand[2][0] = x + 1; cand[2][1] = y - 1; nc = 3; } // strongly vertical: pine/cactus/mushroom
     else if (branchReady && E.rand() < 0.55) { cand[0][0] = x + branchDir; cand[0][1] = y - 1; cand[1][0] = x + branchDir * 2; cand[1][1] = y - 1; cand[2][0] = x + branchDir; cand[2][1] = y; cand[3][0] = x; cand[3][1] = y - 1; cand[4][0] = x - branchDir; cand[4][1] = y - 1; nc = 5; }
     else { cand[0][0] = x; cand[0][1] = y - 1; cand[1][0] = x - 1; cand[1][1] = y - 1; cand[2][0] = x + 1; cand[2][1] = y - 1; cand[3][0] = x - 1; cand[3][1] = y; cand[4][0] = x + 1; cand[4][1] = y; nc = 5; }
-    for (int i = 0; i < nc; i++) { int tx = cand[i][0], ty = cand[i][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
+    for (int i = 0; i < nc; i++) { int tx = cand[i][0], ty = cand[i][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (plantTargetOpen(tk, reserved)) return tk; }
   }
   return -1;
 }
+bool GrowthSystem::plantTargetOpen(
+    int k, const std::unordered_set<int>& reserved) {
+  if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != EMPTY
+      || reserved.count(k)) return false;
+  int y = k / E.cols, x = k - y * E.cols;
+  for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+    if (!ox && !oy) continue;
+    int nx = x + ox, ny = y + oy;
+    if (!E.isInBounds(nx, ny)) continue;
+    int neighbor = E.I(nx, ny);
+    if (reserved.count(neighbor) || gPlantCells.has(neighbor))
+      return true;
+  }
+  return false;
+}
 bool GrowthSystem::addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved) {
-  if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != EMPTY || reserved.count(k)) return false;
+  if (!plantTargetOpen(k, reserved)) return false;
   growth.push_back({k, gWoodMat}); reserved.insert(k); return true;
 }
 void GrowthSystem::thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved) {
@@ -393,7 +408,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
         int tx = x + dx, ty = y + dy;
         if (!E.isInBounds(tx, ty)) continue;
         int tk = E.I(tx, ty);
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) candidates.push_back(tk);
+        if (plantTargetOpen(tk, reserved)) candidates.push_back(tk);
       }
     }
     if (candidates.empty()) return -1;
@@ -409,7 +424,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
       for (int bx : tx) {
         if (!E.isInBounds(bx, y)) continue;
         int tk = E.I(bx, y);
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
       }
     }
     return -1;
@@ -442,7 +457,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
           if (ty > branchSourceY + 1) continue;
           if (!E.isInBounds(tx, ty)) continue;
           int tk = E.I(tx, ty);
-          if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+          if (plantTargetOpen(tk, reserved)) return tk;
         }
       }
     }
@@ -462,7 +477,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
         if (!E.isInBounds(tx, ty)) break;
         int tk = E.I(tx, ty);
         if (E.L->grid[tk] == WILLOW_LEAF || reserved.count(tk)) continue;
-        if (E.L->grid[tk] == EMPTY) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
         break;
       }
     }
@@ -472,7 +487,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
       int tx = pos[0], ty = pos[1];
       if (!E.isInBounds(tx, ty)) continue;
       int tk = E.I(tx, ty);
-      if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+      if (plantTargetOpen(tk, reserved)) return tk;
     }
     return -1;
   }
@@ -493,7 +508,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
         int tx = cand[(first + i) % 18][0], ty = cand[(first + i) % 18][1];
         if (!E.isInBounds(tx, ty)) continue;
         int tk = E.I(tx, ty);
-        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+        if (plantTargetOpen(tk, reserved)) return tk;
       }
     }
     return -1;
@@ -527,7 +542,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
         uint32_t edge = plantGrowthTrait(signature, (uint32_t)(tx + E.L->worldOffsetX) * 31u + (uint32_t)(ty + E.L->worldOffsetY) * 17u);
         if (shape * 100 > limit * 76 && edge % 100u < 24u) continue;
         int tk = E.I(tx, ty);
-        if (E.L->grid[tk] != EMPTY || reserved.count(tk) || !seen.insert(tk).second) continue;
+        if (!plantTargetOpen(tk, reserved) || !seen.insert(tk).second) continue;
         candidates.push_back(tk);
       }
     }
@@ -539,7 +554,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     int cand[11][2] = {{x, y - 1}, {x - 1, y}, {x + 1, y}, {x - 1, y - 1}, {x + 1, y - 1}, {x - 2, y}, {x + 2, y}, {x - 2, y - 1}, {x + 2, y - 1}, {x - 3, y}, {x + 3, y}};
     if (gGrowType == PT_MUSHROOM) { int mc[11][2] = {{x, y - 1}, {x - 1, y - 1}, {x + 1, y - 1}, {x - 2, y - 1}, {x + 2, y - 1}, {x - 3, y - 1}, {x + 3, y - 1}, {x - 2, y}, {x + 2, y}, {x - 3, y}, {x + 3, y}}; std::memcpy(cand, mc, sizeof cand); } // wide flat cap
     int start = (int)(E.rand() * 11); int step = E.rand() < 0.5 ? 1 : -1;
-    for (int i = 0; i < 11; i++) { int idx = ((start + i * step) % 11 + 11) % 11; int tx = cand[idx][0], ty = cand[idx][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
+    for (int i = 0; i < 11; i++) { int idx = ((start + i * step) % 11 + 11) % 11; int tx = cand[idx][0], ty = cand[idx][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (plantTargetOpen(tk, reserved)) return tk; }
   }
   return -1;
 }
@@ -550,6 +565,8 @@ void GrowthSystem::growPlantComponents() {
     if (!comp.growing) continue;
     comp.age++;
     if (!E.componentHasSeed(*E.L, comp)) { comp.growing = false; continue; }
+    gPlantCells.reset((size_t)E.cols * E.rows);
+    for (int k : comp.cells) gPlantCells.add(k);
     // Species materials + per-type caps. PT_STANDARD keeps the original caps.
     gGrowType = comp.plantType; gWoodMat = E.plantWoodMat(gGrowType); gLeafMat = E.plantLeafMat(gGrowType);
     uint32_t growthSignature = plantGrowthSignature(comp);
@@ -591,7 +608,7 @@ void GrowthSystem::growPlantComponents() {
       int leafCount = gGrowType == PT_VINE ? 1 : gGrowType == PT_PINE ? (E.rand() < 0.45 ? 2 : 1) : E.rand() < 0.35 ? 2 : 1;
       leafCount = imin(leafCount, maxLeaf - comp.leafCount);
       int leavesBefore = (int)growth.size();
-      for (int i = 0; i < leafCount; i++) { int leafK = tryGrowLeaf(comp, reserved); if (leafK >= 0) { growth.push_back({leafK, gLeafMat}); reserved.insert(leafK); } }
+      for (int i = 0; i < leafCount; i++) { int leafK = tryGrowLeaf(comp, reserved); if (plantTargetOpen(leafK, reserved)) { growth.push_back({leafK, gLeafMat}); reserved.insert(leafK); } }
       leafBlocked = (int)growth.size() == leavesBefore;
     }
     if (growth.empty()) {

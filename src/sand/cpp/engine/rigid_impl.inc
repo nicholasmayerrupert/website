@@ -1395,6 +1395,7 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
       p->vx = ovx - ow * ry; p->vy = ovy + ow * rx; p->omega = ow;
       p->blastDebris = b->blastDebris;
       p->fuseTicks = containsTnt(p) ? inheritedFuse : 0;
+      p->plantType = b->plantType;
     }
     removedIds.insert(b->id);
   }
@@ -1546,6 +1547,8 @@ void RigidBodySystem::finishErasedJointBodies(
     double oldVx = leader->vx, oldVy = leader->vy, oldOmega = leader->omega;
     bool blastDebris = leader->blastDebris;
     int fuseTicks = leader->fuseTicks;
+    uint8_t fgPlantType = leader->plantType;
+    uint8_t bgPlantType = follower->plantType;
     auto removeOwnedCells = [&](Layer& layer, std::vector<int>& cells) {
       std::vector<int> keep;
       keep.reserve(cells.size());
@@ -1586,8 +1589,10 @@ void RigidBodySystem::finishErasedJointBodies(
         if (!body || !body->jointPeer) continue;
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        body->plantType = fgPlantType;
         body->jointPeer->blastDebris = blastDebris;
         body->jointPeer->fuseTicks = body->fuseTicks;
+        body->jointPeer->plantType = bgPlantType;
         syncJointFollower(body);
         for (const auto& cell : piece.fgCells) {
           int k = cell.second * E.cols + cell.first;
@@ -1605,6 +1610,7 @@ void RigidBodySystem::finishErasedJointBodies(
         if (!body) continue;
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        body->plantType = fgPlantType;
         for (const auto& cell : piece.fgCells) {
           int k = cell.second * E.cols + cell.first;
           E.fg.bodyOwner[k] = body->id;
@@ -1616,6 +1622,7 @@ void RigidBodySystem::finishErasedJointBodies(
         if (!body) continue;
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        body->plantType = bgPlantType;
         for (const auto& cell : piece.bgCells) {
           int k = cell.second * E.cols + cell.first;
           E.bg.bodyOwner[k] = body->id;
@@ -1960,9 +1967,24 @@ void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
   });
   rigidBakeRasterMs += emscripten_get_now() - rasterStart;
   double registerStart = emscripten_get_now();
+  std::vector<int> bakedPlantCells;
+  for (int material = 0; material < TABLE; material++) {
+    if (!E.isPlantMaterial((uint8_t)material)) continue;
+    bakedPlantCells.insert(bakedPlantCells.end(), baked[material].begin(),
+                           baked[material].end());
+  }
+  bool registeredPlantCells = false;
   for (int material = 0; material < TABLE; material++) {
     if (baked[material].empty()) continue;
-    E.comps.registerBakedCells((uint8_t)material, baked[material], assemblyId,
+    if (E.isPlantMaterial((uint8_t)material)) {
+      if (!registeredPlantCells) {
+        E.comps.registerBakedCells(bakedPlantCells, assemblyId, false,
+                                   b->plantType);
+        registeredPlantCells = true;
+      }
+      continue;
+    }
+    E.comps.registerBakedCells(baked[material], assemblyId,
                                E.isIceMaterial(material), b->plantType);
   }
   rigidBakeRegisterMs += emscripten_get_now() - registerStart;
@@ -2729,7 +2751,7 @@ bool RigidBodySystem::anchorPlacementToStatic(
       E.writeGridIndex(k, material);
       placed.push_back(k);
     }
-    E.comps.registerBakedCells(material, placed, assemblyId,
+    E.comps.registerBakedCells(placed, assemblyId,
                                E.isIceMaterial(material), plantType);
   }
 

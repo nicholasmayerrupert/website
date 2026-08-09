@@ -2360,13 +2360,12 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
   }
 }
 
-// Register one material partition of a baked body without merging it into
-// adjacent same-material terrain. The component contact graph still bonds every
-// touching partition for grounding and later detachment; keeping the component
-// boundary preserves the exact object that produced the bake.
+// Register a baked body's supplied cells without merging them into adjacent
+// terrain. Callers group connected plant-family materials so a seeded plant
+// keeps one growth frontier; other structural cells retain material partitions.
 void ComponentSystem::registerBakedCells(
-    uint8_t mat, const std::vector<int>& cells, int assemblyId,
-    bool iceCache, uint8_t plantType) {
+    const std::vector<int>& cells, int assemblyId, bool iceCache,
+    uint8_t plantType) {
   if (cells.empty()) return;
   Layer& lay = *E.L;
   const bool stableSlots = lay.componentIndexExact
@@ -2392,8 +2391,9 @@ void ComponentSystem::registerBakedCells(
     Comp component;
     component.id = E.L->nextComponentId++;
     component.bakedAssemblyId = assemblyId;
-    component.cacheDirty = iceCache || E.isPlantMaterial(mat);
+    component.cacheDirty = iceCache;
     component.plantType = plantType;
+    bool hasPlant = false, hasSeed = false, hasSpore = false;
     stack.clear();
     stack.push_back(seed);
     while (!stack.empty()) {
@@ -2403,6 +2403,9 @@ void ComponentSystem::registerBakedCells(
       int y = k / E.cols, x = k - y * E.cols;
       component.yMax = imax(component.yMax, y);
       uint8_t material = E.L->grid[k];
+      hasPlant = hasPlant || E.isPlantMaterial(material);
+      hasSeed = hasSeed || E.isSeedMaterial(material);
+      hasSpore = hasSpore || material == MYCELIUM_SPORE;
       if (E.isPlantWood(material)) {
         component.woodCount++;
       } else if (E.isPlantLeaf(material)) {
@@ -2420,10 +2423,9 @@ void ComponentSystem::registerBakedCells(
         stack.push_back(nk);
       }
     }
-    if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
-      component.growing = true;
-    }
-    if (mat == MYCELIUM_SPORE) {
+    component.cacheDirty = component.cacheDirty || hasPlant;
+    component.growing = hasSeed || hasSpore;
+    if (hasSpore) {
       E.L->myceliumActive = true;
       E.L->myceliumSporePresent = true;
     }

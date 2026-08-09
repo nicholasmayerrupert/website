@@ -11,12 +11,14 @@ class GrowthSystem {
   // Per-tree growth scratch: set at the top of each comp in growPlantComponents
   // so the growth helpers emit the right species materials.
   uint8_t gGrowType = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
+  StampSet gPlantCells;
 
   bool growStraight();
   bool findWaterTouching(Comp& comp, int count, std::vector<int>& picked);
   uint32_t plantGrowthSignature(Comp& comp);
   void refreshPlantCache(Comp& comp);
   int tryGrowWood(Comp& comp, std::unordered_set<int>& reserved);
+  bool plantTargetOpen(int k, const std::unordered_set<int>& reserved);
   bool addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);
   void thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);
   int tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved);

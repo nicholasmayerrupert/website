@@ -66,6 +66,7 @@ let peakBodies = 0;
 let largestBodyCells = 0;
 let largestBodyChildren = 0;
 let landingTick = -1;
+let lastBodyTick = -1;
 let peakBlocked = 0;
 let peakTerrainBlocked = 0;
 let latePeakBlocked = 0;
@@ -73,6 +74,7 @@ let latePeakSpeed = 0;
 let lateAwakeTicks = 0;
 let peakDepenetrations = 0;
 let peakRejected = 0;
+let peakRecoveryBodies = 0;
 const bodyMs = [];
 const activeBodyMs = [];
 const childTransforms = [];
@@ -83,6 +85,7 @@ const worstTicks = [];
 for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
   const count = engine._bodyCount();
+  if (count) lastBodyTick = tick;
   let largestState = null;
   peakBodies = Math.max(peakBodies, count);
   let blocked = 0;
@@ -133,6 +136,7 @@ for (let tick = 0; tick < STEPS; tick++) {
   const raster = engine.getRigidDebug();
   peakDepenetrations = Math.max(peakDepenetrations, raster.depenetrations);
   peakRejected = Math.max(peakRejected, raster.rejectedCells);
+  peakRecoveryBodies = Math.max(peakRecoveryBodies, solver.recoveryBodies);
   if (tick >= 480) {
     latePeakBlocked = Math.max(latePeakBlocked, blocked);
     latePeakSpeed = Math.max(latePeakSpeed, speed);
@@ -147,12 +151,14 @@ console.log(JSON.stringify({
   largestBodyCells,
   largestBodyChildren,
   landingTick,
+  lastBodyTick,
   overlap: {
     peakBlocked,
     peakTerrainBlocked,
     latePeakBlocked,
     peakRejected,
     peakDepenetrations,
+    peakRecoveryBodies,
   },
   settling: { latePeakSpeed, lateAwakeTicks },
   bodyMs: {

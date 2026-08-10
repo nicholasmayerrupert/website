@@ -723,6 +723,7 @@ static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_SOLVER_HUGE_BODY_MIN_ITERS = 6;
 static const double R_SOLVER_HUGE_BODY_RADIUS = 96.0;
+static const int    R_QUIET_TERRAIN_PROBE_MAX_CELLS = 64;
 static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
 static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
 static const int    R_FLUID_SLEEP_TICKS = 80;

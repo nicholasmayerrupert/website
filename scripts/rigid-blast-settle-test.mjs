@@ -126,7 +126,9 @@ for (const seed of SEEDS) {
   engine.setBgEnabled(true);
   const sites = chooseSites(caveWallCandidates(engine), randomFor(seed ^ 0x51a7e));
   const tracks = new Map();
-  let maxRejected = 0, maxDepenetrations = 0;
+  let maxRejected = 0, maxDepenetrations = 0, maxOwnershipConflicts = 0;
+  let maxRecoveryBodies = 0;
+  let latePeakTerrainBlocked = 0;
   for (let tick = 0; tick < STEPS; tick++) {
     if (tick % 8 === 0 && tick / 8 < sites.length) {
       const [x, y] = sites[tick / 8];
@@ -134,15 +136,41 @@ for (const seed of SEEDS) {
     }
     engine.stepWorld();
     sampleBodies(engine, tick, tracks);
+    let terrainBlocked = 0;
+    for (let body = 0; body < engine._bodyCount(); body++)
+      terrainBlocked += Math.max(0, engine._bodyTerrainBlocked(body));
+    if (tick >= STEPS - 120)
+      latePeakTerrainBlocked = Math.max(latePeakTerrainBlocked, terrainBlocked);
     const rigid = engine.getRigidDebug();
     maxRejected = Math.max(maxRejected, rigid.rejectedCells);
     maxDepenetrations = Math.max(maxDepenetrations, rigid.depenetrations);
+    const solver = engine.getRigidSolverDebug();
+    maxOwnershipConflicts = Math.max(maxOwnershipConflicts,
+      solver.ownershipConflicts);
+    maxRecoveryBodies = Math.max(maxRecoveryBodies, solver.recoveryBodies);
   }
   const settleStart = (sites.length - 1) * 8 + 10;
   const chatter = [...tracks.values()].filter((samples) =>
     hasConfinedChatter(samples, settleStart)).length;
+  let finalTerrainBlocked = 0, finalAwake = 0;
+  const finalOverlaps = [];
+  for (let body = 0; body < engine._bodyCount(); body++) {
+    const blocked = Math.max(0, engine._bodyTerrainBlocked(body));
+    finalTerrainBlocked += blocked;
+    finalAwake += engine._bodyAwake(body) > 0;
+    if (blocked) finalOverlaps.push({
+      id: engine._bodyIdLayer(0, body),
+      jointRole: engine._bodyJointRoleLayer(0, body),
+      blocked,
+      awake: engine._bodyAwake(body),
+      ...engine._bodyState(body),
+    });
+  }
   results.push({ seed, sites: sites.length, bodies: tracks.size,
-    chatter, maxRejected, maxDepenetrations });
+    chatter, maxRejected, maxDepenetrations,
+    latePeakTerrainBlocked, finalTerrainBlocked, finalAwake, finalOverlaps,
+    maxOwnershipConflicts, maxRecoveryBodies,
+  });
   engine.destroy();
 }
 
@@ -150,13 +178,21 @@ const { check, done } = makeChecker('procedural cave blast debris settling');
 for (const result of results)
   console.log(`  seed ${result.seed}: ${result.sites} blasts, `
     + `${result.bodies} bodies, ${result.chatter} chatter, `
-    + `${result.maxRejected} rejected, ${result.maxDepenetrations} depenetrations`);
+    + `${result.maxRejected} rejected, ${result.maxOwnershipConflicts} conflicts, `
+    + `${result.maxDepenetrations} depenetrations, `
+    + `${result.latePeakTerrainBlocked}/${result.finalTerrainBlocked} late/final overlap, `
+    + `${result.finalAwake} awake${result.finalOverlaps.length
+      ? ` ${JSON.stringify(result.finalOverlaps)}` : ''}, `
+    + `${result.maxRecoveryBodies} recoveries`);
 check('every cave field supplied the full blast set',
   results.every((result) => result.sites === BLASTS));
 check('settling debris has no confined alternating positional correction',
   results.every((result) => result.chatter === 0));
 check('settling debris has no rejected raster stamps',
   results.every((result) => result.maxRejected === 0));
+check('settling debris stays clear of static terrain late in the run',
+  results.every((result) => result.latePeakTerrainBlocked === 0
+    && result.finalTerrainBlocked === 0));
 check('terrain fallback remains bounded',
   results.every((result) => result.maxDepenetrations <= 2));
 process.exitCode = done();

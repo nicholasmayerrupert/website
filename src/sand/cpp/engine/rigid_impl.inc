@@ -2598,6 +2598,12 @@ void RigidBodySystem::moveBodies() {
     }
     return root;
   };
+  auto bodyOverlapsTerrain = [&](Body* body) {
+    if (bodyTerrainBlocked(body) > 0) return true;
+    if (body->jointRole != 1 || !body->jointPeer) return false;
+    Engine::ActiveLayerScope layerScope(E, &E.bg);
+    return bodyTerrainBlocked(body->jointPeer) > 0;
+  };
   for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
     terrainAdjustmentParents[slot] = slot;
   for (const auto& pair : terrainContactPairs) {
@@ -2610,11 +2616,28 @@ void RigidBodySystem::moveBodies() {
     int b = adjustmentRoot(second->second);
     if (a != b) terrainAdjustmentParents[b] = a;
   }
-  std::vector<uint8_t> adjustmentRootActive(simulatedBodyCount, 0);
+  static constexpr uint8_t ROOT_ACTIVE = 1 << 0;
+  static constexpr uint8_t ROOT_EXACT = 1 << 1;
+  static constexpr uint8_t ROOT_VISITED = 1 << 2;
+  static constexpr uint8_t ROOT_RECOVERED = 1 << 3;
+  std::vector<uint8_t> adjustmentRootState(simulatedBodyCount, 0);
   for (Body* body : E.L->bodies) {
-    if (body->jointRole == 2 || !body->rasterMayOverlapSolid) continue;
+    if (body->jointRole == 2) continue;
     int slot = moveBodySlotById.find(body->id)->second;
-    adjustmentRootActive[adjustmentRoot(slot)] = 1;
+    int root = adjustmentRoot(slot);
+    if (body->rasterMayOverlapSolid)
+      adjustmentRootState[root] |= ROOT_ACTIVE;
+    // Slender bodies use their dedicated position solver. Exact raster recovery
+    // targets quiet irregular bodies and tiny debris whose sampled contacts can
+    // miss a discrete terrain cell.
+    bool exactQuietProbe = !rigidLargeSlenderBody(body)
+      && (!body->awake
+        || (body->nPts <= R_QUIET_TERRAIN_PROBE_MAX_CELLS
+          && body->vx * body->vx + body->vy * body->vy
+              < R_SLEEP_LIN * R_SLEEP_LIN
+          && std::fabs(body->omega) < R_SLEEP_ANG));
+    if (exactQuietProbe && bodyOverlapsTerrain(body))
+      adjustmentRootState[root] |= ROOT_ACTIVE | ROOT_EXACT;
   }
   // Translate a complete final-contact island together so terrain correction
   // cannot pull a resting stack apart. Material and bake lifetime are irrelevant.
@@ -2624,8 +2647,11 @@ void RigidBodySystem::moveBodies() {
       if (body->jointRole == 2) continue;
       int slot = moveBodySlotById.find(body->id)->second;
       int root = adjustmentRoot(slot);
-      if (!adjustmentRootActive[root]
-          || !bodyFootprintOverlapsSolid(body)) continue;
+      uint8_t rootState = adjustmentRootState[root];
+      if (!(rootState & ROOT_ACTIVE)
+          || !(rootState & ROOT_EXACT
+            ? bodyOverlapsTerrain(body)
+            : bodyFootprintOverlapsSolid(body))) continue;
       double dx = 0, dy = 0;
       if (!findTerrainClearAdjustment(body, dx, dy)) continue;
       for (Body* member : E.L->bodies) {
@@ -2642,11 +2668,97 @@ void RigidBodySystem::moveBodies() {
     }
     if (!adjusted) break;
   }
+  // A structure-scale or already-quiet contact island must never keep a pose
+  // whose raster is inside static terrain. If local translation cannot clear
+  // the proposed pose, retain the complete island's last stamped pose.
+  // Restoring the island together preserves its body-body contacts, while the
+  // next support check wakes any member that is not actually resting there.
+  for (Body* seed : E.L->bodies) {
+    if (seed->jointRole == 2) continue;
+    int seedSlot = moveBodySlotById.find(seed->id)->second;
+    int root = adjustmentRoot(seedSlot);
+    uint8_t& rootState = adjustmentRootState[root];
+    if (!(rootState & ROOT_ACTIVE) || (rootState & ROOT_VISITED)) continue;
+    rootState |= ROOT_VISITED;
+    if (!(rootState & ROOT_EXACT)) continue;
+
+    bool overlapsTerrain = false;
+    bool structureScale = false;
+    bool quietIsland = true;
+    for (Body* member : E.L->bodies) {
+      if (member->jointRole == 2) continue;
+      int memberSlot = moveBodySlotById.find(member->id)->second;
+      if (adjustmentRoot(memberSlot) != root) continue;
+      structureScale = structureScale
+        || member->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
+      quietIsland = quietIsland
+        && (!member->awake
+          || (member->vx * member->vx + member->vy * member->vy
+                < R_SLEEP_LIN * R_SLEEP_LIN
+              && std::fabs(member->omega) < R_SLEEP_ANG));
+      overlapsTerrain = overlapsTerrain
+        || bodyOverlapsTerrain(member);
+    }
+    if ((!structureScale && !quietIsland) || !overlapsTerrain) continue;
+
+    std::vector<std::pair<Body*, MovePose>> proposed;
+    for (Body* member : E.L->bodies) {
+      if (member->jointRole == 2) continue;
+      int memberSlot = moveBodySlotById.find(member->id)->second;
+      if (adjustmentRoot(memberSlot) != root) continue;
+      proposed.push_back({member, {
+        member->px, member->py, member->angle,
+      }});
+      const MovePose& previous = movePreviousPoses[memberSlot];
+      member->px = previous.px;
+      member->py = previous.py;
+      member->angle = previous.angle;
+      member->cs = std::cos(member->angle);
+      member->sn = std::sin(member->angle);
+      if (member->jointRole == 1) syncJointFollower(member);
+    }
+
+    bool previousPoseClear = true;
+    for (const auto& entry : proposed)
+      if (bodyOverlapsTerrain(entry.first)) {
+        previousPoseClear = false;
+        break;
+      }
+    if (!previousPoseClear) {
+      for (const auto& entry : proposed) {
+        Body* member = entry.first;
+        member->px = entry.second.px;
+        member->py = entry.second.py;
+        member->angle = entry.second.angle;
+        member->cs = std::cos(member->angle);
+        member->sn = std::sin(member->angle);
+        if (member->jointRole == 1) syncJointFollower(member);
+      }
+      continue;
+    }
+
+    for (const auto& entry : proposed) {
+      Body* member = entry.first;
+      member->vx = member->vy = member->omega = 0;
+      member->pvx = member->pvy = member->pw = 0;
+      member->awake = false;
+      member->hadContact = true;
+      member->rasterMayOverlapSolid = false;
+      resetSleepTracking(member);
+      if (member->jointRole == 1) syncJointFollower(member);
+      rigidRecoveryBodies++;
+    }
+    rootState |= ROOT_RECOVERED;
+  }
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
     int slot = moveBodySlotById.find(body->id)->second;
-    if (!adjustmentRootActive[adjustmentRoot(slot)]
-        || !bodyFootprintOverlapsSolid(body)) continue;
+    int root = adjustmentRoot(slot);
+    uint8_t rootState = adjustmentRootState[root];
+    if (!(rootState & ROOT_ACTIVE) || (rootState & ROOT_RECOVERED)
+        || !(rootState & ROOT_EXACT
+          ? bodyOverlapsTerrain(body)
+          : bodyFootprintOverlapsSolid(body))) continue;
     body->awake = true;
     resetSleepTracking(body);
   }

@@ -1133,9 +1133,11 @@
       };
       bool shockVelocityConverged = false;
       uint64_t shockIslandKey = solveShockKey[root];
-      bool shockAspectEligible = solveBodyCount[root] >= 8
-        && solveMaxY[root] - solveMinY[root]
-          >= solveMaxX[root] - solveMinX[root];
+      bool shockSupportEligible = (solveBodyCount[root] >= 8
+          && solveMaxY[root] - solveMinY[root]
+            >= solveMaxX[root] - solveMinX[root])
+        || (solveBodyCount[root] >= 4
+          && solveMaxRadius[root] >= R_SOLVER_HUGE_BODY_RADIUS);
       bool shockAttemptAllowed = true;
       if (solverMode >= 2) {
         auto previousAttempt = shockAttemptCache.find(shockIslandKey);
@@ -1147,7 +1149,8 @@
         }
       }
       if (solverMode >= 2 && !hasImpactTarget && solveBodyCount[root] >= 4
-          && !E.L->forceActive && shockAttemptAllowed && shockAspectEligible) {
+          && !E.L->forceActive && shockAttemptAllowed
+          && shockSupportEligible) {
 #include "rigid_step_shock.inc"
       }
       // The first passes run from the lowest contact upward so support impulses
@@ -1372,30 +1375,44 @@
         b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
       }
     }
-    // The velocity solve prevents ordinary tunnelling. If a sustained spatial
-    // force still leaves an already-contacting body pair slightly overlapped,
-    // project only those pairs at their integrated poses. This cold path keeps
-    // rasterized ownership unique without changing ordinary pile settling.
+    // Project residual overlap at the final integrated pose for sustained-force
+    // islands and pairs of structure-scale bodies. A body supported by terrain
+    // stays fixed while the load above it moves clear.
     positionPairs.clear();
-    if (E.L->forceActive) {
+    bool structureProjection = sub + 1 == substeps;
+    bool hasStructurePair = false;
+    if (structureProjection)
+      for (const Contact& contact : contacts)
+        if (contact.b && contact.bIntegrated
+            && contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+            && contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS) {
+          hasStructurePair = true;
+          break;
+        }
+    if (E.L->forceActive || hasStructurePair) {
       spatialForceIsland.assign(n, 0);
       bool hasForceDrivenIsland = false;
-      for (int bi = 0; bi < n; bi++) {
-        if (!solverBodies[bi]->spatialForceApplied) continue;
-        spatialForceIsland[ufFind(solveParent, bi)] = 1;
-        hasForceDrivenIsland = true;
-      }
-      if (hasForceDrivenIsland) {
-        terrainAnchored.assign(n, 0);
-        for (const Contact& contact : contacts) {
-          int root = ufFind(solveParent, contact.a->idx);
-          if (!spatialForceIsland[root]) continue;
-          if (!contact.b) {
-            if (contact.depth > 0)
-              terrainAnchored[contact.a->idx] = 1;
-            continue;
-          }
-          if (!contact.bIntegrated) continue;
+      if (E.L->forceActive)
+        for (int bi = 0; bi < n; bi++) {
+          if (!solverBodies[bi]->spatialForceApplied) continue;
+          spatialForceIsland[ufFind(solveParent, bi)] = 1;
+          hasForceDrivenIsland = true;
+        }
+      terrainAnchored.assign(n, 0);
+      for (const Contact& contact : contacts) {
+        int root = ufFind(solveParent, contact.a->idx);
+        bool forcePair = hasForceDrivenIsland && spatialForceIsland[root];
+        if (!contact.b) {
+          if (contact.depth > 0
+              && (forcePair || contact.ny < -0.1))
+            terrainAnchored[contact.a->idx] = 1;
+          continue;
+        }
+        if (!contact.bIntegrated) continue;
+        bool structurePair = hasStructurePair
+          && contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+          && contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
+        if (forcePair || structurePair) {
           int a = contact.a->idx, b = contact.b->idx;
           positionPairs.push_back({imin(a, b), imax(a, b)});
         }

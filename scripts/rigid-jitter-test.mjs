@@ -72,6 +72,90 @@ const stair = (steps, tread, thickness) => {
   return unique(cells);
 };
 
+const largeShapeBuilder = () => {
+  const cells = new Map();
+  const put = (x, y) => cells.set(`${x},${y}`, [x, y]);
+  const rect = (x0, y0, x1, y1) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) put(x, y);
+  };
+  const line = (x0, y0, x1, y1, thickness = 2) => {
+    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    let error = dx + dy;
+    for (;;) {
+      rect(x0 - thickness, y0 - thickness,
+        x0 + thickness, y0 + thickness);
+      if (x0 === x1 && y0 === y1) break;
+      const twice = error * 2;
+      if (twice >= dy) { error += dy; x0 += sx; }
+      if (twice <= dx) { error += dx; y0 += sy; }
+    }
+  };
+  const result = () => {
+    const values = [...cells.values()];
+    const minX = Math.min(...values.map(([x]) => x));
+    const minY = Math.min(...values.map(([, y]) => y));
+    return values.map(([x, y]) => [x - minX, y - minY]);
+  };
+  return { rect, line, result };
+};
+
+const largeHouse = (width, height, scale = 1) => {
+  const shape = largeShapeBuilder();
+  const thickness = Math.max(2, Math.round(3 * scale));
+  const base = height - thickness * 2;
+  shape.rect(0, base, width, height);
+  shape.rect(thickness * 2, Math.round(height * 0.42),
+    thickness * 4, base);
+  shape.rect(width - thickness * 4, Math.round(height * 0.42),
+    width - thickness * 2, base);
+  shape.rect(Math.round(width * 0.48), Math.round(height * 0.28),
+    Math.round(width * 0.52), base);
+  shape.rect(thickness * 2, Math.round(height * 0.62),
+    width - thickness * 2, Math.round(height * 0.62) + thickness * 2);
+  shape.line(0, Math.round(height * 0.45),
+    Math.round(width * 0.5), 0, thickness);
+  shape.line(Math.round(width * 0.5), 0, width,
+    Math.round(height * 0.45), thickness);
+  return shape.result();
+};
+
+const largeBridge = (width, height, scale = 1) => {
+  const shape = largeShapeBuilder();
+  const thickness = Math.max(2, Math.round(3 * scale));
+  shape.rect(0, height - thickness * 3, width, height);
+  shape.rect(0, 0, thickness * 3, height);
+  shape.rect(width - thickness * 3, 0, width, height);
+  for (let span = 0; span < 5; span++) {
+    const x0 = Math.round(span * width / 5);
+    const x1 = Math.round((span + 1) * width / 5);
+    if (span % 2)
+      shape.line(x0, height - thickness * 4, x1, thickness * 2,
+        thickness);
+    else
+      shape.line(x0, thickness * 2, x1, height - thickness * 4,
+        thickness);
+  }
+  return shape.result();
+};
+
+const largeBranched = (width, height, seed) => {
+  const shape = largeShapeBuilder();
+  const cx = Math.round(width * 0.5), cy = Math.round(height * 0.55);
+  shape.rect(cx - 6, cy - 6, cx + 6, cy + 6);
+  for (let branch = 0; branch < 9; branch++) {
+    const phase = ((seed * 17 + branch * 43) % 628) / 100;
+    const reach = 0.35 + ((seed * 13 + branch * 19) % 50) / 100;
+    const x = Math.round(cx + Math.cos(phase) * width * reach);
+    const y = Math.round(cy + Math.sin(phase) * height * reach);
+    shape.line(cx, cy, x, y, 2 + (branch % 3));
+    if (branch % 2 === 0)
+      shape.line(x, y, x + (branch % 4 - 2) * 12, y - 20, 2);
+  }
+  return shape.result();
+};
+
 const runScene = (seed) => {
   let state = seed >>> 0;
   const random = () => {
@@ -145,6 +229,98 @@ for (const seed of [13, 36]) {
     result.initialBodies >= 12);
   check(`seed ${seed} fully settles and bakes (${result.finalBodies} bodies, tick ${result.settledAt})`,
     result.finalBodies === 0);
+}
+
+{
+  const cols = 960, rows = 608, floorY = 560, seed = 8;
+  let state = seed;
+  const random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: seed, sinksOn: false, infinite: false,
+  });
+  for (let x = 0; x < cols; x++) {
+    const top = floorY + Math.round(Math.sin(x * 0.031) * 16)
+      - ((x * 29 + seed) % 97 < 9 ? 24 : 0);
+    for (let y = top; y < rows; y++)
+      engine.paintDisc(x, y, 0, MAT.STONE, true);
+  }
+  engine.syncComponents();
+
+  for (let body = 0; body < 12; body++) {
+    const kind = (seed + body) % 3;
+    const width = kind === 0 ? 120 + (body % 3) * 28
+      : kind === 1 ? 150 + (body % 3) * 35 : 100 + (body % 4) * 20;
+    const height = kind === 0 ? 95 + (body % 4) * 18
+      : kind === 1 ? 65 + (body % 3) * 18 : 100 + (body % 3) * 22;
+    const cells = kind === 0
+      ? largeHouse(width, height, 1 + (body % 2) * 0.3)
+      : kind === 1
+        ? largeBridge(width, height, 1 + (body % 2) * 0.25)
+        : largeBranched(width, height, seed * 31 + body);
+    const lane = body % 4;
+    const level = Math.floor(body / 4);
+    const ox = 35 + lane * 225 + Math.round((random() - 0.5) * 45);
+    const oy = 20 + level * 145 + Math.round((random() - 0.5) * 25);
+    const widthCells = Math.max(...cells.map(([x]) => x)) + 1;
+    const heightCells = Math.max(...cells.map(([, y]) => y)) + 1;
+    const safeX = Math.max(1, Math.min(cols - widthCells - 1, ox));
+    const safeY = Math.max(1, Math.min(floorY - heightCells - 1, oy));
+    engine.spawnBody(cells.map(([x, y]) => [x + safeX, y + safeY]));
+  }
+  for (let body = 0; body < 12; body++)
+    engine._setBodyMotion(body,
+      (random() - 0.5) * 0.7,
+      random() * 0.35,
+      (random() - 0.5) * 0.018);
+
+  let maxChildren = 0, maxRadius = 0, settledAt = -1;
+  const windows = new Map();
+  for (let tick = 0; tick < 1800; tick++) {
+    engine.stepWorld();
+    let awakeNow = 0;
+    for (let body = 0; body < engine._bodyCount(); body++) {
+      maxChildren = Math.max(maxChildren, engine._bodyChildCount(body));
+      const bodyState = engine._bodyState(body);
+      maxRadius = Math.max(maxRadius, bodyState?.maxR ?? 0);
+      const bodyAwake = engine._bodyAwake(body);
+      awakeNow += bodyAwake;
+      if (tick < 1400 || !bodyAwake) continue;
+      const id = engine._bodyIdLayer(0, body);
+      const window = windows.get(id) ?? {
+        minX: bodyState.px, maxX: bodyState.px,
+        minY: bodyState.py, maxY: bodyState.py,
+        minAngle: bodyState.angle, maxAngle: bodyState.angle,
+        radius: bodyState.maxR,
+      };
+      window.minX = Math.min(window.minX, bodyState.px);
+      window.maxX = Math.max(window.maxX, bodyState.px);
+      window.minY = Math.min(window.minY, bodyState.py);
+      window.maxY = Math.max(window.maxY, bodyState.py);
+      window.minAngle = Math.min(window.minAngle, bodyState.angle);
+      window.maxAngle = Math.max(window.maxAngle, bodyState.angle);
+      windows.set(id, window);
+    }
+    if (awakeNow === 0) {
+      settledAt = tick;
+      break;
+    }
+  }
+  const awake = [...Array(engine._bodyCount()).keys()]
+    .reduce((count, body) => count + engine._bodyAwake(body), 0);
+  const visibleSpan = Math.max(0, ...[...windows.values()].map((window) =>
+    Math.hypot(window.maxX - window.minX, window.maxY - window.minY)
+      + (window.maxAngle - window.minAngle) * window.radius));
+  check(`large structural pile exercises complex compound bodies `
+      + `(${maxChildren} children, radius ${maxRadius.toFixed(1)})`,
+    maxChildren >= 500 && maxRadius >= 200);
+  check(`large structural pile settles without a visible contact cycle `
+      + `(${awake} awake at tick ${settledAt}, `
+      + `${visibleSpan.toFixed(2)}-cell late span)`,
+    settledAt >= 0 && awake === 0 && visibleSpan <= 2);
+  engine.destroy();
 }
 
 const failures = done();

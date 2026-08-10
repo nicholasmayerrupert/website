@@ -1067,6 +1067,13 @@
           break;
         }
       if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
+      // A small residual on one pass can move a far-away point visibly on a
+      // structure-scale body as its compound contact patch changes. Give those
+      // islands two more coherence passes before allowing residual early-out.
+      int islandMinIterations = solverMinIterations;
+      if (solveMaxRadius[root] >= R_SOLVER_HUGE_BODY_RADIUS)
+        islandMinIterations = imax(
+          islandMinIterations, R_SOLVER_HUGE_BODY_MIN_ITERS);
       bool separateImpactPhase = hasImpactTarget
         && solveBodyCount[root] >= 16
         && !solveHasPeerContacts[root]
@@ -1181,8 +1188,8 @@
             && (!solveHasSpatialForce[root]
                 || solveHasJointBody[root]
                 || solveBodyCount[root] < forceFullSolveBodies)
-            && it + 1 >= solverMinIterations
-            && ((it + 1 - solverMinIterations) & 1) == 0) {
+            && it + 1 >= islandMinIterations
+            && ((it + 1 - islandMinIterations) & 1) == 0) {
           double residual = 0;
           for (int oi = islandStart; oi < islandEnd; oi++)
             residual = std::fmax(residual, contactVelocityResidual(
@@ -1207,8 +1214,8 @@
             moved += resolveBias(contacts[contactOrder[oi]]);
         }
         if (moved == 0.0) break;
-        if (solverMode > 0 && it + 1 >= solverMinIterations
-            && ((it + 1 - solverMinIterations) & 1) == 0) {
+        if (solverMode > 0 && it + 1 >= islandMinIterations
+            && ((it + 1 - islandMinIterations) & 1) == 0) {
           double residual = 0;
           for (int oi = islandStart; oi < islandEnd; oi++)
             residual = std::fmax(residual, contactBiasResidual(

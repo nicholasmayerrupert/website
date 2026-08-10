@@ -9,7 +9,10 @@ lives in `rigid_impl.inc`.
 - A conservative full-tick broadphase partitions bodies into candidate islands.
   Each island chooses its own substep cadence from linear speed plus angular tip
   speed, capped by `R_MAX_SUBSTEPS`; an isolated fast projectile therefore does
-  not make a distant resting structure run at the projectile's cadence.
+  not make a distant resting structure run at the projectile's cadence. A pile
+  containing at least four structure-scale bodies and a cross-layer joint uses
+  at least four temporal substeps so support is relinearized through both layer
+  passes before the next world tick.
 - `computeDerived` converts each occupied row into runs and merges identical
   runs vertically. The result is an exact, non-overlapping rectangle cover of
   the pixel mask: a box or beam is one child and a 120×120 L with eight-cell
@@ -87,7 +90,10 @@ lives in `rigid_impl.inc`.
   bias stays separate. Large manifolds retain a missed anchor for up to two
   substeps with decaying impulses to bridge raster-boundary transitions. A
   mixed-size pair receives that persistence when either participant is large,
-  independent of body-index order.
+  independent of body-index order. Low-impact contacts between structure-scale
+  bodies, and between a structure-scale body and terrain, retain the complete
+  cached manifold impulse; smaller and changing contacts use the damped warm
+  start.
 - Sequential impulses solve normal velocity, static/dynamic friction,
   penetration bias, and a fixed impact restitution target. Ice contacts select a
   lower material-pair friction. Each contact's fixed inverse normal, tangent,
@@ -106,6 +112,15 @@ lives in `rigid_impl.inc`.
   of at least twelve single-layer bodies under spatial force also run velocity
   constraints to a no-op or the cap so sustained acceleration converges as one
   contact network. Cross-layer joint islands retain residual convergence.
+- The continuous solve is reconciled with the integer output raster before
+  stamping. Structure-scale bodies receive an exact footprint check. Shared
+  output cells between two large bodies are separated by the smallest
+  terrain-safe sub-cell translation when one exists. Terrain recovery then
+  evaluates complete support islands; if it changes a pose, exact body-pair
+  reconciliation runs once more so neither constraint class can invalidate the
+  other. A pair that cannot be separated locally retains one or both bodies at
+  their last jointly clear poses. One-cell lattice aliasing is tolerated while
+  bodies remain dynamic, but overlapping bodies cannot bake into static terrain.
 - Raster depenetration remains a last-resort fallback.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
@@ -119,9 +134,12 @@ thresholds. A cold fallback also tracks the centre of mass and two shape-scale
 world-space probes. A contact island with frictional support sleeps when every
 member remains inside the two-cell pose envelope for 180 world ticks. Actor
 contact, spatial forces, fluid-only support, fast point motion, geometry changes,
-and explicit wakes reset the envelope. The whole island sleeps together, so the
-fallback cannot freeze one participant inside an active stack. Component-backed
-bodies then pass through the same stable-raster and support checks before baking.
+and explicit wakes reset the envelope. Brief raster-manifold gaps retain an
+already established probe; actual free fall leaves the speed band or pose
+envelope before the sleep interval. The whole island sleeps together, and its
+solved load-bearing anchors preserve diagonal and cross-layer support without
+treating unrelated nearby terrain as ground. Component-backed bodies pass
+through the same stable-raster and support checks before baking.
 
 The exact inverse-raster footprint is cached for one pose and geometry revision.
 Systems that query an unchanged pose reuse the same ordered world/local cells.
@@ -250,7 +268,8 @@ re-ground an airborne body. Powders never push a rigid body upward.
 Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-collision`, `npm run test:rigid-dense-pile`,
 `npm run test:rigid-large-body`, `npm run test:rigid-shape-stress`,
-`node scripts/rigid-jitter-test.mjs`, `npm run test:rigid-topple`,
+`npm run test:rigid-complex-stack`, `node scripts/rigid-jitter-test.mjs`,
+`npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`. Use `npm run bench:rigid-acid` for repeated
 large-body fragmentation and repair, and `npm run bench:rigid-long` for sustained

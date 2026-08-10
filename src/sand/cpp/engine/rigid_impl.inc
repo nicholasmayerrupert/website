@@ -951,6 +951,8 @@ double RigidBodySystem::resolveBias(Contact& c) {
 void RigidBodySystem::resetSleepTracking(Body* b) {
   b->stillTicks = 0;
   b->restProbeTicks = 0;
+  b->sleepSupports.clear();
+  b->bakeBlockedByBody = false;
 }
 void RigidBodySystem::wakeBody(Body* b) {
   if (b->jointRole == 2 && b->jointPeer) b = b->jointPeer;
@@ -983,6 +985,8 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
   follower->restProbePoints = leader->restProbePoints;
   follower->restProbeTicks = leader->restProbeTicks;
+  follower->sleepSupports = leader->sleepSupports;
+  follower->bakeBlockedByBody = leader->bakeBlockedByBody;
   follower->bakeSupportedPoseTicks = leader->bakeSupportedPoseTicks;
   follower->cs = leader->cs; follower->sn = leader->sn;
 }
@@ -1106,7 +1110,8 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
   auto solidIn = [&](Layer& lay, bool peerLayer) {
     int owner = lay.bodyOwner[k];
     if (owner >= 0) {
-      if (body && body->jointRole == 1 && owner == body->id) return false;
+      if (body && owner == body->id
+          && (!peerLayer || body->jointRole == 1)) return false;
       // Owner cells stay present in the grid sweep. Same-layer ordinary bodies
       // use the body/body broad phase, while rigidStep promotes peer-layer owner
       // hits to dynamic contacts after the sweep identifies their exact cells.
@@ -1890,12 +1895,31 @@ bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
   });
   return moving;
 }
-// A sleeping body keeps support only while its current underside still touches
-// a medium, terrain, another body, or the world floor. Inspecting the raster
-// directly avoids a translated probe producing stale support for tiny bodies.
+// A sleeping body keeps support while the solved load-bearing anchors or its
+// current underside still touch a medium, terrain, another body, or the world
+// floor. The anchors preserve valid diagonal and frictional support on irregular
+// shapes without treating an unrelated nearby wall as ground.
 bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
-  (void)probe;
   if (bodyHasLooseSupport(b)) return true;
+  int radius = imax(1, (int)std::ceil(probe));
+  for (const BodySleepSupport& support : b->sleepSupports) {
+    Layer& layer = support.layer ? E.bg : E.fg;
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    int cx = (int)std::floor(support.x);
+    int cy = (int)std::floor(support.y);
+    int anchorRadius = support.owner >= 0 ? radius + 5 : radius + 2;
+    for (int oy = -anchorRadius; oy <= anchorRadius; oy++) {
+      for (int ox = -anchorRadius; ox <= anchorRadius; ox++) {
+        int x = cx + ox, y = cy + oy;
+        if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+        int k = y * E.cols + x;
+        int owner = layer.bodyOwner[k];
+        if (support.owner >= 0 && owner == support.owner) return true;
+        if (support.owner < 0 && owner < 0
+            && !canBodyOccupy(layer.grid[k], k, b->density)) return true;
+      }
+    }
+  }
   occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
   forEachBodyCell(b, [&](int x, int y, int) {
     int k = y * E.cols + x;
@@ -1978,7 +2002,10 @@ bool RigidBodySystem::findTerrainClearAdjustment(
   auto overlapsBlockingCell = [&]() {
     for (int k : blockingCells) {
       int y = k / E.cols, x = k - y * E.cols;
-      if (insideBodyIndex(b, x + 0.5, y + 0.5) >= 0) return true;
+      if (insideBodyIndex(b, x + 0.5, y + 0.5) >= 0
+          || (b->jointRole == 1 && b->jointPeer
+            && insideBodyIndex(b->jointPeer, x + 0.5, y + 0.5) >= 0))
+        return true;
     }
     return false;
   };
@@ -2013,7 +2040,9 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     if (occStamp.has(k)) return;
     occStamp.add(k);
     auto blockedIn = [&](Layer& layer) {
-      if (layer.bodyOwner[k] == b->id) return false;
+      int owner = layer.bodyOwner[k];
+      if (owner == b->id
+          || (b->jointPeer && owner == b->jointPeer->id)) return false;
       uint8_t material = layer.grid[k];
       return material != EMPTY && !E.isGasMaterial(material)
         && !E.isBuoyantMedium(material);
@@ -2161,6 +2190,29 @@ bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
         || (E.isLooseSolidMaterial(material) && E.L->groundedCell[neighbor]))
       return true;
   }
+  // A solved diagonal or frictional support can lie several raster cells from
+  // the contact anchor inside a thick irregular mask. Once that support has
+  // baked, recognize its static material without treating a remaining dynamic
+  // body owner as terrain.
+  for (const BodySleepSupport& support : b->sleepSupports) {
+    Layer& layer = support.layer ? E.bg : E.fg;
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    int cx = (int)std::floor(support.x);
+    int cy = (int)std::floor(support.y);
+    for (int oy = -3; oy <= 3; oy++) {
+      for (int ox = -3; ox <= 3; ox++) {
+        int x = cx + ox, y = cy + oy;
+        if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+        int k = y * E.cols + x;
+        if (layer.bodyOwner[k] >= 0) continue;
+        uint8_t material = layer.grid[k];
+        if (E.isRigidMaterialClass(material)
+            || (E.isLooseSolidMaterial(material)
+              && layer.groundedCell[k]))
+          return true;
+      }
+    }
+  }
   return false;
 }
 bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
@@ -2205,6 +2257,39 @@ void RigidBodySystem::bakeRestingBodies() {
   bool liveTntBody = false;
   for (Body* b : E.L->bodies)
     if (E.bodyContainsMaterial(b, TNT)) { liveTntBody = true; break; }
+  bool mayBake = liveTntBody;
+  for (Body* body : E.L->bodies)
+    mayBake = mayBake || (body->jointRole != 2
+      && (!body->awake || body->rasterMayOverlapSolid
+        || (body->jointPeer && (!body->jointPeer->awake
+          || body->jointPeer->rasterMayOverlapSolid))));
+  if (mayBake) {
+    size_t gridSize = (size_t)E.cols * E.rows;
+    if (rasterProjectionOwner.size() != gridSize)
+      rasterProjectionOwner.assign(gridSize, -1);
+    auto collectLayerOverlaps = [&](Layer& layer) {
+      for (Body* body : layer.bodies) body->bakeBlockedByBody = false;
+      rasterProjectionTouched.clear();
+      for (int bi = 0; bi < (int)layer.bodies.size(); bi++) {
+        Body* body = layer.bodies[bi];
+        ensureBodyRaster(body);
+        for (const BodyRasterCell& cell : body->rasterFootprint) {
+          int k = cell.y * E.cols + cell.x;
+          int previous = rasterProjectionOwner[k];
+          if (previous < 0) {
+            rasterProjectionOwner[k] = bi;
+            rasterProjectionTouched.push_back(k);
+          } else if (previous != bi) {
+            layer.bodies[previous]->bakeBlockedByBody = true;
+            body->bakeBlockedByBody = true;
+          }
+        }
+      }
+      for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
+    };
+    collectLayerOverlaps(*E.L);
+    if (E.L == &E.fg && E.bgEnabled) collectLayerOverlaps(E.bg);
+  }
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) {
@@ -2265,6 +2350,11 @@ void RigidBodySystem::bakeRestingBodies() {
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
+    b->bakeBlockedByBody = b->bakeBlockedByBody
+      || (b->jointRole == 1 && b->jointPeer
+        && b->jointPeer->bakeBlockedByBody);
+    if (b->jointRole == 1) syncJointFollower(b);
+    if (canBake && b->bakeBlockedByBody) canBake = false;
     if (canBake && bodyFootprintOverlapsSolid(b)) canBake = false;
     supportStart = emscripten_get_now();
     bool groundedContact = canBake
@@ -2388,9 +2478,376 @@ void RigidBodySystem::restampBodiesAfterStream() {
   }
   E.L->sleepingBodySupportDirty = true;
 }
+
+void RigidBodySystem::resolveStructureRasterOverlaps() {
+  rasterProjectionBodies.clear();
+  for (Body* body : E.L->bodies)
+    if (body->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
+      rasterProjectionBodies.push_back(body);
+  if ((int)rasterProjectionBodies.size() < R_STRUCTURE_RASTER_MIN_BODIES)
+    return;
+
+  size_t gridSize = (size_t)E.cols * E.rows;
+  if (rasterProjectionOwner.size() != gridSize) {
+    rasterProjectionOwner.assign(gridSize, -1);
+    rasterProjectionTouched.clear();
+  }
+  auto clearOwners = [&]() {
+    for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
+    rasterProjectionTouched.clear();
+  };
+  auto pairKey = [](int aId, int bId) {
+    return ((uint64_t)(uint32_t)aId << 32) | (uint32_t)bId;
+  };
+  auto overlapCount = [&](Body* A, Body* B) {
+    occStamp.reset(gridSize);
+    ensureBodyRaster(A);
+    for (const BodyRasterCell& cell : A->rasterFootprint)
+      occStamp.add(cell.y * E.cols + cell.x);
+    int count = 0;
+    ensureBodyRaster(B);
+    for (const BodyRasterCell& cell : B->rasterFootprint)
+      count += occStamp.has(cell.y * E.cols + cell.x);
+    return count;
+  };
+  auto terrainClear = [&](Body* body) {
+    if (bodyTerrainBlocked(body) > 0) return false;
+    if (body->jointRole != 1 || !body->jointPeer) return true;
+    Engine::ActiveLayerScope layerScope(E, &E.bg);
+    return bodyTerrainBlocked(body->jointPeer) == 0;
+  };
+  auto supported = [&](Body* body) {
+    bool result = bodyTouchesStaticSupport(body);
+    if (!result && body->jointRole == 1 && body->jointPeer) {
+      Engine::ActiveLayerScope layerScope(E, &E.bg);
+      result = bodyTouchesStaticSupport(body->jointPeer);
+    }
+    return result;
+  };
+  auto syncPose = [&](Body* body) {
+    body->cs = std::cos(body->angle);
+    body->sn = std::sin(body->angle);
+    if (body->jointRole == 1) syncJointFollower(body);
+  };
+  // Continuous contacts carry impulses, friction, and torque. This final
+  // position constraint only resolves integer-raster aliasing at the exact pose
+  // that will be committed to the sand grid. Ground-supported lower bodies stay
+  // fixed when the separating direction would push them into their support.
+  for (int pass = 0; pass < 4; pass++) {
+    bool corrected = false;
+    for (Body* body : rasterProjectionBodies) {
+      bool peerTerrainRisk = body->jointRole == 1
+        || (E.L == &E.bg && !E.L->passiveBodyIds.empty());
+      if (body->jointRole == 2 || !peerTerrainRisk || terrainClear(body))
+        continue;
+      double dx = 0, dy = 0;
+      if (!findTerrainClearAdjustment(body, dx, dy)) continue;
+      body->px += dx;
+      body->py += dy;
+      syncPose(body);
+      rigidDepenetrations++;
+      rigidPositionCorrections++;
+      rigidRasterCorrections++;
+      rigidRasterMaxCorrection = std::fmax(
+        rigidRasterMaxCorrection, std::hypot(dx, dy));
+      corrected = true;
+    }
+    clearOwners();
+    rasterProjectionPairs.clear();
+    for (int bi = 0; bi < (int)rasterProjectionBodies.size(); bi++) {
+      Body* body = rasterProjectionBodies[bi];
+      ensureBodyRaster(body);
+      for (const BodyRasterCell& cell : body->rasterFootprint) {
+        int k = cell.y * E.cols + cell.x;
+        int previous = rasterProjectionOwner[k];
+        if (previous < 0) {
+          rasterProjectionOwner[k] = bi;
+          rasterProjectionTouched.push_back(k);
+        } else if (previous != bi) {
+          rasterProjectionPairs.push_back({
+            imin(previous, bi), imax(previous, bi),
+          });
+        }
+      }
+    }
+    if (rasterProjectionPairs.empty()) {
+      if (!corrected) break;
+      continue;
+    }
+    std::sort(rasterProjectionPairs.begin(), rasterProjectionPairs.end());
+    rasterProjectionPairs.erase(
+      std::unique(rasterProjectionPairs.begin(), rasterProjectionPairs.end()),
+      rasterProjectionPairs.end());
+
+    int activeLayer = E.L == &E.bg ? 1 : 0;
+    auto& axes = pairAxes[activeLayer];
+    for (const auto& pair : rasterProjectionPairs) {
+      Body* A = rasterProjectionBodies[pair.first];
+      Body* B = rasterProjectionBodies[pair.second];
+      int pairOverlap = overlapCount(A, B);
+      if (pairOverlap <= R_STRUCTURE_RASTER_ALIAS_CELLS) continue;
+
+      double nx = 0, ny = 0;
+      auto axis = axes.find(pairKey(A->id, B->id));
+      if (axis != axes.end()
+          && axis->second.aRevision == A->geometryRevision
+          && axis->second.bRevision == B->geometryRevision) {
+        nx = axis->second.nx;
+        ny = axis->second.ny;
+      } else {
+        axis = axes.find(pairKey(B->id, A->id));
+        if (axis != axes.end()
+            && axis->second.aRevision == B->geometryRevision
+            && axis->second.bRevision == A->geometryRevision) {
+          nx = -axis->second.nx;
+          ny = -axis->second.ny;
+        }
+      }
+      double centerX = A->px - B->px, centerY = A->py - B->py;
+      if (nx * nx + ny * ny < 1e-12) {
+        nx = centerX;
+        ny = centerY;
+      }
+      double length = std::hypot(nx, ny);
+      if (length < 1e-9) {
+        nx = 0;
+        ny = -1;
+      } else {
+        nx /= length;
+        ny /= length;
+      }
+      if (nx * centerX + ny * centerY < 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+
+      MovePose aStart{A->px, A->py, A->angle};
+      MovePose bStart{B->px, B->py, B->angle};
+      bool aSupported = A->jointRole == 2 || supported(A);
+      bool bSupported = B->jointRole == 2 || supported(B);
+      auto setTrial = [&](double amount, double direction,
+                          double& aWeight, double& bWeight) {
+        double sx = nx * direction, sy = ny * direction;
+        bool bothSleeping = !A->awake && !B->awake;
+        bool aSleepingMove = bothSleeping
+          && (sy < -0.1
+            || (std::fabs(sy) <= 0.1 && A->id > B->id));
+        bool bSleepingMove = bothSleeping
+          && (sy > 0.1
+            || (std::fabs(sy) <= 0.1 && B->id > A->id));
+        bool aMovable = A->jointRole != 2 && (A->awake || aSleepingMove)
+          && !(aSupported && sy > 0);
+        bool bMovable = B->jointRole != 2 && (B->awake || bSleepingMove)
+          && !(bSupported && -sy > 0);
+        double aMass = aMovable ? A->invMass : 0;
+        double bMass = bMovable ? B->invMass : 0;
+        double mass = aMass + bMass;
+        aWeight = mass > 0 ? aMass / mass : 0;
+        bWeight = mass > 0 ? bMass / mass : 0;
+        A->px = aStart.px + sx * amount * aWeight;
+        A->py = aStart.py + sy * amount * aWeight;
+        B->px = bStart.px - sx * amount * bWeight;
+        B->py = bStart.py - sy * amount * bWeight;
+        syncPose(A);
+        syncPose(B);
+      };
+      auto trialClear = [&](double amount, double direction,
+                            double& aWeight, double& bWeight) {
+        setTrial(amount, direction, aWeight, bWeight);
+        if (aWeight <= 0 && bWeight <= 0) return false;
+        int overlap = overlapCount(A, B);
+        if (overlap > R_STRUCTURE_RASTER_ALIAS_CELLS) return false;
+        bool clearTerrain = (aWeight <= 0 || terrainClear(A))
+          && (bWeight <= 0 || terrainClear(B));
+        return clearTerrain;
+      };
+
+      std::array<std::array<double, 2>, 2> candidateAxes{{
+        {nx, ny}, {centerX, centerY},
+      }};
+      double bestAmount = 1e18, bestDirection = 0;
+      double bestAxisX = 0, bestAxisY = 0;
+      for (const auto& candidate : candidateAxes) {
+        double candidateLength = std::hypot(candidate[0], candidate[1]);
+        if (candidateLength < 1e-9) continue;
+        nx = candidate[0] / candidateLength;
+        ny = candidate[1] / candidateLength;
+        for (double direction : {1.0, -1.0}) {
+          double lower = 0, upper = 0;
+          double aWeight = 0, bWeight = 0;
+          for (double amount = 0.125; amount <= 2.0; amount += 0.125) {
+            if (trialClear(amount, direction, aWeight, bWeight)) {
+              upper = amount;
+              break;
+            }
+            lower = amount;
+          }
+          if (upper > 0) {
+            for (int search = 0; search < 6; search++) {
+              double middle = (lower + upper) * 0.5;
+              if (trialClear(middle, direction, aWeight, bWeight))
+                upper = middle;
+              else
+                lower = middle;
+            }
+            if (upper < bestAmount) {
+              bestAmount = upper;
+              bestDirection = direction;
+              bestAxisX = nx;
+              bestAxisY = ny;
+            }
+          }
+          A->px = aStart.px;
+          A->py = aStart.py;
+          B->px = bStart.px;
+          B->py = bStart.py;
+          syncPose(A);
+          syncPose(B);
+        }
+      }
+      if (bestDirection == 0) {
+        auto rollbackAcceptedPose = [&](Body* candidate) {
+          if (!candidate->awake || candidate->jointRole == 2) return false;
+          auto slot = moveBodySlotById.find(candidate->id);
+          if (slot == moveBodySlotById.end()) return false;
+          const MovePose& previous = movePreviousPoses[slot->second];
+          MovePose current{
+            candidate->px, candidate->py, candidate->angle,
+          };
+          double travel = std::hypot(
+              current.px - previous.px, current.py - previous.py)
+            + std::fabs(current.angle - previous.angle) * candidate->maxR;
+          if (travel <= 1e-9) return false;
+          candidate->px = previous.px;
+          candidate->py = previous.py;
+          candidate->angle = previous.angle;
+          syncPose(candidate);
+          bool clear = terrainClear(candidate);
+          if (clear) {
+            for (Body* other : rasterProjectionBodies) {
+              if (other == candidate) continue;
+              if (overlapCount(candidate, other)
+                  > R_STRUCTURE_RASTER_ALIAS_CELLS) {
+                clear = false;
+                break;
+              }
+            }
+          }
+          if (!clear) {
+            candidate->px = current.px;
+            candidate->py = current.py;
+            candidate->angle = current.angle;
+            syncPose(candidate);
+            return false;
+          }
+          candidate->vx = candidate->vy = candidate->omega = 0;
+          candidate->pvx = candidate->pvy = candidate->pw = 0;
+          resetSleepTracking(candidate);
+          rigidPositionCorrections++;
+          rigidRasterCorrections++;
+          rigidRasterMaxCorrection = std::fmax(
+            rigidRasterMaxCorrection, travel);
+          return true;
+        };
+        Body* first = A->awake && !B->awake ? A
+          : B->awake && !A->awake ? B : A;
+        Body* second = first == A ? B : A;
+        if (rollbackAcceptedPose(first)
+            || rollbackAcceptedPose(second)) {
+          corrected = true;
+          continue;
+        }
+        auto rollbackPairAcceptedPose = [&]() {
+          if (A->jointRole == 2 || B->jointRole == 2) return false;
+          auto aSlot = moveBodySlotById.find(A->id);
+          auto bSlot = moveBodySlotById.find(B->id);
+          if (aSlot == moveBodySlotById.end()
+              || bSlot == moveBodySlotById.end())
+            return false;
+          const MovePose& aPrevious = movePreviousPoses[aSlot->second];
+          const MovePose& bPrevious = movePreviousPoses[bSlot->second];
+          MovePose aCurrent{A->px, A->py, A->angle};
+          MovePose bCurrent{B->px, B->py, B->angle};
+          double aTravel = std::hypot(
+              aCurrent.px - aPrevious.px, aCurrent.py - aPrevious.py)
+            + std::fabs(aCurrent.angle - aPrevious.angle) * A->maxR;
+          double bTravel = std::hypot(
+              bCurrent.px - bPrevious.px, bCurrent.py - bPrevious.py)
+            + std::fabs(bCurrent.angle - bPrevious.angle) * B->maxR;
+          if (aTravel <= 1e-9 && bTravel <= 1e-9) return false;
+          A->px = aPrevious.px;
+          A->py = aPrevious.py;
+          A->angle = aPrevious.angle;
+          B->px = bPrevious.px;
+          B->py = bPrevious.py;
+          B->angle = bPrevious.angle;
+          syncPose(A);
+          syncPose(B);
+          bool clear = terrainClear(A) && terrainClear(B)
+            && overlapCount(A, B) <= R_STRUCTURE_RASTER_ALIAS_CELLS;
+          if (clear) {
+            for (Body* other : rasterProjectionBodies) {
+              if (other == A || other == B) continue;
+              if (overlapCount(A, other) > R_STRUCTURE_RASTER_ALIAS_CELLS
+                  || overlapCount(B, other)
+                       > R_STRUCTURE_RASTER_ALIAS_CELLS) {
+                clear = false;
+                break;
+              }
+            }
+          }
+          if (!clear) {
+            A->px = aCurrent.px;
+            A->py = aCurrent.py;
+            A->angle = aCurrent.angle;
+            B->px = bCurrent.px;
+            B->py = bCurrent.py;
+            B->angle = bCurrent.angle;
+            syncPose(A);
+            syncPose(B);
+            return false;
+          }
+          A->vx = A->vy = A->omega = 0;
+          A->pvx = A->pvy = A->pw = 0;
+          B->vx = B->vy = B->omega = 0;
+          B->pvx = B->pvy = B->pw = 0;
+          resetSleepTracking(A);
+          resetSleepTracking(B);
+          rigidPositionCorrections += 2;
+          rigidRasterCorrections += 2;
+          rigidRasterMaxCorrection = std::fmax(
+            rigidRasterMaxCorrection, std::fmax(aTravel, bTravel));
+          return true;
+        };
+        if (rollbackPairAcceptedPose()) {
+          corrected = true;
+          continue;
+        }
+        rigidRasterProjectionFailures++;
+        continue;
+      }
+      nx = bestAxisX;
+      ny = bestAxisY;
+      double finalAWeight = 0, finalBWeight = 0;
+      setTrial(bestAmount, bestDirection, finalAWeight, finalBWeight);
+      rigidPositionCorrections++;
+      rigidRasterCorrections++;
+      rigidRasterMaxCorrection = std::fmax(
+        rigidRasterMaxCorrection, bestAmount);
+      corrected = true;
+    }
+    if (!corrected) break;
+  }
+  clearOwners();
+}
+
 void RigidBodySystem::moveBodies() {
   double bodyPhaseStart = emscripten_get_now();
   if (E.L == &E.fg) {
+    rigidRejectedCells = rigidDepenetrations = 0;
+    rigidOwnershipConflicts = rigidRecoveryBodies = 0;
+    rigidRasterCorrections = rigidRasterProjectionFailures = 0;
+    rigidRasterMaxCorrection = 0;
     rigidCoreMs = rigidClearMs = rigidDepenMs = rigidBakeMs = 0;
     rigidBakeSupportMs = rigidBakeRasterMs = rigidBakeRegisterMs = 0;
     rigidBakedCells = 0;
@@ -2582,10 +3039,11 @@ void RigidBodySystem::moveBodies() {
   rigidStep(1.0);
   double coreElapsed = emscripten_get_now() - coreStart;
   rigidCoreMs = rigidCoreMs + coreElapsed;
-  rigidRejectedCells = 0; rigidDepenetrations = 0;
-  rigidOwnershipConflicts = 0;
-  rigidRecoveryBodies = 0;
+  // First reconcile integer-raster body contacts so terrain recovery starts
+  // from a pose whose neighboring structure bodies are already separated.
+  resolveStructureRasterOverlaps();
   double depenStart = emscripten_get_now();
+  bool terrainPoseChanged = false;
   terrainAdjustmentParents.resize(simulatedBodyCount);
   auto adjustmentRoot = [&](int slot) {
     int root = slot;
@@ -2627,15 +3085,18 @@ void RigidBodySystem::moveBodies() {
     int root = adjustmentRoot(slot);
     if (body->rasterMayOverlapSolid)
       adjustmentRootState[root] |= ROOT_ACTIVE;
-    // Slender bodies use their dedicated position solver. Exact raster recovery
-    // targets quiet irregular bodies and tiny debris whose sampled contacts can
-    // miss a discrete terrain cell.
-    bool exactQuietProbe = !rigidLargeSlenderBody(body)
+    // Structure-scale bodies receive an exact final-raster probe. Their long,
+    // sparse boundary can pass every sampled contact while one remote arm enters
+    // terrain, and peer-layer contacts are outside this layer's final position
+    // projection. Quiet irregular bodies and tiny debris use the same guard.
+    bool exactStructureProbe = body->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
+    bool exactQuietProbe = exactStructureProbe
+      || (!rigidLargeSlenderBody(body)
       && (!body->awake
         || (body->nPts <= R_QUIET_TERRAIN_PROBE_MAX_CELLS
           && body->vx * body->vx + body->vy * body->vy
               < R_SLEEP_LIN * R_SLEEP_LIN
-          && std::fabs(body->omega) < R_SLEEP_ANG));
+          && std::fabs(body->omega) < R_SLEEP_ANG)));
     if (exactQuietProbe && bodyOverlapsTerrain(body))
       adjustmentRootState[root] |= ROOT_ACTIVE | ROOT_EXACT;
   }
@@ -2663,6 +3124,7 @@ void RigidBodySystem::moveBodies() {
         if (member->jointRole == 1) syncJointFollower(member);
       }
       rigidDepenetrations++;
+      terrainPoseChanged = true;
       adjusted = true;
       break;
     }
@@ -2749,6 +3211,7 @@ void RigidBodySystem::moveBodies() {
       rigidRecoveryBodies++;
     }
     rootState |= ROOT_RECOVERED;
+    terrainPoseChanged = true;
   }
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
@@ -2762,6 +3225,11 @@ void RigidBodySystem::moveBodies() {
     body->awake = true;
     resetSleepTracking(body);
   }
+  // Terrain recovery can translate a complete support island. Reconcile body
+  // pairs again only after such a move, so that translation cannot leave one
+  // island inside a neighbor; accepted corrections are checked against the
+  // final terrain raster before they are committed.
+  if (terrainPoseChanged) resolveStructureRasterOverlaps();
   double depenElapsed = emscripten_get_now() - depenStart;
   rigidDepenMs = rigidDepenMs + depenElapsed;
   double bakeStart = emscripten_get_now();

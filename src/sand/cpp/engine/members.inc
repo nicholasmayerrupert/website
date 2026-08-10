@@ -58,7 +58,8 @@
     return false;
   }
   bool bodyNeedsBakeTick(Body* b) {
-    if (b->jointRole == 2 || b->awake || !bodySolidifiesToComponents(b))
+    if (b->jointRole == 2 || b->awake || b->bakeBlockedByBody
+        || !bodySolidifiesToComponents(b))
       return false;
     // Keep one transition tick after the last stability sample so a quiet
     // layer reaches bakeRestingBodies() instead of going inactive at the gate.

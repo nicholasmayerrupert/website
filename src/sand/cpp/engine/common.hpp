@@ -249,6 +249,12 @@ struct BodyRasterCell {
   int x = 0, y = 0, local = -1;
 };
 
+struct BodySleepSupport {
+  double x = 0, y = 0;
+  int owner = -1;
+  uint8_t layer = 0;
+};
+
 // Free rigid body with a continuous pose over a cell occupancy mask.
 struct Body {
   int id = 0;
@@ -281,6 +287,7 @@ struct Body {
   // solver velocities above the ordinary sleep thresholds.
   std::array<double, 6> restProbePoints{};
   uint16_t restProbeTicks = 0;
+  std::vector<BodySleepSupport> sleepSupports;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
@@ -322,6 +329,7 @@ struct Body {
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   uint8_t bakeRasterStableTicks = 0;
   uint8_t bakeSupportedPoseTicks = 0;
+  bool bakeBlockedByBody = false;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;
@@ -723,6 +731,10 @@ static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_SOLVER_HUGE_BODY_MIN_ITERS = 6;
 static const double R_SOLVER_HUGE_BODY_RADIUS = 96.0;
+static const int    R_CROSS_LAYER_STRUCTURE_MIN_BODIES = 4;
+static const int    R_CROSS_LAYER_STRUCTURE_SUBSTEPS = 4;
+static const int    R_STRUCTURE_RASTER_MIN_BODIES = 2;
+static const int    R_STRUCTURE_RASTER_ALIAS_CELLS = 1;
 static const int    R_QUIET_TERRAIN_PROBE_MAX_CELLS = 64;
 static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
 static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
@@ -767,6 +779,8 @@ static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
 static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
 static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;
 static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
+static const double R_STRUCTURE_WARM_START_FACTOR = 1.0;
+static const double R_STRUCTURE_WARM_START_MAX_IMPACT = 0.1;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;

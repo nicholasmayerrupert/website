@@ -207,9 +207,21 @@
     double dtRatio = best->dt > 0 ? dt / best->dt : 1;
     if (dtRatio < 0.25) dtRatio = 0.25;
     else if (dtRatio > 4) dtRatio = 4;
-    contact.accJn = std::fmax(0.0, best->jn * dtRatio * R_WARM_START_FACTOR);
+    // Temporal substeps preserve the complete previous manifold impulse for
+    // structure-scale contacts. This rule is adapted from Box2D's MIT-licensed
+    // contact solver; feature/local-anchor matching above prevents transferring
+    // it to a different part of an irregular body.
+    // https://github.com/erincatto/box2d/blob/main/src/contact_solver.c
+    bool structureContact = contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+      && (!contact.b
+        || contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
+      && contact.impactSpeed <= R_STRUCTURE_WARM_START_MAX_IMPACT;
+    double warmStartFactor = structureContact
+      ? R_STRUCTURE_WARM_START_FACTOR : R_WARM_START_FACTOR;
+    contact.accJn = std::fmax(
+      0.0, best->jn * dtRatio * warmStartFactor);
     double maxFriction = contact.staticFriction * contact.accJn;
-    contact.accJt = best->jt * dtRatio * R_WARM_START_FACTOR;
+    contact.accJt = best->jt * dtRatio * warmStartFactor;
     if (contact.accJt > maxFriction) contact.accJt = maxFriction;
     else if (contact.accJt < -maxFriction) contact.accJt = -maxFriction;
     contact.persisted = true;

@@ -167,6 +167,8 @@ check(`interacting bodies settle without persistent jitter `
   const follower = findRole(1, 2);
   check('large irregular assembly starts as one cross-layer body',
     leader >= 0 && follower >= 0);
+  check('background follower excludes its own stamped raster from terrain',
+    follower >= 0 && engine._bodyTerrainBlockedLayer(1, follower) === 0);
   if (leader >= 0) engine._setBodyMotion(leader, 0.12, 0.35, 0.006);
 
   let firstContact = -1;

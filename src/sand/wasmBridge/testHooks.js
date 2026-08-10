@@ -23,7 +23,13 @@ function table() {
       ['number', 'number']),
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyTerrainBlocked: c('engine_test_body_terrain_blocked', 'number', ['number', 'number']),
+    bodyBlockedLayer: c('engine_test_body_blocked_layer', 'number',
+      ['number', 'number', 'number']),
+    bodyTerrainBlockedLayer: c('engine_test_body_terrain_blocked_layer',
+      'number', ['number', 'number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
+    bodyAwakeLayer: c('engine_test_body_awake_layer', 'number',
+      ['number', 'number', 'number']),
     forceDiag: c('engine_test_force_diag', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
     bodyChildCount: c('engine_test_body_child_count', 'number', ['number', 'number']),
@@ -91,7 +97,13 @@ export function attachTestHooks(engine) {
     t.componentStateCount(ptr, layer ? 1 : 0);
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyTerrainBlocked = (i) => t.bodyTerrainBlocked(ptr, i);
+  engine._bodyBlockedLayer = (layer, i) =>
+    t.bodyBlockedLayer(ptr, layer | 0, i | 0);
+  engine._bodyTerrainBlockedLayer = (layer, i) =>
+    t.bodyTerrainBlockedLayer(ptr, layer | 0, i | 0);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
+  engine._bodyAwakeLayer = (layer, i) =>
+    t.bodyAwakeLayer(ptr, layer | 0, i | 0);
   engine.getForceDebug = () => ({
     fullCoveragePasses: t.forceDiag(ptr, 0),
     candidateBinBuilds: t.forceDiag(ptr, 1),
@@ -220,6 +232,9 @@ export function attachTestHooks(engine) {
     ownershipConflicts: t.rigidSolverDiag(ptr, 39),
     positionCorrections: t.rigidSolverDiag(ptr, 40),
     recoveryBodies: t.rigidSolverDiag(ptr, 41),
+    rasterCorrections: t.rigidSolverDiag(ptr, 84),
+    rasterProjectionFailures: t.rigidSolverDiag(ptr, 85),
+    rasterMaxCorrection: t.rigidSolverDiag(ptr, 86),
     childTransforms: t.rigidSolverDiag(ptr, 42),
     velocityConstraintEvals: t.rigidSolverDiag(ptr, 43),
     biasConstraintEvals: t.rigidSolverDiag(ptr, 44),

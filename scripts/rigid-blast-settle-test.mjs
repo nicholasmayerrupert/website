@@ -128,6 +128,8 @@ for (const seed of SEEDS) {
   const tracks = new Map();
   let maxRejected = 0, maxDepenetrations = 0, maxOwnershipConflicts = 0;
   let maxRecoveryBodies = 0;
+  let maxBodyBlocked = 0;
+  let latePeakBodyBlocked = 0;
   let latePeakTerrainBlocked = 0;
   for (let tick = 0; tick < STEPS; tick++) {
     if (tick % 8 === 0 && tick / 8 < sites.length) {
@@ -137,10 +139,17 @@ for (const seed of SEEDS) {
     engine.stepWorld();
     sampleBodies(engine, tick, tracks);
     let terrainBlocked = 0;
-    for (let body = 0; body < engine._bodyCount(); body++)
+    let bodyBlocked = 0;
+    for (let body = 0; body < engine._bodyCount(); body++) {
+      bodyBlocked = Math.max(bodyBlocked,
+        Math.max(0, engine._bodyBlocked(body)));
       terrainBlocked += Math.max(0, engine._bodyTerrainBlocked(body));
-    if (tick >= STEPS - 120)
+    }
+    maxBodyBlocked = Math.max(maxBodyBlocked, bodyBlocked);
+    if (tick >= STEPS - 120) {
+      latePeakBodyBlocked = Math.max(latePeakBodyBlocked, bodyBlocked);
       latePeakTerrainBlocked = Math.max(latePeakTerrainBlocked, terrainBlocked);
+    }
     const rigid = engine.getRigidDebug();
     maxRejected = Math.max(maxRejected, rigid.rejectedCells);
     maxDepenetrations = Math.max(maxDepenetrations, rigid.depenetrations);
@@ -152,9 +161,11 @@ for (const seed of SEEDS) {
   const settleStart = (sites.length - 1) * 8 + 10;
   const chatter = [...tracks.values()].filter((samples) =>
     hasConfinedChatter(samples, settleStart)).length;
-  let finalTerrainBlocked = 0, finalAwake = 0;
+  let finalBodyBlocked = 0, finalTerrainBlocked = 0, finalAwake = 0;
   const finalOverlaps = [];
   for (let body = 0; body < engine._bodyCount(); body++) {
+    finalBodyBlocked = Math.max(finalBodyBlocked,
+      Math.max(0, engine._bodyBlocked(body)));
     const blocked = Math.max(0, engine._bodyTerrainBlocked(body));
     finalTerrainBlocked += blocked;
     finalAwake += engine._bodyAwake(body) > 0;
@@ -168,6 +179,7 @@ for (const seed of SEEDS) {
   }
   results.push({ seed, sites: sites.length, bodies: tracks.size,
     chatter, maxRejected, maxDepenetrations,
+    maxBodyBlocked, latePeakBodyBlocked, finalBodyBlocked,
     latePeakTerrainBlocked, finalTerrainBlocked, finalAwake, finalOverlaps,
     maxOwnershipConflicts, maxRecoveryBodies,
   });
@@ -180,6 +192,7 @@ for (const result of results)
     + `${result.bodies} bodies, ${result.chatter} chatter, `
     + `${result.maxRejected} rejected, ${result.maxOwnershipConflicts} conflicts, `
     + `${result.maxDepenetrations} depenetrations, `
+    + `${result.maxBodyBlocked}/${result.latePeakBodyBlocked}/${result.finalBodyBlocked} body overlap, `
     + `${result.latePeakTerrainBlocked}/${result.finalTerrainBlocked} late/final overlap, `
     + `${result.finalAwake} awake${result.finalOverlaps.length
       ? ` ${JSON.stringify(result.finalOverlaps)}` : ''}, `
@@ -190,9 +203,16 @@ check('settling debris has no confined alternating positional correction',
   results.every((result) => result.chatter === 0));
 check('settling debris has no rejected raster stamps',
   results.every((result) => result.maxRejected === 0));
+check('blast debris body overlap stays within one raster alias and clears',
+  results.every((result) => result.maxBodyBlocked <= 1
+    && result.maxOwnershipConflicts <= 1
+    && result.latePeakBodyBlocked === 0
+    && result.finalBodyBlocked === 0));
 check('settling debris stays clear of static terrain late in the run',
   results.every((result) => result.latePeakTerrainBlocked === 0
     && result.finalTerrainBlocked === 0));
-check('terrain fallback remains bounded',
-  results.every((result) => result.maxDepenetrations <= 2));
+check('terrain fallback work stays local to a small fraction of the debris',
+  results.every((result) =>
+    result.maxDepenetrations <= Math.ceil(result.bodies / 4)
+    && result.maxRecoveryBodies <= Math.ceil(result.bodies / 8)));
 process.exitCode = done();

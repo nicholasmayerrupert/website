@@ -244,7 +244,27 @@ EMSCRIPTEN_KEEPALIVE int engine_test_component_state_count(Engine* e, int layer)
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_terrain_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyTerrainBlocked(e->fg.bodies[i]) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked_layer(
+    Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  Engine::ActiveLayerScope layerScope(*e, &lay);
+  return i >= 0 && i < (int)lay.bodies.size()
+    ? e->bodyFootprintBlocked(lay.bodies[i]) : -1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_terrain_blocked_layer(
+    Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  Engine::ActiveLayerScope layerScope(*e, &lay);
+  return i >= 0 && i < (int)lay.bodies.size()
+    ? e->bodyTerrainBlocked(lay.bodies[i]) : -1;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_awake_layer(
+    Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return i >= 0 && i < (int)lay.bodies.size()
+    ? (lay.bodies[i]->awake ? 1 : 0) : -1;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_force_diag(Engine* e, int metric) {
   return e->forces.debugMetric(metric);
 }
@@ -523,6 +543,9 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 81: return e->rigid.rigidBakeSupportMs;
     case 82: return e->rigid.rigidBakeRasterMs;
     case 83: return e->rigid.rigidBakeRegisterMs;
+    case 84: return e->rigid.rigidRasterCorrections;
+    case 85: return e->rigid.rigidRasterProjectionFailures;
+    case 86: return e->rigid.rigidRasterMaxCorrection;
     default: return 0;
   }
 }

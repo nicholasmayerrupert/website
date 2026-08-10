@@ -115,7 +115,11 @@
     if (!body->awake || loadedWindowFreeze[bi].frozen) continue;
     double pointSpeed = std::hypot(body->vx, body->vy)
                       + std::fabs(body->omega) * body->maxR;
-    bool eligible = body->hadContact
+    // Keep an established rest probe across brief raster-manifold gaps. A body
+    // that is truly unsupported accelerates past the speed band or leaves the
+    // pose envelope long before the sleep interval; a resting irregular face
+    // should not restart its entire timer when its contact anchors change cell.
+    bool eligible = (body->hadContact || body->restProbeTicks > 0)
       && !fluidOnlySleep[bi]
       && !actorContact[bi]
       && !body->spatialForceApplied
@@ -143,6 +147,30 @@
     bool sleep = islandMinStill[root] >= R_SLEEP_TICKS
               || islandMinRestProbe[root] >= R_REST_PROBE_TICKS;
     if (!sleep) continue;
+    b->sleepSupports.clear();
+    int currentLayer = E.L == &E.bg ? 1 : 0;
+    auto addSupport = [&](double x, double y, int owner, int layer) {
+      if (b->sleepSupports.size() >= 8) return;
+      for (const BodySleepSupport& support : b->sleepSupports)
+        if (support.owner == owner && support.layer == layer
+            && std::fabs(support.x - x) <= 0.5
+            && std::fabs(support.y - y) <= 0.5)
+          return;
+      b->sleepSupports.push_back({x, y, owner, (uint8_t)layer});
+    };
+    for (const Contact& contact : contacts) {
+      double impulseY = contact.accJn * contact.ny
+                      + contact.accJt * contact.nx;
+      if (contact.a == b && impulseY < -1e-8) {
+        int layer = contact.b && !contact.bIntegrated
+          && !contact.b->kinematic ? 1 - currentLayer : currentLayer;
+        addSupport(b->px + contact.rax, b->py + contact.ray,
+                   contact.b ? contact.b->id : -1, layer);
+      }
+      if (contact.b == b && contact.bIntegrated && impulseY > 1e-8)
+        addSupport(b->px + contact.rbx, b->py + contact.rby,
+                   contact.a->id, currentLayer);
+    }
     b->awake = false;
     b->vx = 0;
     b->vy = 0;

@@ -153,8 +153,9 @@
     auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
       const std::vector<float>& S = P->boundarySamples; double pm = P->sweepMargin;
       const std::vector<double>& radii = P->boundarySampleRadii;
-      bool preciseDepth = rigidLargeSlenderBody(P)
-                       && rigidLargeSlenderBody(T);
+      bool preciseDepth =
+        P->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+        && T->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
       bool exactAngular = needsExactAngularSweep(P)
                        || needsExactAngularSweep(T);
       double relativeLinear = exactAngular
@@ -370,6 +371,26 @@
         if (iy >= E.rows) { ox = 0; oy = -1; return; }
         terrainNormalAt(b, ix, iy, b->density, ox, oy);
       };
+      auto terrainPenetrationDepth = [&](double x, double y,
+                                         double nx, double ny) {
+        double inside = 0, outside = 0.25;
+        while (outside <= 4.5
+               && solid((int)std::floor(x + nx * outside),
+                        (int)std::floor(y + ny * outside))) {
+          inside = outside;
+          outside += 0.25;
+        }
+        if (outside > 4.5) return 4.5;
+        for (int iteration = 0; iteration < 6; iteration++) {
+          double middle = (inside + outside) * 0.5;
+          if (solid((int)std::floor(x + nx * middle),
+                    (int)std::floor(y + ny * middle)))
+            inside = middle;
+          else
+            outside = middle;
+        }
+        return outside;
+      };
       auto terrainMayOccupy = [&](double minX, double minY,
                                   double maxX, double maxY) {
         if (!terrainOccupancyReady) return true;
@@ -400,8 +421,18 @@
         int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
         if (solid(cx, cy)) {
           tnorm(cx, cy, nx_, ny_);
-          double depth = 0.5, mx = sx, my = sy;
-          for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; if (!solid((int)std::floor(mx), (int)std::floor(my))) break; depth += 1; }
+          double depth = b->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+            ? terrainPenetrationDepth(sx, sy, nx_, ny_)
+            : 0.5;
+          if (b->maxR < R_SOLVER_HUGE_BODY_RADIUS) {
+            double mx = sx, my = sy;
+            for (int s = 0; s < 4; s++) {
+              mx += nx_;
+              my += ny_;
+              if (!solid((int)std::floor(mx), (int)std::floor(my))) break;
+              depth += 1;
+            }
+          }
           terrAcc.push_back({sx, sy, nx_, ny_, depth, 0});
           if (bodyHasPeerContacts)
             terrPeers.push_back(peerDynamicBodyAt(b, cx, cy));
@@ -1381,7 +1412,7 @@
     positionPairs.clear();
     bool structureProjection = sub + 1 == substeps;
     bool hasStructurePair = false;
-    if (structureProjection)
+    if (structureProjection) {
       for (const Contact& contact : contacts)
         if (contact.b && contact.bIntegrated
             && contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
@@ -1389,6 +1420,19 @@
           hasStructurePair = true;
           break;
         }
+      // The sweep broad phase also covers pairs that first touch at the final
+      // integrated pose. Include those candidates in the exact projection so
+      // a newly closed compound-shape gap cannot bypass position stabilization.
+      for (const auto& pair : broadphasePairs) {
+        Body* A = solverBodies[pair.first];
+        Body* B = solverBodies[pair.second];
+        if (A->maxR < R_SOLVER_HUGE_BODY_RADIUS
+            || B->maxR < R_SOLVER_HUGE_BODY_RADIUS)
+          continue;
+        positionPairs.push_back(pair);
+        hasStructurePair = true;
+      }
+    }
     if (E.L->forceActive || hasStructurePair) {
       spatialForceIsland.assign(n, 0);
       bool hasForceDrivenIsland = false;

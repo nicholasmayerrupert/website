@@ -290,6 +290,7 @@
   double cadenceStart = emscripten_get_now();
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
   double globalPointSpeed = 0;
+  int structureScaleBodyCount = 0;
   double denseFrameVx = 0, denseFrameVy = 0;
   int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
   for (int bi = 0; bi < n; bi++) {
@@ -306,6 +307,19 @@
         + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
       : 0;
     globalPointSpeed = std::fmax(globalPointSpeed, pointSpeed);
+    if (body->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
+      structureScaleBodyCount++;
+  }
+  bool crossLayerStructurePile = false;
+  if (E.bgEnabled) {
+    for (Body* body : E.fg.bodies) {
+      if (body->jointRole == 2
+          || body->maxR < R_SOLVER_HUGE_BODY_RADIUS) continue;
+      if (body->jointRole == 1) {
+        crossLayerStructurePile = true;
+        break;
+      }
+    }
   }
   bool denseWetScene =
     n >= R_DENSE_RIGID_CARGO_BODIES
@@ -367,6 +381,13 @@
     (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
       / initialSafeSubstep);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
+  // The temporal Gauss-Seidel/Soft Step cadence is adapted from Box2D's
+  // MIT-licensed solver: advance and relinearize the cross-layer load path
+  // several times within one world tick.
+  // https://box2d.org/posts/2024/02/solver2d/
+  if (solverMode >= 2 && crossLayerStructurePile
+      && structureScaleBodyCount >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES)
+    substeps = imax(substeps, R_CROSS_LAYER_STRUCTURE_SUBSTEPS);
   if (substeps == 1) {
     rigidIslands = n;
     if (denseWetScene) {
@@ -408,6 +429,7 @@
     std::vector<double> islandVxSum(n, 0), islandVySum(n, 0);
     std::vector<double> islandMaxRelativeSpeed(n, 0);
     std::vector<double> islandMaxPriorImpact(n, 0);
+    std::vector<double> islandMaxRadius(n, 0);
     std::vector<int> islandBodyCount(n, 0), islandAwakeCount(n, 0);
     std::vector<int> islandSubsteps(n, 1);
     std::vector<uint8_t> islandTerrainRisk(n, 0);
@@ -416,6 +438,8 @@
       int root = ufFind(stepIslandParent, bi);
       Body* body = solverBodies[bi];
       islandBodyCount[root]++;
+      islandMaxRadius[root] = std::fmax(
+        islandMaxRadius[root], body->maxR);
       islandTerrainRisk[root] =
         islandTerrainRisk[root] || priorRasterRisk[bi]
         || tickX0[bi] <= 0 || tickY0[bi] <= 0
@@ -471,6 +495,15 @@
         (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
           / safeSubstep);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
+      // Peer-layer contacts are discovered after cadence selection. In a
+      // cross-layer structure pile, keep each giant member on the same temporal
+      // cadence so joint followers transmit support coherently through both
+      // independently solved layers.
+      if (solverMode >= 2 && crossLayerStructurePile
+          && (islandBodyCount[root] >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES
+            || structureScaleBodyCount >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES)
+          && islandMaxRadius[root] >= R_SOLVER_HUGE_BODY_RADIUS)
+        count = imax(count, R_CROSS_LAYER_STRUCTURE_SUBSTEPS);
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
     }

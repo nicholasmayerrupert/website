@@ -23,6 +23,8 @@ class RigidBodySystem {
   int rigidOwnershipConflicts = 0;
   int rigidRecoveryBodies = 0;
   int rigidPositionCorrections = 0;
+  int rigidRasterCorrections = 0, rigidRasterProjectionFailures = 0;
+  double rigidRasterMaxCorrection = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
   int rigidVelocityConstraintEvals = 0, rigidBiasConstraintEvals = 0;
@@ -150,6 +152,7 @@ class RigidBodySystem {
   void stampJointFollower(Body* leader);
   void restampBodiesAfterStream();
   void bakeRestingBodies();
+  void resolveStructureRasterOverlaps();
   void moveBodies();
   void collectPlacementTouchingBodyIds(
     const std::vector<std::pair<int, int>>& cells,
@@ -310,6 +313,9 @@ class RigidBodySystem {
   std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;
+  std::vector<int> rasterProjectionOwner, rasterProjectionTouched;
+  std::vector<Body*> rasterProjectionBodies;
+  std::vector<std::pair<int, int>> rasterProjectionPairs;
 
   Engine& E;
 };

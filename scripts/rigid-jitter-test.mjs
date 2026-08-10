@@ -217,12 +217,25 @@ const runScene = (seed) => {
       break;
     }
   }
-  const result = { initialBodies, finalBodies: engine._bodyCount(), settledAt };
+  const remaining = [];
+  for (let body = 0; body < engine._bodyCount(); body++)
+    remaining.push({
+      id: engine._bodyIdLayer(0, body),
+      awake: engine._bodyAwake(body),
+      blocked: engine._bodyBlocked(body),
+      terrain: engine._bodyTerrainBlocked(body),
+      ...engine._bodyState(body),
+    });
+  const result = {
+    initialBodies, finalBodies: engine._bodyCount(), settledAt, remaining,
+  };
   engine.destroy();
   return result;
 };
 
-for (const seed of [13, 36]) {
+const jitterSeeds = (process.env.JITTER_SEEDS ?? '13,36')
+  .split(',').map(Number).filter(Number.isFinite);
+for (const seed of jitterSeeds) {
   const result = runScene(seed);
   console.log(`seed ${seed}: ${JSON.stringify(result)}`);
   check(`seed ${seed} creates the compound pile (${result.initialBodies} bodies)`,

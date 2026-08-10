@@ -45,7 +45,7 @@ void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
     b->fuseTicks = fuse;
     E.audio.emit(SE_FUSE, b->px, b->py, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
   }
-  b->awake = true; b->stillTicks = 0;
+  b->awake = true; E.rigid.resetSleepTracking(b);
   if (b->jointRole == 1 && b->jointPeer) {
     b->jointPeer->fuseTicks = b->fuseTicks;
     E.rigid.syncJointFollower(b);
@@ -205,7 +205,7 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed,
       b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
       b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
     }
-    b->awake = true; b->stillTicks = 0;
+    b->awake = true; E.rigid.resetSleepTracking(b);
     bb.debrisSpawned++;
     spawned++;
   }
@@ -594,7 +594,7 @@ bool ExplosivesSystem::applyBlastImpulse(Body* body, int cx, int cy,
   body->vy += impulseY * body->invMass;
   body->omega += angularImpulse * body->invInertia;
   body->awake = true;
-  body->stillTicks = 0;
+  E.rigid.resetSleepTracking(body);
   if (body->jointRole == 1) E.rigid.syncJointFollower(body);
   return true;
 }

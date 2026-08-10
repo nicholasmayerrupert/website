@@ -346,7 +346,7 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
       buildCollisionTree, 0, (int)collisionOrder.size());
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   if (++b->geometryRevision == 0) b->geometryRevision = 1;
-  b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
+  b->maxR = std::sqrt(maxR2); b->awake = true; resetSleepTracking(b);
   return true;
 }
 Body* RigidBodySystem::spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density) {
@@ -948,11 +948,15 @@ double RigidBodySystem::resolveBias(Contact& c) {
   }
   return std::fabs(applied);
 }
+void RigidBodySystem::resetSleepTracking(Body* b) {
+  b->stillTicks = 0;
+  b->restProbeTicks = 0;
+}
 void RigidBodySystem::wakeBody(Body* b) {
   if (b->jointRole == 2 && b->jointPeer) b = b->jointPeer;
   if (!bodyFullyInsideLoadedWindow(b)) return;
   b->awake = true;
-  b->stillTicks = 0;
+  resetSleepTracking(b);
   if (b->jointRole == 1) syncJointFollower(b);
 }
 void RigidBodySystem::wakeBodiesTouchingCells(
@@ -977,6 +981,8 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->px = leader->px; follower->py = leader->py; follower->angle = leader->angle;
   follower->vx = leader->vx; follower->vy = leader->vy; follower->omega = leader->omega;
   follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
+  follower->restProbePoints = leader->restProbePoints;
+  follower->restProbeTicks = leader->restProbeTicks;
   follower->bakeSupportedPoseTicks = leader->bakeSupportedPoseTicks;
   follower->cs = leader->cs; follower->sn = leader->sn;
 }
@@ -2642,7 +2648,7 @@ void RigidBodySystem::moveBodies() {
     if (!adjustmentRootActive[adjustmentRoot(slot)]
         || !bodyFootprintOverlapsSolid(body)) continue;
     body->awake = true;
-    body->stillTicks = 0;
+    resetSleepTracking(body);
   }
   double depenElapsed = emscripten_get_now() - depenStart;
   rigidDepenMs = rigidDepenMs + depenElapsed;
@@ -2713,7 +2719,7 @@ void RigidBodySystem::moveBodies() {
     body->px = pose.px; body->py = pose.py; body->angle = pose.angle;
     body->vx = body->vy = body->omega = 0;
     body->awake = false;
-    body->stillTicks = 0;
+    resetSleepTracking(body);
     body->cs = std::cos(body->angle); body->sn = std::sin(body->angle);
     if (body->jointRole == 1) syncJointFollower(body);
     for (int k : movePreviousFootprints[slot]) {

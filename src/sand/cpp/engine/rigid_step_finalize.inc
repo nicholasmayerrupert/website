@@ -48,8 +48,10 @@
         double dvx = body->vx - before[0];
         double dvy = body->vy - before[1];
         double dw = (body->omega - before[2]) * body->maxR;
-        if (dvx * dvx + dvy * dvy + dw * dw > 1e-10)
+        if (dvx * dvx + dvy * dvy + dw * dw > 1e-10) {
           body->stillTicks = 0;
+          body->restProbeTicks = 0;
+        }
       }
     }
   }
@@ -78,7 +80,51 @@
     if (!c.b || !c.bIntegrated || !c.a->awake || !c.b->awake) continue;
     ufUnite(islandParent, c.a->idx, c.b->idx);
   }
+  auto updateRestProbe = [](Body* body) {
+    double cs = std::cos(body->angle), sn = std::sin(body->angle);
+    double lx0 = body->offsetX - 0.5;
+    double lx1 = body->offsetX + body->w - 0.5;
+    double ly0 = body->offsetY - 0.5;
+    double ly1 = body->offsetY + body->h - 0.5;
+    double lx = std::fabs(lx0) >= std::fabs(lx1) ? lx0 : lx1;
+    double ly = std::fabs(ly0) >= std::fabs(ly1) ? ly0 : ly1;
+    const std::array<double, 6> points = {
+      body->px, body->py,
+      body->px + lx * cs, body->py + lx * sn,
+      body->px - ly * sn, body->py + ly * cs,
+    };
+    if (body->restProbeTicks == 0) {
+      body->restProbePoints = points;
+      body->restProbeTicks = 1;
+      return;
+    }
+    double radius2 = R_REST_PROBE_RADIUS * R_REST_PROBE_RADIUS;
+    for (int point = 0; point < 3; point++) {
+      double dx = points[point * 2] - body->restProbePoints[point * 2];
+      double dy = points[point * 2 + 1] - body->restProbePoints[point * 2 + 1];
+      if (dx * dx + dy * dy <= radius2) continue;
+      body->restProbePoints = points;
+      body->restProbeTicks = 1;
+      return;
+    }
+    if (body->restProbeTicks < R_REST_PROBE_TICKS)
+      body->restProbeTicks++;
+  };
+  for (int bi = 0; bi < n; bi++) {
+    Body* body = solverBodies[bi];
+    if (!body->awake || loadedWindowFreeze[bi].frozen) continue;
+    double pointSpeed = std::hypot(body->vx, body->vy)
+                      + std::fabs(body->omega) * body->maxR;
+    bool eligible = body->hadContact
+      && !fluidOnlySleep[bi]
+      && !actorContact[bi]
+      && !body->spatialForceApplied
+      && pointSpeed < R_REST_PROBE_MAX_POINT_SPEED;
+    if (eligible) updateRestProbe(body);
+    else body->restProbeTicks = 0;
+  }
   for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
+  for (int bi = 0; bi < n; bi++) islandMinRestProbe[bi] = INT_MAX;
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
     if (!b->awake) continue;
@@ -87,8 +133,22 @@
     if (fluidOnlySleep[bi])
       st *= (double)R_SLEEP_TICKS / R_FLUID_SLEEP_TICKS;
     if (st < islandMinStill[r]) islandMinStill[r] = st;
+    if ((int)b->restProbeTicks < islandMinRestProbe[r])
+      islandMinRestProbe[r] = b->restProbeTicks;
   }
-  for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; if (b->jointRole == 1) syncJointFollower(b); } }
+  for (int bi = 0; bi < n; bi++) {
+    Body* b = solverBodies[bi];
+    if (!b->awake) continue;
+    int root = ufFind(islandParent, bi);
+    bool sleep = islandMinStill[root] >= R_SLEEP_TICKS
+              || islandMinRestProbe[root] >= R_REST_PROBE_TICKS;
+    if (!sleep) continue;
+    b->awake = false;
+    b->vx = 0;
+    b->vy = 0;
+    b->omega = 0;
+    if (b->jointRole == 1) syncJointFollower(b);
+  }
   for (int bi = 0; bi < n; bi++) {
     const LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
     if (!freeze.frozen) continue;

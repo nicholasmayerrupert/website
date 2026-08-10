@@ -111,6 +111,7 @@ class RigidBodySystem {
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   bool bodyFullyInsideLoadedWindow(Body* b) const;
+  void resetSleepTracking(Body* b);
   void wakeBody(Body* b);
   void wakeBodiesTouchingCells(
     Layer& layer, const std::vector<std::pair<int, int>>& cells);

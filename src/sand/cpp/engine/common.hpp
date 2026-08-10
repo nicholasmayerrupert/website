@@ -275,6 +275,12 @@ struct Body {
   double kinematicVx = 0, kinematicVy = 0, kinematicOmega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
+  // A cold sleep fallback tracks the world-space motion of the centre and two
+  // shape-scale probes. Contact islands that stay inside a small pose envelope
+  // can settle even when discrete contact changes keep their instantaneous
+  // solver velocities above the ordinary sleep thresholds.
+  std::array<double, 6> restProbePoints{};
+  uint16_t restProbeTicks = 0;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
@@ -711,6 +717,7 @@ struct Player {
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_REST_PROBE_TICKS = 180;
 static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
@@ -760,6 +767,8 @@ static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
+static const double R_REST_PROBE_RADIUS = 2.0;
+static const double R_REST_PROBE_MAX_POINT_SPEED = 0.75;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_WAKE_LIN = 0.08;
 static const double R_FLUID_REST_DAMP = 0.98;

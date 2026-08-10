@@ -90,6 +90,7 @@
   std::vector<uint8_t> priorRasterRisk(n, 0);
   std::vector<double> priorImpactSpeed(n, 0);
   std::vector<double> islandMinStill(n);
+  std::vector<int> islandMinRestProbe(n);
   std::vector<uint8_t> liquidContact(n, 0);
   std::vector<uint8_t> liquidSurfaceContact(n, 0);
   std::vector<uint8_t> liquidDensityEquilibrium(n, 0);

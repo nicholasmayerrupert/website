@@ -114,6 +114,15 @@ infinite world's loaded-window boundary stays fixed until streaming brings its
 complete occupied shape back into the window. Finite-world boundaries remain
 solid, and camera-driven streaming persists bodies through the chunk store.
 
+The ordinary sleep path uses tight instantaneous linear and angular velocity
+thresholds. A cold fallback also tracks the centre of mass and two shape-scale
+world-space probes. A contact island with frictional support sleeps when every
+member remains inside the two-cell pose envelope for 180 world ticks. Actor
+contact, spatial forces, fluid-only support, fast point motion, geometry changes,
+and explicit wakes reset the envelope. The whole island sleeps together, so the
+fallback cannot freeze one participant inside an active stack. Component-backed
+bodies then pass through the same stable-raster and support checks before baking.
+
 The exact inverse-raster footprint is cached for one pose and geometry revision.
 Systems that query an unchanged pose reuse the same ordered world/local cells.
 Actor pushing first rejects the complete swept center-line capsule when no live
@@ -241,7 +250,7 @@ re-ground an airborne body. Powders never push a rigid body upward.
 Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-collision`, `npm run test:rigid-dense-pile`,
 `npm run test:rigid-large-body`, `npm run test:rigid-shape-stress`,
-`npm run test:rigid-topple`,
+`node scripts/rigid-jitter-test.mjs`, `npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`. Use `npm run bench:rigid-acid` for repeated
 large-body fragmentation and repair, and `npm run bench:rigid-long` for sustained
@@ -257,6 +266,8 @@ collision choices follow the same families used by production engines:
   XPBD.
 - [Box2D simulation islands](https://box2d.org/posts/2023/10/simulation-islands/)
   describes the graph boundary used for sleeping and parallel scheduling.
+- [Jolt Physics architecture](https://github.com/jrouwe/JoltPhysics/blob/master/Docs/Architecture.md)
+  describes island-wide sleep and bounded world-space point motion over time.
 - [Box2D continuous collision](https://box2d.org/files/ErinCatto_ContinuousCollision_GDC2013.pdf)
   and the [Box2D simulation documentation](https://box2d.org/documentation/md_simulation.html)
   cover time-of-impact and speculative contacts.

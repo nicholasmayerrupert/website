@@ -1070,6 +1070,21 @@ void RigidBodySystem::ensureBodyRaster(Body* b) {
         b->rasterBoundaryFootprint.push_back({wx, wy, local});
     }
   }
+  // A rotated singleton can fit between every sampled grid center. Keep its
+  // sole material cell at the grid cell containing its continuous center.
+  if (b->nPts == 1 && b->rasterFootprint.empty()) {
+    int local = -1;
+    for (int candidate = 0; candidate < (int)b->occ.size(); candidate++)
+      if (bodyMaterialAt(b, candidate) != EMPTY) { local = candidate; break; }
+    double wx = 0, wy = 0;
+    worldPoint(b, 0, sn, cs, wx, wy);
+    int x = (int)std::floor(wx), y = (int)std::floor(wy);
+    if (local >= 0 && x >= 0 && x < E.cols && y >= 0 && y < E.rows) {
+      b->rasterFootprint.push_back({x, y, local});
+      if (b->erosionBoundaryMask[local])
+        b->rasterBoundaryFootprint.push_back({x, y, local});
+    }
+  }
   b->rasterPx = b->px;
   b->rasterPy = b->py;
   b->rasterAngle = b->angle;
@@ -1811,6 +1826,42 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
     E.markCellIndex(k);
   }
 }
+void RigidBodySystem::erodePassiveJointBodies() {
+  // Passive followers are stamped in the background but simulated by their
+  // foreground leaders, so their local heat and acid contact is handled here.
+  if (E.L != &E.bg || E.bg.passiveBodyCells.empty()) return;
+  std::unordered_map<int, Body*> bodyById;
+  for (Body* body : E.bg.bodies)
+    if (body->jointRole == 2) bodyById[body->id] = body;
+  if (bodyById.empty()) return;
+
+  std::unordered_set<Body*> dirty;
+  std::vector<int> acidSmoke;
+  for (Body* body : E.bg.bodies) {
+    if (body->jointRole != 2 || !body->erodible) continue;
+    for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
+      int k = cell.y * E.cols + cell.x;
+      if (E.bg.bodyOwner[k] != body->id) continue;
+      double p = rigidErodeProbabilityAt(k);
+      if (p <= 0 || E.rand() >= p) continue;
+      int x = cell.x, y = cell.y;
+      bool byAcid = (x < E.cols - 1 && E.bg.grid[k + 1] == ACID)
+                 || (x > 0 && E.bg.grid[k - 1] == ACID)
+                 || (y < E.rows - 1 && E.bg.grid[k + E.cols] == ACID)
+                 || (y > 0 && E.bg.grid[k - E.cols] == ACID);
+      if (eraseBodyCellIndex(k, bodyById, dirty) && byAcid) {
+        E.audio.noteAcidDissolve(x, y);
+        if (E.rand() < ACRID_SMOKE_P) acidSmoke.push_back(k);
+      }
+    }
+  }
+  finishErasedJointBodies(dirty);
+  for (int k : acidSmoke) {
+    if (E.bg.grid[k] != EMPTY || E.bg.bodyOwner[k] >= 0) continue;
+    E.writeGridIndex(k, ACRID_SMOKE);
+    E.markCellIndex(k);
+  }
+}
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   int blocked = 0;
   auto blockedIn = [&](Layer& lay, int k) {
@@ -2408,6 +2459,7 @@ void RigidBodySystem::moveBodies() {
     rigidFluidNodesTotal = rigidFluidFacesTotal = 0;
     rigidFluidIterationsTotal = rigidFluidDryReferencesSkipped = 0;
   }
+  erodePassiveJointBodies();
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)
     if (b->jointRole != 2) { hasSimulatedBody = true; break; }

@@ -87,6 +87,93 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
   engine.destroy();
 }
 
+// Acid in the background must erode the passive follower of a cross-layer body.
+// If that follower is paired with a one-cell foreground crystal, removing its
+// whole background structure leaves the crystal as an ordinary body.
+{
+  const cols = 48, rows = 1000, x = 24, y = 24;
+  const engine = attachTestHooks(createEngineWasm({
+    cols, rows, worldSeed: 0xAC1D, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  engine.paintDiscLayer(0, x, y, 0, MAT.CRYSTAL, true);
+  engine.syncComponentsLayer(0);
+  for (let cy = y - 2; cy <= y + 2; cy++)
+    for (let cx = x - 2; cx <= x + 2; cx++)
+      engine.paintDiscLayer(1, cx, cy, 0, MAT.STONE, true);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+  check('foreground singleton/background island starts as a joint body',
+    engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2);
+
+  let backgroundEroded = false;
+  for (let step = 0; step < 160 && !backgroundEroded; step++) {
+    const owner = engine._bodyOwnerGrid(1);
+    const grid = engine.getGridBg();
+    for (let k = 0; k < owner.length; k++) {
+      if (owner[k] < 0) continue;
+      const cy = Math.floor(k / cols), cx = k - cy * cols;
+      for (const [nx, ny] of [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]]) {
+        if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
+        const nk = ny * cols + nx;
+        if (owner[nk] >= 0 || grid[nk] !== MAT.EMPTY) continue;
+        engine.paintDiscLayer(1, nx, ny, 0, MAT.ACID, false);
+        break;
+      }
+    }
+    engine.stepWorld();
+    backgroundEroded = cnt(engine.getGridBg(), MAT.STONE) === 0;
+  }
+  check('background acid erodes a passive joint follower', backgroundEroded);
+  const crystalBody = engine._bodyStateLayer(0, 0);
+  check('crystal left by background erosion becomes a standalone one-cell body',
+    cnt(engine.getGrid(), MAT.CRYSTAL) === 1
+      && engine._bodyCountLayer(0) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 0
+      && crystalBody?.nPts === 1);
+  const crystalY = crystalBody?.py ?? 0;
+  for (let i = 0; i < 4; i++) engine.stepWorld();
+  check('standalone crystal continues falling after its background is gone',
+    (engine._bodyStateLayer(0, 0)?.py ?? 0) > crystalY);
+  engine.destroy();
+}
+
+// A static foreground singleton supported only by co-occupied background
+// terrain must enter the rigid solver as soon as acid removes that contact.
+{
+  const cols = 48, rows = 72, x = 24, y = 20, k = y * cols + x;
+  const engine = attachTestHooks(createEngineWasm({
+    cols, rows, worldSeed: 0x51A6, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  for (let cy = y; cy < rows; cy++)
+    engine.paintDiscLayer(1, x, cy, 0, MAT.STONE, true);
+  engine.syncComponentsLayer(1);
+  engine.paintDiscLayer(0, x, y, 0, MAT.CRYSTAL, true);
+  engine.syncComponentsLayer(0);
+  for (let i = 0; i < 4; i++) engine.stepWorld();
+  check('foreground crystal starts supported by background terrain',
+    engine._bodyCountLayer(0) === 0 && engine._groundedGrid(0)[k] === 1);
+
+  let supportRemoved = false;
+  for (let step = 0; step < 160 && !supportRemoved; step++) {
+    engine.paintDiscLayer(1, x - 1, y, 0, MAT.ACID, false);
+    engine.stepWorld();
+    supportRemoved = engine.getGridBg()[k] !== MAT.STONE;
+  }
+  for (let i = 0; i < 4 && engine._bodyCountLayer(0) === 0; i++)
+    engine.stepWorld();
+  check('acid removes the crystal\'s sole background support', supportRemoved);
+  check('unsupported static crystal becomes a one-cell foreground body',
+    engine._bodyCountLayer(0) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 0
+      && engine._bodyStateLayer(0, 0)?.nPts === 1);
+  engine.destroy();
+}
+
 // Acid cutting matching foreground/background supports must create the falling
 // slab as a joint body on its first dynamic tick.
 {

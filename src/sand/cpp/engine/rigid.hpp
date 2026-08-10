@@ -136,6 +136,7 @@ class RigidBodySystem {
                           bool splitJointBodies = true);
   void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);
   void erodeBodies(std::vector<int>& cells);
+  void erodePassiveJointBodies();
   int bodyFootprintBlocked(Body* b);
   bool bodyFootprintOverlapsSolid(Body* b);
   int bodyTerrainBlocked(Body* b);

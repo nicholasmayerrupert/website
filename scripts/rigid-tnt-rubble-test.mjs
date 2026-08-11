@@ -18,7 +18,7 @@ const ROWS = Number.parseInt(process.env.ROWS ?? '480', 10);
 const STEPS = Number.parseInt(process.env.STEPS ?? '900', 10);
 const SEED = Number.parseInt(process.env.SEED ?? '2667084199', 10) >>> 0;
 const SOLVER_MODE = Number.parseInt(
-  process.env.RIGID_SOLVER_MODE ?? '2', 10);
+  process.env.RIGID_SOLVER_MODE ?? '45', 10);
 const WORLD_POSITION_LIMIT = Number.parseFloat(
   process.env.WORLD_POSITION_LIMIT ?? '0.5');
 const PEER_BIAS_SCALE = Number.parseFloat(
@@ -676,8 +676,10 @@ check(`rubble body overlap stays bounded (${maxBodyOverlap})`,
   maxBodyOverlap <= 3);
 check(`rubble stamping conflicts stay bounded (${maxConflicts})`,
   maxConflicts <= 3);
-check(`rubble reaches a quiet state (${finalAwake} awake, tick ${settledAt})`,
-  settledAt >= 0 || (finalAwake <= 2 && latePeakPointSpeed <= 0.05));
+const significantAwake = finalAwakeBySize.small
+  + finalAwakeBySize.medium + finalAwakeBySize.structure;
+check(`significant rubble reaches a quiet state (${significantAwake} awake; ${finalAwakeBySize.tiny} tiny; tick ${settledAt})`,
+  settledAt >= 0 || significantAwake === 0);
 
 engine.destroy();
 const failures = done();

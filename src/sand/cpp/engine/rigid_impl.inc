@@ -2983,13 +2983,19 @@ void RigidBodySystem::finishErasedJointBodies(
   pruneRoster(E.bg, E.bg.bodyCells);
   pruneRoster(E.bg, E.bg.passiveBodyCells);
 }
-void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
-  if (cells.empty()) { E.L->bodyCells = cells; return; }
+void RigidBodySystem::erodeBodies(
+    std::vector<int>& cells, bool passiveJointBodies) {
+  if (cells.empty()) {
+    if (!passiveJointBodies) E.L->bodyCells = cells;
+    return;
+  }
   std::unordered_map<int, Body*> bodyById; for (Body* b : E.L->bodies) bodyById[b->id] = b;
   std::unordered_set<Body*> dirty;
   std::vector<int> acidSmoke;
   for (Body* body : E.L->bodies) {
-    if (body->jointRole == 2 || !body->erodible) continue;
+    if ((passiveJointBodies ? body->jointRole != 2 : body->jointRole == 2)
+        || !body->erodible) continue;
+    ensureBodyRaster(body);
     for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
       int k = cell.y * E.cols + cell.x;
       if (E.L->bodyOwner[k] != body->id) continue;
@@ -3006,7 +3012,8 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
       }
     }
   }
-  finishErasedBodies(dirty, cells);
+  if (passiveJointBodies) finishErasedJointBodies(dirty);
+  else finishErasedBodies(dirty, cells);
   for (int k : acidSmoke) {
     if (E.L->grid[k] != EMPTY || E.L->bodyOwner[k] >= 0) continue;
     E.writeGridIndex(k, ACRID_SMOKE);
@@ -4247,6 +4254,9 @@ void RigidBodySystem::moveBodies() {
     rigidFluidNodesTotal = rigidFluidFacesTotal = 0;
     rigidFluidIterationsTotal = rigidFluidDryReferencesSkipped = 0;
   }
+  // Joint followers inherit their leader's pose and skip background integration,
+  // but their stamped material still participates in background reactions.
+  if (E.L == &E.bg) erodeBodies(E.bg.passiveBodyCells, true);
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)
     if (b->jointRole != 2) { hasSimulatedBody = true; break; }

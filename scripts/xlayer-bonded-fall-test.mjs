@@ -35,41 +35,52 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
   engine.destroy();
 }
 
-// Foreground acid can erode a joint leader while its background follower is in
-// motion. The follower must remain visible to the joint splitter during that
-// erosion instead of being mistaken for an empty layer.
-{
+// Acid can erode either material half of a moving joint body. Both live owner
+// rasters remain visible to the joint splitter while it rebuilds the result.
+for (const [acidLayer, layerName] of [[0, 'foreground'], [1, 'background']]) {
   const cols = 48, rows = 80;
   const engine = attachTestHooks(createEngineWasm({
     cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
   }));
   engine.setBgEnabled(true);
   for (let layer = 0; layer <= 1; layer++) {
-    for (let y = 8; y <= 19; y++) for (let x = 16; x <= 31; x++)
+    const minX = layer ? 23 : 12;
+    const maxX = layer ? 35 : 24;
+    for (let y = 8; y <= 19; y++) for (let x = minX; x <= maxX; x++)
       engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
     engine.syncComponentsLayer(layer);
   }
   engine.stepWorld();
-  const stoneAtBirth = cnt(engine.getGrid(), MAT.STONE);
+  const layerGrid = () => acidLayer ? engine.getGridBg() : engine.getGrid();
+  const jointLeader = () => {
+    for (let body = 0; body < engine._bodyCountLayer(0); body++) {
+      if (engine._bodyJointRoleLayer(0, body) === 1)
+        return engine._bodyStateLayer(0, body);
+    }
+    return null;
+  };
+  const cellsAtBirth = jointLeader()?.nPts ?? 0;
   let eroded = false, jointAfterErosion = false, erosionDetail = '';
-  for (let step = 0; step < 160 && !eroded; step++) {
-    const owner = engine._bodyOwnerGrid(0);
-    const grid = engine.getGrid();
+  for (let step = 0; step < 24 && !eroded; step++) {
+    const owner = engine._bodyOwnerGrid(acidLayer);
+    const peerOwner = engine._bodyOwnerGrid(acidLayer ? 0 : 1);
+    const grid = layerGrid();
     let placed = 0;
     for (let k = 0; k < owner.length && placed < 24; k++) {
-      if (owner[k] < 0) continue;
+      if (owner[k] < 0 || peerOwner[k] >= 0) continue;
       const y = Math.floor(k / cols), x = k - y * cols;
       for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
         if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
         const nk = ny * cols + nx;
         if (owner[nk] >= 0 || grid[nk] !== MAT.EMPTY) continue;
-        engine.paintDiscLayer(0, nx, ny, 0, MAT.ACID, false);
+        engine.paintDiscLayer(acidLayer, nx, ny, 0, MAT.ACID, false);
         placed++;
         break;
       }
     }
     engine.stepWorld();
-    if (cnt(engine.getGrid(), MAT.STONE) >= stoneAtBirth) continue;
+    const leader = jointLeader();
+    if (leader && leader.nPts >= cellsAtBirth) continue;
     eroded = true;
     const fgRoles = Array.from(
       { length: engine._bodyCountLayer(0) },
@@ -80,10 +91,10 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
       (_, i) => engine._bodyJointRoleLayer(1, i),
     );
     jointAfterErosion = fgRoles.includes(1) && bgRoles.includes(2);
-    erosionDetail = `step ${step}; roles ${fgRoles.join(',')}/${bgRoles.join(',')}; bg stone ${cnt(engine.getGridBg(), MAT.STONE)}`;
+    erosionDetail = `step ${step}; cells ${cellsAtBirth}->${leader?.nPts ?? 0}; roles ${fgRoles.join(',')}/${bgRoles.join(',')}`;
   }
-  check('foreground acid erodes a moving joint body', eroded);
-  check(`acid erosion preserves the background follower (${erosionDetail})`, jointAfterErosion);
+  check(`${layerName} acid erodes a moving joint body`, eroded);
+  check(`${layerName} acid erosion preserves the joint body (${erosionDetail})`, jointAfterErosion);
   engine.destroy();
 }
 

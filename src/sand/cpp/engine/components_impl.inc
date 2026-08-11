@@ -1956,6 +1956,8 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   retire(E.fg, detachedFg);
   retire(E.bg, detachedBg);
 
+  std::vector<Body*> spawnedJoints;
+  spawnedJoints.reserve(pending.size());
   for (PendingJoint& source : pending) {
     E.rigid.wakeBodiesTouchingCells(E.fg, source.fgCells);
     E.rigid.wakeBodiesTouchingCells(E.bg, source.bgCells);
@@ -1963,6 +1965,7 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       source.fgCells, source.fgMaterials, source.bgCells, source.bgMaterials);
     if (!leader || !leader->jointPeer) continue;
     Body* follower = leader->jointPeer;
+    spawnedJoints.push_back(leader);
     leader->fuseTicks = follower->fuseTicks = source.fuseTicks;
     leader->plantType = source.fgPlantType;
     follower->plantType = source.bgPlantType;
@@ -1981,6 +1984,9 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       E.markCellIndex(k);
     }
   }
+
+  E.useLayer(&E.fg);
+  E.rigid.resolveSpawnedJointOverlaps(spawnedJoints);
 
   auto refresh = [&](Layer& lay) {
     lay.sleepingBodySupportDirty = true;

@@ -35,6 +35,13 @@
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)
     if (body->jointRole != 2) solverBodies.push_back(body);
+  bool hasJointSolverBody = false;
+  for (Body* body : solverBodies)
+    hasJointSolverBody = hasJointSolverBody || body->jointRole == 1;
+  bool hasWorldJointBody = hasJointSolverBody;
+  if (E.bgEnabled && !hasWorldJointBody)
+    for (Body* body : E.fg.bodies)
+      hasWorldJointBody = hasWorldJointBody || body->jointRole == 1;
   for (Body* body : solverBodies)
     rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
   int n = (int)solverBodies.size();
@@ -291,6 +298,13 @@
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
   double globalPointSpeed = 0;
   int structureScaleBodyCount = 0;
+  int worldStructureScaleBodyCount = 0;
+  for (Body* body : E.fg.bodies)
+    if (body->jointRole != 2 && rigidStructureScaleBody(body))
+      worldStructureScaleBodyCount++;
+  for (Body* body : E.bg.bodies)
+    if (body->jointRole == 0 && rigidStructureScaleBody(body))
+      worldStructureScaleBodyCount++;
   double denseFrameVx = 0, denseFrameVy = 0;
   int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
   for (int bi = 0; bi < n; bi++) {
@@ -311,7 +325,20 @@
       structureScaleBodyCount++;
   }
   bool crossLayerStructurePile = false;
+  bool peerLayerBodyPotential = false;
   if (E.bgEnabled) {
+    if (E.L == &E.fg) {
+      bool hasLeader = false, hasBackgroundBody = false;
+      for (Body* body : E.fg.bodies)
+        hasLeader = hasLeader || body->jointRole == 1;
+      for (Body* body : E.bg.bodies)
+        hasBackgroundBody = hasBackgroundBody || body->jointRole == 0;
+      peerLayerBodyPotential = hasLeader && hasBackgroundBody;
+    } else if (!E.bg.passiveBodyIds.empty()) {
+      for (Body* body : E.bg.bodies)
+        peerLayerBodyPotential = peerLayerBodyPotential
+          || body->jointRole == 0;
+    }
     for (Body* body : E.fg.bodies) {
       if (body->jointRole == 2
           || body->maxR < R_SOLVER_HUGE_BODY_RADIUS) continue;
@@ -514,6 +541,18 @@
         solverBodies[bi]->denseMicrostepTicks =
           R_DENSE_MICROSTEP_HYSTERESIS;
     }
+  }
+  if ((solverMode == 4 && !peerLayerBodyPotential && !hasWorldJointBody)
+      || solverMode == 7 || solverMode == 8
+      || solverMode == 21 || solverMode == 22) {
+    substeps = imax(substeps, 4);
+    for (int bi = 0; bi < n; bi++)
+      bodySubsteps[bi] = imax(bodySubsteps[bi], 4);
+  }
+  if (solverMode == 22) {
+    substeps = imax(substeps, 8);
+    for (int bi = 0; bi < n; bi++)
+      bodySubsteps[bi] = imax(bodySubsteps[bi], 8);
   }
   rigidSubsteps = substeps;
   rigidCadenceMs += emscripten_get_now() - cadenceStart;

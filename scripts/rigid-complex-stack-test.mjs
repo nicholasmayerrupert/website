@@ -20,6 +20,13 @@ const SOLVER_TOLERANCE = Number.parseFloat(
   process.env.RIGID_SOLVER_TOLERANCE ?? '0.0001');
 const SOLVER_MIN_ITERS = Number.parseInt(
   process.env.RIGID_SOLVER_MIN_ITERS ?? '4', 10);
+const PEER_BIAS_SCALE = Number.parseFloat(
+  process.env.PEER_BIAS_SCALE ?? '1');
+const WORLD_POSITION_LIMIT = Number.parseFloat(
+  process.env.WORLD_POSITION_LIMIT ?? '0.5');
+const TRACE_EVERY = Number.parseInt(process.env.TRACE_EVERY ?? '0', 10);
+const TRACE_START = Number.parseInt(process.env.TRACE_START ?? '0', 10);
+const TRACE_CONTACTS = process.env.TRACE_CONTACTS === '1';
 const TAIL_TICKS = 60;
 const SEEDS = (process.env.SEEDS ?? '7,19')
   .split(',').map(Number).filter(Number.isFinite);
@@ -177,6 +184,8 @@ const runCase = (seed) => {
   engine.setBgEnabled(true);
   engine._setRigidSolverOptions(
     SOLVER_MODE, SOLVER_TOLERANCE, SOLVER_MIN_ITERS);
+  engine._setRigidPeerBiasScale(PEER_BIAS_SCALE);
+  engine._setRigidWorldPositionLimit(WORLD_POSITION_LIMIT);
   for (let x = 0; x < COLS; x++) {
     const top = FLOOR_Y + Math.round(11 * Math.sin(x * 0.041 + seed))
       - ((x * 29 + seed) % 71 < 11 ? 19 : 0);
@@ -246,6 +255,13 @@ const runCase = (seed) => {
   let shockFallbacks = 0;
   let maxAwake = 0;
   let maxSubsteps = 0;
+  let totalContacts = 0;
+  let totalWarmStarted = 0;
+  let totalVelocityConstraintEvals = 0;
+  let totalBiasConstraintEvals = 0;
+  let maxContactDepth = 0;
+  let maxVelocityResidual = 0;
+  let maxBiasResidual = 0;
   let settledAt = -1;
   let latePeakPointSpeed = 0;
   let latePeakPoseSpan = 0;
@@ -268,6 +284,22 @@ const runCase = (seed) => {
   let firstRecoveryTick = -1;
   let lastRecoveryTick = -1;
   let stepWallMs = 0;
+  const phaseTotals = {
+    pairContact: 0,
+    terrainContact: 0,
+    solve: 0,
+    integrate: 0,
+    occupancy: 0,
+    cadence: 0,
+    fluid: 0,
+    bake: 0,
+    clear: 0,
+    depen: 0,
+    stamp: 0,
+    spill: 0,
+  };
+  const phaseMax = Object.fromEntries(
+    Object.keys(phaseTotals).map((key) => [key, 0]));
   const lateTracks = new Map();
   const tailTracks = new Map();
   const trackMotion = (tracks, key, state) => {
@@ -372,6 +404,10 @@ const runCase = (seed) => {
             id: engine._bodyIdLayer(layer, body),
             role: engine._bodyJointRoleLayer(layer, body),
             blocked,
+            sameLayerBlocker: engine._bodyPrimaryBlocker(
+              layer, body, layer),
+            peerLayerBlocker: engine._bodyPrimaryBlocker(
+              layer, body, 1 - layer),
             terrain: engine._bodyTerrainBlockedLayer(layer, body),
             ...engine._bodyStateLayer(layer, body),
           });
@@ -458,6 +494,72 @@ const runCase = (seed) => {
     }
     if (firstConflictTick < 0 && maxConflicts > 0) firstConflictTick = tick;
     maxSubsteps = Math.max(maxSubsteps, solver.substeps);
+    totalContacts += solver.contacts;
+    totalWarmStarted += solver.warmStarted;
+    totalVelocityConstraintEvals += solver.velocityConstraintEvals;
+    totalBiasConstraintEvals += solver.biasConstraintEvals;
+    maxContactDepth = Math.max(maxContactDepth, solver.maxContactDepth);
+    maxVelocityResidual = Math.max(
+      maxVelocityResidual, solver.maxVelocityResidual);
+    maxBiasResidual = Math.max(maxBiasResidual, solver.maxBiasResidual);
+    const phases = {
+      pairContact: solver.rigidPairContactMs,
+      terrainContact: solver.rigidTerrainContactMs,
+      solve: solver.rigidSolveMs,
+      integrate: solver.rigidIntegrateMs,
+      occupancy: solver.rigidOccupancyBuildMs,
+      cadence: solver.rigidCadenceMs,
+      fluid: solver.rigidFluidCoupleMs,
+      bake: solver.rigidBakeMs,
+      clear: solver.rigidClearMs,
+      depen: solver.rigidDepenMs,
+      stamp: solver.rigidStampMs,
+      spill: solver.rigidSpillMs,
+    };
+    for (const [key, value] of Object.entries(phases)) {
+      phaseTotals[key] += value;
+      phaseMax[key] = Math.max(phaseMax[key], value);
+    }
+    if (TRACE_EVERY > 0 && tick + 1 >= TRACE_START
+        && (tick + 1) % TRACE_EVERY === 0) {
+      const sleepState = [];
+      for (let layer = 0; layer < 2; layer++)
+        for (let body = 0; body < engine._bodyCountLayer(layer); body++) {
+          if (engine._bodyJointRoleLayer(layer, body) === 2) continue;
+          const state = engine._bodyStateLayer(layer, body);
+          if (state && (state.worldStillTicks > 0
+              || engine._bodyAwakeLayer(layer, body) > 0))
+            sleepState.push(`${layer}:${engine._bodyIdLayer(layer, body)}`
+              + `=${state.worldStillTicks}/${state.sleepSupports}`);
+        }
+      console.log(`trace seed ${seed} tick ${tick + 1}: ${awake} awake, `
+        + `${tickBlocked} overlap, ${solver.contacts} contacts, `
+        + `${(stepWallMs / (tick + 1)).toFixed(1)} ms mean; `
+        + `pair ${phases.pairContact.toFixed(1)}, `
+        + `terrain ${phases.terrainContact.toFixed(1)}, `
+        + `solve ${phases.solve.toFixed(1)}, `
+        + `integrate ${phases.integrate.toFixed(1)}, `
+        + `bake ${phases.bake.toFixed(1)}, `
+        + `depen ${phases.depen.toFixed(1)}, `
+        + `stamp ${phases.stamp.toFixed(1)}, `
+        + `spill ${phases.spill.toFixed(1)} ms; `
+        + `world-pose ${solver.worldMaxPositionTranslation.toFixed(4)}/`
+        + `${solver.worldMaxPositionRotation.toFixed(6)}, `
+        + `raster ${solver.rasterCorrections}/`
+        + `${solver.rasterMaxCorrection.toFixed(4)}; `
+        + `world-rest ${sleepState.join(',')}`);
+      if (TRACE_CONTACTS) {
+        const contacts = engine._worldContacts().map((contact) => ({
+          pair: `${contact.aLayer}:${contact.aId}/${contact.bLayer}:${contact.bId}`,
+          normal: [contact.nx, contact.ny].map((value) =>
+            Number(value.toFixed(4))),
+          depth: Number(contact.depth.toFixed(5)),
+          normalImpulse: Number(contact.normalImpulse.toFixed(5)),
+          tangentImpulse: Number(contact.tangentImpulse.toFixed(5)),
+        }));
+        console.log(`world contacts ${tick + 1}: ${JSON.stringify(contacts)}`);
+      }
+    }
     if (awake === 0 && settledAt < 0) settledAt = tick;
   }
   for (const track of lateTracks.values())
@@ -501,7 +603,12 @@ const runCase = (seed) => {
   }
   const result = {
     seed, initialFg, initialBg, jointLeaders,
-    solverMode: SOLVER_MODE, maxAwake, maxSubsteps, settledAt, finalAwake,
+    solverMode: SOLVER_MODE, peerBiasScale: PEER_BIAS_SCALE,
+    maxAwake, maxSubsteps, settledAt, finalAwake,
+    totalContacts, totalWarmStarted,
+    warmStartRatio: totalContacts > 0 ? totalWarmStarted / totalContacts : 0,
+    totalVelocityConstraintEvals, totalBiasConstraintEvals,
+    maxContactDepth, maxVelocityResidual, maxBiasResidual,
     finalStates,
     maxBlocked, maxTerrainBlocked, maxBackgroundBlocked,
     maxBackgroundTerrainBlocked, finalBlocked,
@@ -518,6 +625,9 @@ const runCase = (seed) => {
     latePeakPointSpeed, latePeakPoseSpan,
     tailPeakPointSpeed, tailPeakPoseSpan,
     stepMeanMs: stepWallMs / STEPS,
+    phaseMeanMs: Object.fromEntries(Object.entries(phaseTotals)
+      .map(([key, value]) => [key, value / STEPS])),
+    phaseMaxMs: phaseMax,
   };
   engine.destroy();
   return result;
@@ -544,6 +654,7 @@ for (const seed of SEEDS) {
     + `${result.maxConflicts} conflicts, ${result.maxRasterCorrections} raster corrections, `
     + `${result.maxRasterFailures} failed projections, `
     + `${result.recoveryTicks} recovery ticks, `
+    + `${(result.warmStartRatio * 100).toFixed(1)}% warm, `
     + `${result.tailPeakPointSpeed.toFixed(4)} tail speed, `
     + `${result.stepMeanMs.toFixed(2)} ms/step`);
   if (failedCase) {

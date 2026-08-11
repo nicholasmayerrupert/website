@@ -258,6 +258,85 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_terrain_blocked_layer(
   return i >= 0 && i < (int)lay.bodies.size()
     ? e->bodyTerrainBlocked(lay.bodies[i]) : -1;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_terrain_blocker(
+    Engine* e, int layer, int i, int field) {
+  Layer& lay = layer ? e->bg : e->fg;
+  if (i < 0 || i >= (int)lay.bodies.size()) return -1;
+  Engine::ActiveLayerScope layerScope(*e, &lay);
+  int cell = -1;
+  e->rigid.forEachBodyCell(lay.bodies[i], [&](int x, int y, int) {
+    if (cell >= 0 || (lay.infinite && (x == 0 || x == e->cols - 1)))
+      return;
+    int k = y * e->cols + x;
+    uint8_t material = lay.grid[k];
+    if (lay.bodyOwner[k] < 0 && material != EMPTY
+        && !e->isGasMaterial(material)
+        && !e->isBuoyantMedium(material))
+      cell = k;
+  });
+  if (cell < 0 || field == 0) return cell;
+  if (field == 1) return lay.grid[cell];
+  if (field == 2) return lay.cellComp[cell];
+  int component = lay.cellComp[cell];
+  if (field == 3 && component >= 0
+      && component < (int)lay.components.size())
+    return lay.components[component].bakedAssemblyId;
+  return -1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_owner_blocked_grid(
+    Engine* e, int bodyLayer, int i, int probeLayer) {
+  Layer& bodies = bodyLayer ? e->bg : e->fg;
+  if (i < 0 || i >= (int)bodies.bodies.size()) return -1;
+  Body* body = bodies.bodies[i];
+  Layer& probe = probeLayer ? e->bg : e->fg;
+  int blocked = 0;
+  e->rigid.occStamp.reset((size_t)e->cols * e->rows);
+  auto visit = [&](int x, int y, int) {
+    int k = y * e->cols + x;
+    if (e->rigid.occStamp.has(k)) return;
+    e->rigid.occStamp.add(k);
+    int owner = probe.bodyOwner[k];
+    blocked += owner >= 0 && owner != body->id;
+  };
+  e->rigid.forEachBodyCell(body, visit);
+  if (body->jointRole == 1 && body->jointPeer)
+    e->rigid.forEachBodyCell(body->jointPeer, visit);
+  return blocked;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_primary_blocker(
+    Engine* e, int bodyLayer, int i, int probeLayer, int field) {
+  Layer& bodySource = bodyLayer ? e->bg : e->fg;
+  if (i < 0 || i >= (int)bodySource.bodies.size()) return -1;
+  Body* body = bodySource.bodies[i];
+  Layer& probe = probeLayer ? e->bg : e->fg;
+  std::unordered_map<int, int> counts;
+  e->rigid.occStamp.reset((size_t)e->cols * e->rows);
+  auto visit = [&](int x, int y, int) {
+    int k = y * e->cols + x;
+    if (e->rigid.occStamp.has(k)) return;
+    e->rigid.occStamp.add(k);
+    int owner = probe.bodyOwner[k];
+    if (owner >= 0 && owner != body->id) counts[owner]++;
+  };
+  e->rigid.forEachBodyCell(body, visit);
+  if (body->jointRole == 1 && body->jointPeer)
+    e->rigid.forEachBodyCell(body->jointPeer, visit);
+  int bestId = -1, bestCount = 0;
+  for (const auto& entry : counts)
+    if (entry.second > bestCount
+        || (entry.second == bestCount && entry.first < bestId)) {
+      bestId = entry.first;
+      bestCount = entry.second;
+    }
+  return field == 0 ? bestId : bestCount;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_world_contact_count(Engine* e) {
+  return e->rigid.worldContactCount();
+}
+EMSCRIPTEN_KEEPALIVE double engine_test_world_contact_state(
+    Engine* e, int i, int field) {
+  return e->rigid.worldContactState(i, field);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake_layer(
     Engine* e, int layer, int i) {
@@ -297,6 +376,18 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int 
   out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
   out[8] = b->invMass; out[9] = b->invInertia;
   out[10] = b->pvx; out[11] = b->pvy; out[12] = b->pw;
+  out[13] = b->stillTicks; out[14] = b->restProbeTicks;
+  out[15] = b->hadContact ? 1 : 0;
+  out[16] = (double)b->sleepSupports.size();
+  out[17] = b->stampRecoveryStreak;
+  out[18] = b->stampRecoveryTotal;
+  out[19] = b->stampPreclaimAttempts;
+  out[20] = b->stampPreclaimSuccesses;
+  out[21] = b->stampPreclaimBlocked;
+  out[22] = b->stampPreclaimOutside;
+  out[23] = b->stampPreclaimMovedOutside;
+  out[24] = b->stampPreclaimStartedOutside;
+  out[25] = b->worldStillTicks;
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_box_layer(
@@ -406,7 +497,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_collect_dynamic_lights(Engine* e) {
 }
 // Read continuous body state for tests/tools:
 // [px,py,angle,vx,vy,omega,nPts,maxR,invMass,invInertia,
-//  pvx,pvy,pw].
+//  pvx,pvy,pw,stillTicks,restProbeTicks,hadContact,sleepSupports,
+//  stampRecoveryStreak,stampRecoveryTotal,stampPreclaimAttempts,
+//  stampPreclaimSuccesses,stampPreclaimBlocked,stampPreclaimOutside,
+//  stampPreclaimMovedOutside,stampPreclaimStartedOutside].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
@@ -414,6 +508,18 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
   out[8] = b->invMass; out[9] = b->invInertia;
   out[10] = b->pvx; out[11] = b->pvy; out[12] = b->pw;
+  out[13] = b->stillTicks; out[14] = b->restProbeTicks;
+  out[15] = b->hadContact ? 1 : 0;
+  out[16] = (double)b->sleepSupports.size();
+  out[17] = b->stampRecoveryStreak;
+  out[18] = b->stampRecoveryTotal;
+  out[19] = b->stampPreclaimAttempts;
+  out[20] = b->stampPreclaimSuccesses;
+  out[21] = b->stampPreclaimBlocked;
+  out[22] = b->stampPreclaimOutside;
+  out[23] = b->stampPreclaimMovedOutside;
+  out[24] = b->stampPreclaimStartedOutside;
+  out[25] = b->worldStillTicks;
   return 1;
 }
 // Set continuous body motion (test/tool hook): wakes the body.
@@ -546,6 +652,18 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 84: return e->rigid.rigidRasterCorrections;
     case 85: return e->rigid.rigidRasterProjectionFailures;
     case 86: return e->rigid.rigidRasterMaxCorrection;
+    case 87: return e->rigid.rigidWorldRelaxBodies;
+    case 88: return e->rigid.rigidWorldRelaxContacts;
+    case 89: return e->rigid.rigidWorldPositionIterations;
+    case 90: return e->rigid.rigidWorldMaxPositionTranslation;
+    case 91: return e->rigid.rigidWorldMaxPositionRotation;
+    case 92: return e->rigid.rigidWorldPositionLimitHits;
+    case 93: return e->rigid.rigidTerrainRecoveryBodies;
+    case 94: return e->rigid.rigidStampRecoveryBodies;
+    case 95: return e->rigid.rigidRasterPlaceholderBodies;
+    case 96: return e->rigid.rigidSpawnSeparations;
+    case 97: return e->rigid.rigidSpawnSeparationFailures;
+    case 98: return e->rigid.rigidSpawnMaxSeparation;
     default: return 0;
   }
 }
@@ -558,6 +676,41 @@ EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_solver_options(
 EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_force_full_solve_bodies(
     Engine* e, int bodyCount) {
   e->rigid.forceFullSolveBodies = imax(1, bodyCount);
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_world_position_limit(
+    Engine* e, double limit) {
+  e->rigid.worldPositionMotionLimit = std::fmax(0.0, limit);
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_peer_bias_scale(
+    Engine* e, double scale) {
+  e->rigid.peerBiasScale = std::fmax(0.0, scale);
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_trace_body(
+    Engine* e, int layer, int id) {
+  e->rigid.rigidTraceLayer = layer == 0 || layer == 1 ? layer : -1;
+  e->rigid.rigidTraceBodyId = id;
+  e->rigid.rigidTracePoseMask = 0;
+}
+EMSCRIPTEN_KEEPALIVE double engine_test_rigid_trace_state(
+    Engine* e, int field) {
+  if (field == 0) return e->rigid.rigidTracePoseMask;
+  int value = field - 1;
+  int stage = value / 3, axis = value % 3;
+  if (stage >= 0 && stage < (int)e->rigid.rigidTracePoses.size())
+    return e->rigid.rigidTracePoses[stage][axis];
+  int motionField = field - 31;
+  if (motionField >= 0 && motionField < 3)
+    return e->rigid.rigidTraceVelocityMotion[motionField];
+  motionField -= 3;
+  if (motionField >= 0 && motionField < 3)
+    return e->rigid.rigidTraceBiasMotion[motionField];
+  motionField -= 3;
+  if (motionField >= 0 && motionField < 3)
+    return e->rigid.rigidTraceProjectionMotion[motionField];
+  motionField -= 3;
+  if (motionField >= 0 && motionField < 9)
+    return e->rigid.rigidTraceBiasByKind[motionField / 3][motionField % 3];
+  return NAN;
 }
 // Synthetic spill probe for outlet-locality regression tests. The rectangle is
 // stamped as one body and `source` is treated as loose material displaced from

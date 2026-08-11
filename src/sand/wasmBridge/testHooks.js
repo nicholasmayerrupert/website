@@ -27,6 +27,15 @@ function table() {
       ['number', 'number', 'number']),
     bodyTerrainBlockedLayer: c('engine_test_body_terrain_blocked_layer',
       'number', ['number', 'number', 'number']),
+    bodyTerrainBlocker: c('engine_test_body_terrain_blocker', 'number',
+      ['number', 'number', 'number', 'number']),
+    bodyOwnerBlockedGrid: c('engine_test_body_owner_blocked_grid', 'number',
+      ['number', 'number', 'number', 'number']),
+    bodyPrimaryBlocker: c('engine_test_body_primary_blocker', 'number',
+      ['number', 'number', 'number', 'number', 'number']),
+    worldContactCount: c('engine_test_world_contact_count', 'number', ['number']),
+    worldContactState: c('engine_test_world_contact_state', 'number',
+      ['number', 'number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyAwakeLayer: c('engine_test_body_awake_layer', 'number',
       ['number', 'number', 'number']),
@@ -77,6 +86,15 @@ function table() {
     setRigidForceFullSolveBodies: c(
       'engine_test_set_rigid_force_full_solve_bodies', null,
       ['number', 'number']),
+    setRigidWorldPositionLimit: c(
+      'engine_test_set_rigid_world_position_limit', null,
+      ['number', 'number']),
+    setRigidPeerBiasScale: c('engine_test_set_rigid_peer_bias_scale', null,
+      ['number', 'number']),
+    setRigidTraceBody: c('engine_test_set_rigid_trace_body', null,
+      ['number', 'number', 'number']),
+    rigidTraceState: c('engine_test_rigid_trace_state', 'number',
+      ['number', 'number']),
     rigidSpillProbe: c('engine_test_rigid_spill_probe', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     setGroundingDebug: c('engine_test_set_grounding_debug', null, ['number', 'number', 'number']),
     groundingMismatches: c('engine_test_grounding_mismatches', 'number', ['number']),
@@ -101,6 +119,32 @@ export function attachTestHooks(engine) {
     t.bodyBlockedLayer(ptr, layer | 0, i | 0);
   engine._bodyTerrainBlockedLayer = (layer, i) =>
     t.bodyTerrainBlockedLayer(ptr, layer | 0, i | 0);
+  engine._bodyTerrainBlocker = (layer, i) => ({
+    cell: t.bodyTerrainBlocker(ptr, layer | 0, i | 0, 0),
+    material: t.bodyTerrainBlocker(ptr, layer | 0, i | 0, 1),
+    component: t.bodyTerrainBlocker(ptr, layer | 0, i | 0, 2),
+    assembly: t.bodyTerrainBlocker(ptr, layer | 0, i | 0, 3),
+  });
+  engine._bodyOwnerBlockedGrid = (bodyLayer, i, probeLayer) =>
+    t.bodyOwnerBlockedGrid(ptr, bodyLayer | 0, i | 0, probeLayer | 0);
+  engine._bodyPrimaryBlocker = (bodyLayer, i, probeLayer) => ({
+    id: t.bodyPrimaryBlocker(
+      ptr, bodyLayer | 0, i | 0, probeLayer | 0, 0),
+    count: t.bodyPrimaryBlocker(
+      ptr, bodyLayer | 0, i | 0, probeLayer | 0, 1),
+  });
+  engine._worldContacts = () => Array.from(
+    { length: t.worldContactCount(ptr) }, (_, i) => ({
+      aLayer: t.worldContactState(ptr, i, 0),
+      bLayer: t.worldContactState(ptr, i, 1),
+      aId: t.worldContactState(ptr, i, 2),
+      bId: t.worldContactState(ptr, i, 3),
+      nx: t.worldContactState(ptr, i, 4),
+      ny: t.worldContactState(ptr, i, 5),
+      depth: t.worldContactState(ptr, i, 6),
+      normalImpulse: t.worldContactState(ptr, i, 7),
+      tangentImpulse: t.worldContactState(ptr, i, 8),
+    }));
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyAwakeLayer = (layer, i) =>
     t.bodyAwakeLayer(ptr, layer | 0, i | 0);
@@ -149,7 +193,7 @@ export function attachTestHooks(engine) {
     t.spawnNaturalAt(ptr, species | 0, worldX, worldY);
   // Continuous body state, including inverse mass and rotational inertia.
   engine._bodyState = (i) => {
-    const buf = mod._malloc(13 * 8);
+    const buf = mod._malloc(26 * 8);
     const ok = t.bodyState(ptr, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -160,12 +204,25 @@ export function attachTestHooks(engine) {
       invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
       pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
       pw: mod.HEAPF64[base + 12],
+      stillTicks: mod.HEAPF64[base + 13],
+      restProbeTicks: mod.HEAPF64[base + 14],
+      hadContact: mod.HEAPF64[base + 15] > 0,
+      sleepSupports: mod.HEAPF64[base + 16],
+      stampRecoveryStreak: mod.HEAPF64[base + 17],
+      stampRecoveryTotal: mod.HEAPF64[base + 18],
+      stampPreclaimAttempts: mod.HEAPF64[base + 19],
+      stampPreclaimSuccesses: mod.HEAPF64[base + 20],
+      stampPreclaimBlocked: mod.HEAPF64[base + 21],
+      stampPreclaimOutside: mod.HEAPF64[base + 22],
+      stampPreclaimMovedOutside: mod.HEAPF64[base + 23],
+      stampPreclaimStartedOutside: mod.HEAPF64[base + 24],
+      worldStillTicks: mod.HEAPF64[base + 25],
     };
     mod._free(buf);
     return s;
   };
   engine._bodyStateLayer = (layer, i) => {
-    const buf = mod._malloc(13 * 8);
+    const buf = mod._malloc(26 * 8);
     const ok = t.bodyStateLayer(ptr, layer ? 1 : 0, i | 0, buf);
     if (!ok) { mod._free(buf); return null; }
     const base = buf >> 3;
@@ -176,6 +233,19 @@ export function attachTestHooks(engine) {
       invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
       pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
       pw: mod.HEAPF64[base + 12],
+      stillTicks: mod.HEAPF64[base + 13],
+      restProbeTicks: mod.HEAPF64[base + 14],
+      hadContact: mod.HEAPF64[base + 15] > 0,
+      sleepSupports: mod.HEAPF64[base + 16],
+      stampRecoveryStreak: mod.HEAPF64[base + 17],
+      stampRecoveryTotal: mod.HEAPF64[base + 18],
+      stampPreclaimAttempts: mod.HEAPF64[base + 19],
+      stampPreclaimSuccesses: mod.HEAPF64[base + 20],
+      stampPreclaimBlocked: mod.HEAPF64[base + 21],
+      stampPreclaimOutside: mod.HEAPF64[base + 22],
+      stampPreclaimMovedOutside: mod.HEAPF64[base + 23],
+      stampPreclaimStartedOutside: mod.HEAPF64[base + 24],
+      worldStillTicks: mod.HEAPF64[base + 25],
     };
     mod._free(buf);
     return s;
@@ -232,6 +302,12 @@ export function attachTestHooks(engine) {
     ownershipConflicts: t.rigidSolverDiag(ptr, 39),
     positionCorrections: t.rigidSolverDiag(ptr, 40),
     recoveryBodies: t.rigidSolverDiag(ptr, 41),
+    terrainRecoveryBodies: t.rigidSolverDiag(ptr, 93),
+    stampRecoveryBodies: t.rigidSolverDiag(ptr, 94),
+    rasterPlaceholderBodies: t.rigidSolverDiag(ptr, 95),
+    spawnSeparations: t.rigidSolverDiag(ptr, 96),
+    spawnSeparationFailures: t.rigidSolverDiag(ptr, 97),
+    spawnMaxSeparation: t.rigidSolverDiag(ptr, 98),
     rasterCorrections: t.rigidSolverDiag(ptr, 84),
     rasterProjectionFailures: t.rigidSolverDiag(ptr, 85),
     rasterMaxCorrection: t.rigidSolverDiag(ptr, 86),
@@ -277,12 +353,49 @@ export function attachTestHooks(engine) {
     rigidBakeSupportMs: t.rigidSolverDiag(ptr, 81),
     rigidBakeRasterMs: t.rigidSolverDiag(ptr, 82),
     rigidBakeRegisterMs: t.rigidSolverDiag(ptr, 83),
+    worldRelaxBodies: t.rigidSolverDiag(ptr, 87),
+    worldRelaxContacts: t.rigidSolverDiag(ptr, 88),
+    worldPositionIterations: t.rigidSolverDiag(ptr, 89),
+    worldMaxPositionTranslation: t.rigidSolverDiag(ptr, 90),
+    worldMaxPositionRotation: t.rigidSolverDiag(ptr, 91),
+    worldPositionLimitHits: t.rigidSolverDiag(ptr, 92),
   });
   engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
     minIterations = 4) => t.setRigidSolverOptions(
     ptr, mode | 0, residualTolerance, minIterations | 0);
   engine._setRigidForceFullSolveBodies = (bodyCount) =>
     t.setRigidForceFullSolveBodies(ptr, bodyCount | 0);
+  engine._setRigidWorldPositionLimit = (limit) =>
+    t.setRigidWorldPositionLimit(ptr, limit);
+  engine._setRigidPeerBiasScale = (scale) =>
+    t.setRigidPeerBiasScale(ptr, scale);
+  engine._setRigidTraceBody = (layer, id) =>
+    t.setRigidTraceBody(ptr, layer | 0, id | 0);
+  engine._rigidTracePoses = () => {
+    const mask = t.rigidTraceState(ptr, 0) >>> 0;
+    const poses = Array.from({ length: 10 }, (_, stage) => ({
+      px: t.rigidTraceState(ptr, 1 + stage * 3),
+      py: t.rigidTraceState(ptr, 2 + stage * 3),
+      angle: t.rigidTraceState(ptr, 3 + stage * 3),
+    }));
+    const vector = (field) => ({
+      dx: t.rigidTraceState(ptr, field),
+      dy: t.rigidTraceState(ptr, field + 1),
+      da: t.rigidTraceState(ptr, field + 2),
+    });
+    return {
+      mask,
+      poses,
+      velocityMotion: vector(31),
+      biasMotion: vector(34),
+      projectionMotion: vector(37),
+      biasByKind: {
+        terrain: vector(40),
+        sameLayer: vector(43),
+        crossLayer: vector(46),
+      },
+    };
+  };
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);
   engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);

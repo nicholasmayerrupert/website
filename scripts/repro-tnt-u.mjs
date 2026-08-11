@@ -27,6 +27,8 @@ const terrainFactory = terrainRoot === repoRoot
 const COLS = 512;
 const ROWS = 384;
 const MAX_TICKS = 360;
+const SOLVER_MODE = Number.parseInt(
+  process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const STRUCTURAL = new Uint8Array(64);
 for (const material of MATERIALS) {
   if (material.kind === KIND.COMPONENT) STRUCTURAL[material.id] = 1;
@@ -357,6 +359,7 @@ async function runCase(testCase, caseIndex) {
     sinksOn: false,
     infinite: true,
   });
+  engine._setRigidSolverOptions(SOLVER_MODE, 0.0001, 4);
   let source = null;
   let sourceSurfaces = null;
   if (terrainFactory !== factory) {
@@ -491,6 +494,20 @@ async function runCase(testCase, caseIndex) {
     disconnectedTicks = disconnected ? disconnectedTicks + 1 : 0;
     if (disconnected && dMeanY > 0.75) fallingTicks++;
     const perf = engine.getPerf();
+    const rigid = engine.getRigidSolverDebug();
+    let bodyOverlap = 0;
+    let terrainOverlap = 0;
+    let awakeBodies = 0;
+    for (let layer = 0; layer < 2; layer++) {
+      for (let body = 0; body < engine._bodyCountLayer(layer); body++) {
+        if (engine._bodyJointRoleLayer(layer, body) === 2) continue;
+        bodyOverlap = Math.max(bodyOverlap,
+          Math.max(0, engine._bodyBlockedLayer(layer, body)));
+        terrainOverlap += Math.max(0,
+          engine._bodyTerrainBlockedLayer(layer, body));
+        awakeBodies += engine._bodyAwakeLayer(layer, body) > 0;
+      }
+    }
     const row = {
       tick,
       trackingY: ty,
@@ -505,6 +522,14 @@ async function runCase(testCase, caseIndex) {
       maxY: assembly.maxY,
       tnt,
       bodies: engine._bodyCountLayer(0) + engine._bodyCountLayer(1),
+      awakeBodies,
+      bodyOverlap,
+      terrainOverlap,
+      ownershipConflicts: rigid.ownershipConflicts,
+      recoveryBodies: rigid.recoveryBodies,
+      maxContactDepth: Number(rigid.maxContactDepth.toFixed(4)),
+      maxVelocityResidual: Number(rigid.maxVelocityResidual.toFixed(5)),
+      maxBiasResidual: Number(rigid.maxBiasResidual.toFixed(5)),
       contacts,
       components: perf.componentCount,
       componentCells: perf.componentCellCount,
@@ -548,6 +573,7 @@ async function runCase(testCase, caseIndex) {
   engine.destroy();
   return {
     caseIndex,
+    solverMode: SOLVER_MODE,
     geometry: { ...testCase, left, right, top, bottom, trackingSeed: [trackingX, trackingY], initialTnt },
     topology,
     reproduction,
@@ -573,11 +599,21 @@ for (let index = first; index < last; index++) {
   const moved = result.trace.filter((row) => row.dMeanY > 0.75).length;
   const disconnected = result.trace.filter((row) => row.disconnected).length;
   const peakBodies = Math.max(0, ...result.trace.map((row) => row.bodies));
+  const peakBodyOverlap = Math.max(0,
+    ...result.trace.map((row) => row.bodyOverlap));
+  const peakTerrainOverlap = Math.max(0,
+    ...result.trace.map((row) => row.terrainOverlap));
+  const peakConflicts = Math.max(0,
+    ...result.trace.map((row) => row.ownershipConflicts));
+  const totalRecoveries = result.trace.reduce(
+    (sum, row) => sum + row.recoveryBodies, 0);
   if (peakBodies > 0) verifiedCases++;
   console.log(
     `case ${index}: seed=${result.geometry.seed >>> 0} U=${result.geometry.width}x${result.geometry.depth}`
     + ` natural=${result.topology.cells} fill=${result.topology.fill.toFixed(3)} mats=${result.topology.materials}`
     + ` disconnectedTicks=${disconnected} movedTicks=${moved} peakBodies=${peakBodies}`
+    + ` overlap=${peakBodyOverlap}/${peakTerrainOverlap}`
+    + ` conflicts=${peakConflicts} recoveries=${totalRecoveries}`
     + ` ${result.reproduction ? 'REPRODUCED' : 'no pause/resume'}`,
   );
   if (process.env.TRACE_WORST === '1') {

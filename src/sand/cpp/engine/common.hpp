@@ -281,6 +281,10 @@ struct Body {
   double kinematicVx = 0, kinematicVy = 0, kinematicOmega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
+  // Cross-layer contacts form one physical island even though each layer has
+  // its own solver pass. This counter is advanced only when that complete
+  // world island is quiet and connected to static support.
+  uint16_t worldStillTicks = 0;
   // A cold sleep fallback tracks the world-space motion of the centre and two
   // shape-scale probes. Contact islands that stay inside a small pose envelope
   // can settle even when discrete contact changes keep their instantaneous
@@ -288,6 +292,18 @@ struct Body {
   std::array<double, 6> restProbePoints{};
   uint16_t restProbeTicks = 0;
   std::vector<BodySleepSupport> sleepSupports;
+  uint16_t stampRecoveryStreak = 0;
+  uint32_t stampRecoveryTotal = 0;
+  int stampRecoveryTick = -2;
+  uint32_t stampPreclaimAttempts = 0;
+  uint32_t stampPreclaimSuccesses = 0;
+  uint32_t stampPreclaimBlocked = 0;
+  uint32_t stampPreclaimOutside = 0;
+  uint32_t stampPreclaimMovedOutside = 0;
+  uint32_t stampPreclaimStartedOutside = 0;
+  bool rasterAssignmentLocked = false;
+  int rasterLockCell = -1;
+  int rasterLockOwner = -2;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
@@ -371,7 +387,8 @@ struct Contact {
   // Computing them once turns repeated inertia expressions and divisions into
   // one preparation pass plus multiplications in the iterative solver.
   double normalMass, tangentMass, biasMass;
-  double accJn, accJt, accBias;
+  double softBiasRate, softMassScale, softImpulseScale;
+  double accJn, accJt, accBias, accRolling;
   int blockMate;
   bool persisted;
   double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
@@ -725,16 +742,20 @@ struct Player {
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_WORLD_SLEEP_TICKS = 30;
 static const int    R_REST_PROBE_TICKS = 180;
 static const int    R_BAKE_RASTER_TICKS = 20;
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_SOLVER_HUGE_BODY_MIN_ITERS = 6;
 static const double R_SOLVER_HUGE_BODY_RADIUS = 96.0;
+static const double R_EXACT_RASTER_BODY_RADIUS = 64.0;
+static const int    R_EXACT_RASTER_BODY_CELLS = 4096;
 static const int    R_CROSS_LAYER_STRUCTURE_MIN_BODIES = 4;
 static const int    R_CROSS_LAYER_STRUCTURE_SUBSTEPS = 4;
 static const int    R_STRUCTURE_RASTER_MIN_BODIES = 2;
 static const int    R_STRUCTURE_RASTER_ALIAS_CELLS = 1;
+static const int    R_SPAWN_SEPARATION_MAX_CELLS = 16;
 static const int    R_QUIET_TERRAIN_PROBE_MAX_CELLS = 64;
 static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
 static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
@@ -770,6 +791,7 @@ static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BO
 static const int    R_IMPACT_SOUND_SEPARATION_TICKS = 12;
 static const double R_FLUID_IMPACT_SOUND_MIN_SPEED = 1.5;
 static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
+static const double R_ROLLING_RESISTANCE = 0.02;
 static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
 static const double R_STATIC_FRICTION_SPEED = 0.025;
 static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
@@ -784,6 +806,7 @@ static const double R_STRUCTURE_WARM_START_MAX_IMPACT = 0.1;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
+static const double R_WORLD_SLEEP_VELOCITY = 0.05;
 static const double R_REST_PROBE_RADIUS = 2.0;
 static const double R_REST_PROBE_MAX_POINT_SPEED = 0.75;
 static const double R_FLUID_SLEEP_LIN = 0.05;

@@ -275,7 +275,16 @@
       bgA = bgA || layerActive(&bg);
     }
     double tL0 = emscripten_get_now();
+    rigid.beginWorldContactRelax();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
+    rigid.captureTracePose(1);
+    if (bgA) stepLayer(&bg);
+    rigid.captureTracePose(2);
+    rigid.relaxWorldContacts();
+    double tBake = emscripten_get_now();
+    rigid.bakeWorldBodies(fgA, bgA);
+    rigid.captureTracePose(5);
+    perfBodyMs += emscripten_get_now() - tBake;
     if (bgEnabled && comps.jointBakeNeedsGroundRefresh) {
       comps.computeGroundedBoth();
       comps.jointGroundReady = true;
@@ -285,7 +294,6 @@
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
-    if (bgA) stepLayer(&bg);
     perfLayersMs = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
     // Cross-layer assembly motion needs up-to-date joint grounding. Acid/erase

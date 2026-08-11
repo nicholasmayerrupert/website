@@ -13,6 +13,8 @@ await initSandWasm();
 const createEngineWasm = (options) =>
   attachTestHooks(createEngineWasmRaw(options));
 const { check, done } = makeChecker('bounded rigid-pile settling');
+const SOLVER_MODE = Number.parseInt(
+  process.env.RIGID_SOLVER_MODE ?? '2', 10);
 
 const COLS = 480, ROWS = 340, FLOOR_Y = 304;
 const unique = (cells) => [
@@ -166,6 +168,7 @@ const runScene = (seed) => {
   const engine = createEngineWasm({
     cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: false,
   });
+  engine._setRigidSolverOptions(SOLVER_MODE);
   for (let x = 0; x < COLS; x++) {
     const wave = Math.round(3 * Math.sin(x * 0.075));
     const tooth = (x * 17 + 11) % 31 < 4 ? -randomInt(1, 4) : 0;
@@ -254,6 +257,7 @@ for (const seed of jitterSeeds) {
   const engine = createEngineWasm({
     cols, rows, worldSeed: seed, sinksOn: false, infinite: false,
   });
+  engine._setRigidSolverOptions(SOLVER_MODE);
   for (let x = 0; x < cols; x++) {
     const top = floorY + Math.round(Math.sin(x * 0.031) * 16)
       - ((x * 29 + seed) % 97 < 9 ? 24 : 0);

@@ -283,9 +283,9 @@ hash. Earlier foreground-only records therefore differ even when the foreground
 is unchanged. Current simulation hashes also reflect restored loose momentum
 and stateful component continuity across streamed tiles, world-coordinate
 reaction ordering, staggered world-column gravity, compound rigid contacts,
-cave-blast carry, and bounded broad TNT fronts. Those changes can alter the
-foreground itself, so a checksum transition is not solely a measurement-scope
-change.
+cave-blast carry, bounded broad TNT fronts, and world-wide cross-layer rigid
+contact reconciliation. Those changes can alter the foreground itself, so a
+checksum transition is not solely a measurement-scope change.
 
 ## Baseline policy
 

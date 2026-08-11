@@ -13,18 +13,24 @@ class RigidBodySystem {
   static constexpr size_t SPILL_GENERATION_BUDGET =
     (size_t)(TABLE + 4) * TABLE + 2;
 
-  int solverMode = 2;
+  int solverMode = 45;
   double solverResidualTolerance = 1e-4;
   int solverMinIterations = 4;
   int forceFullSolveBodies = R_FORCE_FULL_SOLVE_BODIES;
+  double worldPositionMotionLimit = 0.5;
+  double peerBiasScale = 1;
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   int rigidOwnershipConflicts = 0;
   int rigidRecoveryBodies = 0;
+  int rigidTerrainRecoveryBodies = 0, rigidStampRecoveryBodies = 0;
+  int rigidRasterPlaceholderBodies = 0;
   int rigidPositionCorrections = 0;
   int rigidRasterCorrections = 0, rigidRasterProjectionFailures = 0;
   double rigidRasterMaxCorrection = 0;
+  int rigidSpawnSeparations = 0, rigidSpawnSeparationFailures = 0;
+  double rigidSpawnMaxSeparation = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
   int rigidVelocityConstraintEvals = 0, rigidBiasConstraintEvals = 0;
@@ -68,7 +74,25 @@ class RigidBodySystem {
   double rigidMaxContactDepth = 0;
   double rigidMaxVelocityResidual = 0, rigidMaxBiasResidual = 0;
   double rigidMaxPenetrationResidual = 0;
+  int rigidWorldRelaxBodies = 0, rigidWorldRelaxContacts = 0;
+  int rigidWorldPositionIterations = 0;
+  int rigidWorldPositionLimitHits = 0;
+  double rigidWorldMaxPositionTranslation = 0;
+  double rigidWorldMaxPositionRotation = 0;
+  int rigidTraceLayer = -1, rigidTraceBodyId = -1;
+  uint32_t rigidTracePoseMask = 0;
+  std::array<std::array<double, 3>, 10> rigidTracePoses{};
+  std::array<double, 3> rigidTraceVelocityMotion{};
+  std::array<double, 3> rigidTraceBiasMotion{};
+  std::array<double, 3> rigidTraceProjectionMotion{};
+  std::array<std::array<double, 3>, 3> rigidTraceBiasByKind{};
   void clearContactCaches();
+  void beginWorldContactRelax();
+  void captureTracePose(int stage);
+  void relaxWorldContacts();
+  void bakeWorldBodies(bool foregroundActive, bool backgroundActive);
+  int worldContactCount() const;
+  double worldContactState(int index, int field) const;
   // Scratch for per-body bottom-edge support probes: membership
   // stamp + cell list replacing a per-call unordered_set (the probes only sum
   // integer counters, so iteration order is irrelevant).
@@ -78,6 +102,7 @@ class RigidBodySystem {
   // because every key is already a loaded-grid cell index.
   StampSet splitMemberStamp, splitVisitedStamp;
   StampSet splitWasBodyStamp, splitClaimedStamp;
+  StampSet spawnSeparationStamp, spawnReservationStamp;
   // Body-cell erosion probabilities match static reaction rates.
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
   static constexpr double RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
@@ -94,6 +119,7 @@ class RigidBodySystem {
                            const std::vector<uint8_t>& fgMaterials,
                            const std::vector<std::pair<int, int>>& bgCells,
                            const std::vector<uint8_t>& bgMaterials);
+  void resolveSpawnedJointOverlaps(const std::vector<Body*>& newborns);
   void bindJointBodies(Body* leader, Body* follower, int jointId);
   void unbindJointBodies(Body* leader, Body* follower);
   void freezeCellsOntoBody(Layer& sourceLayer, int sourceBodyId,
@@ -108,8 +134,10 @@ class RigidBodySystem {
   // same zeros — breaking there is bit-identical to running all iterations).
   double resolveContact(Contact& c);
   double resolveContactNormal(Contact& c);
+  double resolveContactNormalSoft(Contact& c, bool useBias);
   double resolveContactFriction(Contact& c);
   double resolveContactBlock(Contact& first, Contact& second);
+  double resolveContactRolling(Contact& first, Contact* second);
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   bool bodyFullyInsideLoadedWindow(Body* b) const;
@@ -144,7 +172,8 @@ class RigidBodySystem {
   bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
   bool findTerrainClearAdjustment(Body* b, double& dx, double& dy);
-  void bakeBodyToGrid(Body* b, int assemblyId);
+  void bakeBodyToGrid(
+    Body* b, int assemblyId, const StampSet* reservedByOtherBody = nullptr);
   bool bodySolidifies(Body* b);
   bool bodyTouchesStaticSupport(Body* b);
   bool bodyHasLooseSupport(Body* b);
@@ -152,7 +181,7 @@ class RigidBodySystem {
   void stampJointFollower(Body* leader);
   void restampBodiesAfterStream();
   void bakeRestingBodies();
-  void resolveStructureRasterOverlaps();
+  void resolveStructureRasterOverlaps(bool allowPreviousPoseRollback = true);
   void moveBodies();
   void collectPlacementTouchingBodyIds(
     const std::vector<std::pair<int, int>>& cells,
@@ -306,6 +335,7 @@ class RigidBodySystem {
   };
   std::vector<MovePose> movePreviousPoses;
   std::vector<std::vector<int>> movePreviousFootprints;
+  std::vector<std::vector<uint8_t>> movePreviousMaterials;
   std::vector<std::vector<Disp>> moveDisplaced;
   std::vector<std::vector<int>> moveStamped;
   std::vector<uint8_t> movePreviousMaterialGrid;
@@ -316,6 +346,19 @@ class RigidBodySystem {
   std::vector<int> rasterProjectionOwner, rasterProjectionTouched;
   std::vector<Body*> rasterProjectionBodies;
   std::vector<std::pair<int, int>> rasterProjectionPairs;
+  struct WorldContact {
+    int aLayer = 0, bLayer = -1;
+    int aId = -1, bId = -1;
+    double lax = 0, lay = 0, lbx = 0, lby = 0;
+    double nx = 0, ny = 0;
+    double depth = 0, initialProjection = 0;
+    double targetVn = 0;
+    double staticFriction = 0, dynamicFriction = 0;
+    double accJn = 0, accJt = 0;
+  };
+  std::vector<WorldContact> worldContacts;
+  std::unordered_map<uint64_t, MovePose> worldPreviousPoses;
+  bool worldHasPeerContact = false;
 
   Engine& E;
 };

@@ -371,6 +371,21 @@
         if (iy >= E.rows) { ox = 0; oy = -1; return; }
         terrainNormalAt(b, ix, iy, b->density, ox, oy);
       };
+      auto contactNormal = [&](int ix, int iy, double wx, double wy,
+                               double& ox, double& oy) {
+        Body* peer = bodyHasPeerContacts
+          ? peerDynamicBodyAt(b, ix, iy) : nullptr;
+        if (!peer) {
+          tnorm(ix, iy, ox, oy);
+          return peer;
+        }
+        int local = insideBodyIndex(peer, wx, wy);
+        if (local < 0)
+          local = insideBodyIndex(peer, ix + 0.5, iy + 0.5);
+        if (local >= 0) bodyNormalAt(peer, local, wx, wy, ox, oy);
+        else tnorm(ix, iy, ox, oy);
+        return peer;
+      };
       auto terrainPenetrationDepth = [&](double x, double y,
                                          double nx, double ny) {
         double inside = 0, outside = 0.25;
@@ -420,7 +435,7 @@
         }
         int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
         if (solid(cx, cy)) {
-          tnorm(cx, cy, nx_, ny_);
+          Body* peer = contactNormal(cx, cy, sx, sy, nx_, ny_);
           double depth = b->maxR >= R_SOLVER_HUGE_BODY_RADIUS
             ? terrainPenetrationDepth(sx, sy, nx_, ny_)
             : 0.5;
@@ -434,8 +449,7 @@
             }
           }
           terrAcc.push_back({sx, sy, nx_, ny_, depth, 0});
-          if (bodyHasPeerContacts)
-            terrPeers.push_back(peerDynamicBodyAt(b, cx, cy));
+          if (bodyHasPeerContacts) terrPeers.push_back(peer);
           return;
         }
         if (!exactAngular) {
@@ -470,10 +484,9 @@
               hxx = (int)std::floor(hx);
               hyy = (int)std::floor(hy);
             }
-            tnorm(hxx, hyy, nx_, ny_);
+            Body* peer = contactNormal(hxx, hyy, hx, hy, nx_, ny_);
             terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
-            if (bodyHasPeerContacts)
-              terrPeers.push_back(peerDynamicBodyAt(b, hxx, hyy));
+            if (bodyHasPeerContacts) terrPeers.push_back(peer);
             break;
           }
           return;
@@ -506,10 +519,9 @@
             hxx = (int)std::floor(hx);
             hyy = (int)std::floor(hy);
           }
-          tnorm(hxx, hyy, nx_, ny_);
+          Body* peer = contactNormal(hxx, hyy, hx, hy, nx_, ny_);
           terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
-          if (bodyHasPeerContacts)
-            terrPeers.push_back(peerDynamicBodyAt(b, hxx, hyy));
+          if (bodyHasPeerContacts) terrPeers.push_back(peer);
           break;
         }
       };
@@ -652,7 +664,8 @@
           bIndex >= 0, impactSpeed, targetVn,
           contactDt, staticFriction, dynamicFriction,
           0, 0, 0,
-          0, 0, 0, -1, false,
+          0, 0, 0,
+          0, 0, 0, 0, -1, false,
         };
         restoreContact(contact, bk, contactDt);
         int contactIndex = (int)contacts.size();
@@ -909,6 +922,8 @@
         TerrainGroup& group = terrGroups[gi];
         Body* peer = group.peer;
         if (peer) {
+          if ((solverMode == 25 || solverMode == 42)
+              && activeLayer == 1) continue;
           bool bodyMoving = b->awake
             && (b->vx * b->vx + b->vy * b->vy > R_WAKE_LIN2
                 || b->omega * b->omega > R_WAKE_ANG2);
@@ -926,8 +941,22 @@
               hasDeepPeerContact = true;
               break;
             }
-          if (b->jointRole != 1 || !hasDeepPeerContact
-              || (b->nPts < 200 && peer->nPts < 200)) {
+          bool exactPeerManifold =
+            (solverMode >= 18 && solverMode <= 23)
+            || solverMode == 25 || solverMode == 27 || solverMode == 28
+            || solverMode == 30 || solverMode == 31 || solverMode == 32
+            || solverMode == 33 || solverMode == 34 || solverMode == 35
+            || solverMode == 36
+            || solverMode == 37 || solverMode == 38 || solverMode == 39
+            || solverMode == 40
+            || solverMode == 42
+            || solverMode == 43
+            || solverMode == 44
+            || solverMode == 45
+            || solverMode == 46
+            || (b->jointRole == 1 && hasDeepPeerContact
+              && (b->nPts >= 200 || peer->nPts >= 200));
+          if (!exactPeerManifold) {
             reduceManifold(group.points, b, peer, fbx, fby, contactDt);
             continue;
           }
@@ -951,6 +980,18 @@
     nc = (int)contacts.size();
     rigidContactMs += emscripten_get_now() - contactStart;
     double solveStart = emscripten_get_now();
+    bool softLayer = solverMode == 7 || solverMode == 8
+      || solverMode == 21 || solverMode == 22
+      || (solverMode == 4
+        && !hasWorldJointBody
+        && peerBackgroundBodies.empty() && peerJointLeaders.empty());
+    if (solverMode != 7 && solverMode != 8
+        && solverMode != 21 && solverMode != 22)
+      for (const Contact& contact : contacts)
+        if (contact.b && !contact.bIntegrated) {
+          softLayer = false;
+          break;
+        }
     if (sub + 1 == substeps) {
       for (const Contact& contact : contacts) {
         if (!contact.b || !contact.bIntegrated
@@ -982,7 +1023,24 @@
         + aInvI * rnA * rnA + bInvI * rnB * rnB;
       double tangentK = aInvM + bInvM
         + aInvI * rtA * rtA + bInvI * rtB * rtB;
-      if (!contact.bIntegrated) {
+      double aBiasK = aInvM + aInvI * rnA * rnA;
+      double bBiasK = bInvM + bInvI * rnB * rnB;
+      bool peerContact = contact.b && !contact.bIntegrated;
+      bool sharePeerBias = peerContact && (solverMode == 35
+        || solverMode == 43
+        || (solverMode == 44
+          && (!rigidStructureScaleBody(contact.a)
+            || !rigidStructureScaleBody(contact.b)))
+        || (solverMode == 45
+          && (!rigidStructureScaleBody(contact.a)
+            || !rigidStructureScaleBody(contact.b)))
+        || (solverMode == 39
+          && (!rigidStructureScaleBody(contact.a)
+            || !rigidStructureScaleBody(contact.b)))
+        || ((solverMode == 36 || solverMode == 37 || solverMode == 38)
+          && aBiasK > 0 && bBiasK > 0
+          && (aBiasK > 8 * bBiasK || bBiasK > 8 * aBiasK)));
+      if (!contact.bIntegrated && !sharePeerBias) {
         bInvM = 0;
         bInvI = 0;
       }
@@ -990,7 +1048,50 @@
         + aInvI * rnA * rnA + bInvI * rnB * rnB;
       contact.normalMass = normalK > 0 ? 1 / normalK : 0;
       contact.tangentMass = tangentK > 0 ? 1 / tangentK : 0;
-      contact.biasMass = biasK > 0 ? 1 / biasK : 0;
+      double peerScale = 1;
+      if (solverMode == 35 && peerContact) {
+        peerScale = peerBiasScale;
+      } else if (solverMode == 36 && sharePeerBias) {
+        peerScale = (aBiasK + bBiasK) / std::fmax(aBiasK, bBiasK);
+      } else if (solverMode == 37 && sharePeerBias) {
+        peerScale = 2;
+      } else if (solverMode == 38 && sharePeerBias) {
+        peerScale = (aBiasK + bBiasK) / std::fmax(aBiasK, bBiasK);
+      } else if (solverMode == 39 && sharePeerBias) {
+        peerScale = 2;
+      } else if (solverMode == 43 && sharePeerBias) {
+        peerScale = 2;
+      } else if (solverMode == 44 && sharePeerBias) {
+        peerScale = 2;
+      } else if (solverMode == 45 && sharePeerBias) {
+        peerScale = 2;
+      } else if (!contact.b && (solverMode == 37 || solverMode == 38
+          || solverMode == 39)) {
+        peerScale = 2;
+      } else if (!contact.b && solverMode == 43
+          && !rigidStructureScaleBody(contact.a)) {
+        peerScale = 2;
+      } else if (!contact.b && solverMode == 44
+          && !rigidStructureScaleBody(contact.a)) {
+        peerScale = 2;
+      } else if (!contact.b
+          && solverMode == 45
+          && worldStructureScaleBodyCount < 8) {
+        peerScale = 2;
+      }
+      contact.biasMass = biasK > 0
+        ? peerScale / biasK
+        : 0;
+      double softDt = std::fmax(1e-9, contact.dt);
+      double contactHertz = std::fmin(30.0, 0.125 / softDt);
+      if (!B || bInvM == 0) contactHertz *= 2;
+      double omega = 2 * M_PI * contactHertz;
+      double a1 = 20.0 + softDt * omega;
+      double a2 = softDt * omega * a1;
+      double a3 = 1 / (1 + a2);
+      contact.softBiasRate = omega / a1;
+      contact.softMassScale = a2 * a3;
+      contact.softImpulseScale = a3;
 #ifdef SAND_INVARIANT_CHECKS
       if (!std::isfinite(contact.normalMass)
           || !std::isfinite(contact.tangentMass)
@@ -1098,10 +1199,12 @@
           break;
         }
       if (hasImpactTarget) solverIters = R_SOLVER_ITERS;
+      if (softLayer) solverIters = 1;
       // A small residual on one pass can move a far-away point visibly on a
       // structure-scale body as its compound contact patch changes. Give those
       // islands two more coherence passes before allowing residual early-out.
       int islandMinIterations = solverMinIterations;
+      if (softLayer) islandMinIterations = 1;
       if (solveMaxRadius[root] >= R_SOLVER_HUGE_BODY_RADIUS)
         islandMinIterations = imax(
           islandMinIterations, R_SOLVER_HUGE_BODY_MIN_ITERS);
@@ -1113,10 +1216,15 @@
           >= 2 * (solveMaxX[root] - solveMinX[root]);
       auto solveVelocity = [&](int ci) {
         Contact& contact = contacts[ci];
+        if (softLayer)
+          return resolveContactNormalSoft(contact, true);
         int mate = contact.blockMate;
-        if (mate >= 0)
-          return ci < mate ? resolveContactBlock(contact, contacts[mate]) : 0.0;
-        return resolveContact(contact);
+        if (mate >= 0) {
+          if (ci > mate) return 0.0;
+          return resolveContactBlock(contact, contacts[mate])
+            + resolveContactRolling(contact, &contacts[mate]);
+        }
+        return resolveContact(contact) + resolveContactRolling(contact, nullptr);
       };
       auto contactVelocityResidual = [&](const Contact& contact) {
         Body* A = contact.a;
@@ -1235,7 +1343,7 @@
         rigidMaxVelocityResidual = std::fmax(
           rigidMaxVelocityResidual,
           contactVelocityResidual(contacts[contactOrder[oi]]));
-      for (int it = 0; it < solverIters; it++) {
+      for (int it = 0; !softLayer && it < solverIters; it++) {
         rigidBiasIterations++;
         rigidBiasConstraintEvals += islandEnd - islandStart;
         double moved = 0;
@@ -1267,6 +1375,34 @@
           std::fmax(0.0, contact.depth - slop));
       }
       islandStart = islandEnd;
+    }
+    if (solverMode >= 5 && hasWorldJointBody && sub + 1 == substeps) {
+      for (int contactIndex = 0;
+           contactIndex < (int)contacts.size(); contactIndex++) {
+        const Contact& contact = contacts[contactIndex];
+        if (contact.b && contact.b->kinematic) continue;
+        bool peerLayer = contact.b && !contact.bIntegrated;
+        if (peerLayer && activeLayer != 0) continue;
+        worldHasPeerContact = worldHasPeerContact || peerLayer;
+        double lax, lay, lbx, lby;
+        localAnchors(contact, lax, lay, lbx, lby);
+        double initialProjection =
+          (contact.a->px + contact.rax) * contact.nx
+          + (contact.a->py + contact.ray) * contact.ny;
+        if (contact.b)
+          initialProjection -=
+            (contact.b->px + contact.rbx) * contact.nx
+            + (contact.b->py + contact.rby) * contact.ny;
+        worldContacts.push_back({
+          activeLayer,
+          contact.b ? (peerLayer ? 1 - activeLayer : activeLayer) : -1,
+          contact.a->id, contact.b ? contact.b->id : -1,
+          lax, lay, lbx, lby, contact.nx, contact.ny,
+          contact.depth, initialProjection,
+          contact.targetVn, contact.staticFriction, contact.dynamicFriction,
+          contact.accJn, contact.accJt,
+        });
+      }
     }
     for (const Contact& contact : contacts) {
       auto proxy = actorProxyIndex.find(contact.b);
@@ -1314,13 +1450,47 @@
     previousContacts.swap(nextContacts);
     rigidSolveMs += emscripten_get_now() - solveStart;
     double integrateStart = emscripten_get_now();
+    if (softLayer) {
+      for (int bi = 0; bi < n; bi++) {
+        Body* body = solverBodies[bi];
+        if (!activeBody[bi] || !body->awake) continue;
+        double dt = bodyDt[bi];
+        body->px += body->vx * dt;
+        body->py += body->vy * dt;
+        body->angle += body->omega * dt;
+      }
+      for (int iteration = 0; iteration < 1; iteration++) {
+        for (int position = 0; position < nc; position++) {
+          int oi = iteration == 0 ? position : nc - 1 - position;
+          int ci = contactOrder[oi];
+          Contact& contact = contacts[ci];
+          resolveContactNormalSoft(contact, false);
+          resolveContactFriction(contact);
+        }
+      }
+      // Restitution is an impact-only constraint after the bias-free relax
+      // stage, matching Box2D's contact-solver stage order.
+      for (Contact& contact : contacts)
+        if (contact.targetVn > 0 && contact.accJn > 0)
+          resolveContactNormal(contact);
+    }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       if (!activeBody[bi] || !b->awake) continue;
       double dt = bodyDt[bi];
-      b->px += (b->vx + b->pvx) * dt;
-      b->py += (b->vy + b->pvy) * dt;
-      b->angle += (b->omega + b->pw) * dt;
+      if (!softLayer) {
+        if (rigidTraceLayer == activeLayer && b->id == rigidTraceBodyId) {
+          rigidTraceVelocityMotion[0] += b->vx * dt;
+          rigidTraceVelocityMotion[1] += b->vy * dt;
+          rigidTraceVelocityMotion[2] += b->omega * dt;
+          rigidTraceBiasMotion[0] += b->pvx * dt;
+          rigidTraceBiasMotion[1] += b->pvy * dt;
+          rigidTraceBiasMotion[2] += b->pw * dt;
+        }
+        b->px += (b->vx + b->pvx) * dt;
+        b->py += (b->vy + b->pvy) * dt;
+        b->angle += (b->omega + b->pw) * dt;
+      }
       // Granular support is sampled as a medium rather than a terrain contact.
       // Near rest, confirm the body has powder beneath its bottom edge so an
       // exact zero-velocity equilibrium can sleep instead of remaining an awake
@@ -1412,11 +1582,17 @@
     positionPairs.clear();
     bool structureProjection = sub + 1 == substeps;
     bool hasStructurePair = false;
+    auto structureProjectionPair = [&](Body* A, Body* B) {
+      if (softLayer) return true;
+      if (rigidWorldBridgeMode(solverMode))
+        return rigidStructureScaleBody(A) || rigidStructureScaleBody(B);
+      return A->maxR >= R_SOLVER_HUGE_BODY_RADIUS
+        && B->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
+    };
     if (structureProjection) {
       for (const Contact& contact : contacts)
         if (contact.b && contact.bIntegrated
-            && contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
-            && contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS) {
+            && structureProjectionPair(contact.a, contact.b)) {
           hasStructurePair = true;
           break;
         }
@@ -1426,12 +1602,45 @@
       for (const auto& pair : broadphasePairs) {
         Body* A = solverBodies[pair.first];
         Body* B = solverBodies[pair.second];
-        if (A->maxR < R_SOLVER_HUGE_BODY_RADIUS
-            || B->maxR < R_SOLVER_HUGE_BODY_RADIUS)
+        if (!structureProjectionPair(A, B))
           continue;
         positionPairs.push_back(pair);
         hasStructurePair = true;
       }
+    }
+    if (rigidWorldBridgeMode(solverMode) && structureProjection) {
+      std::vector<std::pair<int, int>> finalContactPairs;
+      std::vector<int> positionParent(n);
+      for (int bi = 0; bi < n; bi++) positionParent[bi] = bi;
+      for (const auto& pair : broadphasePairs) {
+        Body* A = solverBodies[pair.first];
+        Body* B = solverBodies[pair.second];
+        currentChildPoses[pair.first] = childPose(A, 0);
+        currentChildPoses[pair.second] = childPose(B, 0);
+        currentChildFramesValid[pair.first] = 0;
+        currentChildFramesValid[pair.second] = 0;
+        nextChildPoseDt[pair.first] = -1;
+        nextChildPoseDt[pair.second] = -1;
+        if (collectChildContacts(
+              A, B, 0, pair.first, pair.second) != CCS_CURRENT)
+          continue;
+        bool penetrating = false;
+        for (const ChildManifold& manifold : childManifoldScratch)
+          for (int point = 0; point < manifold.count; point++)
+            penetrating = penetrating || manifold.points[point].depth > 0;
+        if (!penetrating) continue;
+        finalContactPairs.push_back(pair);
+        ufUnite(positionParent, pair.first, pair.second);
+      }
+      std::vector<uint8_t> structureIsland(n, 0);
+      for (int bi = 0; bi < n; bi++)
+        if (rigidStructureScaleBody(solverBodies[bi]))
+          structureIsland[ufFind(positionParent, bi)] = 1;
+      positionPairs.clear();
+      for (const auto& pair : finalContactPairs)
+        if (structureIsland[ufFind(positionParent, pair.first)])
+          positionPairs.push_back(pair);
+      hasStructurePair = !positionPairs.empty();
     }
     if (E.L->forceActive || hasStructurePair) {
       spatialForceIsland.assign(n, 0);
@@ -1454,8 +1663,7 @@
         }
         if (!contact.bIntegrated) continue;
         bool structurePair = hasStructurePair
-          && contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
-          && contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
+          && structureProjectionPair(contact.a, contact.b);
         if (forcePair || structurePair) {
           int a = contact.a->idx, b = contact.b->idx;
           positionPairs.push_back({imin(a, b), imax(a, b)});
@@ -1467,6 +1675,82 @@
       positionPairs.erase(
         std::unique(positionPairs.begin(), positionPairs.end()),
         positionPairs.end());
+      std::vector<MovePose> positionStart(n);
+      for (int bi = 0; bi < n; bi++)
+        positionStart[bi] = {
+          solverBodies[bi]->px,
+          solverBodies[bi]->py,
+          solverBodies[bi]->angle,
+        };
+      auto correctionScale = [&](int index, Body* body,
+                                 double dpx, double dpy, double dangle,
+                                 bool deepContact) {
+        if (!rigidWorldBridgeMode(solverMode)
+            || (dpx == 0 && dpy == 0 && dangle == 0))
+          return 1.0;
+        const MovePose& start = positionStart[index];
+        bool independentAngle = solverMode == 27 || solverMode == 30
+          || solverMode == 31
+          || solverMode == 32
+          || solverMode == 33
+          || solverMode == 34
+          || solverMode == 35
+          || solverMode == 36
+          || solverMode == 37
+          || solverMode == 38
+          || solverMode == 39
+          || solverMode == 40
+          || solverMode == 42
+          || solverMode == 43
+          || solverMode == 44
+          || solverMode == 45
+          || solverMode == 46
+          || (solverMode == 28 && deepContact
+            && rigidStructureScaleBody(body));
+        if (independentAngle) {
+          double translationLimit = std::fmax(
+            1e-9, worldPositionMotionLimit);
+          auto normalizedMotion = [&](double scale) {
+            double translation = std::hypot(
+                body->px + scale * dpx - start.px,
+                body->py + scale * dpy - start.py)
+              / translationLimit;
+            double rotation = std::fabs(
+                body->angle + scale * dangle - start.angle)
+              / 0.01;
+            return std::fmax(translation, rotation);
+          };
+          double current = normalizedMotion(0);
+          double candidate = normalizedMotion(1);
+          if (candidate <= 1 || candidate < current) return 1.0;
+          if (current >= 1) return 0.0;
+          double low = 0, high = 1;
+          for (int step = 0; step < 12; step++) {
+            double middle = 0.5 * (low + high);
+            if (normalizedMotion(middle) <= 1) low = middle;
+            else high = middle;
+          }
+          return low;
+        }
+        auto motion = [&](double scale) {
+          return std::hypot(
+              body->px + scale * dpx - start.px,
+              body->py + scale * dpy - start.py)
+            + std::fabs(body->angle + scale * dangle - start.angle)
+              * body->maxR;
+        };
+        double current = motion(0), candidate = motion(1);
+        if (candidate <= worldPositionMotionLimit || candidate < current)
+          return 1.0;
+        if (current >= worldPositionMotionLimit) return 0.0;
+        double low = 0, high = 1;
+        for (int step = 0; step < 12; step++) {
+          double middle = 0.5 * (low + high);
+          if (motion(middle) <= worldPositionMotionLimit) low = middle;
+          else high = middle;
+        }
+        return low;
+      };
       for (int iteration = 0; iteration < R_BODY_POSITION_SLENDER_ITERS;
            iteration++) {
         bool corrected = false;
@@ -1535,12 +1819,35 @@
           if (inverseMass <= 1e-12) continue;
           double impulse =
             (deepest.depth + R_BODY_RASTER_CLEARANCE) / inverseMass;
-          A->px += deepest.nx * impulse * aInvM;
-          A->py += deepest.ny * impulse * aInvM;
-          A->angle += aCross * impulse * aInvI;
-          B->px -= deepest.nx * impulse * bInvM;
-          B->py -= deepest.ny * impulse * bInvM;
-          B->angle -= bCross * impulse * bInvI;
+          double dx = deepest.nx * impulse;
+          double dy = deepest.ny * impulse;
+          double aAngle = aCross * impulse * aInvI;
+          double bAngle = -bCross * impulse * bInvI;
+          double scale = std::fmin(
+            correctionScale(
+              pair.first, A, dx * aInvM, dy * aInvM, aAngle,
+              deepest.depth > 0.5),
+            correctionScale(
+              pair.second, B, -dx * bInvM, -dy * bInvM, bAngle,
+              deepest.depth > 0.5));
+          if (scale < 1) rigidWorldPositionLimitHits++;
+          if (scale <= 0) continue;
+          if (rigidTraceLayer == activeLayer && A->id == rigidTraceBodyId) {
+            rigidTraceProjectionMotion[0] += dx * aInvM * scale;
+            rigidTraceProjectionMotion[1] += dy * aInvM * scale;
+            rigidTraceProjectionMotion[2] += aAngle * scale;
+          }
+          if (rigidTraceLayer == activeLayer && B->id == rigidTraceBodyId) {
+            rigidTraceProjectionMotion[0] -= dx * bInvM * scale;
+            rigidTraceProjectionMotion[1] -= dy * bInvM * scale;
+            rigidTraceProjectionMotion[2] += bAngle * scale;
+          }
+          A->px += dx * aInvM * scale;
+          A->py += dy * aInvM * scale;
+          A->angle += aAngle * scale;
+          B->px -= dx * bInvM * scale;
+          B->py -= dy * bInvM * scale;
+          B->angle += bAngle * scale;
           rigidPositionCorrections++;
           corrected = true;
         }

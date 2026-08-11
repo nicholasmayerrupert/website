@@ -4,16 +4,8 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
-const residualTolerance = Number(
-  process.env.RIGID_RESIDUAL_TOLERANCE ?? 1e-4);
-const minIterations = Number(process.env.RIGID_MIN_ITERATIONS ?? 4);
-const createEngineWasm = (opts) => {
-  const engine = attachTestHooks(createEngineWasmRaw(opts));
-  engine._setRigidSolverOptions(
-    solverMode, residualTolerance, minIterations);
-  return engine;
-};
+const createEngineWasm = (opts) =>
+  attachTestHooks(createEngineWasmRaw(opts));
 const COLS = 240, ROWS = 180, STONE = 3;
 
 await initSandWasm();
@@ -118,7 +110,7 @@ for (let i = 0; i < e._bodyCount(); i++) finalAwake += e._bodyAwake(i) > 0;
 const warmRatio = activeWarmStarts / Math.max(1, activeContacts);
 
 check(`most bodies remain represented (${e._bodyCount()} >= 75)`, e._bodyCount() >= 75);
-check(`contact cache warm-started the active pile (${(warmRatio * 100).toFixed(1)}% >= 80%)`,
+check(`Box2D warm-start path covered the active pile (${(warmRatio * 100).toFixed(1)}% >= 80%)`,
   warmRatio >= 0.8);
 check(`pile slept by tick 850 (tick ${settledAt})`, settledAt >= 0 && settledAt <= 850);
 check(`no bodies remained awake (${finalAwake} == 0)`, finalAwake === 0);

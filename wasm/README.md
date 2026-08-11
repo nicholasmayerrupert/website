@@ -50,8 +50,9 @@ From the repository root:
 npm run build:sand
 ```
 
-The build checks the generated material and ABI headers, compiles the unity
-translation unit at `src/sand/cpp/sand.cpp`, and writes:
+The build checks the generated material and ABI headers, compiles the vendored
+Box2D 3.1.1 C17 sources, links them with the unity translation unit at
+`src/sand/cpp/sand.cpp`, and writes:
 
 - `src/sand/wasm/sandEngine.js` — Emscripten ES module loader.
 - `src/sand/wasm/sandEngine.wasm` — external SIMD-enabled engine binary.

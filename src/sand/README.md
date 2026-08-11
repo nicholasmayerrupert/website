@@ -234,9 +234,13 @@ more of the world.
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
 - `cpp/engine/step.inc`: world-step coordinator and cross-layer transfer.
-- `cpp/engine/rigid_impl.inc`: rigid-body operations; the hot solver is grouped
-  into prepare/contact/substep/finalize includes and liquid coupling into
-  domain/projection/solve/writeback includes without adding runtime boundaries.
+- `cpp/engine/rigid_box2d.inc`: persistent Box2D world, compound body shapes,
+  per-layer terrain colliders, cross-layer collision filters, actor proxies, and
+  rigid/fluid velocity exchange.
+- `cpp/engine/rigid_impl.inc`: body raster lifecycle, material displacement,
+  erosion, rebaking, and liquid pressure coupling. The pressure work is grouped
+  into domain/projection/solve/writeback includes without runtime boundaries.
+- `cpp/third_party/box2d/`: vendored Box2D 3.1.1 C17 source and license.
 - `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world
   structure stamping under `worldgen_generation.inc`; loaded-window persistence,
   prefetch, shifting, and resize live separately in `world_streaming.inc`.
@@ -413,8 +417,8 @@ wave while pacing rigid rubble through a per-tick body budget.
 
 Players, creatures, items, and projectiles are non-grid actors. Free rigid bodies
 are entities whose occupancy is stamped into the material grid.
-During the foreground rigid solve, each live player and creature contributes an
-exact AABB kinematic collider. Rigid bodies receive ordinary contact normals,
+During the foreground rigid solve, each live player and creature contributes a
+lightly padded AABB kinematic collider. Rigid bodies receive ordinary contact normals,
 friction, and torque from those colliders, while actor movement remains under
 the gameplay controller. Sustained downward contact against terrain applies
 cooldown-limited, nonlethal crush damage.

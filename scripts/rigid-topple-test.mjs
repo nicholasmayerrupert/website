@@ -4,12 +4,8 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 // Every engine in this file gets the test hooks (grounding/body/particle pokes).
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
-const createEngineWasm = (opts) => {
-  const engine = attachTestHooks(createEngineWasmRaw(opts));
-  engine._setRigidSolverOptions(solverMode);
-  return engine;
-};
+const createEngineWasm = (opts) =>
+  attachTestHooks(createEngineWasmRaw(opts));
 
 const COLS = 160, ROWS = 140, SEED = 0xC0FFEE;
 const STONE = 3, RIGID = 13;
@@ -28,32 +24,43 @@ const degAbs = (r) => Math.abs(norm(r) * 180 / Math.PI);
 // Drive the body and report when |angle| first crosses `thresh` deg, the max angle
 // reached, and the tick it fell asleep.
 function topple(e, idx, steps, thresh = 45) {
-  let t = 0, crossed = -1, maxA = 0, slept = -1;
+  let t = 0, crossed = -1, maxA = 0, slept = -1, final = null;
   for (let i = 0; i < steps; i++) {
     t += 16; e.step(t);
     const s = e._bodyState(idx); if (!s) break;
+    final = s;
     const a = degAbs(s.angle); if (a > maxA) maxA = a;
     if (a >= thresh && crossed < 0) crossed = i;
     if (!e._bodyAwake(idx) && slept < 0) slept = i;
   }
-  return { crossed, maxA, slept };
+  return { crossed, maxA, slept, final };
 }
 
 // ---------------------------------------------------------------------------
-// 1. Thin/tall drawn bars straddling a stone STEP edge: COM ends up past the
-//    step, so they must tip to the low side and do it promptly.
+// 1. Thin/tall drawn bars at a stone step edge. A one-cell bar is exactly
+//    torque-free and drops upright; the wider overhang tips to the low side.
 for (const w of [1, 3]) {
-  console.log(`thin drawn bar (w=${w}) topples off a stone step edge`);
+  console.log(`thin drawn bar (w=${w}) leaves a stone step edge`);
   const e = mk();
   const floorY = ROWS - 2;
   stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);
   stoneRect(e, 0, floorY - 3, COLS / 2, floorY - 1);     // raised left platform
   e.syncComponents();
   const idx = e._bodyCount();
-  e.spawnBody(vSlab((COLS / 2) - ((w / 2) | 0), floorY - 3 - 20, w, 20));
+  e.spawnBody(vSlab((COLS / 2) + 1 - ((w / 2) | 0),
+    floorY - 3 - 20, w, 20));
+  const start = e._bodyState(idx);
   const r = topple(e, idx, 400);
-  check(`bar w=${w} fully topples (max |angle| ${r.maxA.toFixed(0)} >= 80)`, r.maxA >= 80);
-  check(`bar w=${w} tips past 45 deg promptly (@tick ${r.crossed}, want >=0 && < 100)`, r.crossed >= 0 && r.crossed < 100);
+  if (w === 1) {
+    check(`one-cell bar clears the torque-free edge onto the lower floor `
+        + `(dy ${(r.final.py - start.py).toFixed(2)})`,
+      r.final.py - start.py > 2);
+    check(`one-cell edge drop remains restrained (max |angle| ${r.maxA.toFixed(1)} < 12)`,
+      r.maxA < 12);
+  } else {
+    check(`bar w=${w} fully topples (max |angle| ${r.maxA.toFixed(0)} >= 80)`, r.maxA >= 80);
+    check(`bar w=${w} tips past 45 deg promptly (@tick ${r.crossed}, want >=0 && < 100)`, r.crossed >= 0 && r.crossed < 100);
+  }
   e.destroy();
 }
 
@@ -103,7 +110,7 @@ for (const w of [3, 5]) {
     stoneRect(e, 0, floorY - 3, COLS / 2, floorY - 1);
     e.syncComponents();
     const idx = e._bodyCount();
-    e.spawnBody(vSlab((COLS / 2) - 1, floorY - 3 - 20, 3, 20));
+    e.spawnBody(vSlab(COLS / 2, floorY - 3 - 20, 3, 20));
     let t = 0; for (let i = 0; i < 200; i++) { t += 16; e.step(t); }
     const s = e._bodyState(idx); e.destroy(); return s;
   };

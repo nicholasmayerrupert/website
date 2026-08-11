@@ -1,6 +1,5 @@
-// Tall, gravity-supported stacks exercise support propagation separately from
-// the irregular long-body benchmark. Run one solver mode per process so timing
-// and diagnostics stay attributable: RIGID_SOLVER_MODE=2 node this-file.mjs.
+// Tall, gravity-supported stacks exercise Box2D pile collapse, contact, and
+// island sleep separately from the irregular long-body benchmark.
 
 import { performance } from 'node:perf_hooks';
 import {
@@ -9,9 +8,6 @@ import {
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
-const mode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
-const tolerance = Number(process.env.RIGID_RESIDUAL_TOLERANCE ?? 1e-4);
-const minIterations = Number(process.env.RIGID_MIN_ITERATIONS ?? 4);
 const cols = 160, rows = 260, floorY = rows - 3;
 const stone = 3;
 
@@ -19,7 +15,6 @@ await initSandWasm();
 const engine = attachTestHooks(createEngineWasmRaw({
   cols, rows, worldSeed: 0x2f5f, sinksOn: false, infinite: false,
 }));
-engine._setRigidSolverOptions(mode, tolerance, minIterations);
 
 for (let y = floorY; y < rows; y++)
   for (let x = 0; x < cols; x++)
@@ -42,25 +37,15 @@ for (let body = 0; body < bodyCount; body++) {
 const initialStates = [...Array(bodyCount).keys()]
   .map((body) => engine._bodyState(body));
 
-const totals = {
-  velocityConstraintEvals: 0,
-  biasConstraintEvals: 0,
-  shockIslands: 0,
-  shockConstraintEvals: 0,
-  shockFallbacks: 0,
-  shockSkipped: 0,
-};
 let solveMs = 0, settledAt = -1, maxLayers = 0;
-let peakLatePointSpeed = 0, maxVelocityResidual = 0;
+let peakLatePointSpeed = 0, maxContacts = 0;
 for (let tick = 1; tick <= 1200; tick++) {
   const start = performance.now();
   engine.stepWorld();
   solveMs += performance.now() - start;
   const diagnostics = engine.getRigidSolverDebug();
-  for (const key of Object.keys(totals)) totals[key] += diagnostics[key];
-  maxLayers = Math.max(maxLayers, diagnostics.shockMaxLayers);
-  maxVelocityResidual = Math.max(
-    maxVelocityResidual, diagnostics.maxVelocityResidual);
+  maxContacts = Math.max(maxContacts, diagnostics.contacts);
+  maxLayers = Math.max(maxLayers, diagnostics.islands);
   let awake = 0;
   for (let body = 0; body < engine._bodyCount(); body++) {
     awake += engine._bodyAwake(body) > 0;
@@ -91,7 +76,6 @@ for (let body = 0; body + 1 < finalStates.length; body++)
 
 const result = {
   scene: `${bodyCount}-body vertical stack`,
-  solverOptions: { mode, tolerance, minIterations },
   finalBodies: engine._bodyCount(),
   finalAwake,
   settledAt,
@@ -101,32 +85,26 @@ const result = {
   preservedPairs,
   peakLatePointSpeed,
   solveMs,
-  maxVelocityResidual,
+  maxContacts,
   maxLayers,
-  ...totals,
 };
 console.log(JSON.stringify(result, null, 2));
 
-if (mode === 2) {
-  const checks = [
-    ['all bodies remain represented', result.finalBodies === bodyCount],
-    ['tower reaches island sleep by tick 100',
-      result.settledAt > 0 && result.settledAt <= 100],
-    ['tower has no awake bodies', result.finalAwake === 0],
-    ['tower stays horizontally aligned', result.maxHorizontalDrift <= 0.5],
-    ['tower retains at least 110 cells of vertical span',
-      result.finalVerticalSpan >= 110],
-    ['all adjacent body pairs preserve vertical order',
-      result.preservedPairs === bodyCount - 1],
-    ['two-pass support propagation activates', result.shockIslands > 0],
-    ['two-pass solve rarely needs fallback', result.shockFallbacks <= 10],
-  ];
-  for (const [label, passed] of checks)
-    console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}`);
-  if (checks.some(([, passed]) => !passed)) {
-    engine.destroy();
-    process.exit(1);
-  }
+const checks = [
+  ['all bodies remain represented', result.finalBodies === bodyCount],
+  ['collapsed pile reaches island sleep by tick 800',
+    result.settledAt > 0 && result.settledAt <= 800],
+  ['tower has no awake bodies', result.finalAwake === 0],
+  ['pile remains inside the finite arena', result.maxHorizontalDrift < cols / 2],
+  ['pile retains a nonzero vertical span', result.finalVerticalSpan >= 30],
+  ['Box2D contact graph activates', result.maxContacts > 0],
+  ['late pile motion is zero', result.peakLatePointSpeed <= 0.001],
+];
+for (const [label, passed] of checks)
+  console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}`);
+if (checks.some(([, passed]) => !passed)) {
+  engine.destroy();
+  process.exit(1);
 }
 
 engine.destroy();

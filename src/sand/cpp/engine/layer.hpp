@@ -153,6 +153,7 @@ struct Layer {
   // free rigid bodies + ownership
   std::vector<Body*> bodies; int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;
+  uint64_t rigidTerrainRevision = 1;
   // Kinematic halves of cross-layer bodies are stamped into this layer but are
   // simulated by their foreground leader.
   std::unordered_set<int> passiveBodyIds;
@@ -206,6 +207,7 @@ struct Layer {
   }
 
   void alloc(int cols, int rows, int chunkCols, int chunkRows, EngineStorageRole role = ESR_FULL) {
+    if (++rigidTerrainRevision == 0) rigidTerrainRevision = 1;
     storageRole = role;
     size_t n = (size_t)cols * rows;
     gridA.assign(n, EMPTY);

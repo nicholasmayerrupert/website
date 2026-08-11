@@ -145,6 +145,7 @@
   // terrain or placed material). An empty/untouched background does not interact,
   // so a pure single-layer scene (e.g. the headless tests) is byte-identical.
   bool bgEnabled = false;
+  bool writingBodyRaster = false;
   // When bgEnabled, step() runs ONE joint grounding flood over both layers up
   // front (computeGroundedBoth) so solids support solids across layers; this flag
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
@@ -652,10 +653,6 @@
       for (Body* body : lay.bodies) {
         std::vector<uint8_t> coverage(body->occ.size(), 0);
         int coveredCells = 0;
-        auto filled = [&](int x, int y) {
-          return x >= 0 && x < body->w && y >= 0 && y < body->h
-            && body->occ[y * body->w + x];
-        };
         for (const BodyCollisionRect& rect : body->collisionRects) {
           if (rect.x0 < 0 || rect.y0 < 0
               || rect.x1 > body->w || rect.y1 > body->h
@@ -670,38 +667,6 @@
                 failBody("collision rectangles overlap", body, local, coverage[local]);
               coveredCells++;
             }
-          for (int face = 0; face < 4; face++) {
-            int start = rect.spanStart[face];
-            int count = rect.spanCount[face];
-            if (start < 0 || count < 0
-                || start + count > (int)body->collisionSpans.size())
-              failBody("collision face span range out of bounds", body, -1, face);
-            int q0 = face < 2 ? rect.y0 : rect.x0;
-            int q1 = face < 2 ? rect.y1 : rect.x1;
-            double offset = face < 2 ? body->offsetY : body->offsetX;
-            for (int q = q0; q < q1; q++) {
-              bool exposed = face == BCF_LEFT ? !filled(rect.x0 - 1, q)
-                : face == BCF_RIGHT ? !filled(rect.x1, q)
-                : face == BCF_UP ? !filled(q, rect.y0 - 1)
-                : !filled(q, rect.y1);
-              double tangent = offset + q;
-              int spanHits = 0;
-              for (int si = start; si < start + count; si++) {
-                const BodyCollisionSpan& span = body->collisionSpans[si];
-                if (!(span.lo < span.hi))
-                  failBody("collision face has empty span", body, -1, si);
-                if (tangent > span.lo && tangent < span.hi) spanHits++;
-              }
-              if (spanHits != (exposed ? 1 : 0)) {
-                int localX = face == BCF_LEFT ? rect.x0
-                  : face == BCF_RIGHT ? rect.x1 - 1 : q;
-                int localY = face == BCF_UP ? rect.y0
-                  : face == BCF_DOWN ? rect.y1 - 1 : q;
-                failBody("collision face exposure mismatch", body,
-                         localY * body->w + localX, face);
-              }
-            }
-          }
         }
         for (int local = 0; local < (int)body->occ.size(); local++)
           if ((body->occ[local] != 0) != (coverage[local] == 1))
@@ -710,10 +675,6 @@
         if (coveredCells != body->nPts)
           failBody("collision rectangle area differs from nPts",
                    body, -1, coveredCells);
-        if (body->boundarySamples.size()
-              != body->boundarySampleRadii.size() * 2)
-          failBody("boundary sample radius count mismatch",
-                   body, -1, (int)body->boundarySampleRadii.size());
         if (body->rasterFootprintValid
             && body->rasterGeometryRevision == body->geometryRevision) {
           for (const BodyRasterCell& cell : body->rasterFootprint) {
@@ -990,6 +951,10 @@
     if (L->fallSpeed) L->fallSpeed[k] = 0;
     if (L->liquidVel) L->liquidVel[k] = 0;
     uint8_t old = L->grid[k];
+    if (!writingBodyRaster && L->bodyOwner[k] < 0
+        && isRigidMaterialClass(old) != isRigidMaterialClass(m)
+        && ++L->rigidTerrainRevision == 0)
+      L->rigidTerrainRevision = 1;
     if (m == NEUTRONIUM) L->forceSourcePresent = true;
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
       forces.noteNeutroniumWrite(L, k, old, m);
@@ -998,6 +963,13 @@
     if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;
     L->grid[k] = m;
     markCellIndex(k);
+  }
+  inline void writeBodyGridIndex(int k, uint8_t material, int bodyId) {
+    bool previous = writingBodyRaster;
+    writingBodyRaster = true;
+    writeGridIndex(k, material);
+    L->bodyOwner[k] = bodyId;
+    writingBodyRaster = previous;
   }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }

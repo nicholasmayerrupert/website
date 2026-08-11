@@ -551,13 +551,15 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
 }
 EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_solver_options(
     Engine* e, int mode, double residualTolerance, int minIterations) {
-  e->rigid.solverMode = mode;
-  e->rigid.solverResidualTolerance = std::fmax(0.0, residualTolerance);
-  e->rigid.solverMinIterations = imax(1, minIterations);
+  (void)e;
+  (void)mode;
+  (void)residualTolerance;
+  (void)minIterations;
 }
 EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_force_full_solve_bodies(
     Engine* e, int bodyCount) {
-  e->rigid.forceFullSolveBodies = imax(1, bodyCount);
+  (void)e;
+  (void)bodyCount;
 }
 // Synthetic spill probe for outlet-locality regression tests. The rectangle is
 // stamped as one body and `source` is treated as loose material displaced from

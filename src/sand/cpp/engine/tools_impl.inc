@@ -348,7 +348,8 @@ void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructu
     if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
   } else {
     if (E.isComponentMaterial(m)) erasedStructural.push_back(k);
-    E.L->grid[k] = EMPTY;
+    E.writeGridIndex(k, EMPTY);
+    E.L->sleepingBodySupportDirty = true;
   }
 }
 // Component-split epilogue shared by every destroy path (eraser, stroke

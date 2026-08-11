@@ -217,32 +217,8 @@ struct StoredCompFragment {
   std::vector<uint16_t> cellOffsets;
 };
 
-enum BodyCollisionFace : uint8_t {
-  BCF_LEFT = 0,
-  BCF_RIGHT = 1,
-  BCF_UP = 2,
-  BCF_DOWN = 3,
-};
-
-struct BodyCollisionSpan {
-  float lo = 0, hi = 0;
-};
-
 struct BodyCollisionRect {
   int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-  std::array<int, 4> spanStart{{0, 0, 0, 0}};
-  std::array<int, 4> spanCount{{0, 0, 0, 0}};
-};
-
-struct BodyCollisionNode {
-  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-  int left = -1, right = -1, child = -1;
-};
-
-struct BodyBoundarySampleBlock {
-  int first = 0, count = 0;
-  float minX = 0, minY = 0, maxX = 0, maxY = 0;
-  double maxRadius = 0;
 };
 
 struct BodyRasterCell {
@@ -275,44 +251,18 @@ struct Body {
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
   double vx = 0, vy = 0, omega = 0;
-  // Actor collision proxies keep a fixed solver pose while exposing the
-  // actor's velocity to contact friction and normal impulses.
-  bool kinematic = false;
-  double kinematicVx = 0, kinematicVy = 0, kinematicOmega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
-  // A cold sleep fallback tracks the world-space motion of the centre and two
-  // shape-scale probes. Contact islands that stay inside a small pose envelope
-  // can settle even when discrete contact changes keep their instantaneous
-  // solver velocities above the ordinary sleep thresholds.
-  std::array<double, 6> restProbePoints{};
-  uint16_t restProbeTicks = 0;
   std::vector<BodySleepSupport> sleepSupports;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
-  // Local-space collision samples (interleaved lx,ly): the cell centre and
-  // midpoint of every exposed face. Filled, large, and very slender masks also
-  // sample exposed convex corners. The body shape is the union of 1x1 occupied
-  // squares, so cell centres alone miss thin-shape edges; samples are cached and
-  // rebuilt only when occupancy changes (computeDerived).
-  std::vector<float> boundarySamples;
-  std::vector<double> boundarySampleRadii;
-  // Spatially coherent sample ranges let terrain bins reject whole boundary
-  // regions before the exact per-sample sweep.
-  std::vector<BodyBoundarySampleBlock> boundarySampleBlocks;
   std::vector<uint8_t> erosionBoundaryMask;
-  // Exact non-overlapping rectangle cover of `occ`. Each face indexes its
-  // exposed sub-spans so contacts cannot originate from decomposition seams.
+  // Exact non-overlapping rectangle cover of `occ` used as Box2D compound
+  // geometry.
   std::vector<BodyCollisionRect> collisionRects;
-  std::vector<BodyCollisionSpan> collisionSpans;
-  // Local-space hierarchy over the exact rectangle cover. Broad-phase traversal
-  // transforms only branches near another body instead of every rectangle in a
-  // large, irregular mask on every substep.
-  std::vector<BodyCollisionNode> collisionTree;
-  int collisionTreeRoot = -1;
   uint32_t geometryRevision = 0;
   // Exact inverse-raster result for one pose. Multiple systems query an
   // unchanged pose in the same tick; the pose/revision/grid key prevents reuse
@@ -326,57 +276,20 @@ struct Body {
   int rasterCols = 0, rasterRows = 0;
   bool rasterFootprintValid = false;
   bool erodible = false;
-  bool tightSlenderBounds = false; // derived span-manifold eligibility
   uint8_t bakeRasterStableTicks = 0;
   uint8_t bakeSupportedPoseTicks = 0;
   bool bakeBlockedByBody = false;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;
-  double sweepMargin = 0;
-  double aabbX0 = 0, aabbY0 = 0, aabbX1 = 0, aabbY1 = 0;
   double pvx = 0, pvy = 0, pw = 0;
   bool spatialForceApplied = false;
-  // omega entering the substep's contact solve (before the solver converts the
-  // body's fall into rotation). Used to tell a genuine topple — where the solver
-  // feeds angular velocity that grows in one direction each substep — apart from
-  // rest jitter, so contact damping settles the latter without crushing the former.
-  double omegaPre = 0;
   bool hadContact = false;
   bool rasterMayOverlapSolid = false;
-  // Dense wet-island cadence carries impact/terrain risk across ticks so a
-  // newly turbulent or landing island stays on normal microsteps briefly.
-  double recentImpactSpeed = 0;
-  uint8_t denseMicrostepTicks = 0;
   uint8_t bakeRasterSampleTag = UINT8_MAX;
   uint32_t bakeRasterSignature = 0;
-  double maxDepth = 0; int idx = 0;
+  double maxDepth = 0;
 };
-struct Contact {
-  Body* a; Body* b;
-  double rax, ray, rbx, rby, nx, ny, depth;
-  int childA, childB, featureA, featureB;
-  uint8_t normalBucket;
-  // Cross-layer contacts exchange velocity impulses immediately even though the
-  // peer body integrates in a different layer pass. Positional bias remains on
-  // the body in the active solver so neither layer's stamped raster becomes
-  // stale before its normal moveBodies pass.
-  bool bIntegrated;
-  // Separating speed captured from the contact's initial impact. Keeping this
-  // target fixed lets sequential impulses preserve a small rebound instead of
-  // damping it back to zero over later solver iterations.
-  double impactSpeed, targetVn, dt;
-  double staticFriction, dynamicFriction;
-  // Inverse effective masses are fixed for this contact during one substep.
-  // Computing them once turns repeated inertia expressions and divisions into
-  // one preparation pass plus multiplications in the iterative solver.
-  double normalMass, tangentMass, biasMass;
-  double accJn, accJt, accBias;
-  int blockMate;
-  bool persisted;
-  double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
-};
-
 // ---- Dropped items + cosmetic particles (items.inc) ----
 // A lightweight NON-GRID entity. IT_ITEM = a dropped material the player can pick
 // up; IT_PARTICLE = a short-lived fleck of mining debris (no pickup). Items fall
@@ -724,21 +637,14 @@ struct Player {
 
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
-static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
-static const int    R_REST_PROBE_TICKS = 180;
+static const int    R_SLEEP_TICKS = 20;
 static const int    R_BAKE_RASTER_TICKS = 20;
-static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
-static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
-static const int    R_SOLVER_HUGE_BODY_MIN_ITERS = 6;
 static const double R_SOLVER_HUGE_BODY_RADIUS = 96.0;
-static const int    R_CROSS_LAYER_STRUCTURE_MIN_BODIES = 4;
-static const int    R_CROSS_LAYER_STRUCTURE_SUBSTEPS = 4;
 static const int    R_STRUCTURE_RASTER_MIN_BODIES = 2;
 static const int    R_STRUCTURE_RASTER_ALIAS_CELLS = 1;
 static const int    R_QUIET_TERRAIN_PROBE_MAX_CELLS = 64;
-static const int    R_FORCE_FULL_SOLVE_BODIES = 12;
 static const int    R_BODY_RASTER_BATCH_THRESHOLD = 8192;
-static const int    R_FLUID_SLEEP_TICKS = 80;
+static const int    R_FLUID_SLEEP_TICKS = 60;
 static const int    R_FLUID_DOMAIN_RADIUS = 4;
 static const int    R_FLUID_BATCH_DOMAIN_RADIUS = 3;
 static const int    R_FLUID_DENSE_DOMAIN_RADIUS = 2;
@@ -754,38 +660,11 @@ static const int    R_FLUID_DENSE_CORRECTOR_CADENCE = 6;
 static const int    R_FLUID_CORRECTOR_BATCH_BODIES = 16;
 static const int    R_FLUID_DENSE_BATCH_BODIES = 24;
 static const int    R_DENSE_RIGID_CARGO_BODIES = 64;
-static const double R_DENSE_COHERENT_RELATIVE_SPEED = 1.25;
-static const double R_DENSE_COHERENT_IMPACT_SPEED = 0.5;
-static const int    R_DENSE_MICROSTEP_HYSTERESIS = 3;
-static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
-// Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
-// stability + earlier contact), and a sample's per-substep relative path is
-// marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
-static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
-static const double R_BODY_RASTER_CLEARANCE = 0.02;
-static const int    R_BODY_POSITION_ITERS = 6;
-static const int    R_BODY_POSITION_SLENDER_ITERS = 8;
-static const double R_SLENDER_PARALLEL_COS = 0.75;
+// Compound shapes carry a small skin so Box2D contact remains clear of the
+// integer material raster at rest.
+static const double R_CONTACT_SKIN = 0.1;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
-static const int    R_IMPACT_SOUND_SEPARATION_TICKS = 12;
-static const double R_FLUID_IMPACT_SOUND_MIN_SPEED = 1.5;
-static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
-static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
-static const double R_STATIC_FRICTION_SPEED = 0.025;
-static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
-static const int    R_CONTACT_CACHE_MISSED_SUBSTEPS = 2;
-static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;
-static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
-static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
-static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;
-static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
-static const double R_STRUCTURE_WARM_START_FACTOR = 1.0;
-static const double R_STRUCTURE_WARM_START_MAX_IMPACT = 0.1;
-static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
-static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
-static const double R_REST_PROBE_RADIUS = 2.0;
-static const double R_REST_PROBE_MAX_POINT_SPEED = 0.75;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_WAKE_LIN = 0.08;
 static const double R_FLUID_REST_DAMP = 0.98;
@@ -795,4 +674,4 @@ static const double R_GRANULAR_BEARING_DEPTH = 7.0;
 static const double R_GRANULAR_DRAG = 0.12, R_GRANULAR_ANG_DRAG = 0.1;
 static const double R_GRANULAR_REST_BAND = 0.08, R_GRANULAR_REST_DAMP = 0.45;
 static const double R_GRANULAR_ZERO_VY = 0.02;
-static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.5;
+static const double R_REST_DEPTH = 1.5;

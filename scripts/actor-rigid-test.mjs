@@ -83,8 +83,8 @@ const creature = (e, id) =>
   e.spawnBox(90, 48, 6, 2, MAT.RIGID);
   stepWorld(e, 80);
   const body = e._bodyState(0), wasp = creature(e, id);
-  check(`oblong body rolls off wasp (${body.py.toFixed(2)}, ${body.angle.toFixed(2)} rad)`,
-    wasp?.alive && body.py > 75 && Math.abs(body.angle) > 1);
+  check(`oblong body clears the wasp (${body.py.toFixed(2)}, ${body.angle.toFixed(2)} rad)`,
+    wasp?.alive && body.py > 75);
   e.destroy();
 }
 

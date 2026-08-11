@@ -184,67 +184,37 @@ component registration, and restoration. Browser presentation exposes
   keeps its convergence and direction updates SIMD-vectorized, and the repeated
   matrix pass traverses compact dynamic faces. Extended ice projections resolve
   once more when clamping tensile pressure changes the active constraints.
-- Body/body broadphase retains its sweep-and-prune order across ticks and repairs
-  it with insertion sort, then restores surviving pairs to deterministic
-  body-index order before generating contacts.
-- Each body caches an exact non-overlapping rectangle cover of its occupied
-  pixels. Current and predicted child transforms reuse one body pose for all
-  candidate pairs at the same substep time. Highly compound pairs traverse
-  balanced collision trees; child frames and swept node bounds are generated
-  lazily once per body pose and reused by every body pair in that substep.
-  Smaller compounds use direct endpoint-AABB rejection before oriented-box SAT.
-  The surviving pairs return to child-index order, preserving deterministic
-  contact generation. Manifolds clip both incident and reference edges against
-  original-mask exposed spans, so decomposition seams cannot act as collision
-  faces. Child and face-span ids participate in the warm-start key. A
-  short-lived coherent child separating axis prevents a far-side feature from
-  reversing a thin contact while the pair crosses a raster boundary.
+- One persistent Box2D world owns rigid broadphase, narrowphase, continuous
+  collision, contact manifolds, restitution, friction, islands, warm starting,
+  and sleep. Body transforms and velocities stay resident between sand ticks.
+- Each body exposes its exact non-overlapping occupied-pixel rectangle cover as
+  a Box2D compound. Geometry revision, layer, or cross-layer role changes
+  recreate only that body. Mass and inertia come from the material-weighted
+  cell mask rather than the rectangle decomposition.
+- Static terrain is an exact row-run rectangle cover per layer. A layer-local
+  terrain revision rebuilds its collider only after static rigid occupancy
+  changes. Foreground and background filters isolate ordinary bodies, while a
+  cross-layer leader collides with both terrain sets and keeps its passive
+  follower on the same pose.
+- Fast translating and rotating bodies use Box2D continuous collision. Ordinary
+  compounds use dynamic bullet sweeps; structure-scale compounds use continuous
+  terrain collision plus the shared substeps. Dynamic substep count depends on
+  active body count, while Box2D's persistent contact graph preserves impulses
+  across ticks. Structure-scale compounds increase native Box2D damping only
+  while a solid contact remains active so deep building-size piles converge to
+  Box2D sleep without changing free flight.
 - Rigid erosion tests only cached raster cells whose local eight-neighbourhood
   reaches the body's boundary, and bodies with no erodible material skip the
   pass entirely. Connectivity and ownership repair use dense generation stamps.
   Damage to joint foreground/background bodies batches geometry reconstruction
   until all erasures for the tick are known.
-- A conservative tick-level candidate graph gives disconnected rigid islands
-  independent substep cadences. Contact islands receive size-based solver
-  budgets, bottom-up stack ordering, and coupled two-point solves for long
-  support faces. Single-layer spatial-force islands with at least twelve bodies
-  run velocity constraints to a no-op or the iteration cap; the resulting stable
-  network has fewer repeated contacts and raster ownership conflicts under
-  sustained force. Cross-layer joint islands retain residual convergence so
-  their two rasters stay aligned.
-- Rigid contact manifolds reject deep-overlap normals that oppose the pair's
-  separating half-space. Stable local anchors persist normal/friction impulses
-  across substeps and ticks, including short decaying persistence for large
-  raster contacts, so dense piles converge from the previous solution and enter
-  island sleep instead of cold-solving jitter indefinitely. Consecutive manifold
-  points with the same persistent feature reuse one contact-cache lookup.
-- Each contact stores its substep-constant inverse normal, tangent, and
-  positional effective masses. Solver iterations reuse them instead of
-  rebuilding and dividing by the same mass and inertia expression.
-- Dense rigid scenes and bodies with at least 4,096 occupied cells build a
-  conservative 8x8 terrain/material occupancy map. Swept terrain samples whose
-  complete travel bounds miss every rigid bin are rejected before grid contact,
-  and bodies whose transformed bounds miss every powder bin skip granular edge
-  sampling. Small scenes retain direct probes so map construction cannot become
-  their fixed cost.
-- Large rotating bodies and long beams use exact angular sample trajectories.
-  Compact bodies use tangent sweeps to keep the common debris path inexpensive;
-  long and filled masks still receive convex-corner samples. Immutable sample
-  radii and pair/body speed terms are cached outside the sample loops.
-  Conservative swept oriented bounds test current and end axes with complete
-  translation and rotational point-reach limits before the body/body raster
-  fallback. Terrain rejection scans horizontal spans of an oriented bound
-  expanded by the complete substep reach. Both paths reject only when the exact
-  raster sweep cannot find a hit. Body pairs that are both at least 4:1 slender
-  with `maxR >= 24` also receive a constant-cost oriented-rectangle reference
-  axis after raster contact exists. Near-parallel pairs add two span constraints
-  with raster-measured depth only when both masks tightly fit their bounds; thin
-  masks must cover every major-axis row or column, while other masks must fill
-  at least 75% of the bounds. Sparse broad bounds and crossed pairs keep their
-  local raster anchors. Refined penetration and tighter slop remain confined to
-  that path. A long/small pair only substitutes the long body's minor axis for
-  center-to-center manifold filtering, and a large participant keeps the pair's
-  missed contact anchors alive regardless of pair order.
+- Players and creatures enter the same Box2D solve as temporary kinematic
+  bodies. Contact impulse drives bounded crush damage; gameplay controllers keep
+  ownership of actor motion.
+- Box2D poses are reconciled with the integer material raster before stamping.
+  This bridge resolves bounded cell-alias conflicts without replacing continuous
+  collision response, then material displacement and component-aware rebaking
+  proceed through the ordinary grid lifecycle.
 - Inverse rasterization is cached by exact body pose, geometry revision, and
   loaded-grid dimensions. Fluid coupling, blocked-footprint probes, actor
   overlap, support checks, and final stamping reuse that footprint whenever the

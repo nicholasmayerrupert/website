@@ -1,50 +1,17 @@
 // Free rigid bodies and component-to-body conversion.
 //
 // Components are grid-anchored while bodies are moving entities. This file owns
-// body geometry, integration, collision sampling, and stamping settled bodies
-// back into component-aware grid state.
+// body geometry and stamping settled bodies back into component-aware grid
+// state. Box2D owns continuous integration and contact response.
 static bool rigidLargeSlenderBody(const Body* body) {
   int shortSide = imax(1, imin(body->w, body->h));
   return imax(body->w, body->h) >= shortSide * 4 && body->maxR >= 24;
 }
 
-static bool rigidTightSlenderBounds(const Body* body) {
-  return body->tightSlenderBounds;
-}
-
-static bool rigidPreciseContact(const Contact& contact) {
-  return contact.a->jointRole == 1
-    || (contact.b && (!contact.bIntegrated
-      || contact.b->jointRole == 1
-      || (rigidLargeSlenderBody(contact.a)
-        && rigidLargeSlenderBody(contact.b))));
-}
-
-static double rigidContactSlop(const Contact& contact) {
-  if (!contact.b && contact.a->jointRole == 1) {
-    double pointSpeed = std::hypot(contact.a->vx, contact.a->vy)
-      + std::fabs(contact.a->omega) * contact.a->maxR;
-    if (pointSpeed < R_SETTLE_LIN) return R_PEN_SLOP;
-  }
-  return rigidPreciseContact(contact) ? R_BODY_PEN_SLOP : R_PEN_SLOP;
-}
-
-static double rigidContactVx(const Body* body) {
-  return body->kinematic ? body->kinematicVx : body->vx;
-}
-
-static double rigidContactVy(const Body* body) {
-  return body->kinematic ? body->kinematicVy : body->vy;
-}
-
-static double rigidContactOmega(const Body* body) {
-  return body->kinematic ? body->kinematicOmega : body->omega;
-}
-
 bool RigidBodySystem::bodyFullyInsideLoadedWindow(Body* body) const {
   if (!E.L->infinite) return true;
   double cs = std::cos(body->angle), sn = std::sin(body->angle);
-  constexpr double edgeTolerance = 1e-7;
+  constexpr double edgeTolerance = 1e-4;
   for (const BodyCollisionRect& rect : body->collisionRects) {
     double lx0 = body->offsetX + rect.x0 - 0.5;
     double lx1 = body->offsetX + rect.x1 - 0.5;
@@ -64,15 +31,7 @@ bool RigidBodySystem::bodyFullyInsideLoadedWindow(Body* body) const {
 }
 
 void RigidBodySystem::clearContactCaches() {
-  for (ContactCache& cache : contactCaches) cache.clear();
-  for (auto& contacts : impactContactTicks) contacts.clear();
-  for (auto& axes : pairAxes) axes.clear();
-  shockAttemptCache.clear();
-  for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
-}
-void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
-  double lx = b->points[i * 2], ly = b->points[i * 2 + 1];
-  ox = b->px + lx * cs - ly * sn; oy = b->py + lx * sn + ly * cs;
+  resetBox2D();
 }
 uint8_t RigidBodySystem::bodyMaterialAt(Body* b, int localIndex) {
   if (localIndex < 0 || localIndex >= (int)b->occ.size() || !b->occ[localIndex]) return EMPTY;
@@ -123,20 +82,8 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
   b->offsetX -= dx; b->offsetY -= dy;
   b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear();
-  b->boundarySamples.clear(); b->boundarySampleRadii.clear();
   int pi = 0; double inertia = 0, maxR2 = 0;
-  int shortSide = imax(1, imin(b->w, b->h));
-  int longSide = imax(b->w, b->h);
-  bool sampleCorners = nPts == b->w * b->h
-    || longSide >= 24 || longSide >= shortSide * 8;
   auto filled = [&](int ii, int jj) { return ii >= 0 && ii < b->w && jj >= 0 && jj < b->h && b->occ[jj * b->w + ii]; };
-  auto addSample = [&](double sx, double sy) {
-    float sampleX = (float)sx, sampleY = (float)sy;
-    b->boundarySamples.push_back(sampleX);
-    b->boundarySamples.push_back(sampleY);
-    b->boundarySampleRadii.push_back(std::hypot(
-      (double)sampleX, (double)sampleY));
-  };
   for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
     if (!b->occ[j * b->w + i]) continue;
     double lx = b->offsetX + i, ly = b->offsetY + j;
@@ -155,69 +102,12 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     inertia += cellMass * (r2 + 1.0 / 6.0);
     if (r2 > maxR2) maxR2 = r2;
     bool exL = !filled(i - 1, j), exR = !filled(i + 1, j), exU = !filled(i, j - 1), exD = !filled(i, j + 1);
-    if (exL || exR || exU || exD) {
-      b->boundaryPts.push_back(pi);
-      addSample(lx, ly);                                   // cell centre
-      if (exR) addSample(lx + 0.5, ly);                    // exposed face midpoints
-      if (exL) addSample(lx - 0.5, ly);
-      if (exD) addSample(lx, ly + 0.5);
-      if (exU) addSample(lx, ly - 0.5);
-      if (sampleCorners) {
-        if (exL && exU) addSample(lx - 0.5, ly - 0.5);
-        if (exR && exU) addSample(lx + 0.5, ly - 0.5);
-        if (exL && exD) addSample(lx - 0.5, ly + 0.5);
-        if (exR && exD) addSample(lx + 0.5, ly + 0.5);
-      }
-    }
+    if (exL || exR || exU || exD) b->boundaryPts.push_back(pi);
     pi++;
-  }
-  b->boundarySampleBlocks.clear();
-  static constexpr int BOUNDARY_SAMPLES_PER_BLOCK = 32;
-  int sampleCount = (int)b->boundarySampleRadii.size();
-  for (int first = 0; first < sampleCount;
-       first += BOUNDARY_SAMPLES_PER_BLOCK) {
-    BodyBoundarySampleBlock block;
-    block.first = first;
-    block.count = imin(BOUNDARY_SAMPLES_PER_BLOCK, sampleCount - first);
-    block.minX = block.minY = std::numeric_limits<float>::max();
-    block.maxX = block.maxY = std::numeric_limits<float>::lowest();
-    for (int sample = first; sample < first + block.count; sample++) {
-      float x = b->boundarySamples[sample * 2];
-      float y = b->boundarySamples[sample * 2 + 1];
-      block.minX = std::fmin(block.minX, x);
-      block.minY = std::fmin(block.minY, y);
-      block.maxX = std::fmax(block.maxX, x);
-      block.maxY = std::fmax(block.maxY, y);
-      block.maxRadius = std::fmax(
-        block.maxRadius, b->boundarySampleRadii[sample]);
-    }
-    b->boundarySampleBlocks.push_back(block);
   }
   double mass = b->cellMaterials.empty() && !b->jointRole ? b->density * nPts : totalMass;
   if (!b->cellMaterials.empty() || b->jointRole) b->density = mass / nPts;
-  bool coversMajorAxis = true;
-  if (shortSide <= 4) {
-    if (b->w >= b->h) {
-      for (int i = 0; i < b->w; i++) {
-        bool covered = false;
-        for (int j = 0; j < b->h; j++)
-          if (filled(i, j)) { covered = true; break; }
-        if (!covered) { coversMajorAxis = false; break; }
-      }
-    } else {
-      for (int j = 0; j < b->h; j++) {
-        bool covered = false;
-        for (int i = 0; i < b->w; i++)
-          if (filled(i, j)) { covered = true; break; }
-        if (!covered) { coversMajorAxis = false; break; }
-      }
-    }
-  }
-  b->tightSlenderBounds =
-    (int64_t)nPts * 4 >= (int64_t)b->w * b->h * 3
-    || (shortSide <= 4 && coversMajorAxis);
   b->collisionRects.clear();
-  b->collisionSpans.clear();
   struct CollisionRun {
     int x0, x1, child;
   };
@@ -255,95 +145,6 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     }
     previousRuns.swap(currentRuns);
   }
-  auto addFaceSpans = [&](BodyCollisionRect& rect, BodyCollisionFace face) {
-    rect.spanStart[face] = (int)b->collisionSpans.size();
-    int q0 = (face == BCF_LEFT || face == BCF_RIGHT) ? rect.y0 : rect.x0;
-    int q1 = (face == BCF_LEFT || face == BCF_RIGHT) ? rect.y1 : rect.x1;
-    int runStart = -1;
-    auto exposed = [&](int q) {
-      if (face == BCF_LEFT) return !filled(rect.x0 - 1, q);
-      if (face == BCF_RIGHT) return !filled(rect.x1, q);
-      if (face == BCF_UP) return !filled(q, rect.y0 - 1);
-      return !filled(q, rect.y1);
-    };
-    auto finishSpan = [&](int end) {
-      if (runStart < 0) return;
-      double offset = (face == BCF_LEFT || face == BCF_RIGHT)
-        ? b->offsetY : b->offsetX;
-      b->collisionSpans.push_back({
-        (float)(offset + runStart - 0.5),
-        (float)(offset + end - 0.5),
-      });
-      runStart = -1;
-    };
-    for (int q = q0; q < q1; q++) {
-      if (exposed(q)) {
-        if (runStart < 0) runStart = q;
-      } else {
-        finishSpan(q);
-      }
-    }
-    finishSpan(q1);
-    rect.spanCount[face] =
-      (int)b->collisionSpans.size() - rect.spanStart[face];
-  };
-  for (BodyCollisionRect& rect : b->collisionRects) {
-    addFaceSpans(rect, BCF_LEFT);
-    addFaceSpans(rect, BCF_RIGHT);
-    addFaceSpans(rect, BCF_UP);
-    addFaceSpans(rect, BCF_DOWN);
-  }
-  b->collisionTree.clear();
-  b->collisionTreeRoot = -1;
-  std::vector<int> collisionOrder(b->collisionRects.size());
-  for (int child = 0; child < (int)collisionOrder.size(); child++)
-    collisionOrder[child] = child;
-  auto buildCollisionTree = [&](auto&& self, int begin, int end) -> int {
-    BodyCollisionNode node;
-    node.x0 = node.y0 = INT_MAX;
-    node.x1 = node.y1 = INT_MIN;
-    int minCenterX = INT_MAX, maxCenterX = INT_MIN;
-    int minCenterY = INT_MAX, maxCenterY = INT_MIN;
-    for (int position = begin; position < end; position++) {
-      const BodyCollisionRect& rect =
-        b->collisionRects[collisionOrder[position]];
-      node.x0 = imin(node.x0, rect.x0);
-      node.y0 = imin(node.y0, rect.y0);
-      node.x1 = imax(node.x1, rect.x1);
-      node.y1 = imax(node.y1, rect.y1);
-      int centerX = rect.x0 + rect.x1;
-      int centerY = rect.y0 + rect.y1;
-      minCenterX = imin(minCenterX, centerX);
-      maxCenterX = imax(maxCenterX, centerX);
-      minCenterY = imin(minCenterY, centerY);
-      maxCenterY = imax(maxCenterY, centerY);
-    }
-    int nodeIndex = (int)b->collisionTree.size();
-    b->collisionTree.push_back(node);
-    if (end - begin == 1) {
-      b->collisionTree[nodeIndex].child = collisionOrder[begin];
-      return nodeIndex;
-    }
-    bool splitX = maxCenterX - minCenterX >= maxCenterY - minCenterY;
-    std::stable_sort(collisionOrder.begin() + begin,
-                     collisionOrder.begin() + end,
-      [&](int first, int second) {
-        const BodyCollisionRect& a = b->collisionRects[first];
-        const BodyCollisionRect& c = b->collisionRects[second];
-        int centerA = splitX ? a.x0 + a.x1 : a.y0 + a.y1;
-        int centerC = splitX ? c.x0 + c.x1 : c.y0 + c.y1;
-        return centerA != centerC ? centerA < centerC : first < second;
-      });
-    int middle = begin + (end - begin) / 2;
-    int left = self(self, begin, middle);
-    int right = self(self, middle, end);
-    b->collisionTree[nodeIndex].left = left;
-    b->collisionTree[nodeIndex].right = right;
-    return nodeIndex;
-  };
-  if (!collisionOrder.empty())
-    b->collisionTreeRoot = buildCollisionTree(
-      buildCollisionTree, 0, (int)collisionOrder.size());
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   if (++b->geometryRevision == 0) b->geometryRevision = 1;
   b->maxR = std::sqrt(maxR2); b->awake = true; resetSleepTracking(b);
@@ -747,210 +548,8 @@ int RigidBodySystem::insideBodyIndex(Body* b, double wx, double wy) {
   if (i < 0 || i >= b->w || j < 0 || j >= b->h) return -1;
   int k = j * b->w + i; return b->occ[k] ? k : -1;
 }
-void RigidBodySystem::bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy) {
-  int i = idx % b->w, j = idx / b->w; int w = b->w, h = b->h;
-  auto at = [&](int ii, int jj) { return (ii < 0 || ii >= w || jj < 0 || jj >= h) ? 0 : (int)b->occ[jj * w + ii]; };
-  int nlx = at(i - 1, j) - at(i + 1, j), nly = at(i, j - 1) - at(i, j + 1);
-  if (nlx == 0 && nly == 0) {
-    double dx = wx - b->px, dy = wy - b->py;
-    double lx = dx * b->cs + dy * b->sn;
-    double ly = -dx * b->sn + dy * b->cs;
-    int left = 1, right = 1, up = 1, down = 1;
-    while (at(i - left, j)) left++;
-    while (at(i + right, j)) right++;
-    while (at(i, j - up)) up++;
-    while (at(i, j + down)) down++;
-    double dl = lx - (b->offsetX + i - left + 0.5);
-    double dr = b->offsetX + i + right - 0.5 - lx;
-    double du = ly - (b->offsetY + j - up + 0.5);
-    double dd = b->offsetY + j + down - 0.5 - ly;
-    nlx = -1; nly = 0; double nearest = dl;
-    if (dr < nearest) { nearest = dr; nlx = 1; nly = 0; }
-    if (du < nearest) { nearest = du; nlx = 0; nly = -1; }
-    if (dd < nearest) { nlx = 0; nly = 1; }
-  }
-  double wx2 = nlx * b->cs - nly * b->sn, wy2 = nlx * b->sn + nly * b->cs;
-  double inv = 1 / std::sqrt(wx2 * wx2 + wy2 * wy2); ox = wx2 * inv; oy = wy2 * inv;
-}
-double RigidBodySystem::resolveContact(Contact& c) {
-  return resolveContactNormal(c) + resolveContactFriction(c);
-}
-double RigidBodySystem::resolveContactNormal(Contact& c) {
-  Body* A = c.a; Body* B = c.b;
-  double rvx = A->vx - A->omega * c.ray, rvy = A->vy + A->omega * c.rax;
-  if (B) {
-    rvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
-    rvy -= rigidContactVy(B) + rigidContactOmega(B) * c.rbx;
-  }
-  double vn = rvx * c.nx + rvy * c.ny;
-  double movedN = 0;
-  if (c.normalMass > 0) {
-    double delta = (c.targetVn - vn) * c.normalMass;
-    double newJn = c.accJn + delta; if (newJn < 0) newJn = 0;
-    double applied = newJn - c.accJn; c.accJn = newJn;
-    movedN = std::fabs(applied);
-    double jx = applied * c.nx, jy = applied * c.ny;
-    A->vx += jx * c.aInvM; A->vy += jy * c.aInvM; A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
-    if (B) { B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM; B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx); }
-  }
-  return movedN;
-}
-double RigidBodySystem::resolveContactFriction(Contact& c) {
-  Body* A = c.a; Body* B = c.b;
-  double tx = -c.ny, ty = c.nx;
-  double rtvx = A->vx - A->omega * c.ray, rtvy = A->vy + A->omega * c.rax;
-  if (B) {
-    rtvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
-    rtvy -= rigidContactVy(B) + rigidContactOmega(B) * c.rbx;
-  }
-  double vt = rtvx * tx + rtvy * ty;
-  double movedT = 0;
-  if (c.tangentMass > 0) {
-    double candidate = c.accJt - vt * c.tangentMass;
-    double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
-      ? c.staticFriction : c.dynamicFriction;
-    double limit = coefficient * c.accJn;
-    double newJt = candidate;
-    if (newJt > limit) newJt = limit;
-    else if (newJt < -limit) newJt = -limit;
-    double applied = newJt - c.accJt; c.accJt = newJt;
-    movedT = std::fabs(applied);
-    double jx = applied * tx, jy = applied * ty;
-    A->vx += jx * c.aInvM; A->vy += jy * c.aInvM; A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
-    if (B) { B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM; B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx); }
-  }
-  return movedT;
-}
-double RigidBodySystem::resolveContactBlock(Contact& first, Contact& second) {
-  Body* A = first.a;
-  Body* B = first.b;
-  double spanX = (A->px + first.rax) - (A->px + second.rax);
-  double spanY = (A->py + first.ray) - (A->py + second.ray);
-  if (second.a != A || second.b != B
-      || first.nx * second.nx + first.ny * second.ny < 0.99
-      || first.targetVn > 0 || second.targetVn > 0
-      || spanX * spanX + spanY * spanY < R_BLOCK_SOLVE_MIN_SPAN2)
-    return resolveContact(first) + resolveContact(second);
-  double aInvM = first.aInvM;
-  double aInvI = first.aInvI;
-  double bInvM = first.bInvM;
-  double bInvI = first.bInvI;
-  auto normalVelocity = [&](const Contact& contact) {
-    double rvx = A->vx - A->omega * contact.ray;
-    double rvy = A->vy + A->omega * contact.rax;
-    if (B) {
-      rvx -= rigidContactVx(B) - rigidContactOmega(B) * contact.rby;
-      rvy -= rigidContactVy(B) + rigidContactOmega(B) * contact.rbx;
-    }
-    return rvx * contact.nx + rvy * contact.ny;
-  };
-  double rnA1 = first.rax * first.ny - first.ray * first.nx;
-  double rnA2 = second.rax * second.ny - second.ray * second.nx;
-  double rnB1 = B ? first.rbx * first.ny - first.rby * first.nx : 0;
-  double rnB2 = B ? second.rbx * second.ny - second.rby * second.nx : 0;
-  double k11 = aInvM + bInvM + aInvI * rnA1 * rnA1 + bInvI * rnB1 * rnB1;
-  double k22 = aInvM + bInvM + aInvI * rnA2 * rnA2 + bInvI * rnB2 * rnB2;
-  double k12 = aInvM + bInvM + aInvI * rnA1 * rnA2 + bInvI * rnB1 * rnB2;
-  double determinant = k11 * k22 - k12 * k12;
-  double largestMass = std::fmax(k11, k22);
-  if (k11 <= 0 || k22 <= 0
-      || determinant <= 1e-3 * largestMass * largestMass)
-    return resolveContact(first) + resolveContact(second);
-
-  double old1 = first.accJn, old2 = second.accJn;
-  double b1 = normalVelocity(first) - first.targetVn - k11 * old1 - k12 * old2;
-  double b2 = normalVelocity(second) - second.targetVn - k12 * old1 - k22 * old2;
-  double next1 = 0, next2 = 0;
-  bool solved = false;
-
-  double invDet = 1 / determinant;
-  double both1 = (k12 * b2 - k22 * b1) * invDet;
-  double both2 = (k12 * b1 - k11 * b2) * invDet;
-  if (both1 >= 0 && both2 >= 0) {
-    next1 = both1;
-    next2 = both2;
-    solved = true;
-  }
-  if (!solved) {
-    double one = -b1 / k11;
-    if (one >= 0 && k12 * one + b2 >= 0) {
-      next1 = one;
-      next2 = 0;
-      solved = true;
-    }
-  }
-  if (!solved) {
-    double two = -b2 / k22;
-    if (two >= 0 && k12 * two + b1 >= 0) {
-      next1 = 0;
-      next2 = two;
-      solved = true;
-    }
-  }
-  if (!solved && b1 >= 0 && b2 >= 0) solved = true;
-  if (!solved) return resolveContact(first) + resolveContact(second);
-
-  rigidBlockSolves++;
-  double delta1 = next1 - old1;
-  double delta2 = next2 - old2;
-  first.accJn = next1;
-  second.accJn = next2;
-  double jx = delta1 * first.nx + delta2 * second.nx;
-  double jy = delta1 * first.ny + delta2 * second.ny;
-  A->vx += jx * aInvM;
-  A->vy += jy * aInvM;
-  A->omega += aInvI
-    * (delta1 * (first.rax * first.ny - first.ray * first.nx)
-       + delta2 * (second.rax * second.ny - second.ray * second.nx));
-  if (B) {
-    B->vx -= jx * bInvM;
-    B->vy -= jy * bInvM;
-    B->omega -= bInvI
-      * (delta1 * (first.rbx * first.ny - first.rby * first.nx)
-         + delta2 * (second.rbx * second.ny - second.rby * second.nx));
-  }
-  return std::fabs(delta1) + std::fabs(delta2)
-    + resolveContactFriction(first) + resolveContactFriction(second);
-}
-void RigidBodySystem::applyWarmStart(Contact& c) {
-  Body* A = c.a; Body* B = c.b;
-  double tx = -c.ny, ty = c.nx;
-  double jx = c.accJn * c.nx + c.accJt * tx;
-  double jy = c.accJn * c.ny + c.accJt * ty;
-  A->vx += jx * c.aInvM; A->vy += jy * c.aInvM;
-  A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
-  if (B) {
-    B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM;
-    B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx);
-  }
-}
-double RigidBodySystem::resolveBias(Contact& c) {
-  Body* A = c.a; Body* B = c.b;
-  double slop = rigidContactSlop(c);
-  double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
-  if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
-  double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
-  if (B && c.bIntegrated) {
-    rvx -= B->pvx - B->pw * c.rby;
-    rvy -= B->pvy + B->pw * c.rbx;
-  }
-  double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return 0;
-  if (c.biasMass <= 0) return 0;
-  double delta = (bias - vn) * c.biasMass;
-  double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
-  double applied = newJ - c.accBias; c.accBias = newJ;
-  double jx = applied * c.nx, jy = applied * c.ny;
-  A->pvx += jx * c.aInvM; A->pvy += jy * c.aInvM; A->pw += c.aInvI * (c.rax * jy - c.ray * jx);
-  if (B && c.bIntegrated) {
-    B->pvx -= jx * c.bInvM;
-    B->pvy -= jy * c.bInvM;
-    B->pw -= c.bInvI * (c.rbx * jy - c.rby * jx);
-  }
-  return std::fabs(applied);
-}
 void RigidBodySystem::resetSleepTracking(Body* b) {
   b->stillTicks = 0;
-  b->restProbeTicks = 0;
   b->sleepSupports.clear();
   b->bakeBlockedByBody = false;
 }
@@ -983,8 +582,6 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->px = leader->px; follower->py = leader->py; follower->angle = leader->angle;
   follower->vx = leader->vx; follower->vy = leader->vy; follower->omega = leader->omega;
   follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
-  follower->restProbePoints = leader->restProbePoints;
-  follower->restProbeTicks = leader->restProbeTicks;
   follower->sleepSupports = leader->sleepSupports;
   follower->bakeBlockedByBody = leader->bakeBlockedByBody;
   follower->bakeSupportedPoseTicks = leader->bakeSupportedPoseTicks;
@@ -1015,30 +612,54 @@ void RigidBodySystem::breakJointBody(Body* member) {
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
 void RigidBodySystem::rigidStep(double tickDt) {
-  double rigidStageStart = emscripten_get_now();
-#include "rigid_step_prepare.inc"
-  rigidStepPrepareMs += emscripten_get_now() - rigidStageStart;
-  rigidStageStart = emscripten_get_now();
-#include "rigid_step_contacts.inc"
-  rigidContactSetupMs += emscripten_get_now() - rigidStageStart;
-  rigidStageStart = emscripten_get_now();
-#include "rigid_step_substeps.inc"
-  rigidStageStart = emscripten_get_now();
-#include "rigid_step_finalize.inc"
-  rigidStepFinalizeMs += emscripten_get_now() - rigidStageStart;
-  rigidFluidReferenceTotalMs += fluidReferenceMs;
-  rigidFluidDomainTotalMs += fluidDomainMs;
-  rigidFluidMatrixTotalMs += fluidMatrixMs;
-  rigidFluidSolveTotalMs += fluidSolveMs;
-  rigidFluidWritebackTotalMs += fluidWritebackMs;
-  rigidFluidNodesTotal += fluidNodeCount;
-  rigidFluidFacesTotal += fluidFaceCount;
-  rigidFluidIterationsTotal += fluidPressureIterations;
-  // Background contacts resolve against the physical foreground leader. Mirror
-  // any resulting motion into its passive background footprint.
-  if (E.L == &E.bg)
-    for (const auto& entry : peerJointLeaders)
-      syncJointFollower(entry.second);
+  (void)tickDt;
+  if (boxStepTick == E.tick) return;
+  rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
+  rigidVelocityIterations = rigidBiasIterations = 0;
+  rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
+  rigidShockIslands = rigidShockConstraintEvals = 0;
+  rigidShockFallbacks = rigidShockMaxLayers = rigidShockSkipped = 0;
+  rigidIslands = rigidBlockSolves = 0;
+  rigidIslandBodySteps = rigidGlobalBodySteps = 0;
+  rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
+  rigidMaxChildren = rigidChildTransforms = 0;
+  rigidCoherentIslands = rigidDenseFallbackIslands = 0;
+  rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
+  rigidTerrainSamples = rigidTerrainSamplesSkipped = 0;
+  rigidGranularBodiesSkipped = 0;
+  rigidPositionCorrections = 0;
+  rigidMaxRelativeSpeed = 0;
+  fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
+  fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
+  fluidInitialMs = fluidCorrectorMs = 0;
+  fluidReferenceMs = fluidDomainMs = fluidMatrixMs = 0;
+  fluidSolveMs = fluidWritebackMs = 0;
+  rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
+  rigidMaxContactDepth = 0;
+  rigidMaxVelocityResidual = rigidMaxBiasResidual = 0;
+  rigidMaxPenetrationResidual = 0;
+  ensureBoxWorld();
+  syncBoxBodies();
+  syncBoxTerrain(E.fg, 0);
+  if (E.bgEnabled) {
+    syncBoxTerrain(E.bg, 1);
+  } else if (B2_IS_NON_NULL(boxTerrainBodies[1])) {
+    b2DestroyBody(boxTerrainBodies[1]);
+    boxTerrainBodies[1] = b2_nullBodyId;
+    boxTerrainRevisions[1] = 0;
+  }
+  createBoxActors();
+  applyBoxFluidCoupling();
+
+  double solveStart = emscripten_get_now();
+  int bodyCount = (int)boxBodies.size();
+  int substeps = bodyCount >= 96 ? 4 : bodyCount >= 24 ? 6 : 8;
+  b2World_Step(boxWorld, BOX_TICK_SECONDS, substeps);
+  rigidSolveMs += emscripten_get_now() - solveStart;
+  rigidSubsteps = substeps;
+  writeBackBoxBodies();
+  finishBoxActors();
+  boxStepTick = E.tick;
 }
 void RigidBodySystem::ensureBodyRaster(Body* b) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
@@ -1110,8 +731,9 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
   auto solidIn = [&](Layer& lay, bool peerLayer) {
     int owner = lay.bodyOwner[k];
     if (owner >= 0) {
-      if (body && owner == body->id
-          && (!peerLayer || body->jointRole == 1)) return false;
+      if (body && (owner == body->id
+          || (body->jointPeer && owner == body->jointPeer->id)))
+        return false;
       // Owner cells stay present in the grid sweep. Same-layer ordinary bodies
       // use the body/body broad phase, while rigidStep promotes peer-layer owner
       // hits to dynamic contacts after the sweep identifies their exact cells.
@@ -1131,11 +753,6 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
 #include "rigid_fluid_projection.inc"
 #include "rigid_fluid_solve.inc"
 #include "rigid_fluid_writeback.inc"
-}
-double RigidBodySystem::granularMediumDensityAt(int x, int y) {
-  if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0;
-  uint8_t material = E.L->grid[y * E.cols + x];
-  return E.isLooseSolidMaterial(material) ? DENSITY[material] : 0;
 }
 // Loose media are relocatable: a body submerging into liquid or powder, or
 // sweeping through gas, spills that cell around its new footprint. Only liquids
@@ -1819,7 +1436,9 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   int blocked = 0;
   auto blockedIn = [&](Layer& lay, int k) {
-    if (lay.bodyOwner[k] == b->id) return false;
+    int owner = lay.bodyOwner[k];
+    if (owner == b->id || (b->jointPeer && owner == b->jointPeer->id))
+      return false;
     uint8_t material = lay.grid[k];
     return material != EMPTY && !E.isGasMaterial(material)
       && !E.isBuoyantMedium(material);
@@ -1839,7 +1458,9 @@ int RigidBodySystem::bodyFootprintBlocked(Body* b) {
 }
 bool RigidBodySystem::bodyFootprintOverlapsSolid(Body* b) {
   auto blockedIn = [&](Layer& layer, int k) {
-    if (layer.bodyOwner[k] == b->id) return false;
+    int owner = layer.bodyOwner[k];
+    if (owner == b->id || (b->jointPeer && owner == b->jointPeer->id))
+      return false;
     uint8_t material = layer.grid[k];
     return material != EMPTY && !E.isGasMaterial(material)
       && !E.isBuoyantMedium(material);
@@ -2186,9 +1807,14 @@ bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
     int neighbor = k + E.cols;
     if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0) continue;
     uint8_t material = E.L->grid[neighbor];
-    if (E.isRigidMaterialClass(material)
-        || (E.isLooseSolidMaterial(material) && E.L->groundedCell[neighbor]))
-      return true;
+    if (E.isRigidMaterialClass(material)) return true;
+    for (int gap = 0; gap <= 1 && y + 1 + gap < E.rows; gap++) {
+      int probe = (y + 1 + gap) * E.cols + (k - y * E.cols);
+      uint8_t powder = E.L->grid[probe];
+      if (E.isLooseSolidMaterial(powder))
+        return true;
+      if (powder != EMPTY && !E.isGasMaterial(powder)) break;
+    }
   }
   // A solved diagonal or frictional support can lie several raster cells from
   // the contact anchor inside a thick irregular mask. Once that support has
@@ -2207,13 +1833,12 @@ bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
         if (layer.bodyOwner[k] >= 0) continue;
         uint8_t material = layer.grid[k];
         if (E.isRigidMaterialClass(material)
-            || (E.isLooseSolidMaterial(material)
-              && layer.groundedCell[k]))
+            || E.isLooseSolidMaterial(material))
           return true;
       }
     }
   }
-  return false;
+  return granularBearingFraction(b, *E.L) >= 1.0 - 1e-9;
 }
 bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
   occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
@@ -2228,6 +1853,41 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
     else if (m != EMPTY && !E.isGasMaterial(m)) solidBelow++;
   }
   return mediumBelow > 0 && mediumBelow > solidBelow;
+}
+double RigidBodySystem::granularBearingFraction(Body* body, Layer& layer) {
+  Engine::ActiveLayerScope layerScope(E, &layer);
+  if (body->invMass <= 0) return 0;
+  ensureBodyRaster(body);
+  occStamp.reset((size_t)(E.cols * E.rows));
+  for (const BodyRasterCell& cell : body->rasterFootprint)
+    occStamp.add(cell.y * E.cols + cell.x);
+  double bearingCapacity = 0;
+  for (const BodyRasterCell& cell : body->rasterFootprint) {
+    if (cell.y + 1 >= E.rows) continue;
+    int below = (cell.y + 1) * E.cols + cell.x;
+    if (occStamp.has(below)) continue;
+    int surfaceY = -1;
+    for (int gap = 0; gap <= 1 && cell.y + 1 + gap < E.rows; gap++) {
+      int probe = (cell.y + 1 + gap) * E.cols + cell.x;
+      uint8_t material = layer.grid[probe];
+      if (E.isLooseSolidMaterial(material)
+          && (layer.groundedCell[probe] || material == SNOW)) {
+        surfaceY = cell.y + 1 + gap;
+        break;
+      }
+      if (material != EMPTY && !E.isGasMaterial(material)) break;
+    }
+    if (surfaceY < 0) continue;
+    int bearingRows = (int)std::ceil(R_GRANULAR_BEARING_DEPTH);
+    for (int depth = 0;
+         depth < bearingRows && surfaceY + depth < E.rows; depth++) {
+      uint8_t material =
+        layer.grid[(surfaceY + depth) * E.cols + cell.x];
+      if (!E.isLooseSolidMaterial(material)) break;
+      bearingCapacity += DENSITY[material];
+    }
+  }
+  return std::fmin(1.0, bearingCapacity * body->invMass);
 }
 bool RigidBodySystem::rasterStableForBake(Body* b) {
   ensureBodyRaster(b);
@@ -2303,35 +1963,32 @@ void RigidBodySystem::bakeRestingBodies() {
       continue;
     }
     double supportStart = emscripten_get_now();
-    bool iceBody = E.bodyContainsMaterial(b, ICE);
     bool quietPose = b->vx * b->vx + b->vy * b->vy
                        < R_SLEEP_LIN * R_SLEEP_LIN
                   && std::fabs(b->omega) < R_SLEEP_ANG;
-    bool terrainContact = b->rasterMayOverlapSolid;
-    if (b->jointRole == 1 && b->jointPeer)
-      terrainContact = terrainContact || b->jointPeer->rasterMayOverlapSolid;
     bool supportedOwn = false, supportedPeer = false;
-    bool sampledIceSupport = iceBody && quietPose && terrainContact;
-    if (sampledIceSupport) {
+    bool sampledPoseSupport = quietPose;
+    if (sampledPoseSupport) {
       supportedOwn = bodyTouchesStaticSupport(b);
       if (b->jointRole == 1 && b->jointPeer) {
         Engine::ActiveLayerScope layerScope(E, &E.bg);
         supportedPeer = bodyTouchesStaticSupport(b->jointPeer);
       }
     }
-    if (sampledIceSupport && (supportedOwn || supportedPeer)) {
+    if (sampledPoseSupport && (supportedOwn || supportedPeer)) {
       if (b->bakeSupportedPoseTicks < R_BAKE_RASTER_TICKS)
         b->bakeSupportedPoseTicks++;
     } else {
       b->bakeSupportedPoseTicks = 0;
     }
     if (b->jointRole == 1) syncJointFollower(b);
-    bool supportedPoseBake =
-      b->bakeSupportedPoseTicks >= R_BAKE_RASTER_TICKS;
+    bool solidifiable = bodySolidifies(b);
+    bool supportedPoseBake = b->bakeSupportedPoseTicks
+      >= R_BAKE_RASTER_TICKS;
     rigidBakeSupportMs += emscripten_get_now() - supportStart;
 
     bool rasterBakeCandidate = !b->awake || b->rasterMayOverlapSolid
-                            || supportedPoseBake;
+                            || solidifiable;
     if (b->jointRole == 1 && b->jointPeer)
       rasterBakeCandidate = rasterBakeCandidate
         || !b->jointPeer->awake || b->jointPeer->rasterMayOverlapSolid;
@@ -2349,7 +2006,7 @@ void RigidBodySystem::bakeRestingBodies() {
     }
     bool canBake = bodyFullyInsideLoadedWindow(b)
       && stableRaster && peerStableRaster
-      && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
+      && solidifiable && (!b->jointPeer || bodySolidifies(b->jointPeer));
     b->bakeBlockedByBody = b->bakeBlockedByBody
       || (b->jointRole == 1 && b->jointPeer
         && b->jointPeer->bakeBlockedByBody);
@@ -2358,13 +2015,13 @@ void RigidBodySystem::bakeRestingBodies() {
     if (canBake && bodyFootprintOverlapsSolid(b)) canBake = false;
     supportStart = emscripten_get_now();
     bool groundedContact = canBake
-      && (sampledIceSupport ? supportedOwn : bodyTouchesStaticSupport(b));
+      && (sampledPoseSupport ? supportedOwn : bodyTouchesStaticSupport(b));
     bool growthOrigin = canBake && E.bodyContainsGrowthOrigin(b);
     bool peerGroundedContact = false;
     bool peerGrowthOrigin = false;
     if (canBake && b->jointRole == 1 && b->jointPeer) {
       Engine::ActiveLayerScope layerScope(E, &E.bg);
-      peerGroundedContact = sampledIceSupport
+      peerGroundedContact = sampledPoseSupport
         ? supportedPeer : bodyTouchesStaticSupport(b->jointPeer);
       peerGrowthOrigin = E.bodyContainsGrowthOrigin(b->jointPeer);
     }
@@ -2424,8 +2081,7 @@ void RigidBodySystem::stampJointFollower(Body* leader) {
     }
     if (isBodyRelocatable(material, k, follower->density))
       displaced.push_back({material, k});
-    E.writeGridIndex(k, bodyMaterialAt(follower, local));
-    E.bg.bodyOwner[k] = follower->id;
+    E.writeBodyGridIndex(k, bodyMaterialAt(follower, local), follower->id);
     E.bg.passiveBodyCells.push_back(k);
     footprint.push_back(k);
   });
@@ -2440,6 +2096,7 @@ void RigidBodySystem::stampJointFollower(Body* leader) {
 // loaded so sleeping bodies remain visible and interactive without requiring a
 // simulation tick.
 void RigidBodySystem::restampBodiesAfterStream() {
+  if (++E.L->rigidTerrainRevision == 0) E.L->rigidTerrainRevision = 1;
   std::vector<int> cells, footprint;
   std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
   for (Body* body : E.L->bodies) {
@@ -2452,8 +2109,7 @@ void RigidBodySystem::restampBodiesAfterStream() {
       if (!canBodyOccupy(material, k, body->density)) return;
       if (isBodyRelocatable(material, k, body->density))
         stamped.first.push_back({material, k});
-      E.writeGridIndex(k, bodyMaterialAt(body, local));
-      E.L->bodyOwner[k] = body->id;
+      E.writeBodyGridIndex(k, bodyMaterialAt(body, local), body->id);
       if (body->blastDebris) E.L->groundedCell[k] = 0;
       cells.push_back(k);
       footprint.push_back(k);
@@ -2482,7 +2138,8 @@ void RigidBodySystem::restampBodiesAfterStream() {
 void RigidBodySystem::resolveStructureRasterOverlaps() {
   rasterProjectionBodies.clear();
   for (Body* body : E.L->bodies)
-    if (body->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
+    if (body->jointRole != 2
+        && body->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
       rasterProjectionBodies.push_back(body);
   if ((int)rasterProjectionBodies.size() < R_STRUCTURE_RASTER_MIN_BODIES)
     return;
@@ -2495,9 +2152,6 @@ void RigidBodySystem::resolveStructureRasterOverlaps() {
   auto clearOwners = [&]() {
     for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
     rasterProjectionTouched.clear();
-  };
-  auto pairKey = [](int aId, int bId) {
-    return ((uint64_t)(uint32_t)aId << 32) | (uint32_t)bId;
   };
   auto overlapCount = [&](Body* A, Body* B) {
     occStamp.reset(gridSize);
@@ -2579,35 +2233,14 @@ void RigidBodySystem::resolveStructureRasterOverlaps() {
       std::unique(rasterProjectionPairs.begin(), rasterProjectionPairs.end()),
       rasterProjectionPairs.end());
 
-    int activeLayer = E.L == &E.bg ? 1 : 0;
-    auto& axes = pairAxes[activeLayer];
     for (const auto& pair : rasterProjectionPairs) {
       Body* A = rasterProjectionBodies[pair.first];
       Body* B = rasterProjectionBodies[pair.second];
       int pairOverlap = overlapCount(A, B);
       if (pairOverlap <= R_STRUCTURE_RASTER_ALIAS_CELLS) continue;
 
-      double nx = 0, ny = 0;
-      auto axis = axes.find(pairKey(A->id, B->id));
-      if (axis != axes.end()
-          && axis->second.aRevision == A->geometryRevision
-          && axis->second.bRevision == B->geometryRevision) {
-        nx = axis->second.nx;
-        ny = axis->second.ny;
-      } else {
-        axis = axes.find(pairKey(B->id, A->id));
-        if (axis != axes.end()
-            && axis->second.aRevision == B->geometryRevision
-            && axis->second.bRevision == A->geometryRevision) {
-          nx = -axis->second.nx;
-          ny = -axis->second.ny;
-        }
-      }
       double centerX = A->px - B->px, centerY = A->py - B->py;
-      if (nx * nx + ny * ny < 1e-12) {
-        nx = centerX;
-        ny = centerY;
-      }
+      double nx = centerX, ny = centerY;
       double length = std::hypot(nx, ny);
       if (length < 1e-9) {
         nx = 0;
@@ -2662,8 +2295,15 @@ void RigidBodySystem::resolveStructureRasterOverlaps() {
         return clearTerrain;
       };
 
-      std::array<std::array<double, 2>, 2> candidateAxes{{
-        {nx, ny}, {centerX, centerY},
+      constexpr double diagonal = 0.7071067811865476;
+      constexpr double shallow = 0.3826834323650898;
+      constexpr double steep = 0.9238795325112867;
+      std::array<std::array<double, 2>, 9> candidateAxes{{
+        {nx, ny},
+        {1, 0}, {0, 1},
+        {diagonal, diagonal}, {diagonal, -diagonal},
+        {steep, shallow}, {steep, -shallow},
+        {shallow, steep}, {shallow, -steep},
       }};
       double bestAmount = 1e18, bestDirection = 0;
       double bestAxisX = 0, bestAxisY = 0;
@@ -2675,7 +2315,7 @@ void RigidBodySystem::resolveStructureRasterOverlaps() {
         for (double direction : {1.0, -1.0}) {
           double lower = 0, upper = 0;
           double aWeight = 0, bWeight = 0;
-          for (double amount = 0.125; amount <= 2.0; amount += 0.125) {
+          for (double amount = 0.125; amount <= 4.0; amount += 0.125) {
             if (trialClear(amount, direction, aWeight, bWeight)) {
               upper = amount;
               break;
@@ -3064,16 +2704,6 @@ void RigidBodySystem::moveBodies() {
   };
   for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
     terrainAdjustmentParents[slot] = slot;
-  for (const auto& pair : terrainContactPairs) {
-    auto first = moveBodySlotById.find(pair.first);
-    auto second = moveBodySlotById.find(pair.second);
-    if (first == moveBodySlotById.end()
-        || second == moveBodySlotById.end())
-      continue;
-    int a = adjustmentRoot(first->second);
-    int b = adjustmentRoot(second->second);
-    if (a != b) terrainAdjustmentParents[b] = a;
-  }
   static constexpr uint8_t ROOT_ACTIVE = 1 << 0;
   static constexpr uint8_t ROOT_EXACT = 1 << 1;
   static constexpr uint8_t ROOT_VISITED = 1 << 2;
@@ -3090,7 +2720,9 @@ void RigidBodySystem::moveBodies() {
     // terrain, and peer-layer contacts are outside this layer's final position
     // projection. Quiet irregular bodies and tiny debris use the same guard.
     bool exactStructureProbe = body->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
-    bool exactQuietProbe = exactStructureProbe
+    bool stoppedPose = body->vx * body->vx + body->vy * body->vy < 1e-12
+      && std::fabs(body->omega) < 1e-12;
+    bool exactQuietProbe = exactStructureProbe || stoppedPose
       || (!rigidLargeSlenderBody(body)
       && (!body->awake
         || (body->nPts <= R_QUIET_TERRAIN_PROBE_MAX_CELLS
@@ -3273,7 +2905,7 @@ void RigidBodySystem::moveBodies() {
       uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
       if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
-      E.writeGridIndex(k, material); E.L->bodyOwner[k] = b->id;
+      E.writeBodyGridIndex(k, material, b->id);
       if (b->blastDebris) E.L->groundedCell[k] = 0;
       moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
@@ -3309,8 +2941,7 @@ void RigidBodySystem::moveBodies() {
       int local = localCellAt(body, x + 0.5, y + 0.5);
       if (local < 0) continue;
       uint8_t material = bodyMaterialAt(body, local);
-      E.writeGridIndex(k, material);
-      E.L->bodyOwner[k] = body->id;
+      E.writeBodyGridIndex(k, material, body->id);
       moveCells.push_back(k);
       moveFootprint.push_back(k);
       moveStamped[slot].push_back(k);
@@ -3809,8 +3440,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       if (!canBodyOccupy(existing, k, spawned->density)) return;
       if (isBodyRelocatable(existing, k, spawned->density))
         displaced.push_back({existing, k});
-      E.writeGridIndex(k, bodyMaterialAt(spawned, local));
-      layer.bodyOwner[k] = spawned->id;
+      E.writeBodyGridIndex(k, bodyMaterialAt(spawned, local), spawned->id);
       (passive ? layer.passiveBodyCells : layer.bodyCells).push_back(k);
       footprint.push_back(k);
       minX = imin(minX, x); minY = imin(minY, y);
@@ -3875,3 +3505,5 @@ Body* RigidBodySystem::spawnDisc(int cx, int cy, int radius, uint8_t material) {
   }
   return finishSpawn(cells, material);
 }
+
+#include "rigid_box2d.inc"

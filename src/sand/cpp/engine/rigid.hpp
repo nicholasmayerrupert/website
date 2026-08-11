@@ -1,4 +1,5 @@
 #pragma once
+#include <box2d/box2d.h>
 // Free rigid-body collision, buoyancy, sleep, erosion, and component baking.
 // Bodies stamp their real material into their owning Layer.
 
@@ -10,13 +11,9 @@ struct Disp { uint8_t material; int from; };
 class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
+  ~RigidBodySystem();
   static constexpr size_t SPILL_GENERATION_BUDGET =
     (size_t)(TABLE + 4) * TABLE + 2;
-
-  int solverMode = 2;
-  double solverResidualTolerance = 1e-4;
-  int solverMinIterations = 4;
-  int forceFullSolveBodies = R_FORCE_FULL_SOLVE_BODIES;
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
@@ -86,7 +83,6 @@ class RigidBodySystem {
   void ensureBodyRaster(Body* b);
   template <class F> void forEachBodyCell(Body* b, F cb);
 
-  void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy);
   bool computeDerived(Body* b, bool preserveWorld);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, const std::vector<uint8_t>& materials);
@@ -101,17 +97,6 @@ class RigidBodySystem {
   uint8_t bodyMaterialAt(Body* b, int localIndex);
   void terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy);
   int insideBodyIndex(Body* b, double wx, double wy);
-  void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy);
-  // Return the total |impulse| applied, so the solver loops can early-exit the
-  // moment an iteration is a provable no-op (all-zero applied impulses leave
-  // every velocity bitwise unchanged, so every later iteration recomputes the
-  // same zeros — breaking there is bit-identical to running all iterations).
-  double resolveContact(Contact& c);
-  double resolveContactNormal(Contact& c);
-  double resolveContactFriction(Contact& c);
-  double resolveContactBlock(Contact& first, Contact& second);
-  void applyWarmStart(Contact& c);
-  double resolveBias(Contact& c);
   bool bodyFullyInsideLoadedWindow(Body* b) const;
   void resetSleepTracking(Body* b);
   void wakeBody(Body* b);
@@ -124,7 +109,6 @@ class RigidBodySystem {
   int localCellAt(Body* b, double wx, double wy);
   bool eraseLocalCell(Body* b, int idx);
   bool isBodyTerrain(Body* b, int x, int y, double bodyDensity);
-  double granularMediumDensityAt(int x, int y);
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity);
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity);
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced,
@@ -148,6 +132,7 @@ class RigidBodySystem {
   bool bodySolidifies(Body* b);
   bool bodyTouchesStaticSupport(Body* b);
   bool bodyHasLooseSupport(Body* b);
+  double granularBearingFraction(Body* b, Layer& layer);
   bool rasterStableForBake(Body* b);
   void stampJointFollower(Body* leader);
   void restampBodiesAfterStream();
@@ -167,71 +152,53 @@ class RigidBodySystem {
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);
 
  private:
-  struct ContactCacheKey {
-    int aId = -1, bId = -1;
-    int childA = -1, childB = -1, featureA = -1, featureB = -1;
-    uint32_t aRevision = 0, bRevision = 0;
-    uint8_t normalBucket = 0, bLayer = 0;
-    uint8_t retainMissed = 0; // pair metadata, not key identity
-    bool operator==(const ContactCacheKey& other) const {
-      return aId == other.aId && bId == other.bId
-          && childA == other.childA && childB == other.childB
-          && featureA == other.featureA && featureB == other.featureB
-          && aRevision == other.aRevision && bRevision == other.bRevision
-          && normalBucket == other.normalBucket && bLayer == other.bLayer;
-    }
+  static constexpr float BOX_METERS_PER_CELL = 0.1f;
+  static constexpr float BOX_TICK_SECONDS = 1.0f / 60.0f;
+  enum BoxCategory : uint64_t {
+    BOX_FG_TERRAIN = 1ull << 0,
+    BOX_BG_TERRAIN = 1ull << 1,
+    BOX_FG_BODY = 1ull << 2,
+    BOX_BG_BODY = 1ull << 3,
+    BOX_JOINT_BODY = 1ull << 4,
+    BOX_ACTOR = 1ull << 5,
   };
-  struct ContactCacheKeyHash {
-    size_t operator()(const ContactCacheKey& key) const {
-      size_t h = (uint32_t)key.aId * 0x9e3779b1u;
-      h ^= (uint32_t)key.bId + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= (uint32_t)key.childA + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= (uint32_t)key.childB + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= (uint32_t)key.featureA + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= (uint32_t)key.featureB + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= key.aRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= key.bRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
-      h ^= (size_t)key.normalBucket << 1;
-      h ^= (size_t)key.bLayer << 5;
-      return h;
-    }
+  struct BoxBodyBinding {
+    b2BodyId id = b2_nullBodyId;
+    int bodyId = 0;
+    uint32_t geometryRevision = 0;
+    uint8_t layer = 0;
+    uint8_t jointRole = 0;
+    double px = 0, py = 0, angle = 0;
+    double vx = 0, vy = 0, omega = 0;
   };
-  struct CachedContact {
-    double lax = 0, lay = 0, lbx = 0, lby = 0;
-    double nx = 0, ny = 0, jn = 0, jt = 0, dt = 1;
-    uint8_t age = 0;
-    bool used = false;
+  struct BoxTerrainRect { int x0 = 0, y0 = 0, x1 = 0, y1 = 0; };
+  struct BoxActorBinding {
+    b2BodyId id = b2_nullBodyId;
+    Player* player = nullptr;
+    Creature* creature = nullptr;
   };
-  using ContactCache = std::unordered_map<
-    ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
-  std::array<ContactCache, 2> contactCaches;
-  std::array<std::unordered_map<uint64_t, int>, 2> impactContactTicks;
-  struct PairAxisState {
-    uint32_t aRevision = 0, bRevision = 0;
-    double nx = 0, ny = 0;
-    uint8_t age = 0;
-  };
-  std::array<std::unordered_map<uint64_t, PairAxisState>, 2> pairAxes;
-  struct ShockAttemptState {
-    uint8_t consecutiveFailures = 0;
-    int retryTick = 0, lastTick = 0;
-  };
-  std::unordered_map<uint64_t, ShockAttemptState> shockAttemptCache;
-  std::vector<std::vector<int>> shockGraphScratch, shockLayersScratch;
-  std::vector<uint8_t> shockTerrainRootScratch, shockTopIsAScratch;
-  std::vector<uint8_t> shockOnStackScratch;
-  std::vector<int> shockBottomScratch, shockIndexScratch, shockLowScratch;
-  std::vector<int> shockStackScratch, shockComponentScratch;
-  std::vector<int> shockLevelScratch, shockBodyLevelScratch;
-  std::vector<std::array<double, 3>> shockDeferredScratch;
-  ContactCache nextContactCacheScratch;
-  std::vector<Contact> solverContactScratch;
-  std::vector<int> broadphaseOrderScratch;
-  std::vector<std::pair<int, int>> broadphasePairScratch;
-  std::array<std::vector<int>, 2> broadphaseBodyIds;
-  std::vector<uint8_t> terrainRigidBins;
-  std::vector<uint8_t> terrainGranularBins;
-  int terrainRigidBinCols = 0, terrainRigidBinRows = 0;
+  b2WorldId boxWorld = b2_nullWorldId;
+  std::array<b2BodyId, 2> boxTerrainBodies{{b2_nullBodyId, b2_nullBodyId}};
+  std::array<uint64_t, 2> boxTerrainRevisions{{0, 0}};
+  std::unordered_map<Body*, BoxBodyBinding> boxBodies;
+  std::unordered_set<Body*> boxWetBodies;
+  std::unordered_set<Body*> boxFluidRestBodies;
+  std::unordered_set<Body*> boxFluidDensityBodies;
+  std::unordered_set<Body*> boxGranularBodies;
+  std::unordered_map<Body*, int> boxGranularQuietTicks;
+  std::unordered_map<Body*, double> boxFluidSlip;
+  std::vector<b2ContactData> boxContactScratch;
+  std::vector<BoxActorBinding> boxActors;
+  int boxStepTick = -1;
+  void resetBox2D();
+  void ensureBoxWorld();
+  void syncBoxTerrain(Layer& layer, int layerIndex);
+  BoxBodyBinding createBoxBody(Body* body, int layerIndex);
+  void syncBoxBodies();
+  void createBoxActors();
+  void finishBoxActors();
+  void applyBoxFluidCoupling();
+  void writeBackBoxBodies();
 
   struct FluidNode {
     Layer* layer = nullptr;
@@ -310,7 +277,6 @@ class RigidBodySystem {
   std::vector<std::vector<int>> moveStamped;
   std::vector<uint8_t> movePreviousMaterialGrid;
   std::vector<int32_t> movePreviousOwnerGrid;
-  std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;
   std::vector<int> rasterProjectionOwner, rasterProjectionTouched;

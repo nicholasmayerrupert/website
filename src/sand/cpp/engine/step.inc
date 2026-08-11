@@ -3,12 +3,11 @@
   // updates run independently in stepActors(); step() composes both clocks for
   // compatibility. Local cell movement rules live in core.inc.
 
-  void stepLayer(Layer* layer) {
+  bool prepareStepLayer(Layer* layer) {
     useLayer(layer);
-    if (!beginStepDirty()) return; // nothing active in this layer this step
+    if (!beginStepDirty()) return false;
     if (L->groundDirty || L->groundContentDirty || !L->groundBaseValid)
       L->componentCarryDirty = true;
-    audio.beginRegionalPass();
     // Timers accumulate across both layers and are reset once per world tick.
     double t0 = emscripten_get_now();
     if (!comps.jointGroundReady) comps.ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
@@ -21,14 +20,14 @@
 #endif
     perfAssemblyUnionMs += emscripten_get_now() - tA;
 
-    double tB = emscripten_get_now();
     reactions.applyBodyIce();
     forces.applyBodyForces();
-    rigid.moveBodies();
-#ifdef SAND_INVARIANT_CHECKS
-    validateInvariants("post-moveBodies");
-#endif
-    perfBodyMs += emscripten_get_now() - tB;
+    return true;
+  }
+
+  void finishStepLayer(Layer* layer) {
+    useLayer(layer);
+    audio.beginRegionalPass();
 
     double tR = emscripten_get_now();
     growth.growPlantComponents();
@@ -50,7 +49,8 @@
     bool indexedLocalCarry = L->groundBaseValid
       && !L->groundDirty && !L->groundContentDirty
       && !L->componentCarryDirty;
-    bool localRigidCarry = blastLocalCarry || indexedLocalCarry;
+    bool localRigidCarry = L->componentIndexExact
+      && (blastLocalCarry || indexedLocalCarry);
     if (localRigidCarry) {
       auto carryRigidSpan = [&](int y, int minX, int maxX) {
         int rb = y * cols;
@@ -89,8 +89,19 @@
         std::swap(L->prevBodyCells, L->curBodyCells);
       }
     } else {
+      if (!L->componentIndexExact)
+        std::fill(L->cellComp.begin(), L->cellComp.end(), -1);
       L->curCompCells.clear();
-      for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->curCompCells.push_back(k); }
+      for (int componentIndex = 0;
+           componentIndex < (int)L->components.size(); componentIndex++)
+        for (int k : L->components[componentIndex].cells) {
+          L->cellComp[k] = componentIndex;
+          L->next[k] = L->grid[k];
+          L->curCompCells.push_back(k);
+        }
+      L->componentIndexExact = true;
+      L->componentIndexPatchOnly = false;
+      L->componentIndexPatches.clear();
       L->curBodyCells.clear();
       for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
       for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
@@ -180,7 +191,37 @@
     for (int k : activeGasCells) { uint8_t m = L->grid[k]; if (!isGasMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (m == FIRE) riseFire(x, y, k); else riseSteam(x, y, k, m); }
     perfGasMs += emscripten_get_now() - tG;
 
+    auto retainOwnedSpan = [&](int y, int minX, int maxX) {
+      int row = y * cols;
+      for (int x = minX; x <= maxX; x++) {
+        int k = row + x;
+        if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0)
+          L->next[k] = L->grid[k];
+      }
+    };
+    for (int y = 0; y < rows; y++) {
+      for (const auto& span : L->activeRowSpans[y])
+        retainOwnedSpan(y, span.first, span.second);
+      for (const auto& span : L->rowMarkSpans[y])
+        retainOwnedSpan(y, span.first, span.second);
+    }
+
     double tT = emscripten_get_now();
+#ifdef SAND_INVARIANT_CHECKS
+    for (int componentIndex = 0;
+         componentIndex < (int)L->components.size(); componentIndex++)
+      for (int k : L->components[componentIndex].cells)
+        if (!isComponentMaterial(L->next[k])) {
+          char buffer[256];
+          snprintf(buffer, sizeof(buffer),
+            "SAND NEXT INVARIANT tick=%d layer=%s k=%d current=%d next=%d cellComp=%d expected=%d owner=%d local=%d exact=%d",
+            tick, L == &bg ? "bg" : "fg", k, L->grid[k], L->next[k],
+            L->cellComp[k], componentIndex, L->bodyOwner[k],
+            localRigidCarry, L->componentIndexExact);
+          emscripten_console_error(buffer);
+          abort();
+        }
+#endif
     std::swap(L->grid, L->next);
     std::swap(L->fallSpeed, L->nextFallSpeed);
     std::swap(L->liquidVel, L->nextLiquidVel);
@@ -275,7 +316,16 @@
       bgA = bgA || layerActive(&bg);
     }
     double tL0 = emscripten_get_now();
-    if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
+    bool fgPrepared = fgA && prepareStepLayer(&fg);
+    bool bgPrepared = bgA && prepareStepLayer(&bg);
+    double tB = emscripten_get_now();
+    if (fgPrepared) {
+      useLayer(&fg);
+      rigid.moveBodies();
+#ifdef SAND_INVARIANT_CHECKS
+      validateInvariants("post-moveBodies-fg");
+#endif
+    }
     if (bgEnabled && comps.jointBakeNeedsGroundRefresh) {
       comps.computeGroundedBoth();
       comps.jointGroundReady = true;
@@ -285,7 +335,16 @@
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
-    if (bgA) stepLayer(&bg);
+    if (bgPrepared) {
+      useLayer(&bg);
+      rigid.moveBodies();
+#ifdef SAND_INVARIANT_CHECKS
+      validateInvariants("post-moveBodies-bg");
+#endif
+    }
+    perfBodyMs += emscripten_get_now() - tB;
+    if (fgPrepared) finishStepLayer(&fg);
+    if (bgPrepared) finishStepLayer(&bg);
     perfLayersMs = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
     // Cross-layer assembly motion needs up-to-date joint grounding. Acid/erase

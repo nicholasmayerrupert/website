@@ -202,17 +202,16 @@ for (let i = 1; i < bodies.length; i++) {
   engine._setBodyMotion(i, vx, vy, omega);
 }
 
-let childPairs = 0, childManifolds = 0, sweepFallbacks = 0;
-let maxChildren = 0, maxRejected = 0, maxDepenetrations = 0;
+let maxContacts = 0, minSubsteps = Infinity, maxSubsteps = 0;
+let maxRejected = 0, maxDepenetrations = 0;
 let latePeakPointSpeed = 0, minimumBodyCount = bodies.length;
 for (let tick = 0; tick < 1800; tick++) {
   engine.stepWorld();
   minimumBodyCount = Math.min(minimumBodyCount, engine._bodyCount());
   const solver = engine.getRigidSolverDebug();
-  childPairs += solver.childPairs;
-  childManifolds += solver.childManifolds;
-  sweepFallbacks += solver.sweepFallbacks;
-  maxChildren = Math.max(maxChildren, solver.maxChildren);
+  maxContacts = Math.max(maxContacts, solver.contacts);
+  minSubsteps = Math.min(minSubsteps, solver.substeps);
+  maxSubsteps = Math.max(maxSubsteps, solver.substeps);
   if (tick >= 1200) {
     const raster = engine.getRigidDebug();
     maxRejected = Math.max(maxRejected, raster.rejectedCells);
@@ -282,13 +281,13 @@ check(`all ${bodies.length} bodies survived the simultaneous scene `
   minimumBodyCount === bodies.length && engine._bodyCount() === bodies.length);
 check('every body retained its exact occupied-cell count', retainedGeometry);
 check('all final poses and velocities are finite and bounded', finitePoses);
-check(`compound SAT exercised child pairs and manifolds `
-    + `(${childPairs}/${childManifolds})`,
-  childPairs > 1000 && childManifolds > 100);
-check(`legacy sweep remained available for CCD (${sweepFallbacks} > 0)`,
-  sweepFallbacks > 0);
-check(`the scene exercised high-complexity compounds (${maxChildren} >= 7)`,
-  maxChildren >= 7);
+check(`Box2D generated compound contacts (peak ${maxContacts})`,
+  maxContacts > 0);
+check(`adaptive Box2D substeps stayed bounded (${minSubsteps}..${maxSubsteps})`,
+  minSubsteps >= 4 && maxSubsteps <= 8);
+check(`the scene retained high-complexity compounds (`
+    + `${Math.max(...bodies.map((body) => body.children))} >= 7)`,
+  Math.max(...bodies.map((body) => body.children)) >= 7);
 check(`all payload geometry remained above the 120x8 L support arm `
     + `(${payloadBottom.toFixed(2)} <= ${mainBottomTop.toFixed(2)})`,
   payloadBottom <= mainBottomTop + 0.25);

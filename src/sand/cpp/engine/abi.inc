@@ -368,6 +368,20 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_joint_role_layer(Engine* e, int layer,
   Layer& lay = layer ? e->bg : e->fg;
   return (i >= 0 && i < (int)lay.bodies.size()) ? lay.bodies[i]->jointRole : -1;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_lookup_preserves_pose_cache(
+    Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  if (i < 0 || i >= (int)lay.bodies.size()) return -1;
+  Body* body = lay.bodies[i];
+  double originalCs = body->cs, originalSn = body->sn;
+  body->cs = 0.125;
+  body->sn = -0.75;
+  e->rigid.localCellAt(body, body->px, body->py);
+  bool preserved = body->cs == 0.125 && body->sn == -0.75;
+  body->cs = originalCs;
+  body->sn = originalSn;
+  return preserved ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int i, double* out) {
   Layer& lay = layer ? e->bg : e->fg;
   if (i < 0 || i >= (int)lay.bodies.size()) return 0;

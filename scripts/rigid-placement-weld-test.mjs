@@ -91,6 +91,8 @@ const findForegroundOnlyBodyCell = (engine) => {
       && engine._bodyCountLayer(1) === 1
       && engine._bodyJointRoleLayer(0, 0) === 1
       && engine._bodyJointRoleLayer(1, 0) === 2);
+  check('body-cell lookup preserves the joint pose cache',
+    engine._bodyLookupPreservesPoseCache(0, 0));
   check('scene exposes a background-only part of the joint', target !== null);
   if (target) {
     check('TNT placement succeeds',
@@ -119,6 +121,7 @@ const findForegroundOnlyBodyCell = (engine) => {
         && engine.getGrid()[targetCell] !== MAT.TNT
         && engine.getGridBg()[targetCell] === MAT.TNT
         && engine._bodyOwnerGrid(1)[targetCell] >= 0);
+    engine._setBodyMotion(0, 0.2, 0.1, 0.08);
     const background = engine.getGridBg();
     const findTnt = () => {
       for (let k = 0; k < background.length; k++) {
@@ -134,7 +137,7 @@ const findForegroundOnlyBodyCell = (engine) => {
       engine.placeMaterial(tnt.x + 1, tnt.y, 0, MAT.FIRE, 1);
       engine.stepWorld();
     }
-    check('TNT ignited on the follower detonates through the physical leader',
+    check('TNT ignited on the rotating follower detonates through the physical leader',
       detonated);
   }
   engine.destroy();

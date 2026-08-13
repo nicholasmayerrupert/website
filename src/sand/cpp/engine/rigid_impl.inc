@@ -2261,7 +2261,16 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   for (const BodyRasterCell& cell : b->rasterFootprint)
     cb(cell.x, cell.y, cell.local);
 }
-int RigidBodySystem::localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }
+int RigidBodySystem::localCellAt(Body* b, double wx, double wy) {
+  double dx = wx - b->px, dy = wy - b->py;
+  double cs = std::cos(b->angle), sn = std::sin(b->angle);
+  double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+  int i = (int)std::lround(lx - b->offsetX);
+  int j = (int)std::lround(ly - b->offsetY);
+  if (i < 0 || i >= b->w || j < 0 || j >= b->h) return -1;
+  int k = j * b->w + i;
+  return b->occ[k] ? k : -1;
+}
 bool RigidBodySystem::eraseLocalCell(Body* b, int idx) {
   if (idx < 0 || idx >= (int)b->occ.size() || !b->occ[idx]) return false;
   if (b->jointRole) breakJointBody(b);

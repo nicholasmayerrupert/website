@@ -931,6 +931,7 @@ void ExplosivesSystem::applyExplosives() {
 
   // 2) Tick static fuses; broad due fronts consume a fixed number of spatial
   //    buckets per step. Cell and bucket order is deterministic.
+  int scheduledStaticTntCells = 0;
   if (!E.L->pendingDetonations.empty()) {
     std::vector<int> fire;
     for (auto& kv : E.L->pendingDetonations) {
@@ -988,6 +989,7 @@ void ExplosivesSystem::applyExplosives() {
     } else {
       staticFire.swap(dueStatic);
     }
+    scheduledStaticTntCells = (int)staticFire.size();
     if ((int)staticFire.size() >= TNT_CLUSTER_FAST_THRESHOLD) {
       carveStaticTntCluster(staticFire, bb, &otherBb, massFront);
     } else {
@@ -996,20 +998,20 @@ void ExplosivesSystem::applyExplosives() {
     }
     for (int cell : staticFire) E.L->pendingDetonations.erase(cell);
   }
-  // 3) Tick body fuses. Each expired body detonates the TNT cell nearest its
-  //    centre, letting later short-fuse blasts advance through a carved charge.
-  std::vector<std::pair<int, int>> bodyBlasts;
-  std::vector<Body*> bodyBlastSources;
+  // 3) Tick body fuses. Compact expired fronts detonate together; broad fronts
+  //    share the static TNT budget and defer their remaining bodies one tick.
+  struct DueBodyBlast { Body* body; int x, y, tntCells; };
+  std::vector<DueBodyBlast> dueBodyBlasts;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2 || b->fuseTicks <= 0) continue;
-    bool containsTnt = b->material == TNT && b->cellMaterials.empty();
-    if (!containsTnt)
+    int tntCells = b->material == TNT && b->cellMaterials.empty()
+      ? b->nPts : 0;
+    if (!b->cellMaterials.empty())
       for (uint8_t material : b->cellMaterials)
-        if (material == TNT) { containsTnt = true; break; }
-    if (!containsTnt)
-      for (uint8_t material : b->jointPeerMaterials)
-        if (material == TNT) { containsTnt = true; break; }
-    if (!containsTnt) {
+        if (material == TNT) tntCells++;
+    for (uint8_t material : b->jointPeerMaterials)
+      if (material == TNT) tntCells++;
+    if (!tntCells) {
       b->fuseTicks = 0;
       continue;
     }
@@ -1042,13 +1044,31 @@ void ExplosivesSystem::applyExplosives() {
     considerTntCells(*E.L, E.L->bodyCells, b->id, E.L == &E.bg ? 1 : 0);
     if (b->jointRole == 1 && b->jointPeer)
       considerTntCells(E.bg, E.bg.passiveBodyCells, b->jointPeer->id, 1);
-    bodyBlasts.push_back({blastX, blastY});
-    bodyBlastSources.push_back(b);
+    dueBodyBlasts.push_back({b, blastX, blastY, tntCells});
+  }
+  int dueTntCells = 0;
+  for (const DueBodyBlast& blast : dueBodyBlasts)
+    dueTntCells += blast.tntCells;
+  int scheduledTntCells = scheduledStaticTntCells;
+  bool bodyBudgetClosed = scheduledTntCells
+    >= TNT_FRONT_CELLS_PER_STEP;
+  bool pacedBodyFront = dueTntCells + scheduledStaticTntCells
+    >= TNT_MASS_FRONT_CELLS;
+  for (const DueBodyBlast& blast : dueBodyBlasts) {
+    if (pacedBodyFront && !bodyBudgetClosed && scheduledTntCells > 0
+        && scheduledTntCells + blast.tntCells
+             > TNT_FRONT_CELLS_PER_STEP)
+      bodyBudgetClosed = true;
+    if (bodyBudgetClosed) {
+      blast.body->fuseTicks = 1;
+      continue;
+    }
+    scheduledTntCells += blast.tntCells;
+    carveBlastAcrossLayers(blast.x, blast.y, TNT_BLAST_RADIUS,
+                          TNT_BLAST_POWER, bb, &otherBb, blast.body);
     // Any TNT left outside this crater continues as a short-fuse body or body
     // fragment, so large rigid charges propagate instead of leaving inert TNT.
-    b->fuseTicks = TNT_CHAIN_FUSE;
+    blast.body->fuseTicks = TNT_CHAIN_FUSE;
   }
-  for (size_t i = 0; i < bodyBlasts.size(); i++)
-    carveBlastAcrossLayers(bodyBlasts[i].first, bodyBlasts[i].second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb, bodyBlastSources[i]);
   finishBlastBatches(bb, &otherBb); // one finalize per layer for every crater of this step
 }

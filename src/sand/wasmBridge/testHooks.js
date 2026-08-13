@@ -47,6 +47,8 @@ function table() {
     bodyIdLayer: c('engine_test_body_id_layer', 'number', ['number', 'number', 'number']),
     bodyBlastDebrisLayer: c('engine_test_body_blast_debris_layer', 'number', ['number', 'number', 'number']),
     bodyJointRoleLayer: c('engine_test_body_joint_role_layer', 'number', ['number', 'number', 'number']),
+    bodyLookupPreservesPoseCache: c('engine_test_body_lookup_preserves_pose_cache', 'number',
+      ['number', 'number', 'number']),
     bodyStateLayer: c('engine_test_body_state_layer', 'number', ['number', 'number', 'number', 'number']),
     spawnBoxLayer: c('engine_test_spawn_box_layer', 'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -164,6 +166,8 @@ export function attachTestHooks(engine) {
   engine._bodyIdLayer = (layer, i) => t.bodyIdLayer(ptr, layer ? 1 : 0, i);
   engine._bodyBlastDebrisLayer = (layer, i) => t.bodyBlastDebrisLayer(ptr, layer ? 1 : 0, i);
   engine._bodyJointRoleLayer = (layer, i) => t.bodyJointRoleLayer(ptr, layer ? 1 : 0, i);
+  engine._bodyLookupPreservesPoseCache = (layer, i) =>
+    t.bodyLookupPreservesPoseCache(ptr, layer ? 1 : 0, i | 0) === 1;
   engine._groundedGrid = (layer = 0) =>
     new Uint8Array(mod.HEAPU8.buffer, t.groundedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._bodyOwnerGrid = (layer = 0) =>

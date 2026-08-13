@@ -3542,7 +3542,10 @@ void RigidBodySystem::bakeRestingBodies() {
     collectLayerOverlaps(*E.L);
     if (E.L == &E.fg && E.bgEnabled) collectLayerOverlaps(E.bg);
   }
-  bool baked = false; std::vector<Body*> keep;
+  bool baked = false;
+  // Reservation checks scan the full live roster, so converted bodies remain
+  // valid until the roster has been rebuilt at the end of this pass.
+  std::vector<Body*> keep, retired, retiredFollowers;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) {
       keep.push_back(b);
@@ -3679,7 +3682,7 @@ void RigidBodySystem::bakeRestingBodies() {
         for (Body* candidate : E.bg.bodies)
           if (candidate != follower) bgKeep.push_back(candidate);
         E.bg.bodies = std::move(bgKeep);
-        delete follower;
+        retiredFollowers.push_back(follower);
       } else {
         StampSet& reserved = E.L == &E.bg
           ? backgroundReserved : foregroundReserved;
@@ -3687,12 +3690,15 @@ void RigidBodySystem::bakeRestingBodies() {
         clearBodyStamp(*E.L, b->id);
         bakeBodyToGrid(b, assemblyId, &reserved);
       }
-      delete b; baked = true;
+      retired.push_back(b);
+      baked = true;
     }
     else keep.push_back(b);
   }
   if (baked) {
     E.L->bodies = std::move(keep);
+    for (Body* body : retired) delete body;
+    for (Body* follower : retiredFollowers) delete follower;
     if (E.L == &E.fg && E.bgEnabled)
       E.comps.jointBakeNeedsGroundRefresh = true;
   }

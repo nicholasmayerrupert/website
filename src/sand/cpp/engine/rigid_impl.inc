@@ -953,6 +953,17 @@ void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& o
   double lx = b->points[i * 2], ly = b->points[i * 2 + 1];
   ox = b->px + lx * cs - ly * sn; oy = b->py + lx * sn + ly * cs;
 }
+void RigidBodySystem::bodyFusePoint(Body* b, double& wx, double& wy) {
+  double cs = std::cos(b->angle), sn = std::sin(b->angle);
+  wx = b->px + b->fuseLocalX * cs - b->fuseLocalY * sn;
+  wy = b->py + b->fuseLocalX * sn + b->fuseLocalY * cs;
+}
+void RigidBodySystem::setBodyFusePoint(Body* b, double wx, double wy) {
+  double dx = wx - b->px, dy = wy - b->py;
+  double cs = std::cos(b->angle), sn = std::sin(b->angle);
+  b->fuseLocalX = dx * cs + dy * sn;
+  b->fuseLocalY = -dx * sn + dy * cs;
+}
 uint8_t RigidBodySystem::bodyMaterialAt(Body* b, int localIndex) {
   if (localIndex < 0 || localIndex >= (int)b->occ.size() || !b->occ[localIndex]) return EMPTY;
   return b->cellMaterials.empty() ? b->material : b->cellMaterials[localIndex];
@@ -1000,6 +1011,10 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   double divisor = b->cellMaterials.empty() && !b->jointRole ? nPts : totalMass;
   double dx = sumX / divisor, dy = sumY / divisor;
   if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
+  if (b->fuseTicks > 0) {
+    b->fuseLocalX -= dx;
+    b->fuseLocalY -= dy;
+  }
   b->offsetX -= dx; b->offsetY -= dy;
   b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear();
   b->boundarySamples.clear(); b->boundarySampleRadii.clear();
@@ -2157,6 +2172,9 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->vx = leader->vx; follower->vy = leader->vy; follower->omega = leader->omega;
   follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
   follower->worldStillTicks = leader->worldStillTicks;
+  follower->fuseTicks = leader->fuseTicks;
+  follower->fuseLocalX = leader->fuseLocalX;
+  follower->fuseLocalY = leader->fuseLocalY;
   follower->restProbePoints = leader->restProbePoints;
   follower->restProbeTicks = leader->restProbeTicks;
   follower->sleepSupports = leader->sleepSupports;
@@ -2719,6 +2737,8 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
     // genuine split: rebuild each piece as an axis-aligned body with inherited motion
     double ovx = b->vx, ovy = b->vy, ow = b->omega, opx = b->px, opy = b->py;
     int inheritedFuse = b->fuseTicks;
+    double fuseX = opx, fuseY = opy;
+    if (inheritedFuse > 0) bodyFusePoint(b, fuseX, fuseY);
     for (auto& grp : groups) {
       std::vector<std::pair<int, int>> gc; gc.reserve(grp.size());
       std::vector<uint8_t> gm; gm.reserve(grp.size());
@@ -2734,6 +2754,7 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
       p->vx = ovx - ow * ry; p->vy = ovy + ow * rx; p->omega = ow;
       p->blastDebris = b->blastDebris;
       p->fuseTicks = containsTnt(p) ? inheritedFuse : 0;
+      if (p->fuseTicks > 0) setBodyFusePoint(p, fuseX, fuseY);
       p->plantType = b->plantType;
     }
     removedIds.insert(b->id);
@@ -2888,6 +2909,8 @@ void RigidBodySystem::finishErasedJointBodies(
     double oldVx = leader->vx, oldVy = leader->vy, oldOmega = leader->omega;
     bool blastDebris = leader->blastDebris;
     int fuseTicks = leader->fuseTicks;
+    double fuseX = oldPx, fuseY = oldPy;
+    if (fuseTicks > 0) bodyFusePoint(leader, fuseX, fuseY);
     uint8_t fgPlantType = leader->plantType;
     uint8_t bgPlantType = follower->plantType;
     auto removeOwnedCells = [&](Layer& layer, std::vector<int>& cells) {
@@ -2936,9 +2959,12 @@ void RigidBodySystem::finishErasedJointBodies(
         spawnedJoints.push_back(body);
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        if (body->fuseTicks > 0) setBodyFusePoint(body, fuseX, fuseY);
         body->plantType = fgPlantType;
         body->jointPeer->blastDebris = blastDebris;
         body->jointPeer->fuseTicks = body->fuseTicks;
+        body->jointPeer->fuseLocalX = body->fuseLocalX;
+        body->jointPeer->fuseLocalY = body->fuseLocalY;
         body->jointPeer->plantType = bgPlantType;
         syncJointFollower(body);
         for (const auto& cell : piece.fgCells) {
@@ -2957,6 +2983,7 @@ void RigidBodySystem::finishErasedJointBodies(
         if (!body) continue;
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        if (body->fuseTicks > 0) setBodyFusePoint(body, fuseX, fuseY);
         body->plantType = fgPlantType;
         for (const auto& cell : piece.fgCells) {
           int k = cell.second * E.cols + cell.first;
@@ -2969,6 +2996,7 @@ void RigidBodySystem::finishErasedJointBodies(
         if (!body) continue;
         inheritMotion(body);
         body->fuseTicks = hasTnt ? fuseTicks : 0;
+        if (body->fuseTicks > 0) setBodyFusePoint(body, fuseX, fuseY);
         body->plantType = bgPlantType;
         for (const auto& cell : piece.bgCells) {
           int k = cell.second * E.cols + cell.first;
@@ -3404,8 +3432,23 @@ void RigidBodySystem::bakeBodyToGrid(
                                E.isIceMaterial(material), b->plantType);
   }
   rigidBakeRegisterMs += emscripten_get_now() - registerStart;
-  if (b->fuseTicks > 0)
-    for (int k : baked[TNT]) E.queueDetonation(k, b->fuseTicks);
+  if (b->fuseTicks > 0 && !baked[TNT].empty()) {
+    double fuseX, fuseY;
+    bodyFusePoint(b, fuseX, fuseY);
+    int nearest = baked[TNT][0];
+    double nearestDistance = 1e30;
+    for (int k : baked[TNT]) {
+      int y = k / E.cols, x = k - y * E.cols;
+      double dx = x + 0.5 - fuseX, dy = y + 0.5 - fuseY;
+      double distance = dx * dx + dy * dy;
+      if (distance < nearestDistance
+          || (distance == nearestDistance && k < nearest)) {
+        nearest = k;
+        nearestDistance = distance;
+      }
+    }
+    E.queueDetonation(nearest, b->fuseTicks);
+  }
 }
 // Every component material has a static representation. Generic RIGID has none
 // and therefore remains a body.
@@ -5191,6 +5234,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     std::vector<WeldMotion> motion;
     std::unordered_set<Body*> capturedPhysical;
     int fuseTicks = 0;
+    double fuseX = 0, fuseY = 0;
     auto collectRaster = [&](Body* source, std::map<int, uint8_t>& materialAt) {
       forEachBodyCell(source, [&](int x, int y, int local) {
         materialAt.emplace(y * E.cols + x, bodyMaterialAt(source, local));
@@ -5202,8 +5246,10 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
         if (capturedPhysical.insert(physical).second)
           captureWeldMotion(physical, motion);
         if (physical->fuseTicks > 0
-            && (!fuseTicks || physical->fuseTicks < fuseTicks))
+            && (!fuseTicks || physical->fuseTicks < fuseTicks)) {
           fuseTicks = physical->fuseTicks;
+          bodyFusePoint(physical, fuseX, fuseY);
+        }
       }
       collectRaster(source, activeMaterialAt);
       removedIds[activeLayer].insert(source->id);
@@ -5273,8 +5319,11 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       applyWeldMotion(leader, motion);
       leader->blastDebris = false;
       leader->fuseTicks = fuseTicks;
+      if (fuseTicks > 0) setBodyFusePoint(leader, fuseX, fuseY);
       leader->jointPeer->blastDebris = false;
       leader->jointPeer->fuseTicks = fuseTicks;
+      leader->jointPeer->fuseLocalX = leader->fuseLocalX;
+      leader->jointPeer->fuseLocalY = leader->fuseLocalY;
       syncJointFollower(leader);
       body = leader;
     }
@@ -5285,10 +5334,13 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     std::map<int, uint8_t> materialAt;
     std::vector<WeldMotion> motion;
     int fuseTicks = 0;
+    double fuseX = 0, fuseY = 0;
     for (Body* source : touching) {
       captureWeldMotion(source, motion);
-      if (source->fuseTicks > 0 && (!fuseTicks || source->fuseTicks < fuseTicks))
+      if (source->fuseTicks > 0 && (!fuseTicks || source->fuseTicks < fuseTicks)) {
         fuseTicks = source->fuseTicks;
+        bodyFusePoint(source, fuseX, fuseY);
+      }
       forEachBodyCell(source, [&](int x, int y, int local) {
         materialAt.emplace(y * E.cols + x, bodyMaterialAt(source, local));
       });
@@ -5333,6 +5385,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       applyWeldMotion(body, motion);
       body->blastDebris = false;
       body->fuseTicks = fuseTicks;
+      if (fuseTicks > 0) setBodyFusePoint(body, fuseX, fuseY);
     }
   }
 

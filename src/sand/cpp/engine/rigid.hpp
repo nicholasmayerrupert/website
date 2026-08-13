@@ -110,6 +110,8 @@ class RigidBodySystem {
   // Rasterize a body's occ mask to world cells (bodies in impl; instantiated there).
   void ensureBodyRaster(Body* b);
   template <class F> void forEachBodyCell(Body* b, F cb);
+  void bodyFusePoint(Body* b, double& wx, double& wy);
+  void setBodyFusePoint(Body* b, double wx, double wy);
 
   void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy);
   bool computeDerived(Body* b, bool preserveWorld);

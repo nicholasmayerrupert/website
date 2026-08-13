@@ -200,6 +200,47 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a long rigid charge propagates from the side that was ignited ---
+{
+  const C = 220, R = 220, cx = C >> 1;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.spawnBox(cx, 35, 55, 2, MAT.TNT);
+  const extent = () => {
+    const grid = e.getGrid();
+    let count = 0, minX = C, maxX = -1, minY = R;
+    for (let k = 0; k < grid.length; k++) {
+      if (grid[k] !== MAT.TNT) continue;
+      const x = k % C, y = Math.floor(k / C);
+      count++;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+    }
+    return { count, minX, maxX, minY };
+  };
+  const initial = extent();
+  let first = null, drops = 0, previous = initial.count;
+  for (let tick = 0; tick < 100 && previous > 0; tick++) {
+    const live = extent();
+    if (!first)
+      placeFixture(e, live.minX - 1, live.minY, 0, MAT.FIRE);
+    e.step(tick * 16);
+    const next = extent();
+    if (next.count < previous) {
+      drops++;
+      if (!first) first = next;
+    }
+    previous = next.count;
+  }
+  check(`long rigid TNT existed (${initial.count} cells across ${initial.minX}-${initial.maxX})`,
+    initial.count >= 400 && initial.maxX - initial.minX >= 100);
+  check(`rigid TNT's first crater started at its lit side (${first?.minX})`,
+    first && first.count > 0 && first.minX >= initial.minX + 12
+      && first.maxX >= initial.maxX - 3);
+  check(`long rigid TNT completed as a staged front (${drops} drops, ${previous} left)`,
+    drops >= 3 && previous === 0);
+  e.destroy();
+}
+
 // --- a blast front shortens an already-lit static fuse instead of leaving a late tail ---
 {
   const e = mk();

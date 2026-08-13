@@ -34,7 +34,8 @@ void ExplosivesSystem::queueDetonation(int cell, int fuse) {
     E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
   }
 }
-void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
+void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse,
+                                         double sourceX, double sourceY) {
   if (!b) return;
   if (b->jointRole == 2) {
     if (!b->jointPeer) return;
@@ -43,11 +44,14 @@ void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
   if (!E.bodyContainsMaterial(b, TNT)) return;
   if (b->fuseTicks <= 0 || b->fuseTicks > fuse) {
     b->fuseTicks = fuse;
+    E.rigid.setBodyFusePoint(b, sourceX, sourceY);
     E.audio.emit(SE_FUSE, b->px, b->py, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
   }
   b->awake = true; E.rigid.resetSleepTracking(b);
   if (b->jointRole == 1 && b->jointPeer) {
     b->jointPeer->fuseTicks = b->fuseTicks;
+    b->jointPeer->fuseLocalX = b->fuseLocalX;
+    b->jointPeer->fuseLocalY = b->fuseLocalY;
     E.rigid.syncJointFollower(b);
   }
 }
@@ -458,7 +462,10 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
     if (material == TNT && dd > 0) {
       if (bodyCell) {
         if (hitBody && !bb.sourceBodies.count(hitBody)) {
-          bb.tntBodyIgnitions.insert(hitBody);
+          auto ignition = bb.tntBodyIgnitions.find(hitBody);
+          if (ignition == bb.tntBodyIgnitions.end()
+              || dd < ignition->second.distanceSquared)
+            bb.tntBodyIgnitions[hitBody] = {k, dd};
           return;
         }
       } else {
@@ -525,8 +532,11 @@ void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
       dirtyJoints.insert(body->jointRole == 1 ? body : body->jointPeer);
   // Set the fuse while every recorded body is still alive. Ordinary bodies can
   // be replaced below by split fragments, which inherit this countdown.
-  for (Body* b : bb.tntBodyIgnitions)
-    shortenTntBodyFuse(b, TNT_CHAIN_FUSE);
+  for (const auto& entry : bb.tntBodyIgnitions) {
+    int cell = entry.second.cell;
+    shortenTntBodyFuse(entry.first, TNT_CHAIN_FUSE,
+                       cell % E.cols + 0.5, cell / E.cols + 0.5);
+  }
   // The mirrored layer has not applied its cuts yet. Ordinary bodies can split
   // now; cross-layer bodies split once the complete two-layer cut is visible.
   E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells, false);
@@ -619,7 +629,8 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
           || b->py - reach >= wave.cy + wave.radius) continue;
       if (applyBlastImpulse(b, wave.cx, wave.cy, wave.radius, wave.power)
           && E.bodyContainsMaterial(b, TNT))
-        shortenTntBodyFuse(b, TNT_CHAIN_FUSE);
+        shortenTntBodyFuse(b, TNT_CHAIN_FUSE,
+                           wave.cx + 0.5, wave.cy + 0.5);
     }
 
     int localDebrisCap = bb.debrisStepCap;
@@ -853,7 +864,9 @@ void ExplosivesSystem::applyExplosives() {
       int id = E.L->bodyOwner[k];
       if (!builtBodies) { for (Body* b : E.L->bodies) bodyById[b->id] = b; builtBodies = true; }
       auto it = bodyById.find(id);
-      if (it != bodyById.end() && it->second->fuseTicks == 0) shortenTntBodyFuse(it->second, TNT_FUSE_TICKS);
+      if (it != bodyById.end() && it->second->fuseTicks == 0)
+        shortenTntBodyFuse(it->second, TNT_FUSE_TICKS,
+                           k % E.cols + 0.5, k / E.cols + 0.5);
     } else queueDetonation(k, TNT_FUSE_TICKS);
   };
   const std::vector<int>* heatCells = &E.activeHeatCells;
@@ -1016,6 +1029,8 @@ void ExplosivesSystem::applyExplosives() {
       continue;
     }
     if (--b->fuseTicks > 0) continue;
+    double fuseX, fuseY;
+    E.rigid.bodyFusePoint(b, fuseX, fuseY);
     int blastX = (int)std::lround(b->px);
     int blastY = (int)std::lround(b->py);
     double bestDistance = 1e30;
@@ -1027,7 +1042,7 @@ void ExplosivesSystem::applyExplosives() {
             || layer.bodyOwner[k] != ownerId || layer.grid[k] != TNT)
           continue;
         int y = k / E.cols, x = k - y * E.cols;
-        double dx = x + 0.5 - b->px, dy = y + 0.5 - b->py;
+        double dx = x + 0.5 - fuseX, dy = y + 0.5 - fuseY;
         double distance = dx * dx + dy * dy;
         if (distance < bestDistance
             || (distance == bestDistance
@@ -1069,6 +1084,12 @@ void ExplosivesSystem::applyExplosives() {
     // Any TNT left outside this crater continues as a short-fuse body or body
     // fragment, so large rigid charges propagate instead of leaving inert TNT.
     blast.body->fuseTicks = TNT_CHAIN_FUSE;
+    E.rigid.setBodyFusePoint(blast.body, blast.x + 0.5, blast.y + 0.5);
+    if (blast.body->jointRole == 1 && blast.body->jointPeer) {
+      blast.body->jointPeer->fuseTicks = blast.body->fuseTicks;
+      blast.body->jointPeer->fuseLocalX = blast.body->fuseLocalX;
+      blast.body->jointPeer->fuseLocalY = blast.body->fuseLocalY;
+    }
   }
   finishBlastBatches(bb, &otherBb); // one finalize per layer for every crater of this step
 }

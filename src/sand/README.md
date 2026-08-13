@@ -300,8 +300,9 @@ When a seed-bearing tree rebakes after rigid motion, resumed growth derives an
 upward leader and crown frame from the settled raster, so a fallen trunk bends
 back toward the sky instead of reusing its invalid pre-fall axis.
 The plain seed grows `WOOD`/`PLANT`, while oak uses distinct
-`OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live TNT fuses remain attached to
-their static component or body.
+`OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live static TNT fuses remain
+cell-addressed, while a body fuse retains its body-local ignition front through
+motion, splitting, welding, and baking.
 Mixed assemblies retain a per-cell material map, so ore, masonry, timber,
 foliage, and ice rotate together without losing their identities. Foreground and
 background halves released by the same bonded structural break become one

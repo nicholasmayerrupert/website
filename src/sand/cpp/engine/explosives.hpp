@@ -70,6 +70,7 @@ class ExplosivesSystem {
     std::array<int16_t, TABLE * BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE> debrisSlots;
   };
   struct BlastCellRemoval { int cell; uint8_t material; };
+  struct TntBodyIgnition { int cell, distanceSquared; };
   struct BlastParticlePlan {
     uint8_t material;
     double x, y, vx, vy;
@@ -81,7 +82,8 @@ class ExplosivesSystem {
     std::vector<int> erasedStructural;
     std::vector<BlastParticlePlan> particlePlans;
     std::vector<BlastWave> waves;
-    std::unordered_set<Body*> sourceBodies, tntBodyIgnitions;
+    std::unordered_set<Body*> sourceBodies;
+    std::unordered_map<Body*, TntBodyIgnition> tntBodyIgnitions;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -95,7 +97,7 @@ class ExplosivesSystem {
   // front is sooner (ordinary heat re-ignition still leaves the fuse unchanged).
   std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH);
   void queueDetonation(int cell, int fuse);
-  void shortenTntBodyFuse(Body* b, int fuse);
+  void shortenTntBodyFuse(Body* b, int fuse, double sourceX, double sourceY);
   void spawnBlastRingGases(const std::vector<BlastWave>& waves, int waveCap);
   void activateBlastRectNow(int x0, int y0, int x1, int y1);
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);

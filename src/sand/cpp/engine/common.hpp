@@ -306,6 +306,9 @@ struct Body {
   int rasterLockOwner = -2;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
+  // The ignition front is a body-local point, so its next crater follows the
+  // same end of a moving or rotating charge.
+  double fuseLocalX = 0, fuseLocalY = 0;
   uint8_t plantType = PT_STANDARD; // seed species restored when a settled body bakes
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;

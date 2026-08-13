@@ -1736,6 +1736,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     std::vector<std::pair<int, int>> cells;
     std::vector<uint8_t> materials;
     int fuseTicks = 0;
+    int fuseCell = -1;
     uint8_t plantType = PT_STANDARD;
   };
   std::vector<PendingBody> pending;
@@ -1776,8 +1777,10 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
           body.plantType = lay.components[slot].plantType;
         auto fuse = lay.pendingDetonations.find(k);
         if (fuse != lay.pendingDetonations.end()) {
-          if (!body.fuseTicks || fuse->second < body.fuseTicks)
+          if (!body.fuseTicks || fuse->second < body.fuseTicks) {
             body.fuseTicks = fuse->second;
+            body.fuseCell = k;
+          }
           lay.pendingDetonations.erase(fuse);
         }
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
@@ -1825,6 +1828,10 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     Body* body = E.rigid.spawnBodyImpl(source.cells, source.materials);
     if (!body) continue;
     body->fuseTicks = source.fuseTicks;
+    if (source.fuseCell >= 0)
+      E.rigid.setBodyFusePoint(body,
+        source.fuseCell % E.cols + 0.5,
+        source.fuseCell / E.cols + 0.5);
     body->plantType = source.plantType;
     for (size_t i = 0; i < source.cells.size(); i++) {
       int k = source.cells[i].second * E.cols + source.cells[i].first;
@@ -1857,6 +1864,7 @@ void ComponentSystem::detachCrossLayerComponentGroups(
     std::vector<std::pair<int, int>> fgCells, bgCells;
     std::vector<uint8_t> fgMaterials, bgMaterials;
     int fuseTicks = 0;
+    int fuseCell = -1;
     uint8_t fgPlantType = PT_STANDARD, bgPlantType = PT_STANDARD;
   };
   std::vector<PendingJoint> pending;
@@ -1910,8 +1918,10 @@ void ComponentSystem::detachCrossLayerComponentGroups(
           int k = cell.second * E.cols + cell.first;
           auto fuse = lay.pendingDetonations.find(k);
           if (fuse == lay.pendingDetonations.end()) continue;
-          if (!joint.fuseTicks || fuse->second < joint.fuseTicks)
+          if (!joint.fuseTicks || fuse->second < joint.fuseTicks) {
             joint.fuseTicks = fuse->second;
+            joint.fuseCell = k;
+          }
           lay.pendingDetonations.erase(fuse);
         }
       };
@@ -1967,6 +1977,13 @@ void ComponentSystem::detachCrossLayerComponentGroups(
     Body* follower = leader->jointPeer;
     spawnedJoints.push_back(leader);
     leader->fuseTicks = follower->fuseTicks = source.fuseTicks;
+    if (source.fuseCell >= 0) {
+      E.rigid.setBodyFusePoint(leader,
+        source.fuseCell % E.cols + 0.5,
+        source.fuseCell / E.cols + 0.5);
+      follower->fuseLocalX = leader->fuseLocalX;
+      follower->fuseLocalY = leader->fuseLocalY;
+    }
     leader->plantType = source.fgPlantType;
     follower->plantType = source.bgPlantType;
     for (const auto& cell : source.fgCells) {

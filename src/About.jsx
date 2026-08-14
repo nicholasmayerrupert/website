@@ -37,8 +37,7 @@ export default function About() {
               <p className="career-card__company">Mastercard</p>
               <h3>Software Engineer I</h3>
               <p>
-                I currently work on Mastercard&apos;s engineering team as a
-                Software Engineer I.
+                I currently work on Mastercard&apos;s engineering team.
               </p>
             </div>
           </article>

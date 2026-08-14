@@ -17,47 +17,47 @@ const HISTORY = [
   {
     title: 'Simulation code is separated and measured',
     copy:
-      'I moved the update rules into src/sand/engine.js and made the page a client of that engine. I also introduced a deterministic benchmark, recorded baselines, and a seeded random source for repeatable workloads.',
+      'After separating the update rules into src/sand/engine.js, I made the page a client of that engine. I also introduced a deterministic benchmark, recorded baselines, and a seeded random source for repeatable workloads.',
   },
   {
     title: 'A loaded window replaces the fixed world',
     copy:
-      'I replaced the fixed world with a sliding buffer that made horizontal travel unbounded, then added a chunk store to preserve edits and bodies after regions left memory. Vertical streaming expanded this into a two-axis window over procedural terrain.',
+      'A sliding buffer replaced the fixed world and made horizontal travel unbounded. I then added a chunk store to preserve edits and bodies after regions left memory, while vertical streaming expanded the buffer into a two-axis window over procedural terrain.',
   },
   {
     title: 'The cellular core moves to C++ and WebAssembly',
     copy:
-      'I first ported the double-buffered grid, loose-material passes, dirty tracking, and paint operations to C++. I used a parity harness to compare the port with the JavaScript engine before moving components, reactions, rigid bodies, and world generation and removing the legacy engine.',
+      'The C++ port began with the double-buffered grid, loose-material passes, dirty tracking, and paint operations. I used a parity harness to compare it with the JavaScript engine before moving components, reactions, rigid bodies, and world generation and removing the legacy engine.',
   },
   {
     title: 'Rendering and interaction become engine responsibilities',
     copy:
-      'I moved pixel generation, WebGL2 presentation, the camera, pointer mapping, and input policy into C++. I reduced JavaScript to lifecycle and event forwarding, packaged the runtime as a framework-free sand-game Web Component, and added a second fully simulated layer.',
+      'Pixel generation, WebGL2 presentation, the camera, pointer mapping, and input policy all moved into C++. That left JavaScript responsible for lifecycle and event forwarding. I then packaged the runtime as a framework-free sand-game Web Component and added a second fully simulated layer.',
   },
   {
     title: 'The engine becomes the multiplayer authority',
     copy:
-      'I replaced the browser-hosted relay with a headless Node server running the same WebAssembly engine. Browsers became clients that submit validated intents and receive world, actor, item, and inventory state.',
+      'For multiplayer, I replaced the browser-hosted relay with a headless Node server running the same WebAssembly engine. Browsers became clients that submit validated intents and receive world, actor, item, and inventory state.',
   },
   {
     title: 'Engine ownership is divided into named subsystems',
     copy:
-      'I reduced the coordinator by extracting camera, networking, terrain, rendering, items, inventory, players, tools, reactions, explosives, growth, components, and rigid-body responsibilities. I also added a development validator that checks component and body ownership after each step.',
+      'As the engine grew, I extracted camera, networking, terrain, rendering, items, inventory, players, tools, reactions, explosives, growth, components, and rigid-body responsibilities from the coordinator. A development validator now checks component and body ownership after each step.',
   },
   {
     title: 'Offline simulation moves off the main thread',
     copy:
-      'I moved creative and offline simulation into an authority worker. One engine advances the world there while another applies backpressured differences and presents the result on the main thread. This remains the basis of the current offline runtime.',
+      'To move creative and offline simulation off the main thread, I introduced an authority worker. One engine advances the world there while another applies backpressured differences and presents the result. This remains the basis of the current offline runtime.',
   },
   {
     title: 'Structural and fluid behavior converge on the rigid-body system',
     copy:
-      'I gave supported structural materials and detached assemblies one placement and motion path. I replaced simpler buoyancy rules with pressure-based liquid coupling and added compound collision shapes so concave, hollow, long, and mixed-material bodies retain their real geometry.',
+      'I brought supported structural materials and detached assemblies onto one placement and motion path. Pressure-based liquid coupling replaced simpler buoyancy rules, while compound collision shapes let concave, hollow, long, and mixed-material bodies retain their real geometry.',
   },
   {
     title: 'New mechanics extend shared engine systems',
     copy:
-      'I later added target-masked spatial forces, preserved plant growth through rigid transitions, and propagated TNT ignition across moving rigid material. These changes use the same component, force, reaction, and body ownership rules rather than separate browser-side effects.',
+      'Later additions included target-masked spatial forces, plant growth that survives rigid transitions, and TNT ignition across moving rigid material. I built them on the existing component, force, reaction, and body ownership rules rather than separate browser-side effects.',
   },
 ];
 
@@ -107,12 +107,6 @@ const ENGINE_PROBLEMS = [
   },
 ];
 
-const REVERTED_WORK = [
-  'I removed a detached-terrain optimization after the broader falling behavior proved unreliable.',
-  'I reverted a change that removed pauses from large TNT chains because uninterrupted fronts were not yet safe.',
-  'I reverted a dense neutronium tail-latency change instead of keeping an unstable performance result.',
-];
-
 export default function FallingSandCaseStudy() {
   const artRef = useRef(null);
   const [artActive, setArtActive] = useState(false);
@@ -151,8 +145,8 @@ export default function FallingSandCaseStudy() {
         <p className="case-kicker">Engine development history</p>
         <h1>Falling Sand</h1>
         <p className="case-hero__lede">
-          I began the project as a JavaScript canvas inside this site&apos;s About
-          section. I later moved the simulation to C++ and WebAssembly,
+          What began as a JavaScript canvas inside this site&apos;s About section is
+          now a much larger engine. I moved the simulation to C++ and WebAssembly,
           with two material layers, streamed procedural terrain, component-backed
           structures, rigid-body physics, and a WebGL2 presenter.
         </p>
@@ -192,7 +186,7 @@ export default function FallingSandCaseStudy() {
           <p className="case-section__label">Development history</p>
           <h2 id="history-heading">How the engine changed</h2>
           <p>
-            I selected these milestones from the complete repository history.
+            These milestones come from the complete repository history.
             They mark changes to the engine&apos;s ownership, execution model, or
             simulation model rather than every material and gameplay addition.
           </p>
@@ -254,40 +248,6 @@ export default function FallingSandCaseStudy() {
               <p>{problem.copy}</p>
             </article>
           ))}
-        </div>
-      </section>
-
-      <section className="case-section" aria-labelledby="verification-heading">
-        <div className="case-section__intro">
-          <p className="case-section__label">Verification</p>
-          <h2 id="verification-heading">Performance work is checked against behavior</h2>
-          <p>
-            I introduced deterministic workloads before beginning the C++
-            rewrite. The current benchmark records phase timing, work
-            volume, streaming cost, rendering cost, and a terrain checksum.
-            Focused suites cover component ownership, rigid collisions, fluids,
-            world shifts, networking, actors, and rendering invariants.
-          </p>
-          <p>
-            Development builds can validate component and body ownership after
-            every step. Pure refactors are expected to preserve exact checksums;
-            intentional behavior changes require an explained baseline update.
-          </p>
-        </div>
-
-        <div className="case-reverts">
-          <h3>Changes that did not remain</h3>
-          <p>
-            I also removed optimizations when their behavior or stability was
-            not acceptable.
-          </p>
-          <ul>
-            {REVERTED_WORK.map((item) => (
-              <li key={item}>
-                <p>{item}</p>
-              </li>
-            ))}
-          </ul>
         </div>
       </section>
 

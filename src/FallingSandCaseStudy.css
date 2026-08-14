@@ -1,7 +1,6 @@
 :root {
   --case-bg: #08090b;
   --case-panel: #0d1015;
-  --case-panel-soft: #0a0c10;
   --case-text: #eceef2;
   --case-muted: #989da8;
   --case-dim: #6e747f;
@@ -227,8 +226,7 @@ body {
   text-wrap: balance;
 }
 
-.case-section__intro > p:not(.case-section__label),
-.case-reflection__copy > p {
+.case-section__intro > p:not(.case-section__label) {
   margin: 24px 0 0;
   color: var(--case-muted);
   font-size: 15px;
@@ -261,8 +259,7 @@ body {
 
 .case-history h3,
 .case-runtime h3,
-.case-problems h3,
-.case-reverts h3 {
+.case-problems h3 {
   margin: 0;
   color: #e4e6eb;
   font-size: 20px;
@@ -273,8 +270,7 @@ body {
 
 .case-history__list li > div > p,
 .case-runtime p,
-.case-problems p,
-.case-reverts p {
+.case-problems p {
   margin: 13px 0 0;
   color: var(--case-muted);
   font-size: 14px;
@@ -331,41 +327,17 @@ body {
   margin-top: 52px;
 }
 
-.case-reverts {
-  padding: clamp(30px, 4vw, 44px);
-  border: 1px solid var(--case-line);
-  border-radius: 16px;
-  background: var(--case-panel-soft);
-}
-
-.case-reverts > p {
-  max-width: 700px;
-}
-
-.case-reverts ul {
-  margin: 30px 0 0;
-  padding: 0;
-  border-top: 1px solid var(--case-line);
-  list-style: none;
-}
-
-.case-reverts li {
-  padding: 22px 0;
-  border-bottom: 1px solid var(--case-line);
-}
-
-.case-reverts li > p {
-  margin: 0;
-}
-
 .case-reflection__copy {
   max-width: 780px;
+  display: grid;
+  gap: 24px;
 }
 
-.case-reflection__copy > p:first-child {
-  margin-top: 0;
+.case-reflection__copy > p {
+  margin: 0;
   color: #c2c5cc;
   font-size: 18px;
+  line-height: 1.7;
 }
 
 .case-run {

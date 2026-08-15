@@ -33,7 +33,6 @@ const MARS_PALETTE = Object.freeze({
 });
 const HORIZON_RATIO = 0.36;
 export const SURFACE_CAM_Y = -120;
-const MAX_VERTICAL_DRIFT_UP = 18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;
 const RIDGE_SAMPLE_STEP = 4;
@@ -95,7 +94,7 @@ export function paletteForPhase(phase) {
 }
 
 function backgroundDriftY(camY) {
-  return clamp((camY - SURFACE_CAM_Y) * 0.55, -MAX_VERTICAL_DRIFT_UP, MAX_VERTICAL_DRIFT_DOWN);
+  return Math.min((camY - SURFACE_CAM_Y) * 0.55, MAX_VERTICAL_DRIFT_DOWN);
 }
 
 function snapScreenPixel(value, scale) {

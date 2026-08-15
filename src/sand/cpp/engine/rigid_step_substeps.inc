@@ -593,7 +593,7 @@
         // A sparse shape's first swept hit already identifies its entered local
         // face; a remote concave arm can put the body's center on the other side.
         // Terrain remains multi-sided for floor/wall corners.
-        bool localSparseSweep = sweptHit[bk]
+        bool localSparseSweep = B && sweptHit[bk]
           && (!rigidTightSlenderBounds(A)
               || !rigidTightSlenderBounds(B));
         if (B && !childFeature[bk] && !localSparseSweep

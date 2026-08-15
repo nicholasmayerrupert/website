@@ -12,6 +12,41 @@ const BLASTS = 10;
 const STEPS_PER_BLAST = 75;
 
 await initSandWasm();
+
+// A fast TNT fragment can reach terrain through the swept-contact manifold,
+// whose optional peer body is absent for terrain contacts.
+{
+  const sweptContactEngine = attachTestHooks(createEngineWasmRaw({
+    cols: 512,
+    rows: 384,
+    worldSeed: 1401181199,
+    sinksOn: false,
+    infinite: true,
+    storageRole: 'authority',
+  }));
+  sweptContactEngine.setBgEnabled(true);
+  sweptContactEngine.setCreativeMaterial(CREATIVE_KIND.MATERIAL, MAT.TNT);
+  const cx = 165, cy = 191, halfWidth = 45, halfHeight = 25;
+  sweptContactEngine.pointerDown(cx, cy, 0);
+  for (let point = 1; point < 15; point++) {
+    const angle = point * Math.PI * 2 / 15;
+    sweptContactEngine.pointerDraft(
+      Math.round(cx + Math.cos(angle) * halfWidth),
+      Math.round(cy + Math.sin(angle) * halfHeight),
+    );
+  }
+  sweptContactEngine.pointerUp(0);
+  sweptContactEngine.pointerButtons(0);
+  sweptContactEngine.paintDiscLayer(0, 118, 166, 2, MAT.FIRE, false);
+  for (let step = 0; step < 12; step++) {
+    sweptContactEngine.stepActors();
+    sweptContactEngine.stepWorld();
+  }
+  if (sweptContactEngine.getTick() !== 12)
+    throw new Error(`swept TNT contact stopped at tick ${sweptContactEngine.getTick()} of 12`);
+  sweptContactEngine.destroy();
+}
+
 const engine = attachTestHooks(createEngineWasmRaw({
   cols: COLS,
   rows: ROWS,

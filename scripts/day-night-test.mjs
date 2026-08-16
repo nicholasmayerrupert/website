@@ -13,6 +13,7 @@ import {
   celestialOrbitY,
   cloudCycleOffset,
   paletteForPhase,
+  ridgeFacetDepths,
   skyAltitudeLayout,
 } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -80,6 +81,13 @@ check('sun and moon paths meet the viewport bottom before reaching the same apex
   close(celestialOrbitY(70, 0, 180), 180) &&
   close(celestialOrbitY(70, 1, 180), 180) &&
   close(celestialOrbitY(70, 0.5, 180), 70 - 70 * 0.68));
+
+const facet = ridgeFacetDepths(32, 65, 20, 0);
+const shiftedFacet = ridgeFacetDepths(25, 65, 20, 7);
+check('mountain face shadows end at the ridge floor and translate rigidly',
+  close(facet.floorY, 85)
+    && close(shiftedFacet.floorY, facet.floorY - 7)
+    && close(shiftedFacet.shoulderY, facet.shoulderY - 7));
 
 const surfaceSky = skyAltitudeLayout(SURFACE_CAM_Y, 180, 65);
 const nearbySky = skyAltitudeLayout(SURFACE_CAM_Y - 8, 180, 65);

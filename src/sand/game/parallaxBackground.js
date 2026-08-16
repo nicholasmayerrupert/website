@@ -317,6 +317,14 @@ function tracePixelSurface(ctx, points, yOffset = 0) {
   }
 }
 
+export function ridgeFacetDepths(peakY, base, amp, offY) {
+  const floorY = base + amp - offY;
+  return {
+    shoulderY: Math.min(peakY + amp * 1.5, floorY),
+    floorY,
+  };
+}
+
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, scale = 1) {
   const offX = snapScreenPixel(camX * depth - w * 0.5, scale);
   // Round the stable contour before applying the screen-pixel offset. The
@@ -367,12 +375,13 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     const x = worldX - offX;
     const peakY = surfaceY(x);
     const width = facetPeriod * (0.55 + rand01(worldX + seed * 101) * 0.3);
+    const facet = ridgeFacetDepths(peakY, base, amp, offY);
     ctx.globalAlpha = 0.13 + detail * 0.025;
     ctx.fillStyle = rand01(worldX + seed * 37) > 0.5 ? '#071116' : '#000000';
     ctx.beginPath();
     ctx.moveTo(x, peakY);
-    ctx.lineTo(x + width, peakY + amp * 1.5);
-    ctx.lineTo(x + width * 0.55, h);
+    ctx.lineTo(x + width, facet.shoulderY);
+    ctx.lineTo(x + width * 0.55, facet.floorY);
     ctx.closePath();
     ctx.fill();
 

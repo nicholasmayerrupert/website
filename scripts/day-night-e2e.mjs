@@ -142,6 +142,74 @@ try {
   check(`clouds retain vertical parallax (${(skyPan.clouds.overlap * 100).toFixed(1)}% fixed pixels)`,
     skyPan.clouds.before > 20 && skyPan.clouds.after > 20 && skyPan.clouds.overlap < 0.9);
 
+  const altitudeSky = await page.evaluate(async () => {
+    const { createParallaxBackground, SURFACE_CAM_Y } =
+      await import('/src/sand/game/parallaxBackground.js');
+    const { sampleDayNight } = await import('/src/sand/game/dayNightCycle.js');
+    const host = document.createElement('div');
+    const background = createParallaxBackground(host);
+    background.resize(1280, 720);
+    const canvas = host.querySelector('canvas');
+    const context = canvas.getContext('2d');
+    const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
+    const stats = (colors) => {
+      const targets = new Set(colors.map(rgb));
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let count = 0, sumY = 0, minY = canvas.height, maxY = -1;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const color = (pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2];
+        if (!targets.has(color)) continue;
+        const y = Math.floor(i / 4 / canvas.width);
+        count++;
+        sumY += y;
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+      return { count, minY, maxY, meanY: count ? sumY / count : -1 };
+    };
+    let visualKey = 0;
+    const sample = (camY, phase) => {
+      background.draw({
+        camY,
+        dayNight: sampleDayNight(phase),
+        dayVisualKey: ++visualKey,
+      });
+      return {
+        stars: stats(['#e1f1f3', '#f9e7b7', '#b9dcff']),
+        sun: stats(['#ffe39a']),
+        moon: stats(['#f4fbff']),
+      };
+    };
+    const surfaceNight = sample(SURFACE_CAM_Y, 0);
+    const highNight = sample(SURFACE_CAM_Y - 144, 0);
+    const spaceNight = sample(SURFACE_CAM_Y - 320, 0);
+    const surfaceNoon = sample(SURFACE_CAM_Y, 0.5);
+    const highNoon = sample(SURFACE_CAM_Y - 144, 0.5);
+    const spaceNoon = sample(SURFACE_CAM_Y - 320, 0.5);
+    background.destroy();
+    return {
+      height: canvas.height,
+      surfaceNight,
+      highNight,
+      spaceNight,
+      surfaceNoon,
+      highNoon,
+      spaceNoon,
+    };
+  });
+  check(`the star boundary expands toward the bottom with altitude (${altitudeSky.surfaceNight.stars.maxY} -> ${altitudeSky.highNight.stars.maxY} -> ${altitudeSky.spaceNight.stars.maxY})`,
+    altitudeSky.surfaceNight.stars.count > 8
+      && altitudeSky.highNight.stars.maxY > altitudeSky.surfaceNight.stars.maxY + altitudeSky.height * 0.25
+      && altitudeSky.spaceNight.stars.maxY > altitudeSky.height * 0.85);
+  check(`the moon exits through the bottom at extreme altitude (${altitudeSky.surfaceNight.moon.meanY.toFixed(1)} -> ${altitudeSky.highNight.moon.meanY.toFixed(1)} -> ${altitudeSky.spaceNight.moon.count} pixels)`,
+    altitudeSky.surfaceNight.moon.count > 10 && altitudeSky.highNight.moon.count > 10
+      && altitudeSky.highNight.moon.meanY > altitudeSky.surfaceNight.moon.meanY + altitudeSky.height * 0.35
+      && altitudeSky.spaceNight.moon.count === 0);
+  check(`the sun exits through the bottom at extreme altitude (${altitudeSky.surfaceNoon.sun.meanY.toFixed(1)} -> ${altitudeSky.highNoon.sun.meanY.toFixed(1)} -> ${altitudeSky.spaceNoon.sun.count} pixels)`,
+    altitudeSky.surfaceNoon.sun.count > 10 && altitudeSky.highNoon.sun.count > 10
+      && altitudeSky.highNoon.sun.meanY > altitudeSky.surfaceNoon.sun.meanY + altitudeSky.height * 0.35
+      && altitudeSky.spaceNoon.sun.count === 0);
+
   await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
   const backgroundHash = () => page.evaluate(() => {
     const bg = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');

@@ -33,6 +33,9 @@ const MARS_PALETTE = Object.freeze({
 });
 const HORIZON_RATIO = 0.36;
 export const SURFACE_CAM_Y = -120;
+const STAR_FIELD_FRACTION = 0.72;
+const SPACE_REVEAL_START_CELLS = 32;
+const SPACE_REVEAL_SPAN_CELLS = 192;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;
 const RIDGE_SAMPLE_STEP = 4;
@@ -55,6 +58,31 @@ function clamp(value, min, max) {
 function smooth01(value) {
   const t = clamp(value, 0, 1);
   return t * t * (3 - 2 * t);
+}
+
+// The deep-sky layout stays fixed near the surface. Above the atmosphere its
+// lower edge opens toward the bottom of the viewport and carries the visible
+// sun/moon orbit out through that edge.
+export function skyAltitudeLayout(camY, height, horizon) {
+  const h = Math.max(1, height);
+  const surfaceStarBottom = clamp(
+    Math.max(18, horizon * STAR_FIELD_FRACTION), 0, h,
+  );
+  const ascent = Math.max(
+    0, SURFACE_CAM_Y - camY - SPACE_REVEAL_START_CELLS,
+  );
+  const reveal = smooth01(ascent / SPACE_REVEAL_SPAN_CELLS);
+  const starBottom = surfaceStarBottom
+    + (h - surfaceStarBottom) * reveal;
+  const gradientExtent = horizon
+    + (h / STAR_FIELD_FRACTION - horizon) * reveal;
+  return {
+    reveal,
+    surfaceStarBottom,
+    starBottom,
+    gradientExtent,
+    celestialDrop: (h + 12) * reveal,
+  };
 }
 
 function smoothNoise1D(value, seed) {
@@ -117,18 +145,26 @@ function drawDither(ctx, w, h, horizon, daylight) {
   }
 }
 
-function drawStars(ctx, w, horizon, opacity) {
+function drawStars(ctx, w, horizon, opacity, field = null) {
   if (opacity <= 0) return;
   ctx.globalAlpha = opacity;
   const offX = Math.floor(-w * 0.5);
   const period = 240;
+  const naturalBottom = Math.max(18, horizon * STAR_FIELD_FRACTION);
+  const layoutBottom = Math.max(naturalBottom, field?.layoutBottom ?? naturalBottom);
+  const visibleBottom = clamp(
+    field?.visibleBottom ?? naturalBottom, 0, layoutBottom,
+  );
+  const starCount = Math.max(
+    42, Math.ceil(42 * layoutBottom / naturalBottom),
+  );
   const start = Math.floor((offX - 16) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < starCount; i++) {
       const seed = tile * 131 + i * 977;
       const x = tile + Math.floor(rand01(seed) * period) - offX;
-      const y = Math.floor(rand01(seed + 7) * Math.max(18, horizon * 0.72));
-      if (x < 0 || x >= w || y < 0 || y >= horizon) continue;
+      const y = Math.floor(rand01(seed + 7) * layoutBottom);
+      if (x < 0 || x >= w || y < 0 || y >= visibleBottom) continue;
       const warmth = rand01(seed + 13);
       ctx.fillStyle = warmth > 0.84 ? '#f9e7b7' : warmth < 0.13 ? '#b9dcff' : '#e1f1f3';
       ctx.fillRect(x, y, 1, 1);
@@ -189,14 +225,14 @@ export function celestialOrbitY(horizon, progress) {
     - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight) {
+function drawCelestialBodies(ctx, w, horizon, dayNight, verticalOffset = 0) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = celestialOrbitY(horizon, t);
+    const y = celestialOrbitY(horizon, t) + verticalOffset;
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -210,7 +246,9 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
+    drawPixelMoon(
+      ctx, orbitX(t), celestialOrbitY(horizon, t) + verticalOffset,
+    );
   }
 }
 
@@ -708,7 +746,10 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       return;
     }
     const palette = paletteForPhase(dayNight.phase);
-    const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));
+    const altitude = skyAltitudeLayout(qy, h, horizon);
+    const sky = ctx.createLinearGradient(
+      0, 0, 0, Math.max(1, altitude.gradientExtent),
+    );
     sky.addColorStop(0, palette.skyTop);
     sky.addColorStop(0.52, palette.skyMid);
     sky.addColorStop(0.84, palette.skyGlow);
@@ -716,11 +757,18 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
-    drawDither(ctx, w, h, skyHeight, dayNight.daylight);
-    drawStars(ctx, w, skyHeight, dayNight.starOpacity);
+    drawDither(
+      ctx, w, h, Math.min(h, altitude.gradientExtent), dayNight.daylight,
+    );
+    drawStars(ctx, w, skyHeight, dayNight.starOpacity, {
+      visibleBottom: altitude.starBottom,
+      layoutBottom: h,
+    });
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
-    drawCelestialBodies(ctx, w, skyHeight, dayNight);
+    drawCelestialBodies(
+      ctx, w, skyHeight, dayNight, altitude.celestialDrop,
+    );
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
     const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);

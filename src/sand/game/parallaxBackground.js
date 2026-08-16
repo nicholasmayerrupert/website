@@ -36,6 +36,8 @@ export const SURFACE_CAM_Y = -120;
 const STAR_FIELD_FRACTION = 0.72;
 const BACKGROUND_VERTICAL_PARALLAX = 0.55;
 const FAR_RIDGE_DEPTH = 0.18;
+const RIDGE_FACET_FLOOR_DEPTH = 1.65;
+const RIDGE_FACET_FLOOR_X_RATIO = 0.32;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;
 const RIDGE_SAMPLE_STEP = 4;
@@ -318,7 +320,7 @@ function tracePixelSurface(ctx, points, yOffset = 0) {
 }
 
 export function ridgeFacetDepths(peakY, base, amp, offY) {
-  const floorY = base + amp - offY;
+  const floorY = base + amp * RIDGE_FACET_FLOOR_DEPTH - offY;
   return {
     shoulderY: Math.min(peakY + amp * 1.5, floorY),
     floorY,
@@ -381,7 +383,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     ctx.beginPath();
     ctx.moveTo(x, peakY);
     ctx.lineTo(x + width, facet.shoulderY);
-    ctx.lineTo(x + width * 0.55, facet.floorY);
+    ctx.lineTo(x + width * RIDGE_FACET_FLOOR_X_RATIO, facet.floorY);
     ctx.closePath();
     ctx.fill();
 

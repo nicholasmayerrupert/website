@@ -9,6 +9,10 @@ import {
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
 import { createTurnDeadline, SIM_STEP_MS } from '../timing/fixedRateClock.js';
+import {
+  encodeWorkerLiveness,
+  WORKER_LIVENESS_STAGE,
+} from './workerLiveness.js';
 
 const STREAM_MARGIN = 40;
 const LIVE_SIM_COLS = 512;
@@ -55,7 +59,18 @@ let closing = false;
 let initGeneration = 0;
 let pendingRuntimeConfig = null;
 let pendingResize = null;
+let livenessStage = WORKER_LIVENESS_STAGE.INITIALIZING;
+let livenessTurn = 0;
+let livenessProbeArmed = false;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
+
+function setLivenessStage(stage, publish = false) {
+  livenessStage = stage;
+  if (!publish) return;
+  self.postMessage(encodeWorkerLiveness(
+    stage, livenessTurn, awaitingAck, !!control,
+  ));
+}
 
 function shutdown() {
   if (closing) return;
@@ -113,6 +128,7 @@ function perf() {
   return {
     ...parallel,
     worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs, actorMs: parallel.actorMs || 0,
+    wasmHeapBytes: engine?.getHeapBytes?.() || 0,
     actorTick: engine?.getActorTick?.() || 0,
     creatureCount: engine?.creatureCount?.() || 0,
     itemCount: engine?.itemCount?.() || 0,
@@ -193,7 +209,10 @@ function applyCreatureRuntime() {
 function applyRuntimeConfig(data) {
   if (data.tool !== undefined) engine.setTool(data.tool | 0);
   if (data.drawMode !== undefined) engine.setDrawMode(!!data.drawMode);
-  if (data.paused !== undefined) paused = !!data.paused;
+  if (data.paused !== undefined) {
+    paused = !!data.paused;
+    if (paused) setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED);
+  }
   if (data.artificialDelayMs !== undefined)
     artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
   if (data.creativeKind !== undefined) {
@@ -435,8 +454,20 @@ function schedule(delay = null) {
 function run() {
   if (closing || !engine) return;
   const started = performance.now();
-  if (paused) { schedule(); return; }
-  if (!control) { schedule(); return; }
+  if (paused) {
+    setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED);
+    schedule();
+    return;
+  }
+  if (!control) {
+    setLivenessStage(WORKER_LIVENESS_STAGE.WAITING_CONTROL);
+    schedule();
+    return;
+  }
+  const detailedLiveness = livenessProbeArmed;
+  livenessProbeArmed = false;
+  livenessTurn++;
+  setLivenessStage(WORKER_LIVENESS_STAGE.STREAM, detailedLiveness);
   const fromWorldOffsetX = engine.getWorldOffsetX();
   const fromWorldOffsetY = engine.getWorldOffsetY();
   const shifted = streamForControl();
@@ -476,8 +507,11 @@ function run() {
   }
   // Authority time advances as one coherent tick. An over-budget world slows
   // actors by the same amount instead of letting an actor catch-up loop race ahead.
+  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_ACTORS, detailedLiveness);
   engine.stepActors();
+  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_WORLD, detailedLiveness);
   engine.stepWorld();
+  setLivenessStage(WORKER_LIVENESS_STAGE.TRANSPORT, detailedLiveness);
   // The DEV delay hook isolates scheduling without burning a browser CPU core.
   lastStepMs = performance.now() - stepStart;
   rateSteps++;
@@ -507,6 +541,7 @@ function run() {
   if (targetTurnMs > SIM_STEP_MS)
     schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
   else schedule();
+  setLivenessStage(WORKER_LIVENESS_STAGE.SCHEDULED, detailedLiveness);
 }
 
 self.onmessage = async ({ data }) => {
@@ -517,6 +552,7 @@ self.onmessage = async ({ data }) => {
   }
   if (closing) return;
   if (data.type === 'init') {
+    livenessProbeArmed = false;
     const generation = ++initGeneration;
     clearTimeout(timer);
     try {
@@ -596,7 +632,7 @@ self.onmessage = async ({ data }) => {
       }
       latestInput = null;
       lastInventoryHash = -1;
-      epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null;
+      epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null; livenessTurn = 0;
       lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
       survivalSpawnViewReady = false;
       rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
@@ -610,6 +646,9 @@ self.onmessage = async ({ data }) => {
         postActors(true);
       }
       schedule();
+      setLivenessStage(paused
+        ? WORKER_LIVENESS_STAGE.PAUSED
+        : WORKER_LIVENESS_STAGE.SCHEDULED, true);
     } catch (error) {
       engine?.destroy();
       engine = null;
@@ -625,6 +664,11 @@ self.onmessage = async ({ data }) => {
   }
   if (data.type === 'resize' && !engine) {
     pendingResize = data;
+    return;
+  }
+  if (data.type === 'liveness-probe') {
+    livenessProbeArmed = true;
+    setLivenessStage(livenessStage, true);
     return;
   }
   if (!engine) return;
@@ -700,3 +744,5 @@ self.onmessage = async ({ data }) => {
     applyResize(data);
   }
 };
+
+setLivenessStage(WORKER_LIVENESS_STAGE.INITIALIZING, true);

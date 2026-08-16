@@ -4,11 +4,13 @@ import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 import { prepareMirrorShift } from './mirrorShift.js';
+import { createWorkerLivenessMonitor } from './workerLiveness.js';
 
 const REPLAYABLE_CONFIG_KEYS = [
   'tool', 'drawMode', 'creativeKind', 'creativeValue',
   'creatureNaturalSpawning', 'paused', 'artificialDelayMs',
 ];
+const LIVENESS_PROBE_MS = 1000;
 
 /** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
 export function createWorldWorkerClient(ctx) {
@@ -26,6 +28,9 @@ export function createWorldWorkerClient(ctx) {
   let resizeId = 0;
   let awaitingResizeId = 0;
   let destroyTimer = 0;
+  let livenessTimer = 0;
+  let livenessProbePending = false;
+  let failNextMirrorApply = false;
   let closed = false;
   let workerGeneration = 0;
   let predictor = null;
@@ -45,9 +50,11 @@ export function createWorldWorkerClient(ctx) {
   let missionSignature = '';
   let missionDirty = false;
   let appliedEpoch = 0;
+  const liveness = createWorkerLivenessMonitor();
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
     resizePending: false, resizeControlsSent: 0, controlWorldX: 0, controlWorldY: 0,
+    liveness: liveness.snapshot(),
   };
 
   const post = (message) => {
@@ -56,11 +63,28 @@ export function createWorldWorkerClient(ctx) {
     return true;
   };
 
+  const probeLiveness = () => {
+    if (closed || livenessProbePending) return;
+    livenessProbePending = post({ type: 'liveness-probe' });
+  };
+
+  const acknowledge = (packet) => {
+    if (post({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence }))
+      liveness.noteAck();
+  };
+
   const handleMessage = ({ data }) => {
+    const receivedAt = performance.now();
+    if (typeof data === 'number') {
+      if (liveness.noteSignal(data, receivedAt)) livenessProbePending = false;
+      return;
+    }
     if (!data) return;
+    liveness.noteMessage(receivedAt);
     if (data.type === 'full' || data.type === 'shift' || data.type === 'diff') {
+      liveness.notePacket(data.worldTick, receivedAt);
       if ((data.epoch | 0) < appliedEpoch) {
-        post({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
+        acknowledge(data);
         return;
       }
       // Runtime zoom can emit many buffer sizes in quick succession. While the
@@ -68,13 +92,13 @@ export function createWorldWorkerClient(ctx) {
       // them to the already-resized render mirror is both stale and expensive.
       if (awaitingResizeId &&
           (data.type !== 'full' || data.resizeId !== awaitingResizeId)) {
-        post({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
+        acknowledge(data);
         return;
       }
       // Full and shift packets establish epochs. Never let a diff for a future
       // frame replace one before the browser has applied that coordinate frame.
       if (data.type === 'diff' && data.epoch !== appliedEpoch) {
-        post({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
+        acknowledge(data);
         return;
       }
       const packetPriority = { diff: 0, shift: 1, full: 2 };
@@ -114,6 +138,7 @@ export function createWorldWorkerClient(ctx) {
     } else if (data.type === 'sounds') {
       if (!data.epoch || data.epoch >= appliedEpoch) pendingSounds.push(new Float32Array(data.data));
     } else if (data.type === 'stats') {
+      liveness.noteAuthorityTick(data.worldTick, receivedAt);
       state = {
         ...state, ...data.perf, worldTick: data.worldTick ?? state.worldTick,
         worldTps: data.perf?.worldTps ?? state.worldTps,
@@ -123,6 +148,7 @@ export function createWorldWorkerClient(ctx) {
         toolWrites: data.perf?.toolWrites ?? state.toolWrites,
       };
     } else if (data.type === 'error') {
+      liveness.noteFailure(receivedAt);
       handleError(new Error(data.message || 'simulation worker failed'));
     }
   };
@@ -172,6 +198,7 @@ export function createWorldWorkerClient(ctx) {
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
         ...initOptions, drawMode: ctx.drawModeOn,
       });
+      probeLiveness();
     },
     updateControl() {
       const e = ctx.engine;
@@ -247,6 +274,9 @@ export function createWorldWorkerClient(ctx) {
     testStepActors(steps = 1) {
       post({ type: 'test-step-actors', steps: steps | 0 });
     },
+    testFailNextMirrorApply() {
+      failNextMirrorApply = true;
+    },
     config(config) {
       for (const key of REPLAYABLE_CONFIG_KEYS) {
         if (config[key] !== undefined) runtimeConfig[key] = config[key];
@@ -273,16 +303,41 @@ export function createWorldWorkerClient(ctx) {
     },
     applyPending() {
       let changed = false;
+      let appliedWorldTick = null;
       if (pending && ctx.engine) {
         const packet = pending;
         pending = null;
-        const bytes = new Uint8Array(packet.data);
         const applyStarted = performance.now();
-        let requestResync = false;
+        const previousAppliedEpoch = appliedEpoch;
+        const previousResizeId = awaitingResizeId;
+        let packetBytes = 0;
+        let mirrorFrame = null;
+        let settled = false;
+        const settle = (requestResync) => {
+          if (!settled) {
+            acknowledge(packet);
+            settled = true;
+          }
+          if (requestResync)
+            post({ type: 'resync', epoch: packet.epoch, sequence: packet.sequence });
+        };
+        try {
+          if (failNextMirrorApply) {
+            failNextMirrorApply = false;
+            throw new Error('forced mirror packet failure');
+          }
+          const bytes = new Uint8Array(packet.data);
+          packetBytes = bytes.length;
+          let requestResync = false;
+          if (packet.type === 'full' || packet.type === 'shift') {
+            mirrorFrame = {
+              cam: ctx.engine.getCam(),
+              offsetX: ctx.engine.getWorldOffsetX(),
+              offsetY: ctx.engine.getWorldOffsetY(),
+            };
+          }
         if (packet.type === 'full') {
-          const cam = ctx.engine.getCam();
-          const oldOffsetX = ctx.engine.getWorldOffsetX();
-          const oldOffsetY = ctx.engine.getWorldOffsetY();
+          const { cam, offsetX: oldOffsetX, offsetY: oldOffsetY } = mirrorFrame;
           const worldCamX = oldOffsetX + cam.x;
           const worldCamY = oldOffsetY + cam.y;
           const containsView = worldCamX >= packet.worldOffsetX && worldCamY >= packet.worldOffsetY &&
@@ -308,6 +363,7 @@ export function createWorldWorkerClient(ctx) {
             } else {
               ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
               ctx.engine.setMirrorWorldTick(packet.worldTick);
+              appliedWorldTick = packet.worldTick;
               rebasePresentation(oldOffsetX, oldOffsetY, packet.worldOffsetX, packet.worldOffsetY);
               appliedEpoch = packet.epoch | 0;
               if (awaitingResizeId && packet.resizeId === awaitingResizeId) awaitingResizeId = 0;
@@ -316,9 +372,7 @@ export function createWorldWorkerClient(ctx) {
             }
           }
         } else if (packet.type === 'shift') {
-          const cam = ctx.engine.getCam();
-          const oldOffsetX = ctx.engine.getWorldOffsetX();
-          const oldOffsetY = ctx.engine.getWorldOffsetY();
+          const { cam, offsetX: oldOffsetX, offsetY: oldOffsetY } = mirrorFrame;
           const worldCamX = oldOffsetX + cam.x;
           const worldCamY = oldOffsetY + cam.y;
           const dx = packet.shiftDx | 0;
@@ -355,6 +409,7 @@ export function createWorldWorkerClient(ctx) {
               ctx.forceFullRender = true;
             } else {
               ctx.engine.setMirrorWorldTick(packet.worldTick);
+              appliedWorldTick = packet.worldTick;
               appliedEpoch = packet.epoch | 0;
               state = {
                 ...state,
@@ -376,20 +431,47 @@ export function createWorldWorkerClient(ctx) {
             requestResync = true;
           } else {
             ctx.engine.setMirrorWorldTick(packet.worldTick);
+            appliedWorldTick = packet.worldTick;
             changed = true;
           }
         } else {
           state = { ...state, droppedWrongEpochDiffs: (state.droppedWrongEpochDiffs || 0) + 1 };
         }
-        post({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
-        if (requestResync) {
-          post({ type: 'resync', epoch: packet.epoch, sequence: packet.sequence });
+          settle(requestResync);
+          state = {
+            ...state, epoch: appliedEpoch,
+            mirrorApplyMs: performance.now() - applyStarted, packetBytes,
+            packetType: packet.type, resizePending: !!awaitingResizeId,
+          };
+          if (appliedWorldTick !== null)
+            liveness.noteApplied(appliedWorldTick, performance.now());
+        } catch (error) {
+          // A mirror-side failure must release the authority's packet gate. The
+          // next full snapshot replaces any partially applied local state.
+          settle(true);
+          if (mirrorFrame) {
+            try {
+              ctx.engine.setMirrorWorldOffset(mirrorFrame.offsetX, mirrorFrame.offsetY);
+              ctx.engine.cameraSet(mirrorFrame.cam.x, mirrorFrame.cam.y);
+            } catch (restoreError) {
+              console.error('sand mirror frame restore failed', restoreError);
+            }
+          }
+          appliedEpoch = previousAppliedEpoch;
+          awaitingResizeId = previousResizeId;
+          appliedWorldTick = null;
+          changed = false;
+          state = {
+            ...state,
+            mirrorApplyMs: performance.now() - applyStarted,
+            packetBytes,
+            packetType: packet.type,
+            mirrorPacketErrors: (state.mirrorPacketErrors || 0) + 1,
+            lastMirrorPacketError: error?.message || String(error),
+            resizePending: !!awaitingResizeId,
+          };
+          console.error('sand world mirror packet failed', error);
         }
-        state = {
-          ...state, epoch: appliedEpoch,
-          mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length,
-          packetType: packet.type, resizePending: !!awaitingResizeId,
-        };
       }
       // Draft indices do not carry enough information to translate across
       // frames, so apply only after their matching coordinate frame is installed.
@@ -499,6 +581,8 @@ export function createWorldWorkerClient(ctx) {
       closed = true;
       clearTimeout(resizeTimer);
       resizeTimer = 0;
+      clearInterval(livenessTimer);
+      livenessTimer = 0;
       workerGeneration++;
       const target = worker;
       let finished = false;
@@ -509,6 +593,7 @@ export function createWorldWorkerClient(ctx) {
         destroyTimer = 0;
         target.onmessage = null;
         target.onerror = null;
+        target.onmessageerror = null;
         target.terminate();
       };
       target.onmessage = ({ data }) => { if (data?.type === 'destroyed') finish(); };
@@ -519,7 +604,10 @@ export function createWorldWorkerClient(ctx) {
       try { target.postMessage({ type: 'destroy' }); }
       catch { finish(); return; }
     },
-    get state() { return state; },
+    get state() {
+      state.liveness = liveness.snapshot();
+      return state;
+    },
     getOwnPlayer() {
       const own = players.find((p) => p.id === authoritativePlayerId) || null;
       const predicted = own?.alive === false ? null : predictor?.renderState();
@@ -565,6 +653,7 @@ export function createWorldWorkerClient(ctx) {
   };
   const handleError = (event) => {
     if (closed) return;
+    liveness.noteFailure();
     clearTimeout(destroyTimer);
     console.error('sand world worker failed', event.message || event);
     worker.terminate();
@@ -586,6 +675,10 @@ export function createWorldWorkerClient(ctx) {
       if (closed || target !== worker || generation !== workerGeneration) return;
       handleError(event);
     };
+    target.onmessageerror = (event) => {
+      if (closed || target !== worker || generation !== workerGeneration) return;
+      handleError(event);
+    };
   };
   const restartWorker = () => {
     if (closed) return;
@@ -597,6 +690,7 @@ export function createWorldWorkerClient(ctx) {
     workerGeneration++;
     previous.onmessage = null;
     previous.onerror = null;
+    previous.onmessageerror = null;
     try { previous.terminate(); } catch { /* already stopped */ }
     if (predictorEngine && predictorPlayerId) {
       try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
@@ -611,17 +705,22 @@ export function createWorldWorkerClient(ctx) {
     items = new Float32Array(0); projectiles = new Float32Array(0);
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;
+    liveness.reset();
+    livenessProbePending = false;
     worker = new WorldWorker();
     state = {
       ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
       resizePending: false, resizeControlsSent: 0, controlWorldX: 0, controlWorldY: 0,
+      liveness: liveness.snapshot(),
     };
     bindWorker();
     if (initOptions) post({
       type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
       ...initOptions, drawMode: ctx.drawModeOn,
     });
+    probeLiveness();
   };
   bindWorker();
+  livenessTimer = setInterval(probeLiveness, LIVENESS_PROBE_MS);
   return api;
 }

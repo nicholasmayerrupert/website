@@ -1604,6 +1604,8 @@ void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
   lay.componentRegistryDirty = true;
   lay.componentIndexPatchOnly = false;
   lay.componentIndexPatches.clear();
+  lay.groundBaseFlags.resize(lay.components.size(), 0);
+  lay.crossBondedComp.resize(lay.components.size(), 0);
 
   splitTouched.assign(lay.components.size(), 0);
   std::vector<int> touchedSlots;

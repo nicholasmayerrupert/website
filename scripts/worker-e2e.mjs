@@ -43,6 +43,44 @@ try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__sandTest && window.__sandPerf, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => {
+    const perf = window.__sandPerf();
+    return (perf.workerStatus === 'live' || perf.workerStatus === 'live-no-diffs')
+      && perf.workerProgressAgeMs < 2000;
+  }, null, { timeout: 30000 });
+  check('worker client receives sparse liveness turn progress',
+    await page.evaluate(() => {
+      const perf = window.__sandPerf();
+      return (perf.workerStatus === 'live' || perf.workerStatus === 'live-no-diffs')
+        && perf.workerProgressAgeMs < 2000;
+    }));
+  const mirrorFailure = await page.evaluate(() => {
+    const perf = window.__sandPerf();
+    window.__sandTest.failNextMirrorApply();
+    window.__sandTest.paintWorker(1, 120, 35, 5);
+    return {
+      errors: perf.mirrorPacketErrors,
+      worldTick: perf.worldTick,
+      mirrorTick: perf.mirrorWorldTick,
+    };
+  });
+  await page.waitForFunction((before) => {
+    const perf = window.__sandPerf();
+    return perf.mirrorPacketErrors > before.errors
+      && perf.worldTick > before.worldTick
+      && perf.mirrorWorldTick > before.mirrorTick
+      && !perf.workerAwaitingAck
+      && (perf.workerStatus === 'live' || perf.workerStatus === 'live-no-diffs');
+  }, mirrorFailure, { timeout: 30000 });
+  check('a mirror apply exception releases the worker ACK gate and resynchronizes',
+    await page.evaluate((before) => {
+      const perf = window.__sandPerf();
+      return perf.mirrorPacketErrors === before.errors + 1
+        && perf.lastMirrorPacketError === 'forced mirror packet failure'
+        && perf.worldTick > before.worldTick
+        && perf.mirrorWorldTick > before.mirrorTick
+        && !perf.workerAwaitingAck;
+    }, mirrorFailure));
   const keyboardOwnership = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     const sim = root.querySelector('.sg-sim');
@@ -122,6 +160,8 @@ try {
     return perf.mirrorPacketType === 'full' && perf.worldTick === 0
       && perf.workerControls === 0;
   }, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__sandPerf().workerStatus === 'paused',
+    null, { timeout: 30000 });
   const pausedTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.waitForTimeout(300);
   const pausedTickAfterRetry = await page.evaluate(() => window.__sandPerf().worldTick);
@@ -130,7 +170,8 @@ try {
   await page.evaluate(() => window.__sandTest.setPaused(false));
   await page.waitForFunction((tick) => {
     const perf = window.__sandPerf();
-    return perf.workerControls > 0 && perf.worldTick > tick;
+    return perf.workerControls > 0 && perf.worldTick > tick
+      && (perf.workerStatus === 'live' || perf.workerStatus === 'live-no-diffs');
   }, pausedTick, { timeout: 30000 });
 
   // Runtime tool/material configuration sent during worker initialization is

@@ -70,6 +70,7 @@ export const UNIT_SUITES = [
   ['pure-perf', 'pure-perf-checksum-test.mjs', exclusive(480_000)],
   ['timing', 'timing-test.mjs'],
   ['worker-order', 'world-worker-order-test.mjs'],
+  ['worker-liveness', 'worker-liveness-test.mjs'],
   ['viewport-pause', 'viewport-pause-test.mjs'],
   ['players', 'player-test.mjs'],
   ['actor-rigid', 'actor-rigid-test.mjs'],

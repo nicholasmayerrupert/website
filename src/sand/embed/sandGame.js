@@ -378,6 +378,7 @@ function createPerfHud(root, game) {
   addRow('fps', 'fps');
   addRow('actorTps', 'actor/s');
   addRow('worldTps', 'world/s');
+  addRow('authority', 'authority');
   addRow('actor', 'actor ms');
   addRow('step', 'step ms');
   addRow('render', 'render ms');
@@ -409,7 +410,7 @@ function createPerfHud(root, game) {
   addRow('xBonds', 'cross bonds');
   addRow('creatures', 'creatures');
   addRow('shifts', 'world shifts');
-  addRow('heap', 'heap MB');
+  addRow('heap', 'heap mirror/authority MB');
   addRow('grid', 'grid');
   addRow('tick', 'tick');
   root.appendChild(wrap);
@@ -442,6 +443,7 @@ function createPerfHud(root, game) {
     rows.fps.textContent = fps.toFixed(0);
     rows.actorTps.textContent = actorTps.toFixed(0);
     rows.worldTps.textContent = worldTps.toFixed(0);
+    rows.authority.textContent = `${s.workerStatus} / ${s.workerStage}`;
     rows.actor.textContent = f2(s.actorMs);
     rows.step.textContent = f2(s.stepMs);
     rows.render.textContent = f2(s.renderMs);
@@ -473,7 +475,7 @@ function createPerfHud(root, game) {
     rows.xBonds.textContent = String(s.crossBondCount || 0);
     rows.creatures.textContent = String(s.creatureCount || 0);
     rows.shifts.textContent = String(s.worldShifts);
-    rows.heap.textContent = s.heapMB.toFixed(1);
+    rows.heap.textContent = `${s.heapMB.toFixed(1)} / ${s.authorityHeapMB.toFixed(1)}`;
     rows.grid.textContent = `${s.cols}×${s.rows}`;
     rows.tick.textContent = `${s.actorTick}/${s.worldTick}`;
   };

@@ -3547,11 +3547,15 @@ void RigidBodySystem::bakeRestingBodies() {
       && (!body->awake || body->rasterMayOverlapSolid
         || (body->jointPeer && (!body->jointPeer->awake
           || body->jointPeer->rasterMayOverlapSolid))));
+  std::array<std::unordered_map<int, std::vector<int>>, 2> stampedBodyCells;
+  std::array<bool, 2> stampedBodyCellsReady = {false, false};
   if (mayBake) {
     size_t gridSize = (size_t)E.cols * E.rows;
     if (rasterProjectionOwner.size() != gridSize)
       rasterProjectionOwner.assign(gridSize, -1);
-    auto collectLayerOverlaps = [&](Layer& layer) {
+    auto collectLayerOverlaps = [&](Layer& layer, int layerIndex) {
+      StampSet& aliases = bakeRasterAliases[layerIndex];
+      aliases.reset(gridSize);
       for (Body* body : layer.bodies) body->bakeBlockedByBody = false;
       rasterProjectionTouched.clear();
       std::unordered_map<uint64_t, int> overlapCounts;
@@ -3565,6 +3569,7 @@ void RigidBodySystem::bakeRestingBodies() {
             rasterProjectionOwner[k] = bi;
             rasterProjectionTouched.push_back(k);
           } else if (previous != bi) {
+            aliases.add(k);
             int first = imin(previous, bi);
             int second = imax(previous, bi);
             uint64_t key = ((uint64_t)(uint32_t)first << 32)
@@ -3582,13 +3587,14 @@ void RigidBodySystem::bakeRestingBodies() {
       }
       for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
     };
-    collectLayerOverlaps(*E.L);
-    if (E.L == &E.fg && E.bgEnabled) collectLayerOverlaps(E.bg);
+    collectLayerOverlaps(*E.L, E.L == &E.bg ? 1 : 0);
+    if (E.L == &E.fg && E.bgEnabled) collectLayerOverlaps(E.bg, 1);
   }
   bool baked = false;
-  // Reservation checks scan the full live roster, so converted bodies remain
-  // valid until the roster has been rebuilt at the end of this pass.
+  // Converted bodies remain valid until the roster has been rebuilt at the end
+  // of this pass because overlap metadata still refers to their raster poses.
   std::vector<Body*> keep, retired, retiredFollowers;
+  std::array<std::vector<int>, 2> clearedBodyCells;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) {
       keep.push_back(b);
@@ -3670,68 +3676,47 @@ void RigidBodySystem::bakeRestingBodies() {
     if (canBake && (groundedContact || peerGroundedContact
                     || growthOrigin || peerGrowthOrigin)) {
       int assemblyId = E.nextBakedAssemblyId++;
-      StampSet foregroundReserved, backgroundReserved;
-      auto reserveOtherBodies = [&](Layer& layer, Body* selected,
-                                    StampSet& reserved) {
-        reserved.reset((size_t)E.cols * E.rows);
-        for (Body* other : layer.bodies) {
-          if (other == selected) continue;
-          ensureBodyRaster(other);
-          for (const BodyRasterCell& cell : other->rasterFootprint)
-            reserved.add(cell.y * E.cols + cell.x);
-        }
-      };
-      auto clearBodyStamp = [&](Layer& layer, int bodyId) {
+      auto clearBodyStamp = [&](Layer& layer, Body* body, int layerIndex) {
         Engine::ActiveLayerScope layerScope(E, &layer);
-        auto clearCells = [&](std::vector<int>& cells) {
-          std::vector<int> kept;
-          kept.reserve(cells.size());
-          for (int k : cells) {
-            if (k >= 0 && k < E.cols * E.rows
-                && layer.bodyOwner[k] == bodyId) {
-              E.writeGridIndex(k, EMPTY);
-              layer.bodyOwner[k] = -1;
-            } else {
-              kept.push_back(k);
+        if (!stampedBodyCellsReady[layerIndex]) {
+          auto& stamped = stampedBodyCells[layerIndex];
+          stamped.reserve(layer.bodies.size() * 2);
+          auto collectStamped = [&](const std::vector<int>& cells) {
+            for (int k : cells) {
+              if (k < 0 || k >= E.cols * E.rows) continue;
+              int owner = layer.bodyOwner[k];
+              if (owner >= 0) stamped[owner].push_back(k);
             }
-          }
-          cells = std::move(kept);
-        };
-        clearCells(layer.bodyCells);
-        clearCells(layer.passiveBodyCells);
+          };
+          collectStamped(layer.bodyCells);
+          collectStamped(layer.passiveBodyCells);
+          stampedBodyCellsReady[layerIndex] = true;
+        }
+        auto found = stampedBodyCells[layerIndex].find(body->id);
+        if (found == stampedBodyCells[layerIndex].end()) return;
+        for (int k : found->second) {
+          if (layer.bodyOwner[k] != body->id) continue;
+          E.writeGridIndex(k, EMPTY);
+          layer.bodyOwner[k] = -1;
+          clearedBodyCells[layerIndex].push_back(k);
+        }
       };
       if (b->jointRole == 1 && b->jointPeer) {
         Body* follower = b->jointPeer;
         syncJointFollower(b);
-        reserveOtherBodies(E.fg, b, foregroundReserved);
-        reserveOtherBodies(E.bg, follower, backgroundReserved);
-        clearBodyStamp(E.fg, b->id);
-        clearBodyStamp(E.bg, follower->id);
+        clearBodyStamp(E.fg, b, 0);
+        clearBodyStamp(E.bg, follower, 1);
         Engine::ActiveLayerScope layerScope(E, &E.fg);
         E.useLayer(&E.fg);
-        bakeBodyToGrid(b, assemblyId, &foregroundReserved);
+        bakeBodyToGrid(b, assemblyId, &bakeRasterAliases[0]);
         E.useLayer(&E.bg);
-        bakeBodyToGrid(follower, assemblyId, &backgroundReserved);
+        bakeBodyToGrid(follower, assemblyId, &bakeRasterAliases[1]);
         E.bg.passiveBodyIds.erase(follower->id);
-        E.bg.passiveBodyCells.erase(
-          std::remove_if(E.bg.passiveBodyCells.begin(), E.bg.passiveBodyCells.end(),
-                         [&](int k) {
-                           return k >= 0 && k < E.cols * E.rows
-                             && E.bg.bodyOwner[k] == follower->id;
-                         }),
-          E.bg.passiveBodyCells.end());
-        std::vector<Body*> bgKeep;
-        bgKeep.reserve(E.bg.bodies.size());
-        for (Body* candidate : E.bg.bodies)
-          if (candidate != follower) bgKeep.push_back(candidate);
-        E.bg.bodies = std::move(bgKeep);
         retiredFollowers.push_back(follower);
       } else {
-        StampSet& reserved = E.L == &E.bg
-          ? backgroundReserved : foregroundReserved;
-        reserveOtherBodies(*E.L, b, reserved);
-        clearBodyStamp(*E.L, b->id);
-        bakeBodyToGrid(b, assemblyId, &reserved);
+        int layerIndex = E.L == &E.bg ? 1 : 0;
+        clearBodyStamp(*E.L, b, layerIndex);
+        bakeBodyToGrid(b, assemblyId, &bakeRasterAliases[layerIndex]);
       }
       retired.push_back(b);
       baked = true;
@@ -3739,6 +3724,29 @@ void RigidBodySystem::bakeRestingBodies() {
     else keep.push_back(b);
   }
   if (baked) {
+    auto pruneBakedBodyCells = [&](Layer& layer, int layerIndex) {
+      if (clearedBodyCells[layerIndex].empty()) return;
+      StampSet& cleared = bakeRasterAliases[layerIndex];
+      cleared.reset((size_t)E.cols * E.rows);
+      for (int k : clearedBodyCells[layerIndex]) cleared.add(k);
+      auto prune = [&](std::vector<int>& cells) {
+        cells.erase(std::remove_if(cells.begin(), cells.end(), [&](int k) {
+          return k >= 0 && k < E.cols * E.rows && cleared.has(k);
+        }), cells.end());
+      };
+      prune(layer.bodyCells);
+      prune(layer.passiveBodyCells);
+    };
+    pruneBakedBodyCells(E.fg, 0);
+    if (E.bgEnabled) pruneBakedBodyCells(E.bg, 1);
+    if (!retiredFollowers.empty()) {
+      std::unordered_set<Body*> retiredSet(
+        retiredFollowers.begin(), retiredFollowers.end());
+      E.bg.bodies.erase(
+        std::remove_if(E.bg.bodies.begin(), E.bg.bodies.end(),
+          [&](Body* body) { return retiredSet.count(body) != 0; }),
+        E.bg.bodies.end());
+    }
     E.L->bodies = std::move(keep);
     for (Body* body : retired) delete body;
     for (Body* follower : retiredFollowers) delete follower;

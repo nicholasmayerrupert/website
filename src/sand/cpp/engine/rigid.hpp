@@ -346,6 +346,7 @@ class RigidBodySystem {
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> moveCells, moveFootprint;
   std::vector<int> rasterProjectionOwner, rasterProjectionTouched;
+  std::array<StampSet, 2> bakeRasterAliases;
   std::vector<Body*> rasterProjectionBodies;
   std::vector<std::pair<int, int>> rasterProjectionPairs;
   struct WorldContact {

@@ -1,5 +1,6 @@
 // Repeated blasts exercise foreground/background destruction, rubble motion,
 // and the conversion of several resting rigid bodies in one world step.
+import { performance } from 'node:perf_hooks';
 import {
   initSandWasm, createEngineWasm as createEngineWasmRaw, MAT,
 } from '../src/sand/wasmBridge/engineFactory.js';
@@ -45,6 +46,94 @@ await initSandWasm();
   if (sweptContactEngine.getTick() !== 12)
     throw new Error(`swept TNT contact stopped at tick ${sweptContactEngine.getTick()} of 12`);
   sweptContactEngine.destroy();
+}
+
+// A live TNT body lets supported rubble bake as soon as it sleeps. All fragments
+// reach that transition together so the bake pass must handle a dense roster in
+// one bounded world turn.
+{
+  const cols = 512, rows = 600;
+  const rubbleCount = 800, halfSize = 6;
+  const firstShelf = 30, shelfGap = 22;
+  const bodySpacing = 14, bodiesPerShelf = 35;
+  const bakeLimitMs = 250;
+  const bakeEngine = attachTestHooks(createEngineWasmRaw({
+    cols,
+    rows,
+    worldSeed: 1,
+    sinksOn: false,
+    infinite: false,
+    storageRole: 'authority',
+  }));
+  const grid = bakeEngine.getGrid();
+  for (let y = firstShelf; y < rows; y++) grid[y * cols + 1] = MAT.STONE;
+  for (let shelf = 0; shelf < Math.ceil(rubbleCount / bodiesPerShelf); shelf++) {
+    const y = firstShelf + shelf * shelfGap;
+    for (let x = 1; x < cols - 1; x++) grid[y * cols + x] = MAT.STONE;
+  }
+  for (let x = 1; x < cols - 1; x++) grid[(rows - 1) * cols + x] = MAT.STONE;
+  bakeEngine.syncComponents();
+
+  for (let body = 0; body < rubbleCount; body++) {
+    const shelf = Math.floor(body / bodiesPerShelf);
+    const column = body % bodiesPerShelf;
+    bakeEngine.spawnBox(
+      10 + column * bodySpacing,
+      firstShelf + shelf * shelfGap - halfSize,
+      halfSize,
+      halfSize,
+      MAT.STONE,
+    );
+    if (!bakeEngine._setBodyBlastDebris(body, true))
+      throw new Error(`could not mark rubble body ${body}`);
+  }
+  bakeEngine.spawnBox(cols - 6, 5, 1, 1, MAT.TNT);
+
+  let transition = null;
+  for (let tick = 0; tick < 30; tick++) {
+    let tntBody = -1;
+    for (let body = 0; body < bakeEngine._bodyCount(); body++) {
+      if (bakeEngine._bodyMaterial(body) === MAT.TNT) {
+        tntBody = body;
+        break;
+      }
+    }
+    if (tntBody < 0 || !bakeEngine._setBodyMotion(tntBody, 0, 0, 0))
+      throw new Error(`live TNT body was lost before bake tick ${tick}`);
+    const before = bakeEngine._bodyCount();
+    const started = performance.now();
+    bakeEngine.stepWorld();
+    const elapsed = performance.now() - started;
+    const after = bakeEngine._bodyCount();
+    if (after < before) {
+      transition = {
+        tick,
+        before,
+        after,
+        elapsed,
+        bakedCells: bakeEngine.getRigidSolverDebug().rigidBakedCells,
+      };
+      break;
+    }
+  }
+
+  const expectedBakedCells = rubbleCount * halfSize * 2 * halfSize * 2;
+  if (!transition || transition.before !== rubbleCount + 1
+      || transition.after !== 1
+      || transition.bakedCells !== expectedBakedCells) {
+    throw new Error(`TNT rubble batch did not bake completely: ${JSON.stringify(transition)}`);
+  }
+  if (transition.elapsed >= bakeLimitMs) {
+    throw new Error(
+      `TNT rubble batch bake took ${transition.elapsed.toFixed(1)}ms `
+      + `(limit ${bakeLimitMs}ms)`,
+    );
+  }
+  console.log(
+    `ok - ${rubbleCount} TNT rubble bodies baked in `
+    + `${transition.elapsed.toFixed(1)}ms at tick ${transition.tick}`,
+  );
+  bakeEngine.destroy();
 }
 
 const engine = attachTestHooks(createEngineWasmRaw({

@@ -56,7 +56,7 @@ export const UNIT_SUITES = [
   ['rigid-terrain-contact', 'rigid-terrain-contact-test.mjs'],
   ['rigid-blast-impulse', 'rigid-blast-impulse-test.mjs'],
   ['rigid-blast-settle', 'rigid-blast-settle-test.mjs'],
-  ['tnt-rigid-bake', 'tnt-rigid-bake-stress-test.mjs'],
+  ['tnt-rigid-bake', 'tnt-rigid-bake-stress-test.mjs', exclusive(120_000)],
   ['rigid-placement-weld', 'rigid-placement-weld-test.mjs'],
   ['rigid-shape-stress', 'rigid-shape-stress-test.mjs', exclusive(180_000)],
   ['rigid-sliver', 'rigid-sliver-test.mjs'],

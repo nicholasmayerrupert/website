@@ -52,6 +52,25 @@ const materialStats = (engine, mat, centerX, centerY) => {
   }
   return { count, meanRadius: count ? sumRadius / count : 0, maxY };
 };
+const longestVerticalInterface = (engine, first, second) => {
+  const grid = engine.getGrid();
+  let longest = 0;
+  for (let x = 1; x < COLS - 2; x++) {
+    let run = 0;
+    for (let y = 1; y < ROWS - 1; y++) {
+      const left = grid[y * COLS + x];
+      const right = grid[y * COLS + x + 1];
+      if ((left === first && right === second)
+          || (left === second && right === first)) {
+        run++;
+        longest = Math.max(longest, run);
+      } else {
+        run = 0;
+      }
+    }
+  }
+  return longest;
+};
 const quadrantCounts = (engine, mat, centerX, centerY) => {
   const quadrants = [0, 0, 0, 0];
   const grid = engine.getGrid();
@@ -398,6 +417,32 @@ for (const [label, innerMaterial, outerMaterial] of [
       && lava.count === lavaBefore && sand.count === sandBefore);
   check(`${label}: the static scene settles (${idleAt} steps)`,
     idleAt > 0 && idleAt <= 1200 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// A broad source must let adjacent loose-material columns shear along its
+// surface instead of preserving a tall seam from the incoming pile.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 125, 78, 125, 111, MAT.STONE);
+  paintRect(engine, 55, 78, 125, 81, MAT.NEUTRONIUM);
+  paintRect(engine, 35, 24, 89, 72, MAT.LAVA);
+  paintRect(engine, 90, 24, 144, 72, MAT.DIRT);
+  engine.syncComponents();
+  const lavaBefore = countMaterial(engine, MAT.LAVA);
+  const dirtBefore = countMaterial(engine, MAT.DIRT);
+  for (let step = 0; step < 240; step++) engine.stepWorld();
+  const seam = longestVerticalInterface(engine, MAT.LAVA, MAT.DIRT);
+  const idleAfter = runUntilIdle(engine, 2760);
+  const idleAt = idleAfter < 0 ? -1 : idleAfter + 240;
+  check(`a broad neutronium pile quickly sheds vertical loose-material seams (${seam} cells)`,
+    seam <= 6);
+  check('broad-source pile relaxation conserves lava and dirt',
+    countMaterial(engine, MAT.LAVA) === lavaBefore
+      && countMaterial(engine, MAT.DIRT) === dirtBefore);
+  check(`a broad-source mixed pile settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 3000 && engine.stepWorld() === false);
   engine.destroy();
 }
 

@@ -1506,6 +1506,27 @@ int ForceSystem::looseMoveCandidates(
   return moveCount;
 }
 
+bool ForceSystem::elongatedNeutroniumFaceAt(
+    int k, int stepX, int stepY) const {
+  if (k < 0 || k >= (int)nearestNeutroniumField.size()
+      || (stepX == 0 && stepY == 0)
+      || (stepX != 0 && stepY != 0))
+    return false;
+  int seedIndex = nearestNeutroniumField[k];
+  if (seedIndex < 0 || seedIndex >= (int)neutroniumSeeds.size()) return false;
+  const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
+  if (seed.sourceLayer < 0 || seed.sourceLayer > 1
+      || seed.emitter < 0
+      || seed.emitter >= (int)states[seed.sourceLayer].emitters.size())
+    return false;
+  const ForceEmitter& emitter =
+    states[seed.sourceLayer].emitters[seed.emitter];
+  float width = emitter.geometryMaxX - emitter.geometryMinX + 1.0f;
+  float height = emitter.geometryMaxY - emitter.geometryMinY + 1.0f;
+  return stepX == 0 ? width >= height * 3.0f
+                    : height >= width * 3.0f;
+}
+
 bool ForceSystem::overridesGravity(
     int x, int y, uint8_t material) {
   uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
@@ -1611,12 +1632,15 @@ bool ForceSystem::tryMoveLoose(
   }
   uint32_t lateralPhase = E.L->worldSeed ^ 0x4C495155u
                         ^ ((uint32_t)E.tick * 0x9e3779b9u);
+  bool elongatedFace = target == FORCE_LIQUID
+    && elongatedNeutroniumFaceAt(k, stepX, stepY);
   bool fanPressuredLiquid = target == FORCE_LIQUID
     && magnitude >= CELL_STEP_FORCE && pressureBehind
     && whash2(lateralPhase, E.L->worldOffsetX + x,
-              E.L->worldOffsetY + y) < 0.125;
+              E.L->worldOffsetY + y) < (elongatedFace ? 0.25 : 0.125);
   // Pressurized liquid occasionally takes another inward route before the
-  // direct radial cell, widening an incoming stream into available shell space.
+  // direct radial cell, widening an incoming stream through available shell
+  // space or lighter loose material.
   if (fanPressuredLiquid && moveCount > 0) {
     std::array<std::pair<int, int>, 2> lateralMoves;
     if (stepX && stepY) {
@@ -1636,7 +1660,12 @@ bool ForceSystem::tryMoveLoose(
         continue;
       int toK = ny * E.cols + nx;
       uint8_t occupant = E.L->grid[toK];
-      if (occupant != EMPTY && !E.isGasMaterial(occupant)) continue;
+      bool axisAlignedLooseShear = elongatedFace
+        && E.isLooseSolidMaterial(occupant)
+        && E.canDisplaceMaterial(material, occupant);
+      if (occupant != EMPTY && !E.isGasMaterial(occupant)
+          && !axisAlignedLooseShear)
+        continue;
       if (!canEnter(toK)) continue;
       destination = toK;
       break;

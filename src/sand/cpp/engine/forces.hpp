@@ -216,4 +216,5 @@ class ForceSystem {
                        const std::vector<uint8_t>& bins) const;
   int looseMoveCandidates(double forceX, double forceY, double directionPhase,
                           std::array<std::pair<int, int>, 3>& moves) const;
+  bool elongatedNeutroniumFaceAt(int k, int stepX, int stepY) const;
 };

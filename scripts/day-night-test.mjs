@@ -86,22 +86,20 @@ const nearbySky = skyAltitudeLayout(SURFACE_CAM_Y - 8, 180, 65);
 const highSky = skyAltitudeLayout(SURFACE_CAM_Y - 144, 180, 65);
 const spaceSky = skyAltitudeLayout(SURFACE_CAM_Y - 320, 180, 65);
 const highSkyNextCell = skyAltitudeLayout(SURFACE_CAM_Y - 145, 180, 65);
+const farRidgeRate = 0.55 * 1.18;
 check('the surface star boundary remains above the mountain horizon',
-  surfaceSky.starBottom <= 65 - 16 && surfaceSky.celestialProgress === 0);
-check('ordinary camera movement keeps celestial layout screen-fixed',
-  close(nearbySky.starBottom, surfaceSky.starBottom)
-    && nearbySky.celestialProgress === 0);
-check('high altitude expands the star field without moving the terrain horizon',
-  highSky.starBottom > surfaceSky.starBottom + 70
-    && highSky.gradientExtent > 120
-    && highSky.celestialProgress > 0
-    && highSky.celestialProgress < 0.15);
-check('the star boundary never descends faster than the far mountain ridge',
-  highSkyNextCell.starBottom - highSky.starBottom <= 0.65);
-check('space fills the viewport and moves celestial bodies beyond its bottom',
+  surfaceSky.starBottom <= 65 - 16 && close(surfaceSky.gradientTop, 0));
+check('the atmospheric transition follows the far mountain during ordinary movement',
+  close(nearbySky.starBottom - surfaceSky.starBottom, 8 * farRidgeRate)
+    && close(nearbySky.gradientTop, 8 * farRidgeRate));
+check('high altitude translates the color gradient with the far mountain',
+  close(highSky.starBottom - surfaceSky.starBottom, 144 * farRidgeRate)
+    && close(highSky.gradientTop, 144 * farRidgeRate));
+check('the star boundary descends at exactly the far mountain rate',
+  close(highSkyNextCell.starBottom - highSky.starBottom, farRidgeRate));
+check('space eventually fills the viewport with the upper atmosphere',
   close(spaceSky.starBottom, 180)
-    && spaceSky.gradientExtent > 180
-    && spaceSky.celestialProgress === 1);
+    && spaceSky.gradientTop > 180);
 
 const failures = done();
 process.exit(failures === 0 ? 0 : 1);

@@ -34,7 +34,6 @@ const MARS_PALETTE = Object.freeze({
 const HORIZON_RATIO = 0.36;
 export const SURFACE_CAM_Y = -120;
 const STAR_FIELD_FRACTION = 0.72;
-const SPACE_REVEAL_START_CELLS = 32;
 const BACKGROUND_VERTICAL_PARALLAX = 0.55;
 const FAR_RIDGE_DEPTH = 0.18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
@@ -61,34 +60,19 @@ function smooth01(value) {
   return t * t * (3 - 2 * t);
 }
 
-// The deep-sky layout stays fixed near the surface. Above the atmosphere its
-// lower edge opens toward the bottom of the viewport and carries the visible
-// sun/moon orbit out through that edge.
+// The atmospheric transition shares the far ridge's vertical displacement,
+// preserving their separation while the deep sky opens above them.
 export function skyAltitudeLayout(camY, height, horizon) {
   const h = Math.max(1, height);
   const surfaceStarBottom = clamp(
     Math.max(18, horizon * STAR_FIELD_FRACTION), 0, h,
   );
-  const ascent = Math.max(
-    0, SURFACE_CAM_Y - camY - SPACE_REVEAL_START_CELLS,
-  );
-  const starTravel = h - surfaceStarBottom;
-  // Match the far ridge's downward pace so the atmospheric boundary cannot
-  // overtake the most distant mountain layer during an ascent.
-  const farRidgeRate = BACKGROUND_VERTICAL_PARALLAX * (1 + FAR_RIDGE_DEPTH);
-  const reveal = starTravel > 0
-    ? clamp(ascent * farRidgeRate / starTravel, 0, 1)
-    : 1;
-  const starBottom = surfaceStarBottom
-    + starTravel * reveal;
-  const gradientExtent = horizon
-    + (h / STAR_FIELD_FRACTION - horizon) * reveal;
+  const farRidgeShift = -backgroundDriftY(camY) * (1 + FAR_RIDGE_DEPTH);
   return {
-    reveal,
     surfaceStarBottom,
-    starBottom,
-    gradientExtent,
-    celestialProgress: smooth01((reveal - 0.45) / 0.55),
+    starBottom: clamp(surfaceStarBottom + farRidgeShift, 0, h),
+    gradientTop: farRidgeShift,
+    gradientBottom: farRidgeShift + horizon,
   };
 }
 
@@ -235,20 +219,14 @@ export function celestialOrbitY(horizon, progress) {
     - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
 }
 
-function drawCelestialBodies(
-  ctx, w, horizon, dayNight, altitudeProgress = 0, viewportHeight = horizon,
-) {
+function drawCelestialBodies(ctx, w, horizon, dayNight) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
-  const orbitY = (t) => {
-    const y = celestialOrbitY(horizon, t);
-    return y + (viewportHeight + 12 - y) * altitudeProgress;
-  };
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = orbitY(t);
+    const y = celestialOrbitY(horizon, t);
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -262,7 +240,7 @@ function drawCelestialBodies(
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), orbitY(t));
+    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
   }
 }
 
@@ -762,7 +740,8 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     const palette = paletteForPhase(dayNight.phase);
     const altitude = skyAltitudeLayout(qy, h, horizon);
     const sky = ctx.createLinearGradient(
-      0, 0, 0, Math.max(1, altitude.gradientExtent),
+      0, altitude.gradientTop,
+      0, altitude.gradientTop + Math.max(1, skyHeight),
     );
     sky.addColorStop(0, palette.skyTop);
     sky.addColorStop(0.52, palette.skyMid);
@@ -772,7 +751,9 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     ctx.fillRect(0, 0, w, h);
 
     drawDither(
-      ctx, w, h, Math.min(h, altitude.gradientExtent), dayNight.daylight,
+      ctx, w, h,
+      Math.min(h, Math.max(0, altitude.gradientBottom)),
+      dayNight.daylight,
     );
     drawStars(ctx, w, skyHeight, dayNight.starOpacity, {
       visibleBottom: altitude.starBottom,
@@ -780,9 +761,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     });
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
-    drawCelestialBodies(
-      ctx, w, skyHeight, dayNight, altitude.celestialProgress, h,
-    );
+    drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
     const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);

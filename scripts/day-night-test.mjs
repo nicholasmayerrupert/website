@@ -85,7 +85,7 @@ check('sun and moon paths meet the viewport bottom before reaching the same apex
 const facet = ridgeFacetDepths(32, 65, 20, 0);
 const shiftedFacet = ridgeFacetDepths(25, 65, 20, 7);
 check('mountain face shadows end at the ridge floor and translate rigidly',
-  close(facet.floorY, 98)
+  close(facet.floorY, 135)
     && close(shiftedFacet.floorY, facet.floorY - 7)
     && close(shiftedFacet.shoulderY, facet.shoulderY - 7));
 

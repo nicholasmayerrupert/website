@@ -76,10 +76,10 @@ check('cloud travel is phase-driven and loops exactly once per day',
   close(cloudCycleOffset(0.25, 170), 170) &&
   close(cloudCycleOffset(0.5, 170), 340) &&
   close(cloudCycleOffset(0, 170), cloudCycleOffset(1, 170)));
-check('sun and moon paths begin below the mountain troughs before reaching the same apex',
-  celestialOrbitY(70, 0) >= 138 &&
-  celestialOrbitY(70, 1) >= 138 &&
-  close(celestialOrbitY(70, 0.5), 70 - 70 * 0.68));
+check('sun and moon paths meet the viewport bottom before reaching the same apex',
+  close(celestialOrbitY(70, 0, 180), 180) &&
+  close(celestialOrbitY(70, 1, 180), 180) &&
+  close(celestialOrbitY(70, 0.5, 180), 70 - 70 * 0.68));
 
 const surfaceSky = skyAltitudeLayout(SURFACE_CAM_Y, 180, 65);
 const nearbySky = skyAltitudeLayout(SURFACE_CAM_Y - 8, 180, 65);

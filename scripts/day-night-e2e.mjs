@@ -186,7 +186,6 @@ try {
     const surfaceNoon = sample(SURFACE_CAM_Y, 0.5);
     const highNoon = sample(SURFACE_CAM_Y - 144, 0.5);
     const spaceNoon = sample(SURFACE_CAM_Y - 320, 0.5);
-    const highHorizon = sample(SURFACE_CAM_Y - 144, 0.8);
     const spaceHorizon = sample(SURFACE_CAM_Y - 320, 0.8);
     background.destroy();
     return {
@@ -197,7 +196,6 @@ try {
       surfaceNoon,
       highNoon,
       spaceNoon,
-      highHorizon,
       spaceHorizon,
     };
   });
@@ -215,13 +213,11 @@ try {
       && altitudeSky.spaceNoon.sun.count > 10
       && Math.abs(altitudeSky.highNoon.sun.meanY - altitudeSky.surfaceNoon.sun.meanY) < 1
       && Math.abs(altitudeSky.spaceNoon.sun.meanY - altitudeSky.surfaceNoon.sun.meanY) < 1);
-  check(`low sun and moon remain visible as the atmosphere opens (high sun ${altitudeSky.highHorizon.sun.count}, moon ${altitudeSky.highHorizon.moon.count}; space sun ${altitudeSky.spaceHorizon.sun.count}, moon ${altitudeSky.spaceHorizon.moon.count})`,
-    altitudeSky.highHorizon.sun.count > 10
-      && altitudeSky.highHorizon.sun.meanY < altitudeSky.height - 20
-      && altitudeSky.highHorizon.moon.count > 10
-      && altitudeSky.highHorizon.moon.meanY < altitudeSky.height - 20
-      && altitudeSky.spaceHorizon.sun.count > 10
-      && altitudeSky.spaceHorizon.moon.count > 10);
+  check(`sun and moon meet the bottom edge in open space (sun ${altitudeSky.spaceHorizon.sun.count}@${altitudeSky.spaceHorizon.sun.meanY.toFixed(1)}, moon ${altitudeSky.spaceHorizon.moon.count}@${altitudeSky.spaceHorizon.moon.meanY.toFixed(1)})`,
+    altitudeSky.spaceHorizon.sun.count > 10
+      && altitudeSky.spaceHorizon.moon.count > 10
+      && altitudeSky.spaceHorizon.sun.meanY > altitudeSky.height * 0.9
+      && altitudeSky.spaceHorizon.moon.meanY > altitudeSky.height * 0.9);
 
   await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
   const backgroundHash = () => page.evaluate(() => {

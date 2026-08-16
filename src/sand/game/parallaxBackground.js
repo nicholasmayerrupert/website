@@ -212,21 +212,24 @@ function drawPixelMoon(ctx, x, y) {
   ctx.fillRect(px - 3, py + 2, 2, 1);
 }
 
-export function celestialOrbitY(horizon, progress) {
+export function celestialOrbitY(horizon, progress, viewportHeight) {
   const arcHeight = Math.max(12, horizon * 0.68);
-  const belowHorizon = clamp(horizon * 1.05, 68, 96);
-  return horizon + belowHorizon
-    - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
+  const bottom = Math.max(1, viewportHeight);
+  const apex = horizon - arcHeight;
+  return bottom
+    - Math.sin(Math.PI * clamp(progress, 0, 1)) * (bottom - apex);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight) {
+function drawCelestialBodies(ctx, w, horizon, viewportHeight, dayNight) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
+  // The screen bottom is the shared rise/set endpoint; terrain occludes that
+  // portion of the orbit while the camera remains near the surface.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = celestialOrbitY(horizon, t);
+    const y = celestialOrbitY(horizon, t, viewportHeight);
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -240,7 +243,9 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
+    drawPixelMoon(
+      ctx, orbitX(t), celestialOrbitY(horizon, t, viewportHeight),
+    );
   }
 }
 
@@ -724,7 +729,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
         drawPixelOrb(
           ctx,
           w * (0.08 + t * 0.64),
-          celestialOrbitY(skyHeight, t),
+          celestialOrbitY(skyHeight, t, h),
           '#f3bb76',
           '#fff0bd',
           true,
@@ -761,7 +766,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     });
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
-    drawCelestialBodies(ctx, w, skyHeight, dayNight);
+    drawCelestialBodies(ctx, w, skyHeight, h, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
     const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);

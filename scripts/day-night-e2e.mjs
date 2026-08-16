@@ -95,6 +95,53 @@ try {
     sunrise.state.starOpacity > 0 && sunrise.state.starOpacity < 1 && sunset.state.starOpacity > 0 && sunset.state.starOpacity < 1 &&
     sunrise.state.sunVisible && sunrise.state.moonVisible && sunset.state.sunVisible && sunset.state.moonVisible);
 
+  const skyPan = await page.evaluate(() => {
+    const T = window.__sandTest;
+    const bg = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
+    const context = bg.getContext('2d');
+    const originalCam = T.getCam();
+    const info = T.info();
+    const shiftedY = originalCam.y >= 8
+      ? originalCam.y - 8
+      : Math.min(info.rows - info.viewRows, originalCam.y + 8);
+    const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
+    const pixelSet = (colors) => {
+      const targets = new Set(colors.map(rgb));
+      const pixels = context.getImageData(0, 0, bg.width, bg.height).data;
+      const matches = new Set();
+      for (let i = 0; i < pixels.length; i += 4) {
+        const color = (pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2];
+        if (targets.has(color)) matches.add(i / 4);
+      }
+      return matches;
+    };
+    const overlap = (a, b) => {
+      let shared = 0;
+      for (const pixel of a) if (b.has(pixel)) shared++;
+      return shared / Math.max(1, Math.min(a.size, b.size));
+    };
+    const pair = (phase, colors) => {
+      T.setDayPhase(phase);
+      T.setCam(originalCam.x, originalCam.y);
+      const before = pixelSet(colors);
+      T.setCam(originalCam.x, shiftedY);
+      const after = pixelSet(colors);
+      return { overlap: overlap(before, after), before: before.size, after: after.size };
+    };
+
+    const stars = pair(0, ['#e1f1f3', '#f9e7b7', '#b9dcff']);
+    const moon = pair(0, ['#f4fbff']);
+    const sun = pair(0.5, ['#ffe39a']);
+    const clouds = pair(0.5, ['#b8cdd5', '#edf4f2']);
+    T.setCam(originalCam.x, originalCam.y);
+    return { cameraDelta: Math.abs(shiftedY - originalCam.y), stars, moon, sun, clouds };
+  });
+  check(`celestial pixels stay screen-fixed across a vertical camera pan (stars ${(skyPan.stars.overlap * 100).toFixed(1)}%, moon ${(skyPan.moon.overlap * 100).toFixed(1)}%, sun ${(skyPan.sun.overlap * 100).toFixed(1)}%)`,
+    skyPan.cameraDelta >= 7.9 && skyPan.stars.before > 8 && skyPan.moon.before > 10 && skyPan.sun.before > 10 &&
+    skyPan.stars.overlap > 0.94 && skyPan.moon.overlap > 0.94 && skyPan.sun.overlap > 0.94);
+  check(`clouds retain vertical parallax (${(skyPan.clouds.overlap * 100).toFixed(1)}% fixed pixels)`,
+    skyPan.clouds.before > 20 && skyPan.clouds.after > 20 && skyPan.clouds.overlap < 0.9);
+
   await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
   const backgroundHash = () => page.evaluate(() => {
     const bg = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');

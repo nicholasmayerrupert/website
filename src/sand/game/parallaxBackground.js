@@ -117,18 +117,17 @@ function drawDither(ctx, w, h, horizon, daylight) {
   }
 }
 
-function drawStars(ctx, w, horizon, camX, camY, opacity, scale) {
+function drawStars(ctx, w, horizon, opacity) {
   if (opacity <= 0) return;
   ctx.globalAlpha = opacity;
-  const offX = Math.floor(camX * 0.025 - w * 0.5);
-  const offY = snapScreenPixel(backgroundDriftY(camY) * 1.2, scale);
+  const offX = Math.floor(-w * 0.5);
   const period = 240;
   const start = Math.floor((offX - 16) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
     for (let i = 0; i < 42; i++) {
       const seed = tile * 131 + i * 977;
       const x = tile + Math.floor(rand01(seed) * period) - offX;
-      const y = Math.floor(rand01(seed + 7) * Math.max(18, horizon * 0.72)) - offY;
+      const y = Math.floor(rand01(seed + 7) * Math.max(18, horizon * 0.72));
       if (x < 0 || x >= w || y < 0 || y >= horizon) continue;
       const warmth = rand01(seed + 13);
       ctx.fillStyle = warmth > 0.84 ? '#f9e7b7' : warmth < 0.13 ? '#b9dcff' : '#e1f1f3';
@@ -190,14 +189,14 @@ export function celestialOrbitY(horizon, progress) {
     - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight, offY) {
+function drawCelestialBodies(ctx, w, horizon, dayNight) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = celestialOrbitY(horizon, t) - offY;
+    const y = celestialOrbitY(horizon, t);
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -211,7 +210,7 @@ function drawCelestialBodies(ctx, w, horizon, dayNight, offY) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t) - offY);
+    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
   }
 }
 
@@ -661,16 +660,15 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     const h = canvas.height / (PIXEL_SCALE * s);
     ctx.setTransform(PIXEL_SCALE * s, 0, 0, PIXEL_SCALE * s, 0, 0);
 
-    // Vertical parallax belongs in each layer's offset. Changing the horizon
-    // would regenerate the sky and rescale seeded scenery on every vertical pan.
+    // Vertical parallax belongs to the finite scenery layers. Changing the
+    // horizon would regenerate the sky and rescale seeded scenery on every pan.
     const horizon = Math.round(clamp(h * HORIZON_RATIO, -28, h - 36));
-    const verticalDrift = snapScreenPixel(backgroundDriftY(qy), s);
     const skyHeight = Math.max(0, horizon);
     if (planetId === PLANET.SHIP) {
       ctx.fillStyle = '#02040a';
       ctx.fillRect(0, 0, w, h);
-      drawStars(ctx, w, h, qx, qy, 1, s);
-      drawPixelOrb(ctx, w * .82, h * .22 - verticalDrift * .08, '#174a76', '#74b9d7');
+      drawStars(ctx, w, h, 1);
+      drawPixelOrb(ctx, w * .82, h * .22, '#174a76', '#74b9d7');
       return;
     }
     if (planetId !== PLANET.EARTH) {
@@ -687,19 +685,16 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
         ctx,
         w,
         skyHeight,
-        qx,
-        qy,
         planetId === PLANET.MOON ? 0.92 : Math.max(0.08, dayNight.starOpacity * 0.55),
-        s,
       );
       if (planetId === PLANET.MOON) {
-        drawPixelOrb(ctx, w * 0.78, skyHeight * 0.28 - verticalDrift, '#397db4', '#a9d5e9');
+        drawPixelOrb(ctx, w * 0.78, skyHeight * 0.28, '#397db4', '#a9d5e9');
       } else if (dayNight.sunVisible) {
         const t = dayNight.sunProgress;
         drawPixelOrb(
           ctx,
           w * (0.08 + t * 0.64),
-          celestialOrbitY(skyHeight, t) - verticalDrift,
+          celestialOrbitY(skyHeight, t),
           '#f3bb76',
           '#fff0bd',
           true,
@@ -722,10 +717,10 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     ctx.fillRect(0, 0, w, h);
 
     drawDither(ctx, w, h, skyHeight, dayNight.daylight);
-    drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity, s);
+    drawStars(ctx, w, skyHeight, dayNight.starOpacity);
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
-    drawCelestialBodies(ctx, w, skyHeight, dayNight, verticalDrift);
+    drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
     const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);

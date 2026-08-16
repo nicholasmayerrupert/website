@@ -1565,12 +1565,20 @@ bool ForceSystem::tryMoveLoose(
     forceX, forceY, directionPhase, moves);
   auto canEnter = [&](int toK, bool followPressureVacancy = false) {
     if (E.isLiquidMaterial(material)) {
+      uint8_t nextMaterial = E.L->next[toK];
+      // A powder that still mirrors the untouched grid is parked in place.
+      bool canDisplaceParkedPowder = E.L->assemblyWakeStamp[toK] != E.tick
+        && E.isLooseSolidMaterial(nextMaterial)
+        && nextMaterial == E.L->grid[toK]
+        && E.L->vacatedStamp[toK] != E.tick
+        && E.canDisplaceMaterial(material, nextMaterial);
       // Radial moves reject same-material vacancies because they are not new
       // volume. Pressure chains may follow one after a frontier cell moves.
       return (followPressureVacancy
               || E.L->vacatedStamp[toK] != E.tick
               || E.L->grid[toK] != material)
-          && E.liquidCanClaim(toK, material);
+          && (E.liquidCanClaim(toK, material)
+              || canDisplaceParkedPowder);
     }
     if (E.isGasMaterial(material)) {
       uint8_t occupant = E.L->grid[toK];

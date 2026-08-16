@@ -363,6 +363,44 @@ for (const [label, mat, limit] of [
   engine.destroy();
 }
 
+// Radial density sorting is independent of the initial shell order. Denser
+// lava moves inside lighter sand, including when the sand starts nearer.
+for (const [label, innerMaterial, outerMaterial] of [
+  ['lava starts inside sand', MAT.LAVA, MAT.SAND],
+  ['lava starts outside sand', MAT.SAND, MAT.LAVA],
+]) {
+  const { engine, sourceX, sourceY } = createOpenSuspendedSource();
+  const candidates = [];
+  const grid = engine.getGrid();
+  for (let y = sourceY - 24; y <= sourceY - 7; y++) {
+    for (let x = sourceX - 22; x <= sourceX + 22; x++) {
+      const radius = Math.hypot(x + 0.5 - sourceX, y + 0.5 - sourceY);
+      if (radius >= 8 && radius <= 23 && grid[y * COLS + x] === MAT.EMPTY)
+        candidates.push({ x, y, radius });
+    }
+  }
+  candidates.sort((a, b) => a.radius - b.radius);
+  const volume = Math.floor(candidates.length / 2);
+  for (const { x, y } of candidates.slice(0, volume))
+    engine.paintDisc(x, y, 0, innerMaterial, true);
+  for (const { x, y } of candidates.slice(-volume))
+    engine.paintDisc(x, y, 0, outerMaterial, true);
+
+  const lavaBefore = countMaterial(engine, MAT.LAVA);
+  const sandBefore = countMaterial(engine, MAT.SAND);
+  const idleAt = runUntilIdle(engine, 1200);
+  const lava = materialStats(engine, MAT.LAVA, sourceX, sourceY);
+  const sand = materialStats(engine, MAT.SAND, sourceX, sourceY);
+  check(`${label}: lava sorts inside sand (${lava.meanRadius.toFixed(2)} < ${sand.meanRadius.toFixed(2)})`,
+    lava.meanRadius < sand.meanRadius);
+  check(`${label}: equal volumes are conserved`,
+    lavaBefore === sandBefore
+      && lava.count === lavaBefore && sand.count === sandBefore);
+  check(`${label}: the static scene settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 1200 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
 // Neutronium in either layer pulls loose material in the other layer.
 for (const [sourceLayer, targetLayer, label] of [
   [0, 1, 'foreground neutronium pulls background material'],

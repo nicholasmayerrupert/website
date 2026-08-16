@@ -176,7 +176,7 @@ try {
       });
       return {
         stars: stats(['#e1f1f3', '#f9e7b7', '#b9dcff']),
-        sun: stats(['#ffe39a']),
+        sun: stats(['#ffe39a', '#ffd489', '#fff1c1']),
         moon: stats(['#f4fbff']),
       };
     };
@@ -186,6 +186,7 @@ try {
     const surfaceNoon = sample(SURFACE_CAM_Y, 0.5);
     const highNoon = sample(SURFACE_CAM_Y - 144, 0.5);
     const spaceNoon = sample(SURFACE_CAM_Y - 320, 0.5);
+    const highHorizon = sample(SURFACE_CAM_Y - 144, 0.8);
     background.destroy();
     return {
       height: canvas.height,
@@ -195,6 +196,7 @@ try {
       surfaceNoon,
       highNoon,
       spaceNoon,
+      highHorizon,
     };
   });
   check(`the star boundary expands toward the bottom with altitude (${altitudeSky.surfaceNight.stars.maxY} -> ${altitudeSky.highNight.stars.maxY} -> ${altitudeSky.spaceNight.stars.maxY})`,
@@ -203,12 +205,19 @@ try {
       && altitudeSky.spaceNight.stars.maxY > altitudeSky.height * 0.85);
   check(`the moon exits through the bottom at extreme altitude (${altitudeSky.surfaceNight.moon.meanY.toFixed(1)} -> ${altitudeSky.highNight.moon.meanY.toFixed(1)} -> ${altitudeSky.spaceNight.moon.count} pixels)`,
     altitudeSky.surfaceNight.moon.count > 10 && altitudeSky.highNight.moon.count > 10
-      && altitudeSky.highNight.moon.meanY > altitudeSky.surfaceNight.moon.meanY + altitudeSky.height * 0.35
+      && altitudeSky.highNight.moon.meanY > altitudeSky.surfaceNight.moon.meanY + altitudeSky.height * 0.03
       && altitudeSky.spaceNight.moon.count === 0);
   check(`the sun exits through the bottom at extreme altitude (${altitudeSky.surfaceNoon.sun.meanY.toFixed(1)} -> ${altitudeSky.highNoon.sun.meanY.toFixed(1)} -> ${altitudeSky.spaceNoon.sun.count} pixels)`,
     altitudeSky.surfaceNoon.sun.count > 10 && altitudeSky.highNoon.sun.count > 10
-      && altitudeSky.highNoon.sun.meanY > altitudeSky.surfaceNoon.sun.meanY + altitudeSky.height * 0.35
+      && altitudeSky.highNoon.sun.meanY > altitudeSky.surfaceNoon.sun.meanY + altitudeSky.height * 0.03
       && altitudeSky.spaceNoon.sun.count === 0);
+  check(`low sun and moon emerge above the bottom while the atmosphere opens (sun ${altitudeSky.highHorizon.sun.count}@${altitudeSky.highHorizon.sun.meanY.toFixed(1)}, moon ${altitudeSky.highHorizon.moon.count}@${altitudeSky.highHorizon.moon.meanY.toFixed(1)})`,
+    altitudeSky.highHorizon.sun.count > 10
+      && altitudeSky.highHorizon.sun.meanY > altitudeSky.height * 0.65
+      && altitudeSky.highHorizon.sun.meanY < altitudeSky.height - 20
+      && altitudeSky.highHorizon.moon.count > 10
+      && altitudeSky.highHorizon.moon.meanY > altitudeSky.height * 0.65
+      && altitudeSky.highHorizon.moon.meanY < altitudeSky.height - 20);
 
   await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
   const backgroundHash = () => page.evaluate(() => {

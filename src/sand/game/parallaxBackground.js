@@ -35,7 +35,8 @@ const HORIZON_RATIO = 0.36;
 export const SURFACE_CAM_Y = -120;
 const STAR_FIELD_FRACTION = 0.72;
 const SPACE_REVEAL_START_CELLS = 32;
-const SPACE_REVEAL_SPAN_CELLS = 192;
+const BACKGROUND_VERTICAL_PARALLAX = 0.55;
+const FAR_RIDGE_DEPTH = 0.18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;
 const RIDGE_SAMPLE_STEP = 4;
@@ -71,9 +72,15 @@ export function skyAltitudeLayout(camY, height, horizon) {
   const ascent = Math.max(
     0, SURFACE_CAM_Y - camY - SPACE_REVEAL_START_CELLS,
   );
-  const reveal = smooth01(ascent / SPACE_REVEAL_SPAN_CELLS);
+  const starTravel = h - surfaceStarBottom;
+  // Match the far ridge's downward pace so the atmospheric boundary cannot
+  // overtake the most distant mountain layer during an ascent.
+  const farRidgeRate = BACKGROUND_VERTICAL_PARALLAX * (1 + FAR_RIDGE_DEPTH);
+  const reveal = starTravel > 0
+    ? clamp(ascent * farRidgeRate / starTravel, 0, 1)
+    : 1;
   const starBottom = surfaceStarBottom
-    + (h - surfaceStarBottom) * reveal;
+    + starTravel * reveal;
   const gradientExtent = horizon
     + (h / STAR_FIELD_FRACTION - horizon) * reveal;
   return {
@@ -81,7 +88,7 @@ export function skyAltitudeLayout(camY, height, horizon) {
     surfaceStarBottom,
     starBottom,
     gradientExtent,
-    celestialDrop: (h + 12) * reveal,
+    celestialProgress: smooth01((reveal - 0.45) / 0.55),
   };
 }
 
@@ -122,7 +129,10 @@ export function paletteForPhase(phase) {
 }
 
 function backgroundDriftY(camY) {
-  return Math.min((camY - SURFACE_CAM_Y) * 0.55, MAX_VERTICAL_DRIFT_DOWN);
+  return Math.min(
+    (camY - SURFACE_CAM_Y) * BACKGROUND_VERTICAL_PARALLAX,
+    MAX_VERTICAL_DRIFT_DOWN,
+  );
 }
 
 function snapScreenPixel(value, scale) {
@@ -225,14 +235,20 @@ export function celestialOrbitY(horizon, progress) {
     - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight, verticalOffset = 0) {
+function drawCelestialBodies(
+  ctx, w, horizon, dayNight, altitudeProgress = 0, viewportHeight = horizon,
+) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
+  const orbitY = (t) => {
+    const y = celestialOrbitY(horizon, t);
+    return y + (viewportHeight + 12 - y) * altitudeProgress;
+  };
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = celestialOrbitY(horizon, t) + verticalOffset;
+    const y = orbitY(t);
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -246,9 +262,7 @@ function drawCelestialBodies(ctx, w, horizon, dayNight, verticalOffset = 0) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(
-      ctx, orbitX(t), celestialOrbitY(horizon, t) + verticalOffset,
-    );
+    drawPixelMoon(ctx, orbitX(t), orbitY(t));
   }
 }
 
@@ -738,7 +752,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
           true,
         );
       }
-      drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 18, 17, palette.ridgeFar, 5.1, palette.skyLow, 2, s);
+      drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 18, 17, palette.ridgeFar, 5.1, palette.skyLow, 2, s);
       drawRidge(ctx, w, h, qx, qy, 0.35, horizon + 31, 19, palette.ridgeMid, 9.7, palette.skyLow, 3, s);
       drawRidge(ctx, w, h, qx, qy, 0.53, horizon + 53, 22, palette.ridgeNear, 14.2, palette.skyLow, 4, s);
       drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 105, 13, palette.ridgeDeep, 19.6, palette.skyLow, 2, s);
@@ -767,11 +781,11 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(
-      ctx, w, skyHeight, dayNight, altitude.celestialDrop,
+      ctx, w, skyHeight, dayNight, altitude.celestialProgress, h,
     );
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
-    const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);
+    const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3, s);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);

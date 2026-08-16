@@ -71,6 +71,23 @@ const longestVerticalInterface = (engine, first, second) => {
   }
   return longest;
 };
+const longestExposedVerticalRun = (engine, mat) => {
+  const grid = engine.getGrid();
+  let longest = 0;
+  for (let x = 1; x < COLS - 1; x++) {
+    let run = 0;
+    for (let y = 1; y < ROWS - 1; y++) {
+      const k = y * COLS + x;
+      if (grid[k] === mat && grid[k - 1] !== mat && grid[k + 1] !== mat) {
+        run++;
+        longest = Math.max(longest, run);
+      } else {
+        run = 0;
+      }
+    }
+  }
+  return longest;
+};
 const quadrantCounts = (engine, mat, centerX, centerY) => {
   const quadrants = [0, 0, 0, 0];
   const grid = engine.getGrid();
@@ -443,6 +460,29 @@ for (const [label, innerMaterial, outerMaterial] of [
       && countMaterial(engine, MAT.DIRT) === dirtBefore);
   check(`a broad-source mixed pile settles (${idleAt} steps)`,
     idleAt > 0 && idleAt <= 3000 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// Powder dropped onto a broad horizontal face must keep spreading after the
+// field's global quadrant coverage stops improving. Otherwise a narrow incoming
+// stream freezes into a one-cell-wide vertical spike.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 130, 78, 130, 111, MAT.STONE);
+  paintRect(engine, 50, 78, 130, 81, MAT.NEUTRONIUM);
+  paintRect(engine, 90, 8, 90, 68, MAT.SAND);
+  engine.syncComponents();
+  const sandBefore = countMaterial(engine, MAT.SAND);
+  for (let step = 0; step < 240; step++) engine.stepWorld();
+  const spike = longestExposedVerticalRun(engine, MAT.SAND);
+  check(`sand dropped onto broad neutronium has no vertical spike (${spike} cells)`,
+    spike <= 12);
+  check('broad-source sand relaxation conserves material',
+    countMaterial(engine, MAT.SAND) === sandBefore);
+  const idleAfter = runUntilIdle(engine, 2760);
+  check(`broad-source sand relaxation settles (${idleAfter + 240} steps)`,
+    idleAfter > 0 && idleAfter <= 2760 && engine.stepWorld() === false);
   engine.destroy();
 }
 

@@ -373,9 +373,11 @@ sand can spread sideways through lighter water instead of retaining a narrow
 inward stream. Pressurized liquids also occasionally choose a lateral-inward free
 cell before the direct radial cell, widening incoming streams before they can form
 narrow spires. Denser loose materials sort closer to the source, with water forming
-the outer shell. Tangential flow stops after quadrant coverage is balanced or stops
-improving, and a blocked static arrangement becomes inactive; moving neutronium
-bodies continue to wake their field.
+the outer shell. Layer-wide tangential flow stops after quadrant coverage is
+balanced or stops improving, while pressure-backed powder keeps taking supported
+tangent steps along an elongated neutronium face until its local column spreads.
+A blocked static arrangement becomes inactive; moving neutronium bodies continue
+to wake their field.
 
 Reactions are routed through generated flags where possible:
 

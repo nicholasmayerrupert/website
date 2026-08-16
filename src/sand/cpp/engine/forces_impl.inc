@@ -1632,8 +1632,7 @@ bool ForceSystem::tryMoveLoose(
   }
   uint32_t lateralPhase = E.L->worldSeed ^ 0x4C495155u
                         ^ ((uint32_t)E.tick * 0x9e3779b9u);
-  bool elongatedFace = target == FORCE_LIQUID
-    && elongatedNeutroniumFaceAt(k, stepX, stepY);
+  bool elongatedFace = elongatedNeutroniumFaceAt(k, stepX, stepY);
   bool fanPressuredLiquid = target == FORCE_LIQUID
     && magnitude >= CELL_STEP_FORCE && pressureBehind
     && whash2(lateralPhase, E.L->worldOffsetX + x,
@@ -1682,7 +1681,9 @@ bool ForceSystem::tryMoveLoose(
     double minimum = looseMinForce[layerIndex(E.L)][material];
     bool forcePressureGradient = target != FORCE_GAS
       && minimum < 1e20 && magnitude > minimum + 0.015;
-    if (!looseTangentialBalanced[forceLayer]
+    bool compressedPowderFace = target == FORCE_POWDER
+      && elongatedFace && pressureBehind;
+    if ((!looseTangentialBalanced[forceLayer] || compressedPowderFace)
         && (pressureBehind || forcePressureGradient)) {
       std::array<std::pair<int, int>, 2> tangents = {{
         {stepY, -stepX}, {-stepY, stepX}

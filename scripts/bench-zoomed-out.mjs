@@ -4,6 +4,8 @@
 //
 //   node scripts/bench-zoomed-out.mjs
 //   node scripts/bench-zoomed-out.mjs --cols 1120 --rows 1056
+//   node scripts/bench-zoomed-out.mjs --case water --pan
+//   node scripts/bench-zoomed-out.mjs --case fire --pan-diagonal
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -15,6 +17,8 @@ const stringFlag = (name, fallback) => { const i = args.indexOf(name); return i 
 const hasFlag = (name) => args.includes(name);
 const targetCols = flag('--cols', 1120), targetRows = flag('--rows', 1056);
 const selectedCase = stringFlag('--case', 'default');
+const diagonalPanDuringCase = hasFlag('--pan-diagonal');
+const panDuringCase = hasFlag('--pan') || diagonalPanDuringCase;
 if (!['default', 'pan', 'water', 'fire', 'acid', 'all'].includes(selectedCase)) throw new Error(`unknown --case ${selectedCase}`);
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
@@ -102,6 +106,17 @@ try {
     while (Date.now() < end) { out.push({ ...(await page.evaluate(() => window.__sandPerf())), at: Date.now() }); await page.waitForTimeout(250); }
     return out;
   };
+  const sampleCase = async (ms) => {
+    if (panDuringCase) {
+      await page.keyboard.down('d');
+      if (diagonalPanDuringCase) await page.keyboard.down('s');
+    }
+    try { return await sampleFor(ms); }
+    finally {
+      if (diagonalPanDuringCase) await page.keyboard.up('s');
+      if (panDuringCase) await page.keyboard.up('d');
+    }
+  };
   console.log(`zoomed-out browser benchmark (${info.cols}x${info.rows}, target ${targetCols}x${targetRows})`);
   if (selectedCase === 'default' || selectedCase === 'pan' || selectedCase === 'all') {
     await page.keyboard.down('d');
@@ -116,7 +131,7 @@ try {
       // depending on synthetic pointer timing or the palette DOM.
       for (let i = 0; i < 20; i++) window.__sandTest.paintWorker(2, Math.floor(cols * (0.25 + (i % 5) * 0.1)), Math.floor(rows * (0.12 + Math.floor(i / 5) * 0.035)), 10);
     });
-    const waterSummary = summarize(await sampleFor(7000));
+    const waterSummary = summarize(await sampleCase(7000));
     console.log('  water ', waterSummary);
     if (waterSummary.toolWritesTotal <= 0) throw new Error('water stroke produced no worker tool writes');
   }
@@ -125,13 +140,13 @@ try {
     if (selectedCase !== 'acid') {
       await page.evaluate(() => window.__sandTest.seedWorkerReaction(5, 1200, 0));
       await page.waitForTimeout(250);
-      console.log('  fire  ', summarize(await sampleFor(7000)));
+      console.log('  fire  ', summarize(await sampleCase(7000)));
     }
     if (selectedCase !== 'fire') {
       info = await preparePage(true);
       await page.evaluate(() => window.__sandTest.seedWorkerReaction(10, 2400, 0));
       await page.waitForTimeout(250);
-      const acid = summarize(await sampleFor(7000));
+      const acid = summarize(await sampleCase(7000));
       console.log('  acid  ', acid);
       if (acid.toolWritesTotal <= 0) throw new Error('acid injection produced no worker tool writes');
     }

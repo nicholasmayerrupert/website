@@ -62,8 +62,13 @@ class GLPresenter {
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
   static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
   static constexpr int GL_LIGHT_CHANGE_REACH = 60;
+  // When a pan reaches the edge of the exact lighting cache, solve fresh strips
+  // beyond the viewport so later camera cells reuse exact light.
+  static constexpr int GL_LIGHT_PAN_LOOKAHEAD = 32;
   static constexpr int GL_DYNAMIC_LIGHT_CAP = 32;
-  int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)
+  // Region whose GL_LIGHT_EXACT_SHRINK inset is known exact. Pan-strip patches
+  // extend it along either or both movement axes.
+  int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1;
   // Exact x-ranges where a presentation diff changed a structural cell or a
   // worker-tagged user edit. NetSync records them before replacing mirror rows.
   std::vector<std::pair<int, int>> glTerrainLightIntervals;

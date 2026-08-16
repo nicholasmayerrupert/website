@@ -1971,6 +1971,26 @@ void GLPresenter::glPresentWindow(int forceFull) {
   if (!contentDirty && !windowMoved && !animationDue) return;
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
   bool previousWindowValid = !forceFull && !worldShifted && glLastVisX0 >= 0;
+  int exposed[16], exposedCount = 0;
+  auto addExposed = [&](int ax0, int ay0, int ax1, int ay1) {
+    if (ax0 > ax1 || ay0 > ay1) return;
+    int* r = exposed + exposedCount * 4;
+    r[0] = ax0; r[1] = ay0; r[2] = ax1; r[3] = ay1;
+    exposedCount++;
+  };
+  bool windowDisjoint = false;
+  if (previousWindowValid && windowMoved) {
+    int ix0 = imax(x0, glLastVisX0), iy0 = imax(y0, glLastVisY0);
+    int ix1 = imin(x1, glLastVisX1), iy1 = imin(y1, glLastVisY1);
+    if (ix0 > ix1 || iy0 > iy1) {
+      windowDisjoint = true;
+    } else {
+      addExposed(x0, y0, ix0 - 1, y1);
+      addExposed(ix1 + 1, y0, x1, y1);
+      addExposed(ix0, y0, ix1, iy0 - 1);
+      addExposed(ix0, iy1 + 1, ix1, y1);
+    }
+  }
 
   // Lighting policy: resize, world shift, and day-night changes solve the FULL
   // buffer (keeps the sky shift-remap caches coherent buffer-wide). The very
@@ -1992,7 +2012,12 @@ void GLPresenter::glPresentWindow(int forceFull) {
     bool windowExposed = glLightX0 < 0 ||
                          imax(0, x0 - 1) < ex0 || imax(0, y0 - 1) < ey0 ||
                          imin(E.cols - 1, x1 + 1) > ex1 || imin(E.rows - 1, y1 + 1) > ey1;
-    if ((contentDirty && (lightForced || lightThrottleReady)) || windowExposed) {
+    bool cacheablePan = previousWindowValid && !windowDisjoint && exposedCount > 0 &&
+                        (camCol != glLastCamCol || camRow != glLastCamRow);
+    bool cameraPatchReady = windowExposed && !lightForced && glLightX0 >= 0 &&
+                            E.storageRole == ESR_PRESENTATION && cacheablePan;
+    bool scheduledSolve = contentDirty && (lightForced || lightThrottleReady);
+    if (scheduledSolve || (windowExposed && !cameraPatchReady)) {
       double t0 = emscripten_get_now();
       int lx0 = 0, ly0 = 0, lx1 = E.cols - 1, ly1 = E.rows - 1;
       if (!lightForced) {
@@ -2066,13 +2091,80 @@ void GLPresenter::glPresentWindow(int forceFull) {
         glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
         glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
       }
+      bool cameraLightPatched = false;
+      int exactX0 = ex0, exactY0 = ey0, exactX1 = ex1, exactY1 = ey1;
+      if (cameraPatchReady) {
+        // Keep one cell beyond the sample window exact for face-lit materials,
+        // plus look-ahead on every moving axis. Direct skylight is recast from
+        // the real buffer edge for each repaired column, so newly exposed shaft
+        // shadows are current immediately.
+        int viewX0 = imax(0, x0 - 1), viewY0 = imax(0, y0 - 1);
+        int viewX1 = imin(E.cols - 1, x1 + 1), viewY1 = imin(E.rows - 1, y1 + 1);
+        if (camCol > glLastCamCol) {
+          exactX0 = imax(exactX0, viewX0);
+          exactX1 = imin(E.cols - 1, viewX1 + GL_LIGHT_PAN_LOOKAHEAD);
+        } else if (camCol < glLastCamCol) {
+          exactX0 = imax(0, viewX0 - GL_LIGHT_PAN_LOOKAHEAD);
+          exactX1 = imin(exactX1, viewX1);
+        } else {
+          exactX0 = imax(exactX0, viewX0); exactX1 = imin(exactX1, viewX1);
+        }
+        if (camRow > glLastCamRow) {
+          exactY0 = imax(exactY0, viewY0);
+          exactY1 = imin(E.rows - 1, viewY1 + GL_LIGHT_PAN_LOOKAHEAD);
+        } else if (camRow < glLastCamRow) {
+          exactY0 = imax(0, viewY0 - GL_LIGHT_PAN_LOOKAHEAD);
+          exactY1 = imin(exactY1, viewY1);
+        } else {
+          exactY0 = imax(exactY0, viewY0); exactY1 = imin(exactY1, viewY1);
+        }
+        // At a buffer edge there are no omitted sources beyond the solve. Match
+        // the validity encoding by repairing the short remainder to that edge.
+        if (exactX0 <= GL_LIGHT_EXACT_SHRINK) exactX0 = 0;
+        if (exactY0 <= GL_LIGHT_EXACT_SHRINK) exactY0 = 0;
+        if (exactX1 >= E.cols - 1 - GL_LIGHT_EXACT_SHRINK) exactX1 = E.cols - 1;
+        if (exactY1 >= E.rows - 1 - GL_LIGHT_EXACT_SHRINK) exactY1 = E.rows - 1;
+        if (exactX0 <= exactX1 && exactY0 <= exactY1) {
+          int patches[16], patchCount = 0;
+          auto addLightPatch = [&](int px0, int py0, int px1, int py1) {
+            if (px0 > px1 || py0 > py1) return;
+            int* p = patches + patchCount * 4;
+            p[0] = px0; p[1] = py0; p[2] = px1; p[3] = py1;
+            patchCount++;
+          };
+          // Partition the target exact rectangle around the previous one. The
+          // side strips include diagonal corners; the top/bottom strips cover
+          // only the old x-overlap, so no cell is solved twice as a kept pixel.
+          addLightPatch(exactX0, exactY0, imin(exactX1, ex0 - 1), exactY1);
+          addLightPatch(imax(exactX0, ex1 + 1), exactY0, exactX1, exactY1);
+          int overlapX0 = imax(exactX0, ex0), overlapX1 = imin(exactX1, ex1);
+          addLightPatch(overlapX0, exactY0, overlapX1, imin(exactY1, ey0 - 1));
+          addLightPatch(overlapX0, imax(exactY0, ey1 + 1), overlapX1, exactY1);
+          for (int pi = 0; pi < patchCount; pi++) {
+            const int* p = patches + pi * 4;
+            E.renderer.computeLightingBothPatch(
+              p[0] - GL_LIGHT_EXACT_SHRINK, p[1] - GL_LIGHT_EXACT_SHRINK,
+              p[2] + GL_LIGHT_EXACT_SHRINK, p[3] + GL_LIGHT_EXACT_SHRINK,
+              p[0], p[1], p[2], p[3]);
+          }
+          cameraLightPatched = patchCount > 0;
+          lightUpdated = lightUpdated || cameraLightPatched;
+        }
+      }
       if (lightUpdated) {
-        // The current sample window is exact. Constrain the validity region to
-        // it so the next whole-cell pan solves newly exposed lighting.
-        glLightX0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN);
-        glLightY0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
-        glLightX1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN);
-        glLightY1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
+        if (cameraLightPatched) {
+          glLightX0 = exactX0 <= GL_LIGHT_EXACT_SHRINK ? 0 : exactX0 - GL_LIGHT_EXACT_SHRINK;
+          glLightY0 = exactY0 <= GL_LIGHT_EXACT_SHRINK ? 0 : exactY0 - GL_LIGHT_EXACT_SHRINK;
+          glLightX1 = exactX1 >= E.cols - 1 ? E.cols - 1 : exactX1 + GL_LIGHT_EXACT_SHRINK;
+          glLightY1 = exactY1 >= E.rows - 1 ? E.rows - 1 : exactY1 + GL_LIGHT_EXACT_SHRINK;
+        } else {
+          // The current sample window is exact. Constrain the validity region
+          // so the next whole-cell pan repairs newly exposed lighting.
+          glLightX0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN);
+          glLightY0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
+          glLightX1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN);
+          glLightY1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
+        }
         E.useLayer(&E.fg); E.foldRowMarksToRender();
         E.useLayer(&E.bg); E.foldRowMarksToRender();
         E.perfLightMs = emscripten_get_now() - t0;
@@ -2089,25 +2181,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   // their repaired chunks above, while a pure pan keeps the overlap and adds at
   // most four non-overlapping edge bands.
   bool fullWindowRefresh = forceFull || worldShifted || fullLightUpdated || !previousWindowValid;
-  int exposed[16], exposedCount = 0;
-  auto addExposed = [&](int ax0, int ay0, int ax1, int ay1) {
-    if (ax0 > ax1 || ay0 > ay1) return;
-    int* r = exposed + exposedCount * 4;
-    r[0] = ax0; r[1] = ay0; r[2] = ax1; r[3] = ay1;
-    exposedCount++;
-  };
-  if (!fullWindowRefresh && windowMoved) {
-    int ix0 = imax(x0, glLastVisX0), iy0 = imax(y0, glLastVisY0);
-    int ix1 = imin(x1, glLastVisX1), iy1 = imin(y1, glLastVisY1);
-    if (ix0 > ix1 || iy0 > iy1) {
-      fullWindowRefresh = true;
-    } else {
-      addExposed(x0, y0, ix0 - 1, y1);
-      addExposed(ix1 + 1, y0, x1, y1);
-      addExposed(ix0, y0, ix1, iy0 - 1);
-      addExposed(ix0, iy1 + 1, ix1, y1);
-    }
-  }
+  if (!fullWindowRefresh && windowDisjoint) fullWindowRefresh = true;
   E.renderer.renderFrameSalt = animFrame;
   int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
   int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;

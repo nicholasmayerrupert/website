@@ -55,7 +55,7 @@ try {
       import('/src/sand/materials.js'),
     ]);
     await initSandWasm();
-    const cols = 128, rows = 128;
+    const cols = 256, rows = 256, viewCols = 128, viewRows = 128;
     const source = createEngineWasm({
       cols, rows, infinite: false, sinksOn: false, storageRole: 'authority', worldSeed: 7,
     });
@@ -63,12 +63,12 @@ try {
       cols, rows, infinite: false, sinksOn: false, storageRole: 'presentation', worldSeed: 7,
     });
     const canvas = document.createElement('canvas');
-    canvas.width = cols;
-    canvas.height = rows;
+    canvas.width = viewCols;
+    canvas.height = viewRows;
     document.body.append(canvas);
     mirror.glInit(canvas);
-    mirror.glResize(cols, rows);
-    mirror.setViewport(1, 1, cols, rows);
+    mirror.glResize(viewCols, viewRows);
+    mirror.setViewport(1, 1, viewCols, viewRows);
     mirror.cameraSet(0, 0);
     mirror.glSetFlags(false, false, true);
     source.setSkyLight(255);
@@ -79,8 +79,18 @@ try {
     for (let y = 8; y <= 112; y++) {
       source.paintDisc(55, y, 0, MAT.STONE, true);
       source.paintDisc(72, y, 0, MAT.STONE, true);
+      source.paintDisc(183, y, 0, MAT.STONE, true);
+      source.paintDisc(202, y, 0, MAT.STONE, true);
     }
     for (let x = 55; x <= 72; x++) source.paintDisc(x, 112, 0, MAT.STONE, true);
+    for (let x = 183; x <= 202; x++) source.paintDisc(x, 112, 0, MAT.STONE, true);
+    for (let x = 184; x <= 201; x++) source.paintDisc(x, 48, 0, MAT.STONE, true);
+    for (let y = 113; y <= 220; y++) {
+      source.paintDisc(183, y, 0, MAT.STONE, true);
+      source.paintDisc(202, y, 0, MAT.STONE, true);
+    }
+    for (let x = 183; x <= 202; x++) source.paintDisc(x, 220, 0, MAT.STONE, true);
+    for (let x = 184; x <= 201; x++) source.paintDisc(x, 160, 0, MAT.STONE, true);
     source.syncComponents();
     mirror.applyWorldMirror(source.serializeWorld(), 0, 0);
     source.resetDirty();
@@ -91,6 +101,33 @@ try {
       return (p[0] + p[1] + p[2]) / 3;
     };
     const open = brightness(63, 112);
+
+    // This blocked shaft begins outside the first viewport's exact-light zone
+    // on both axes. A diagonal pan must solve the entering strips before
+    // displaying them and match a forced full-buffer reference exactly.
+    let panLightMs = 0, panLightSolves = 0;
+    const panLightOffsets = [];
+    for (let offset = 1; offset <= 96; offset++) {
+      mirror.cameraSet(offset, offset);
+      mirror.glRenderFrame(false);
+      const lightMs = mirror.getPerf().lightMs;
+      if (lightMs > 0) {
+        panLightSolves++;
+        panLightOffsets.push(offset);
+        panLightMs = Math.max(panLightMs, lightMs);
+      }
+    }
+    const panShadow = brightness(192 - 96, 220 - 96);
+    const panFrame = mirror.glReadPixels(0, 0, viewCols, viewRows);
+    mirror.glRenderFrame(true);
+    const fullShadow = brightness(192 - 96, 220 - 96);
+    const fullFrame = mirror.glReadPixels(0, 0, viewCols, viewRows);
+    let panFrameMaxDelta = 0;
+    for (let i = 0; i < panFrame.length; i++) {
+      panFrameMaxDelta = Math.max(panFrameMaxDelta, Math.abs(panFrame[i] - fullFrame[i]));
+    }
+    mirror.cameraSet(0, 0);
+    mirror.glRenderFrame(false);
 
     for (let x = 56; x <= 71; x++) source.paintDisc(x, 48, 0, MAT.STONE, true);
     source.syncComponents();
@@ -131,6 +168,7 @@ try {
     return {
       open, blocked, reopened, blockLightMs, eraseLightMs,
       editedWaterLightMs, flowingWaterLightMs,
+      panShadow, fullShadow, panFrameMaxDelta, panLightMs, panLightSolves, panLightOffsets,
     };
   });
 
@@ -144,6 +182,12 @@ try {
     result.editedWaterLightMs > 0);
   check(`autonomous water churn stays on the throttled catch-up path (${result.flowingWaterLightMs.toFixed(3)}ms)`,
     result.flowingWaterLightMs === 0);
+  check(`dual-axis camera pan amortizes exact edge lighting (${result.panLightSolves} solves at ${result.panLightOffsets.join(',')}, max ${result.panLightMs.toFixed(3)}ms)`,
+    result.panLightSolves > 0 && result.panLightSolves <= 4);
+  check(`panned shadow matches a full-light reference (${result.panShadow.toFixed(1)} ~= ${result.fullShadow.toFixed(1)})`,
+    Math.abs(result.panShadow - result.fullShadow) < 1);
+  check(`camera-patched viewport exactly matches a full-light frame (max byte delta ${result.panFrameMaxDelta})`,
+    result.panFrameMaxDelta === 0);
 } finally {
   await browser?.close();
   stopServer();

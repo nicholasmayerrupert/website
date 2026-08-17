@@ -67,6 +67,44 @@ console.log('prefetch determinism — horizontal pan (right into novel terrain)'
   check('control: WITHOUT prefetch the same shifts were fillRect misses', r.statsA.miss > 0, `A hit=${r.statsA.hit} miss=${r.statsA.miss}`);
 }
 
+console.log('deep hazard boundaries stay inside a streamed entering band');
+{
+  const cols = 256, rows = 1024;
+  const options = {
+    cols, rows, worldSeed: 198, sinksOn: false, infinite: true,
+  };
+  const synchronous = attachTestHooks(createEngineWasm(options));
+  const prefetched = attachTestHooks(createEngineWasm(options));
+  const retainedIndexBeforeShift = 974 * cols + 255;
+  const retainedBeforeShift = synchronous.getGrid()[retainedIndexBeforeShift];
+  for (let i = 0; i < 100
+      && prefetched.getWorldStoreStats().prefetchTiles < 256; i++)
+    prefetched.prefetchAdvance(100, 512, 96, 96);
+  synchronous.shiftWorldXY(128, 0);
+  prefetched.shiftWorldXY(128, 0);
+  const syncFg = synchronous.getGrid(), prefetchFg = prefetched.getGrid();
+  const syncBg = synchronous.getGridBg(), prefetchBg = prefetched.getGridBg();
+  let fgMismatches = 0, bgMismatches = 0;
+  for (let i = 0; i < syncFg.length; i++) {
+    if (syncFg[i] !== prefetchFg[i]) fgMismatches++;
+    if (syncBg[i] !== prefetchBg[i]) bgMismatches++;
+  }
+  const retainedIndexAfterShift = 974 * cols + 127;
+  check('seed-198 synchronous and prefetched shifts are byte-identical',
+    fgMismatches === 0 && bgMismatches === 0,
+    `foreground=${fgMismatches} background=${bgMismatches}`);
+  check('hazard sealing does not rewrite the retained edge cell',
+    retainedBeforeShift === MAT.STONE
+      && syncFg[retainedIndexAfterShift] === retainedBeforeShift,
+    `before=${retainedBeforeShift} after=${syncFg[retainedIndexAfterShift]}`);
+  const syncStats = synchronous.getShiftFillStats();
+  const prefetchStats = prefetched.getShiftFillStats();
+  check('seed-198 control used synchronous generation while prefetch used cache',
+    syncStats.miss === 2 && prefetchStats.hit === 2 && prefetchStats.miss === 0,
+    `sync hit=${syncStats.hit} miss=${syncStats.miss}; prefetch hit=${prefetchStats.hit} miss=${prefetchStats.miss}`);
+  synchronous.destroy(); prefetched.destroy();
+}
+
 console.log('prefetch determinism — vertical pan (down into novel terrain)');
 {
   const r = panAxis('y', 8);

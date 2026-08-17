@@ -159,7 +159,8 @@ void GLPresenter::glSetDebugHitboxes(int on) { glDebugHitboxes = on != 0; }
 void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   glOwnPlayerId = ownId;
   glUseExtPlayers = useExternal != 0;
-  if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
+  if (glUseExtPlayers && data && count > 0)
+    glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
   else glExtPlayers.clear();
 }
 void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y) {
@@ -174,7 +175,8 @@ void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int l
 // engine-owned item list (a client does not simulate local item actors).
 void GLPresenter::glSetItems(int useExternal, const float* data, int count) {
   glUseExtItems = useExternal != 0;
-  if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
+  if (glUseExtItems && data && count > 0)
+    glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
   else glExtItems.clear();
 }
 void GLPresenter::glSetCreatures(int useExternal, const float* data, int count) {

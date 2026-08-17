@@ -922,15 +922,21 @@
   bool pfTerrainStep(Layer* Lx, int futOffX, int futOffY) {
     PrefetchGenerationScope scope(
       L, Lx, pfGrid.data(), futOffX, futOffY);
+    int genX0, genX1, genY0, genY1;
+    generationRectWithHazardHalo(
+      pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh,
+      genX0, genX1, genY0, genY1);
     bool done;
     if (pfDx) {
       int per = imax(1, PREFETCH_CELLS_PER_FRAME / imax(1, rows));
-      int c0 = pfEx0 + pfCursor, c1 = imin(pfEx0 + pfEw, c0 + per);
-      fillTerrain(c0, c1, 0, rows); pfCursor += c1 - c0; done = pfCursor >= pfEw;
+      int c0 = genX0 + pfCursor, c1 = imin(genX1, c0 + per);
+      fillTerrain(c0, c1, genY0, genY1);
+      pfCursor += c1 - c0; done = c1 >= genX1;
     } else {
       int per = imax(1, PREFETCH_CELLS_PER_FRAME / imax(1, cols));
-      int r0 = pfEy0 + pfCursor, r1 = imin(pfEy0 + pfEh, r0 + per);
-      fillTerrain(0, cols, r0, r1); pfCursor += r1 - r0; done = pfCursor >= pfEh;
+      int r0 = genY0 + pfCursor, r1 = imin(genY1, r0 + per);
+      fillTerrain(genX0, genX1, r0, r1);
+      pfCursor += r1 - r0; done = r1 >= genY1;
     }
     return done;
   }
@@ -939,8 +945,11 @@
     {
       PrefetchGenerationScope scope(
         L, Lx, pfGrid.data(), futOffX, futOffY);
-      runGenerationPipeline(pfEx0, pfEx0 + pfEw,
-                            pfEy0, pfEy0 + pfEh,
+      int genX0, genX1, genY0, genY1;
+      generationRectWithHazardHalo(
+        pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh,
+        genX0, genX1, genY0, genY1);
+      runGenerationPipeline(genX0, genX1, genY0, genY1,
                             true, false);
     }
     pfStoreTiles(Lx, futOffX, futOffY);
@@ -955,7 +964,7 @@
     if ((int)pfGrid.size() != cols * rows) {
       if ((size_t)cols * rows < pfGrid.size()) std::vector<uint8_t>().swap(pfGrid);
       pfGrid.assign((size_t)cols * rows, EMPTY);
-    }
+    } else std::fill(pfGrid.begin(), pfGrid.end(), EMPTY);
     pfBand(dx, dy, pfEx0, pfEy0, pfEw, pfEh);
     int futOffX = fg.worldOffsetX + dx, futOffY = fg.worldOffsetY + dy; // fg/bg share one offset
     bool cached = pfBandCached(&fg, futOffX, futOffY) && (!bgEnabled || pfBandCached(&bg, futOffX, futOffY));
@@ -965,7 +974,12 @@
   void pfRunSlice() {
     int futOffX = fg.worldOffsetX + pfDx, futOffY = fg.worldOffsetY + pfDy;
     if (pfStage == PF_FG_TERRAIN) {
-      if (pfTerrainStep(&fg, futOffX, futOffY)) { pfFinalizeLayer(&fg, futOffX, futOffY); pfCursor = 0; pfStage = bgEnabled ? PF_BG_TERRAIN : PF_DONE; }
+      if (pfTerrainStep(&fg, futOffX, futOffY)) {
+        pfFinalizeLayer(&fg, futOffX, futOffY);
+        pfCursor = 0;
+        if (bgEnabled) std::fill(pfGrid.begin(), pfGrid.end(), EMPTY);
+        pfStage = bgEnabled ? PF_BG_TERRAIN : PF_DONE;
+      }
     } else if (pfStage == PF_BG_TERRAIN) {
       if (pfTerrainStep(&bg, futOffX, futOffY)) { pfFinalizeLayer(&bg, futOffX, futOffY); pfStage = PF_DONE; }
     }

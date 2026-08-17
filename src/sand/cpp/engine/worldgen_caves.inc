@@ -704,22 +704,24 @@
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
       if (L->grid[k] != SALT && !isDissolvable(L->grid[k])) continue;
-      bool touchesAcid = (x > 0 && L->grid[k - 1] == ACID) || (x + 1 < cols && L->grid[k + 1] == ACID)
-                       || (y > 0 && L->grid[k - cols] == ACID) || (y + 1 < rows && L->grid[k + cols] == ACID);
+      bool touchesAcid = (x > colStart && L->grid[k - 1] == ACID)
+                       || (x + 1 < colEnd && L->grid[k + 1] == ACID)
+                       || (y > rowStart && L->grid[k - cols] == ACID)
+                       || (y + 1 < rowEnd && L->grid[k + cols] == ACID);
       if (touchesAcid) L->grid[k] = CRYSTAL;
     }
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
       if (L->grid[k] == ACID) {
-        if (y + 1 < rows && L->grid[k + cols] != ACID) L->grid[k + cols] = CRYSTAL;
-        if (x > 0 && L->grid[k - 1] != ACID && L->grid[k - 1] != EMPTY) L->grid[k - 1] = CRYSTAL;
-        if (x + 1 < cols && L->grid[k + 1] != ACID && L->grid[k + 1] != EMPTY) L->grid[k + 1] = CRYSTAL;
+        if (y + 1 < rowEnd && L->grid[k + cols] != ACID) L->grid[k + cols] = CRYSTAL;
+        if (x > colStart && L->grid[k - 1] != ACID && L->grid[k - 1] != EMPTY) L->grid[k - 1] = CRYSTAL;
+        if (x + 1 < colEnd && L->grid[k + 1] != ACID && L->grid[k + 1] != EMPTY) L->grid[k + 1] = CRYSTAL;
       } else if (L->grid[k] == LAVA) {
         int wx = L->worldOffsetX + x, wy = L->worldOffsetY + y;
         uint8_t wall = terrain.genDeepRockAt(wx, wy);
-        if (y + 1 < rows && L->grid[k + cols] != LAVA) L->grid[k + cols] = wall;
-        if (x > 0 && L->grid[k - 1] != LAVA && L->grid[k - 1] != EMPTY) L->grid[k - 1] = wall;
-        if (x + 1 < cols && L->grid[k + 1] != LAVA && L->grid[k + 1] != EMPTY) L->grid[k + 1] = wall;
+        if (y + 1 < rowEnd && L->grid[k + cols] != LAVA) L->grid[k + cols] = wall;
+        if (x > colStart && L->grid[k - 1] != LAVA && L->grid[k - 1] != EMPTY) L->grid[k - 1] = wall;
+        if (x + 1 < colEnd && L->grid[k + 1] != LAVA && L->grid[k + 1] != EMPTY) L->grid[k + 1] = wall;
       }
     }
   }

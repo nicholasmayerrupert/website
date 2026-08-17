@@ -495,6 +495,9 @@ const creatureImplementation = readFileSync(
   resolve(root, 'src/sand/cpp/engine/creatures_impl.inc'), 'utf8');
 const creatureRenderer = readFileSync(
   resolve(root, 'src/sand/cpp/engine/glpresenter_impl.inc'), 'utf8');
+check('empty external player and item snapshots avoid null pointer ranges',
+  creatureRenderer.includes('if (glUseExtPlayers && data && count > 0)')
+    && creatureRenderer.includes('if (glUseExtItems && data && count > 0)'));
 check('creature ids and descriptor order preserve the stable ABI',
   CREATURE.MINNOW === 0
     && CREATURE.DYNAMITEER === 7

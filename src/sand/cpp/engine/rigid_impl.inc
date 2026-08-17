@@ -1636,16 +1636,41 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
                                     body->py - current.py);
     double travel = translation
       + std::fabs(body->angle - current.angle) * body->maxR;
-    if (travel > 1e-9) {
+    bool poseChanged = travel > 1e-9;
+    bool worldBridge = rigidWorldBridgeMode(solverMode);
+    if (!poseChanged && worldBridge) continue;
+    if (poseChanged) {
       movedBodies++;
       rigidRasterMaxCorrection = std::fmax(
         rigidRasterMaxCorrection, translation);
     }
-    body->vx = body->vy = body->omega = 0;
+    double pointSpeed = std::hypot(body->vx, body->vy)
+      + std::fabs(body->omega) * body->maxR;
+    bool keepMotion = worldBridge
+      && (pointSpeed > R_WORLD_SLEEP_VELOCITY || body->spatialForceApplied);
+    if (keepMotion) {
+      // The committed pose is a positional constraint, so remove only linear
+      // motion that immediately drives back through that correction. Tangential
+      // velocity and angular momentum remain owned by the world solver.
+      if (translation > 1e-9) {
+        double nx = (body->px - current.px) / translation;
+        double ny = (body->py - current.py) / translation;
+        double inwardSpeed = body->vx * nx + body->vy * ny;
+        if (inwardSpeed < 0) {
+          body->vx -= inwardSpeed * nx;
+          body->vy -= inwardSpeed * ny;
+        }
+      }
+      wakeBody(body);
+    } else {
+      // A body inside the world sleep band, or a solver without a cross-layer
+      // contact coordinator, parks with the completed assignment.
+      body->vx = body->vy = body->omega = 0;
+      body->awake = false;
+      resetSleepTracking(body);
+      body->stillTicks = R_SLEEP_TICKS;
+    }
     body->pvx = body->pvy = body->pw = 0;
-    body->awake = false;
-    resetSleepTracking(body);
-    body->stillTicks = R_SLEEP_TICKS;
     body->hadContact = true;
     if (body->jointRole == 1) syncJointFollower(body);
   }

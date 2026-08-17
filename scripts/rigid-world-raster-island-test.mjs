@@ -15,7 +15,8 @@ await initSandWasm();
 const COLS = 960;
 const ROWS = 1440;
 const FLOOR_Y = 1360;
-const STEPS = 180;
+const STEPS = Number.parseInt(process.env.STEPS ?? '260', 10);
+const SOLVER_MODE = 45;
 const { check, done } = makeChecker('crowded cross-layer raster island');
 const { random, specs: allSpecs } = makeComplexStackScenario(19, COLS);
 const specs = allSpecs.filter((_, index) => index >= 7 && index !== 10);
@@ -27,7 +28,7 @@ const engine = attachTestHooks(createEngineWasmRaw({
   infinite: false,
 }));
 engine.setBgEnabled(true);
-engine._setRigidSolverOptions(2, 0.0001, 4);
+engine._setRigidSolverOptions(SOLVER_MODE, 0.0001, 4);
 engine._setRigidPeerBiasScale(1);
 engine._setRigidWorldPositionLimit(0.5);
 
@@ -89,8 +90,51 @@ let maxProjectionFailures = 0;
 let maxCorrection = 0;
 let maxCorrectionTick = -1;
 let settledAt = -1;
+let abruptRasterStops = 0;
+let abruptRasterRotationStops = 0;
+let maxStoppedPointSpeed = 0;
+let maxStoppedOmega = 0;
+const bodySnapshot = () => {
+  const snapshot = new Map();
+  for (let layer = 0; layer < 2; layer++) {
+    for (let body = 0; body < engine._bodyCountLayer(layer); body++) {
+      if (engine._bodyJointRoleLayer(layer, body) === 2) continue;
+      const state = engine._bodyStateLayer(layer, body);
+      if (!state) continue;
+      snapshot.set(`${layer}:${engine._bodyIdLayer(layer, body)}`, {
+        awake: engine._bodyAwakeLayer(layer, body) > 0,
+        pointSpeed: Math.hypot(state.vx, state.vy)
+          + Math.abs(state.omega) * state.maxR,
+        omega: state.omega,
+      });
+    }
+  }
+  return snapshot;
+};
+let previousBodies = bodySnapshot();
 for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
+  const solver = engine.getRigidSolverDebug();
+  const currentBodies = bodySnapshot();
+  if (solver.rasterCorrections > 0) {
+    for (const [key, previous] of previousBodies) {
+      const current = currentBodies.get(key);
+      if (!current || !previous.awake) continue;
+      if (previous.pointSpeed > 0.25
+          && !current.awake && current.pointSpeed <= 1e-9) {
+        abruptRasterStops++;
+        maxStoppedPointSpeed = Math.max(
+          maxStoppedPointSpeed, previous.pointSpeed);
+      }
+      if (Math.abs(previous.omega) > 1e-4
+          && Math.abs(current.omega) <= 1e-9) {
+        abruptRasterRotationStops++;
+        maxStoppedOmega = Math.max(
+          maxStoppedOmega, Math.abs(previous.omega));
+      }
+    }
+  }
+  previousBodies = currentBodies;
   let awake = 0;
   for (let layer = 0; layer < 2; layer++) {
     for (let body = 0; body < engine._bodyCountLayer(layer); body++) {
@@ -102,7 +146,6 @@ for (let tick = 0; tick < STEPS; tick++) {
       awake += engine._bodyAwakeLayer(layer, body) > 0;
     }
   }
-  const solver = engine.getRigidSolverDebug();
   maxOwnershipConflicts = Math.max(
     maxOwnershipConflicts, solver.ownershipConflicts);
   maxProjectionFailures = Math.max(
@@ -136,6 +179,12 @@ check(`every island projection succeeds (${maxProjectionFailures})`,
 check(`projection correction remains bounded `
     + `(${maxCorrection.toFixed(4)} at ${maxCorrectionTick})`,
   maxCorrection <= 2);
+check(`raster recovery preserves active motion `
+    + `(${abruptRasterStops} body stops, `
+    + `${abruptRasterRotationStops} rotation stops, peak speed `
+    + `${maxStoppedPointSpeed.toFixed(4)}, omega `
+    + `${maxStoppedOmega.toFixed(6)})`,
+  abruptRasterStops === 0 && abruptRasterRotationStops === 0);
 check(`island settles and stays uniquely assigned (${settledAt}/${finalBlocked})`,
   settledAt >= 0 && finalAwake === 0 && finalBlocked === 0);
 

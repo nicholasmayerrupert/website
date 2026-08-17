@@ -1183,12 +1183,15 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   }
 
   auto setPose = [&](WorldRasterNode& node, const MovePose& pose) {
+    bool changed = node.body->px != pose.px
+      || node.body->py != pose.py
+      || node.body->angle != pose.angle;
     node.body->px = pose.px;
     node.body->py = pose.py;
     node.body->angle = pose.angle;
     node.body->cs = std::cos(pose.angle);
     node.body->sn = std::sin(pose.angle);
-    node.body->rasterFootprintValid = false;
+    if (changed) node.body->rasterFootprintValid = false;
     if (node.body->jointRole == 1) syncJointFollower(node.body);
   };
   worldRasterRollback = worldRasterViolating;
@@ -1272,6 +1275,9 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   // Build both layers' claims directly from canonical-node footprints. The
   // recursive search only mutates trial poses; the sand grids remain unchanged
   // until one complete assignment has passed every claim and terrain check.
+  int remainingSearchCandidates = 8192;
+  size_t remainingSearchRasterCells = std::min(
+    gridSize * 64, (size_t)16 * 1024 * 1024);
   auto searchBoundedAssignment = [&](
       const std::vector<uint8_t>& moving,
       const std::vector<uint8_t>& included) {
@@ -1289,6 +1295,46 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         worldRasterSearchOwner[claim] = -1;
       }
     };
+    auto rasterScanCells = [&](Body* body) {
+      bool cacheValid = body->rasterFootprintValid
+        && body->rasterPx == body->px
+        && body->rasterPy == body->py
+        && body->rasterAngle == body->angle
+        && body->rasterGeometryRevision == body->geometryRevision
+        && body->rasterCols == E.cols
+        && body->rasterRows == E.rows;
+      if (cacheValid) return (size_t)0;
+      double sn = std::sin(body->angle), cs = std::cos(body->angle);
+      double lx0 = body->offsetX - 0.5;
+      double lx1 = body->offsetX + body->w - 0.5;
+      double ly0 = body->offsetY - 0.5;
+      double ly1 = body->offsetY + body->h - 0.5;
+      double minWX = 1e18, minWY = 1e18;
+      double maxWX = -1e18, maxWY = -1e18;
+      auto includeCorner = [&](double lx, double ly) {
+        double wx = body->px + lx * cs - ly * sn;
+        double wy = body->py + lx * sn + ly * cs;
+        minWX = std::fmin(minWX, wx);
+        minWY = std::fmin(minWY, wy);
+        maxWX = std::fmax(maxWX, wx);
+        maxWY = std::fmax(maxWY, wy);
+      };
+      includeCorner(lx0, ly0);
+      includeCorner(lx1, ly0);
+      includeCorner(lx1, ly1);
+      includeCorner(lx0, ly1);
+      int x0 = imax(0, (int)std::floor(minWX));
+      int y0 = imax(0, (int)std::floor(minWY));
+      int x1 = imin(E.cols - 1, (int)std::floor(maxWX));
+      int y1 = imin(E.rows - 1, (int)std::floor(maxWY));
+      if (x1 < x0 || y1 < y0) return (size_t)0;
+      return (size_t)(x1 - x0 + 1) * (y1 - y0 + 1);
+    };
+    auto spendRasterCells = [&](size_t cells) {
+      if (cells > remainingSearchRasterCells) return false;
+      remainingSearchRasterCells -= cells;
+      return true;
+    };
     auto claimNode = [&](int nodeIndex) {
       size_t start = worldRasterSearchTouched.size();
       WorldRasterNode& node = worldRasterNodes[nodeIndex];
@@ -1296,7 +1342,15 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         Layer& layer = layerIndex ? E.bg : E.fg;
         Body* member = layerIndex ? node.background : node.foreground;
         if (!member) continue;
+        if (!spendRasterCells(rasterScanCells(member))) {
+          releaseClaims(start);
+          return false;
+        }
         ensureBodyRaster(member);
+        if (!spendRasterCells(member->rasterFootprint.size())) {
+          releaseClaims(start);
+          return false;
+        }
         for (const BodyRasterCell& cell : member->rasterFootprint) {
           int k = cell.y * E.cols + cell.x;
           int claim = layerIndex * (int)gridSize + k;
@@ -1349,17 +1403,21 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       {0.7071067811865476, -0.7071067811865476},
       {0.9238795325112867, -0.3826834323650898},
     };
-    // Contended islands fall back to their accepted assignment after a fixed
-    // amount of bounded local work, so search cost cannot grow combinatorially.
-    int remainingCandidates = 4096;
+    // All contended islands share one candidate and raster-work budget for this
+    // resolver call, including the fixed claims repeated by separate attempts.
     auto search = [&](auto&& self, int depth) -> bool {
       if (depth == (int)searchNodes.size()) return true;
-      if (remainingCandidates <= 0) return false;
+      if (remainingSearchCandidates <= 0
+          || remainingSearchRasterCells == 0)
+        return false;
       int nodeIndex = searchNodes[depth];
       WorldRasterNode& node = worldRasterNodes[nodeIndex];
       const MovePose& current = worldRasterCurrentPoses[nodeIndex];
       auto tryPose = [&](const MovePose& pose) {
-        if (remainingCandidates-- <= 0) return false;
+        if (remainingSearchCandidates <= 0
+            || remainingSearchRasterCells == 0)
+          return false;
+        remainingSearchCandidates--;
         setPose(node, pose);
         size_t start = worldRasterSearchTouched.size();
         if (!claimNode(nodeIndex)) return false;
@@ -1378,7 +1436,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         double acceptedTranslation = std::hypot(
           accepted.px - current.px, accepted.py - current.py);
         for (int sample = 1;
-             sample <= 16 && remainingCandidates > 0; sample++) {
+             sample <= 16 && remainingSearchCandidates > 0; sample++) {
           double fraction = (double)sample / 16;
           if (acceptedTranslation * fraction > 2) break;
           if (tryPose({
@@ -1391,9 +1449,9 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         }
       }
       for (double amount = 0.125;
-           amount <= 2.0 && remainingCandidates > 0; amount += 0.125) {
+           amount <= 2.0 && remainingSearchCandidates > 0; amount += 0.125) {
         for (const auto& direction : directions) {
-          if (remainingCandidates <= 0) break;
+          if (remainingSearchCandidates <= 0) break;
           if (tryPose({
                 current.px + direction[0] * amount,
                 current.py + direction[1] * amount,
@@ -1457,8 +1515,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     }
   }
   if (recovered) recovered = assignmentValid(&worldRasterViolating);
+  // Rollback interpolation shares a fixed number of exact whole-roster checks.
+  int remainingRollbackValidations = 64;
   for (int pass = 0;
-       !recovered && pass < (int)worldRasterNodes.size(); pass++) {
+       !recovered && remainingRollbackValidations > 7
+         && pass < (int)worldRasterNodes.size(); pass++) {
     bool canRollback = true;
     double maxRollbackTravel = 0;
     for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
@@ -1505,9 +1566,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     int samples = imin(64, imax(
       1, (int)std::ceil(maxRollbackTravel / 0.25)));
     double lower = 0, upper = -1;
-    for (int sample = 1; sample <= samples; sample++) {
+    for (int sample = 1;
+         sample <= samples && remainingRollbackValidations > 7; sample++) {
       double fraction = (double)sample / samples;
       setRollbackFraction(fraction);
+      remainingRollbackValidations--;
       if (assignmentValid(&worldRasterViolating)) {
         upper = fraction;
         break;
@@ -1515,13 +1578,16 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       lower = fraction;
     }
     if (upper > 0) {
-      for (int search = 0; search < 6; search++) {
+      for (int search = 0;
+           search < 6 && remainingRollbackValidations > 1; search++) {
         double middle = (lower + upper) * 0.5;
         setRollbackFraction(middle);
+        remainingRollbackValidations--;
         if (assignmentValid(nullptr)) upper = middle;
         else lower = middle;
       }
       setRollbackFraction(upper);
+      remainingRollbackValidations--;
       if (!assignmentValid(&worldRasterViolating)) break;
       recovered = true;
       break;

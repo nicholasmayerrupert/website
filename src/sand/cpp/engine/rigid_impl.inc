@@ -1553,12 +1553,12 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     recovered = allAccepted && assignmentValid(&worldRasterViolating);
   }
   if (!recovered) {
-    char message[180];
-    snprintf(message, sizeof(message),
-      "SAND RASTER ASSIGNMENT FAILURE tick=%d nodes=%d",
-      E.tick, (int)worldRasterNodes.size());
-    emscripten_console_error(message);
-    abort();
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+      setPose(worldRasterNodes[index], worldRasterCurrentPoses[index]);
+    rigidRasterProjectionFailures = imax(
+      1, rigidRasterProjectionFailures);
+    worldRasterAssignmentValid = false;
+    return;
   }
 
   int movedBodies = 0;

@@ -48,6 +48,66 @@ await initSandWasm();
   sweptContactEngine.destroy();
 }
 
+// A component body resting on another free body remains dynamic. Nearby static
+// terrain is not its load-bearing support, even while a live TNT body enables
+// the accelerated rubble-bake path.
+{
+  const cols = 140, rows = 140;
+  const supportEngine = attachTestHooks(createEngineWasmRaw({
+    cols,
+    rows,
+    worldSeed: 1,
+    sinksOn: false,
+    infinite: false,
+    storageRole: 'authority',
+  }));
+  supportEngine.setBgEnabled(true);
+  for (let y = 40; y < rows; y++)
+    for (let x = 29; x <= 31; x++)
+      supportEngine.paintDisc(x, y, 0, MAT.STONE, true);
+  for (let y = 130; y < rows; y++)
+    for (let x = 0; x < cols; x++)
+      supportEngine.paintDisc(x, y, 0, MAT.STONE, true);
+  supportEngine.syncComponents();
+  supportEngine.stepWorld();
+  supportEngine.spawnBox(38, 126, 4, 4, MAT.RIGID);
+  for (let tick = 0; tick < 80; tick++) supportEngine.stepWorld();
+  supportEngine.spawnBox(38, 90, 4, 4, MAT.STONE);
+  supportEngine.spawnBox(120, 20, 1, 1, MAT.TNT);
+
+  const findBody = (material) => {
+    for (let body = 0; body < supportEngine._bodyCount(); body++)
+      if (supportEngine._bodyMaterial(body) === material) return body;
+    return -1;
+  };
+  let unsupportedStaticCells = 0;
+  for (let tick = 0; tick < 180; tick++) {
+    const tnt = findBody(MAT.TNT);
+    if (tnt >= 0) supportEngine._setBodyMotion(tnt, 0, 0, 0);
+    supportEngine.stepWorld();
+    const grid = supportEngine.getGrid();
+    const owners = supportEngine._bodyOwnerGrid();
+    const grounded = supportEngine._groundedGrid();
+    for (let y = 100; y < 125; y++) {
+      for (let x = 34; x <= 41; x++) {
+        const cell = y * cols + x;
+        if (grid[cell] === MAT.STONE && owners[cell] < 0 && !grounded[cell])
+          unsupportedStaticCells++;
+      }
+    }
+  }
+  const stone = findBody(MAT.STONE);
+  if (unsupportedStaticCells !== 0 || stone < 0
+      || supportEngine._bodyAwake(stone) !== 0) {
+    throw new Error(
+      `body-supported stone baked without static support: `
+      + `${unsupportedStaticCells} unsupported samples, body ${stone}`,
+    );
+  }
+  console.log('ok - body-supported TNT rubble remained a sleeping body');
+  supportEngine.destroy();
+}
+
 // A live TNT body lets supported rubble bake as soon as it sleeps. All fragments
 // reach that transition together so the bake pass must handle a dense roster in
 // one bounded world turn.

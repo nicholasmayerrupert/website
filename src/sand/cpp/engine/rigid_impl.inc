@@ -4308,8 +4308,8 @@ bool RigidBodySystem::bodySolidifies(Body* b) {
   return E.bodySolidifiesToComponents(b);
 }
 // A static component that survived this tick's assembly-motion pass is valid
-// support even when its own equilibrium comes from powder. Side contact does not
-// bear weight, and another free body is not static support.
+// support even when its own equilibrium comes from powder. Side contact and
+// another free body do not convert a resting body into static terrain.
 bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
   occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
   forEachBodyCell(b, [&](int x, int y, int) {
@@ -4326,11 +4326,10 @@ bool RigidBodySystem::bodyTouchesStaticSupport(Body* b) {
         || (E.isLooseSolidMaterial(material) && E.L->groundedCell[neighbor]))
       return true;
   }
-  // A solved diagonal or frictional support can lie several raster cells from
-  // the contact anchor inside a thick irregular mask. Once that support has
-  // baked, recognize its static material without treating a remaining dynamic
-  // body owner as terrain.
+  // A solved diagonal or frictional terrain support can lie several raster
+  // cells from the contact anchor inside a thick irregular mask.
   for (const BodySleepSupport& support : b->sleepSupports) {
+    if (support.owner >= 0) continue;
     Layer& layer = support.layer ? E.bg : E.fg;
     Engine::ActiveLayerScope layerScope(E, &layer);
     int cx = (int)std::floor(support.x);

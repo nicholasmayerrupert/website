@@ -70,20 +70,20 @@ class ExplosivesSystem {
     std::array<int16_t, TABLE * BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE> debrisSlots;
   };
   struct BlastCellRemoval { int cell; uint8_t material; };
-  struct TntBodyIgnition { int cell, distanceSquared; };
+  struct FuseBodyIgnition { int cell, distanceSquared; };
   struct BlastParticlePlan {
     uint8_t material;
     double x, y, vx, vy;
   };
   struct BlastBatch {
-    std::vector<int> forcedStaticTnt;
+    std::vector<int> forcedStaticFuse;
     std::vector<BlastCellRemoval> staticCuts;
-    std::vector<int> gasCuts, bodyCuts, staticTntIgnitions;
+    std::vector<int> gasCuts, bodyCuts, staticFuseIgnitions;
     std::vector<int> erasedStructural;
     std::vector<BlastParticlePlan> particlePlans;
     std::vector<BlastWave> waves;
     std::unordered_set<Body*> sourceBodies;
-    std::unordered_map<Body*, TntBodyIgnition> tntBodyIgnitions;
+    std::unordered_map<Body*, FuseBodyIgnition> fuseBodyIgnitions;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -97,7 +97,7 @@ class ExplosivesSystem {
   // front is sooner (ordinary heat re-ignition still leaves the fuse unchanged).
   std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH);
   void queueDetonation(int cell, int fuse);
-  void shortenTntBodyFuse(Body* b, int fuse, double sourceX, double sourceY);
+  void shortenFuseBody(Body* b, int fuse, double sourceX, double sourceY);
   void spawnBlastRingGases(const std::vector<BlastWave>& waves, int waveCap);
   void activateBlastRectNow(int x0, int y0, int x1, int y1);
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
@@ -106,8 +106,8 @@ class ExplosivesSystem {
                            int sx0, int sy, int count, int salt, BlastBatch& bb,
                            const BlastDebrisEjection& fallback, int tries = -1);
   void buildBlastDamage(const BlastBatch& bb);
-  void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb,
-                             bool massFront = false);
+  void carveStaticFuseCluster(const std::vector<int>& cells, BlastBatch& bb,
+                              BlastBatch* otherBb, bool massFront = false);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,
                   uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
   void evaluateBlastPlan(BlastBatch& bb);

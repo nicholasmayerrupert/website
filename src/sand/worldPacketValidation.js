@@ -1,4 +1,4 @@
-import { MATERIALS } from './materials.generated.js';
+import { isMaterialId } from './materials.generated.js';
 
 const readU16 = (bytes, offset) => bytes[offset] | (bytes[offset + 1] << 8);
 const readU32 = (bytes, offset) => (
@@ -8,9 +8,7 @@ const readU32 = (bytes, offset) => (
   | (bytes[offset + 3] << 24)
 ) >>> 0;
 
-export const isValidMaterialId = (value) => (
-  Number.isInteger(value) && value >= 0 && value < MATERIALS.length
-);
+export const isValidMaterialId = isMaterialId;
 
 export const maxWorldRleBytes = (cells) => cells * 10;
 export const maxWorldDiffBytes = (cells) => cells * 18 + 4;

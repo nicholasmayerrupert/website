@@ -360,15 +360,6 @@ uint8_t Renderer::renderLightForCell(const uint8_t* light, int k, int x, int y, 
 
 void Renderer::buildRenderTables() {
   for (int m = 0; m < TABLE; m++) {
-    bool empty = m == EMPTY || MAT_CLASS[m] == MC_NONE;
-    bool gas = MAT_CLASS[m] == MC_GAS;
-    bool glass = m == GLASS;
-    bool liquid = MAT_CLASS[m] == MC_LIQUID;
-    bool looseSolid = MAT_CLASS[m] == MC_SOLID;
-    bool rigid = MAT_CLASS[m] == MC_RIGID;
-    renderLightTransparent[m] = empty || gas || glass;
-    renderFaceLit[m] = !empty && !gas && !liquid;
-    renderLightLoss[m] = empty || gas ? 4 : glass ? 6 : liquid ? 8 : looseSolid ? 17 : rigid ? 24 : 20;
     int alpha = (int)std::lround((1.0f - MAT_TRANSPARENCY[m]) * 255.0f);
     if (alpha < 0) alpha = 0; else if (alpha > 255) alpha = 255;
     renderAlphaMask[m] = (uint32_t)alpha << 24;
@@ -474,13 +465,17 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
                    + (int)renderNoise[(((ny + 1) & 63) << 6) + nx];
         if (molten >= 31) c = shimmer >= 2 ? PACKED_LAVA_HOT : PACKED_LAVA_WARM;
         else if (molten >= 25) c = shimmer == 7 ? PACKED_LAVA_HOT : PACKED_LAVA_WARM;
+      } else {
+        uint8_t detail = MAT_RENDER_DETAIL_PROFILE[m];
+        uint8_t pattern = RENDER_DETAIL_PATTERN[detail];
+        bool highlighted = pattern == RDPAT_ALWAYS;
+        if (pattern == RDPAT_HASH_MASK)
+          highlighted = (renderCellHash(wx, wy) & RENDER_DETAIL_MASK[detail])
+            == RENDER_DETAIL_MATCH[detail];
+        else if (pattern == RDPAT_MYCELIUM_NODULE)
+          highlighted = myceliumNoduleAt(wx, wy);
+        if (highlighted) c = RENDER_DETAIL_COLOR[detail];
       }
-      else if (m == CRYSTAL) { if ((renderCellHash(wx, wy) & 7u) == 0u) c = PACKED_CRYSTAL_CORE; }
-      else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
-        if (m == MYCELIUM_SPORE || myceliumNoduleAt(wx, wy)) c = PACKED_MYCELIUM_NODULE;
-      }
-      else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
-      else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
       if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
       c = (c & 0x00ffffffu) | alphaMask;
       p[k] = c;

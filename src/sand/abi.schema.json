@@ -1,88 +1,453 @@
 {
-  "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 30,
+  "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
+  "abiVersion": 32,
+  "objectWires": {
+    "player": {
+      "$comment": "Player object projection shared by the WASM snapshot adapter, authority protocol, prediction, and presentation. `source` declares aliases from the engine object shape; mine fields exist only on the wire object.",
+      "maxRecords": 64,
+      "fields": [
+        { "name": "id", "kind": "i32", "min": 0 },
+        { "name": "x", "kind": "number" },
+        { "name": "y", "kind": "number" },
+        { "name": "vx", "kind": "number", "default": 0 },
+        { "name": "vy", "kind": "number", "default": 0 },
+        { "name": "facing", "kind": "i32", "default": 0 },
+        { "name": "grounded", "kind": "boolean", "default": false },
+        { "name": "jr", "source": "jumpReady", "kind": "boolean", "default": false },
+        { "name": "tool", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "health", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "alive", "kind": "boolean", "default": true },
+        { "name": "seq", "source": ["inputSeq", "seq"], "kind": "u32", "default": 0 },
+        { "name": "animState", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "animFrame", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "deathTicks", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "respawnReady", "kind": "boolean", "default": false },
+        { "name": "bowCharge", "kind": "number", "default": 0, "min": 0, "max": 1 },
+        { "name": "heldItemKind", "kind": "i32", "default": 0, "min": 0 },
+        { "name": "jetpackFuel", "kind": "number", "default": 1, "min": 0, "max": 1 },
+        { "name": "jetpackActive", "kind": "boolean", "default": false },
+        { "name": "shieldHealth", "kind": "i32", "default": 200, "min": 0, "max": 200, "clamp": true },
+        { "name": "shieldActive", "kind": "boolean", "default": false },
+        { "name": "aimX", "kind": "number", "default": 0 },
+        { "name": "aimY", "kind": "number", "default": 0 },
+        { "name": "mineProgress", "kind": "number", "default": 0, "min": 0, "max": 1, "clamp": true },
+        { "name": "mineTarget", "kind": "point", "default": null }
+      ]
+    }
+  },
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
       "cPrefix": "PS",
-      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame", "deathTicks", "respawnReady", "bowCharge", "heldItemKind", "jetpackFuel", "jetpackActive", "shieldHealth", "shieldActive"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "active", "kind": "boolean", "snapshotMember": "active" },
+        { "name": "x", "kind": "number", "snapshotMember": "px" },
+        { "name": "y", "kind": "number", "snapshotMember": "py" },
+        { "name": "vx", "kind": "number", "snapshotMember": "vx" },
+        { "name": "vy", "kind": "number", "snapshotMember": "vy" },
+        { "name": "w", "kind": "i32", "snapshotMember": "w" },
+        { "name": "h", "kind": "i32", "snapshotMember": "h" },
+        { "name": "facing", "kind": "i32", "snapshotMember": "facing" },
+        { "name": "grounded", "kind": "boolean", "snapshotMember": "grounded" },
+        { "name": "tool", "kind": "i32", "snapshotMember": "selectedTool" },
+        { "name": "aimX", "kind": "number", "snapshotMember": "aimX" },
+        { "name": "aimY", "kind": "number", "snapshotMember": "aimY" },
+        { "name": "health", "kind": "i32", "snapshotMember": "health" },
+        { "name": "inputSeq", "kind": "u32", "snapshotMember": "inputSeq" },
+        { "name": "alive", "kind": "boolean", "snapshotMember": "alive" },
+        { "name": "jumpReady", "kind": "boolean", "snapshotMember": "jumpReady" },
+        { "name": "animState", "kind": "i32", "snapshotMember": "animState" },
+        { "name": "animFrame", "kind": "i32", "snapshotMember": "animFrame" },
+        { "name": "deathTicks", "kind": "i32", "snapshotMember": "deathTicks" },
+        { "name": "respawnReady", "kind": "boolean", "snapshotParameter": true },
+        { "name": "bowCharge", "kind": "number", "snapshotParameter": true },
+        { "name": "heldItemKind", "kind": "i32", "snapshotParameter": true },
+        { "name": "jetpackFuel", "kind": "number", "snapshotMember": "jetpackFuel" },
+        { "name": "jetpackActive", "kind": "boolean", "snapshotMember": "jetpackActive" },
+        { "name": "shieldHealth", "kind": "i32", "snapshotMember": "shieldHealth" },
+        { "name": "shieldActive", "kind": "boolean", "snapshotMember": "shieldActive" }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writePlayerSnapshot" }],
+      "wireCodec": {
+        "maxRecords": 64,
+        "integers": ["id", "w", "h", "facing", "tool", "health", "animState", "animFrame", "deathTicks", "heldItemKind", "shieldHealth"],
+        "unsigned": ["inputSeq"],
+        "booleans": ["active", "grounded", "alive", "jumpReady", "respawnReady", "jetpackActive", "shieldActive"]
+      }
     },
     "itemSnapshot": {
       "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
       "cPrefix": "IS",
-      "fields": ["id", "kind", "material", "count", "x", "y", "life", "plantType", "itemKind", "isTool", "toolClass", "toolTier"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "kind", "kind": "i32", "snapshotMember": "kind" },
+        { "name": "material", "kind": "i32", "snapshotMember": "material" },
+        { "name": "count", "kind": "i32", "snapshotMember": "count" },
+        { "name": "x", "kind": "number", "snapshotMember": "px" },
+        { "name": "y", "kind": "number", "snapshotMember": "py" },
+        { "name": "life", "kind": "i32", "snapshotMember": "life" },
+        { "name": "plantType", "kind": "i32", "snapshotMember": "plantType" },
+        { "name": "itemKind", "kind": "i32", "snapshotMember": "itemKind" },
+        { "name": "isTool", "kind": "boolean", "snapshotMember": "isTool" },
+        { "name": "toolClass", "kind": "i32", "snapshotMember": "toolClass" },
+        { "name": "toolTier", "kind": "i32", "snapshotMember": "toolTier" }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writeItemSnapshot" }],
+      "wireCodec": {
+        "maxRecords": 1024,
+        "integers": ["id", "kind", "material", "count", "life", "plantType", "itemKind", "toolClass", "toolTier"],
+        "booleans": ["isTool"],
+        "defaults": { "itemKind": 0, "isTool": 0, "toolClass": 0, "toolTier": 0 }
+      }
     },
     "creatureSnapshot": {
       "$comment": "float32 creature records built by CreatureSystem; also used by the external GL renderer and CREATURES wire message.",
       "cPrefix": "CSN",
-      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame", "attackState", "attackProgress", "aimX", "aimY", "spawnProgress", "attackPattern"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "species", "kind": "i32", "snapshotMember": "species" },
+        { "name": "x", "kind": "number", "snapshotParameter": true },
+        { "name": "y", "kind": "number", "snapshotParameter": true },
+        { "name": "vx", "kind": "number", "snapshotMember": "vx" },
+        { "name": "vy", "kind": "number", "snapshotMember": "vy" },
+        { "name": "w", "kind": "i32", "snapshotParameter": true },
+        { "name": "h", "kind": "i32", "snapshotParameter": true },
+        { "name": "facing", "kind": "i32", "snapshotMember": "facing" },
+        { "name": "health", "kind": "i32", "snapshotMember": "health" },
+        { "name": "maxHealth", "kind": "i32", "snapshotParameter": true },
+        { "name": "alive", "kind": "boolean", "snapshotMember": "alive" },
+        { "name": "animFrame", "kind": "i32", "snapshotMember": "animFrame" },
+        { "name": "attackState", "kind": "i32", "snapshotMember": "attackState" },
+        { "name": "attackProgress", "kind": "number", "snapshotMember": "attackProgress" },
+        { "name": "aimX", "kind": "number", "snapshotParameter": true },
+        { "name": "aimY", "kind": "number", "snapshotParameter": true },
+        { "name": "spawnProgress", "kind": "number", "snapshotMember": "spawnProgress" },
+        { "name": "attackPattern", "kind": "i32", "snapshotMember": "attackPattern" }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [
+        { "name": "writeCreatureSnapshot" },
+        {
+          "name": "writeCreatureTelegraphSnapshot",
+          "sources": {
+            "vx": { "literal": 0 },
+            "vy": { "literal": 0 },
+            "facing": { "literal": 1 },
+            "health": { "literal": 0 },
+            "alive": { "literal": false },
+            "animFrame": { "literal": 0 },
+            "attackState": { "literal": 0 },
+            "attackProgress": { "literal": 0 },
+            "aimX": { "literal": 0 },
+            "aimY": { "literal": 0 },
+            "spawnProgress": { "parameter": true },
+            "attackPattern": { "literal": 0 }
+          }
+        }
+      ],
+      "wireCodec": {
+        "maxRecordsConstant": "CREATURE_MAX_RECORDS",
+        "integers": ["id", "species", "w", "h", "facing", "health", "maxHealth", "animFrame", "attackState", "attackPattern"],
+        "booleans": ["alive"],
+        "defaults": { "attackProgress": 0, "aimX": "x", "aimY": "y", "spawnProgress": 0, "attackPattern": 0 }
+      }
     },
     "inventorySlot": {
-      "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
+      "$comment": "Inventory and cursor stack record shared by the C++ float32 snapshot writer, JS snapshot reader, state-sync object projection, and protocol validation. Fields join every representation unless objectWire is false; snapshotParameter reads a per-record value instead of an InvSlot member.",
       "cPrefix": "IVS",
-      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "plantType", "itemKind", "selected"]
+      "fields": [
+        { "name": "material", "kind": "i32", "min": 0, "snapshotMember": "material" },
+        { "name": "isTool", "kind": "boolean", "default": false, "snapshotMember": "isTool" },
+        { "name": "toolClass", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "toolClass" },
+        { "name": "toolTier", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "toolTier" },
+        { "name": "count", "kind": "i32", "min": 0, "snapshotMember": "count" },
+        { "name": "plantType", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "plantType" },
+        { "name": "itemKind", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "itemKind" },
+        { "name": "selected", "kind": "boolean", "default": false, "objectWire": false, "snapshotParameter": true }
+      ],
+      "wireCodec": { "maxRecordsConstant": "INV_SLOTS" },
+      "objectWire": { "name": "inventoryStack", "maxRecordsConstant": "INV_SLOTS" },
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writeInventorySlotSnapshot" }]
     },
     "projectileSnapshot": {
       "$comment": "float32 projectile records used by the authority, network, and external GL renderer.",
       "cPrefix": "PRS",
-      "fields": ["id", "owner", "x", "y", "vx", "vy", "charge", "kind", "fuse", "rotation"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "owner", "kind": "i32", "snapshotMember": "owner" },
+        { "name": "x", "kind": "number", "snapshotMember": "px" },
+        { "name": "y", "kind": "number", "snapshotMember": "py" },
+        { "name": "vx", "kind": "number", "snapshotMember": "vx" },
+        { "name": "vy", "kind": "number", "snapshotMember": "vy" },
+        { "name": "charge", "kind": "number", "snapshotMember": "charge" },
+        { "name": "kind", "kind": "i32", "snapshotMember": "kind" },
+        { "name": "fuse", "kind": "i32", "snapshotMember": "fuse" },
+        { "name": "rotation", "kind": "number", "snapshotMember": "rotation" }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writeProjectileSnapshot" }],
+      "wireCodec": {
+        "maxRecords": 256,
+        "integers": ["id", "owner", "kind", "fuse"],
+        "defaults": { "rotation": 0 }
+      }
     },
     "craftingRecipe": {
       "$comment": "int32 recipe headers; ingredientStart/count index craftingIngredient records.",
       "cPrefix": "CR",
-      "fields": ["id", "outputKind", "outputMaterial", "outputTier", "outputCount", "ingredientStart", "ingredientCount"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "outputKind", "kind": "i32", "snapshotMember": "output.itemKind" },
+        { "name": "outputMaterial", "kind": "i32", "snapshotMember": "output.material" },
+        { "name": "outputTier", "kind": "i32", "snapshotMember": "output.toolTier" },
+        { "name": "outputCount", "kind": "i32", "snapshotMember": "output.count" },
+        { "name": "ingredientStart", "kind": "i32", "snapshotParameter": true },
+        { "name": "ingredientCount", "kind": "i32", "snapshotParameter": true }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeCraftingRecipeSnapshot" }]
     },
     "craftingIngredient": {
       "$comment": "int32 recipe ingredients: kind selects exact material or material flag.",
       "cPrefix": "CI",
-      "fields": ["kind", "value", "count"]
+      "fields": [
+        { "name": "kind", "kind": "i32", "snapshotMember": "kind" },
+        { "name": "value", "kind": "i32", "snapshotMember": "value" },
+        { "name": "count", "kind": "i32", "snapshotMember": "count" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeCraftingIngredientSnapshot" }]
     },
     "survivalFootprint": {
       "$comment": "int32 records built by buildSurvivalFootprintSnapshot (inventory.inc).",
       "cPrefix": "FP",
-      "fields": ["id", "width", "height", "cellCount", "anchorX", "anchorY"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "width", "kind": "i32", "snapshotMember": "width" },
+        { "name": "height", "kind": "i32", "snapshotMember": "height" },
+        { "name": "cellCount", "kind": "i32", "snapshotParameter": true },
+        { "name": "anchorX", "kind": "i32", "snapshotMember": "anchorX" },
+        { "name": "anchorY", "kind": "i32", "snapshotMember": "anchorY" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeSurvivalFootprintSnapshot" }]
     },
     "glPlayerExt": {
       "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
       "cPrefix": "GLP",
-      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge", "aimX", "aimY", "jetpackFuel", "jetpackActive", "shieldHealth", "shieldActive"]
+      "fields": [
+        { "name": "x", "kind": "number", "snapshotMember": "x" },
+        { "name": "y", "kind": "number", "snapshotMember": "y" },
+        { "name": "w", "kind": "i32", "snapshotMember": "w" },
+        { "name": "h", "kind": "i32", "snapshotMember": "h" },
+        { "name": "facing", "kind": "i32", "snapshotMember": "facing" },
+        { "name": "own", "kind": "boolean", "snapshotParameter": true },
+        { "name": "animState", "kind": "i32", "snapshotParameter": true },
+        { "name": "animFrame", "kind": "i32", "snapshotParameter": true },
+        { "name": "alive", "kind": "boolean", "snapshotParameter": true },
+        { "name": "heldItemKind", "kind": "i32", "snapshotParameter": true },
+        { "name": "bowCharge", "kind": "number", "snapshotParameter": true },
+        { "name": "aimX", "kind": "number", "snapshotParameter": true },
+        { "name": "aimY", "kind": "number", "snapshotParameter": true },
+        { "name": "jetpackFuel", "kind": "number", "snapshotParameter": true },
+        { "name": "jetpackActive", "kind": "boolean", "snapshotParameter": true },
+        { "name": "shieldHealth", "kind": "i32", "snapshotParameter": true },
+        { "name": "shieldActive", "kind": "boolean", "snapshotParameter": true }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writeGlPlayerExtSnapshot", "language": "js" }]
     },
     "soundEvent": {
       "$comment": "float32 semantic audio events drained from the authoritative engine. Coordinates are absolute world cells so streaming cannot move a queued sound.",
       "cPrefix": "SND",
-      "fields": ["type", "x", "y", "intensity", "material", "layer"]
+      "fields": [
+        { "name": "type", "kind": "i32", "snapshotMember": "type" },
+        { "name": "x", "kind": "number", "snapshotMember": "x" },
+        { "name": "y", "kind": "number", "snapshotMember": "y" },
+        { "name": "intensity", "kind": "number", "snapshotMember": "intensity" },
+        { "name": "material", "kind": "i32", "snapshotMember": "material" },
+        { "name": "layer", "kind": "i32", "snapshotMember": "layer" }
+      ],
+      "snapshotStorage": "float",
+      "snapshotWriters": [{ "name": "writeSoundEventSnapshot" }],
+      "wireCodec": {
+        "maxRecordsConstant": "SOUND_EVENT_MAX_RECORDS",
+        "integers": ["type", "material", "layer"]
+      }
     },
     "perfSnapshot": {
       "$comment": "double records written by engine_perf_snapshot. Fine step phases accumulate across both layers; counts are totals for the last step. Bump abiVersion on layout change.",
       "cPrefix": "PF",
       "fields": [
-        "stepMs", "actorMs",
-        "dirtyChunks", "dirtyRows", "dirtyCells",
-        "componentCount", "componentCellCount", "crossBondCount",
-        "lightMs", "fillMs", "uploadMs",
-        "shiftSave", "shiftBuffers", "shiftTranslate", "shiftRegister", "shiftFill",
-        "forcePrepareMs", "forceWakeMs",
-        "groundingMs", "crossLayerGroundingMs", "componentIndexMs", "assemblyUnionMs",
-        "carryMs", "bodyMs", "sandMs", "liquidMs", "gasMs",
-        "reactMs", "tailMs", "liquidRelaxMs", "liquidSurfaceMs",
-        "layersMs", "crossMs"
-      ]
+        { "name": "stepMs", "kind": "number", "snapshotMember": "perfStepMs" },
+        { "name": "actorMs", "kind": "number", "snapshotMember": "perfActorMs" },
+        { "name": "dirtyChunks", "kind": "i32", "snapshotMember": "perfDirtyChunks" },
+        { "name": "dirtyRows", "kind": "i32", "snapshotMember": "perfDirtyRows" },
+        { "name": "dirtyCells", "kind": "i32", "snapshotMember": "perfDirtyCells" },
+        { "name": "componentCount", "kind": "i32", "snapshotMember": "perfComponentCount" },
+        { "name": "componentCellCount", "kind": "i32", "snapshotMember": "perfComponentCellCount" },
+        { "name": "crossBondCount", "kind": "i32", "snapshotMember": "perfCrossBondCount" },
+        { "name": "lightMs", "kind": "number", "snapshotMember": "perfLightMs" },
+        { "name": "fillMs", "kind": "number", "snapshotMember": "perfFillMs" },
+        { "name": "uploadMs", "kind": "number", "snapshotMember": "perfUploadMs" },
+        { "name": "shiftSave", "kind": "number", "snapshotMember": "perfShiftSave" },
+        { "name": "shiftBuffers", "kind": "number", "snapshotMember": "perfShiftBuffers" },
+        { "name": "shiftTranslate", "kind": "number", "snapshotMember": "perfShiftTranslate" },
+        { "name": "shiftRegister", "kind": "number", "snapshotMember": "perfShiftRegister" },
+        { "name": "shiftFill", "kind": "number", "snapshotMember": "perfShiftFill" },
+        { "name": "forcePrepareMs", "kind": "number", "snapshotMember": "perfForcePrepareMs" },
+        { "name": "forceWakeMs", "kind": "number", "snapshotMember": "perfForceWakeMs" },
+        { "name": "groundingMs", "kind": "number", "snapshotMember": "perfGroundingMs" },
+        { "name": "crossLayerGroundingMs", "kind": "number", "snapshotMember": "perfCrossLayerGroundingMs" },
+        { "name": "componentIndexMs", "kind": "number", "snapshotMember": "perfComponentIndexMs" },
+        { "name": "assemblyUnionMs", "kind": "number", "snapshotMember": "perfAssemblyUnionMs" },
+        { "name": "carryMs", "kind": "number", "snapshotMember": "perfCarryMs" },
+        { "name": "bodyMs", "kind": "number", "snapshotMember": "perfBodyMs" },
+        { "name": "sandMs", "kind": "number", "snapshotMember": "perfSandMs" },
+        { "name": "liquidMs", "kind": "number", "snapshotMember": "perfLiquidMs" },
+        { "name": "gasMs", "kind": "number", "snapshotMember": "perfGasMs" },
+        { "name": "reactMs", "kind": "number", "snapshotMember": "perfReactMs" },
+        { "name": "tailMs", "kind": "number", "snapshotMember": "perfTailMs" },
+        { "name": "liquidRelaxMs", "kind": "number", "snapshotMember": "perfLiquidRelaxMs" },
+        { "name": "liquidSurfaceMs", "kind": "number", "snapshotMember": "perfLiquidSurfaceMs" },
+        { "name": "layersMs", "kind": "number", "snapshotMember": "perfLayersMs" },
+        { "name": "crossMs", "kind": "number", "snapshotMember": "perfCrossMs" }
+      ],
+      "snapshotStorage": "double",
+      "snapshotWriters": [{ "name": "writePerfSnapshot" }]
     },
     "missionSnapshot": {
       "$comment": "int32 mission header built by MissionSystem. Objective coordinates are absolute world cells and remain stable across streaming.",
       "cPrefix": "MS",
-      "fields": ["revision", "missionId", "planetId", "phase", "objectiveCount", "threatLevel", "extractionX", "extractionY", "elapsedTicks", "recoveredWeaponMask"]
+      "fields": [
+        { "name": "revision", "kind": "i32", "snapshotMember": "revision" },
+        { "name": "missionId", "kind": "i32", "snapshotMember": "missionId" },
+        { "name": "planetId", "kind": "i32", "snapshotMember": "planetId" },
+        { "name": "phase", "kind": "i32", "snapshotMember": "phase" },
+        { "name": "objectiveCount", "kind": "i32", "snapshotParameter": true },
+        { "name": "threatLevel", "kind": "i32", "snapshotMember": "threatLevel" },
+        { "name": "extractionX", "kind": "i32", "snapshotMember": "extractionX" },
+        { "name": "extractionY", "kind": "i32", "snapshotMember": "extractionY" },
+        { "name": "elapsedTicks", "kind": "i32", "snapshotMember": "elapsedTicks" },
+        { "name": "recoveredWeaponMask", "kind": "i32", "snapshotMember": "recoveredWeaponMask" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeMissionSnapshot" }]
     },
     "objectiveSnapshot": {
       "$comment": "int32 authoritative objective records built by MissionSystem.",
       "cPrefix": "OS",
-      "fields": ["id", "type", "state", "current", "required", "worldX", "worldY", "targetActorId", "flags"]
+      "fields": [
+        { "name": "id", "kind": "i32", "snapshotMember": "id" },
+        { "name": "type", "kind": "i32", "snapshotMember": "type" },
+        { "name": "state", "kind": "i32", "snapshotMember": "state" },
+        { "name": "current", "kind": "i32", "snapshotMember": "current" },
+        { "name": "required", "kind": "i32", "snapshotMember": "required" },
+        { "name": "worldX", "kind": "i32", "snapshotMember": "worldX" },
+        { "name": "worldY", "kind": "i32", "snapshotMember": "worldY" },
+        { "name": "targetActorId", "kind": "i32", "snapshotMember": "targetActorId" },
+        { "name": "flags", "kind": "i32", "snapshotMember": "flags" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeObjectiveSnapshot" }]
     },
     "worldContext": {
       "$comment": "int32 semantic description of one absolute world coordinate. Feature bounds are inclusive and feature ids are stable for a worldgen version.",
       "cPrefix": "WC",
-      "fields": ["surfaceBiome", "caveBiome", "surfaceY", "depth", "tags", "featureKind", "siteRole", "featureId", "parentFeatureId", "left", "top", "right", "bottom"]
+      "fields": [
+        { "name": "surfaceBiome", "kind": "i32", "snapshotMember": "surfaceBiome" },
+        { "name": "caveBiome", "kind": "i32", "snapshotMember": "caveBiome" },
+        { "name": "surfaceY", "kind": "i32", "snapshotMember": "surfaceY" },
+        { "name": "depth", "kind": "i32", "snapshotMember": "depth" },
+        { "name": "tags", "kind": "u32", "snapshotMember": "tags" },
+        { "name": "featureKind", "kind": "i32", "snapshotMember": "featureKind" },
+        { "name": "siteRole", "kind": "i32", "snapshotMember": "siteRole" },
+        { "name": "featureId", "kind": "u32", "snapshotMember": "featureId" },
+        { "name": "parentFeatureId", "kind": "u32", "snapshotMember": "parentFeatureId" },
+        { "name": "left", "kind": "i32", "snapshotMember": "left" },
+        { "name": "top", "kind": "i32", "snapshotMember": "top" },
+        { "name": "right", "kind": "i32", "snapshotMember": "right" },
+        { "name": "bottom", "kind": "i32", "snapshotMember": "bottom" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeWorldContextSnapshot" }]
+    },
+    "testBodyState": {
+      "$comment": "double diagnostic records returned by engine_test_body_state and engine_test_body_state_layer.",
+      "cPrefix": "TBS",
+      "fields": [
+        { "name": "px", "kind": "number", "snapshotMember": "px" },
+        { "name": "py", "kind": "number", "snapshotMember": "py" },
+        { "name": "angle", "kind": "number", "snapshotMember": "angle" },
+        { "name": "vx", "kind": "number", "snapshotMember": "vx" },
+        { "name": "vy", "kind": "number", "snapshotMember": "vy" },
+        { "name": "omega", "kind": "number", "snapshotMember": "omega" },
+        { "name": "nPts", "kind": "i32", "snapshotMember": "nPts" },
+        { "name": "maxR", "kind": "number", "snapshotMember": "maxR" },
+        { "name": "invMass", "kind": "number", "snapshotMember": "invMass" },
+        { "name": "invInertia", "kind": "number", "snapshotMember": "invInertia" },
+        { "name": "pvx", "kind": "number", "snapshotMember": "pvx" },
+        { "name": "pvy", "kind": "number", "snapshotMember": "pvy" },
+        { "name": "pw", "kind": "number", "snapshotMember": "pw" },
+        { "name": "stillTicks", "kind": "i32", "snapshotMember": "stillTicks" },
+        { "name": "restProbeTicks", "kind": "u32", "snapshotMember": "restProbeTicks" },
+        { "name": "hadContact", "kind": "boolean", "snapshotMember": "hadContact" },
+        { "name": "sleepSupports", "kind": "u32", "snapshotParameter": true },
+        { "name": "stampRecoveryStreak", "kind": "u32", "snapshotMember": "stampRecoveryStreak" },
+        { "name": "stampRecoveryTotal", "kind": "u32", "snapshotMember": "stampRecoveryTotal" },
+        { "name": "stampPreclaimAttempts", "kind": "u32", "snapshotMember": "stampPreclaimAttempts" },
+        { "name": "stampPreclaimSuccesses", "kind": "u32", "snapshotMember": "stampPreclaimSuccesses" },
+        { "name": "stampPreclaimBlocked", "kind": "u32", "snapshotMember": "stampPreclaimBlocked" },
+        { "name": "stampPreclaimOutside", "kind": "u32", "snapshotMember": "stampPreclaimOutside" },
+        { "name": "stampPreclaimMovedOutside", "kind": "u32", "snapshotMember": "stampPreclaimMovedOutside" },
+        { "name": "stampPreclaimStartedOutside", "kind": "u32", "snapshotMember": "stampPreclaimStartedOutside" },
+        { "name": "worldStillTicks", "kind": "u32", "snapshotMember": "worldStillTicks" }
+      ],
+      "snapshotStorage": "double",
+      "snapshotWriters": [{ "name": "writeTestBodyStateSnapshot" }]
     }
+  },
+  "wireEnums": [
+    "InventoryItemKind",
+    "ProjectileKind",
+    "CreatureSpecies",
+    "CreatureAttackState"
+  ],
+  "creatureBehaviorProfiles": {
+    "CRBH_GENERIC": 0,
+    "CRBH_DYNAMITEER": 1,
+    "CRBH_BORE_SENTINEL": 2,
+    "CRBH_CAUSTIC_MORTARMAN": 3,
+    "CRBH_CLUSTER_WASP": 4,
+    "CRBH_MINIGUNNER": 5,
+    "CRBH_QUARRY_FOREMAN": 6,
+    "CRBH_REACTOR_WARDEN": 7
+  },
+  "creatureRenderProfiles": {
+    "CRP_MINNOW": 0,
+    "CRP_PIKE": 1,
+    "CRP_FOX": 2,
+    "CRP_HARE": 3,
+    "CRP_CRAWLER": 4,
+    "CRP_MOLE": 5,
+    "CRP_BIRD": 6,
+    "CRP_DYNAMITEER": 7,
+    "CRP_BORE_SENTINEL": 8,
+    "CRP_CAUSTIC_MORTARMAN": 9,
+    "CRP_CLUSTER_WASP": 10,
+    "CRP_MINIGUNNER": 11,
+    "CRP_SURVEYOR": 12,
+    "CRP_SHIELD_ANCHOR": 13,
+    "CRP_QUARRY_FOREMAN": 14,
+    "CRP_REACTOR_WARDEN": 15,
+    "CRP_REACTOR_CORE": 16,
+    "CRP_IRIS_COMMANDER": 17,
+    "CRP_IRIS_ENGINEER": 18,
+    "CRP_VILLAGER": 19
   },
   "enums": {
     "PlayerInput": {
@@ -154,33 +519,145 @@
       "values": { "CK_MATERIAL": 0, "CK_SEED": 1, "CK_ERASER": 2, "CK_CUBE": 3, "CK_CREATURE": 4 }
     },
     "CreatureSpecies": {
-      "$comment": "Creature species ids used by snapshots, test hooks, and the network renderer.",
+      "$comment": "Stable creature ids plus simulation, population, behavior, and rendering descriptors.",
       "cName": "CreatureSpeciesAbi",
       "cType": "int",
       "jsName": "CREATURE",
       "jsPrefix": "CREATURE",
-      "values": {
-        "CREATURE_MINNOW": 0,
-        "CREATURE_PIKE": 1,
-        "CREATURE_FOX": 2,
-        "CREATURE_HARE": 3,
-        "CREATURE_CRAWLER": 4,
-        "CREATURE_MOLE": 5,
-        "CREATURE_BIRD": 6,
-        "CREATURE_DYNAMITEER": 7,
-        "CREATURE_BORE_SENTINEL": 8,
-        "CREATURE_CAUSTIC_MORTARMAN": 9,
-        "CREATURE_CLUSTER_WASP": 10,
-        "CREATURE_MINIGUNNER": 11,
-        "CREATURE_SURVEYOR": 12,
-        "CREATURE_SHIELD_ANCHOR": 13,
-        "CREATURE_QUARRY_FOREMAN": 14,
-        "CREATURE_REACTOR_WARDEN": 15,
-        "CREATURE_REACTOR_CORE": 16,
-        "CREATURE_IRIS_COMMANDER": 17,
-        "CREATURE_IRIS_ENGINEER": 18,
-        "CREATURE_VILLAGER": 19
-      }
+      "descriptors": [
+        {
+          "id": 0, "key": "CREATURE_MINNOW", "cSymbol": "CS_MINNOW", "name": "minnow", "creative": { "order": 0, "colors": ["#9de2c9", "#256f89"] },
+          "stats": { "locomotion": "CL_AQUATIC", "w": 4, "h": 2, "maxHealth": 18, "walkSpeed": 0, "swimSpeed": 0.34, "accel": 0.055, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0.70, "sightRange": 34, "attackRange": 0, "damage": 0, "attackCooldown": 18, "scanInterval": 18, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_WATER", "maxActive": 3, "densityRadius": 84, "densityCap": 2, "minPlayerDistance": 20, "maxPlayerDistance": 180 },
+          "world": { "preferredSurfaceBiomes": ["BIOME_PLAINS", "BIOME_SWAMP"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_MINNOW", "humanNpc": false, "bob": "CRB_AQUATIC", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 1, "key": "CREATURE_PIKE", "cSymbol": "CS_PIKE", "name": "pike",
+          "stats": { "locomotion": "CL_AQUATIC", "w": 7, "h": 3, "maxHealth": 55, "walkSpeed": 0, "swimSpeed": 0.48, "accel": 0.070, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0.64, "sightRange": 58, "attackRange": 0.6, "damage": 12, "attackCooldown": 14, "scanInterval": 14, "hopPeriod": 0, "targets": ["CT_PREY", "CT_PLAYER"], "prey": ["CREATURE_MINNOW"], "hostile": true },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_WATER", "maxActive": 2, "densityRadius": 130, "densityCap": 1, "minPlayerDistance": 28, "maxPlayerDistance": 180 },
+          "world": { "preferredSurfaceBiomes": ["BIOME_SWAMP"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_PIKE", "humanNpc": false, "bob": "CRB_AQUATIC", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 2, "key": "CREATURE_FOX", "cSymbol": "CS_FOX", "name": "fox", "creative": { "order": 1, "colors": ["#f49a46", "#7b3420"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 7, "h": 4, "maxHealth": 42, "walkSpeed": 0.34, "swimSpeed": 0.30, "accel": 0.060, "gravity": 0.075, "jumpSpeed": 1.15, "fluidThreshold": 0.30, "sightRange": 62, "attackRange": 0.5, "damage": 7, "attackCooldown": 16, "scanInterval": 16, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 1, "densityRadius": 96, "densityCap": 1, "minPlayerDistance": 28, "maxPlayerDistance": 180 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredSurfaceBiomes": ["BIOME_PLAINS", "BIOME_FOREST", "BIOME_TUNDRA"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_FOX", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 3, "key": "CREATURE_HARE", "cSymbol": "CS_HARE", "name": "hare",
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 5, "h": 3, "maxHealth": 24, "walkSpeed": 0.34, "swimSpeed": 0.30, "accel": 0.070, "gravity": 0.075, "jumpSpeed": 1.30, "fluidThreshold": 0.30, "sightRange": 44, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 20, "hopPeriod": 46, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 2, "densityRadius": 88, "densityCap": 1, "minPlayerDistance": 22, "maxPlayerDistance": 180 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredSurfaceBiomes": ["BIOME_PLAINS", "BIOME_FOREST", "BIOME_TUNDRA"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_HARE", "humanNpc": false, "bob": "CRB_HARE", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 4, "key": "CREATURE_CRAWLER", "cSymbol": "CS_CRAWLER", "name": "crawler",
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 7, "h": 3, "maxHealth": 48, "walkSpeed": 0.25, "swimSpeed": 0.22, "accel": 0.052, "gravity": 0.075, "jumpSpeed": 0.95, "fluidThreshold": 0.34, "sightRange": 70, "attackRange": 0.7, "damage": 8, "attackCooldown": 20, "scanInterval": 18, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 1, "densityRadius": 104, "densityCap": 1, "minPlayerDistance": 30, "maxPlayerDistance": 180 },
+          "world": { "requiredTags": ["WA_UNDERGROUND"], "excludedTags": ["WA_SETTLEMENT"], "preferredTags": ["WA_DEEP"], "preferredCaveBiomes": ["CAVE_MUSHROOM", "CAVE_LUSH", "CAVE_DEEP_VOID"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_CRAWLER", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 5, "key": "CREATURE_MOLE", "cSymbol": "CS_MOLE", "name": "mole", "creative": { "order": 2, "colors": ["#ba997e", "#4b3b3a"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 6, "h": 3, "maxHealth": 34, "walkSpeed": 0.22, "swimSpeed": 0.18, "accel": 0.048, "gravity": 0.075, "jumpSpeed": 0.82, "fluidThreshold": 0.36, "sightRange": 40, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 22, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 1, "densityRadius": 112, "densityCap": 1, "minPlayerDistance": 34, "maxPlayerDistance": 180 },
+          "world": { "requiredTags": ["WA_UNDERGROUND"], "excludedTags": ["WA_SETTLEMENT"], "preferredTags": ["WA_MINE"], "preferredCaveBiomes": ["CAVE_DEFAULT", "CAVE_LUSH", "CAVE_DEEP_FOSSIL"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_MOLE", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 6, "key": "CREATURE_BIRD", "cSymbol": "CS_BIRD", "name": "bird", "creative": { "order": 3, "colors": ["#aedaf0", "#3663a0"] },
+          "stats": { "locomotion": "CL_FLYING", "w": 5, "h": 3, "maxHealth": 20, "walkSpeed": 0, "swimSpeed": 0.50, "accel": 0.060, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 54, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 20, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_AMBIENT", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_AIR", "maxActive": 2, "densityRadius": 96, "densityCap": 1, "minPlayerDistance": 20, "maxPlayerDistance": 180 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredSurfaceBiomes": ["BIOME_PLAINS", "BIOME_FOREST", "BIOME_JUNGLE"] },
+          "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_BIRD", "humanNpc": false, "bob": "CRB_BIRD", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 7, "key": "CREATURE_DYNAMITEER", "cSymbol": "CS_DYNAMITEER", "name": "dynamiteer", "creative": { "order": 4, "colors": ["#ff6b35", "#5c1720"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 7, "h": 5, "maxHealth": 72, "walkSpeed": 0.23, "swimSpeed": 0.17, "accel": 0.045, "gravity": 0.075, "jumpSpeed": 1.00, "fluidThreshold": 0.30, "sightRange": 92, "attackRange": 72, "damage": 18, "attackCooldown": 135, "scanInterval": 12, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_ENCOUNTER", "encounterCost": 2, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 1, "densityRadius": 128, "densityCap": 1, "minPlayerDistance": 34, "maxPlayerDistance": 220 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredTags": ["WA_SETTLEMENT"], "preferredSurfaceBiomes": ["BIOME_PLAINS", "BIOME_DESERT", "BIOME_ROCKY", "BIOME_TUNDRA"] },
+          "behaviorProfile": "CRBH_DYNAMITEER", "render": { "profile": "CRP_DYNAMITEER", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 8, "key": "CREATURE_BORE_SENTINEL", "cSymbol": "CS_BORE_SENTINEL", "name": "bore sentinel", "creative": { "order": 5, "colors": ["#f4c95d", "#343746"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 9, "h": 6, "maxHealth": 170, "walkSpeed": 0.12, "swimSpeed": 0.11, "accel": 0.026, "gravity": 0.075, "jumpSpeed": 0.72, "fluidThreshold": 0.34, "sightRange": 138, "attackRange": 118, "damage": 42, "attackCooldown": 260, "scanInterval": 10, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_ENCOUNTER", "encounterCost": 4, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 1, "densityRadius": 156, "densityCap": 1, "minPlayerDistance": 46, "maxPlayerDistance": 220 },
+          "world": { "requiredTags": ["WA_UNDERGROUND"], "excludedTags": ["WA_SETTLEMENT"], "preferredTags": ["WA_MINE", "WA_DEEP"], "preferredCaveBiomes": ["CAVE_DEEP_GEODE", "CAVE_DEEP_FOSSIL"] },
+          "behaviorProfile": "CRBH_BORE_SENTINEL", "render": { "profile": "CRP_BORE_SENTINEL", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 9, "key": "CREATURE_CAUSTIC_MORTARMAN", "cSymbol": "CS_CAUSTIC_MORTARMAN", "name": "caustic mortarman", "creative": { "order": 6, "colors": ["#72dc69", "#263e30"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 8, "h": 6, "maxHealth": 120, "walkSpeed": 0.16, "swimSpeed": 0.14, "accel": 0.034, "gravity": 0.075, "jumpSpeed": 0.82, "fluidThreshold": 0.32, "sightRange": 112, "attackRange": 92, "damage": 16, "attackCooldown": 180, "scanInterval": 10, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_ENCOUNTER", "encounterCost": 3, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 1, "densityRadius": 144, "densityCap": 1, "minPlayerDistance": 40, "maxPlayerDistance": 220 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredSurfaceBiomes": ["BIOME_DESERT", "BIOME_SWAMP"] },
+          "behaviorProfile": "CRBH_CAUSTIC_MORTARMAN", "render": { "profile": "CRP_CAUSTIC_MORTARMAN", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 10, "key": "CREATURE_CLUSTER_WASP", "cSymbol": "CS_CLUSTER_WASP", "name": "cluster wasp", "creative": { "order": 7, "colors": ["#f2a63d", "#4b315e"] },
+          "stats": { "locomotion": "CL_FLYING", "w": 7, "h": 5, "maxHealth": 68, "walkSpeed": 0, "swimSpeed": 0.46, "accel": 0.055, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 124, "attackRange": 104, "damage": 0, "attackCooldown": 210, "scanInterval": 10, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_ENCOUNTER", "encounterCost": 3, "countsTowardNaturalCap": true, "habitat": "CH_AIR", "maxActive": 1, "densityRadius": 144, "densityCap": 1, "minPlayerDistance": 38, "maxPlayerDistance": 220 },
+          "world": { "requiredTags": ["WA_SURFACE"], "excludedTags": ["WA_INDOOR"], "preferredSurfaceBiomes": ["BIOME_FOREST", "BIOME_JUNGLE", "BIOME_SWAMP"] },
+          "behaviorProfile": "CRBH_CLUSTER_WASP", "render": { "profile": "CRP_CLUSTER_WASP", "humanNpc": false, "bob": "CRB_WASP", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 11, "key": "CREATURE_MINIGUNNER", "cSymbol": "CS_MINIGUNNER", "name": "minigunner", "creative": { "order": 8, "colors": ["#d5a83d", "#263746"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 9, "h": 6, "maxHealth": 165, "walkSpeed": 0.15, "swimSpeed": 0.11, "accel": 0.030, "gravity": 0.075, "jumpSpeed": 0.76, "fluidThreshold": 0.34, "sightRange": 138, "attackRange": 118, "damage": 0, "attackCooldown": 270, "scanInterval": 6, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_ENCOUNTER", "encounterCost": 4, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 1, "densityRadius": 156, "densityCap": 1, "minPlayerDistance": 44, "maxPlayerDistance": 220 },
+          "world": { "requiredTags": ["WA_UNDERGROUND"], "excludedTags": ["WA_SETTLEMENT"], "preferredTags": ["WA_MINE", "WA_FACILITY", "WA_DEEP"], "preferredCaveBiomes": ["CAVE_CRYSTAL", "CAVE_DEEP_MAGMA", "CAVE_DEEP_VOID"] },
+          "behaviorProfile": "CRBH_MINIGUNNER", "render": { "profile": "CRP_MINIGUNNER", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 12, "key": "CREATURE_SURVEYOR", "cSymbol": "CS_SURVEYOR", "name": "surveyor",
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 4, "h": 8, "maxHealth": 70, "walkSpeed": 0.12, "swimSpeed": 0.16, "accel": 0.036, "gravity": 0.075, "jumpSpeed": 0.72, "fluidThreshold": 0.34, "sightRange": 36, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 24, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 0, "densityRadius": 96, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_SURVEYOR", "humanNpc": true, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_PROTECTED_CREW"
+        },
+        {
+          "id": 13, "key": "CREATURE_SHIELD_ANCHOR", "cSymbol": "CS_SHIELD_ANCHOR", "name": "shield anchor",
+          "stats": { "locomotion": "CL_STATIONARY", "w": 7, "h": 7, "maxHealth": 210, "walkSpeed": 0, "swimSpeed": 0, "accel": 0, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 0, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 60, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 0, "densityRadius": 96, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_SHIELD_ANCHOR", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": true }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 14, "key": "CREATURE_QUARRY_FOREMAN", "cSymbol": "CS_QUARRY_FOREMAN", "name": "quarry foreman",
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 10, "h": 7, "maxHealth": 520, "walkSpeed": 0.19, "swimSpeed": 0.14, "accel": 0.038, "gravity": 0.075, "jumpSpeed": 0.92, "fluidThreshold": 0.32, "sightRange": 148, "attackRange": 112, "damage": 30, "attackCooldown": 105, "scanInterval": 8, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 0, "densityRadius": 160, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_QUARRY_FOREMAN", "render": { "profile": "CRP_QUARRY_FOREMAN", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 15, "key": "CREATURE_REACTOR_WARDEN", "cSymbol": "CS_REACTOR_WARDEN", "name": "reactor warden",
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 11, "h": 8, "maxHealth": 760, "walkSpeed": 0.13, "swimSpeed": 0.10, "accel": 0.028, "gravity": 0.075, "jumpSpeed": 0.72, "fluidThreshold": 0.34, "sightRange": 162, "attackRange": 132, "damage": 0, "attackCooldown": 190, "scanInterval": 5, "hopPeriod": 0, "targets": ["CT_PLAYER"], "prey": [], "hostile": true },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 0, "densityRadius": 180, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_REACTOR_WARDEN", "render": { "profile": "CRP_REACTOR_WARDEN", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 16, "key": "CREATURE_REACTOR_CORE", "cSymbol": "CS_REACTOR_CORE", "name": "reactor core",
+          "stats": { "locomotion": "CL_STATIONARY", "w": 9, "h": 12, "maxHealth": 460, "walkSpeed": 0, "swimSpeed": 0, "accel": 0, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 0, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 60, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_CAVE", "maxActive": 0, "densityRadius": 96, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_REACTOR_CORE", "humanNpc": false, "bob": "CRB_WALKER", "stationaryCycle": true }, "protection": "CPROT_NONE"
+        },
+        {
+          "id": 17, "key": "CREATURE_IRIS_COMMANDER", "cSymbol": "CS_IRIS_COMMANDER", "name": "IRIS commander",
+          "stats": { "locomotion": "CL_STATIONARY", "w": 4, "h": 8, "maxHealth": 100, "walkSpeed": 0, "swimSpeed": 0, "accel": 0, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 0, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 60, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 0, "densityRadius": 96, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_IRIS_COMMANDER", "humanNpc": true, "bob": "CRB_NONE", "stationaryCycle": false }, "protection": "CPROT_ALWAYS"
+        },
+        {
+          "id": 18, "key": "CREATURE_IRIS_ENGINEER", "cSymbol": "CS_IRIS_ENGINEER", "name": "IRIS engineer",
+          "stats": { "locomotion": "CL_STATIONARY", "w": 4, "h": 8, "maxHealth": 100, "walkSpeed": 0, "swimSpeed": 0, "accel": 0, "gravity": 0, "jumpSpeed": 0, "fluidThreshold": 0, "sightRange": 0, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 60, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": true, "habitat": "CH_SURFACE", "maxActive": 0, "densityRadius": 96, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": {}, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_IRIS_ENGINEER", "humanNpc": true, "bob": "CRB_NONE", "stationaryCycle": false }, "protection": "CPROT_PROTECTED_CREW"
+        },
+        {
+          "id": 19, "key": "CREATURE_VILLAGER", "cSymbol": "CS_VILLAGER", "name": "villager", "creative": { "order": 9, "colors": ["#d59d3f", "#5b8445"] },
+          "stats": { "locomotion": "CL_AMPHIBIOUS", "w": 4, "h": 8, "maxHealth": 60, "walkSpeed": 0.10, "swimSpeed": 0.14, "accel": 0.030, "gravity": 0.075, "jumpSpeed": 0.70, "fluidThreshold": 0.34, "sightRange": 28, "attackRange": 0, "damage": 0, "attackCooldown": 0, "scanInterval": 28, "hopPeriod": 0, "targets": [], "prey": [], "hostile": false },
+          "population": { "profile": "CPOP_SCRIPTED", "encounterCost": 0, "countsTowardNaturalCap": false, "habitat": "CH_SURFACE", "maxActive": 0, "densityRadius": 72, "densityCap": 0, "minPlayerDistance": 0, "maxPlayerDistance": 0 },
+          "world": { "requiredTags": ["WA_SETTLEMENT"] }, "behaviorProfile": "CRBH_GENERIC", "render": { "profile": "CRP_VILLAGER", "humanNpc": true, "bob": "CRB_WALKER", "stationaryCycle": false }, "protection": "CPROT_NONE"
+        }
+      ]
     },
     "CreatureAttackState": {
       "$comment": "Replicated enemy telegraph/fire state used by simulation, transport, and GL presentation.",
@@ -196,7 +673,58 @@
       "cType": "uint8_t",
       "jsName": "PLANET",
       "jsPrefix": "PL",
-      "values": { "PL_EARTH": 0, "PL_MOON": 1, "PL_MARS": 2, "PL_SHIP": 3 }
+      "derived": {
+        "count": "PLANET_COUNT",
+        "allMask": "PLANET_ALL_MASK",
+        "jsNames": "PLANET_NAMES",
+        "jsByName": "PLANET_BY_NAME"
+      },
+      "generationProfiles": {
+        "PGP_EARTH": 0,
+        "PGP_MOON": 1,
+        "PGP_MARS": 2,
+        "PGP_SHIP": 3
+      },
+      "presentationProfiles": {
+        "PPP_EARTH": 0,
+        "PPP_MOON": 1,
+        "PPP_MARS": 2,
+        "PPP_SHIP": 3
+      },
+      "gameplayFlagBits": {
+        "villageResidents": 0,
+        "protectedCrew": 1,
+        "frameAnchor": 2,
+        "voidRecovery": 3,
+        "scriptedCrew": 4,
+        "naturalSpawns": 5
+      },
+      "descriptors": [
+        {
+          "key": "PL_EARTH", "id": 0, "name": "Earth", "generationProfile": "PGP_EARTH", "offworldMaterialProfile": "OWMP_NONE", "presentationProfile": "PPP_EARTH", "gravity": 1.0,
+          "gameplayFlags": ["villageResidents", "naturalSpawns"],
+          "worldSeedSalt": 0, "caveBiomeSalt": 0, "facilitySalt": 0, "outcropSalt": 0,
+          "facilityShell": "BRICK", "facilityWall": "STONE", "facilityTrim": "CRYSTAL"
+        },
+        {
+          "key": "PL_MOON", "id": 1, "name": "Moon", "generationProfile": "PGP_MOON", "offworldMaterialProfile": "OWMP_LUNAR", "presentationProfile": "PPP_MOON", "gravity": 0.33,
+          "gameplayFlags": ["naturalSpawns"],
+          "worldSeedSalt": 1291865649, "caveBiomeSalt": 439038721, "facilitySalt": 3025342465, "outcropSalt": 168914945,
+          "facilityShell": "STONE", "facilityWall": "DEEPSTONE", "facilityTrim": "CRYSTAL"
+        },
+        {
+          "key": "PL_MARS", "id": 2, "name": "Mars", "generationProfile": "PGP_MARS", "offworldMaterialProfile": "OWMP_MARTIAN", "presentationProfile": "PPP_MARS", "gravity": 0.76,
+          "gameplayFlags": ["naturalSpawns"],
+          "worldSeedSalt": 1296126547, "caveBiomeSalt": 439038722, "facilitySalt": 3025342466, "outcropSalt": 168914946,
+          "facilityShell": "BRICK", "facilityWall": "SANDSTONE", "facilityTrim": "COPPER_ORE"
+        },
+        {
+          "key": "PL_SHIP", "id": 3, "name": "Ship", "generationProfile": "PGP_SHIP", "offworldMaterialProfile": "OWMP_NONE", "presentationProfile": "PPP_SHIP", "gravity": 1.0,
+          "gameplayFlags": ["protectedCrew", "frameAnchor", "voidRecovery", "scriptedCrew"],
+          "worldSeedSalt": 1397246288, "caveBiomeSalt": 0, "facilitySalt": 0, "outcropSalt": 0,
+          "facilityShell": "IRON_ORE", "facilityWall": "IRON_ORE", "facilityTrim": "LIGHT"
+        }
+      ]
     },
     "SurfaceBiome": {
       "$comment": "Surface climate classification returned by semantic world queries.",
@@ -204,15 +732,8 @@
       "cType": "int",
       "jsName": "BIOME",
       "jsPrefix": "BIOME",
-      "values": {
-        "BIOME_PLAINS": 0,
-        "BIOME_FOREST": 1,
-        "BIOME_DESERT": 2,
-        "BIOME_ROCKY": 3,
-        "BIOME_TUNDRA": 4,
-        "BIOME_JUNGLE": 5,
-        "BIOME_SWAMP": 6
-      }
+      "derived": { "count": "SURFACE_BIOME_COUNT", "allMask": "SURFACE_BIOME_ALL_MASK" },
+      "valuesFrom": "surfaceBiomes"
     },
     "CaveBiome": {
       "$comment": "Cave realm classification returned by semantic world queries.",
@@ -220,16 +741,8 @@
       "cType": "int",
       "jsName": "CAVE_BIOME",
       "jsPrefix": "CAVE",
-      "values": {
-        "CAVE_DEFAULT": 0,
-        "CAVE_CRYSTAL": 1,
-        "CAVE_MUSHROOM": 2,
-        "CAVE_LUSH": 3,
-        "CAVE_DEEP_MAGMA": 4,
-        "CAVE_DEEP_GEODE": 5,
-        "CAVE_DEEP_FOSSIL": 6,
-        "CAVE_DEEP_VOID": 7
-      }
+      "derived": { "count": "CAVE_BIOME_COUNT", "allMask": "CAVE_BIOME_ALL_MASK" },
+      "valuesFrom": "caveBiomes"
     },
     "WorldAreaTag": {
       "$comment": "Composable semantic location tags used by world queries and natural spawn rules.",
@@ -260,7 +773,10 @@
         "WF_VILLAGE": 1,
         "WF_VILLAGE_BUILDING": 2,
         "WF_MINE": 3,
-        "WF_OFFWORLD_FACILITY": 4
+        "WF_OFFWORLD_FACILITY": 4,
+        "WF_RUIN": 5,
+        "WF_DEEP_STRUCTURE": 6,
+        "WF_OUTCROP": 7
       }
     },
     "WorldSiteRole": {
@@ -278,7 +794,10 @@
         "WSR_MEETING_HALL": 5,
         "WSR_MINE_HEADHOUSE": 6,
         "WSR_MINE_GALLERY": 7,
-        "WSR_FACILITY": 8
+        "WSR_FACILITY": 8,
+        "WSR_RUIN": 9,
+        "WSR_DEEP_STRUCTURE": 10,
+        "WSR_OUTCROP": 11
       }
     },
     "MissionId": {
@@ -356,6 +875,9 @@
   "constants": {
     "$comment": "Shared scalar constants. INV_SLOTS must equal INV_HOTBAR + the grid size (asserted in common.hpp).",
     "INV_HOTBAR": 9,
-    "INV_SLOTS": 36
+    "INV_SLOTS": 36,
+    "CREATURE_MAX_DIMENSION": 32,
+    "CREATURE_MAX_RECORDS": 128,
+    "SOUND_EVENT_MAX_RECORDS": 192
   }
 }

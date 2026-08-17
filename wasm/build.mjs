@@ -23,6 +23,8 @@ if (dev)
 
 run(process.execPath, ['scripts/generate-materials.mjs', '--check']);
 run(process.execPath, ['scripts/generate-abi.mjs', '--check']);
+run(process.execPath, ['scripts/generate-biomes.mjs', '--check']);
+run(process.execPath, ['scripts/check-sand-contracts.mjs']);
 
 const output = 'src/sand/wasm/sandEngine.js';
 const compilerArgs = [

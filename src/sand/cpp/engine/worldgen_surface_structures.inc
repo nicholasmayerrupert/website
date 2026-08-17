@@ -1,18 +1,16 @@
-  void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
+  void fillVillageGeneratedFeature(
+      const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
     // Keep clipping and store logic shared across structure stamp sites.
     auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
-      L->grid[y * cols + lx] = m;                         // structures OVERWRITE terrain
+      stampGeneratedFeatureCell(feature, y * cols + lx, m);
     };
-    uint32_t sseed = L->worldSeed ^ 0x57121314u;       // fg-only struct seed (shared is fine)
-    int wx0 = L->worldOffsetX + colStart - STRUCT_REACH, wx1 = L->worldOffsetX + colEnd + STRUCT_REACH;
-    int wy0 = L->worldOffsetY + rowStart - STRUCT_REACH, wy1 = L->worldOffsetY + rowEnd + STRUCT_REACH;
     int rectX0 = L->worldOffsetX + colStart, rectX1 = L->worldOffsetX + colEnd - 1;
     int rectY0 = L->worldOffsetY + rowStart, rectY1 = L->worldOffsetY + rowEnd - 1;
-    int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
-    int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
-    auto h2 = [&](uint32_t salt, int a, int b) { return whash2(sseed ^ salt, a, b); };
+    int wx0 = rectX0 - feature.overscanX;
+    int wx1 = rectX1 + feature.overscanX;
     // Structure plans always consult foreground cave topology, even while the
     // background or a prefetched scratch band is active. This keeps placement
     // decisions byte-identical across both layers.
@@ -49,7 +47,8 @@
     // apothecaries, storehouses, and a meeting hall. The foreground retains a
     // generous walk-through silhouette; the solid background wall carries the
     // windows, furniture, tools, produce, banners, and other lived-in detail.
-    int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
+    int vxMin = floorDiv(wx0, feature.latticeWidth);
+    int vxMax = floorDiv(wx1, feature.latticeWidth);
     auto stampCottage = [&](const VillageBuildingPlan& plan) {
       int ordinal = plan.ordinal, role = ordinal & 3;
       bool hall = plan.hall;
@@ -60,8 +59,9 @@
       if (left + w + 2 < rectX0 || left - 2 > rectX1
           || floorY < rectY0 || wallTop - roofH - 16 > rectY1) return;
       const int DOOR_CLEARANCE = PLAYER_H + 5;
-      uint8_t wall = biome == BIOME_DESERT ? SANDSTONE : BRICK;
-      uint8_t foundation = biome == BIOME_DESERT ? SANDSTONE : BRICK;
+      const SurfaceBiomeDef& biomeDef = surfaceBiomeDef(biome);
+      uint8_t wall = biomeDef.structureWall;
+      uint8_t foundation = biomeDef.structureFoundation;
       for (int x = left; x <= left + w; x++) {
         for (int y = wallTop; y <= floorY; y++) {
           bool edge = x == left || x == left + w || y == wallTop || y == floorY;
@@ -325,30 +325,67 @@
       }
       put(wellX, wellY - 3, CLAY); put(wellX - 4, wellY - 1, MOSS);
     }
+  }
+
+  void fillMineGeneratedFeature(
+      const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
+    auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
+      int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
+      if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
+      stampGeneratedFeatureCell(feature, y * cols + lx, m);
+    };
+    int rectX0 = L->worldOffsetX + colStart;
+    int rectX1 = L->worldOffsetX + colEnd - 1;
+    int rectY0 = L->worldOffsetY + rowStart;
+    int rectY1 = L->worldOffsetY + rowEnd - 1;
+    int wx0 = rectX0 - feature.overscanX;
+    int wx1 = rectX1 + feature.overscanX;
+    auto groundAnchorY = [&](int x) {
+      int biome = terrain.genBiomeAt(x);
+      return terrain.genSurfaceAbs(x) + TerrainGen::GEN_SKIN
+           + terrain.genSoilDepthAt(x, biome);
+    };
+    auto stampTerraceFoundation = [&](int left, int right, int floorY,
+                                      uint8_t foundation, bool stairs) {
+      for (int x = left; x <= right; x++) {
+        int groundY = groundAnchorY(x);
+        for (int y = floorY + 1; y <= groundY; y++) {
+          uint8_t course = foundation;
+          if (foundation == BRICK && (y - floorY) % 5 == 0)
+            course = SANDSTONE;
+          put(x, y, course);
+        }
+      }
+      if (!stairs) return;
+      for (int side : {-1, 1}) {
+        int edgeX = side < 0 ? left : right;
+        int drop = terrain.genSurfaceAbs(edgeX + side) - floorY;
+        for (int step = 1; step <= imin(10, drop); step++) {
+          int x = edgeX + side * step;
+          int groundY = groundAnchorY(x);
+          int stepY = imin(floorY + step, groundY - 1);
+          for (int y = stepY; y <= groundY; y++) put(x, y, foundation);
+        }
+      }
+    };
 
     // Large, multi-level mines are shared structures: the foreground owns their
     // clear galleries and access shafts, while the background remains solid and
     // carries matching timber frames, station walls, and rail beds. In side view
     // the support work therefore reads behind the player without cutting linear
     // voids through the backdrop.
-    static const int MINE_LATTICE = WorldContextSystem::MINE_LATTICE;
-    struct MineFootprint { int left, right, top, bottom; };
-    std::vector<MineFootprint> mines;
-    int mineMin = floorDiv(wx0, MINE_LATTICE), mineMax = floorDiv(wx1, MINE_LATTICE);
+    int mineMin = floorDiv(wx0, feature.latticeWidth);
+    int mineMax = floorDiv(wx1, feature.latticeWidth);
     for (int mr = mineMin; mr <= mineMax; mr++) {
       MinePlan plan;
       if (!worldContext.minePlan(mr, plan)) continue;
       int center = plan.center;
 
-      int width = plan.width, levels = plan.levels;
-      const int clearHeight = PLAYER_H + 7;
-      const int levelGap = 27;
-      int firstFloor = plan.firstFloor;
-      int left = plan.left, right = plan.right;
-      int shaftHalf = 6;
-      MineFootprint mine{plan.left, plan.right, plan.top, plan.bottom};
-      if (mine.right < rectX0 || mine.left > rectX1 || mine.bottom < rectY0 || mine.top > rectY1) continue;
-      mines.push_back(mine);
+      int levels = plan.levels;
+      int shaftHalf = plan.shaftHalf;
+      if (plan.right < rectX0 || plan.left > rectX1
+          || plan.bottom < rectY0 || plan.top > rectY1) continue;
 
       auto stampSupportFrame = [&](int x, int ceiling, int floor) {
         for (int y = ceiling; y <= floor; y++) put(x, y, WOOD);
@@ -388,14 +425,13 @@
       };
 
       for (int level = 0; level < levels; level++) {
-        int floor = firstFloor + level * levelGap;
-        int ceiling = floor - clearHeight;
-        int inset = (level & 1) * 10;
-        int x0 = left + inset, x1 = right - inset;
-        int stationHalf = level == 0 ? 27 : 21;
-        const int sideRoomHeight = PLAYER_H + 5;
-        int roomX0 = (level & 1) == 0 ? x0 + 12 : x1 - 44;
-        int roomX1 = roomX0 + 31;
+        const MineLevelPlan& levelPlan = plan.level[level];
+        int floor = levelPlan.floor, ceiling = levelPlan.ceiling;
+        int x0 = levelPlan.left, x1 = levelPlan.right;
+        int stationHalf = (levelPlan.stationRight
+                         - levelPlan.stationLeft) / 2;
+        int sideRoomHeight = levelPlan.ceiling - levelPlan.roomTop;
+        int roomX0 = levelPlan.roomLeft, roomX1 = levelPlan.roomRight;
 
         if (L->isBackground) {
           for (int y = ceiling - 5; y <= floor; y++)
@@ -479,7 +515,7 @@
         for (int y = ceiling - 5; y < floor; y++)
           for (int x = center - stationHalf; x <= center + stationHalf; x++) put(x, y, EMPTY);
 
-        int shaftA = center - width / 4, shaftB = center + width / 4;
+        int shaftA = plan.shaftLeft, shaftB = plan.shaftRight;
         auto railSection = [&](int from, int to) {
           if (from <= to) stampRail(from, to, floor);
         };
@@ -495,9 +531,9 @@
 
       // Broad inter-level shafts let the full player body pass with room to
       // maneuver. Timber ledges mark each landing in the background layer.
-      for (int shaftX : {center - width / 4, center + width / 4}) {
-        int top = firstFloor - clearHeight;
-        int bottom = firstFloor + (levels - 1) * levelGap;
+      for (int shaftX : {plan.shaftLeft, plan.shaftRight}) {
+        int top = plan.shaftTop;
+        int bottom = plan.shaftBottom;
         if (!L->isBackground) {
           for (int y = top; y < bottom; y++)
             for (int x = shaftX - shaftHalf; x <= shaftX + shaftHalf; x++) put(x, y, EMPTY);
@@ -509,7 +545,7 @@
               for (int x = shaftX + shaftHalf - 5; x <= shaftX + shaftHalf - 1; x++) put(x, y, WOOD);
           }
           for (int level = 0; level < levels; level++) {
-            int landing = firstFloor + level * levelGap;
+            int landing = plan.level[level].floor;
             for (int x = shaftX - shaftHalf - 2; x <= shaftX + shaftHalf + 2; x++)
               put(x, landing, WOOD);
           }
@@ -557,8 +593,8 @@
         put(houseLeft + houseW - 1, floor - PLAYER_H - 6, CRYSTAL);
       }
 
-      int shaftTop = floor - PLAYER_H - 4;
-      int shaftBottom = firstFloor - clearHeight;
+      int shaftTop = plan.connectorTop;
+      int shaftBottom = plan.connectorBottom;
       if (!L->isBackground) {
         for (int y = shaftTop; y <= shaftBottom; y++)
           for (int x = center - shaftHalf; x <= center + shaftHalf; x++) put(x, y, EMPTY);
@@ -568,13 +604,39 @@
             put(x, y, WOOD);
       }
     }
+  }
+
+  void fillRuinGeneratedFeature(
+      const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
+    auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
+      int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
+      if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
+      stampGeneratedFeatureCell(feature, y * cols + lx, m);
+    };
+    uint32_t sseed = L->worldSeed ^ 0x57121314u;
+    int rectX0 = L->worldOffsetX + colStart;
+    int rectX1 = L->worldOffsetX + colEnd - 1;
+    int rectY0 = L->worldOffsetY + rowStart;
+    int rectY1 = L->worldOffsetY + rowEnd - 1;
+    int wx0 = rectX0 - feature.overscanX;
+    int wx1 = rectX1 + feature.overscanX;
+    int wy0 = rectY0 - feature.overscanY;
+    int wy1 = rectY1 + feature.overscanY;
+    auto h2 = [&](uint32_t salt, int a, int b) {
+      return whash2(sseed ^ salt, a, b);
+    };
+
+    int lxMin = floorDiv(wx0, feature.latticeWidth);
+    int lxMax = floorDiv(wx1, feature.latticeWidth);
+    int lyMin = floorDiv(wy0, feature.latticeHeight);
+    int lyMax = floorDiv(wy1, feature.latticeHeight);
 
     // --- structure archetypes ------------------------------------------------
     // Each ruin has two coordinated stamps. The foreground is a roomy, traversable
     // shell; the background is a fully solid decorated wall with furnishings,
     // murals, storage, vegetation, and light. This keeps the backdrop mostly solid
     // while making the empty play space feel inhabited.
-    enum SKind { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_SHRINE, SK_FORGE, SK_ARCHIVE, SK_OVERGROWN, SK_MUSHGROVE };
     auto backdropRoom = [&](int ax, int ay, int w, int h, uint8_t field) {
       for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
         bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
@@ -863,76 +925,20 @@
     };
 
     for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
-      if (whash2(sseed, lx, ly) >= 0.25) continue;
-      // jittered anchor + hashed size
-      int ax = lx * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xA1u, lx, ly) * 6);
-      int ay = ly * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xB2u, lx, ly) * 6);
-      int w = 28 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 17); // 28..44
-      int h = 18 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 10); // 18..27
-      int kind;
-      int centerX, floorY, surfAbs;
-      {
-        // Background generation temporarily asks the foreground terrain oracle
-        // where the ruin sits. The scope restores the active layer before any
-        // cells are stamped, so both layers share one exact structure plan even
-        // during predictive generation into a scratch band.
-        ForegroundTerrainScope foregroundQuery(L);
-        // Pick an archetype, biased by the cave biome it sits in so a structure fits
-        // its surroundings (lush -> overgrown ruin, mushroom -> grove, crystal ->
-        // shrine); elsewhere a mix of the neutral kinds.
-        int caveBiome = terrain.genCaveBiomeAt(ax + w / 2, ay + h / 2);
-        double pick = whash2(sseed ^ 0x9001u, lx, ly);
-        if (caveBiome == CAVE_LUSH && pick < 0.60) kind = SK_OVERGROWN;
-        else if (caveBiome == CAVE_MUSHROOM && pick < 0.55) kind = SK_MUSHGROVE;
-        else if (caveBiome == CAVE_CRYSTAL && pick < 0.55) kind = SK_SHRINE;
-        else {
-          static const SKind pool[] = { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_FORGE, SK_ARCHIVE, SK_OVERGROWN, SK_SHRINE };
-          kind = pool[(int)(whash2(sseed ^ 0x9002u, lx, ly) * 7) % 7];
-        }
-        if (kind == SK_COLONNADE) w += 4;                // halls run wider
-        if (kind == SK_ARCHIVE) { w += 8; h += 4; }      // room for shelves + central aisle
-        if (kind == SK_SHRINE) {
-          w = 19 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 10);
-          h = imax(PLAYER_H + 3, w / 2 + 3);
-        }
-        // Seat the structure on an actual cave floor near its deterministic
-        // candidate. This keeps its reward and doorway on the traversable cave
-        // graph instead of creating an isolated room in arbitrary solid stone.
-        centerX = ax + w / 2; floorY = INT_MIN;
-        for (int radius = 0; radius <= 30 && floorY == INT_MIN; radius++) {
-          for (int side = 0; side < (radius == 0 ? 1 : 2); side++) {
-            int yy = ay + (radius == 0 ? 0 : (side == 0 ? -radius : radius));
-            if (terrain.genOpenCaveAt(centerX, yy) && !terrain.genOpenCaveAt(centerX, yy + 1)) {
-              floorY = yy;
-              break;
-            }
-          }
-        }
-        if (floorY == INT_MIN) continue;
-        ay = floorY - h + 1;
-        if (ax + w < rectX0 || ax > rectX1 || ay + h < rectY0 || ay > rectY1) continue;
-        surfAbs = terrain.genSurfaceAbs(centerX);
-        if (ay < surfAbs + 30 || ay + h > terrain.caveBottomAbs()) continue;
-        bool overlapsMine = false;
-        for (const MineFootprint& mine : mines) {
-          if (ax <= mine.right && ax + w >= mine.left
-              && ay <= mine.bottom && ay + h >= mine.top) {
-            overlapsMine = true;
-            break;
-          }
-        }
-        if (overlapsMine) continue;
-        if (kind == SK_FORGE && floorY - surfAbs < 180) kind = SK_HOUSE;
-      }
-      switch (kind) {
-        case SK_HOUSE:     stampHouse(ax, ay, w, h, lx, ly); break;
-        case SK_VAULT:     stampVault(ax, ay, w, h, lx, ly); break;
-        case SK_COLONNADE: stampColonnade(ax, ay, w, h, lx, ly); break;
-        case SK_SHRINE:    stampShrine(ax, ay, w, h, lx, ly); break;
-        case SK_FORGE:     stampForge(ax, ay, w, h, lx, ly); break;
-        case SK_ARCHIVE:   stampArchive(ax, ay, w, h, lx, ly); break;
-        case SK_OVERGROWN: stampOvergrown(ax, ay, w, h, lx, ly); break;
-        case SK_MUSHGROVE: stampMushGrove(ax, ay, w, h, lx, ly); break;
+      RuinPlan plan;
+      if (!worldContext.ruinPlan(lx, ly, plan)) continue;
+      int ax = plan.left, ay = plan.top;
+      int w = plan.right - plan.left, h = plan.bottom - plan.top + 1;
+      if (plan.right < rectX0 || plan.left > rectX1
+          || plan.bottom < rectY0 || plan.top > rectY1) continue;
+      switch (plan.kind) {
+#define WORLDGEN_FACILITY_ARCHETYPE(...)
+#define WORLDGEN_RUIN_ARCHETYPE(symbol, id, name, profile, chance, neutral, size, widthAdd, heightAdd, minDepth, fallback, stamp) \
+        case RK_##symbol: stamp(ax, ay, w, h, lx, ly); break;
+#include "worldgen_structure_archetypes.def"
+#undef WORLDGEN_RUIN_ARCHETYPE
+#undef WORLDGEN_FACILITY_ARCHETYPE
+        case RK_COUNT: assert(false && "invalid ruin archetype"); break;
       }
 
       // Open one full-height side door and connect it to the first nearby cave

@@ -6,9 +6,9 @@
     L->gCaveSeed = (seed ^ 0x5bd1e995u) + layerSalt * 0x9e3779b9u;
     L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
-    if (planetId != PL_EARTH) {
-      uint32_t planetSalt = planetId == PL_MOON ? 0x4D004E31u
-                          : planetId == PL_MARS ? 0x4D415253u : 0x53484950u;
+    const PlanetDef& planet = planetDef(planetId);
+    if (planet.generationProfile != PGP_EARTH) {
+      uint32_t planetSalt = planet.worldSeedSalt;
       L->gSeaRow = INT_MAX / 4;
       L->gCaveSeed ^= planetSalt;
       L->gPocketSeed ^= planetSalt * 0x9e3779b9u;
@@ -19,64 +19,52 @@
   void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background) {
     initInfiniteLayerState(seed, layerSalt, background);
     fillRect(0, cols, 0, rows);
-    registerSeededComponents(0, cols);
+    comps.registerSeededComponents(0, cols);
   }
   void initInfinite(uint32_t seed) {
-    useLayer(&fg); initInfiniteLayer(seed, 0, false); // foreground: caves carved for traversal
-    useLayer(&bg); initInfiniteLayer(seed, 1, true);  // background: more-solid backdrop
+    ActiveLayerScope boundary(*this, &fg, &fg);
+    { ActiveLayerScope active(*this, &fg); initInfiniteLayer(seed, 0, false); }
+    { ActiveLayerScope active(*this, &bg); initInfiniteLayer(seed, 1, true); }
     bgEnabled = true;
-    useLayer(&fg);
   }
   // The browser mirror receives its actual cells from the authority worker. It
   // still needs deterministic terrain metadata for the initial camera surface,
   // but generating a duplicate world would require all simulation scratch and
   // defeat the presentation storage profile.
   void initInfinitePresentation(uint32_t seed) {
-    useLayer(&fg); initInfiniteLayerState(seed, 0, false);
-    useLayer(&bg); initInfiniteLayerState(seed, 1, true);
+    ActiveLayerScope boundary(*this, &fg, &fg);
+    { ActiveLayerScope active(*this, &fg); initInfiniteLayerState(seed, 0, false); }
+    { ActiveLayerScope active(*this, &bg); initInfiniteLayerState(seed, 1, true); }
     bgEnabled = true;
-    useLayer(&fg);
   }
-  void shiftRowMajorU8(uint8_t* arr, int dx, uint8_t fill) {
-    if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, cols - dx); memset(arr + b + cols - dx, fill, dx); }
-    else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, cols - s); memset(arr + b, fill, s); } }
-  }
-  void shiftRowMajorU32(uint32_t* arr, int dx, uint32_t fill) {
+  template <typename T>
+  void shiftRowMajor(T* arr, int dx, T fill) {
     if (dx > 0) for (int y = 0; y < rows; y++) {
       int b = y * cols;
-      memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * sizeof(uint32_t));
+      memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * sizeof(T));
       std::fill(arr + b + cols - dx, arr + b + cols, fill);
     } else {
       int s = -dx;
       for (int y = 0; y < rows; y++) {
         int b = y * cols;
-        memmove(arr + b + s, arr + b, (size_t)(cols - s) * sizeof(uint32_t));
+        memmove(arr + b + s, arr + b, (size_t)(cols - s) * sizeof(T));
         std::fill(arr + b, arr + b + s, fill);
       }
     }
   }
   // Vertical slide of a row-major buffer by dy rows (dy>0: content moves UP, new
   // band enters at the bottom). A single contiguous memmove (no per-row loop).
-  void shiftBufV(uint8_t* arr, int dy, uint8_t fill) {
-    int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols;
-    if (dy > 0) { memmove(arr, arr + band, rest); memset(arr + rest, fill, band); }
-    else { memmove(arr + band, arr, rest); memset(arr, fill, band); }
-  }
-  void shiftBufVU32(uint32_t* arr, int dy, uint32_t fill) {
+  template <typename T>
+  void shiftBufV(T* arr, int dy, T fill) {
     int s = std::abs(dy);
     size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols;
     if (dy > 0) {
-      memmove(arr, arr + band, rest * sizeof(uint32_t));
+      memmove(arr, arr + band, rest * sizeof(T));
       std::fill(arr + rest, arr + rest + band, fill);
     } else {
-      memmove(arr + band, arr, rest * sizeof(uint32_t));
+      memmove(arr + band, arr, rest * sizeof(T));
       std::fill(arr, arr + band, fill);
     }
-  }
-  void shiftBufVI32(int32_t* arr, int dy, int32_t fill) {
-    int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols, n = (size_t)rows * cols;
-    if (dy > 0) { memmove(arr, arr + band, rest * 4); for (size_t i = rest; i < n; i++) arr[i] = fill; }
-    else { memmove(arr + band, arr, rest * 4); for (size_t i = 0; i < band; i++) arr[i] = fill; }
   }
   // Re-index every component after the L->grid slid by (dx,dy). One axis at a time:
   // each cell's new (col,row) is (x-dx, y-dy); cells that slid off the buffer drop.
@@ -220,9 +208,10 @@
     auto add = [&](const Layer& lay) {
       for (const auto& entry : lay.tileStore) total += entry.second.size();
       for (const auto& entry : lay.prefetchStore) total += entry.second.size();
-      for (const auto& entry : lay.fallSpeedStore) total += entry.second.size();
-      for (const auto& entry : lay.liquidVelocityStore)
-        total += entry.second.size() * sizeof(uint32_t);
+#define SAND_COUNT_CELL_STORE(name, type, empty, store, encode, decode, accepts, operations) \
+      for (const auto& entry : lay.store) total += entry.second.size() * sizeof(type);
+      SAND_PERSISTENT_CELL_CHANNELS(SAND_COUNT_CELL_STORE)
+#undef SAND_COUNT_CELL_STORE
       for (const auto& entry : lay.componentStore)
         for (const StoredCompFragment& fragment : entry.second)
           total += sizeof(StoredCompFragment)
@@ -295,7 +284,7 @@
             continue;
           }
           int k = y * cols + x;
-          if (L->grid[k] == TNT && L->bodyOwner[k] < 0) {
+          if (isFuseExplosive(L->grid[k]) && L->bodyOwner[k] < 0) {
             auto inserted = L->pendingDetonations.emplace(k, fuse.ticks);
             if (!inserted.second)
               inserted.first->second = imin(inserted.first->second, fuse.ticks);
@@ -731,8 +720,6 @@
   void csSaveTiles(int bx0, int by0, int w, int h) { // uses the CURRENT offset (leaving band)
     csSaveComponentFragments(bx0, by0, w, h);
     std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> raw;
-    std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> fallRaw;
-    std::array<uint32_t, CHUNK_SIZE * CHUNK_SIZE> velocityRaw;
     for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) continue;
@@ -744,31 +731,31 @@
         auto dirtyTile = L->dirtyWorldTiles.find(key);
         if (dirtyTile == L->dirtyWorldTiles.end()) {
           L->tileStore.erase(key);
-          L->fallSpeedStore.erase(key);
-          L->liquidVelocityStore.erase(key);
+#define SAND_ERASE_CELL_STORE(name, type, empty, store, encode, decode, accepts, operations) L->store.erase(key);
+          SAND_PERSISTENT_CELL_CHANNELS(SAND_ERASE_CELL_STORE)
+#undef SAND_ERASE_CELL_STORE
           if (L->prefetchStore.find(key) == L->prefetchStore.end())
             encodeTile(raw.data(), L->prefetchStore[key]);
           continue;
         }
         L->prefetchStore.erase(key);
         encodeTile(raw.data(), L->tileStore[key]);
-        bool hasFallSpeed = false, hasLiquidVelocity = false;
-        for (int r = 0; r < CHUNK_SIZE; r++) {
-          size_t source = (size_t)(ty + r) * cols + tx;
-          size_t target = (size_t)r * CHUNK_SIZE;
-          memcpy(fallRaw.data() + target, L->fallSpeed + source, CHUNK_SIZE);
-          memcpy(velocityRaw.data() + target, L->liquidVel + source,
-                 CHUNK_SIZE * sizeof(uint32_t));
-          for (int x = 0; x < CHUNK_SIZE; x++) {
-            hasFallSpeed = hasFallSpeed || fallRaw[target + x] != 0;
-            hasLiquidVelocity = hasLiquidVelocity || velocityRaw[target + x] != 0;
-          }
+#define SAND_SAVE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+        { \
+          std::array<type, CHUNK_SIZE * CHUNK_SIZE> channelRaw; \
+          bool hasState = false; \
+          for (int r = 0; r < CHUNK_SIZE; r++) { \
+            size_t source = (size_t)(ty + r) * cols + tx; \
+            size_t target = (size_t)r * CHUNK_SIZE; \
+            L->name.copyCurrentSpan(source, CHUNK_SIZE, channelRaw.data() + target); \
+            for (int x = 0; x < CHUNK_SIZE; x++) \
+              hasState = hasState || channelRaw[target + x] != L->name.emptyValue; \
+          } \
+          if (hasState) encode(channelRaw.data(), L->store[key]); \
+          else L->store.erase(key); \
         }
-        if (hasFallSpeed) encodeTile(fallRaw.data(), L->fallSpeedStore[key]);
-        else L->fallSpeedStore.erase(key);
-        if (hasLiquidVelocity)
-          encodeVelocityTile(velocityRaw.data(), L->liquidVelocityStore[key]);
-        else L->liquidVelocityStore.erase(key);
+        SAND_PERSISTENT_CELL_CHANNELS(SAND_SAVE_CELL_CHANNEL)
+#undef SAND_SAVE_CELL_CHANNEL
         L->dirtyWorldTiles.erase(dirtyTile);
       }
   }
@@ -785,8 +772,6 @@
   }
   void csLoadTiles(int bx0, int by0, int w, int h) { // overlay saved tiles (NEW offset); missing left as-is
     std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> raw;
-    std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> fallRaw;
-    std::array<uint32_t, CHUNK_SIZE * CHUNK_SIZE> velocityRaw;
     for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) continue;
@@ -797,40 +782,27 @@
         const std::vector<uint8_t>* stored = persistent != L->tileStore.end() ? &persistent->second
           : (prefetched != L->prefetchStore.end() ? &prefetched->second : nullptr);
         if (!stored || !decodeTile(*stored, raw.data())) continue;
-        bool hasFallSpeed = false;
-        auto storedFallSpeed = L->fallSpeedStore.find(key);
-        if (persistent != L->tileStore.end()
-            && storedFallSpeed != L->fallSpeedStore.end())
-          hasFallSpeed = decodeTile(storedFallSpeed->second, fallRaw.data());
-        auto storedVelocity = L->liquidVelocityStore.find(key);
-        bool hasLiquidVelocity = persistent != L->tileStore.end()
-          && storedVelocity != L->liquidVelocityStore.end()
-          && decodeVelocityTile(storedVelocity->second, velocityRaw.data());
         for (int r = 0; r < CHUNK_SIZE; r++) {
           size_t d = (size_t)(ty + r) * cols + tx;
-          size_t source = (size_t)r * CHUNK_SIZE;
           memcpy(L->grid + d, raw.data() + r * CHUNK_SIZE, CHUNK_SIZE);
           memcpy(L->next + d, raw.data() + r * CHUNK_SIZE, CHUNK_SIZE);
-          if (L->fallSpeed) {
-            if (hasFallSpeed) memcpy(L->fallSpeed + d, fallRaw.data() + source, CHUNK_SIZE);
-            else memset(L->fallSpeed + d, 0, CHUNK_SIZE);
-          }
-          if (L->nextFallSpeed) {
-            if (hasFallSpeed) memcpy(L->nextFallSpeed + d, fallRaw.data() + source, CHUNK_SIZE);
-            else memset(L->nextFallSpeed + d, 0, CHUNK_SIZE);
-          }
-          if (L->liquidVel) {
-            if (hasLiquidVelocity) {
-              memcpy(L->liquidVel + d, velocityRaw.data() + source,
-                     CHUNK_SIZE * sizeof(uint32_t));
-              memcpy(L->nextLiquidVel + d, velocityRaw.data() + source,
-                     CHUNK_SIZE * sizeof(uint32_t));
-            } else {
-              memset(L->liquidVel + d, 0, CHUNK_SIZE * sizeof(uint32_t));
-              memset(L->nextLiquidVel + d, 0, CHUNK_SIZE * sizeof(uint32_t));
-            }
-          }
         }
+#define SAND_LOAD_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+        { \
+          std::array<type, CHUNK_SIZE * CHUNK_SIZE> channelRaw; \
+          auto storedState = L->store.find(key); \
+          bool hasState = persistent != L->tileStore.end() \
+            && storedState != L->store.end() \
+            && decode(storedState->second, channelRaw.data()); \
+          for (int r = 0; r < CHUNK_SIZE; r++) { \
+            size_t target = (size_t)(ty + r) * cols + tx; \
+            size_t source = (size_t)r * CHUNK_SIZE; \
+            L->name.restoreSpan(target, CHUNK_SIZE, \
+              hasState ? channelRaw.data() + source : nullptr); \
+          } \
+        }
+        SAND_PERSISTENT_CELL_CHANNELS(SAND_LOAD_CELL_CHANNEL)
+#undef SAND_LOAD_CELL_CHANNEL
         if (persistent != L->tileStore.end()) L->dirtyWorldTiles.insert(key);
         if (prefetched != L->prefetchStore.end()) L->prefetchStore.erase(prefetched);
       }
@@ -919,15 +891,37 @@
         encodeTile(raw.data(), Lx->prefetchStore[key]);
       }
   }
-  // Run one terrain slice for layer Lx into the pfGrid scratch at the future offset.
-  // We retarget only L + L->grid + Lx's offset (NOT useLayer) and restore them: terrain
-  // gen reads L->* + L->grid + cols/rows only, never the other per-cell mirrors. Returns
-  // true once the whole band's terrain is generated.
+  struct PrefetchGenerationScope {
+    Layer*& active;
+    Layer* target;
+    Layer* savedActive;
+    uint8_t* savedGrid;
+    int savedOffsetX, savedOffsetY;
+
+    PrefetchGenerationScope(Layer*& activeLayer, Layer* targetLayer,
+                            uint8_t* scratch, int offsetX, int offsetY)
+        : active(activeLayer), target(targetLayer), savedActive(activeLayer),
+          savedGrid(targetLayer->grid),
+          savedOffsetX(targetLayer->worldOffsetX),
+          savedOffsetY(targetLayer->worldOffsetY) {
+      active = target;
+      target->grid = scratch;
+      target->worldOffsetX = offsetX;
+      target->worldOffsetY = offsetY;
+    }
+    ~PrefetchGenerationScope() {
+      target->worldOffsetX = savedOffsetX;
+      target->worldOffsetY = savedOffsetY;
+      target->grid = savedGrid;
+      active = savedActive;
+    }
+  };
+
+  // Run one terrain slice for a layer in the isolated prefetch grid. The scope
+  // restores every ambient generation pointer and coordinate on all exits.
   bool pfTerrainStep(Layer* Lx, int futOffX, int futOffY) {
-    Layer* sL = L; uint8_t* sGrid = Lx->grid;
-    int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
-    L = Lx; Lx->grid = pfGrid.data();
-    Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
+    PrefetchGenerationScope scope(
+      L, Lx, pfGrid.data(), futOffX, futOffY);
     bool done;
     if (pfDx) {
       int per = imax(1, PREFETCH_CELLS_PER_FRAME / imax(1, rows));
@@ -938,34 +932,17 @@
       int r0 = pfEy0 + pfCursor, r1 = imin(pfEy0 + pfEh, r0 + per);
       fillTerrain(0, cols, r0, r1); pfCursor += r1 - r0; done = pfCursor >= pfEh;
     }
-    Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
-    Lx->grid = sGrid; L = sL;
     return done;
   }
   // Complete the band, then slice it into the disposable baseline cache.
   void pfFinalizeLayer(Layer* Lx, int futOffX, int futOffY) {
-    Layer* sL = L; uint8_t* sGrid = Lx->grid;
-    int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
-    L = Lx; Lx->grid = pfGrid.data();
-    Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
-    if (planetId == PL_SHIP) {
-      fillSpaceship(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    } else if (planetId == PL_MOON || planetId == PL_MARS) {
-      fillOffworldStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    } else {
-      // Cave features / structures BEFORE trees and BEFORE pfStoreTiles,
-      // mirroring fillRect's order so a prefetched tile is byte-identical to
-      // the synchronous fillRect tile.
-      fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      fillDeepCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      fillOceanFlora(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      fillDeepStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      sealHazardBoundaries(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-      fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    {
+      PrefetchGenerationScope scope(
+        L, Lx, pfGrid.data(), futOffX, futOffY);
+      runGenerationPipeline(pfEx0, pfEx0 + pfEw,
+                            pfEy0, pfEy0 + pfEh,
+                            true, false);
     }
-    Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
-    Lx->grid = sGrid; L = sL;
     pfStoreTiles(Lx, futOffX, futOffY);
   }
   void pfStartTarget(int dx, int dy) {
@@ -1032,6 +1009,7 @@
   }
   // Slide BOTH layers in lockstep with the shared camera; anchor psys.players once.
   void shiftWorld(int dx, int dy) {
+    ActiveLayerScope boundary(*this, &fg, &fg);
     if (!fg.infinite || (dx == 0) == (dy == 0) || dx == INT_MIN || dy == INT_MIN)
       return;
     int distance = std::abs(dx ? dx : dy);
@@ -1045,11 +1023,10 @@
     // discarding only the in-flight scratch state is always safe.
     pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;
     worldShiftCount++;
-    useLayer(&fg); shiftLayer(dx, dy);
-    useLayer(&bg); shiftLayer(dx, dy);
-    useLayer(&fg); restampBodiesAfterStream();
-    useLayer(&bg); restampBodiesAfterStream();
-    useLayer(&fg);
+    { ActiveLayerScope active(*this, &fg); shiftLayer(dx, dy); }
+    { ActiveLayerScope active(*this, &bg); shiftLayer(dx, dy); }
+    { ActiveLayerScope active(*this, &fg); rigid.restampBodiesAfterStream(PCSO_BODY_DISPLACE); }
+    { ActiveLayerScope active(*this, &bg); rigid.restampBodiesAfterStream(PCSO_BODY_DISPLACE); }
     for (auto& p : psys.players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
     int restoreX = dx > 0 ? cols - std::abs(dx) : 0;
     int restoreY = dy > 0 ? rows - std::abs(dy) : 0;
@@ -1058,11 +1035,10 @@
     remapStoredEntities(fg.worldOffsetX - dx, fg.worldOffsetY - dy,
                         fg.worldOffsetX, fg.worldOffsetY,
                         restoreX, restoreY, restoreW, restoreH);
-    remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the L->grid shift)
-    remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
-    useLayer(&fg); clearAllMineDamage();
-    useLayer(&bg); clearAllMineDamage();
-    useLayer(&fg);
+    tools.remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the L->grid shift)
+    tools.remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
+    { ActiveLayerScope active(*this, &fg); tools.clearAllMineDamage(); }
+    { ActiveLayerScope active(*this, &bg); tools.clearAllMineDamage(); }
     for (auto& p : psys.players) p.mineActive = false;
   }
   void shiftLayer(int dx, int dy) {
@@ -1077,9 +1053,9 @@
     // 1) clear body rasters so no body ghost is saved/memmoved (bodies persist via
     //    bodyStore + translate below). body-material invariant: body cells hold their
     //    real material now, so clear by isBodyCell, not by == RIGID.
-    for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+    for (int k : L->bodyCells) { if (isBodyCell(k)) L->clearVacatedCellPhases((size_t)k); else L->bodyOwner[k] = -1; }
     L->bodyCells.clear();
-    for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+    for (int k : L->passiveBodyCells) { if (isBodyCell(k)) L->clearVacatedCellPhases((size_t)k); else L->bodyOwner[k] = -1; }
     L->passiveBodyCells.clear();
     L->blastSparseCarryReady = false;
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
@@ -1090,9 +1066,8 @@
     // 3) slide the buffers + dirty marks.
     _t = emscripten_get_now();
     if (dx) {
-      shiftRowMajorU8(L->grid, dx, EMPTY); shiftRowMajorU8(L->next, dx, EMPTY); shiftRowMajorI32(L->bodyOwner.data(), dx, -1);
-      shiftRowMajorU8(L->fallSpeed, dx, 0); shiftRowMajorU8(L->nextFallSpeed, dx, 0);
-      shiftRowMajorU32(L->liquidVel, dx, 0); shiftRowMajorU32(L->nextLiquidVel, dx, 0);
+      L->shiftPersistentCellState(
+        [&](auto* cells, auto fill) { shiftRowMajor(cells, dx, fill); });
       auto shiftMarksX = [&](auto& rowMarks) {
         for (int y = 0; y < rows; y++) {
           auto oldSpans = std::move(rowMarks[y]);
@@ -1107,9 +1082,8 @@
       shiftMarksX(L->rowMarkSpans);
       shiftMarksX(L->simOnlyRowMarkSpans);
     } else {
-      shiftBufV(L->grid, dy, EMPTY); shiftBufV(L->next, dy, EMPTY); shiftBufVI32(L->bodyOwner.data(), dy, -1);
-      shiftBufV(L->fallSpeed, dy, 0); shiftBufV(L->nextFallSpeed, dy, 0);
-      shiftBufVU32(L->liquidVel, dy, 0); shiftBufVU32(L->nextLiquidVel, dy, 0);
+      L->shiftPersistentCellState(
+        [&](auto* cells, auto fill) { shiftBufV(cells, dy, fill); });
       auto shiftMarksY = [&](auto& rowMarks) {
         auto oldSpans = std::move(rowMarks);
         rowMarks.clear(); rowMarks.resize(rows);
@@ -1152,20 +1126,16 @@
     perfShiftTranslate += emscripten_get_now() - _t;
     _t = emscripten_get_now();
     csRestoreComponentFragments(ex0, ey0, ew, eh);
-    if (dx) registerSeededComponents(ex0, ex0 + s, 0, rows);
-    else registerSeededComponents(0, cols, ey0, ey0 + s);
+    if (dx) comps.registerSeededComponents(ex0, ex0 + s, 0, rows);
+    else comps.registerSeededComponents(0, cols, ey0, ey0 + s);
     perfShiftRegister += emscripten_get_now() - _t;
   }
-  void shiftRowMajorI32(int32_t* arr, int dx, int32_t fill) {
-    if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * 4); for (int i = b + cols - dx; i < b + cols; i++) arr[i] = fill; }
-    else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, (size_t)(cols - s) * 4); for (int i = b; i < b + s; i++) arr[i] = fill; } }
-  }
-
   // Grow/shrink the loaded simulation window while preserving world content via
   // the tile/body stores. Keeps worldgen seeds/params (so terrain stays byte-
   // identical for absolute coords), players, and items. Returns 1 if dims changed.
   // Camera is re-anchored so the pre-resize world-space view center stays put.
   int resizeLoadedWindow(int newCols, int newRows) {
+    ActiveLayerScope boundary(*this, &fg, &fg);
     if (!fg.infinite) return 0;
     if (newCols < CHUNK_SIZE * 2 || newRows < CHUNK_SIZE * 2
         || newCols > ENGINE_MAX_DIMENSION || newRows > ENGINE_MAX_DIMENSION)
@@ -1230,9 +1200,8 @@
       }
       cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);
       cam.set(worldCX - newOffX - vCols * 0.5, worldCY - newOffY - vRows * 0.5);
-      useLayer(&fg); markAllDirty();
-      useLayer(&bg); markAllDirty();
-      useLayer(&fg);
+      { ActiveLayerScope active(*this, &fg); markAllDirty(); }
+      { ActiveLayerScope active(*this, &bg); markAllDirty(); }
       worldShiftCount++;
       return 1;
     }
@@ -1240,12 +1209,12 @@
     int fgNextComponentId = fg.nextComponentId;
     int bgNextComponentId = bg.nextComponentId;
     auto persistLayer = [&](Layer* lay) {
-      useLayer(lay);
+      ActiveLayerScope active(*this, lay);
       // Drop body rasters so free-body cells don't pollute the tile save (bodies
       // persist via bodyStore, same as shiftWorld).
-      for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+      for (int k : L->bodyCells) { if (isBodyCell(k)) L->clearVacatedCellPhases((size_t)k); else L->bodyOwner[k] = -1; }
       L->bodyCells.clear();
-      for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+      for (int k : L->passiveBodyCells) { if (isBodyCell(k)) L->clearVacatedCellPhases((size_t)k); else L->bodyOwner[k] = -1; }
       L->passiveBodyCells.clear();
       L->blastSparseCarryReady = false;
       csSaveFusesLeaving(0, 0, cols, rows);
@@ -1281,14 +1250,14 @@
     bg.worldOffsetX = newOffX; bg.worldOffsetY = newOffY;
 
     auto refillLayer = [&](Layer* lay) {
-      useLayer(lay);
+      ActiveLayerScope active(*this, lay);
       // Baseline generate then overlay saved tiles (same order as a shift miss).
       fillRect(0, cols, 0, rows);
       csLoadTiles(0, 0, cols, rows);
       csRestoreBodies(0, 0, cols, rows);
       csRestoreFuses(0, 0, cols, rows);
       csRestoreComponentFragments(0, 0, cols, rows);
-      registerSeededComponents(0, cols);
+      comps.registerSeededComponents(0, cols);
       // Wake the whole window so settle re-activates after the rebuild.
       markAllDirty();
       L->groundDirty = true; L->groundContentDirty = true; L->looseGroundDirty = true;
@@ -1296,9 +1265,8 @@
     };
     refillLayer(&fg);
     refillLayer(&bg);
-    useLayer(&fg); restampBodiesAfterStream();
-    useLayer(&bg); restampBodiesAfterStream();
-    useLayer(&fg);
+    { ActiveLayerScope active(*this, &fg); rigid.restampBodiesAfterStream(PCSO_BODY_DISPLACE); }
+    { ActiveLayerScope active(*this, &bg); rigid.restampBodiesAfterStream(PCSO_BODY_DISPLACE); }
 
     // Re-anchor entities into the new buffer.
     for (size_t i = 0; i < psys.players.size(); i++) {
@@ -1319,9 +1287,8 @@
     cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);
     cam.set(worldCX - newOffX - vCols * 0.5, worldCY - newOffY - vRows * 0.5);
 
-    useLayer(&fg); markAllDirty();
-    useLayer(&bg); markAllDirty();
-    useLayer(&fg);
+    { ActiveLayerScope active(*this, &fg); markAllDirty(); }
+    { ActiveLayerScope active(*this, &bg); markAllDirty(); }
     worldShiftCount++; // treat as a stream event for any counters/tests
     return 1;
   }

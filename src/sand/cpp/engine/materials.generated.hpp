@@ -7,47 +7,316 @@ enum Mat : uint8_t { EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 
 enum Kind : uint8_t { K_NONE = 0, K_POWDER = 1, K_LIQUID = 2, K_GAS = 3, K_COMPONENT = 4, K_FREE_RIGID = 5 };
 enum MaterialClass : uint8_t { MC_NONE = 0, MC_GAS = 1, MC_SOLID = 2, MC_RIGID = 3, MC_LIQUID = 4 };
 enum RenderAnim : uint8_t { RA_NONE = 0, RA_FIRE = 1, RA_STEAM = 2, RA_SMOKE = 3, RA_WATER = 4, RA_OIL = 5, RA_ACID = 6, RA_LAVA = 7, RA_METHANE = 8 };
+enum GasProfile : uint8_t { GP_NONE = 0, GP_VAPOR = 1, GP_FIRE = 2, GP_ACRID = 3, GP_PERSISTENT_CEILING = 4 };
+enum ExplosiveProfile : uint8_t { XP_NONE = 0, XP_TNT_FUSE = 1, XP_METHANE_POCKET = 2 };
+enum MaterialReactionProfile : uint8_t { MRP_NONE = 0, MRP_FIRE = 1, MRP_ACID = 2, MRP_LAVA = 3 };
+enum ContactHazardProfile : uint8_t { CHP_NONE = 0, CHP_FIRE = 1, CHP_ACID = 2, CHP_LAVA = 3 };
+enum HabitatProfile : uint8_t { HP_NONE = 0, HP_AQUATIC = 1 };
+enum AmbienceSampleField : uint8_t { ASF_AMOUNT = 0, ASF_WORLD_X = 1, ASF_WORLD_Y = 2 };
+enum AmbienceProfile : uint8_t { AP_NONE = 0, AP_WATER = 1, AP_FIRE = 2, AP_LAVA = 3, AP_ACID = 4 };
+enum AmbienceGroup : uint8_t { AG_WATER = 0, AG_FIRE = 1, AG_LAVA = 2, AG_ACID = 3 };
+enum LiquidMovementProfile : uint8_t { LMP_NONE = 0, LMP_STANDARD = 1, LMP_VISCOUS_GRAVITY = 2 };
+enum EmissionProfile : uint8_t { EP_NONE = 0, EP_UNIFORM = 1, EP_CRYSTAL_QUARTER = 2, EP_MYCELIUM_SPARSE = 3 };
+enum LightTransmissionProfile : uint8_t { LTP_CLEAR = 0, LTP_LIQUID = 1, LTP_LOOSE_SOLID = 2, LTP_RIGID = 3, LTP_GLASS = 4 };
+enum RenderDetailPattern : uint8_t { RDPAT_NONE = 0, RDPAT_HASH_MASK = 1, RDPAT_MYCELIUM_NODULE = 2, RDPAT_ALWAYS = 3 };
+enum RenderDetailProfile : uint8_t { RDP_NONE = 0, RDP_CRYSTAL_CORE = 1, RDP_MYCELIUM_NODULE = 2, RDP_MYCELIUM_SPORE = 3, RDP_GLOWBERRY_CORE = 4, RDP_GLOWSHROOM_CORE = 5 };
+enum MaterialPlacement : uint8_t { MP_ERASE = 0, MP_PAINT = 1, MP_STRUCTURE = 2 };
+enum PlantType : uint8_t { PT_OAK = 0, PT_PINE = 1, PT_WILLOW = 2, PT_CACTUS = 3, PT_MUSHROOM = 4, PT_BUSH = 5, PT_VINE = 6, PT_STANDARD = 7 };
+enum PlantGrowthProfile : uint8_t { PGR_OAK = 0, PGR_PINE = 1, PGR_WILLOW = 2, PGR_CACTUS = 3, PGR_MUSHROOM = 4, PGR_BUSH = 5, PGR_VINE = 6, PGR_STANDARD = 7 };
+enum PlantWorldgenProfile : uint8_t { PWG_BROADLEAF = 0, PWG_PINE = 1, PWG_WILLOW = 2, PWG_CACTUS = 3, PWG_BUSH = 4 };
+enum PlantWoodGrowthTopology : uint8_t { PGW_GENERIC = 0, PGW_VINE = 1, PGW_OAK = 2, PGW_PINE = 3, PGW_WILLOW = 4, PGW_CACTUS = 5 };
+enum PlantLeafGrowthTopology : uint8_t { PGL_GENERIC = 0, PGL_MUSHROOM = 1, PGL_VINE = 2, PGL_WILLOW = 3, PGL_PINE = 4, PGL_OAK = 5 };
+enum PlantTrunkGrowthProfile : uint8_t { PGT_NONE = 0, PGT_GENERIC = 1, PGT_TREE = 2 };
+enum PlantLeafBurstProfile : uint8_t { PGB_DEFAULT = 0, PGB_SINGLE = 1, PGB_PINE = 2 };
+enum PlantWorldgenTopology : uint8_t { PWGT_BROADLEAF = 0, PWGT_PINE = 1, PWGT_WILLOW = 2, PWGT_CACTUS = 3, PWGT_BUSH = 4 };
 // Mining tool classes + tiers (drives MAT_TOOLCLASS / MAT_TOOLTIER drop gating).
 enum ToolClass : uint8_t { TC_NONE = 0, TC_PICKAXE = 1, TC_AXE = 2, TC_SHOVEL = 3, TC_HAND = 4, TC_DIG = 5 };
 enum ToolTier : uint8_t { TT_HAND = 0, TT_WOOD = 1, TT_STONE = 2, TT_IRON = 3, TT_GOLD = 4 };
 // Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
-static const uint16_t MF_FLAMMABLE = 1u << 0;
-static const uint16_t MF_DISSOLVABLE = 1u << 1;
-static const uint16_t MF_RIGID = 1u << 2;
-static const uint16_t MF_BEARING = 1u << 3;
-static const uint16_t MF_PLANTFAMILY = 1u << 4;
-static const uint16_t MF_QUENCHESLAVA = 1u << 5;
-static const uint16_t MF_RELAXESGAPS = 1u << 6;
-static const uint16_t MF_PLANTWOOD = 1u << 7;
-static const uint16_t MF_PLANTLEAF = 1u << 8;
+static const uint32_t MF_FLAMMABLE = 1u << 0;
+static const uint32_t MF_DISSOLVABLE = 1u << 1;
+static const uint32_t MF_RIGID = 1u << 2;
+static const uint32_t MF_BEARING = 1u << 3;
+static const uint32_t MF_PLANTFAMILY = 1u << 4;
+static const uint32_t MF_QUENCHESLAVA = 1u << 5;
+static const uint32_t MF_RELAXESGAPS = 1u << 6;
+static const uint32_t MF_PLANTWOOD = 1u << 7;
+static const uint32_t MF_PLANTLEAF = 1u << 8;
+static const uint32_t MF_SPAWNHAZARD = 1u << 9;
+static const uint32_t MF_HEATSOURCE = 1u << 10;
 
 static const int MATERIAL_COUNT = 55;
-static const int TABLE = 64;
-static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 1.5f, 0.4f, 1.7f, 2, 2.3f, 0.9f, 2.7f, 2.8f, 2.6f, 3, 2.4f, 0.6f, 0.7f, 0.5f, 0.45f, 0.4f, 0, 1.5f, 1.05f, 1.2f, 1.6f, 2.4f, 2.5f, 1.2f, 1.1f, 0.4f, 0.45f, 1.4f, 0.4f, 0.4f, 0.4f, 0.4f, 2.9f, 2.1f, 1.8f, 32, 2.6f, 0.5f, 0.6f, 0.4f, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_GAS, K_POWDER, K_LIQUID, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_POWDER, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE};
+static const int MATERIAL_ID_LIMIT = 55;
+static const int FIRST_UNDEFINED_MATERIAL_ID = 55;
+static const int TABLE = 256;
+static constexpr uint8_t MAT_DEFINED[TABLE] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t DEFINED_MATERIAL_IDS[MATERIAL_COUNT] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54};
+static constexpr bool isMaterialId(int material) {
+  return material >= 0 && material < TABLE && MAT_DEFINED[material] != 0;
+}
+static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 1.5f, 0.4f, 1.7f, 2, 2.3f, 0.9f, 2.7f, 2.8f, 2.6f, 3, 2.4f, 0.6f, 0.7f, 0.5f, 0.45f, 0.4f, 0, 1.5f, 1.05f, 1.2f, 1.6f, 2.4f, 2.5f, 1.2f, 1.1f, 0.4f, 0.45f, 1.4f, 0.4f, 0.4f, 0.4f, 0.4f, 2.9f, 2.1f, 1.8f, 32, 2.6f, 0.5f, 0.6f, 0.4f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t MAT_KIND[TABLE]    = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_GAS, K_POWDER, K_LIQUID, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_POWDER, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE};
 // Broad gameplay class and trait flags per material.
-static const uint8_t  MAT_CLASS[TABLE]      = {MC_NONE, MC_SOLID, MC_LIQUID, MC_RIGID, MC_LIQUID, MC_GAS, MC_GAS, MC_RIGID, MC_RIGID, MC_RIGID, MC_LIQUID, MC_LIQUID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_SOLID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_GAS, MC_SOLID, MC_LIQUID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_GAS, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE};
-static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 96, 14, 65, 0, 0, 31, 159, 287, 96, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 151, 0, 8, 96, 9, 12, 14, 12, 14, 14, 278, 30, 11, 0, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  MAT_CLASS[TABLE]      = {MC_NONE, MC_SOLID, MC_LIQUID, MC_RIGID, MC_LIQUID, MC_GAS, MC_GAS, MC_RIGID, MC_RIGID, MC_RIGID, MC_LIQUID, MC_LIQUID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_SOLID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_GAS, MC_SOLID, MC_LIQUID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_GAS, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE};
+static constexpr uint32_t MAT_FLAGS[TABLE]      = {0, 10, 96, 14, 577, 1536, 0, 31, 159, 287, 608, 1536, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 151, 0, 8, 96, 9, 524, 14, 12, 14, 14, 278, 30, 11, 512, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint32_t MAT_CRAFT_FLAGS[TABLE]= {0, 10, 96, 14, 577, 1536, 0, 31, 159, 287, 608, 1536, 12, 12, 159, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 407, 0, 8, 96, 9, 524, 14, 12, 14, 14, 278, 30, 11, 512, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t MAT_PLACEMENT[TABLE] = {0, 1, 1, 2, 1, 1, 1, 2, 2, 2, 1, 1, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  MAT_GAS_PROFILE[TABLE]= {0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t MAT_EXPLOSIVE_PROFILE[TABLE] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t EXPLOSIVE_HEAT_SENSITIVE[3] = {0, 1, 1};
+static constexpr uint8_t MAT_HEAT_SENSITIVE_EXPLOSIVE[TABLE] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr int MATERIAL_REACTION_PROFILE_COUNT = 4;
+static constexpr uint8_t MAT_REACTION_PROFILE[TABLE] = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t MAT_CONTACT_HAZARD_PROFILE[TABLE] = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t MAT_HABITAT_PROFILE[TABLE] = {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t HABITAT_AQUATIC[2] = {0, 1};
+static constexpr uint8_t MAT_AQUATIC_HABITAT[TABLE] = {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr int AMBIENCE_SAMPLE_STRIDE = 3;
+static constexpr uint8_t NO_AMBIENCE_GROUP = 255;
+static constexpr int AMBIENCE_GROUP_COUNT = 4;
+static constexpr uint8_t MAT_AMBIENCE_PROFILE[TABLE] = {0, 0, 1, 0, 0, 2, 0, 0, 0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static constexpr uint8_t AMBIENCE_PROFILE_GROUP[5] = {255, 0, 1, 2, 3};
+static constexpr uint8_t MAT_AMBIENCE_GROUP[TABLE] = {255, 255, 0, 255, 255, 1, 255, 255, 255, 255, 3, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+static const uint8_t  MAT_LIQUID_PROFILE[TABLE]= {0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t LIQUID_MOBILITY_GATED[3] = {0, 0, 1};
+static const uint8_t LIQUID_STRAIGHT_FALL[3] = {0, 0, 1};
+static const uint8_t LIQUID_FIXED_FALL_CAP[3] = {0, 0, 3};
+static const float GAS_DECAY[5] = {0, 0.018f, 0.008f, 0.05f, 0};
+static const float GAS_TRAPPED_DECAY[5] = {0, 0.018f, 0.008f, 0.3f, 0};
+static const float GAS_UP_CHANCE[5] = {0, 0.72f, 0.72f, 0.72f, 0.72f};
+static const float GAS_SIDE_CHANCE[5] = {0, 0.65f, 0.65f, 0.65f, 1};
+static const uint8_t GAS_PERSISTENT[5] = {0, 0, 0, 0, 1};
+static const uint8_t GAS_CEILING_ROUTE[5] = {0, 0, 0, 0, 1};
+static constexpr uint8_t CONTACT_HAZARD_PLAYER_DAMAGE[4] = {0, 4, 12, 15};
+static constexpr uint8_t CONTACT_HAZARD_CREATURE_DAMAGE[4] = {0, 0, 12, 0};
+static constexpr uint8_t CONTACT_HAZARD_CADENCE[4] = {0, 30, 15, 15};
+static constexpr uint8_t CONTACT_HAZARD_PRIORITY[4] = {0, 1, 2, 3};
+static const uint8_t MAT_EMISSION_PROFILE[TABLE] = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_RENDER_DETAIL_PROFILE[TABLE] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t RENDER_DETAIL_PATTERN[6] = {0, 1, 2, 3, 1, 1};
+static const uint8_t RENDER_DETAIL_MASK[6] = {0, 7, 0, 0, 3, 3};
+static const uint8_t RENDER_DETAIL_MATCH[6] = {0, 0, 0, 0, 0, 0};
+static const uint32_t RENDER_DETAIL_COLOR[6] = {0u, 0xf0fffdf8u, 0xeadc7db4u, 0xeadc7db4u, 0xf08cd2ffu, 0xf0ffebc8u};
+static const uint8_t MAT_LIGHT_PROFILE[TABLE] = {0, 2, 1, 3, 1, 0, 0, 3, 3, 3, 1, 1, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 2, 1, 2, 3, 3, 3, 3, 3, 3, 3, 2, 0, 3, 3, 3, 3, 4, 3, 3, 2, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_LIGHT_TRANSPARENT[TABLE] = {1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_LIGHT_LOSS[TABLE] = {4, 17, 8, 24, 8, 4, 4, 24, 24, 24, 8, 8, 24, 24, 24, 17, 17, 17, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 4, 17, 8, 17, 24, 24, 24, 24, 24, 24, 24, 17, 4, 24, 24, 24, 24, 6, 24, 24, 17, 24, 24, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_FACE_LIT[TABLE] = {0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t NO_PLANT_SPECIES = 255;
+static const int PLANT_SPECIES_COUNT = 8;
+static constexpr bool isPlantSpeciesId(int species) {
+  return species >= 0 && species < PLANT_SPECIES_COUNT;
+}
+static const int PLANT_GROWTH_PROFILE_COUNT = 8;
+static const int PLANT_WORLDGEN_PROFILE_COUNT = 5;
+struct PlantGrowthProfileDef {
+  PlantGrowthProfile profile;
+  PlantWoodGrowthTopology woodTopology;
+  PlantLeafGrowthTopology leafTopology;
+  PlantTrunkGrowthProfile trunkProfile;
+  PlantLeafBurstProfile leafBurst;
+  uint16_t maxWoodBase, maxWoodVariation;
+  uint16_t maxLeafBase, maxLeafVariation, leafStart;
+  uint16_t thickenHeight, wideBaseHeight;
+  bool straight, leaves, variedTree, finishStemFirst;
+  bool extraWood, gravityRecovery;
+  double woodLeafChance, vineBerriesChance;
+  double foliageAlongsideWoodChance;
+  float oppositeChance, wideBaseChance;
+};
+struct PlantWorldgenProfileDef {
+  PlantWorldgenProfile profile;
+  PlantWorldgenTopology topology;
+  uint8_t heightBase, heightVariation;
+  uint8_t horizontalReach, upwardReach;
+};
+static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFILE_COUNT] = {
+{
+  PGR_OAK, PGW_OAK,
+  PGL_OAK, PGT_TREE,
+  PGB_DEFAULT,
+  220, 31,
+  480, 71, 36,
+  23, 8,
+  false, true,
+  false, true,
+  true, false,
+  0.54f,
+  0,
+  0,
+  0.94f, 0.78f
+},
+{
+  PGR_PINE, PGW_PINE,
+  PGL_PINE, PGT_TREE,
+  PGB_PINE,
+  104, 30,
+  230, 81, 5,
+  19, 5,
+  true, true,
+  true, false,
+  true, false,
+  0.44,
+  0,
+  0.38,
+  0.78f, 0.55f
+},
+{
+  PGR_WILLOW, PGW_WILLOW,
+  PGL_WILLOW, PGT_TREE,
+  PGB_DEFAULT,
+  205, 31,
+  240, 61, 5,
+  24, 5,
+  true, true,
+  true, false,
+  true, true,
+  0.44,
+  0,
+  0.38,
+  0.88f, 0.55f
+},
+{
+  PGR_CACTUS, PGW_CACTUS,
+  PGL_GENERIC, PGT_NONE,
+  PGB_DEFAULT,
+  34, 0,
+  105, 0, 6,
+  0, 0,
+  true, false,
+  false, true,
+  true, false,
+  0.54f,
+  0,
+  0,
+  0, 0
+},
+{
+  PGR_MUSHROOM, PGW_GENERIC,
+  PGL_MUSHROOM, PGT_NONE,
+  PGB_DEFAULT,
+  13, 0,
+  28, 0, 11,
+  0, 0,
+  true, true,
+  false, true,
+  true, false,
+  0.54f,
+  0,
+  0,
+  0, 0
+},
+{
+  PGR_BUSH, PGW_GENERIC,
+  PGL_GENERIC, PGT_GENERIC,
+  PGB_DEFAULT,
+  14, 0,
+  38, 0, 3,
+  0, 0,
+  false, true,
+  false, false,
+  true, false,
+  0.54f,
+  0,
+  0,
+  0, 0
+},
+{
+  PGR_VINE, PGW_VINE,
+  PGL_VINE, PGT_NONE,
+  PGB_SINGLE,
+  40, 0,
+  9, 0, 8,
+  0, 0,
+  true, true,
+  false, true,
+  false, false,
+  0.54f,
+  0.22,
+  0,
+  0, 0
+},
+{
+  PGR_STANDARD, PGW_GENERIC,
+  PGL_GENERIC, PGT_GENERIC,
+  PGB_DEFAULT,
+  120, 0,
+  105, 0, 6,
+  0, 0,
+  false, true,
+  false, false,
+  true, false,
+  0.54f,
+  0,
+  0,
+  0, 0
+}
+};
+static constexpr PlantWorldgenProfileDef PLANT_WORLDGEN_PROFILES[PLANT_WORLDGEN_PROFILE_COUNT] = {
+{ PWG_BROADLEAF, PWGT_BROADLEAF, 13, 12, 9, 42 },
+{ PWG_PINE, PWGT_PINE, 23, 13, 10, 42 },
+{ PWG_WILLOW, PWGT_WILLOW, 18, 10, 14, 42 },
+{ PWG_CACTUS, PWGT_CACTUS, 9, 8, 2, 42 },
+{ PWG_BUSH, PWGT_BUSH, 4, 4, 5, 42 }
+};
+static constexpr int PLANT_WORLDGEN_MAX_HORIZONTAL_REACH = 14;
+static constexpr int PLANT_WORLDGEN_MAX_UPWARD_REACH = 42;
+static constexpr PlantGrowthProfile PLANT_GROWTH_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PGR_OAK, PGR_PINE, PGR_WILLOW, PGR_CACTUS, PGR_MUSHROOM, PGR_BUSH, PGR_VINE, PGR_STANDARD};
+static constexpr PlantWorldgenProfile PLANT_WORLDGEN_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PWG_BROADLEAF, PWG_PINE, PWG_WILLOW, PWG_CACTUS, PWG_BROADLEAF, PWG_BUSH, PWG_BROADLEAF, PWG_BROADLEAF};
+static constexpr bool plantGrowthProfilesComplete() {
+  for (int i = 0; i < PLANT_GROWTH_PROFILE_COUNT; i++)
+    if ((int)PLANT_GROWTH_PROFILES[i].profile != i) return false;
+  return true;
+}
+static constexpr bool plantWorldgenProfilesComplete() {
+  for (int i = 0; i < PLANT_WORLDGEN_PROFILE_COUNT; i++)
+    if ((int)PLANT_WORLDGEN_PROFILES[i].profile != i) return false;
+  return true;
+}
+static_assert(plantGrowthProfilesComplete(),
+              "Plant growth profiles must be dense and ordered by stable id");
+static_assert(plantWorldgenProfilesComplete(),
+              "Plant worldgen profiles must be dense and ordered by stable id");
+static inline const PlantGrowthProfileDef& plantGrowthProfileForSpecies(
+    uint8_t species) {
+  return PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFILE_BY_SPECIES[species]];
+}
+static inline const PlantWorldgenProfileDef& plantWorldgenProfileForSpecies(
+    uint8_t species) {
+  return PLANT_WORLDGEN_PROFILES[PLANT_WORLDGEN_PROFILE_BY_SPECIES[species]];
+}
+static const uint8_t PLANT_SEED_MATERIAL[PLANT_SPECIES_COUNT] = {52, 7, 7, 7, 7, 7, 7, 7};
+static const uint8_t PLANT_WOOD_MATERIAL[PLANT_SPECIES_COUNT] = {53, 26, 8, 27, 28, 8, 30, 8};
+static const uint8_t PLANT_LEAF_MATERIAL[PLANT_SPECIES_COUNT] = {54, 44, 45, 9, 29, 46, 40, 9};
+static const uint8_t MAT_PLANT_SPECIES[TABLE] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 3, 4, 4, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 6, 255, 255, 255, 1, 2, 5, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+static const uint8_t MAT_IS_PLANT_SEED[TABLE] = {0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_PALETTE_HIDDEN[TABLE] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Render transparency: 0 = opaque, 1 = invisible. Packed color alpha is ignored.
-static const float    MAT_TRANSPARENCY[TABLE]= {0, 0, 0.42f, 0, 0, 0, 0.62f, 0, 0, 0, 0.32f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.52f, 0, 0.38f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7f, 0, 0, 0, 0, 0.68f, 0.12f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const float    MAT_TRANSPARENCY[TABLE]= {0, 0, 0.42f, 0, 0, 0, 0.62f, 0, 0, 0, 0.32f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.52f, 0, 0.38f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7f, 0, 0, 0, 0, 0.68f, 0.12f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Mining gate: which tool class drops a material + the min tier required.
-static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 3, 0, 2, 2, 2, 1, 1, 1, 1, 3, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 3, 0, 2, 2, 2, 1, 1, 1, 1, 3, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Mining speed percentages: held-class x preferred-class matrix, then held tier.
 static const int TOOL_CLASS_COUNT = 6;
+static const int TOOL_TIER_COUNT = 5;
+static constexpr bool isToolClassId(int toolClass) {
+  return toolClass >= 0 && toolClass < TOOL_CLASS_COUNT;
+}
+static constexpr bool isToolTierId(int toolTier) {
+  return toolTier >= 0 && toolTier < TOOL_TIER_COUNT;
+}
 static const uint8_t  TOOL_CLASS_SPEED[36] = {100, 35, 35, 35, 50, 35, 100, 255, 35, 35, 35, 35, 100, 35, 100, 35, 35, 35, 100, 35, 35, 100, 35, 35, 100, 25, 25, 60, 100, 35, 100, 100, 100, 100, 100, 100};
 static const uint8_t  TOOL_TIER_SPEED[5] = {50, 100, 135, 175, 210};
 static const int MINING_PROGRESS_DIVISOR = 5;
 // Renderer lookup tables.
-static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x6030c8d8u, 0xe8f2f8f8u, 0x66c0c890u, 0xc84a4a52u, 0xc82838ccu, 0xb8424852u, 0xd8fff4e8u, 0xc8643255u, 0xdf96547du, 0xd81e9bffu, 0xc8ffd69bu, 0xc854aa5bu, 0x609bd296u, 0xb42d6340u, 0xa35f963fu, 0xb447824fu, 0xc8342e34u, 0x88ffe3b8u, 0xffd8ffffu, 0xff321022u, 0xc88b8582u, 0xc23e668fu, 0xc22a5487u, 0xa33b7d35u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u};
-static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0, 4, 3, 6, 4, 8, 7, 12, 8, 8, 8, 9, 0, 10, 11, 12, 9, 3, 1, 3, 7, 5, 7, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  MAT_RENDER_ANIM[TABLE] = {0, 0, 4, 0, 5, 1, 2, 0, 0, 0, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 0, 5, 10, 4, 2, 1, 2, 6, 6, 3, 10, 13, 9, 12, 12, 4, 3, 2, 2, 1, 0, 1, 0, 1, 3, 8, 8, 4, 5, 1, 2, 2, 0, 2, 2, 2, 14, 7, 6, 255, 2, 2, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-// Baseline light emission per material (0 = dark); positional sparkle patterns
-// for CRYSTAL/MYCELIUM stay in render.inc (emissionForCell).
-static const uint8_t  MAT_EMISSION[TABLE]   = {0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 58, 112, 98, 95, 0, 0, 0, 0, 0, 0, 18, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x6030c8d8u, 0xe8f2f8f8u, 0x66c0c890u, 0xc84a4a52u, 0xc82838ccu, 0xb8424852u, 0xd8fff4e8u, 0xc8643255u, 0xdf96547du, 0xd81e9bffu, 0xc8ffd69bu, 0xc854aa5bu, 0x609bd296u, 0xb42d6340u, 0xa35f963fu, 0xb447824fu, 0xc8342e34u, 0x88ffe3b8u, 0xffd8ffffu, 0xff321022u, 0xc88b8582u, 0xc23e668fu, 0xc22a5487u, 0xa33b7d35u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u};
+static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0, 4, 3, 6, 4, 8, 7, 12, 8, 8, 8, 9, 0, 10, 11, 12, 9, 3, 1, 3, 7, 5, 7, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  MAT_RENDER_ANIM[TABLE] = {0, 0, 4, 0, 5, 1, 2, 0, 0, 0, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 0, 5, 10, 4, 2, 1, 2, 6, 6, 3, 10, 13, 9, 12, 12, 4, 3, 2, 2, 1, 0, 1, 0, 1, 3, 8, 8, 4, 5, 1, 2, 2, 0, 2, 2, 2, 14, 7, 6, 255, 2, 2, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// Baseline light emission per material (0 = dark); MAT_EMISSION_PROFILE selects
+// any positional emission pattern in Renderer::emissionForCell.
+static const uint8_t  MAT_EMISSION[TABLE]   = {0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 58, 112, 98, 95, 0, 0, 0, 0, 0, 0, 18, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint32_t PACKED_FIRE = 0xb8226cffu;
 static const uint32_t PACKED_FIRE_HOT = 0x9e50cdffu;
 static const uint32_t PACKED_LAVA_WARM = 0xc81870ffu;

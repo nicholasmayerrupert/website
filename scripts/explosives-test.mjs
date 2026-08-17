@@ -7,7 +7,7 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 // Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
-import { KIND, MATERIALS, MAT } from '../src/sand/materials.js';
+import { KIND, MATERIAL_BY_ID, MAT } from '../src/sand/materials.js';
 import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -16,7 +16,7 @@ await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false });
 const { check, done } = makeChecker('explosives (TNT)');
 const placeFixture = (engine, cx, cy, radius, material, layer = 0) => {
-  if (MATERIALS[material]?.kind === KIND.COMPONENT) {
+  if (MATERIAL_BY_ID[material]?.kind === KIND.COMPONENT) {
     return layer
       ? engine.paintDiscLayer(layer, cx, cy, radius, material, false)
       : engine.paintDisc(cx, cy, radius, material, false);
@@ -142,6 +142,21 @@ function blastDamagesMaterial(name) {
   check(`hard block carves a crater (${hard.crater} cells)`, hard.crater > 0);
   // the headline rule: easier-to-mine (lower durability) blows up from farther out
   check(`soft block blows up MORE than hard (${soft.crater} > ${hard.crater})`, soft.crater > hard.crater * 1.5);
+}
+
+// --- blast cuts clear every registered phase of cell-correlated state ---
+{
+  const cols = 64, rows = 64, cx = 32, cy = 32;
+  const e = createEngineWasm({
+    cols, rows, worldSeed: 123, sinksOn: false, infinite: false,
+  });
+  const x = cx, y = 13, cell = y * cols + x;
+  e.paintDisc(x, y, 0, MAT.WATER, true);
+  e._setMotionSentinel(0, cell, 0x31415926);
+  e._detonateTnt(cx, cy);
+  check('blast-cut loose cells clear every persistent channel in both phases',
+    e.getGrid()[cell] === MAT.EMPTY && e._motionCellZero(0, cell));
+  e.destroy();
 }
 
 // --- material-class damage coverage: broad blast gate, storage-aware cleanup ---
@@ -734,12 +749,12 @@ function blastDamagesMaterial(name) {
     for (let k = 0; k < fgGrid.length; k++) {
       const x = k % C;
       if (fgOwners[k] === id) {
-        const cellMass = MATERIALS[fgGrid[k]].density;
+        const cellMass = MATERIAL_BY_ID[fgGrid[k]].density;
         weightedX += (x + 0.5) * cellMass;
         mass += cellMass;
       }
       if (bgOwners[k] === id) {
-        const cellMass = MATERIALS[bgGrid[k]].density;
+        const cellMass = MATERIAL_BY_ID[bgGrid[k]].density;
         weightedX += (x + 0.5) * cellMass;
         mass += cellMass;
       }

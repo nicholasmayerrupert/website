@@ -2,6 +2,98 @@
 // Per-layer grids, dirty state, components, bodies, world stores, and rendering
 // buffers. Engine owns foreground and background instances.
 
+template <class T>
+struct PingPongCellState {
+  static_assert(std::is_trivially_copyable<T>::value,
+                "persistent cell state must support contiguous copy/shift");
+  std::vector<T> phaseA, phaseB;
+  T* current = nullptr;
+  T* next = nullptr;
+  T emptyValue{};
+
+  void allocate(size_t count, T empty) {
+    emptyValue = empty;
+    phaseA.assign(count, empty);
+    phaseB.assign(count, empty);
+    current = phaseA.data();
+    next = phaseB.data();
+  }
+  void disable(T empty) {
+    emptyValue = empty;
+    phaseA.clear(); phaseB.clear();
+    current = next = nullptr;
+  }
+  void swapBuffers() { std::swap(current, next); }
+  void clear() {
+    std::fill(phaseA.begin(), phaseA.end(), emptyValue);
+    std::fill(phaseB.begin(), phaseB.end(), emptyValue);
+  }
+  void clearSpan(size_t offset, size_t count) {
+    if (!current || offset > phaseA.size() || count > phaseA.size() - offset) return;
+    std::fill(current + offset, current + offset + count, emptyValue);
+    std::fill(next + offset, next + offset + count, emptyValue);
+  }
+  void copyCurrentSpan(size_t offset, size_t count, T* output) const {
+    if (!current || !output || offset > phaseA.size() || count > phaseA.size() - offset) return;
+    std::memcpy(output, current + offset, count * sizeof(T));
+  }
+  void restoreSpan(size_t offset, size_t count, const T* stored) {
+    if (!current || offset > phaseA.size() || count > phaseA.size() - offset) return;
+    if (stored) {
+      std::memcpy(current + offset, stored, count * sizeof(T));
+      std::memcpy(next + offset, stored, count * sizeof(T));
+    } else {
+      std::fill(current + offset, current + offset + count, emptyValue);
+      std::fill(next + offset, next + offset + count, emptyValue);
+    }
+  }
+  bool layoutValid(size_t count, bool currentIsPhaseA) const {
+    return phaseA.size() == count && phaseB.size() == count
+        && current == (currentIsPhaseA ? phaseA.data() : phaseB.data())
+        && next == (currentIsPhaseA ? phaseB.data() : phaseA.data());
+  }
+  bool disabled() const {
+    return phaseA.empty() && phaseB.empty() && current == nullptr && next == nullptr;
+  }
+  void release() {
+    std::vector<T>().swap(phaseA); std::vector<T>().swap(phaseB);
+    current = next = nullptr;
+  }
+};
+
+enum PersistentCellOperation : uint8_t {
+  PCSO_STATIONARY = 1u << 0,
+  PCSO_MOVE = 1u << 1,
+  PCSO_SWAP = 1u << 2,
+  PCSO_CROSS_LAYER = 1u << 3,
+  PCSO_FORCE_PARK = 1u << 4,
+  PCSO_BODY_DISPLACE = 1u << 5,
+  PCSO_BODY_MOTION = 1u << 6,
+  PCSO_ALL = PCSO_STATIONARY | PCSO_MOVE | PCSO_SWAP | PCSO_CROSS_LAYER
+    | PCSO_FORCE_PARK | PCSO_BODY_DISPLACE | PCSO_BODY_MOTION,
+};
+
+// One profile entry declares a loose-cell side channel's value type, empty
+// value, streamed codec, material predicate, and motion policy. Component and
+// body state belongs to their topology records. Loose-cell lifecycle and motion
+// paths expand this same list at compile time.
+#define SAND_PERSISTENT_CELL_CHANNELS(X) \
+  X(fallSpeed, uint8_t, 0, fallSpeedStore, encodeTile, decodeTile, persistentLooseState, PCSO_CROSS_LAYER) \
+  X(liquidVel, uint32_t, 0, liquidVelocityStore, encodeVelocityTile, decodeVelocityTile, persistentLiquidState, PCSO_STATIONARY | PCSO_MOVE | PCSO_SWAP | PCSO_CROSS_LAYER | PCSO_BODY_DISPLACE)
+
+#define SAND_VALIDATE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+  static_assert(std::is_trivially_copyable<type>::value, #name " state must be trivially copyable"); \
+  static_assert(((operations) & ~PCSO_ALL) == 0, #name " has an unknown motion operation");
+SAND_PERSISTENT_CELL_CHANNELS(SAND_VALIDATE_CELL_CHANNEL)
+#undef SAND_VALIDATE_CELL_CHANNEL
+
+struct PersistentCellSnapshot {
+#define SAND_DECLARE_CELL_SNAPSHOT(name, type, empty, store, encode, decode, accepts, operations) \
+  type name = (type)(empty);
+  SAND_PERSISTENT_CELL_CHANNELS(SAND_DECLARE_CELL_SNAPSHOT)
+#undef SAND_DECLARE_CELL_SNAPSHOT
+};
+
 struct Layer {
   struct StoredFuse {
     int wx = 0, wy = 0, ticks = 0;
@@ -11,15 +103,14 @@ struct Layer {
   std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
   // Per-cell downward momentum for powders and liquids. These buffers swap with
   // grid/next, so a loose cell carries its fall speed across world ticks.
-  std::vector<uint8_t> fallSpeedA, fallSpeedB;
-  uint8_t* fallSpeed = nullptr;
-  uint8_t* nextFallSpeed = nullptr;
   // Packed cell-centered liquid velocity used by the rigid/fluid pressure
   // solve. It moves with liquid cells and remains independent of the cellular
   // automaton's integer fall distance above.
-  std::vector<uint32_t> liquidVelA, liquidVelB;
-  uint32_t* liquidVel = nullptr;
-  uint32_t* nextLiquidVel = nullptr;
+#define SAND_DECLARE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+  PingPongCellState<type> name; \
+  std::unordered_map<int64_t, std::vector<type>> store;
+  SAND_PERSISTENT_CELL_CHANNELS(SAND_DECLARE_CELL_CHANNEL)
+#undef SAND_DECLARE_CELL_CHANNEL
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
@@ -159,8 +250,8 @@ struct Layer {
   // One-shot wake probe retained across the grounding pass, which consumes the
   // dirty flags that reported a possible change beneath a sleeping body.
   bool sleepingBodySupportDirty = false;
-  // lit static TNT cells counting down to detonation (cell -> ticksLeft). Body TNT
-  // uses Body::fuseTicks instead, since a body's cells move. See explosives.inc.
+  // Lit static fuse-profile cells count down here (cell -> ticksLeft); moving
+  // bodies keep their countdown in Body::fuseTicks.
   std::unordered_map<int, int> pendingDetonations;
   // worldgen / streaming (per-layer terrain + chunk store)
   bool infinite = false;
@@ -175,8 +266,6 @@ struct Layer {
   // Payloads use compact RLE when it beats the raw CHUNK*CHUNK bytes.
   std::unordered_map<int64_t, std::vector<uint8_t>> tileStore;
   std::unordered_map<int64_t, std::vector<uint8_t>> prefetchStore;
-  std::unordered_map<int64_t, std::vector<uint8_t>> fallSpeedStore;
-  std::unordered_map<int64_t, std::vector<uint32_t>> liquidVelocityStore;
   std::unordered_map<int64_t, std::vector<StoredCompFragment>> componentStore;
   std::unordered_map<int, StoredCompState> componentStateStore;
   std::unordered_map<int, int> componentFragmentRefs;
@@ -186,6 +275,129 @@ struct Layer {
   std::unordered_map<int64_t, std::vector<StoredFuse>> fuseStore;
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;
+
+  // The material grid and motion state are one ping-pong unit. Keeping their
+  // phase change and reset operations here prevents a newly-added side buffer
+  // from being omitted at a swap, network replacement, or streamed restore.
+  void swapSimulationBuffers() {
+    std::swap(grid, next);
+#define SAND_SWAP_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.swapBuffers();
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_SWAP_CELL_CHANNEL)
+#undef SAND_SWAP_CELL_CHANNEL
+  }
+
+  void clearMotionState() {
+#define SAND_CLEAR_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.clear();
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_CELL_CHANNEL)
+#undef SAND_CLEAR_CELL_CHANNEL
+  }
+
+  void clearMotionSpan(size_t offset, size_t count) {
+    if (offset >= gridA.size()) return;
+    count = std::min(count, gridA.size() - offset);
+#define SAND_CLEAR_CELL_SPAN(name, type, empty, store, encode, decode, accepts, operations) name.clearSpan(offset, count);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_CELL_SPAN)
+#undef SAND_CLEAR_CELL_SPAN
+  }
+
+  // A vacated topology raster releases its material, body ownership, and every
+  // registered cell-state phase as one operation. Component membership must
+  // already be absent at the call site.
+  void clearVacatedCellPhases(size_t index) {
+    if (!grid || !next || index >= gridA.size()) return;
+    grid[index] = next[index] = EMPTY;
+#define SAND_CLEAR_VACATED_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (name.current) { \
+      name.current[index] = (type)(empty); \
+      name.next[index] = (type)(empty); \
+    }
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_VACATED_CELL_CHANNEL)
+#undef SAND_CLEAR_VACATED_CELL_CHANNEL
+    if (index < bodyOwner.size()) bodyOwner[index] = -1;
+  }
+
+  template <class Shift>
+  void shiftPersistentCellState(Shift&& shift) {
+    shift(grid, (uint8_t)EMPTY); shift(next, (uint8_t)EMPTY);
+#define SAND_SHIFT_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    shift(name.current, name.emptyValue); shift(name.next, name.emptyValue);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_SHIFT_CELL_CHANNEL)
+#undef SAND_SHIFT_CELL_CHANNEL
+    shift(bodyOwner.data(), (int32_t)-1);
+  }
+
+  bool cellBufferLayoutValid(int cols, int rows,
+                             int chunkCols, int chunkRows) const {
+    const size_t n = (size_t)cols * rows;
+    const size_t chunks = (size_t)chunkCols * chunkRows;
+    if (gridA.size() != n || grid == nullptr || dirtyRender.size() != chunks
+        || rowMarkSpans.size() != (size_t)rows
+        || simOnlyRowMarkSpans.size() != (size_t)rows)
+      return false;
+    const bool renders = storageRole != ESR_AUTHORITY;
+    if ((light.size() == n) != renders || (lightBase.size() == n) != renders
+        || (skyLight.size() == n) != renders
+        || (skyTopInput.size() == (size_t)cols) != renders
+        || (skyDownValue.size() == (size_t)cols) != renders
+        || (skyDownDepth.size() == (size_t)cols) != renders
+        || (renderPixels.size() == n * 4) != renders)
+      return false;
+    if (storageRole == ESR_PRESENTATION) {
+      return gridB.empty() && grid == gridA.data() && next == grid
+#define SAND_DISABLED_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+          && name.disabled()
+          SAND_PERSISTENT_CELL_CHANNELS(SAND_DISABLED_CELL_CHANNEL)
+#undef SAND_DISABLED_CELL_CHANNEL
+          ;
+    }
+    const bool phaseA = grid == gridA.data();
+    const bool phaseB = grid == gridB.data();
+    if ((!phaseA && !phaseB) || next != (phaseA ? gridB.data() : gridA.data())
+#define SAND_INVALID_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+        || !name.layoutValid(n, phaseA)
+        SAND_PERSISTENT_CELL_CHANNELS(SAND_INVALID_CELL_CHANNEL)
+#undef SAND_INVALID_CELL_CHANNEL
+        )
+      return false;
+    return gridB.size() == n && chunkStamp.size() == chunks
+        && activeRowSpans.size() == (size_t)rows
+        && vacatedStamp.size() == n && assemblyWakeStamp.size() == n
+        && blastGasStamp.size() == n && groundedCell.size() == n
+        && cellComp.size() == n && groundStack.size() == n
+        && seenStamp.size() == n && rigidSpillFootprint.size() == n
+        && rigidSpillReserved.size() == n && reactionFlags.size() == n
+        && reactionSteam.size() == n && reactionFires.size() == n
+        && reactionIgnite.size() == n && mineDamage.size() == n
+        && bodyOwner.size() == n && looseDirtyCol.size() == (size_t)cols;
+  }
+
+  template <class T>
+  static void releaseBuffer(T& buffer) {
+    T().swap(buffer);
+  }
+
+  void releaseCellBufferCapacity() {
+    releaseBuffer(gridA); releaseBuffer(gridB);
+#define SAND_RELEASE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.release();
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_RELEASE_CELL_CHANNEL)
+#undef SAND_RELEASE_CELL_CHANNEL
+    grid = next = nullptr;
+    releaseBuffer(dirtyRender); releaseBuffer(dirtyRects);
+    releaseBuffer(rowMarkSpans); releaseBuffer(simOnlyRowMarkSpans);
+    releaseBuffer(chunkStamp); releaseBuffer(activeRowSpans);
+    releaseBuffer(vacatedStamp); releaseBuffer(assemblyWakeStamp);
+    releaseBuffer(blastGasStamp); releaseBuffer(groundedCell);
+    releaseBuffer(cellComp); releaseBuffer(groundStack);
+    releaseBuffer(seenStamp); releaseBuffer(rigidSpillFootprint);
+    releaseBuffer(rigidSpillReserved); releaseBuffer(reactionFlags);
+    releaseBuffer(reactionSteam); releaseBuffer(reactionFires);
+    releaseBuffer(reactionIgnite); releaseBuffer(mineDamage);
+    releaseBuffer(light); releaseBuffer(lightBase); releaseBuffer(skyLight);
+    releaseBuffer(skyTopInput); releaseBuffer(skyDownValue);
+    releaseBuffer(skyDownDepth); releaseBuffer(looseDirtyCol);
+    releaseBuffer(groundRigidBase); releaseBuffer(bodyOwner);
+    releaseBuffer(renderPixels);
+  }
 
   void reserveSeenGenerations(size_t count) {
     if (count <= (size_t)(INT32_MAX - seenGen)) return;
@@ -222,9 +434,9 @@ struct Layer {
     // presentation code never swaps or writes the cellular next buffer.
     if (role == ESR_PRESENTATION) {
       gridB.clear(); next = grid;
-      fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
-      liquidVelA.clear(); liquidVelB.clear();
-      liquidVel = nextLiquidVel = nullptr;
+#define SAND_DISABLE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.disable((type)(empty));
+      SAND_PERSISTENT_CELL_CHANNELS(SAND_DISABLE_CELL_CHANNEL)
+#undef SAND_DISABLE_CELL_CHANNEL
       light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
       skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
       renderPixels.assign(n * 4, 0);
@@ -232,10 +444,9 @@ struct Layer {
     }
 
     gridB.assign(n, EMPTY); next = gridB.data();
-    fallSpeedA.assign(n, 0); fallSpeedB.assign(n, 0);
-    fallSpeed = fallSpeedA.data(); nextFallSpeed = fallSpeedB.data();
-    liquidVelA.assign(n, 0); liquidVelB.assign(n, 0);
-    liquidVel = liquidVelA.data(); nextLiquidVel = liquidVelB.data();
+#define SAND_ALLOCATE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.allocate(n, (type)(empty));
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_ALLOCATE_CELL_CHANNEL)
+#undef SAND_ALLOCATE_CELL_CHANNEL
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowSpans.clear(); activeRowSpans.resize(rows);
     vacatedStamp.assign(n, -1);
@@ -268,25 +479,15 @@ struct Layer {
     if (newN < gridA.size()) {
       // Release capacity after shrink; ordinary growth still reuses allocations.
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
-      release(gridA); release(gridB); release(fallSpeedA); release(fallSpeedB);
-      release(liquidVelA); release(liquidVelB);
-      release(dirtyRender); release(dirtyRects);
-      release(rowMarkSpans); release(simOnlyRowMarkSpans); release(chunkStamp);
-      release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp);
-      release(groundedCell); release(cellComp); release(groundStack);
-      release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
+      releaseCellBufferCapacity();
       release(prevCompCells); release(curCompCells); release(prevBodyCells); release(curBodyCells);
       release(bodyCells); release(passiveBodyCells);
-      release(reactionFlags); release(reactionSteam); release(reactionFires); release(reactionIgnite);
-      release(mineDamage); release(light); release(lightBase); release(skyLight);
-      release(skyTopInput); release(skyDownValue); release(skyDownDepth);
       release(components);
       release(growingPlantComponents); release(myceliumComponents); release(iceComponents);
       release(mobileComponents);
       release(deferredSplitIds);
       release(componentIndexPatches);
-      release(looseDirtyCol); release(groundRigidBase);
-      release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
+      release(groundBaseFlags); release(crossBondedComp);
       release(compAdjPairs);
     }
     alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
@@ -336,9 +537,9 @@ struct Layer {
       }
     }
     gridB.clear(); grid = gridA.data(); next = grid;
-    fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
-    liquidVelA.clear(); liquidVelB.clear();
-    liquidVel = nextLiquidVel = nullptr;
+#define SAND_DISABLE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.disable((type)(empty));
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_DISABLE_CELL_CHANNEL)
+#undef SAND_DISABLE_CELL_CHANNEL
     size_t n = (size_t)newCols * newRows;
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };

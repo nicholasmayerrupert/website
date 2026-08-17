@@ -4,7 +4,7 @@
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { KIND, MATERIALS, MAT } from '../src/sand/materials.js';
+import { KIND, MATERIAL_BY_ID, MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 132;
@@ -17,7 +17,7 @@ const CUT_Y = 105;
 await initSandWasm();
 const createEngineWasm = (options) => attachTestHooks(createEngineWasmRaw(options));
 const { check, done } = makeChecker('rigid detachment matrix');
-const isComponentMaterial = (material) => MATERIALS[material]?.kind === KIND.COMPONENT;
+const isComponentMaterial = (material) => MATERIAL_BY_ID[material]?.kind === KIND.COMPONENT;
 
 const CASES = [
   { name: 'thin neck', supports: [{ x: 66, width: 1 }] },

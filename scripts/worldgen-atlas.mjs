@@ -4,7 +4,10 @@
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  initSandWasm, createEngineWasm,
+  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS,
+} from '../src/sand/wasmBridge/engineFactory.js';
 
 const output = resolve(process.argv[2] || 'bench/worldgen-atlas.png');
 const seed = Number(process.argv[3] || 0xBED) >>> 0;
@@ -14,25 +17,10 @@ const X_SCALE = 3, Y_SCALE = 2;
 const PANE_HEIGHT = 720, GAP = 8, HEIGHT = PANE_HEIGHT * 2 + GAP;
 const SEA_LEVEL = 18, DEEP_BLEND_TOP = 624, DEEP_BLEND_BOTTOM = 848;
 
-const biomeColors = [
-  [92, 151, 76],   // plains
-  [46, 112, 64],   // forest
-  [202, 164, 91],  // desert
-  [120, 124, 132], // rocky
-  [202, 218, 221], // tundra
-  [35, 132, 69],   // jungle
-  [73, 105, 74],   // swamp
-];
-const caveColors = [
-  [72, 75, 84],    // default
-  [79, 184, 205],  // crystal
-  [143, 74, 143],  // mushroom
-  [58, 137, 80],   // lush
-  [192, 70, 42],   // deep magma
-  [87, 169, 207],  // deep geode
-  [183, 151, 105], // deep fossil
-  [104, 62, 133],  // deep void
-];
+const parseColor = (value) => [1, 3, 5].map((offset) =>
+  Number.parseInt(value.slice(offset, offset + 2), 16));
+const biomeColors = SURFACE_BIOME_DEFS.map((def) => parseColor(def.atlasColor));
+const caveColors = CAVE_BIOME_DEFS.map((def) => parseColor(def.atlasColor));
 
 function mix(a, b, t) {
   return [

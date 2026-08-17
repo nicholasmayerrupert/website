@@ -110,11 +110,15 @@
   }
   for (FluidNode& node : fluidNodes) {
     uint32_t velocity = E.packedLiquidVelocity(node.vx, node.vy);
-    if (node.layer->liquidVel[node.cell] != velocity
-        || node.layer->nextLiquidVel[node.cell] != velocity)
+    uint32_t currentVelocity =
+      E.persistentLiquidState(node.layer->grid[node.cell]) ? velocity : 0;
+    uint32_t nextVelocity =
+      E.persistentLiquidState(node.layer->next[node.cell]) ? velocity : 0;
+    if (node.layer->liquidVel.current[node.cell] != currentVelocity
+        || node.layer->liquidVel.next[node.cell] != nextVelocity)
       E.markWorldTileDirty(node.layer, node.cell);
-    node.layer->liquidVel[node.cell] = velocity;
-    node.layer->nextLiquidVel[node.cell] = velocity;
+    node.layer->liquidVel.current[node.cell] = currentVelocity;
+    node.layer->liquidVel.next[node.cell] = nextVelocity;
     int layer = node.layer == &E.bg ? 1 : 0;
     fluidPressureCache[layer][node.cell] = (float)node.pressure;
   }

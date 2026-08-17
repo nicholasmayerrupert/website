@@ -144,7 +144,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-Worldgen version 3 is canonical in absolute coordinates: viewport size changes
+World generation version 4 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select surface biomes; narrow deterministic ecotones blend
@@ -182,9 +182,11 @@ unlock progressively deeper.
 `WorldContextSystem` exposes the semantic plan behind generated terrain at any
 absolute coordinate: surface/cave biome, surface-relative depth, composable area
 tags, stable feature identity and bounds, parent feature, and nested site role.
-Worldgen and context queries share the village, child-building, mine, and
-off-world-facility plan functions, so spawning can target a settlement, home,
-mine gallery, or facility without inspecting mutable cell materials. These
+Worldgen and context queries share the plans for settlements, mines, ruins,
+deep monuments, formations, and facilities, so spawning and tools can target a
+site without inspecting mutable cell materials. One compile-time registry row
+owns each family's placement reach, profile eligibility, stage, write/layer
+policy, exclusions, priority, semantics, and executable callbacks. These
 records are regenerated from the seed and version rather than added to the
 streaming store. `npm run test:world-context` covers feature nesting, spawn
 affinity, viewport independence, and streaming stability. See
@@ -199,7 +201,9 @@ connectivity, progression, reachability, and background-solidity checks;
 archives, large player-clear mines, and cross-layer rail alignment. `npm run test:prefetch`
 covers deterministic restoration and storage bounds; `npm run test:deep-world`
 flood-tests normal/deep connectivity and checks deep strata, biome diversity, lava
-seas, monuments, and background solidity. `npm run worldgen:atlas`
+seas, monuments, and background solidity. `scripts/worldgen-version-test.mjs`
+locks representative all-planet raster and semantic output to the explicit
+world-generation version. `npm run worldgen:atlas`
 writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders
 their actual composited cell grids to `bench/structure-atlas.png`.
@@ -240,9 +244,14 @@ more of the world.
 - `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world
   structure stamping under `worldgen_generation.inc`; loaded-window persistence,
   prefetch, shifting, and resize live separately in `world_streaming.inc`.
+- `cpp/engine/worldgen_features.def`: one authoritative registry row per
+  generated feature family, including dispatch, reach, composition, and context.
 - `cpp/engine/abi.inc`: exported C ABI.
 - `materials.schema.json`: material identity and generated behavior/render tables.
-- `abi.schema.json`: packed ABI layouts and shared enums.
+- `biomes.schema.json`: stable biome IDs, selection policy, and generated biome
+  behavior descriptors.
+- `abi.schema.json`: packed ABI layouts, stable planet descriptors, shared
+  enums, and actor/inventory wire codecs.
 - `wasmBridge/engineFactory.js`: production JS adapter for the WASM ABI.
 - `wasmBridge/testHooks.js`: test-only ABI adapters.
 - `game/createSandGame.js`: browser runtime and presentation loop.
@@ -263,7 +272,7 @@ performance-sensitive systems.
 
 ## Building generated sources
 
-Material or ABI schema changes:
+Material, biome, or ABI schema changes:
 
 ```sh
 npm run generate
@@ -281,6 +290,109 @@ that single SIMD package without a scalar fallback. `npm run sand:doctor`
 checks its provenance and generated-source freshness. `npm run build:sand -- --dev`
 enables the post-step component/body invariant validator. `wasm/README.md` has
 the macOS, Linux, Windows, and WSL Emscripten setup instructions.
+
+## Engine extension contracts
+
+Subsystem implementations are called through their owning `Engine` member
+(`tools`, `inv`, `comps`, `rigid`, and so on). Composition fragments only
+declare owned subsystem members; they do not mirror methods onto `Engine`.
+`scripts/check-sand-contracts.mjs` rejects forwarding façades. `Engine` methods
+are reserved for operations that coordinate multiple subsystems.
+
+Temporary layer selection uses `Engine::ActiveLayerScope`. Raw `useLayer()` is
+limited to the top-level step phase transitions, and source checks reject direct
+ambient-layer assignments elsewhere. ABI operations leave the foreground active.
+
+Persistent per-cell ping-pong state is declared once in
+`SAND_PERSISTENT_CELL_CHANNELS` in `cpp/engine/layer.hpp`. Each row names the
+channel, value type and empty value, streamed store and encode/decode functions,
+material predicate, and whitelist of `PCSO_*` motion operations. Allocation,
+swapping, clearing, network replacement, streaming, resizing, validation, and
+release all expand the same list. A motion operation outside the whitelist
+resets the channel to its empty value instead of carrying stale state. The row
+owns storage and transport; the subsystem that computes or consumes the value
+still owns that behavior. The engine-contract suite seeds every registered
+channel and both phases, then verifies horizontal/vertical stream restore,
+resize preservation, network clearing, and motion-policy resets.
+
+ABI layouts, callable exports, network actor records, inventory stacks, and
+player aliases live in `abi.schema.json`. The ABI generator validates every C++
+export against its single JavaScript `cwrap`. Its runtime fingerprint includes
+the ABI, material, and biome contracts; the JOIN handshake checks the broader
+network-catalogue fingerprint and explicit protocol version. The fingerprints
+are derived; the generator never changes `abiVersion`. Externally visible ABI
+changes require a manual ABI version bump, while wire-envelope changes require
+a protocol version bump.
+
+Raster generation and semantic world context share the explicit
+`WORLD_GENERATION_VERSION` in `cpp/engine/terrain.hpp`. Any intentional change
+to generated cells, feature containment, or semantic identity increments that
+version and adds the matching `GOLDEN_BY_VERSION` entry in
+`scripts/worldgen-version-test.mjs` after the output has been inspected.
+
+The extension path for each registry is explicit:
+
+| Extension | Authoritative edit | Generated/runtime path | Focused verification |
+| --- | --- | --- | --- |
+| Basic material using existing policies | One stable-ID `materials[]` record in `materials.schema.json`, selecting its class, `kind`, and existing movement, habitat, ambience, render, hazard, and trait profiles | `kind` derives placement; `materials.generated.{js,hpp}` supplies sparse validity and indexed behavior tables | `node scripts/run-tests.mjs --only mat-generator` and `node scripts/run-tests.mjs --only mat-flags` |
+| Declarative reaction | One `SimpleReactionDescriptor` in `SIMPLE_REACTION_CATALOGUE` | Indexed source buckets apply exact-ID or trait matching, cadence, probability, layer policy, products, topology repair, and retry liveness | `node scripts/run-tests.mjs --only mat-behavior` and the relevant chemistry suite by manifest key |
+| Complex reaction | One `ReactionPassDescriptor` plus one uniformly shaped handler in `reactions.hpp` / `reactions_impl.inc` | The descriptor owns phase, priority, source selectors, cadence, layer policy, retry matching, and its callable; the handler owns only specialized topology or sequencing | `node scripts/run-tests.mjs --only acid-stuck`, `node scripts/run-tests.mjs --only structural-stress`, and a handler-specific suite |
+| Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, network replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
+| Plant species using existing policies | One `plantSpecies` record plus any seed/wood/leaf material identity records it references, all in `materials.schema.json`; select reusable growth and worldgen profiles | Generated material/species tables drive growth, worldgen, crafting, and palette metadata | `node scripts/run-tests.mjs --only mat-generator`, `node scripts/run-tests.mjs --only flora`, and `node scripts/run-tests.mjs --only biomes` |
+| Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its named palette/sprite asset in `glpresenter_impl.inc` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
+| Biome | Append one stable-ID surface or cave record in `biomes.schema.json`; climate is optional for profile-only biomes, surface rows declare structure eligibility, and offworld records inherit `offworldMaterialDefaults`; `cave_profile_handlers.def` composes selectors from `cave_handler_policies.def`; manually bump `abiVersion` because public biome enums import these IDs | Generated C++/JS descriptors own selection, terrain, flora, hazards, structure-material constraints, policy selectors, and ABI enum imports | `node scripts/run-tests.mjs --only biome-generator`, `node scripts/run-tests.mjs --only biomes`, and the relevant prefetch/seam suite; include `--only worldgen-version` when output changes |
+| Planet using existing profiles | One explicit-ID `PlanetId.descriptors` record in `abi.schema.json`, selecting compatible generation/off-world-material and presentation profiles plus gameplay capabilities | Generated C++/JS descriptors own identity, gravity, load-bearing facility materials, capability flags, and lookup helpers | `node scripts/run-tests.mjs --only planet-selection`, `node scripts/run-tests.mjs --only planet-gravity`, and `node scripts/run-tests.mjs --only worldgen-version` |
+| Generated feature/site family | One `worldgen_features.def` row plus its localized plan/query/overlap/stamp callbacks; add stable semantic enums in `abi.schema.json` only for a public identity | The row generates the family enum, callback declarations, dispatch, reach, composition, and context registration | `node scripts/run-tests.mjs --only world-context`, `node scripts/run-tests.mjs --only structures`, and `node scripts/run-tests.mjs --only worldgen-version` |
+| Generation stage | One dense-ID `worldgen_stages.def` row in execution order plus a stage callback in `world_context_impl.inc`, or the shared generated-feature callback; insertion/reordering is a worldgen-version change | The row owns profile applicability, order, feature-stage selection, overscan, and dispatch | `node scripts/run-tests.mjs --only worldgen-quality`, `node scripts/run-tests.mjs --only worldgen-version`, and the affected domain suite |
+| Facility or ruin archetype | One dense-ID `worldgen_structure_archetypes.def` row plus its local stamp lambda in `worldgen_offworld.inc` or `worldgen_surface_structures.inc`; facility rows declare above-deck reach and ruin profile chances are increasing cumulative cutoffs | The row generates identity, selection metadata, buffer capacities, reach, and stamp dispatch; other structure families use `worldgen_features.def` | `node scripts/run-tests.mjs --only structures` and `node scripts/run-tests.mjs --only worldgen-version` |
+| Replicated or ABI field | Add the field to every representation that carries it in `abi.schema.json`: packed snapshot struct, object wire, and `glPlayerExt` are independent; `inventoryStack` alone derives from `inventorySlot` | The generator emits offsets, writers, codecs, and projectors for each declared representation; the owning subsystem supplies the value and presentation consumers read it | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only abi-snapshot-writers`, `node scripts/run-tests.mjs --only net-protocol`, and the relevant round-trip suite |
+
+After an authoritative edit, refresh and validate generated sources before the
+engine build:
+
+```sh
+npm run generate
+npm run generate:check
+node scripts/check-sand-contracts.mjs
+npm run build:sand -- --dev
+```
+
+Run the focused tests from the table, then the required suite. Simulation or
+render changes also compare the relevant committed benchmark; behavior-neutral
+refactors retain the deterministic checksum:
+
+```sh
+npm test
+node scripts/bench-sand.mjs --compare bench/baseline.json
+node scripts/bench-pan.mjs --compare bench/pan-baseline.json       # presentation
+node scripts/bench-actor-rigid.mjs --compare bench/actor-rigid-baseline.json
+```
+
+Every `scripts/run-tests.mjs --only ...` command performs generated-source,
+engine-contract, and committed-WASM provenance checks before its suite. When a
+confirmed behavior or performance change intentionally makes a benchmark
+baseline stale, run that benchmark with `--update` and the same baseline path,
+then immediately rerun `--compare`. Do not update a baseline to hide an
+unexplained regression.
+
+Adding a planet that reuses existing policies is one explicit-ID descriptor in
+`PlanetId.descriptors`. A distinct generation or presentation behavior is a new
+named profile: define the profile identity in `abi.schema.json`, implement it in
+the owning terrain or presentation subsystem, and add its biome-selection policy
+to `biomes.schema.json` when applicable. Appending a public planet increments
+`abiVersion`; any resulting generated-world change also increments
+`WORLD_GENERATION_VERSION` and adds its compatibility golden. Both generators
+reject non-dense IDs and unknown biome/material/profile references.
+
+Adding a biome is one stable-ID record in `biomes.schema.json`. A surface record
+owns its ordered climate clauses, regional-profile membership, terrain skin and
+soil, flora, structure materials, and named off-world material styles. A cave
+record owns its shallow/deep profile segments, hazards, wall dressing, veins,
+and monument materials. `npm run generate` emits the C++ and JavaScript
+catalogues; descriptor reachability and all-planet generation tests cover every
+record. Appending a public biome ID increments `abiVersion`. Increment the
+world-generation version and add its compatibility golden whenever the record
+changes generated cells or semantic biome output.
 
 ## Materials and simulation
 
@@ -613,8 +725,9 @@ Mars > Moon fall ordering. The campaign browser suite covers Kestrel and all
 three deployment configurations.
 
 `scripts/test-manifest.mjs` is the source of truth for executable test entries.
-The runner checks that every `*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is
-declared before running suites. Headless tests use two workers; browser suites
+Before running a suite, the runner checks generated material/ABI/biome sources and
+the committed WASM provenance without rebuilding. It also checks that every
+`*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is declared. Headless tests use two workers; browser suites
 stay serial because their real-time rendering checks are contention-sensitive.
 CPU/memory-heavy headless suites and every browser suite declare exclusive
 concurrency in the manifest, so the runner drains active jobs before starting
@@ -645,9 +758,35 @@ commands.
 
 ## Adding a material
 
+Choose the narrowest extension mechanism that expresses the behavior:
+
+- A material that reuses existing policies is schema-only.
+- Different constants within an existing policy belong in a reusable schema
+  profile. A genuinely distinct policy adds one generated selector and one
+  table-driven implementation in the subsystem that owns it.
+- A local material-to-material transformation is a reaction descriptor.
+- History attached to a loose cell uses a persistent-channel row plus the
+  producer/consumer in its owning subsystem. State attached to a component or
+  free body belongs in that topology record instead.
+- A custom reaction pass or topology handler is reserved for behavior whose
+  ordering or structural mutation cannot be represented by those paths.
+
 1. Add the material to `materials.schema.json` without renumbering existing IDs.
-2. Run `npm run generate`.
-3. Add special movement or reaction code only if existing kinds and flags do not
-   cover the behavior.
-4. Rebuild WASM.
-5. Run material tests and the relevant engine benchmark.
+   Select its class and `kind`; `kind` derives generic placement. Select its
+   gas/liquid movement, contact hazard, light transmission, habitat, ambience,
+   emission, render-detail, and cross-cutting trait profiles there. The generator
+   rejects incompatible class, component, plant-role, and profile combinations.
+2. Set its creative folder/order in the schema palette block when the default
+   catalogue order is not appropriate; the main palette includes every entry.
+   Flora species, seed artwork, seed/trunk/foliage mapping, and
+   crafting-equivalent flags also live in this schema, and the C++ engine and
+   JavaScript HUD consume the same tables.
+3. Express ordinary contact transformations as a `SimpleReactionDescriptor` in
+   `cpp/engine/reactions_impl.inc`. Its matcher, products, cadence, probability,
+   layer policy, derived retry liveness, and hash channel are one row. Use a
+   registered custom pass only for topology or sequencing that the simple path
+   cannot model.
+4. Run `npm run generate`, rebuild WASM, run the focused suites through
+   `scripts/run-tests.mjs --only <manifest-key>`, then compare the relevant engine
+   benchmark. A behavior-preserving catalogue change must retain the
+   deterministic checksum.

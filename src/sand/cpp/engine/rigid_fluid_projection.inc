@@ -163,7 +163,7 @@
     }
     fluidNodeStamp[layer][k] = fluidNodeGeneration;
     fluidNodeIndex[layer][k] = (int)fluidNodes.size();
-    uint32_t packedVelocity = lay->liquidVel ? lay->liquidVel[k] : 0;
+    uint32_t packedVelocity = lay->liquidVel.current ? lay->liquidVel.current[k] : 0;
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
     double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
@@ -329,7 +329,7 @@
     }
     uint8_t material = layerAt(layer)->grid[nk];
     if (E.isLiquidMaterial(material)) {
-      uint32_t packedVelocity = layerAt(layer)->liquidVel[nk];
+      uint32_t packedVelocity = layerAt(layer)->liquidVel.current[nk];
       double outsideVx = E.liquidVelocityX(packedVelocity);
       double outsideVy = E.liquidVelocityY(packedVelocity) + E.scaledGravity(R_GRAVITY) * dt;
       double predicted = (node.vx + outsideVx) * nx * 0.5

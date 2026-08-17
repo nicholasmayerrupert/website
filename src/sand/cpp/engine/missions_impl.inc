@@ -37,9 +37,8 @@ bool MissionSystem::safeMissionSpawnAt(uint8_t species, int localX,
   if (x0 - HAZARD_MARGIN < 1 || x1 + HAZARD_MARGIN >= E.cols - 1 ||
       y0 - HAZARD_MARGIN < 1 || y1 + HAZARD_MARGIN + 1 >= E.rows - 1)
     return false;
-  auto dangerous = [](uint8_t material) {
-    return material == FIRE || material == ACID || material == LAVA ||
-           material == OIL || material == METHANE || material == TNT;
+  auto dangerous = [&](uint8_t material) {
+    return E.isSpawnHazard(material);
   };
   for (int y = y0 - HAZARD_MARGIN; y <= y1 + HAZARD_MARGIN; y++)
     for (int x = x0 - HAZARD_MARGIN; x <= x1 + HAZARD_MARGIN; x++)
@@ -141,7 +140,7 @@ int MissionSystem::spawnMissionResident(uint8_t species, int worldX,
 
 bool MissionSystem::start(int id, int ownerPlayerId) {
   if (id < MI_GREENFALL_RECOVERY || id > MI_RED_FURNACE ||
-      missionId != MI_NONE || !E.findPlayer(ownerPlayerId)) return false;
+      missionId != MI_NONE || !E.psys.findPlayer(ownerPlayerId)) return false;
   uint8_t expectedPlanet = id == MI_SILENT_QUARRY ? PL_MOON
                          : id == MI_RED_FURNACE ? PL_MARS : PL_EARTH;
   if (E.planetId != expectedPlanet) return false;
@@ -161,10 +160,10 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   objectives.clear();
   objectives.reserve(4);
   E.creatureNaturalSpawning = false;
-  E.useLayer(&E.fg);
+  Engine::ActiveLayerScope active(E, &E.fg);
   E.comps.ensureGroundedSingleLayer();
 
-  Player* player = E.findPlayer(playerId);
+  Player* player = E.psys.findPlayer(playerId);
   int centerX = (int)std::lround(player->spawnWorldX);
   int surfaceY = E.terrain.genSurfaceAbs(centerX);
   int surfaceLocalY = surfaceY - E.fg.worldOffsetY;
@@ -246,7 +245,7 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
 void MissionSystem::activateObjective(int objectiveId) {
   MissionObjective* objective = findObjective(objectiveId);
   if (!objective || objective->state != OS_LOCKED) return;
-  E.useLayer(&E.fg);
+  Engine::ActiveLayerScope active(E, &E.fg);
   E.comps.ensureGroundedSingleLayer();
   objective->state = OS_ACTIVE;
   revision++;
@@ -372,16 +371,15 @@ void MissionSystem::beginExtraction() {
     coreDestabilized = true;
     int localX = objectives[2].worldX - E.fg.worldOffsetX;
     int localY = objectives[2].worldY - E.fg.worldOffsetY;
-    E.useLayer(&E.fg);
-    E.detonate(localX, localY, 28, 25.0, playerId, TNT,
+    Engine::ActiveLayerScope active(E, &E.fg);
+    E.explosives.detonate(localX, localY, 28, 25.0, playerId, TNT,
                (uint32_t)(E.actorTick ^ 0x52454446u));
-    E.useLayer(&E.fg);
   }
 }
 
 void MissionSystem::collectRecoveredWeapons() {
   recoveredWeaponMask = 0;
-  Player* player = E.findPlayer(playerId);
+  Player* player = E.psys.findPlayer(playerId);
   if (!player) return;
   auto collect = [&](const InvSlot& slot) {
     if (slot.count <= 0 || slot.itemKind < IK_DYNAMITE_SATCHEL ||
@@ -444,7 +442,7 @@ void MissionSystem::update() {
     if (objective && objective->type == OK_EXTRACT) beginExtraction();
     else activateObjective(next);
   }
-  Player* player = E.findPlayer(playerId);
+  Player* player = E.psys.findPlayer(playerId);
   if (!player || !player->alive) {
     fail();
     return;
@@ -472,16 +470,10 @@ int MissionSystem::buildMissionSnapshot() {
     return 0;
   }
   missionSnapshot.assign(MS_STRIDE, 0);
-  missionSnapshot[MS_REVISION] = revision;
-  missionSnapshot[MS_MISSION_ID] = missionId;
-  missionSnapshot[MS_PLANET_ID] = planetId;
-  missionSnapshot[MS_PHASE] = phase;
-  missionSnapshot[MS_OBJECTIVE_COUNT] = (int)objectives.size();
-  missionSnapshot[MS_THREAT_LEVEL] = threatLevel;
-  missionSnapshot[MS_EXTRACTION_X] = extractionX;
-  missionSnapshot[MS_EXTRACTION_Y] = extractionY;
-  missionSnapshot[MS_ELAPSED_TICKS] = elapsedTicks;
-  missionSnapshot[MS_RECOVERED_WEAPON_MASK] = recoveredWeaponMask;
+  writeMissionSnapshot(missionSnapshot.data(), *this, {
+    .objectiveCount = WriteMissionSnapshotObjectiveCount{
+      (int)objectives.size()},
+  });
   return 1;
 }
 
@@ -490,15 +482,7 @@ int MissionSystem::buildObjectiveSnapshot() {
   for (size_t i = 0; i < objectives.size(); i++) {
     const MissionObjective& objective = objectives[i];
     int32_t* out = objectiveSnapshot.data() + i * OS_STRIDE;
-    out[OS_ID] = objective.id;
-    out[OS_TYPE] = objective.type;
-    out[OS_STATE] = objective.state;
-    out[OS_CURRENT] = objective.current;
-    out[OS_REQUIRED] = objective.required;
-    out[OS_WORLD_X] = objective.worldX;
-    out[OS_WORLD_Y] = objective.worldY;
-    out[OS_TARGET_ACTOR_ID] = objective.targetActorId;
-    out[OS_FLAGS] = objective.flags;
+    writeObjectiveSnapshot(out, objective);
   }
   return (int)objectives.size();
 }

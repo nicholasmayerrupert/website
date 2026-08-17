@@ -8,7 +8,7 @@
 bool ItemSystem::itemGridSolid(int x, int y) {
   if (y >= E.rows) return true;
   if (y < 0 || x < 0 || x >= E.cols) return false;
-  return E.isSolidForPlayer(E.L->grid[E.I(x, y)]);
+  return E.psys.isSolidForPlayer(E.L->grid[E.I(x, y)]);
 }
 bool ItemSystem::itemCellLiquidAt(int x, int y) {
   if (y < 0 || y >= E.rows || x < 0 || x >= E.cols) return false;
@@ -163,7 +163,7 @@ void ItemSystem::cullItems() {
 
 void ItemSystem::updateItems() {
   if (items.empty()) return;
-  E.useLayer(&E.fg);
+  Engine::ActiveLayerScope active(E, &E.fg);
   for (auto& it : items) {
     if (it.pickupDelay > 0) it.pickupDelay--;
     if (it.kind == IT_PARTICLE) {
@@ -196,7 +196,7 @@ void ItemSystem::updateItems() {
     unburyItem(it);
     floatItem(it);
     int px, py;
-    if (seedItemCanPlant(it, px, py) && E.placeSeedAtTyped(px, py, it.plantType)) {
+    if (seedItemCanPlant(it, px, py) && E.tools.placeSeedAtTyped(px, py, it.plantType)) {
       if (--it.count > 0) it.pickupDelay = IT_PICKUP_DELAY;
     }
   }
@@ -234,11 +234,7 @@ int ItemSystem::buildItemSnapshot() {
   for (size_t i = 0; i < items.size(); i++) {
     const Item& it = items[i];
     float* o = snapshot.data() + i * IS_STRIDE;
-    o[IS_ID] = (float)it.id; o[IS_KIND] = (float)it.kind; o[IS_MATERIAL] = (float)it.material; o[IS_COUNT] = (float)it.count;
-    o[IS_X] = (float)it.px; o[IS_Y] = (float)it.py; o[IS_LIFE] = (float)it.life;
-    o[IS_PLANT_TYPE] = (float)it.plantType;
-    o[IS_ITEM_KIND] = (float)it.itemKind; o[IS_IS_TOOL] = (float)it.isTool;
-    o[IS_TOOL_CLASS] = (float)it.toolClass; o[IS_TOOL_TIER] = (float)it.toolTier;
+    writeItemSnapshot(o, it);
   }
   return (int)items.size();
 }

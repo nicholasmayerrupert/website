@@ -255,6 +255,27 @@ const createOpenSuspendedSource = () => {
   engine.destroy();
 }
 
+// Repelled gas can move downward along the force vector, but it never owns the
+// powder/liquid fall-speed channel.
+{
+  const { engine, sourceX, sourceY } = createSuspendedSource();
+  engine.setBgEnabled(false);
+  engine.paintDisc(sourceX, sourceY + 12, 2, MAT.FIRE, true);
+  const before = new Set();
+  for (let k = 0; k < engine.getGrid().length; k++)
+    if (engine.getGrid()[k] === MAT.FIRE) before.add(k);
+  engine.stepWorld();
+  const fireCells = [];
+  for (let k = 0; k < engine.getGrid().length; k++)
+    if (engine.getGrid()[k] === MAT.FIRE) fireCells.push(k);
+  check('neutronium force moves fire through the gas path',
+    fireCells.some((cell) => !before.has(cell)));
+  const fallSpeed = engine._fallSpeedGrid();
+  check('force-moved fire does not acquire loose fall momentum',
+    fireCells.length > 0 && fireCells.every((cell) => fallSpeed[cell] === 0));
+  engine.destroy();
+}
+
 // Material arriving from one direction spreads along force tangents once its
 // inward path is pressure-blocked, allowing it to wrap around the source.
 for (const [label, mat, limit] of [

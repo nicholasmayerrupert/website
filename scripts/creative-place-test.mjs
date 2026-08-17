@@ -5,7 +5,9 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
-import { CREATIVE_KIND as CK, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import {
+  CREATIVE_KIND as CK, CREATURE, CREATURE_CREATIVE_ENTRIES,
+} from '../src/sand/wasmBridge/abi.generated.js';
 import { buildEntries } from '../src/sand/embed/toolPalette.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -26,21 +28,12 @@ const hasCell = (cells, x, y) => {
   return false;
 };
 
-const expectedEggs = [
-  ['Minnow Spawn Egg', CREATURE.MINNOW],
-  ['Fox Spawn Egg', CREATURE.FOX],
-  ['Mole Spawn Egg', CREATURE.MOLE],
-  ['Bird Spawn Egg', CREATURE.BIRD],
-  ['Dynamiteer Spawn Egg', CREATURE.DYNAMITEER],
-  ['Bore Sentinel Spawn Egg', CREATURE.BORE_SENTINEL],
-  ['Caustic Mortarman Spawn Egg', CREATURE.CAUSTIC_MORTARMAN],
-  ['Cluster Wasp Spawn Egg', CREATURE.CLUSTER_WASP],
-  ['Minigunner Spawn Egg', CREATURE.MINIGUNNER],
-  ['Villager Spawn Egg', CREATURE.VILLAGER],
-];
+const expectedEggs = CREATURE_CREATIVE_ENTRIES.map(({ label, id }) =>
+  [label, id]);
 const menuTail = buildEntries().slice(-expectedEggs.length);
-check('creative menu ends with the ten enabled creature spawn eggs',
-  menuTail.length === expectedEggs.length && menuTail.every((entry, i) =>
+check('creative menu ends with every schema-enabled creature spawn egg',
+  expectedEggs.length > 0 && menuTail.length === expectedEggs.length
+    && menuTail.every((entry, i) =>
     entry.kind === CK.CREATURE && entry.label === expectedEggs[i][0] && entry.value === expectedEggs[i][1]));
 const seedEntries = buildEntries().filter((entry) => entry.kind === CK.SEED);
 check('all seven species seeds have distinct creative-menu pixel icons',

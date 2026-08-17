@@ -3,7 +3,10 @@
 // (JS module)
 
 // Slots in the flat lookup tables (power-of-two headroom over the live ids).
-export const TABLE_SIZE = 64;
+export const TABLE_SIZE = 256;
+export const MATERIAL_COUNT = 55;
+export const MATERIAL_ID_LIMIT = 55;
+export const FIRST_UNDEFINED_MATERIAL_ID = 55;
 
 // How the engine routes a cell each tick (mirrors C++ enum Kind).
 export const KIND = {
@@ -37,6 +40,150 @@ export const RA = {
   METHANE: 8,
 };
 
+export const GP = {
+  NONE: 0,
+  VAPOR: 1,
+  FIRE: 2,
+  ACRID: 3,
+  PERSISTENT_CEILING: 4,
+};
+
+export const XP = {
+  NONE: 0,
+  TNT_FUSE: 1,
+  METHANE_POCKET: 2,
+};
+export const EXPLOSIVE_HEAT_SENSITIVE = [0, 1, 1];
+
+export const MRP = {
+  NONE: 0,
+  FIRE: 1,
+  ACID: 2,
+  LAVA: 3,
+};
+export const MATERIAL_REACTION_PROFILE_COUNT = 4;
+
+export const CHP = {
+  NONE: 0,
+  FIRE: 1,
+  ACID: 2,
+  LAVA: 3,
+};
+
+export const HP = {
+  NONE: 0,
+  AQUATIC: 1,
+};
+
+export const AP = {
+  NONE: 0,
+  WATER: 1,
+  FIRE: 2,
+  LAVA: 3,
+  ACID: 4,
+};
+
+export const AMBIENCE_SAMPLE_FIELD = Object.freeze({
+  AMOUNT: 0,
+  WORLD_X: 1,
+  WORLD_Y: 2,
+});
+export const AMBIENCE_SAMPLE_STRIDE = 3;
+
+export const AMBIENCE_GROUP = {
+  WATER: 0,
+  FIRE: 1,
+  LAVA: 2,
+  ACID: 3,
+};
+export const AMBIENCE_GROUP_COUNT = 4;
+export const NO_AMBIENCE_GROUP = 255;
+export const AMBIENCE_GROUP_MIXER = Object.freeze([
+  {
+    "name": "water",
+    "id": 0,
+    "gain": 0,
+    "noise": "brown",
+    "filterType": "bandpass",
+    "frequency": 720,
+    "q": 0.48
+  },
+  {
+    "name": "fire",
+    "id": 1,
+    "gain": 0.15,
+    "noise": "crackle",
+    "filterType": "bandpass",
+    "frequency": 1850,
+    "q": 0.62
+  },
+  {
+    "name": "lava",
+    "id": 2,
+    "gain": 0,
+    "noise": "brown",
+    "filterType": "lowpass",
+    "frequency": 320,
+    "q": 0.72
+  },
+  {
+    "name": "acid",
+    "id": 3,
+    "gain": 0,
+    "noise": "brown",
+    "filterType": "bandpass",
+    "frequency": 820,
+    "q": 0.45
+  }
+]);
+export const HABITAT_AQUATIC = [0, 1];
+export const AMBIENCE_PROFILE_GROUP = [255, 0, 1, 2, 3];
+
+export const LMP = {
+  NONE: 0,
+  STANDARD: 1,
+  VISCOUS_GRAVITY: 2,
+};
+
+export const EP = {
+  NONE: 0,
+  UNIFORM: 1,
+  CRYSTAL_QUARTER: 2,
+  MYCELIUM_SPARSE: 3,
+};
+
+export const LTP = {
+  CLEAR: 0,
+  LIQUID: 1,
+  LOOSE_SOLID: 2,
+  RIGID: 3,
+  GLASS: 4,
+};
+
+export const RENDER_DETAIL_PATTERN = {
+  NONE: 0,
+  HASH_MASK: 1,
+  MYCELIUM_NODULE: 2,
+  ALWAYS: 3,
+};
+export const RDP = {
+  NONE: 0,
+  CRYSTAL_CORE: 1,
+  MYCELIUM_NODULE: 2,
+  MYCELIUM_SPORE: 3,
+  GLOWBERRY_CORE: 4,
+  GLOWSHROOM_CORE: 5,
+};
+
+// How generic tools place the material. This is derived from kind through the
+// schema's kindPlacementProfiles map, so a new FREE_RIGID cannot accidentally
+// fall through to raw pixel painting.
+export const MP = {
+  ERASE: 0,
+  PAINT: 1,
+  STRUCTURE: 2,
+};
+
 // Behavior-flag bitmasks (mirrors C++ MF_* constants). OR together per material.
 export const MF = {
   flammable: 1,
@@ -48,6 +195,8 @@ export const MF = {
   relaxesGaps: 64,
   plantWood: 128,
   plantLeaf: 256,
+  spawnHazard: 512,
+  heatSource: 1024,
 };
 
 // Mining tool classes + tiers (mirror C++ enum ToolClass / ToolTier).
@@ -70,73 +219,594 @@ export const TT = {
 // The material registry. Each entry fully distinguishes one material across the
 // whole simulation AND the renderer.
 export const MATERIALS = [
-  { id: 0, name: 'EMPTY', kind: KIND.NONE, materialClass: MC.NONE, density: 0, looseSorted: false, mobility: 0, transparency: 0, color: 0x00000000, textureAmp: 0, durability: 0, renderAnim: 'none' },
-  { id: 1, name: 'SAND', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.6, looseSorted: true, mobility: 1, transparency: 0, color: 0x7978c8e6, textureAmp: 7, durability: 2, renderAnim: 'none' },
-  { id: 2, name: 'WATER', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1, looseSorted: true, mobility: 1, transparency: 0.42, color: 0x66ffaa78, textureAmp: 3, durability: 0, renderAnim: 'water' },
-  { id: 3, name: 'STONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3968c8c, textureAmp: 8, durability: 8, renderAnim: 'none' },
-  { id: 4, name: 'OIL', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 0.8, looseSorted: true, mobility: 1, transparency: 0, color: 0x8c1c4869, textureAmp: 4, durability: 0, renderAnim: 'oil' },
-  { id: 5, name: 'FIRE', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0, color: 0xb8226cff, textureAmp: 0, durability: 0, renderAnim: 'fire' },
-  { id: 6, name: 'STEAM', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0.62, color: 0x42ffe6d2, textureAmp: 0, durability: 0, renderAnim: 'steam' },
-  { id: 7, name: 'SEED', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xc7162e58, textureAmp: 5, durability: 2, renderAnim: 'none' },
-  { id: 8, name: 'WOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc2234c80, textureAmp: 7, durability: 4, renderAnim: 'none' },
-  { id: 9, name: 'PLANT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa354aa5b, textureAmp: 9, durability: 2, renderAnim: 'none' },
-  { id: 10, name: 'ACID', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1.1, looseSorted: true, mobility: 1, transparency: 0.32, color: 0x8020ff80, textureAmp: 4, durability: 0, renderAnim: 'acid' },
-  { id: 11, name: 'LAVA', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 2.8, looseSorted: true, mobility: 0.35, transparency: 0, color: 0xc81050ff, textureAmp: 0, durability: 0, renderAnim: 'lava' },
-  { id: 12, name: 'ICE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, transparency: 0, color: 0x90fff0c0, textureAmp: 5, durability: 5, renderAnim: 'none' },
-  { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, materialClass: MC.RIGID, density: 1.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, renderAnim: 'none' },
-  { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, renderAnim: 'none' },
-  { id: 15, name: 'DIRT', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, transparency: 0, color: 0xc8305278, textureAmp: 7, durability: 2, renderAnim: 'none' },
-  { id: 16, name: 'SNOW', kind: KIND.POWDER, materialClass: MC.SOLID, density: 0.4, looseSorted: true, mobility: 1, transparency: 0, color: 0xe0faf2eb, textureAmp: 4, durability: 1, renderAnim: 'none' },
-  { id: 17, name: 'MUD', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.7, looseSorted: true, mobility: 1, transparency: 0, color: 0xd02a3a4a, textureAmp: 5, durability: 2, renderAnim: 'none' },
-  { id: 18, name: 'CLAY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2, looseSorted: false, mobility: 0, transparency: 0, color: 0xb34868b2, textureAmp: 5, durability: 6, renderAnim: 'none' },
-  { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, renderAnim: 'none' },
-  { id: 20, name: 'MOSS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, transparency: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, renderAnim: 'none' },
-  { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.7, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, renderAnim: 'none' },
-  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.8, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3788ca0, textureAmp: 8, durability: 13, renderAnim: 'none' },
-  { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3555050, textureAmp: 8, durability: 9, renderAnim: 'none' },
-  { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, renderAnim: 'none' },
-  { id: 25, name: 'BRICK', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8374696, textureAmp: 4, durability: 12, renderAnim: 'none' },
-  { id: 26, name: 'PINE_WOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc21e3a5a, textureAmp: 6, durability: 4, renderAnim: 'none' },
-  { id: 27, name: 'CACTUS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.7, looseSorted: false, mobility: 0, transparency: 0, color: 0xc23c7846, textureAmp: 6, durability: 3, renderAnim: 'none' },
-  { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, renderAnim: 'none' },
-  { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, transparency: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, renderAnim: 'none' },
-  { id: 30, name: 'VINE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, renderAnim: 'none' },
-  { id: 31, name: 'ACRID_SMOKE', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0.52, color: 0x6030c8d8, textureAmp: 0, durability: 0, renderAnim: 'smoke' },
-  { id: 32, name: 'SALT', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, transparency: 0, color: 0xe8f2f8f8, textureAmp: 4, durability: 1, renderAnim: 'none' },
-  { id: 33, name: 'BRINE', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1.05, looseSorted: true, mobility: 1, transparency: 0.38, color: 0x66c0c890, textureAmp: 3, durability: 0, renderAnim: 'water' },
-  { id: 34, name: 'GUNPOWDER', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.2, looseSorted: true, mobility: 1, transparency: 0, color: 0xc84a4a52, textureAmp: 6, durability: 1, renderAnim: 'none' },
-  { id: 35, name: 'TNT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc82838cc, textureAmp: 4, durability: 3, renderAnim: 'none' },
-  { id: 36, name: 'DEBRIS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb8424852, textureAmp: 8, durability: 8, renderAnim: 'none' },
-  { id: 37, name: 'CRYSTAL', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xd8fff4e8, textureAmp: 7, durability: 8, renderAnim: 'none' },
-  { id: 38, name: 'MYCELIUM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.2, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8643255, textureAmp: 12, durability: 4, renderAnim: 'none' },
-  { id: 39, name: 'MYCELIUM_SPORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.1, looseSorted: false, mobility: 0, transparency: 0, color: 0xdf96547d, textureAmp: 8, durability: 5, renderAnim: 'none' },
-  { id: 40, name: 'GLOWBERRY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xd81e9bff, textureAmp: 8, durability: 1, renderAnim: 'none' },
-  { id: 41, name: 'GLOWSHROOM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8ffd69b, textureAmp: 8, durability: 2, renderAnim: 'none' },
-  { id: 42, name: 'GRASS', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.4, looseSorted: true, mobility: 1, transparency: 0, color: 0xc854aa5b, textureAmp: 9, durability: 2, renderAnim: 'none' },
-  { id: 43, name: 'METHANE', kind: KIND.GAS, materialClass: MC.GAS, density: 0.4, looseSorted: false, mobility: 0, transparency: 0.7, color: 0x609bd296, textureAmp: 0, durability: 0, renderAnim: 'methane' },
-  { id: 44, name: 'PINE_NEEDLES', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb42d6340, textureAmp: 10, durability: 2, renderAnim: 'none' },
-  { id: 45, name: 'WILLOW_LEAF', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa35f963f, textureAmp: 11, durability: 2, renderAnim: 'none' },
-  { id: 46, name: 'BUSH_LEAF', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb447824f, textureAmp: 12, durability: 2, renderAnim: 'none' },
-  { id: 47, name: 'DEEPSTONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.9, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8342e34, textureAmp: 9, durability: 14, renderAnim: 'none' },
-  { id: 48, name: 'GLASS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.1, looseSorted: false, mobility: 0, transparency: 0.68, color: 0x88ffe3b8, textureAmp: 3, durability: 7, renderAnim: 'none' },
-  { id: 49, name: 'LIGHT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.8, looseSorted: false, mobility: 0, transparency: 0.12, color: 0xffd8ffff, textureAmp: 1, durability: 6, renderAnim: 'none' },
-  { id: 50, name: 'NEUTRONIUM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 32, looseSorted: false, mobility: 0, transparency: 0, color: 0xff321022, textureAmp: 3, durability: 255, renderAnim: 'none' },
-  { id: 51, name: 'STONE_DUST', kind: KIND.POWDER, materialClass: MC.SOLID, density: 2.6, looseSorted: true, mobility: 1, transparency: 0, color: 0xc88b8582, textureAmp: 7, durability: 2, renderAnim: 'none' },
-  { id: 52, name: 'OAK_SEED', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xc23e668f, textureAmp: 5, durability: 2, renderAnim: 'none' },
-  { id: 53, name: 'OAK_WOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc22a5487, textureAmp: 7, durability: 4, renderAnim: 'none' },
-  { id: 54, name: 'OAK_LEAF', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa33b7d35, textureAmp: 10, durability: 2, renderAnim: 'none' },
+  { id: 0, name: 'EMPTY', kind: KIND.NONE, placement: MP.ERASE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.CLEAR, materialClass: MC.NONE, density: 0, looseSorted: false, mobility: 0, transparency: 0, color: 0x00000000, textureAmp: 0, durability: 0, emission: 0, renderAnim: 'none' },
+  { id: 1, name: 'SAND', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.6, looseSorted: true, mobility: 1, transparency: 0, color: 0x7978c8e6, textureAmp: 7, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 2, name: 'WATER', kind: KIND.LIQUID, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.AQUATIC, ambienceProfile: AP.WATER, liquidMovementProfile: LMP.STANDARD, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LIQUID, materialClass: MC.LIQUID, density: 1, looseSorted: true, mobility: 1, transparency: 0.42, color: 0x66ffaa78, textureAmp: 3, durability: 0, emission: 0, renderAnim: 'water' },
+  { id: 3, name: 'STONE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3968c8c, textureAmp: 8, durability: 8, emission: 0, renderAnim: 'none' },
+  { id: 4, name: 'OIL', kind: KIND.LIQUID, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.STANDARD, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LIQUID, materialClass: MC.LIQUID, density: 0.8, looseSorted: true, mobility: 1, transparency: 0, color: 0x8c1c4869, textureAmp: 4, durability: 0, emission: 0, renderAnim: 'oil' },
+  { id: 5, name: 'FIRE', kind: KIND.GAS, placement: MP.PAINT, gasProfile: GP.FIRE, explosiveProfile: XP.NONE, reactionProfile: MRP.FIRE, contactHazardProfile: CHP.FIRE, habitatProfile: HP.NONE, ambienceProfile: AP.FIRE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.NONE, lightProfile: LTP.CLEAR, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0, color: 0xb8226cff, textureAmp: 0, durability: 0, emission: 245, renderAnim: 'fire' },
+  { id: 6, name: 'STEAM', kind: KIND.GAS, placement: MP.PAINT, gasProfile: GP.VAPOR, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.CLEAR, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0.62, color: 0x42ffe6d2, textureAmp: 0, durability: 0, emission: 0, renderAnim: 'steam' },
+  { id: 7, name: 'SEED', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xc7162e58, textureAmp: 5, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 8, name: 'WOOD', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc2234c80, textureAmp: 7, durability: 4, emission: 0, renderAnim: 'none' },
+  { id: 9, name: 'PLANT', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa354aa5b, textureAmp: 9, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 10, name: 'ACID', kind: KIND.LIQUID, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.ACID, contactHazardProfile: CHP.ACID, habitatProfile: HP.NONE, ambienceProfile: AP.ACID, liquidMovementProfile: LMP.STANDARD, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LIQUID, materialClass: MC.LIQUID, density: 1.1, looseSorted: true, mobility: 1, transparency: 0.32, color: 0x8020ff80, textureAmp: 4, durability: 0, emission: 0, renderAnim: 'acid' },
+  { id: 11, name: 'LAVA', kind: KIND.LIQUID, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.LAVA, contactHazardProfile: CHP.LAVA, habitatProfile: HP.NONE, ambienceProfile: AP.LAVA, liquidMovementProfile: LMP.VISCOUS_GRAVITY, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.NONE, lightProfile: LTP.LIQUID, materialClass: MC.LIQUID, density: 2.8, looseSorted: true, mobility: 0.35, transparency: 0, color: 0xc81050ff, textureAmp: 0, durability: 0, emission: 230, renderAnim: 'lava' },
+  { id: 12, name: 'ICE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, transparency: 0, color: 0x90fff0c0, textureAmp: 5, durability: 5, emission: 0, renderAnim: 'none' },
+  { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 1.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, emission: 0, renderAnim: 'none' },
+  { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, emission: 0, renderAnim: 'none' },
+  { id: 15, name: 'DIRT', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, transparency: 0, color: 0xc8305278, textureAmp: 7, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 16, name: 'SNOW', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 0.4, looseSorted: true, mobility: 1, transparency: 0, color: 0xe0faf2eb, textureAmp: 4, durability: 1, emission: 0, renderAnim: 'none' },
+  { id: 17, name: 'MUD', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.7, looseSorted: true, mobility: 1, transparency: 0, color: 0xd02a3a4a, textureAmp: 5, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 18, name: 'CLAY', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2, looseSorted: false, mobility: 0, transparency: 0, color: 0xb34868b2, textureAmp: 5, durability: 6, emission: 0, renderAnim: 'none' },
+  { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, emission: 0, renderAnim: 'none' },
+  { id: 20, name: 'MOSS', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, transparency: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, emission: 0, renderAnim: 'none' },
+  { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.7, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, emission: 0, renderAnim: 'none' },
+  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.8, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3788ca0, textureAmp: 8, durability: 13, emission: 0, renderAnim: 'none' },
+  { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3555050, textureAmp: 8, durability: 9, emission: 0, renderAnim: 'none' },
+  { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, emission: 0, renderAnim: 'none' },
+  { id: 25, name: 'BRICK', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8374696, textureAmp: 4, durability: 12, emission: 0, renderAnim: 'none' },
+  { id: 26, name: 'PINE_WOOD', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc21e3a5a, textureAmp: 6, durability: 4, emission: 0, renderAnim: 'none' },
+  { id: 27, name: 'CACTUS', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.7, looseSorted: false, mobility: 0, transparency: 0, color: 0xc23c7846, textureAmp: 6, durability: 3, emission: 0, renderAnim: 'none' },
+  { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, transparency: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 30, name: 'VINE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, emission: 0, renderAnim: 'none' },
+  { id: 31, name: 'ACRID_SMOKE', kind: KIND.GAS, placement: MP.PAINT, gasProfile: GP.ACRID, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.CLEAR, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0.52, color: 0x6030c8d8, textureAmp: 0, durability: 0, emission: 0, renderAnim: 'smoke' },
+  { id: 32, name: 'SALT', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, transparency: 0, color: 0xe8f2f8f8, textureAmp: 4, durability: 1, emission: 0, renderAnim: 'none' },
+  { id: 33, name: 'BRINE', kind: KIND.LIQUID, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.AQUATIC, ambienceProfile: AP.WATER, liquidMovementProfile: LMP.STANDARD, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LIQUID, materialClass: MC.LIQUID, density: 1.05, looseSorted: true, mobility: 1, transparency: 0.38, color: 0x66c0c890, textureAmp: 3, durability: 0, emission: 0, renderAnim: 'water' },
+  { id: 34, name: 'GUNPOWDER', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.2, looseSorted: true, mobility: 1, transparency: 0, color: 0xc84a4a52, textureAmp: 6, durability: 1, emission: 0, renderAnim: 'none' },
+  { id: 35, name: 'TNT', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.TNT_FUSE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 1.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc82838cc, textureAmp: 4, durability: 3, emission: 0, renderAnim: 'none' },
+  { id: 36, name: 'DEBRIS', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb8424852, textureAmp: 8, durability: 8, emission: 0, renderAnim: 'none' },
+  { id: 37, name: 'CRYSTAL', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.CRYSTAL_QUARTER, renderDetailProfile: RDP.CRYSTAL_CORE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xd8fff4e8, textureAmp: 7, durability: 8, emission: 132, renderAnim: 'none' },
+  { id: 38, name: 'MYCELIUM', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.MYCELIUM_SPARSE, renderDetailProfile: RDP.MYCELIUM_NODULE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 1.2, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8643255, textureAmp: 12, durability: 4, emission: 58, renderAnim: 'none' },
+  { id: 39, name: 'MYCELIUM_SPORE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.MYCELIUM_SPORE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 1.1, looseSorted: false, mobility: 0, transparency: 0, color: 0xdf96547d, textureAmp: 8, durability: 5, emission: 112, renderAnim: 'none' },
+  { id: 40, name: 'GLOWBERRY', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.GLOWBERRY_CORE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xd81e9bff, textureAmp: 8, durability: 1, emission: 98, renderAnim: 'none' },
+  { id: 41, name: 'GLOWSHROOM', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.GLOWSHROOM_CORE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8ffd69b, textureAmp: 8, durability: 2, emission: 95, renderAnim: 'none' },
+  { id: 42, name: 'GRASS', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 1.4, looseSorted: true, mobility: 1, transparency: 0, color: 0xc854aa5b, textureAmp: 9, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 43, name: 'METHANE', kind: KIND.GAS, placement: MP.PAINT, gasProfile: GP.PERSISTENT_CEILING, explosiveProfile: XP.METHANE_POCKET, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.CLEAR, materialClass: MC.GAS, density: 0.4, looseSorted: false, mobility: 0, transparency: 0.7, color: 0x609bd296, textureAmp: 0, durability: 0, emission: 0, renderAnim: 'methane' },
+  { id: 44, name: 'PINE_NEEDLES', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb42d6340, textureAmp: 10, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 45, name: 'WILLOW_LEAF', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa35f963f, textureAmp: 11, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 46, name: 'BUSH_LEAF', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb447824f, textureAmp: 12, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 47, name: 'DEEPSTONE', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 2.9, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8342e34, textureAmp: 9, durability: 14, emission: 0, renderAnim: 'none' },
+  { id: 48, name: 'GLASS', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.NONE, lightProfile: LTP.GLASS, materialClass: MC.RIGID, density: 2.1, looseSorted: false, mobility: 0, transparency: 0.68, color: 0x88ffe3b8, textureAmp: 3, durability: 7, emission: 18, renderAnim: 'none' },
+  { id: 49, name: 'LIGHT', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.UNIFORM, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 1.8, looseSorted: false, mobility: 0, transparency: 0.12, color: 0xffd8ffff, textureAmp: 1, durability: 6, emission: 255, renderAnim: 'none' },
+  { id: 50, name: 'NEUTRONIUM', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 32, looseSorted: false, mobility: 0, transparency: 0, color: 0xff321022, textureAmp: 3, durability: 255, emission: 0, renderAnim: 'none' },
+  { id: 51, name: 'STONE_DUST', kind: KIND.POWDER, placement: MP.PAINT, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.LOOSE_SOLID, materialClass: MC.SOLID, density: 2.6, looseSorted: true, mobility: 1, transparency: 0, color: 0xc88b8582, textureAmp: 7, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 52, name: 'OAK_SEED', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xc23e668f, textureAmp: 5, durability: 2, emission: 0, renderAnim: 'none' },
+  { id: 53, name: 'OAK_WOOD', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc22a5487, textureAmp: 7, durability: 4, emission: 0, renderAnim: 'none' },
+  { id: 54, name: 'OAK_LEAF', kind: KIND.COMPONENT, placement: MP.STRUCTURE, gasProfile: GP.NONE, explosiveProfile: XP.NONE, reactionProfile: MRP.NONE, contactHazardProfile: CHP.NONE, habitatProfile: HP.NONE, ambienceProfile: AP.NONE, liquidMovementProfile: LMP.NONE, emissionProfile: EP.NONE, renderDetailProfile: RDP.NONE, lightProfile: LTP.RIGID, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xa33b7d35, textureAmp: 10, durability: 2, emission: 0, renderAnim: 'none' },
 ];
+
+// Sparse id lookup kept separate from the compact authoring/palette catalogue.
+// Never index MATERIALS by id: stable ids may intentionally contain gaps.
+export const MATERIAL_BY_ID = [MATERIALS[0], MATERIALS[1], MATERIALS[2], MATERIALS[3], MATERIALS[4], MATERIALS[5], MATERIALS[6], MATERIALS[7], MATERIALS[8], MATERIALS[9], MATERIALS[10], MATERIALS[11], MATERIALS[12], MATERIALS[13], MATERIALS[14], MATERIALS[15], MATERIALS[16], MATERIALS[17], MATERIALS[18], MATERIALS[19], MATERIALS[20], MATERIALS[21], MATERIALS[22], MATERIALS[23], MATERIALS[24], MATERIALS[25], MATERIALS[26], MATERIALS[27], MATERIALS[28], MATERIALS[29], MATERIALS[30], MATERIALS[31], MATERIALS[32], MATERIALS[33], MATERIALS[34], MATERIALS[35], MATERIALS[36], MATERIALS[37], MATERIALS[38], MATERIALS[39], MATERIALS[40], MATERIALS[41], MATERIALS[42], MATERIALS[43], MATERIALS[44], MATERIALS[45], MATERIALS[46], MATERIALS[47], MATERIALS[48], MATERIALS[49], MATERIALS[50], MATERIALS[51], MATERIALS[52], MATERIALS[53], MATERIALS[54], null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
+export const MAT_DEFINED = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const DEFINED_MATERIAL_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54];
+export const isMaterialId = (value) => Number.isInteger(value)
+  && value >= 0 && value < TABLE_SIZE && MAT_DEFINED[value] === 1;
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++
 // MAT_CLASS / MAT_FLAGS tables.
-export const MAT_CLASS = [0, 2, 4, 3, 4, 1, 1, 3, 3, 3, 4, 4, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2, 4, 2, 3, 3, 3, 3, 3, 3, 3, 2, 1, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_FLAGS = [0, 10, 96, 14, 65, 0, 0, 31, 159, 287, 96, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 151, 0, 8, 96, 9, 12, 14, 12, 14, 14, 278, 30, 11, 0, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_TRANSPARENCY = [0, 0, 0.42, 0, 0, 0, 0.62, 0, 0, 0, 0.32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.52, 0, 0.38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0, 0, 0, 0, 0.68, 0.12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_RENDER_ANIM = [0, 0, 4, 0, 5, 1, 2, 0, 0, 0, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_CLASS = [0, 2, 4, 3, 4, 1, 1, 3, 3, 3, 4, 4, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2, 4, 2, 3, 3, 3, 3, 3, 3, 3, 2, 1, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_FLAGS = [0, 10, 96, 14, 577, 1536, 0, 31, 159, 287, 608, 1536, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 151, 0, 8, 96, 9, 524, 14, 12, 14, 14, 278, 30, 11, 512, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_CRAFT_FLAGS = [0, 10, 96, 14, 577, 1536, 0, 31, 159, 287, 608, 1536, 12, 12, 159, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 407, 0, 8, 96, 9, 524, 14, 12, 14, 14, 278, 30, 11, 512, 287, 287, 287, 14, 12, 12, 12, 10, 31, 159, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_TRANSPARENCY = [0, 0, 0.42, 0, 0, 0, 0.62, 0, 0, 0, 0.32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.52, 0, 0.38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0, 0, 0, 0, 0.68, 0.12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_RENDER_ANIM = [0, 0, 4, 0, 5, 1, 2, 0, 0, 0, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_PLACEMENT = [0, 1, 1, 2, 1, 1, 1, 2, 2, 2, 1, 1, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_GAS_PROFILE = [0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_EXPLOSIVE_PROFILE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_HEAT_SENSITIVE_EXPLOSIVE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_REACTION_PROFILE = [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_LIQUID_PROFILE = [0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const LIQUID_MOBILITY_GATED = [0, 0, 1];
+export const LIQUID_STRAIGHT_FALL = [0, 0, 1];
+export const LIQUID_FIXED_FALL_CAP = [0, 0, 3];
+export const GAS_DECAY = [0, 0.018, 0.008, 0.05, 0];
+export const GAS_TRAPPED_DECAY = [0, 0.018, 0.008, 0.3, 0];
+export const GAS_UP_CHANCE = [0, 0.72, 0.72, 0.72, 0.72];
+export const GAS_SIDE_CHANCE = [0, 0.65, 0.65, 0.65, 1];
+export const GAS_PERSISTENT = [0, 0, 0, 0, 1];
+export const GAS_CEILING_ROUTE = [0, 0, 0, 0, 1];
+export const MAT_CONTACT_HAZARD_PROFILE = [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const CONTACT_HAZARD_PLAYER_DAMAGE = [0, 4, 12, 15];
+export const CONTACT_HAZARD_CREATURE_DAMAGE = [0, 0, 12, 0];
+export const CONTACT_HAZARD_CADENCE = [0, 30, 15, 15];
+export const CONTACT_HAZARD_PRIORITY = [0, 1, 2, 3];
+export const MAT_HABITAT_PROFILE = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_AQUATIC_HABITAT = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_AMBIENCE_PROFILE = [0, 0, 1, 0, 0, 2, 0, 0, 0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_AMBIENCE_GROUP = [255, 255, 0, 255, 255, 1, 255, 255, 255, 255, 3, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+export const MAT_EMISSION_PROFILE = [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_EMISSION = [0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 58, 112, 98, 95, 0, 0, 0, 0, 0, 0, 18, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_RENDER_DETAIL_PROFILE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_LIGHT_PROFILE = [0, 2, 1, 3, 1, 0, 0, 3, 3, 3, 1, 1, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 2, 1, 2, 3, 3, 3, 3, 3, 3, 3, 2, 0, 3, 3, 3, 3, 4, 3, 3, 2, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_LIGHT_TRANSPARENT = [1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_LIGHT_LOSS = [4, 17, 8, 24, 8, 4, 4, 24, 24, 24, 8, 8, 24, 24, 24, 17, 17, 17, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 4, 17, 8, 17, 24, 24, 24, 24, 24, 24, 24, 17, 4, 24, 24, 24, 24, 6, 24, 24, 17, 24, 24, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_FACE_LIT = [0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+// Flora identity/material mapping and creative-palette metadata share the same
+// schema records as the C++ growth/component helpers.
+export const NO_PLANT_SPECIES = 255;
+export const PGR = Object.freeze({"OAK":0,"PINE":1,"WILLOW":2,"CACTUS":3,"MUSHROOM":4,"BUSH":5,"VINE":6,"STANDARD":7});
+export const PWG = Object.freeze({"BROADLEAF":0,"PINE":1,"WILLOW":2,"CACTUS":3,"BUSH":4});
+export const PLANT_GROWTH_PROFILES = Object.freeze([
+  {
+    "id": 0,
+    "name": "oak",
+    "woodTopology": "oak",
+    "leafTopology": "oak",
+    "trunkProfile": "tree",
+    "straight": false,
+    "maxWoodBase": 220,
+    "maxWoodVariation": 31,
+    "maxLeafBase": 480,
+    "maxLeafVariation": 71,
+    "leafStart": 36,
+    "leaves": true,
+    "variedTree": false,
+    "finishStemFirst": true,
+    "extraWood": true,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "default",
+    "gravityRecovery": false,
+    "thickenHeight": 23,
+    "oppositeChance": 0.94,
+    "wideBaseChance": 0.78,
+    "wideBaseHeight": 8
+  },
+  {
+    "id": 1,
+    "name": "pine",
+    "woodTopology": "pine",
+    "leafTopology": "pine",
+    "trunkProfile": "tree",
+    "straight": true,
+    "maxWoodBase": 104,
+    "maxWoodVariation": 30,
+    "maxLeafBase": 230,
+    "maxLeafVariation": 81,
+    "leafStart": 5,
+    "leaves": true,
+    "variedTree": true,
+    "finishStemFirst": false,
+    "extraWood": true,
+    "woodLeafChance": 0.44,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0.38,
+    "leafBurst": "pine",
+    "gravityRecovery": false,
+    "thickenHeight": 19,
+    "oppositeChance": 0.78,
+    "wideBaseChance": 0.55,
+    "wideBaseHeight": 5
+  },
+  {
+    "id": 2,
+    "name": "willow",
+    "woodTopology": "willow",
+    "leafTopology": "willow",
+    "trunkProfile": "tree",
+    "straight": true,
+    "maxWoodBase": 205,
+    "maxWoodVariation": 31,
+    "maxLeafBase": 240,
+    "maxLeafVariation": 61,
+    "leafStart": 5,
+    "leaves": true,
+    "variedTree": true,
+    "finishStemFirst": false,
+    "extraWood": true,
+    "woodLeafChance": 0.44,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0.38,
+    "leafBurst": "default",
+    "gravityRecovery": true,
+    "thickenHeight": 24,
+    "oppositeChance": 0.88,
+    "wideBaseChance": 0.55,
+    "wideBaseHeight": 5
+  },
+  {
+    "id": 3,
+    "name": "cactus",
+    "woodTopology": "cactus",
+    "leafTopology": "generic",
+    "trunkProfile": "none",
+    "straight": true,
+    "maxWoodBase": 34,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 105,
+    "maxLeafVariation": 0,
+    "leafStart": 6,
+    "leaves": false,
+    "variedTree": false,
+    "finishStemFirst": true,
+    "extraWood": true,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "default",
+    "gravityRecovery": false,
+    "thickenHeight": 0,
+    "oppositeChance": 0,
+    "wideBaseChance": 0,
+    "wideBaseHeight": 0
+  },
+  {
+    "id": 4,
+    "name": "mushroom",
+    "woodTopology": "generic",
+    "leafTopology": "mushroom",
+    "trunkProfile": "none",
+    "straight": true,
+    "maxWoodBase": 13,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 28,
+    "maxLeafVariation": 0,
+    "leafStart": 11,
+    "leaves": true,
+    "variedTree": false,
+    "finishStemFirst": true,
+    "extraWood": true,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "default",
+    "gravityRecovery": false,
+    "thickenHeight": 0,
+    "oppositeChance": 0,
+    "wideBaseChance": 0,
+    "wideBaseHeight": 0
+  },
+  {
+    "id": 5,
+    "name": "bush",
+    "woodTopology": "generic",
+    "leafTopology": "generic",
+    "trunkProfile": "generic",
+    "straight": false,
+    "maxWoodBase": 14,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 38,
+    "maxLeafVariation": 0,
+    "leafStart": 3,
+    "leaves": true,
+    "variedTree": false,
+    "finishStemFirst": false,
+    "extraWood": true,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "default",
+    "gravityRecovery": false,
+    "thickenHeight": 0,
+    "oppositeChance": 0,
+    "wideBaseChance": 0,
+    "wideBaseHeight": 0
+  },
+  {
+    "id": 6,
+    "name": "vine",
+    "woodTopology": "vine",
+    "leafTopology": "vine",
+    "trunkProfile": "none",
+    "straight": true,
+    "maxWoodBase": 40,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 9,
+    "maxLeafVariation": 0,
+    "leafStart": 8,
+    "leaves": true,
+    "variedTree": false,
+    "finishStemFirst": true,
+    "extraWood": false,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0.22,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "single",
+    "gravityRecovery": false,
+    "thickenHeight": 0,
+    "oppositeChance": 0,
+    "wideBaseChance": 0,
+    "wideBaseHeight": 0
+  },
+  {
+    "id": 7,
+    "name": "standard",
+    "woodTopology": "generic",
+    "leafTopology": "generic",
+    "trunkProfile": "generic",
+    "straight": false,
+    "maxWoodBase": 120,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 105,
+    "maxLeafVariation": 0,
+    "leafStart": 6,
+    "leaves": true,
+    "variedTree": false,
+    "finishStemFirst": false,
+    "extraWood": true,
+    "woodLeafChance": 0.54,
+    "vineBerriesChance": 0,
+    "foliageAlongsideWoodChance": 0,
+    "leafBurst": "default",
+    "gravityRecovery": false,
+    "thickenHeight": 0,
+    "oppositeChance": 0,
+    "wideBaseChance": 0,
+    "wideBaseHeight": 0
+  }
+]);
+export const PLANT_WORLDGEN_PROFILES = Object.freeze([
+  {
+    "id": 0,
+    "name": "broadleaf",
+    "topology": "broadleaf",
+    "heightBase": 13,
+    "heightVariation": 12,
+    "horizontalReach": 9,
+    "upwardReach": 42
+  },
+  {
+    "id": 1,
+    "name": "pine",
+    "topology": "pine",
+    "heightBase": 23,
+    "heightVariation": 13,
+    "horizontalReach": 10,
+    "upwardReach": 42
+  },
+  {
+    "id": 2,
+    "name": "willow",
+    "topology": "willow",
+    "heightBase": 18,
+    "heightVariation": 10,
+    "horizontalReach": 14,
+    "upwardReach": 42
+  },
+  {
+    "id": 3,
+    "name": "cactus",
+    "topology": "cactus",
+    "heightBase": 9,
+    "heightVariation": 8,
+    "horizontalReach": 2,
+    "upwardReach": 42
+  },
+  {
+    "id": 4,
+    "name": "bush",
+    "topology": "bush",
+    "heightBase": 4,
+    "heightVariation": 4,
+    "horizontalReach": 5,
+    "upwardReach": 42
+  }
+]);
+export const PLANT_SPECIES = [
+  {
+    "id": 0,
+    "name": "OAK",
+    "label": "Oak",
+    "growthProfile": 0,
+    "worldgenProfile": 0,
+    "seedMaterial": 52,
+    "woodMaterial": 53,
+    "leafMaterial": 54,
+    "palette": true,
+    "colors": [
+      "#d59a5f",
+      "#78472d"
+    ],
+    "pixels": [
+      ".........",
+      "...222...",
+      "..21112..",
+      "..21112..",
+      "..11111..",
+      "...111...",
+      "...121...",
+      "....2....",
+      "........."
+    ]
+  },
+  {
+    "id": 1,
+    "name": "PINE",
+    "label": "Pine",
+    "growthProfile": 1,
+    "worldgenProfile": 1,
+    "seedMaterial": 7,
+    "woodMaterial": 26,
+    "leafMaterial": 44,
+    "palette": true,
+    "colors": [
+      "#72b878",
+      "#315b46"
+    ],
+    "pixels": [
+      "....2....",
+      "...121...",
+      "...121...",
+      "..11211..",
+      "..11211..",
+      ".1112111.",
+      "...121...",
+      "....2....",
+      "........."
+    ]
+  },
+  {
+    "id": 2,
+    "name": "WILLOW",
+    "label": "Willow",
+    "growthProfile": 2,
+    "worldgenProfile": 2,
+    "seedMaterial": 7,
+    "woodMaterial": 8,
+    "leafMaterial": 45,
+    "palette": true,
+    "colors": [
+      "#b7d983",
+      "#527047"
+    ],
+    "pixels": [
+      "...111...",
+      "..11211..",
+      ".1112111.",
+      ".1122211.",
+      "..12221..",
+      "...121...",
+      "...121...",
+      "....2....",
+      "........."
+    ]
+  },
+  {
+    "id": 3,
+    "name": "CACTUS",
+    "label": "Cactus",
+    "growthProfile": 3,
+    "worldgenProfile": 3,
+    "seedMaterial": 7,
+    "woodMaterial": 27,
+    "leafMaterial": 9,
+    "palette": true,
+    "colors": [
+      "#63c77a",
+      "#28653f"
+    ],
+    "pixels": [
+      ".........",
+      "...222...",
+      "..21112..",
+      "..12121..",
+      "..21112..",
+      "..12121..",
+      "..21112..",
+      "...222...",
+      "........."
+    ]
+  },
+  {
+    "id": 4,
+    "name": "MUSHROOM",
+    "label": "Mushroom",
+    "growthProfile": 4,
+    "worldgenProfile": 0,
+    "seedMaterial": 7,
+    "woodMaterial": 28,
+    "leafMaterial": 29,
+    "palette": true,
+    "colors": [
+      "#aaa79f",
+      "#77736c"
+    ],
+    "pixels": [
+      ".........",
+      "...111...",
+      "..11111..",
+      ".1121211.",
+      ".1111111.",
+      "...222...",
+      "...222...",
+      "..22222..",
+      "........."
+    ]
+  },
+  {
+    "id": 5,
+    "name": "BUSH",
+    "label": "Bush",
+    "growthProfile": 5,
+    "worldgenProfile": 4,
+    "seedMaterial": 7,
+    "woodMaterial": 8,
+    "leafMaterial": 46,
+    "palette": true,
+    "colors": [
+      "#70b764",
+      "#bd5c82"
+    ],
+    "pixels": [
+      ".........",
+      "..12121..",
+      ".1121211.",
+      ".2111112.",
+      ".1212121.",
+      "..11111..",
+      "...121...",
+      "....2....",
+      "........."
+    ]
+  },
+  {
+    "id": 6,
+    "name": "VINE",
+    "label": "Vine",
+    "growthProfile": 6,
+    "worldgenProfile": 0,
+    "seedMaterial": 7,
+    "woodMaterial": 30,
+    "leafMaterial": 40,
+    "palette": true,
+    "colors": [
+      "#315b26",
+      "#203f1a"
+    ],
+    "pixels": [
+      "....1....",
+      "...111...",
+      "....1....",
+      "...11....",
+      "...12....",
+      "..11.....",
+      "..1......",
+      ".21......",
+      "........."
+    ]
+  },
+  {
+    "id": 7,
+    "name": "STANDARD",
+    "label": "Standard",
+    "growthProfile": 7,
+    "worldgenProfile": 0,
+    "seedMaterial": 7,
+    "woodMaterial": 8,
+    "leafMaterial": 9,
+    "palette": false,
+    "colors": [
+      "#6bab59",
+      "#315b26"
+    ],
+    "pixels": [
+      ".........",
+      ".........",
+      ".........",
+      ".........",
+      ".........",
+      ".........",
+      ".........",
+      ".........",
+      "........."
+    ]
+  }
+];
+export const PLANT_SEED_MATERIAL = [52, 7, 7, 7, 7, 7, 7, 7];
+export const PLANT_WOOD_MATERIAL = [53, 26, 8, 27, 28, 8, 30, 8];
+export const PLANT_LEAF_MATERIAL = [54, 44, 45, 9, 29, 46, 40, 9];
+export const MAT_PLANT_SPECIES = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 3, 4, 4, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 6, 255, 255, 255, 1, 2, 5, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+export const MAT_IS_PLANT_SEED = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_PALETTE_HIDDEN = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const PALETTE_MAIN_ORDER = ["cube","eraser","rigid","neutronium","stone","water","acid","lava","tnt","seed","sand","fire","methane","oil","gunpowder","crystal","mycelium_spore","mycelium","glowberry","glowshroom","brine","steam","acrid_smoke","ice","oak seed","pine seed","willow seed","cactus seed","mushroom seed","bush seed","vine seed","grass","dirt","snow","mud","salt","gold_ore","iron_ore","copper_ore","coal_ore","brick","clay","sandstone","moss","wood","oak_wood","pine_wood","oak_leaf","pine_needles","willow_leaf","bush_leaf","cactus","mush_cap","mush_stem","vine","plant","driftwood","debris"];
+export const PALETTE_SECTIONS = [{"id":"main","label":"Main","accent":"#f6c56f","all":true},{"id":"tools","label":"Tools","accent":"#cbd5e1","labels":["cube","eraser","rigid"]},{"id":"terrain","label":"Terrain","accent":"#c99a6b","labels":["sand","stone","neutronium","dirt","snow","mud","clay","sandstone","copper_ore","iron_ore","coal_ore","gold_ore","brick","salt","debris","crystal"]},{"id":"fluids","label":"Fluids","accent":"#70bfff","labels":["water","oil","acid","lava","ice","steam","brine"]},{"id":"flora","label":"Flora","accent":"#7dd88a","labels":["seed","wood","plant","oak_wood","oak_leaf","driftwood","moss","pine_wood","cactus","mush_stem","mush_cap","pine_needles","willow_leaf","bush_leaf","vine","mycelium","mycelium_spore","glowberry","glowshroom","grass"],"entryKinds":["seed"]},{"id":"reactions","label":"Reactions","accent":"#ff856c","labels":["fire","steam","methane","oil","acid","lava","neutronium","acrid_smoke","salt","brine","gunpowder","tnt","debris"]},{"id":"creatures","label":"Creatures","accent":"#c99cff","entryKinds":["creature"]}];
 
 // Mining gate tables: which tool class drops a material and the min tier required.
-export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 3, 0, 2, 2, 2, 1, 1, 1, 1, 3, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_TOOLTIER = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 3, 0, 2, 2, 2, 1, 1, 1, 1, 3, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_TOOLTIER = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 export const TOOL_CLASS_SPEED = [100, 35, 35, 35, 50, 35, 100, 255, 35, 35, 35, 35, 100, 35, 100, 35, 35, 35, 100, 35, 35, 100, 35, 35, 100, 25, 25, 60, 100, 35, 100, 100, 100, 100, 100, 100];
 export const TOOL_TIER_SPEED = [50, 100, 135, 175, 210];
 export const MINING_PROGRESS_DIVISOR = 5;

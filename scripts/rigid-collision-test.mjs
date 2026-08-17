@@ -51,6 +51,35 @@ const rigidBottom = (g) => { let b = -1; for (let i = 0; i < g.length; i++) if (
   e.destroy();
 }
 
+// A topology edit preserves opted-in cell state, while a moving raster uses the
+// distinct body-motion policy. This prevents a translating body from carrying
+// the same current around its footprint on every tick.
+{
+  console.log('moving rigid spill applies the body-motion state policy');
+  const cols = 128, sourceX = 41, sourceY = 49, WATER = 2;
+  const e = mk({ cols, rows: 96 });
+  stoneRect(e, 20, 50, 99, 50);
+  e.syncComponents();
+  e._spawnBoxLayer(0, 40, 49, 1, 1, STONE);
+  e.paintDisc(sourceX, sourceY, 0, WATER, true);
+  e._setLiquidVelocity(0, sourceX, sourceY, 1.25, 0);
+  const source = sourceY * cols + sourceX;
+  const before = e._motionCellState(0, source);
+  e._setBodyMotion(0, 1, 0, 0);
+  e.stepWorld();
+  const grid = e.getGrid();
+  let destination = -1;
+  for (let k = 0; k < grid.length; k++)
+    if (grid[k] === WATER) { destination = k; break; }
+  const sourceOwner = e._bodyOwnerGrid()[source];
+  const after = destination >= 0 ? e._motionCellState(0, destination) : null;
+  check('moving body relocated water and reset non-opted-in motion state',
+    before[2] !== 0 && before[3] === 0
+      && destination >= 0 && destination !== source && sourceOwner >= 0
+      && after[2] === 0 && after[3] === 0);
+  e.destroy();
+}
+
 // ---------------------------------------------------------------------------
 // Two horizontal pillars with an open gap between them, a thin horizontal bar
 // bridging across the top resting on the pillars, and a thin vertical bar

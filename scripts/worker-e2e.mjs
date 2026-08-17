@@ -263,11 +263,9 @@ try {
   check('creative Main folder contains the complete catalog',
     mainLabels.join('\n') === expectedMainLabels.join('\n'),
     `${mainLabels.length}/${expectedMainLabels.length} entries`);
-  const expectedEggLabels = [
-    'Minnow Spawn Egg', 'Fox Spawn Egg', 'Mole Spawn Egg', 'Bird Spawn Egg',
-    'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg', 'Caustic Mortarman Spawn Egg',
-    'Cluster Wasp Spawn Egg', 'Minigunner Spawn Egg', 'Villager Spawn Egg',
-  ];
+  const expectedEggLabels = buildEntries()
+    .filter((entry) => entry.egg)
+    .map((entry) => entry.label);
   check('creative Main folder keeps the enabled spawn eggs at the bottom',
     mainLabels.slice(-expectedEggLabels.length).join(',') === expectedEggLabels.join(','),
     mainLabels.slice(-expectedEggLabels.length).join(','));

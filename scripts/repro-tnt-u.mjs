@@ -18,7 +18,7 @@ const hooks = await import(pathToFileURL(path.join(repoRoot, 'src/sand/wasmBridg
 const materials = await import(pathToFileURL(path.join(repoRoot, 'src/sand/materials.js')));
 const { initSandWasm, createEngineWasm: createEngineWasmRaw } = factory;
 const { attachTestHooks } = hooks;
-const { KIND, MATERIALS, MAT } = materials;
+const { KIND, MATERIALS, MATERIAL_BY_ID, MAT, TABLE_SIZE } = materials;
 const terrainRoot = process.env.TERRAIN_ROOT ? path.resolve(process.env.TERRAIN_ROOT) : repoRoot;
 const terrainFactory = terrainRoot === repoRoot
   ? factory
@@ -29,7 +29,7 @@ const ROWS = 384;
 const MAX_TICKS = 360;
 const SOLVER_MODE = Number.parseInt(
   process.env.RIGID_SOLVER_MODE ?? '2', 10);
-const STRUCTURAL = new Uint8Array(64);
+const STRUCTURAL = new Uint8Array(TABLE_SIZE);
 for (const material of MATERIALS) {
   if (material.kind === KIND.COMPONENT) STRUCTURAL[material.id] = 1;
 }
@@ -187,7 +187,7 @@ function contactStats(engine, views, assembly) {
       const kind = kinds[layer].get(owner) ? 'debris' : 'otherBody';
       contacts[`${kind}${suffix}`].add(key);
     } else if (STRUCTURAL[material]) contacts[`static${suffix}`].add(key);
-    else if (material !== MAT.EMPTY && MATERIALS[material]?.kind === KIND.GAS) {
+    else if (material !== MAT.EMPTY && MATERIAL_BY_ID[material]?.kind === KIND.GAS) {
       contacts[`gas${suffix}`].add(key);
     } else if (material !== MAT.EMPTY) {
       contacts[`loose${suffix}`].add(key);

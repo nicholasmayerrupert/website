@@ -5,12 +5,28 @@
 // limits, browser activation, mute persistence, or document visibility.
 
 import { OFF, SOUND_EVENT, STRIDES } from '../wasmBridge/abi.generated.js';
-import { KIND, MATERIALS, MAT } from '../materials.js';
+import { KIND, MATERIAL_BY_ID, MAT } from '../materials.js';
+import {
+  AMBIENCE_GROUP_MIXER, AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
+} from '../materials.generated.js';
 import { loadAudioAssets, TNT_EXPLOSION_LAYERS } from './audioAssets.js';
 
 const STORAGE_KEY = 'sand-audio-muted';
-const AMBIENCE = Object.freeze({ WATER: 0, FIRE: 1, LAVA: 2, ACID: 3 });
-const AMBIENCE_VOLUME = [0, 0.15, 0, 0];
+export function buildAmbienceVoiceSpecs(groups = AMBIENCE_GROUP_MIXER) {
+  if (!Array.isArray(groups)) throw new TypeError('ambience mixer must be an array');
+  const noiseKinds = new Set(['white', 'brown', 'crackle']);
+  const filterTypes = new Set(['lowpass', 'bandpass', 'highpass']);
+  return groups.map((group, id) => {
+    if (group?.id !== id || !Number.isFinite(group.gain) || group.gain < 0
+        || !noiseKinds.has(group.noise) || !filterTypes.has(group.filterType)
+        || !Number.isFinite(group.frequency) || group.frequency <= 0
+        || !Number.isFinite(group.q) || group.q < 0) {
+      throw new TypeError(`invalid ambience mixer group ${id}`);
+    }
+    return Object.freeze({ ...group });
+  });
+}
+const AMBIENCE_VOICE_SPECS = buildAmbienceVoiceSpecs();
 const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 190,
   [SOUND_EVENT.FUSE]: 95,
@@ -231,23 +247,21 @@ export function createSandAudio() {
     return panner;
   };
 
-  const createAmbienceVoice = (group) => {
+  const createAmbienceVoice = (spec) => {
     const source = context.createBufferSource();
     source.loop = true;
-    source.buffer = group === AMBIENCE.WATER || group === AMBIENCE.ACID ? brownBuffer
-      : group === AMBIENCE.FIRE ? crackleBuffer
-        : brownBuffer;
+    source.buffer = spec.noise === 'white' ? noiseBuffer
+      : spec.noise === 'crackle' ? crackleBuffer : brownBuffer;
     const filter = context.createBiquadFilter();
-    if (group === AMBIENCE.WATER) { filter.type = 'bandpass'; filter.frequency.value = 720; filter.Q.value = 0.48; }
-    else if (group === AMBIENCE.FIRE) { filter.type = 'bandpass'; filter.frequency.value = 1850; filter.Q.value = 0.62; }
-    else if (group === AMBIENCE.LAVA) { filter.type = 'lowpass'; filter.frequency.value = 320; filter.Q.value = 0.72; }
-    else { filter.type = 'bandpass'; filter.frequency.value = 820; filter.Q.value = 0.45; }
+    filter.type = spec.filterType;
+    filter.frequency.value = spec.frequency;
+    filter.Q.value = spec.q;
     const gain = context.createGain();
     gain.gain.value = 0;
     source.connect(filter); filter.connect(gain);
     const panner = connectSpatial(gain, ambienceBus, 0);
     source.start();
-    return { source, gain, panner };
+    return { source, gain, panner, volume: spec.gain };
   };
 
   const createMovementVoice = (buffer, {
@@ -335,7 +349,7 @@ export function createSandAudio() {
     noiseBuffer = makeNoise(2.1, 'white');
     brownBuffer = makeNoise(2.3, 'brown');
     crackleBuffer = makeNoise(2.7, 'crackle');
-    ambienceVoices = [0, 1, 2, 3].map(createAmbienceVoice);
+    ambienceVoices = AMBIENCE_VOICE_SPECS.map(createAmbienceVoice);
     movementVoices = {
       lava: createMovementVoice(brownBuffer, { frequency: 230, q: 0.5, rate: 0.72 }),
       gas: createMovementVoice(noiseBuffer, {
@@ -684,7 +698,7 @@ export function createSandAudio() {
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {
-      const density = MATERIALS[material]?.density || 1.4;
+      const density = MATERIAL_BY_ID[material]?.density || 1.4;
       const heavy = clamp((density - 0.4) / 2.7);
       const bodyGain = type === SOUND_EVENT.SOLID_LAND ? 0.72 : 1;
       const bodyPitch = pitch * (1.08 - heavy * 0.32);
@@ -699,7 +713,7 @@ export function createSandAudio() {
     } else if (type === SOUND_EVENT.LAND) {
       playNoise({ duration: 0.13, gain: gain * 0.44, pan, frequency: 410, type: 'lowpass', q: 0.55, rate: 0.9 });
     } else if (type === SOUND_EVENT.PLACE) {
-      const kind = MATERIALS[material]?.kind;
+      const kind = MATERIAL_BY_ID[material]?.kind;
       if (kind === KIND.POWDER || kind === KIND.LIQUID || kind === KIND.GAS) {
         if (kind === KIND.POWDER) holdMovementVoice('sand', strength * 0.45, spatial,
           { volume: 0.075, rate: 0.96 + variation * 0.08, hold: 0.2 });
@@ -710,7 +724,7 @@ export function createSandAudio() {
         else holdMovementVoice('water', strength * 0.42, spatial,
           { volume: 0.062, rate: material === MAT.OIL ? 0.82 : 0.96 + variation * 0.08, hold: 0.2 });
       } else {
-        const density = MATERIALS[material]?.density || 1.4;
+        const density = MATERIAL_BY_ID[material]?.density || 1.4;
         const heavy = clamp((density - 0.4) / 2.7);
         const placePitch = pitch * (0.94 - heavy * 0.22);
         playNoise({ duration: 0.13 + heavy * 0.05, gain: gain * 0.28, pan,
@@ -774,7 +788,7 @@ export function createSandAudio() {
         EVENT_DISTANCE[type] ?? 70, packed[i + O.layer] | 0);
       if (spatial.gain <= 0.001) continue;
       const material = packed[i + O.material] | 0;
-      const materialKind = MATERIALS[material]?.kind;
+      const materialKind = MATERIAL_BY_ID[material]?.kind;
       const continuousPlace = type === SOUND_EVENT.PLACE
         && (materialKind === KIND.POWDER || materialKind === KIND.LIQUID || materialKind === KIND.GAS);
       const regional = type === SOUND_EVENT.FLUID_FALL || type === SOUND_EVENT.POWDER_MOVE
@@ -811,12 +825,16 @@ export function createSandAudio() {
     if (!context || !ambienceVoices) return;
     const now = context.currentTime;
     for (let group = 0; group < ambienceVoices.length; group++) {
-      const o = group * 3;
-      const amount = audible() && packed?.length >= o + 3 ? clamp(packed[o]) : 0;
-      const spatial = spatializeSound(packed?.[o + 1] ?? listener.x, packed?.[o + 2] ?? listener.y,
-        listener, 115, 0);
+      const o = group * AMBIENCE_SAMPLE_STRIDE;
+      const amount = audible() && packed?.length >= o + AMBIENCE_SAMPLE_STRIDE
+        ? clamp(packed[o + AMBIENCE_SAMPLE_FIELD.AMOUNT]) : 0;
+      const spatial = spatializeSound(
+        packed?.[o + AMBIENCE_SAMPLE_FIELD.WORLD_X] ?? listener.x,
+        packed?.[o + AMBIENCE_SAMPLE_FIELD.WORLD_Y] ?? listener.y,
+        listener, 115, 0,
+      );
       const voice = ambienceVoices[group];
-      const target = amount * AMBIENCE_VOLUME[group] * Math.max(0.18, spatial.gain);
+      const target = amount * voice.volume * Math.max(0.18, spatial.gain);
       voice.gain.gain.setTargetAtTime(target, now, target > voice.gain.gain.value ? 0.16 : 0.3);
       if (voice.panner) voice.panner.pan.setTargetAtTime(spatial.pan * 0.72, now, 0.18);
     }

@@ -15,10 +15,10 @@ void InventorySystem::seedStarterTools(Player& p) {
   p.inv[1].toolClass = TC_DIG;
   p.inv[1].toolTier = TT_IRON;
   p.inv[1].count = 1;
-  p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
+  p.selectedFootprint = E.tools.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   setSelectedSlot(p, 0);
 }
-void InventorySystem::seedStarterTools(int id) { Player* p = E.findPlayer(id); if (p) seedStarterTools(*p); }
+void InventorySystem::seedStarterTools(int id) { Player* p = E.psys.findPlayer(id); if (p) seedStarterTools(*p); }
 void InventorySystem::resetPlayerPlaceStroke(Player& p) {
   p.placeStrokeActive = false;
   p.placeStrokeMaterial = EMPTY;
@@ -33,17 +33,17 @@ void InventorySystem::setSelectedSlot(Player& p, int slot) {
   p.selectedSlot = slot;
   if (!(p.input & PI_PRIMARY)) p.emptyWeaponTriggerLatch = false;
   resetPlayerPlaceStroke(p);
-  E.resetPlayerMine(p);
+  E.psys.resetPlayerMine(p);
   InvSlot& s = p.inv[slot];
   p.bowChargeTicks = 0;
   if (s.itemKind == IK_MINING_TOOL && s.count > 0) { p.heldToolClass = TC_DIG; p.heldToolTier = s.toolTier; }
   else { p.heldToolClass = TC_HAND; p.heldToolTier = TT_HAND; }
 }
-void InventorySystem::setSelectedSlot(int id, int slot) { Player* p = E.findPlayer(id); if (p) setSelectedSlot(*p, slot); }
+void InventorySystem::setSelectedSlot(int id, int slot) { Player* p = E.psys.findPlayer(id); if (p) setSelectedSlot(*p, slot); }
 // Cycle the selected hotbar slot by `delta` with wrap-around (scroll wheel). The
 // wrap policy lives here, not in JS, so all input policy stays engine-side.
 void InventorySystem::cycleSelectedSlot(int id, int delta) {
-  Player* p = E.findPlayer(id); if (!p) return;
+  Player* p = E.psys.findPlayer(id); if (!p) return;
   int s = ((p->selectedSlot + delta) % INV_HOTBAR + INV_HOTBAR) % INV_HOTBAR;
   setSelectedSlot(*p, s);
 }
@@ -59,7 +59,9 @@ bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t 
 }
 bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
   if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
-  if (a.itemKind == IK_MATERIAL) return a.material == b.material && ((a.material != SEED && a.material != OAK_SEED) || a.plantType == b.plantType);
+  if (a.itemKind == IK_MATERIAL)
+    return a.material == b.material
+      && (!MAT_IS_PLANT_SEED[a.material] || a.plantType == b.plantType);
   if (a.itemKind == IK_ARROW) return true;
   return isFiniteAmmoWeapon(a.itemKind);
 }
@@ -85,8 +87,8 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
   p = trial;
   return true;
 }
-bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
-bool InventorySystem::addStack(int id, const InvSlot& stack) { Player* p = E.findPlayer(id); return p ? addStack(*p, stack) : false; }
+bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.psys.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
+bool InventorySystem::addStack(int id, const InvSlot& stack) { Player* p = E.psys.findPlayer(id); return p ? addStack(*p, stack) : false; }
 bool InventorySystem::addSpecialItem(int id, uint8_t itemKind, int count) {
   if (itemKind < IK_DYNAMITE_SATCHEL || itemKind > IK_RESCUE_BEAM) return false;
   InvSlot stack;
@@ -115,9 +117,11 @@ bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer)
   // and holding keeps placing as the loose material flows/settles away.
   bool foreground = layer == &E.fg;
   if (!foreground) E.bgEnabled = true;
-  E.useLayer(layer);
-  int placed = E.placeMaterialAtFootprintCapped(ax, ay, E.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
-  E.useLayer(&E.fg);
+  int placed = 0;
+  {
+    Engine::ActiveLayerScope active(E, layer);
+    placed = E.tools.placeMaterialAtFootprintCapped(ax, ay, E.tools.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
+  }
   if (placed <= 0) return false;
   uint8_t placedMaterial = s.material;
   s.count -= placed; if (s.count <= 0) s = InvSlot();
@@ -129,16 +133,18 @@ bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1,
   if (s.itemKind != IK_MATERIAL || s.isTool || s.count <= 0 || s.material == EMPTY) return false;
   bool foreground = layer == &E.fg;
   if (!foreground) E.bgEnabled = true;
-  E.useLayer(layer);
-  int placed = E.placeMaterialAtFootprintStrokeCapped(x0, y0, x1, y1, E.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
-  E.useLayer(&E.fg);
+  int placed = 0;
+  {
+    Engine::ActiveLayerScope active(E, layer);
+    placed = E.tools.placeMaterialAtFootprintStrokeCapped(x0, y0, x1, y1, E.tools.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
+  }
   if (placed <= 0) return false;
   uint8_t placedMaterial = s.material;
   s.count -= placed; if (s.count <= 0) s = InvSlot();
   E.audio.emit(SE_PLACE, x1, y1, std::min(1.25, 0.3 + placed * 0.025), placedMaterial, foreground ? 0 : 1);
   return true;
 }
-bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.findPlayer(id); return p ? placeFromSelected(*p, ax, ay, &E.fg) : false; }
+bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.psys.findPlayer(id); return p ? placeFromSelected(*p, ax, ay, &E.fg) : false; }
 
 // Move/swap/merge slot `from` into `to` (the openable-grid drag). Same-material
 // compatible stacks merge (respecting their material/ammo limit); otherwise the
@@ -153,7 +159,7 @@ void InventorySystem::moveSlot(Player& p, int from, int to) {
   }
   InvSlot tmp = a; a = b; b = tmp;
 }
-void InventorySystem::moveSlot(int id, int from, int to) { Player* p = E.findPlayer(id); if (p) moveSlot(*p, from, to); }
+void InventorySystem::moveSlot(int id, int from, int to) { Player* p = E.psys.findPlayer(id); if (p) moveSlot(*p, from, to); }
 
 // ---- Minecraft cursor model (the carried stack p.cursor) ----
 // Click a slot to pick up / place / merge / swap the carried stack. half=true is the
@@ -184,7 +190,7 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   }
   if (slot == p.selectedSlot) setSelectedSlot(p, p.selectedSlot); // re-derive held tool
 }
-void InventorySystem::cursorPick(int id, int slot, int half) { Player* p = E.findPlayer(id); if (p) cursorPick(*p, slot, half != 0); }
+void InventorySystem::cursorPick(int id, int slot, int half) { Player* p = E.psys.findPlayer(id); if (p) cursorPick(*p, slot, half != 0); }
 
 // Throw the carried stack into the world in the facing direction (drop-out).
 // Materials keep their stack-count behavior; captured enemy weapons can also be
@@ -204,11 +210,12 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   if (c.itemKind != IK_MATERIAL || c.isTool || c.material == EMPTY) return false;
   int n = whole ? c.count : 1;
   double sx = p.px + p.w / 2.0 + p.facing * 1.5, sy = p.py + p.h / 2.0;
-  E.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP, c.plantType);
+  E.itemsys.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED,
+                      IT_THROW_UP, c.plantType);
   c.count -= n; if (c.count <= 0) c = InvSlot();
   return true;
 }
-bool InventorySystem::throwFromCursor(int id, int whole) { Player* p = E.findPlayer(id); return p ? throwFromCursor(*p, whole != 0) : false; }
+bool InventorySystem::throwFromCursor(int id, int whole) { Player* p = E.psys.findPlayer(id); return p ? throwFromCursor(*p, whole != 0) : false; }
 
 void InventorySystem::dropAll(Player& p) {
   int ordinal = 0;
@@ -234,28 +241,25 @@ void InventorySystem::dropAll(Player& p) {
 // Pack the carried cursor stack (one slot record) for the HUD's floating item.
 int InventorySystem::buildCursorSnapshot(int playerId) {
   cursorSnap.assign(IVS_STRIDE, 0.0f);
-  Player* p = E.findPlayer(playerId); if (!p) return 0;
+  Player* p = E.psys.findPlayer(playerId); if (!p) return 0;
   InvSlot& s = p->cursor;
-  float* o = cursorSnap.data();
-  o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
-  o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = 0.0f;
-  o[IVS_PLANT_TYPE] = (float)s.plantType;
-  o[IVS_ITEM_KIND] = (float)s.itemKind;
+  writeInventorySlotSnapshot(cursorSnap.data(), s, {
+    .selected = WriteInventorySlotSnapshotSelected{false},
+  });
   return s.count > 0 ? 1 : 0;
 }
 
 // Pack one player's inventory into invSnapshot for the JS HUD.
 int InventorySystem::buildInventorySnapshot(int playerId) {
   invSnapshot.assign((size_t)INV_SLOTS * IVS_STRIDE, 0.0f);
-  Player* p = E.findPlayer(playerId);
+  Player* p = E.psys.findPlayer(playerId);
   if (!p) return 0;
   for (int i = 0; i < INV_SLOTS; i++) {
     InvSlot& s = p->inv[i];
     float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
-    o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
-    o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = (i == p->selectedSlot) ? 1.0f : 0.0f;
-    o[IVS_PLANT_TYPE] = (float)s.plantType;
-    o[IVS_ITEM_KIND] = (float)s.itemKind;
+    writeInventorySlotSnapshot(o, s, {
+      .selected = WriteInventorySlotSnapshotSelected{i == p->selectedSlot},
+    });
   }
   return INV_SLOTS;
 }
@@ -270,16 +274,16 @@ int InventorySystem::buildInventorySnapshot(int playerId) {
 // Only runs when E.survivalInventory is on, so creative is untouched.
 void InventorySystem::applyInventoryPlayer(Player& p) {
   if (!p.active || !p.alive) {
-    E.resetPlayerMine(p);
+    E.psys.resetPlayerMine(p);
     resetPlayerPlaceStroke(p);
-    if (E.tools.drafting && E.tools.draftOwner == p.id) E.playerFinalizeSolidDraft();
+    if (E.tools.drafting && E.tools.draftOwner == p.id) E.psys.playerFinalizeSolidDraft();
     p.prevInput = p.input; return;
   }
   if (p.toolCooldown > 0) p.toolCooldown--;
   int prev = p.prevInput;
   bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
   if (p.emptyWeaponTriggerLatch) {
-    E.resetPlayerMine(p); resetPlayerPlaceStroke(p);
+    E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p);
     p.prevInput = p.input;
     if (primary) return;
     p.emptyWeaponTriggerLatch = false;
@@ -295,20 +299,19 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   };
   bool aimInReach = inReachOf(ax, ay);
   InvSlot& sel = p.inv[p.selectedSlot];
-  const SurvivalFootprint& fp = E.getSurvivalFootprint(p);
+  const SurvivalFootprint& fp = E.tools.getSurvivalFootprint(p);
 
-  // (1) An active component E.tools.draft this player owns takes over its originating
+  // (1) An active component draft this player owns takes over its originating
   //     button: extend while held, materialize on release.
   if (E.tools.drafting && E.tools.draftOwner == p.id) {
     bool held = E.tools.draftLayer ? secondary : primary;
-    if (!held) { E.playerFinalizeSolidDraft(); E.playerActionCount++; }
+    if (!held) { E.psys.playerFinalizeSolidDraft(); E.playerActionCount++; }
     else if (aimInReach && !sel.isTool && sel.count > 0 && sel.material == E.tools.draftMaterial) {
-      E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
+      Engine::ActiveLayerScope active(E, E.tools.draftLayer ? &E.bg : &E.fg);
       int sx = E.tools.draftStrokeActive ? E.tools.lastDraftCx : ax, sy = E.tools.draftStrokeActive ? E.tools.lastDraftCy : ay;
-      int added = E.addFootprintStrokeToDraftCapped(E.tools.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.tools.draftLayer ? nullptr : &p);
+      int added = E.tools.addFootprintStrokeToDraftCapped(E.tools.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.tools.draftLayer ? nullptr : &p);
       E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
       if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
-      E.useLayer(&E.fg);
     } else if (!aimInReach) E.tools.draftStrokeActive = false;
     return;
   }
@@ -322,39 +325,43 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (sel.itemKind == IK_CLUSTER_LAUNCHER) { E.projectiles.applyClusterLauncherInput(p, prev); return; }
   if (sel.itemKind == IK_MINIGUN) { E.projectiles.applyMinigunInput(p); return; }
   if (sel.itemKind == IK_RESCUE_BEAM) { E.projectiles.applyRescueBeamInput(p); return; }
-  if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (sel.itemKind == IK_ARROW) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && E.isSeedMaterial(sel.material);
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);
-  if (!primary && !secondary) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (!primary && !secondary) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 
   if (mineMode) {
     if (p.placeStrokeActive) return; // selected stack ran dry during this held placement stroke
     // Hold-lock: while mining, reach is measured to the locked cell so the cursor
     // can wander without cancelling. Leaving reach of the lock (or releasing) resets.
     int reachX = p.mineActive ? p.mineX : ax, reachY = p.mineActive ? p.mineY : ay;
-    if (!inReachOf(reachX, reachY)) { E.resetPlayerMine(p); return; }
+    if (!inReachOf(reachX, reachY)) { E.psys.resetPlayerMine(p); return; }
     bool acted = false;
     // Creatures are hitbox entities, not grid cells. Route the same held mining
     // action through their health before resolving terrain; hurtCooldown keeps a
     // 60 Hz held button from becoming an accidental one-frame kill.
     int hitRadius = imax(fp.width, fp.height) / 2 + 1;
     int hitDamage = 7 + (int)p.heldToolTier * 4;
-    acted |= E.damageCreaturesAt(ax, ay, hitRadius, hitDamage);
-    if (primary) acted |= E.mineFootprint(p, ax, ay, &E.fg);
-    if (secondary && !primary) acted |= E.mineFootprintBoth(p, ax, ay);
+    acted |= E.creatures.damageAtPoint(ax, ay, hitRadius, hitDamage);
+    if (primary) acted |= E.psys.mineFootprint(p, ax, ay, &E.fg);
+    if (secondary && !primary) acted |= E.psys.mineFootprintBoth(p, ax, ay);
     if (acted) E.playerActionCount++;
   } else if (!aimInReach) {
-    E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return;
+    E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return;
   } else if (isSeed) {
-    E.resetPlayerMine(p);
+    E.psys.resetPlayerMine(p);
     if ((primaryRising || secondaryRising) && sel.count > 0) {
       bool toBg = secondaryRising && !primaryRising;
       if (toBg) E.bgEnabled = true;
       int x0, y0;
-      E.useLayer(toBg ? &E.bg : &E.fg);
-      uint8_t plantType = sel.material == OAK_SEED ? PT_OAK : sel.plantType;
-      bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAtTyped(x0, y0, plantType);
-      E.useLayer(&E.fg);
+      uint8_t encodedPlantType = MAT_PLANT_SPECIES[sel.material];
+      uint8_t plantType = encodedPlantType != NO_PLANT_SPECIES
+        ? encodedPlantType : E.validPlantType(sel.plantType);
+      bool placed = false;
+      {
+        Engine::ActiveLayerScope active(E, toBg ? &E.bg : &E.fg);
+        placed = E.tools.getSeedOrigin(ax, ay, x0, y0) && E.tools.placeSeedAtTyped(x0, y0, plantType);
+      }
       if (placed) {
         E.audio.emit(SE_PLACE, x0, y0, 0.6, E.plantSeedMat(plantType), toBg ? 1 : 0);
         sel.count--;
@@ -363,24 +370,25 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       }
     }
   } else if (isComp) {
-    // begin a component E.tools.draft on press (stage + consume the first disc immediately).
+    // begin a component draft on press (stage + consume the first disc immediately).
     if (primaryRising || secondaryRising) {
       bool toBg = secondaryRising && !primaryRising;
       if (toBg) E.bgEnabled = true;
       E.tools.drafting = true; E.tools.draftOwner = p.id; E.tools.draftLayer = toBg ? 1 : 0; E.tools.draftMaterial = sel.material;
       E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
-      E.useLayer(toBg ? &E.bg : &E.fg);
-      int added = E.addFootprintToDraftCapped(E.tools.draft, ax, ay, fp, E.rows, sel.count, toBg ? nullptr : &p);
-      if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
-      E.useLayer(&E.fg);
+      {
+        Engine::ActiveLayerScope active(E, toBg ? &E.bg : &E.fg);
+        int added = E.tools.addFootprintToDraftCapped(E.tools.draft, ax, ay, fp, E.rows, sel.count, toBg ? nullptr : &p);
+        if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
+      }
       E.playerActionCount++;
     }
   } else { // loose material -> continuous capped paint (consume per cell)
-    E.resetPlayerMine(p);
+    E.psys.resetPlayerMine(p);
     if (p.toolCooldown <= 0 && sel.count > 0) {
       Layer* layer = (secondary && !primary) ? &E.bg : &E.fg;
       int layerId = layer == &E.bg ? 1 : 0;
-      int fpId = E.clampSurvivalFootprintId(p.selectedFootprint);
+      int fpId = E.tools.clampSurvivalFootprintId(p.selectedFootprint);
       bool sameStroke = p.placeStrokeActive && p.placeStrokeLayer == layerId && p.placeStrokeMaterial == sel.material && p.placeStrokeFootprint == fpId;
       int sx = sameStroke ? p.placeStrokeX : ax, sy = sameStroke ? p.placeStrokeY : ay;
       if (placeFromSelectedStroke(p, sx, sy, ax, ay, layer)) p.toolCooldown = P_TOOL_COOLDOWN;

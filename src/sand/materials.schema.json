@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for material identity, shared by JS and C++. Edit here, then run `npm run generate` to regenerate materials.generated.js and cpp/engine/materials.generated.hpp. Numeric ids MUST stay stable: saved scenes, worldgen, tests, and the WASM grid key off them. `materialClass` is the broad gameplay/physics bucket and `flags` add cross-cutting traits, so a new material that reuses existing physics needs only a schema entry.",
-  "tableSize": 64,
+  "tableSize": 256,
   "kinds": {
     "NONE": 0,
     "POWDER": 1,
@@ -8,6 +8,20 @@
     "GAS": 3,
     "COMPONENT": 4,
     "FREE_RIGID": 5
+  },
+  "$placementProfileDoc": "Generic placement policy is explicit per material kind. paint writes loose cells; structure enters the component/body-aware placement path; erase clears cells. Add a new kind here and in kindPlacementProfiles before any material can use it.",
+  "placementProfiles": {
+    "erase": 0,
+    "paint": 1,
+    "structure": 2
+  },
+  "kindPlacementProfiles": {
+    "NONE": "erase",
+    "POWDER": "paint",
+    "LIQUID": "paint",
+    "GAS": "paint",
+    "COMPONENT": "structure",
+    "FREE_RIGID": "structure"
   },
   "$materialClassDoc": "Broad gameplay/physics class. Material ids remain exact identity; class answers high-level questions like gas/liquid/loose solid/rigid.",
   "materialClasses": {
@@ -29,7 +43,103 @@
     "lava": 7,
     "methane": 8
   },
-  "$flagDoc": "Bit index per behavior flag. flammable: ignites near fire/lava. dissolvable: acid eats it. rigid: a solid that grounds via rigid contact + is moved by moveRigidAssemblies. bearing: supports loose material above it (rigid ∪ sand-like powders). plantFamily: belongs to the growable plant-component family (flooded unbounded; fire-split).",
+  "$gasProfileDoc": "Gas movement/lifetime profiles. Every gas selects one explicitly; non-gases use none. Probabilities are per active tick. trappedDecay applies when the gas has no adjacent vent. ceilingRoute makes persistent gas move sideways only toward a route that rises.",
+  "gasProfiles": {
+    "none": { "id": 0, "decay": 0, "trappedDecay": 0, "upChance": 0, "sideChance": 0, "persistent": false, "ceilingRoute": false },
+    "vapor": { "id": 1, "decay": 0.018, "trappedDecay": 0.018, "upChance": 0.72, "sideChance": 0.65, "persistent": false, "ceilingRoute": false },
+    "fire": { "id": 2, "decay": 0.008, "trappedDecay": 0.008, "upChance": 0.72, "sideChance": 0.65, "persistent": false, "ceilingRoute": false },
+    "acrid": { "id": 3, "decay": 0.05, "trappedDecay": 0.30, "upChance": 0.72, "sideChance": 0.65, "persistent": false, "ceilingRoute": false },
+    "persistentCeiling": { "id": 4, "decay": 0, "trappedDecay": 0, "upChance": 0.72, "sideChance": 1, "persistent": true, "ceilingRoute": true }
+  },
+  "$explosiveProfileDoc": "Reusable heat-triggered explosive policies. tntFuse supports static/component-body fuses; methanePocket consumes a connected gas pocket into bounded blast fronts. A material reuses either behavior by selecting one profile.",
+  "explosiveProfiles": {
+    "none": { "id": 0, "heatSensitive": false, "requiredKind": null },
+    "tntFuse": { "id": 1, "heatSensitive": true, "requiredKind": "COMPONENT" },
+    "methanePocket": { "id": 2, "heatSensitive": true, "requiredKind": "GAS" }
+  },
+  "$reactionProfileDoc": "Reusable source-side chemistry and rigid-erosion policies. fire, acid, and lava select the existing optimized handlers; neighbor-side eligibility remains expressed by material traits such as flammable, dissolvable, and quenchesLava.",
+  "reactionProfiles": {
+    "none": { "id": 0, "requiredKind": null },
+    "fire": { "id": 1, "requiredKind": "GAS" },
+    "acid": { "id": 2, "requiredKind": "LIQUID" },
+    "lava": { "id": 3, "requiredKind": "LIQUID" }
+  },
+  "$contactHazardProfileDoc": "Reusable actor-contact policies. Player and creature damage may differ, while cadence and priority define when one overlapping hazard wins. The none profile is harmless and every damaging profile has a positive cadence and unique priority.",
+  "contactHazardProfiles": {
+    "none": { "id": 0, "playerDamage": 0, "creatureDamage": 0, "cadence": 0, "priority": 0 },
+    "fire": { "id": 1, "playerDamage": 4, "creatureDamage": 0, "cadence": 30, "priority": 1 },
+    "acid": { "id": 2, "playerDamage": 12, "creatureDamage": 12, "cadence": 15, "priority": 2 },
+    "lava": { "id": 3, "playerDamage": 15, "creatureDamage": 0, "cadence": 15, "priority": 3 }
+  },
+  "$habitatProfileDoc": "Reusable creature-habitat policy. Aquatic marks liquids that support aquatic spawning and locomotion; hazardous or nonviable liquids use none.",
+  "habitatProfiles": {
+    "none": { "id": 0, "aquatic": false },
+    "aquatic": { "id": 1, "aquatic": true }
+  },
+  "$ambienceProfileDoc": "Reusable continuous-sound policy. Materials may share an ambience group; each group declares its browser mixer voice, and none contributes no continuous sound.",
+  "$ambienceSampleDoc": "Packed ambience records cross the Wasm boundary in this generated field order. C++, the bridge, and the browser mixer consume the generated offsets and stride.",
+  "ambienceSampleFields": {
+    "amount": 0,
+    "worldX": 1,
+    "worldY": 2
+  },
+  "ambienceGroups": {
+    "water": { "id": 0, "gain": 0, "noise": "brown", "filterType": "bandpass", "frequency": 720, "q": 0.48 },
+    "fire": { "id": 1, "gain": 0.15, "noise": "crackle", "filterType": "bandpass", "frequency": 1850, "q": 0.62 },
+    "lava": { "id": 2, "gain": 0, "noise": "brown", "filterType": "lowpass", "frequency": 320, "q": 0.72 },
+    "acid": { "id": 3, "gain": 0, "noise": "brown", "filterType": "bandpass", "frequency": 820, "q": 0.45 }
+  },
+  "ambienceProfiles": {
+    "none": { "id": 0, "group": null },
+    "water": { "id": 1, "group": "water" },
+    "fire": { "id": 2, "group": "fire" },
+    "lava": { "id": 3, "group": "lava" },
+    "acid": { "id": 4, "group": "acid" }
+  },
+  "$liquidMovementProfileDoc": "Liquid movement profiles define whether mobility gates general flow, whether a clear straight fall bypasses that gate, and an optional fixed terminal fall cap. A zero fixedFallCap uses density-scaled fall speed.",
+  "liquidMovementProfiles": {
+    "none": { "id": 0, "mobilityGated": false, "straightFallIgnoresMobility": false, "fixedFallCap": 0 },
+    "standard": { "id": 1, "mobilityGated": false, "straightFallIgnoresMobility": false, "fixedFallCap": 0 },
+    "viscousGravity": { "id": 2, "mobilityGated": true, "straightFallIgnoresMobility": true, "fixedFallCap": 3 }
+  },
+  "$emissionProfileDoc": "Light emission amount and spatial pattern are independent. Every emitting material selects a profile; none is required for non-emitting materials.",
+  "emissionProfiles": {
+    "none": 0,
+    "uniform": 1,
+    "crystalQuarter": 2,
+    "myceliumSparse": 3
+  },
+  "$renderDetailProfileDoc": "Static world-space highlight patterns applied after base texture shading. Colors reference animColors entries so renderer detail does not require exact material checks.",
+  "renderDetailPatterns": {
+    "none": 0,
+    "hashMask": 1,
+    "myceliumNodule": 2,
+    "always": 3
+  },
+  "renderDetailProfiles": {
+    "none": { "id": 0, "pattern": "none", "mask": 0, "match": 0, "color": null },
+    "crystalCore": { "id": 1, "pattern": "hashMask", "mask": 7, "match": 0, "color": "PACKED_CRYSTAL_CORE" },
+    "myceliumNodule": { "id": 2, "pattern": "myceliumNodule", "mask": 0, "match": 0, "color": "PACKED_MYCELIUM_NODULE" },
+    "myceliumSpore": { "id": 3, "pattern": "always", "mask": 0, "match": 0, "color": "PACKED_MYCELIUM_NODULE" },
+    "glowberryCore": { "id": 4, "pattern": "hashMask", "mask": 3, "match": 0, "color": "PACKED_GLOWBERRY_CORE" },
+    "glowshroomCore": { "id": 5, "pattern": "hashMask", "mask": 3, "match": 0, "color": "PACKED_GLOWSHROOM_CORE" }
+  },
+  "$lightTransmissionProfileDoc": "Hot lighting properties shared by every material in a broad class, with an optional per-material lightProfile override for cases such as glass.",
+  "lightTransmissionProfiles": {
+    "clear": { "id": 0, "transparent": true, "loss": 4, "faceLit": false },
+    "liquid": { "id": 1, "transparent": false, "loss": 8, "faceLit": false },
+    "looseSolid": { "id": 2, "transparent": false, "loss": 17, "faceLit": true },
+    "rigid": { "id": 3, "transparent": false, "loss": 24, "faceLit": true },
+    "glass": { "id": 4, "transparent": true, "loss": 6, "faceLit": true }
+  },
+  "materialClassLightProfiles": {
+    "none": "clear",
+    "gas": "clear",
+    "solid": "looseSolid",
+    "rigid": "rigid",
+    "liquid": "liquid"
+  },
+  "$flagDoc": "Bit index per behavior flag. flammable: ignites near fire/lava. dissolvable: acid eats it. rigid: a solid that grounds via rigid contact + is moved by moveRigidAssemblies. bearing: supports loose material above it (rigid ∪ sand-like powders). plantFamily: belongs to the growable plant-component family. spawnHazard: excluded from authored safe-spawn regions. heatSource: wakes and ignites heat-sensitive explosives.",
   "flagBits": {
     "flammable": 0,
     "dissolvable": 1,
@@ -39,7 +149,9 @@
     "quenchesLava": 5,
     "relaxesGaps": 6,
     "plantWood": 7,
-    "plantLeaf": 8
+    "plantLeaf": 8,
+    "spawnHazard": 9,
+    "heatSource": 10
   },
   "$toolDoc": "Mining gate (survival): toolClass is the preferred mining class and the drop gate for specialized tools. A destroyed cell drops an item if the material is hand-tier, or if the held tool's class matches toolClass AND its tier >= toolTier. The dig tool is a universal digger: it matches every material class for drops (still tier-gated) and digs at a flat speed so only DURABILITY (hardness) matters. toolClass 'none' never drops (liquids/gas/free-rigid). Wrong class or too-low tier still breaks the block, it just yields nothing.",
   "toolClasses": {
@@ -70,22 +182,71 @@
     ],
     "tierPercent": [50, 100, 135, 175, 210]
   },
+  "$plantGrowthProfilesDoc": "Reusable runtime growth policies. A species selects one profile; a new profile is needed only for genuinely new growth topology or cadence.",
+  "plantGrowthProfiles": [
+    { "id": 0, "name": "oak", "woodTopology": "oak", "leafTopology": "oak", "trunkProfile": "tree", "straight": false, "maxWoodBase": 220, "maxWoodVariation": 31, "maxLeafBase": 480, "maxLeafVariation": 71, "leafStart": 36, "leaves": true, "variedTree": false, "finishStemFirst": true, "extraWood": true, "woodLeafChance": 0.54, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0, "leafBurst": "default", "gravityRecovery": false, "thickenHeight": 23, "oppositeChance": 0.94, "wideBaseChance": 0.78, "wideBaseHeight": 8 },
+    { "id": 1, "name": "pine", "woodTopology": "pine", "leafTopology": "pine", "trunkProfile": "tree", "straight": true, "maxWoodBase": 104, "maxWoodVariation": 30, "maxLeafBase": 230, "maxLeafVariation": 81, "leafStart": 5, "leaves": true, "variedTree": true, "finishStemFirst": false, "extraWood": true, "woodLeafChance": 0.44, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0.38, "leafBurst": "pine", "gravityRecovery": false, "thickenHeight": 19, "oppositeChance": 0.78, "wideBaseChance": 0.55, "wideBaseHeight": 5 },
+    { "id": 2, "name": "willow", "woodTopology": "willow", "leafTopology": "willow", "trunkProfile": "tree", "straight": true, "maxWoodBase": 205, "maxWoodVariation": 31, "maxLeafBase": 240, "maxLeafVariation": 61, "leafStart": 5, "leaves": true, "variedTree": true, "finishStemFirst": false, "extraWood": true, "woodLeafChance": 0.44, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0.38, "leafBurst": "default", "gravityRecovery": true, "thickenHeight": 24, "oppositeChance": 0.88, "wideBaseChance": 0.55, "wideBaseHeight": 5 },
+    { "id": 3, "name": "cactus", "woodTopology": "cactus", "leafTopology": "generic", "trunkProfile": "none", "straight": true, "maxWoodBase": 34, "maxWoodVariation": 0, "maxLeafBase": 105, "maxLeafVariation": 0, "leafStart": 6, "leaves": false, "variedTree": false, "finishStemFirst": true, "extraWood": true, "woodLeafChance": 0.54, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0, "leafBurst": "default", "gravityRecovery": false, "thickenHeight": 0, "oppositeChance": 0, "wideBaseChance": 0, "wideBaseHeight": 0 },
+    { "id": 4, "name": "mushroom", "woodTopology": "generic", "leafTopology": "mushroom", "trunkProfile": "none", "straight": true, "maxWoodBase": 13, "maxWoodVariation": 0, "maxLeafBase": 28, "maxLeafVariation": 0, "leafStart": 11, "leaves": true, "variedTree": false, "finishStemFirst": true, "extraWood": true, "woodLeafChance": 0.54, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0, "leafBurst": "default", "gravityRecovery": false, "thickenHeight": 0, "oppositeChance": 0, "wideBaseChance": 0, "wideBaseHeight": 0 },
+    { "id": 5, "name": "bush", "woodTopology": "generic", "leafTopology": "generic", "trunkProfile": "generic", "straight": false, "maxWoodBase": 14, "maxWoodVariation": 0, "maxLeafBase": 38, "maxLeafVariation": 0, "leafStart": 3, "leaves": true, "variedTree": false, "finishStemFirst": false, "extraWood": true, "woodLeafChance": 0.54, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0, "leafBurst": "default", "gravityRecovery": false, "thickenHeight": 0, "oppositeChance": 0, "wideBaseChance": 0, "wideBaseHeight": 0 },
+    { "id": 6, "name": "vine", "woodTopology": "vine", "leafTopology": "vine", "trunkProfile": "none", "straight": true, "maxWoodBase": 40, "maxWoodVariation": 0, "maxLeafBase": 9, "maxLeafVariation": 0, "leafStart": 8, "leaves": true, "variedTree": false, "finishStemFirst": true, "extraWood": false, "woodLeafChance": 0.54, "vineBerriesChance": 0.22, "foliageAlongsideWoodChance": 0, "leafBurst": "single", "gravityRecovery": false, "thickenHeight": 0, "oppositeChance": 0, "wideBaseChance": 0, "wideBaseHeight": 0 },
+    { "id": 7, "name": "standard", "woodTopology": "generic", "leafTopology": "generic", "trunkProfile": "generic", "straight": false, "maxWoodBase": 120, "maxWoodVariation": 0, "maxLeafBase": 105, "maxLeafVariation": 0, "leafStart": 6, "leaves": true, "variedTree": false, "finishStemFirst": false, "extraWood": true, "woodLeafChance": 0.54, "vineBerriesChance": 0, "foliageAlongsideWoodChance": 0, "leafBurst": "default", "gravityRecovery": false, "thickenHeight": 0, "oppositeChance": 0, "wideBaseChance": 0, "wideBaseHeight": 0 }
+  ],
+  "$plantWorldgenProfilesDoc": "Reusable deterministic surface silhouettes. Height ranges are base plus floor(hash * variation).",
+  "plantWorldgenProfiles": [
+    { "id": 0, "name": "broadleaf", "topology": "broadleaf", "heightBase": 13, "heightVariation": 12, "horizontalReach": 9, "upwardReach": 42 },
+    { "id": 1, "name": "pine", "topology": "pine", "heightBase": 23, "heightVariation": 13, "horizontalReach": 10, "upwardReach": 42 },
+    { "id": 2, "name": "willow", "topology": "willow", "heightBase": 18, "heightVariation": 10, "horizontalReach": 14, "upwardReach": 42 },
+    { "id": 3, "name": "cactus", "topology": "cactus", "heightBase": 9, "heightVariation": 8, "horizontalReach": 2, "upwardReach": 42 },
+    { "id": 4, "name": "bush", "topology": "bush", "heightBase": 4, "heightVariation": 4, "horizontalReach": 5, "upwardReach": 42 }
+  ],
+  "$plantSpeciesDoc": "Stable flora ids plus materials, reusable growth/worldgen policies, and palette artwork. Standard is the generic SEED growth path and is not a separate palette entry.",
+  "plantSpecies": [
+    { "id": 0, "name": "OAK", "label": "Oak", "growthProfile": "oak", "worldgenProfile": "broadleaf", "seedMaterial": "OAK_SEED", "woodMaterial": "OAK_WOOD", "leafMaterial": "OAK_LEAF", "palette": true, "colors": ["#d59a5f", "#78472d"], "pixels": [".........", "...222...", "..21112..", "..21112..", "..11111..", "...111...", "...121...", "....2....", "........."] },
+    { "id": 1, "name": "PINE", "label": "Pine", "growthProfile": "pine", "worldgenProfile": "pine", "seedMaterial": "SEED", "woodMaterial": "PINE_WOOD", "leafMaterial": "PINE_NEEDLES", "palette": true, "colors": ["#72b878", "#315b46"], "pixels": ["....2....", "...121...", "...121...", "..11211..", "..11211..", ".1112111.", "...121...", "....2....", "........."] },
+    { "id": 2, "name": "WILLOW", "label": "Willow", "growthProfile": "willow", "worldgenProfile": "willow", "seedMaterial": "SEED", "woodMaterial": "WOOD", "leafMaterial": "WILLOW_LEAF", "palette": true, "colors": ["#b7d983", "#527047"], "pixels": ["...111...", "..11211..", ".1112111.", ".1122211.", "..12221..", "...121...", "...121...", "....2....", "........."] },
+    { "id": 3, "name": "CACTUS", "label": "Cactus", "growthProfile": "cactus", "worldgenProfile": "cactus", "seedMaterial": "SEED", "woodMaterial": "CACTUS", "leafMaterial": "PLANT", "palette": true, "colors": ["#63c77a", "#28653f"], "pixels": [".........", "...222...", "..21112..", "..12121..", "..21112..", "..12121..", "..21112..", "...222...", "........."] },
+    { "id": 4, "name": "MUSHROOM", "label": "Mushroom", "growthProfile": "mushroom", "worldgenProfile": "broadleaf", "seedMaterial": "SEED", "woodMaterial": "MUSH_STEM", "leafMaterial": "MUSH_CAP", "palette": true, "colors": ["#aaa79f", "#77736c"], "pixels": [".........", "...111...", "..11111..", ".1121211.", ".1111111.", "...222...", "...222...", "..22222..", "........."] },
+    { "id": 5, "name": "BUSH", "label": "Bush", "growthProfile": "bush", "worldgenProfile": "bush", "seedMaterial": "SEED", "woodMaterial": "WOOD", "leafMaterial": "BUSH_LEAF", "palette": true, "colors": ["#70b764", "#bd5c82"], "pixels": [".........", "..12121..", ".1121211.", ".2111112.", ".1212121.", "..11111..", "...121...", "....2....", "........."] },
+    { "id": 6, "name": "VINE", "label": "Vine", "growthProfile": "vine", "worldgenProfile": "broadleaf", "seedMaterial": "SEED", "woodMaterial": "VINE", "leafMaterial": "GLOWBERRY", "palette": true, "colors": ["#315b26", "#203f1a"], "pixels": ["....1....", "...111...", "....1....", "...11....", "...12....", "..11.....", "..1......", ".21......", "........."] },
+    { "id": 7, "name": "STANDARD", "label": "Standard", "growthProfile": "standard", "worldgenProfile": "broadleaf", "seedMaterial": "SEED", "woodMaterial": "WOOD", "leafMaterial": "PLANT", "palette": false, "colors": ["#6bab59", "#315b26"], "pixels": [".........", ".........", ".........", ".........", ".........", ".........", ".........", ".........", "........."] }
+  ],
+  "$paletteDoc": "Creative palette order and folders. Labels are generated entry labels: material names are lowercase, species are '<name> seed', and tools are cube/eraser. Main automatically contains every entry; items omitted from mainOrder retain catalogue order.",
+  "palette": {
+    "mainOrder": [
+      "cube", "eraser", "rigid", "neutronium", "stone", "water", "acid", "lava", "tnt", "seed", "sand",
+      "fire", "methane", "oil", "gunpowder", "crystal", "mycelium_spore", "mycelium", "glowberry", "glowshroom",
+      "brine", "steam", "acrid_smoke", "ice", "oak seed", "pine seed", "willow seed", "cactus seed", "mushroom seed", "bush seed", "vine seed",
+      "grass", "dirt", "snow", "mud", "salt", "gold_ore", "iron_ore", "copper_ore", "coal_ore", "brick", "clay", "sandstone", "moss",
+      "wood", "oak_wood", "pine_wood", "oak_leaf", "pine_needles", "willow_leaf", "bush_leaf", "cactus", "mush_cap", "mush_stem", "vine", "plant", "driftwood", "debris"
+    ],
+    "sections": [
+      { "id": "main", "label": "Main", "accent": "#f6c56f", "all": true },
+      { "id": "tools", "label": "Tools", "accent": "#cbd5e1", "labels": ["cube", "eraser", "rigid"] },
+      { "id": "terrain", "label": "Terrain", "accent": "#c99a6b", "labels": ["sand", "stone", "neutronium", "dirt", "snow", "mud", "clay", "sandstone", "copper_ore", "iron_ore", "coal_ore", "gold_ore", "brick", "salt", "debris", "crystal"] },
+      { "id": "fluids", "label": "Fluids", "accent": "#70bfff", "labels": ["water", "oil", "acid", "lava", "ice", "steam", "brine"] },
+      { "id": "flora", "label": "Flora", "accent": "#7dd88a", "labels": ["seed", "wood", "plant", "oak_wood", "oak_leaf", "driftwood", "moss", "pine_wood", "cactus", "mush_stem", "mush_cap", "pine_needles", "willow_leaf", "bush_leaf", "vine", "mycelium", "mycelium_spore", "glowberry", "glowshroom", "grass"], "entryKinds": ["seed"] },
+      { "id": "reactions", "label": "Reactions", "accent": "#ff856c", "labels": ["fire", "steam", "methane", "oil", "acid", "lava", "neutronium", "acrid_smoke", "salt", "brine", "gunpowder", "tnt", "debris"] },
+      { "id": "creatures", "label": "Creatures", "accent": "#c99cff", "entryKinds": ["creature"] }
+    ]
+  },
   "materials": [
     { "id": 0,  "name": "EMPTY",     "kind": "NONE",       "materialClass": "none",   "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0x00000000", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "none",  "flags": [] },
     { "id": 1,  "name": "SAND",      "kind": "POWDER",     "materialClass": "solid",  "density": 1.6, "looseSorted": true,  "mobility": 1.0,  "color": "0x7978c8e6", "toolClass": "shovel", "toolTier": 0, "textureAmp": 7, "durability": 2,  "renderAnim": "none",  "flags": ["dissolvable", "bearing"] },
-    { "id": 2,  "name": "WATER",     "kind": "LIQUID",     "materialClass": "liquid", "density": 1.0, "looseSorted": true,  "mobility": 1.0,  "transparency": 0.42, "color": "0x66ffaa78", "toolClass": "none", "toolTier": 0, "textureAmp": 3, "durability": 0,  "renderAnim": "water",  "flags": ["quenchesLava", "relaxesGaps"] },
+    { "id": 2,  "name": "WATER",     "kind": "LIQUID",     "liquidMovementProfile": "standard", "habitatProfile": "aquatic", "ambienceProfile": "water", "materialClass": "liquid", "density": 1.0, "looseSorted": true,  "mobility": 1.0,  "transparency": 0.42, "color": "0x66ffaa78", "toolClass": "none", "toolTier": 0, "textureAmp": 3, "durability": 0,  "renderAnim": "water",  "flags": ["quenchesLava", "relaxesGaps"] },
     { "id": 3,  "name": "STONE",     "kind": "COMPONENT",  "materialClass": "rigid",  "density": 2.6, "looseSorted": false, "mobility": 0,    "color": "0xb3968c8c", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 8,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
-    { "id": 4,  "name": "OIL",       "kind": "LIQUID",     "materialClass": "liquid", "density": 0.8, "looseSorted": true,  "mobility": 1.0,  "color": "0x8c1c4869", "toolClass": "none", "toolTier": 0, "textureAmp": 4, "durability": 0,  "renderAnim": "oil",  "flags": ["flammable", "relaxesGaps"] },
-    { "id": 5,  "name": "FIRE",      "kind": "GAS",        "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0xb8226cff", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "emission": 245,  "renderAnim": "fire",  "flags": [] },
-    { "id": 6,  "name": "STEAM",     "kind": "GAS",        "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "transparency": 0.62, "color": "0x42ffe6d2", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "steam",  "flags": [] },
+    { "id": 4,  "name": "OIL",       "kind": "LIQUID",     "liquidMovementProfile": "standard", "materialClass": "liquid", "density": 0.8, "looseSorted": true,  "mobility": 1.0,  "color": "0x8c1c4869", "toolClass": "none", "toolTier": 0, "textureAmp": 4, "durability": 0,  "renderAnim": "oil",  "flags": ["flammable", "relaxesGaps", "spawnHazard"] },
+    { "id": 5,  "name": "FIRE",      "kind": "GAS",        "gasProfile": "fire", "reactionProfile": "fire", "contactHazardProfile": "fire", "ambienceProfile": "fire", "emissionProfile": "uniform", "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0xb8226cff", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "emission": 245,  "renderAnim": "fire",  "flags": ["spawnHazard", "heatSource"] },
+    { "id": 6,  "name": "STEAM",     "kind": "GAS",        "gasProfile": "vapor", "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "transparency": 0.62, "color": "0x42ffe6d2", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "steam",  "flags": [] },
     { "id": 7,  "name": "SEED",      "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.5, "looseSorted": false, "mobility": 0,    "color": "0xc7162e58", "toolClass": "axe", "toolTier": 0, "textureAmp": 5, "durability": 2,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] },
     { "id": 8,  "name": "WOOD",      "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc2234c80", "toolClass": "axe", "toolTier": 0, "textureAmp": 7, "durability": 4,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily", "plantWood"] },
     { "id": 9,  "name": "PLANT",     "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.4, "looseSorted": false, "mobility": 0,    "color": "0xa354aa5b", "toolClass": "axe", "toolTier": 0, "textureAmp": 9, "durability": 2,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily", "plantLeaf"] },
-    { "id": 10, "name": "ACID",      "kind": "LIQUID",     "materialClass": "liquid", "density": 1.1, "looseSorted": true,  "mobility": 1.0,  "transparency": 0.32, "color": "0x8020ff80", "toolClass": "none", "toolTier": 0, "textureAmp": 4, "durability": 0,  "renderAnim": "acid",  "flags": ["quenchesLava", "relaxesGaps"] },
-    { "id": 11, "name": "LAVA",      "kind": "LIQUID",     "materialClass": "liquid", "density": 2.8, "looseSorted": true,  "mobility": 0.35, "color": "0xc81050ff", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "emission": 230,  "renderAnim": "lava",  "flags": [] },
+    { "id": 10, "name": "ACID",      "kind": "LIQUID",     "liquidMovementProfile": "standard", "reactionProfile": "acid", "contactHazardProfile": "acid", "ambienceProfile": "acid", "materialClass": "liquid", "density": 1.1, "looseSorted": true,  "mobility": 1.0,  "transparency": 0.32, "color": "0x8020ff80", "toolClass": "none", "toolTier": 0, "textureAmp": 4, "durability": 0,  "renderAnim": "acid",  "flags": ["quenchesLava", "relaxesGaps", "spawnHazard"] },
+    { "id": 11, "name": "LAVA",      "kind": "LIQUID",     "liquidMovementProfile": "viscousGravity", "reactionProfile": "lava", "contactHazardProfile": "lava", "ambienceProfile": "lava", "emissionProfile": "uniform", "materialClass": "liquid", "density": 2.8, "looseSorted": true,  "mobility": 0.35, "color": "0xc81050ff", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "emission": 230,  "renderAnim": "lava",  "flags": ["spawnHazard", "heatSource"] },
     { "id": 12, "name": "ICE",       "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.9, "looseSorted": false, "mobility": 0,    "color": "0x90fff0c0", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 5, "durability": 5,  "renderAnim": "none",   "flags": ["rigid", "bearing"] },
     { "id": 13, "name": "RIGID",     "kind": "FREE_RIGID", "materialClass": "rigid",  "density": 1.4, "looseSorted": false, "mobility": 0,    "color": "0xff8a725e", "toolClass": "none", "toolTier": 0, "textureAmp": 6, "durability": 10, "renderAnim": "none",  "flags": ["rigid", "bearing"] },
-    { "id": 14, "name": "DRIFTWOOD", "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc26e7d8c", "toolClass": "axe", "toolTier": 0, "textureAmp": 7, "durability": 4,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 14, "name": "DRIFTWOOD", "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc26e7d8c", "toolClass": "axe", "toolTier": 0, "textureAmp": 7, "durability": 4,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"], "craftingFlags": ["plantWood"] },
 
     { "id": 15, "name": "DIRT",      "kind": "POWDER",     "materialClass": "solid",  "density": 1.5, "looseSorted": true,  "mobility": 1.0,  "color": "0xc8305278", "toolClass": "shovel", "toolTier": 0, "textureAmp": 7, "durability": 2,  "renderAnim": "none",  "flags": ["dissolvable", "bearing"] },
     { "id": 16, "name": "SNOW",      "kind": "POWDER",     "materialClass": "solid",  "density": 0.4, "looseSorted": true,  "mobility": 1.0,  "color": "0xe0faf2eb", "toolClass": "shovel", "toolTier": 0, "textureAmp": 4, "durability": 1,  "renderAnim": "none",  "flags": ["bearing"] },
@@ -102,28 +263,28 @@
     { "id": 27, "name": "CACTUS",    "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.7, "looseSorted": false, "mobility": 0,    "color": "0xc23c7846", "toolClass": "axe", "toolTier": 0, "textureAmp": 6, "durability": 3,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing", "plantFamily", "plantWood"] },
     { "id": 28, "name": "MUSH_STEM", "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.5, "looseSorted": false, "mobility": 0,    "color": "0xb0afc8d2", "toolClass": "axe", "toolTier": 0, "textureAmp": 6, "durability": 2,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing", "plantFamily", "plantWood"] },
     { "id": 29, "name": "MUSH_CAP",  "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.45,"looseSorted": false, "mobility": 0,    "color": "0xb83237b4", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing", "plantFamily", "plantLeaf"] },
-    { "id": 30, "name": "VINE",      "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.4, "looseSorted": false, "mobility": 0,    "color": "0xa32d6e3c", "toolClass": "axe", "toolTier": 0, "textureAmp": 9, "durability": 1,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "plantFamily", "plantWood"] },
-    { "id": 31, "name": "ACRID_SMOKE","kind": "GAS",       "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "transparency": 0.52, "color": "0x6030c8d8", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "smoke",  "flags": [] },
+    { "id": 30, "name": "VINE",      "kind": "COMPONENT",  "materialClass": "rigid",  "density": 0.4, "looseSorted": false, "mobility": 0,    "color": "0xa32d6e3c", "toolClass": "axe", "toolTier": 0, "textureAmp": 9, "durability": 1,  "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "plantFamily", "plantWood"], "craftingFlags": ["plantLeaf"], "nonBearing": true },
+    { "id": 31, "name": "ACRID_SMOKE","kind": "GAS",       "gasProfile": "acrid", "materialClass": "gas",    "density": 0,   "looseSorted": false, "mobility": 0,    "transparency": 0.52, "color": "0x6030c8d8", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "smoke",  "flags": [] },
 
     { "id": 32, "name": "SALT",      "kind": "POWDER",     "materialClass": "solid",  "density": 1.5, "looseSorted": true,  "mobility": 1.0,  "color": "0xe8f2f8f8", "toolClass": "shovel", "toolTier": 0, "textureAmp": 4, "durability": 1,  "renderAnim": "none",  "flags": ["bearing"] },
-    { "id": 33, "name": "BRINE",     "kind": "LIQUID",     "materialClass": "liquid", "density": 1.05,"looseSorted": true,  "mobility": 1.0,  "transparency": 0.38, "color": "0x66c0c890", "toolClass": "none", "toolTier": 0, "textureAmp": 3, "durability": 0,  "renderAnim": "water",  "flags": ["quenchesLava", "relaxesGaps"] },
+    { "id": 33, "name": "BRINE",     "kind": "LIQUID",     "liquidMovementProfile": "standard", "habitatProfile": "aquatic", "ambienceProfile": "water", "materialClass": "liquid", "density": 1.05,"looseSorted": true,  "mobility": 1.0,  "transparency": 0.38, "color": "0x66c0c890", "toolClass": "none", "toolTier": 0, "textureAmp": 3, "durability": 0,  "renderAnim": "water",  "flags": ["quenchesLava", "relaxesGaps"] },
     { "id": 34, "name": "GUNPOWDER", "kind": "POWDER",     "materialClass": "solid",  "density": 1.2, "looseSorted": true,  "mobility": 1.0,  "color": "0xc84a4a52", "toolClass": "shovel", "toolTier": 0, "textureAmp": 6, "durability": 1,  "renderAnim": "none",  "flags": ["flammable", "bearing"] },
-    { "id": 35, "name": "TNT",       "kind": "COMPONENT",  "materialClass": "rigid",  "density": 1.6, "looseSorted": false, "mobility": 0,    "color": "0xc82838cc", "toolClass": "pickaxe", "toolTier": 0, "textureAmp": 4, "durability": 3,  "renderAnim": "none", "flags": ["rigid", "bearing"] },
+    { "id": 35, "name": "TNT",       "kind": "COMPONENT",  "explosiveProfile": "tntFuse", "materialClass": "rigid",  "density": 1.6, "looseSorted": false, "mobility": 0,    "color": "0xc82838cc", "toolClass": "pickaxe", "toolTier": 0, "textureAmp": 4, "durability": 3,  "renderAnim": "none", "flags": ["rigid", "bearing", "spawnHazard"] },
     { "id": 36, "name": "DEBRIS",    "kind": "COMPONENT",  "materialClass": "rigid",  "density": 2.4, "looseSorted": false, "mobility": 0,    "color": "0xb8424852", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 8,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
-    { "id": 37, "name": "CRYSTAL",   "kind": "COMPONENT",  "materialClass": "rigid",  "density": 2.5, "looseSorted": false, "mobility": 0,    "color": "0xd8fff4e8", "toolClass": "pickaxe", "toolTier": 2, "textureAmp": 7, "durability": 8,  "emission": 132, "renderAnim": "none", "flags": ["rigid", "bearing"] },
-    { "id": 38, "name": "MYCELIUM",  "kind": "COMPONENT",  "materialClass": "rigid",  "density": 1.2, "looseSorted": false, "mobility": 0,    "color": "0xc8643255", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 12, "durability": 4, "emission": 58,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
-    { "id": 39, "name": "MYCELIUM_SPORE","kind": "COMPONENT","materialClass": "rigid","density": 1.1, "looseSorted": false, "mobility": 0,    "color": "0xdf96547d", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 5, "emission": 112,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 37, "name": "CRYSTAL",   "kind": "COMPONENT",  "emissionProfile": "crystalQuarter", "renderDetailProfile": "crystalCore", "materialClass": "rigid",  "density": 2.5, "looseSorted": false, "mobility": 0,    "color": "0xd8fff4e8", "toolClass": "pickaxe", "toolTier": 2, "textureAmp": 7, "durability": 8,  "emission": 132, "renderAnim": "none", "flags": ["rigid", "bearing"] },
+    { "id": 38, "name": "MYCELIUM",  "kind": "COMPONENT",  "emissionProfile": "myceliumSparse", "renderDetailProfile": "myceliumNodule", "materialClass": "rigid",  "density": 1.2, "looseSorted": false, "mobility": 0,    "color": "0xc8643255", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 12, "durability": 4, "emission": 58,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 39, "name": "MYCELIUM_SPORE","kind": "COMPONENT","emissionProfile": "uniform", "renderDetailProfile": "myceliumSpore", "materialClass": "rigid","density": 1.1, "looseSorted": false, "mobility": 0,    "color": "0xdf96547d", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 5, "emission": 112,  "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
 
-    { "id": 40, "name": "GLOWBERRY", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xd81e9bff", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 1, "emission": 98, "renderAnim": "none", "flags": ["dissolvable", "rigid", "plantFamily", "plantLeaf"] },
-    { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "emission": 95, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 40, "name": "GLOWBERRY", "kind": "COMPONENT", "emissionProfile": "uniform", "renderDetailProfile": "glowberryCore", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xd81e9bff", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 1, "emission": 98, "renderAnim": "none", "flags": ["dissolvable", "rigid", "plantFamily", "plantLeaf"], "nonBearing": true },
+    { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "emissionProfile": "uniform", "renderDetailProfile": "glowshroomCore", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "emission": 95, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
     { "id": 42, "name": "GRASS",     "kind": "POWDER",    "materialClass": "solid", "density": 1.4, "looseSorted": true,  "mobility": 1.0, "color": "0xc854aa5b", "toolClass": "shovel", "toolTier": 0, "textureAmp": 9, "durability": 2, "renderAnim": "none", "flags": ["flammable", "dissolvable", "bearing"] },
-    { "id": 43, "name": "METHANE",   "kind": "GAS",       "materialClass": "gas",   "density": 0.4, "looseSorted": false, "mobility": 0,   "transparency": 0.70, "color": "0x609bd296", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "renderAnim": "methane", "flags": [] },
+    { "id": 43, "name": "METHANE",   "kind": "GAS",       "gasProfile": "persistentCeiling", "explosiveProfile": "methanePocket", "materialClass": "gas",   "density": 0.4, "looseSorted": false, "mobility": 0,   "transparency": 0.70, "color": "0x609bd296", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "renderAnim": "methane", "flags": ["spawnHazard"] },
     { "id": 44, "name": "PINE_NEEDLES", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xb42d6340", "toolClass": "axe", "toolTier": 0, "textureAmp": 10, "durability": 2, "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily", "plantLeaf"] },
     { "id": 45, "name": "WILLOW_LEAF", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xa35f963f", "toolClass": "axe", "toolTier": 0, "textureAmp": 11, "durability": 2, "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily", "plantLeaf"] },
     { "id": 46, "name": "BUSH_LEAF", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xb447824f", "toolClass": "axe", "toolTier": 0, "textureAmp": 12, "durability": 2, "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily", "plantLeaf"] },
     { "id": 47, "name": "DEEPSTONE", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.9, "looseSorted": false, "mobility": 0, "color": "0xc8342e34", "toolClass": "pickaxe", "toolTier": 2, "textureAmp": 9, "durability": 14, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"] },
-    { "id": 48, "name": "GLASS",     "kind": "COMPONENT", "materialClass": "rigid", "density": 2.1, "looseSorted": false, "mobility": 0, "transparency": 0.68, "color": "0x88ffe3b8", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 3, "durability": 7, "emission": 18, "renderAnim": "none", "flags": ["rigid", "bearing"] },
-    { "id": 49, "name": "LIGHT",     "kind": "COMPONENT", "materialClass": "rigid", "density": 1.8, "looseSorted": false, "mobility": 0, "transparency": 0.12, "color": "0xffd8ffff", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 1, "durability": 6, "emission": 255, "renderAnim": "none", "flags": ["rigid", "bearing"] },
+    { "id": 48, "name": "GLASS",     "kind": "COMPONENT", "lightProfile": "glass", "emissionProfile": "uniform", "materialClass": "rigid", "density": 2.1, "looseSorted": false, "mobility": 0, "transparency": 0.68, "color": "0x88ffe3b8", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 3, "durability": 7, "emission": 18, "renderAnim": "none", "flags": ["rigid", "bearing"] },
+    { "id": 49, "name": "LIGHT",     "kind": "COMPONENT", "emissionProfile": "uniform", "materialClass": "rigid", "density": 1.8, "looseSorted": false, "mobility": 0, "transparency": 0.12, "color": "0xffd8ffff", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 1, "durability": 6, "emission": 255, "renderAnim": "none", "flags": ["rigid", "bearing"] },
     { "id": 50, "name": "NEUTRONIUM", "kind": "COMPONENT", "materialClass": "rigid", "density": 32.0, "looseSorted": false, "mobility": 0, "color": "0xff321022", "toolClass": "pickaxe", "toolTier": 4, "textureAmp": 3, "durability": 255, "renderAnim": "none", "flags": ["rigid", "bearing"] },
     { "id": 51, "name": "STONE_DUST", "kind": "POWDER", "materialClass": "solid", "density": 2.6, "looseSorted": true, "mobility": 1.0, "color": "0xc88b8582", "toolClass": "shovel", "toolTier": 0, "textureAmp": 7, "durability": 2, "renderAnim": "none", "flags": ["dissolvable", "bearing"] },
     { "id": 52, "name": "OAK_SEED",  "kind": "COMPONENT", "materialClass": "rigid", "density": 0.5, "looseSorted": false, "mobility": 0, "color": "0xc23e668f", "toolClass": "axe", "toolTier": 0, "textureAmp": 5, "durability": 2, "renderAnim": "none", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] },

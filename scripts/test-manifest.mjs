@@ -6,6 +6,7 @@
 const exclusive = (timeoutMs) => ({ timeoutMs, concurrency: 'exclusive' });
 
 export const UNIT_SUITES = [
+  ['test-runner', 'run-tests-test.mjs'],
   ['campaign', 'campaign-test.mjs'],
   ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],
@@ -24,12 +25,18 @@ export const UNIT_SUITES = [
   ['creative', 'creative-place-test.mjs'],
   ['throw', 'throw-test.mjs'],
   ['mat-flags', 'materials-flags-test.mjs'],
+  ['mat-generator', 'material-generator-test.mjs'],
+  ['abi-generator', 'abi-generator-test.mjs'],
+  ['biome-generator', 'biome-generator-test.mjs'],
+  ['abi-snapshot-writers', 'abi-snapshot-writer-test.mjs'],
   ['mat-behavior', 'material-behavior-test.mjs'],
   ['liquid-mass', 'liquid-mass-test.mjs'],
   ['gas-bubble', 'gas-bubble-test.mjs'],
   ['planet-gravity', 'planet-gravity-test.mjs'],
+  ['planet-selection', 'planet-selection-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
   ['world-context', 'world-context-test.mjs'],
+  ['worldgen-version', 'worldgen-version-test.mjs'],
   ['survival-spawn-context', 'survival-spawn-context-test.mjs'],
   ['worldgen-quality', 'worldgen-quality-test.mjs'],
   ['deep-world', 'worldgen-deep-test.mjs'],
@@ -81,6 +88,7 @@ export const UNIT_SUITES = [
   ['world-packets', 'world-packet-validation-test.mjs'],
   ['audio', 'audio-test.mjs'],
   ['server', 'server-roundtrip-test.mjs', exclusive(240_000)],
+  ['engine-contract', 'engine-contract-test.mjs'],
   ['layer', 'layer-test.mjs'],
   ['stacked-logs', 'stacked-logs-test.mjs'],
   ['xlayer-fall', 'xlayer-bonded-fall-test.mjs'],
@@ -119,5 +127,14 @@ export const BROWSER_SUITES = [
   ['production-startup', 'startup-recovery-e2e.mjs', exclusive(180_000)],
 ];
 
-// Any executable excluded from required aggregates must be listed explicitly.
-export const EXCLUDED_TESTS = [];
+// Focused suites are available by manifest key without joining the default
+// headless or browser aggregates.
+export const FOCUSED_SUITES = [
+  ['tnt-u', 'repro-tnt-u.mjs', exclusive(120_000)],
+];
+
+// This strict diagnostic reproduces the unresolved transactional projection
+// contract for a foreground/background joint beside an independent body.
+export const EXCLUDED_TESTS = [
+  ['rigid-world-raster-blocker', 'rigid-world-raster-test.mjs'],
+];

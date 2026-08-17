@@ -37,9 +37,6 @@ class Renderer {
   // Renderer tables (material -> RGBA). Shared (layer-agnostic).
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
   uint32_t renderAlphaMask[TABLE];     // schema transparency converted to packed ABGR alpha
-  uint8_t renderLightLoss[TABLE];      // material -> propagation loss (lighting hot loop)
-  uint8_t renderLightTransparent[TABLE];
-  uint8_t renderFaceLit[TABLE];
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
   // Shared render-only animation clock. The GL presenter sets this from a
@@ -72,13 +69,15 @@ class Renderer {
     uint32_t h = renderCellHash(wx, wy);
     return (h % 19u) == 0u || (((h >> 8) % 53u) == 0u);
   }
-  // Baseline emission strength comes from the schema (MAT_EMISSION); CRYSTAL and
-  // MYCELIUM emit from sparse positional pockets rather than every cell.
+  // Baseline strength and spatial pattern both come from the material schema.
   static inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
     uint8_t e = MAT_EMISSION[m];
     if (!e) return 0;
-    if (m == CRYSTAL) return (((wx * 17 + wy * 31) & 3) == 0) ? e : 0;
-    if (m == MYCELIUM) return (((wx * 13 + wy * 29) & 31) == 0) ? e : 0;
+    uint8_t profile = MAT_EMISSION_PROFILE[m];
+    if (profile == EP_CRYSTAL_QUARTER)
+      return (((wx * 17 + wy * 31) & 3) == 0) ? e : 0;
+    if (profile == EP_MYCELIUM_SPARSE)
+      return (((wx * 13 + wy * 29) & 31) == 0) ? e : 0;
     return e;
   }
   static inline uint8_t crossLayerEmissionFor(uint8_t m, int wx, int wy) {
@@ -100,9 +99,9 @@ class Renderer {
     return a | (b << 16) | (g << 8) | r;
   }
 
-  inline bool transparentForLight(uint8_t m) const { return renderLightTransparent[m] != 0; }
-  inline int lightLossFor(uint8_t m) const { return renderLightLoss[m]; }
-  inline bool faceLitMaterial(uint8_t m) const { return renderFaceLit[m] != 0; }
+  inline bool transparentForLight(uint8_t m) const { return MAT_LIGHT_TRANSPARENT[m] != 0; }
+  inline int lightLossFor(uint8_t m) const { return MAT_LIGHT_LOSS[m]; }
+  inline bool faceLitMaterial(uint8_t m) const { return MAT_FACE_LIT[m] != 0; }
   bool topRayStartsInSky(Layer* lay, int x);
   bool sideRayStartsInSky(Layer* lay, int x, int y);
   // Lighting solves take an inclusive cell region [rx0,ry0..rx1,ry1]. Light

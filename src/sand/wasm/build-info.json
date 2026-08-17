@@ -1,25 +1,25 @@
 {
-  "generatedAt": "2026-08-16T06:48:45.454Z",
+  "generatedAt": "2026-08-17T00:10:05.587Z",
   "output": {
     "path": "src/sand/wasm/sandEngine.js",
-    "bytes": 67204,
-    "sha256": "fef7b13f381d30c932e1d620ecb6c667d8dcd325465f73ecdb5015d8586293fd",
-    "fnv1a": "0x29a512a0"
+    "bytes": 69279,
+    "sha256": "c966abcf501eb9670ba0f3950b275a84d8250a50d0b0d6e09a77b7b40bc2b744",
+    "fnv1a": "0x2e7e8cc"
   },
   "wasm": {
     "path": "src/sand/wasm/sandEngine.wasm",
-    "bytes": 1460207,
-    "sha256": "c43aad514274731feaf85cd25663976592470b2ed0f48313a437fd3f2ad75280",
-    "fnv1a": "0x168a3518"
+    "bytes": 1510219,
+    "sha256": "db3f058571b1a231fb761c71a0d8c6e8f919aa42e06f4690dd36dc2d2b982d64",
+    "fnv1a": "0xfe2f4125"
   },
   "source": {
-    "commit": "a984c78",
+    "commit": "c3c82a9",
     "dirty": true,
-    "sha256": "89e2744090fe57b97a3dad57fcc70d733f796650ffbb47db3835727d05ec55c3"
+    "sha256": "5180200fe3f9768a6399b18de1a910738226678c382decbe5f1703f50988b02c"
   },
   "variant": "production",
   "toolchain": {
     "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.0 (afa15e0c56d1292e073c2c91bafc1d5e0cdf0dd3)",
-    "emccPath": "/tmp/sand-emsdk-recovery/upstream/emscripten/emcc"
+    "emccPath": "/home/nick/Nick/emsdk/upstream/emscripten/emcc"
   }
 }

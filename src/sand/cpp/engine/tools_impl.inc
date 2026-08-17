@@ -119,12 +119,10 @@ int ToolSystem::buildSurvivalFootprintSnapshot() {
   for (size_t i = 0; i < survivalFootprints.size(); i++) {
     const SurvivalFootprint& fp = survivalFootprints[i];
     int32_t* o = survivalFootprintSnapshot.data() + i * FP_STRIDE;
-    o[FP_ID] = fp.id;
-    o[FP_WIDTH] = fp.width;
-    o[FP_HEIGHT] = fp.height;
-    o[FP_CELL_COUNT] = (int32_t)fp.cells.size();
-    o[FP_ANCHOR_X] = fp.anchorX;
-    o[FP_ANCHOR_Y] = fp.anchorY;
+    writeSurvivalFootprintSnapshot(o, fp, {
+      .cellCount = WriteSurvivalFootprintSnapshotCellCount{
+        (int)fp.cells.size()},
+    });
   }
   return (int)survivalFootprints.size();
 }
@@ -133,9 +131,9 @@ void ToolSystem::setSelectedFootprint(Player& p, int id) {
   if (p.selectedFootprint == next) return;
   p.selectedFootprint = next;
   p.placeStrokeActive = false;
-  E.resetPlayerMine(p);
+  E.psys.resetPlayerMine(p);
 }
-void ToolSystem::setSelectedFootprint(int id, int footprintId) { Player* p = E.findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
+void ToolSystem::setSelectedFootprint(int id, int footprintId) { Player* p = E.psys.findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
 int ToolSystem::selectedFootprintId(int id) const { const Player* p = nullptr; for (const auto& pp : E.psys.players) if (pp.id == id) { p = &pp; break; } return p ? clampSurvivalFootprintId(p->selectedFootprint) : 0; }
 int ToolSystem::survivalFootprintCellCount(const Player& p) const { return (int)getSurvivalFootprint(p).cells.size(); }
 void ToolSystem::survivalFootprintBounds(const SurvivalFootprint& fp, int cx, int cy, int& x0, int& y0, int& x1, int& y1) const {
@@ -154,29 +152,42 @@ bool ToolSystem::footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint&
 }
 // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
 int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
+  if (!isMaterialId(material)) return 0;
+  // FREE_RIGID products need a body owner rather than static component
+  // membership. Reuse the structural placement policy after clearing an
+  // overwrite footprint.
+  if (MAT_PLACEMENT[material] == MP_STRUCTURE
+      && !E.isComponentMaterial(material)) {
+    if (overwrite) eraseDisc(cx, cy, radius);
+    std::vector<std::pair<int, int>> cells;
+    forEachClippedToolDiscCell(
+      E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
+        if (E.L->grid[E.I(xx, yy)] == EMPTY) cells.push_back({xx, yy});
+      });
+    finalizeStructuralPlacement(cells, material);
+    return (int)cells.size();
+  }
   int changed = 0;
   std::vector<int> erasedStructural;
-  std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
-  bool destroyedAny = false;
+  CellMutationBatch mutations(E, erasedStructural);
   forEachClippedToolDiscCell(
     E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
       int k = E.I(xx, yy);
       if (!(overwrite || E.L->grid[k] == EMPTY)) return;
       uint8_t old = E.L->grid[k];
-      if (old == material) { E.writeGridIndex(k, material); return; }
-      // Release structural ownership before replacing its grid material so the
-      // component or body cannot retain an invisible cell.
-      if (old != EMPTY && (E.isComponentMaterial(old) || E.isBodyCell(k))) {
-        destroyCellAt(k, old, erasedStructural, bodyById, dirtyBodies);
-        destroyedAny = true;
+      // An explicit loose-cell overwrite resets its per-cell motion state while
+      // topology-aware replacement keeps same-material mutations state-neutral.
+      if (old == material && MAT_PLACEMENT[material] != MP_STRUCTURE) {
+        E.writeGridIndexUnsafe(k, material);
+        E.L->clearMotionSpan((size_t)k, 1);
+        return;
       }
-      E.writeGridIndex(k, material);
-      changed++;
+      bool wrote = E.isComponentMaterial(material)
+        ? mutations.replaceWithStatic(k, material)
+        : mutations.replaceLoose(k, material);
+      if (wrote && old != material) changed++;
   });
-  if (destroyedAny) {
-    E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
-    splitComponentsAfterDestroy(erasedStructural);
-  }
+  mutations.commitGeneral();
   if (changed) {
     ToolDiscBounds bounds = clippedToolDiscBounds(
       E.cols, E.rows, cx, cy, radius, E.rows);
@@ -188,8 +199,9 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
 // paint as cells; structural placement uses its local support/contact state.
 // EMPTY erases.
 int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
-  if (mat == EMPTY) return eraseDisc(cx, cy, radius);
-  if (!E.isComponentMaterial(mat)) return paintDisc(cx, cy, radius, mat, false);
+  if (!isMaterialId(mat)) return 0;
+  if (MAT_PLACEMENT[mat] == MP_ERASE) return eraseDisc(cx, cy, radius);
+  if (MAT_PLACEMENT[mat] == MP_PAINT) return paintDisc(cx, cy, radius, mat, false);
   std::vector<std::pair<int, int>> cells;
   forEachClippedToolDiscCell(
     E.cols, E.rows, cx, cy, radius, E.rows, [&](int xx, int yy) {
@@ -209,9 +221,9 @@ void ToolSystem::registerComponentCells(
   if (E.isPlantMaterial(mat)) {
     int yMax = 0;
     for (int k : cells) yMax = imax(yMax, k / E.cols);
-    E.registerPlantCells(mat, cells, yMax);
+    E.comps.registerPlantCells(mat, cells, yMax);
   } else {
-    E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, mat, cells,
+    E.comps.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, mat, cells,
                               E.isIceMaterial(mat));
   }
   if (mat == MYCELIUM_SPORE) {
@@ -239,10 +251,11 @@ void ToolSystem::registerComponentCells(
 void ToolSystem::finalizeStructuralPlacement(
     const std::vector<std::pair<int, int>>& cells, uint8_t mat,
     uint8_t plantType) {
-  if (cells.empty()) return;
+  if (cells.empty() || !isMaterialId(mat)
+      || MAT_PLACEMENT[mat] != MP_STRUCTURE) return;
   E.L->skyDirty = true;
   if (!E.isComponentMaterial(mat)) {
-    E.finishSpawn(cells, mat);
+    E.rigid.finishSpawn(cells, mat);
     return;
   }
   std::map<int, std::pair<int, int>> ordered;
@@ -274,7 +287,7 @@ void ToolSystem::finalizeStructuralPlacement(
     }
 
     if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
-      Body* body = E.finishSpawn(island, mat, false);
+      Body* body = E.rigid.finishSpawn(island, mat, false);
       if (body && E.isSeedMaterial(mat)) body->plantType = plantType;
       continue;
     }
@@ -300,7 +313,7 @@ void ToolSystem::finalizeStructuralPlacement(
       if (touchesStatic) break;
     }
     if (!touchesStatic) {
-      E.finishSpawn(island, mat);
+      E.rigid.finishSpawn(island, mat);
       continue;
     }
     if (E.rigid.anchorPlacementToStatic(island, mat, plantType)) continue;
@@ -310,7 +323,7 @@ void ToolSystem::finalizeStructuralPlacement(
     for (const auto& cell : island) {
       int k = cell.second * E.cols + cell.first;
       if (E.L->grid[k] != EMPTY) continue;
-      E.writeGridIndex(k, mat);
+      E.writeGridIndexUnsafe(k, mat);
       staticCells.insert(k);
     }
     registerComponentCells(mat, staticCells, plantType);
@@ -318,13 +331,17 @@ void ToolSystem::finalizeStructuralPlacement(
 }
 
 int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p) {
-  bool comp = E.isComponentMaterial(mat);
+  if (!isMaterialId(mat) || MAT_PLACEMENT[mat] == MP_ERASE
+      || maxCells <= 0) return 0;
+  bool structural = MAT_PLACEMENT[mat] == MP_STRUCTURE;
   std::vector<std::pair<int, int>> cells;
+  std::vector<int> removed;
+  CellMutationBatch mutations(E, removed);
   int placed = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, E.rows, maxCells, p,
     [&](int k) {
       if (E.L->grid[k] != EMPTY) return false;
-      if (comp) cells.push_back({k % E.cols, k / E.cols});
-      else E.writeGridIndex(k, mat);
+      if (structural) cells.push_back({k % E.cols, k / E.cols});
+      else if (!mutations.replaceLoose(k, mat)) return false;
       return true;
     });
   if (placed) {
@@ -332,7 +349,8 @@ int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFoo
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
     E.markDirtyRect(x0, y0, x1, y1);
   }
-  if (comp) finalizeStructuralPlacement(cells, mat);
+  mutations.commitGeneral();
+  if (structural) finalizeStructuralPlacement(cells, mat);
   return placed;
 }
 // ---- shared destroy/erase plumbing ----
@@ -342,19 +360,26 @@ int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFoo
 // erases them, the component-split system erases static cells.
 void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructural,
                    std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
+  auto clearCellState = [&](int cell) {
+    E.writeGridIndexUnsafe(cell, EMPTY);
+    E.L->clearMotionSpan((size_t)cell, 1);
+  };
   E.noteLooseGroundTouch(m);
   if (E.isBodyCell(k)) {
     if (bodyById.empty()) for (Body* b : E.L->bodies) bodyById[b->id] = b;
-    if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
+    if (!E.rigid.eraseBodyCellIndex(k, bodyById, dirtyBodies)) {
+      clearCellState(k);
+      E.L->bodyOwner[k] = -1;
+    }
   } else {
     if (E.isComponentMaterial(m)) erasedStructural.push_back(k);
-    E.L->grid[k] = EMPTY;
+    clearCellState(k);
   }
 }
 // Component-split epilogue shared by every destroy path (eraser, stroke
 // eraser, both mining paths).
 void ToolSystem::splitComponentsAfterDestroy(std::vector<int>& erasedStructural) {
-  E.splitRigidAfterErase(E.L->components, erasedStructural, E.L->nextComponentId, false);
+  E.comps.splitRigidAfterErase(E.L->components, erasedStructural, E.L->nextComponentId, false);
 }
 // Returns the NUMBER OF GRID CELLS cleared (non-EMPTY -> EMPTY). Body/draft-only
 // erases still mark dirty but don't count toward the cleared total.
@@ -368,7 +393,7 @@ int ToolSystem::eraseDisc(int cx, int cy, int radius) {
       else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     });
-  E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+  E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) {
     ToolDiscBounds bounds = clippedToolDiscBounds(
       E.cols, E.rows, cx, cy, radius, E.rows);
@@ -389,7 +414,7 @@ int ToolSystem::eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, 
     else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
     if (draft.erase(k)) changed = true;
   }
-  E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+  E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) { E.L->skyDirty = true; E.markDirtyRect(x0, y0, x1, y1); }
   splitComponentsAfterDestroy(erasedStructural);
   return cleared;
@@ -443,7 +468,7 @@ uint32_t ToolSystem::minePowerFor(uint8_t m, const Player& miner, bool scaledSpe
   return power;
 }
 double ToolSystem::playerMineProgress(int id) {
-  Player* p = E.findPlayer(id);
+  Player* p = E.psys.findPlayer(id);
   if (!p || !p->mineActive) return 0.0;
   double best = 0.0;
   auto consider = [&](int xx, int yy, uint32_t areaScale) {
@@ -472,15 +497,12 @@ double ToolSystem::playerMineProgress(int id) {
     }
   };
   if (p->mineLayer == 2) {
-    E.useLayer(&E.fg);
-    scanActiveLayer();
-    E.useLayer(&E.bg);
-    scanActiveLayer();
+    { Engine::ActiveLayerScope active(E, &E.fg); scanActiveLayer(); }
+    { Engine::ActiveLayerScope active(E, &E.bg); scanActiveLayer(); }
   } else {
-    E.useLayer(p->mineLayer ? &E.bg : &E.fg);
+    Engine::ActiveLayerScope active(E, p->mineLayer ? &E.bg : &E.fg);
     scanActiveLayer();
   }
-  E.useLayer(&E.fg);
   return best;
 }
 // One mining hit on cell k (material m != EMPTY): apply damage scaled by the
@@ -515,7 +537,7 @@ int ToolSystem::mineDamageDisc(int cx, int cy, int radius, const Player& miner, 
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); uint8_t m = E.L->grid[k]; if (m == EMPTY) { if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; } continue; }
     if (mineDamageCellStep(k, m, miner, scaledSpeed, 1, 1, erasedStructural, bodyById, dirtyBodies)) changed = 1;
   } }
-  E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+  E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (!lastMinedCells.empty()) E.L->skyDirty = true;
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   splitComponentsAfterDestroy(erasedStructural);
@@ -539,7 +561,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
     }
     if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, speedMultiplier, erasedStructural, bodyById, dirtyBodies)) changed = 1;
   }
-  E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+  E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) {
     int x0, y0, x1, y1;
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
@@ -632,7 +654,7 @@ bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, P
 // reaches a stable raster and bakes into the component system.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  Body* body = E.finishSpawn({{x0, y0}}, E.plantSeedMat(pt), false);
+  Body* body = E.rigid.finishSpawn({{x0, y0}}, E.plantSeedMat(pt), false);
   if (!body) return false;
   body->plantType = pt;
   E.L->skyDirty = true;
@@ -641,7 +663,7 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
 }
 bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   if (!canPlaceSeedAt(x0, y0)) return false;
-  if (!E.finishSpawn({{x0, y0}}, MYCELIUM_SPORE, false)) return false;
+  if (!E.rigid.finishSpawn({{x0, y0}}, MYCELIUM_SPORE, false)) return false;
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;
@@ -652,8 +674,8 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
 // value means the draft preview changed.
 int ToolSystem::effectiveTool() { return activeTool; }
 bool ToolSystem::isPaintTool(int t) { return t == T_SAND || t == T_WATER || t == T_OIL || t == T_FIRE || t == T_ACID || t == T_LAVA; }
-// The creative pointer flow routes by `creativeMode`. setTool keeps the legacy Tool
-// enum working (survival eraser + back-compat) by mapping it onto the creative brush.
+// The creative pointer flow routes by `creativeMode`. setTool maps the compact
+// Tool enum used by survival and embedders onto the creative brush policy.
 void ToolSystem::setTool(int tool) {
   activeTool = tool;
   switch (tool) {
@@ -671,31 +693,30 @@ void ToolSystem::setTool(int tool) {
     case T_LAVA: creativeMode = CM_PAINT; creativeMaterial = LAVA; break;
   }
 }
-// The searchable creative palette path: select ANY material, seed species, eraser,
-// or cube. Routes by the material's kind — components and RIGID draft (live
-// preview), the rest paint; EMPTY maps to the eraser.
+// The searchable creative palette path selects any material, seed species,
+// eraser, or cube. MAT_PLACEMENT routes structural drafts, loose paint, and
+// erasure; seed metadata selects the species-aware seed flow.
 void ToolSystem::setCreativeMaterial(int kind, int value) {
   switch (kind) {
     case CK_MATERIAL: {
-      if (value < 0 || value >= MATERIAL_COUNT) return;
+      if (!isMaterialId(value)) return;
       uint8_t m = (uint8_t)value;
-      if (m == EMPTY) creativeMode = CM_ERASE;
-      else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
-      else if (E.isSeedMaterial(m)) { creativeMode = CM_SEED; creativeSeed = m == OAK_SEED ? PT_OAK : PT_STANDARD; creativeMaterial = m; }
+      if (MAT_PLACEMENT[m] == MP_ERASE) creativeMode = CM_ERASE;
+      else if (E.isSeedMaterial(m)) { creativeMode = CM_SEED; creativeSeed = E.plantTypeFromMaterial(m); creativeMaterial = m; }
       else if (m == MYCELIUM_SPORE) { creativeMode = CM_MYCELIUM_SPORE; creativeMaterial = m; }
-      else if (E.isComponentMaterial(m)) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
+      else if (MAT_PLACEMENT[m] == MP_STRUCTURE) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
       else { creativeMode = CM_PAINT; creativeMaterial = m; }
       // Remember the last SOLID for the CUBE tool so it spawns a body of that material.
       // Any component (stone/ore/brick/ice/TNT, and the plant family: wood/plant/
       // driftwood/cactus/…) qualifies, plus the permanent RIGID. Powders/liquids/gases
       // can't be free bodies (settle would flow a powder body's cells apart). Stone &
       // ice bodies bake into terrain on rest (bodySolidifies); the rest — like the
-      // existing driftwood float — stay free bodies (a wood body tumbles/floats forever).
-      if (m == RIGID || E.isComponentMaterial(m)) cubeMaterial = m;
+      // driftwood-style materials stay free bodies and keep tumbling or floating.
+      if (MAT_PLACEMENT[m] == MP_STRUCTURE) cubeMaterial = m;
       break;
     }
     case CK_SEED:
-      if (value < PT_OAK || value > PT_STANDARD) return;
+      if (value < 0 || value >= PLANT_SPECIES_COUNT) return;
       creativeMode = CM_SEED; creativeSeed = (uint8_t)value;
       creativeMaterial = E.plantSeedMat(creativeSeed); break;
     case CK_ERASER: creativeMode = CM_ERASE; break;
@@ -707,9 +728,8 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
 }
 
 // When the world buffer slides under an active draft, remap the staged cells by
-// the SAME per-cell delta the grid uses (decode x/y, x-=dx, y-=dy, re-encode),
-// mirroring translateComponents/shiftRowMajorU8 so the preview + finalized solid
-// stay pinned to their world location instead of jolting with the buffer.
+// the same per-cell delta as the grid and component shift so the preview and
+// finalized solid stay pinned to their world location.
 void ToolSystem::remapDraftForShift(std::unordered_set<int>& d, int dx, int dy) {
   if (d.empty()) return;
   std::unordered_set<int> moved; moved.reserve(d.size());
@@ -741,7 +761,7 @@ int ToolSystem::updateSeedDraft(int cx, int cy) {
 // Extend the active component draft / seed preview into draftLayer.
 int ToolSystem::continueDrafts(int cx, int cy) {
   if (!drafting && !draftingSeed) return 0;
-  E.useLayer(draftLayer ? &E.bg : &E.fg);
+  Engine::ActiveLayerScope active(E, draftLayer ? &E.bg : &E.fg);
   int changed = 0;
   if (drafting) {
     int sx = draftStrokeActive ? lastDraftCx : cx, sy = draftStrokeActive ? lastDraftCy : cy;
@@ -749,7 +769,6 @@ int ToolSystem::continueDrafts(int cx, int cy) {
     lastDraftCx = cx; lastDraftCy = cy; draftStrokeActive = true;
   }
   if (draftingSeed) { changed |= updateSeedDraft(cx, cy); }
-  E.useLayer(&E.fg);
   return changed;
 }
 int ToolSystem::pointerDraft(int cx, int cy) { return continueDrafts(cx, cy); }
@@ -762,7 +781,7 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
   if (toBg) { rmbDown = true; E.bgEnabled = true; } else lmbDown = true;
   if (creativeMode == CM_PAINT || creativeMode == CM_ERASE) return 0; // continuous
   draftLayer = toBg ? 1 : 0;
-  E.useLayer(toBg ? &E.bg : &E.fg);
+  Engine::ActiveLayerScope active(E, toBg ? &E.bg : &E.fg);
   int changed = 0;
   switch (creativeMode) {
     case CM_DRAFT:
@@ -772,7 +791,7 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
     case CM_SEED:
     case CM_MYCELIUM_SPORE: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
     case CM_CUBE:
-      if (E.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial))
+      if (E.rigid.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial))
         E.audio.emit(SE_PLACE, cx, cy, 1.0, cubeMaterial, toBg ? 1 : 0);
       break; // RIGID by default; a selected component solid spawns a material body that bakes or reacts
     case CM_CREATURE: {
@@ -785,7 +804,6 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
     }
     default: break;
   }
-  E.useLayer(&E.fg);
   return changed;
 }
 // Track button release (mirrors the old buttons==0 reset on move/up). Releasing
@@ -800,7 +818,7 @@ int ToolSystem::pointerUp(int button) {
   bool ownerReleased = (draftLayer == 1) ? (button == 2) : (button == 0);
   if (!ownerReleased) return 0;
   int changed = 0;
-  E.useLayer(draftLayer ? &E.bg : &E.fg);
+  Engine::ActiveLayerScope active(E, draftLayer ? &E.bg : &E.fg);
   if (drafting) {
     uint8_t placedMaterial = draftMaterial;
     finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); changed = 1;
@@ -816,7 +834,6 @@ int ToolSystem::pointerUp(int button) {
     }
     draftingSeed = false; hasSeedOrigin = false; changed = 1;
   }
-  E.useLayer(&E.fg);
   return changed;
 }
 // Apply one continuous paint/erase emit at (cx,cy) on the ACTIVE layer.
@@ -832,7 +849,7 @@ void ToolSystem::emitToolAt(int cx, int cy) {
 // leaving gaps. Erase uses an exact capsule footprint, avoiding stamp aliasing when
 // the camera is moving and avoiding per-cell hash-table churn.
 void ToolSystem::emitStrokeLayer(int x0, int y0, int x1, int y1, bool toBg) {
-  E.useLayer(toBg ? &E.bg : &E.fg);
+  Engine::ActiveLayerScope active(E, toBg ? &E.bg : &E.fg);
   int rad = (creativeMode == CM_ERASE) ? BRUSH_ERASE : brushFor(creativeMaterial);
   int spacing = imax(1, rad);
   if (creativeMode == CM_ERASE) {
@@ -856,7 +873,6 @@ void ToolSystem::emitStrokeLayer(int x0, int y0, int x1, int y1, bool toBg) {
   } else {
     strokeScan(x0, y0, x1, y1, spacing, [&](int x, int y) { emitToolAt(x, y); }, [] { return true; });
   }
-  if (toBg) E.useLayer(&E.fg);
 }
 // Continuous painting while held, throttled. LMB paints the foreground; RMB the
 // background. Draft/cube/seed act on click. Survival mining is separate (player.inc).

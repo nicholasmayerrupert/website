@@ -1,5 +1,5 @@
 // Unity translation unit for the C++/WASM sand engine. Engine owns shared state
-// and thin subsystem shims; composed subsystem classes hold gameplay policy.
+// and cross-system coordination; composed subsystem classes hold gameplay policy.
 
 #include "engine/common.hpp"
 #include "engine/camera.hpp"
@@ -22,6 +22,7 @@
 #include "engine/explosives.hpp"
 #include "engine/growth.hpp"
 #include "engine/components.hpp"
+#include "engine/cell_mutations.hpp"
 #include "engine/rigid.hpp"
 #include "engine/audio.hpp"
 
@@ -71,6 +72,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/creatures_impl.inc"
 #include "engine/missions_impl.inc"
 #include "engine/tools_impl.inc"
+#include "engine/cell_mutations_impl.inc"
 #include "engine/reactions_impl.inc"
 #include "engine/explosives_impl.inc"
 #include "engine/growth_impl.inc"

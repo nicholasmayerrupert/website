@@ -9,7 +9,12 @@ import { dirname, relative, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
+const allowDev = args.includes('--allow-dev');
 const variant = args.includes('--dev') ? 'dev' : 'production';
+if (allowDev && !checkOnly) {
+  console.error('--allow-dev is valid only with --check');
+  process.exit(2);
+}
 const positional = args.filter((arg) => !arg.startsWith('--'));
 const outPath = positional[0] || 'src/sand/wasm/sandEngine.js';
 const infoPath = positional[1] || `${dirname(outPath)}/build-info.json`;
@@ -24,19 +29,23 @@ const sourcePathPrefixes = [
   'src/sand/materials.schema.json',
   'src/sand/materials.generated.js',
   'src/sand/abi.schema.json',
+  'src/sand/biomes.schema.json',
   'wasm/build.mjs',
   'wasm/emscripten.mjs',
   'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
+  'scripts/generate-biomes.mjs',
 ];
 const sourceRoots = [
   'src/sand/cpp',
   'src/sand/materials.schema.json',
   'src/sand/abi.schema.json',
+  'src/sand/biomes.schema.json',
   'wasm/build.mjs',
   'wasm/emscripten.mjs',
   'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
+  'scripts/generate-biomes.mjs',
 ];
 
 const safeExec = (cmd, argv = []) => {
@@ -116,7 +125,8 @@ if (checkOnly) {
     process.exit(1);
   }
   const failures = [];
-  if (recorded.variant !== 'production')
+  if (recorded.variant !== 'production'
+      && !(allowDev && recorded.variant === 'dev'))
     failures.push(`build variant is ${recorded.variant || 'unknown'}, not production`);
   if (recorded.source?.sha256 !== info.source.sha256)
     failures.push('compiled source hash is stale');

@@ -5,7 +5,7 @@
 // createSandGame.js.
 
 import { TOOL_IDS } from './runtimeConfig.js';
-import { ITEM_KIND, OFF } from '../wasmBridge/abi.generated.js';
+import { ITEM_KIND, writeGlPlayerExtSnapshot } from '../wasmBridge/abi.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
   DAY_CYCLE_MS,
@@ -161,7 +161,6 @@ export function createGameLoop(ctx, {
     } else {
       const ps = playersForRender();
       const stride = engine.getRenderStrides().player;
-      const G = OFF.glPlayerExt;
       const ownId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0;
       const liveAim = engine.getAim();
       const floats = ps.length * stride;
@@ -169,17 +168,15 @@ export function createGameLoop(ctx, {
       const packed = packScratch.subarray(0, floats);
       for (let i = 0; i < ps.length; i++) {
         const p = ps[i], o = i * stride;
-        packed[o + G.x] = p.x; packed[o + G.y] = p.y; packed[o + G.w] = p.w; packed[o + G.h] = p.h;
-        packed[o + G.facing] = p.facing; packed[o + G.own] = p.id === ownId ? 1 : 0;
-        packed[o + G.animState] = p.animState || 0; packed[o + G.animFrame] = p.animFrame || 0;
-        packed[o + G.alive] = p.alive === false ? 0 : 1;
-        packed[o + G.heldItemKind] = p.heldItemKind || 0; packed[o + G.bowCharge] = p.bowCharge || 0;
-        packed[o + G.aimX] = p.id === ownId ? liveAim.x : (p.aimX ?? p.x + p.w * .5 + p.facing);
-        packed[o + G.aimY] = p.id === ownId ? liveAim.y : (p.aimY ?? p.y + p.h * .42);
-        packed[o + G.jetpackFuel] = p.jetpackFuel ?? 1;
-        packed[o + G.jetpackActive] = p.jetpackActive ? 1 : 0;
-        packed[o + G.shieldHealth] = p.shieldHealth ?? 200;
-        packed[o + G.shieldActive] = p.shieldActive ? 1 : 0;
+        const own = p.id === ownId;
+        writeGlPlayerExtSnapshot(
+          packed, o, p, own, p.animState || 0, p.animFrame || 0,
+          p.alive !== false, p.heldItemKind || 0, p.bowCharge || 0,
+          own ? liveAim.x : (p.aimX ?? p.x + p.w * .5 + p.facing),
+          own ? liveAim.y : (p.aimY ?? p.y + p.h * .42),
+          p.jetpackFuel ?? 1, !!p.jetpackActive,
+          p.shieldHealth ?? 200, !!p.shieldActive,
+        );
       }
       engine.glSetPlayers(true, packed, ownId);
     }

@@ -1,5 +1,7 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
-import { PLANET } from '../wasmBridge/abi.generated.js';
+import {
+  PLANET, PLANET_PRESENTATION, PLANET_PRESENTATION_BY_ID,
+} from '../wasmBridge/abi.generated.js';
 
 const PIXEL_SCALE = 4;
 
@@ -657,6 +659,11 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
 }
 
 export function createParallaxBackground(container, { planetId = PLANET.EARTH } = {}) {
+  const presentationProfile = PLANET_PRESENTATION_BY_ID[planetId];
+  if (![PLANET_PRESENTATION.EARTH, PLANET_PRESENTATION.MOON,
+    PLANET_PRESENTATION.MARS, PLANET_PRESENTATION.SHIP].includes(presentationProfile)) {
+    throw new RangeError(`unsupported planet presentation profile for id ${planetId}`);
+  }
   const canvas = document.createElement('canvas');
   canvas.className = 'sand-parallax-bg';
   canvas.style.position = 'absolute';
@@ -710,15 +717,16 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // horizon would regenerate the sky and rescale seeded scenery on every pan.
     const horizon = Math.round(clamp(h * HORIZON_RATIO, -28, h - 36));
     const skyHeight = Math.max(0, horizon);
-    if (planetId === PLANET.SHIP) {
+    if (presentationProfile === PLANET_PRESENTATION.SHIP) {
       ctx.fillStyle = '#02040a';
       ctx.fillRect(0, 0, w, h);
       drawStars(ctx, w, h, 1);
       drawPixelOrb(ctx, w * .82, h * .22, '#174a76', '#74b9d7');
       return;
     }
-    if (planetId !== PLANET.EARTH) {
-      const palette = planetId === PLANET.MOON ? MOON_PALETTE : MARS_PALETTE;
+    if (presentationProfile !== PLANET_PRESENTATION.EARTH) {
+      const moon = presentationProfile === PLANET_PRESENTATION.MOON;
+      const palette = moon ? MOON_PALETTE : MARS_PALETTE;
       const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));
       sky.addColorStop(0, palette.skyTop);
       sky.addColorStop(0.58, palette.skyMid);
@@ -731,9 +739,9 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
         ctx,
         w,
         skyHeight,
-        planetId === PLANET.MOON ? 0.92 : Math.max(0.08, dayNight.starOpacity * 0.55),
+        moon ? 0.92 : Math.max(0.08, dayNight.starOpacity * 0.55),
       );
-      if (planetId === PLANET.MOON) {
+      if (moon) {
         drawPixelOrb(ctx, w * 0.78, skyHeight * 0.28, '#397db4', '#a9d5e9');
       } else if (dayNight.sunVisible) {
         const t = dayNight.sunProgress;

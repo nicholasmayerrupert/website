@@ -14,11 +14,7 @@ bool CraftingSystem::ingredientMatches(const InvSlot& slot, const CraftIngredien
   if (slot.count <= 0 || slot.itemKind != IK_MATERIAL) return false;
   if (ingredient.kind == CIK_MATERIAL) return slot.material == ingredient.value;
   if (ingredient.kind != CIK_MATERIAL_FLAG) return false;
-  if (ingredient.value == MF_PLANTWOOD)
-    return slot.material == DRIFTWOOD || (MAT_FLAGS[slot.material] & MF_PLANTWOOD) != 0;
-  if (ingredient.value == MF_PLANTLEAF)
-    return slot.material == VINE || (MAT_FLAGS[slot.material] & MF_PLANTLEAF) != 0;
-  return (MAT_FLAGS[slot.material] & ingredient.value) != 0;
+  return (MAT_CRAFT_FLAGS[slot.material] & ingredient.value) != 0;
 }
 
 bool CraftingSystem::craftOnce(Player& p, const CraftRecipe& recipe) {
@@ -45,7 +41,7 @@ bool CraftingSystem::craftOnce(Player& p, const CraftRecipe& recipe) {
 
 int CraftingSystem::craft(int playerId, int recipeId, bool craftMax) {
   ensureRecipes();
-  Player* p = E.findPlayer(playerId);
+  Player* p = E.psys.findPlayer(playerId);
   if (!p || !p->active || !p->alive) return 0;
   const CraftRecipe* recipe = nullptr;
   for (const auto& r : recipes) if (r.id == recipeId) { recipe = &r; break; }
@@ -62,9 +58,12 @@ int CraftingSystem::buildRecipeSnapshot() {
   int ingredientStart = 0;
   for (size_t i = 0; i < recipes.size(); i++) {
     const CraftRecipe& r = recipes[i]; int32_t* o = recipeSnapshot.data() + i * CR_STRIDE;
-    o[CR_ID] = r.id; o[CR_OUTPUT_KIND] = r.output.itemKind; o[CR_OUTPUT_MATERIAL] = r.output.material;
-    o[CR_OUTPUT_TIER] = r.output.toolTier; o[CR_OUTPUT_COUNT] = r.output.count;
-    o[CR_INGREDIENT_START] = ingredientStart; o[CR_INGREDIENT_COUNT] = (int)r.ingredients.size();
+    writeCraftingRecipeSnapshot(o, r, {
+      .ingredientStart = WriteCraftingRecipeSnapshotIngredientStart{
+        ingredientStart},
+      .ingredientCount = WriteCraftingRecipeSnapshotIngredientCount{
+        (int)r.ingredients.size()},
+    });
     ingredientStart += (int)r.ingredients.size();
   }
   return (int)recipes.size();
@@ -75,7 +74,7 @@ int CraftingSystem::buildIngredientSnapshot() {
   ingredientSnapshot.assign(n * CI_STRIDE, 0); size_t at = 0;
   for (const auto& r : recipes) for (const auto& ingredient : r.ingredients) {
     int32_t* o = ingredientSnapshot.data() + at++ * CI_STRIDE;
-    o[CI_KIND] = ingredient.kind; o[CI_VALUE] = ingredient.value; o[CI_COUNT] = ingredient.count;
+    writeCraftingIngredientSnapshot(o, ingredient);
   }
   return (int)n;
 }

@@ -19,7 +19,8 @@ void ComponentSystem::prepareAssemblyScratch(size_t gridLen) {
 }
 
 bool ComponentSystem::isKestrelFrameAnchor(const Layer& lay, int x, int y) const {
-  if (E.planetId != PL_SHIP || !lay.isBackground) return false;
+  if (!planetHasGameplayFlag(E.planetId, PGF_FRAME_ANCHOR)
+      || !lay.isBackground) return false;
   int worldX = lay.worldOffsetX + x;
   int worldY = lay.worldOffsetY + y;
   return worldX >= -2 && worldX <= 2 && worldY >= -2 && worldY <= 2;
@@ -393,7 +394,7 @@ void ComponentSystem::applyLooseOverlay() {
 // fully-supported components stay asleep while dirty loose columns wake.
 void ComponentSystem::refreshLooseOverlayPreservingJoint(Layer* lay) {
   if (!lay->looseGroundDirty) return;
-  E.useLayer(lay);
+  Engine::ActiveLayerScope active(E, lay);
   const uint8_t* const g = lay->grid;
   uint8_t* const grounded = lay->groundedCell.data();
   const int cols = E.cols, rows = E.rows;
@@ -1052,7 +1053,7 @@ void ComponentSystem::groundLayerBase(Layer* lay) {
   // computeGrounded's internal tiers do the caching (rigid-base reuse +
   // per-pass loose overlay). Result is the layer's INDEPENDENT grounding;
   // computeGroundedBoth may then patch cross-layer support on top.
-  E.useLayer(lay);
+  Engine::ActiveLayerScope active(E, lay);
   computeGrounded();
 }
 
@@ -1090,6 +1091,7 @@ void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<u
   }
 }
 void ComponentSystem::computeGroundedBoth() {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   // Wall-time split: base floods -> groundingMs; bond scan + UF -> crossLayerGroundingMs.
   // indexComponents inside base floods already accumulates componentIndexMs.
   double tJoint0 = emscripten_get_now();
@@ -1109,7 +1111,6 @@ void ComponentSystem::computeGroundedBoth() {
       && !rigidMayChange(E.fg) && !rigidMayChange(E.bg)) {
     refreshLooseOverlayPreservingJoint(&E.fg);
     refreshLooseOverlayPreservingJoint(&E.bg);
-    E.useLayer(&E.fg);
     jointSupportSleeping = true;
     E.perfGroundingMs += emscripten_get_now() - tJoint0;
     return;
@@ -1195,7 +1196,6 @@ void ComponentSystem::computeGroundedBoth() {
   if (!anyUngrounded) {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
-    E.useLayer(&E.fg);
     jointSupportValid = true;
     jointSupportSleeping = false;
     E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
@@ -1245,7 +1245,6 @@ void ComponentSystem::computeGroundedBoth() {
   if (cgBonds.empty()) {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
-    E.useLayer(&E.fg);
     jointSupportValid = true;
     jointSupportSleeping = false;
     E.refreshMobileComponentRegistry(&E.fg);
@@ -1303,7 +1302,6 @@ void ComponentSystem::computeGroundedBoth() {
   // cells), so the prev snapshot from before groundLayerBase is still correct.
   if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
   if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
-  E.useLayer(&E.fg);
   jointSupportValid = true;
   jointSupportSleeping = false;
   E.refreshMobileComponentRegistry(&E.fg);
@@ -1618,7 +1616,7 @@ void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
     }
     lay.cellComp[k] = -1;
     lay.groundedCell[k] = 0;
-    lay.next[k] = lay.grid[k];
+    E.mirrorCurrentCellToNext(k);
     if (lay.groundBaseValid && k < (int)lay.groundRigidBase.size())
       lay.groundRigidBase[k] = 0;
   }
@@ -1855,6 +1853,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
 
 void ComponentSystem::detachCrossLayerComponentGroups(
     const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups) {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   if (groups.empty()) return;
 #ifdef SAND_INVARIANT_CHECKS
   if (!E.fg.componentIndexExact || !E.bg.componentIndexExact) {
@@ -1992,19 +1991,16 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       int k = cell.second * E.cols + cell.first;
       E.fg.bodyOwner[k] = leader->id;
       E.fg.bodyCells.push_back(k);
-      E.useLayer(&E.fg);
-      E.markCellIndex(k);
+      E.markLayerCell(&E.fg, k);
     }
     for (const auto& cell : source.bgCells) {
       int k = cell.second * E.cols + cell.first;
       E.bg.bodyOwner[k] = follower->id;
       E.bg.passiveBodyCells.push_back(k);
-      E.useLayer(&E.bg);
-      E.markCellIndex(k);
+      E.markLayerCell(&E.bg, k);
     }
   }
 
-  E.useLayer(&E.fg);
   E.rigid.resolveSpawnedJointOverlaps(spawnedJoints);
 
   auto refresh = [&](Layer& lay) {
@@ -2025,10 +2021,10 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   cgBonds.erase(std::remove_if(cgBonds.begin(), cgBonds.end(), [&](const CrossLayerBond& bond) {
     return detachedFg.count(bond.fgComp) || detachedBg.count(bond.bgComp);
   }), cgBonds.end());
-  E.useLayer(&E.fg);
 }
 
 void ComponentSystem::moveCrossLayerBondedAssemblies() {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   const int nf = compCount(E.fg), nb = compCount(E.bg);
   if (cgBonds.empty() || nf == 0 || nb == 0) return;
 
@@ -2106,7 +2102,6 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     E.fg.crossBondedComp.clear();
     E.bg.crossBondedComp.clear();
   }
-  E.useLayer(&E.fg);
 }
 
 void ComponentSystem::moveRigidAssemblies() {
@@ -2322,63 +2317,106 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
   }
 }
 
-void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) {
-  if (cells.empty()) return;
+int ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId,
+                                        uint8_t mat,
+                                        std::unordered_set<int>& cells,
+                                        int yMax, bool iceCache) {
+  if (cells.empty()) return -1;
   E.L->componentCarryDirty = true;
   E.L->componentRegistryDirty = true;
-  E.invalidateComponentIndexPatches(E.L);
+  // Registration keeps cellComp authoritative even while grounding is dirty.
+  // This makes adjacent single-cell paint an indexed append instead of
+  // rescanning the growing component for every brush stamp. Grounding and its
+  // contact graph still take the full-reflood path below.
+  if (!E.L->componentIndexExact) {
+    std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
+    for (size_t i = 0; i < list.size(); i++)
+      for (int k : list[i].cells) E.L->cellComp[k] = (int32_t)i;
+    E.L->componentIndexExact = true;
+  }
+  E.L->componentIndexPatchOnly = false;
+  E.L->componentIndexPatches.clear();
+  E.L->groundBaseValid = false;
+  E.L->groundBaseFlags.clear();
   if (mat == NEUTRONIUM) {
     E.L->forceSourcePresent = true;
   }
   E.L->groundDirty = true; // adds rigid cells (lava harden / tool placement) -> full reflood
-  // Find which existing components the new cells touch. Comp.cells is a vector
-  // now, so a linear .count() per neighbor would be O(cells * comps * size); use
-  // a cell->component-index stamp map built LAZILY (only once a same-material
-  // neighbor actually exists), keeping the common "placed in open space" case cheap.
-  // (`touchingIds` and the maps are membership-only; merge order comes from
-  // iterating `list` below, so the swap to stamps is order-neutral.)
+  // Find compatible existing components through the maintained ownership map.
+  // Input membership remains a stamp because grid already contains the new
+  // material and those cells do not have an owner yet.
   const size_t gridLen = (size_t)(E.cols * E.rows);
   regCells.reset(gridLen);
   for (int k : cells) regCells.add(k);
-  std::unordered_set<int> touchingIds;
-  bool ownerBuilt = false;
+  std::unordered_set<int> touching;
   for (int k : cells) {
     int y = k / E.cols, x = k - y * E.cols;
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx;
       if (E.L->grid[nk] != mat || regCells.has(nk)) continue;
-      if (!ownerBuilt) {
-        regOwnerStamp.reset(gridLen);
-        if (regOwnerVal.size() < gridLen) regOwnerVal.resize(gridLen);
-        for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) { regOwnerStamp.add(c); regOwnerVal[c] = (int32_t)i; }
-        ownerBuilt = true;
-      }
-      if (regOwnerStamp.has(nk)) {
-        Comp& owner = list[regOwnerVal[nk]];
-        // Baked partitions retain their object boundary. New world/tool/reaction
-        // cells may support them through the contact graph, but cannot merge
-        // into their material component and silently enlarge the old body.
-        if (owner.bakedAssemblyId == 0) touchingIds.insert(owner.id);
-      }
+      int ownerIndex = E.L->cellComp[nk];
+      if (ownerIndex < 0 || ownerIndex >= (int)list.size()) continue;
+      Comp& owner = list[ownerIndex];
+      // Baked partitions retain their object boundary. New world/tool/reaction
+      // cells may support them through the contact graph, but cannot merge
+      // into their material component and silently enlarge that baked assembly.
+      if (owner.bakedAssemblyId == 0) touching.insert(ownerIndex);
     }
   }
-  Comp newComp; newComp.id = nextId++; newComp.cells.assign(cells.begin(), cells.end()); newComp.yMax = yMax; newComp.cacheDirty = iceCache;
-  if (!touchingIds.empty()) {
-    std::vector<Comp> keep;
-    for (auto& comp : list) {
-      if (touchingIds.count(comp.id)) { for (int k : comp.cells) { newComp.cells.push_back(k); int y = k / E.cols; if (y > newComp.yMax) newComp.yMax = y; } }
-      else keep.push_back(std::move(comp));
-    }
-    list = std::move(keep);
+  if (touching.empty()) {
+    Comp component;
+    component.id = nextId++;
+    component.cells.assign(cells.begin(), cells.end());
+    component.yMax = yMax;
+    component.cacheDirty = iceCache;
+    int index = (int)list.size();
+    list.push_back(std::move(component));
+    for (int k : cells) E.L->cellComp[k] = index;
+    return index;
   }
-  list.push_back(std::move(newComp));
+
+  int survivor = *std::min_element(touching.begin(), touching.end());
+  if (touching.size() == 1) {
+    Comp& component = list[survivor];
+    component.cells.insert(component.cells.end(), cells.begin(), cells.end());
+    component.yMax = imax(component.yMax, yMax);
+    component.cacheDirty = component.cacheDirty || iceCache;
+    component.grounded = false;
+    for (int k : cells) E.L->cellComp[k] = survivor;
+    return survivor;
+  }
+
+  Comp merged = std::move(list[survivor]);
+  for (size_t i = (size_t)survivor + 1; i < list.size(); i++) {
+    if (!touching.count((int)i)) continue;
+    merged.cells.insert(merged.cells.end(), list[i].cells.begin(), list[i].cells.end());
+    merged.yMax = imax(merged.yMax, list[i].yMax);
+  }
+  merged.cells.insert(merged.cells.end(), cells.begin(), cells.end());
+  merged.yMax = imax(merged.yMax, yMax);
+  merged.cacheDirty = merged.cacheDirty || iceCache;
+  merged.grounded = false;
+
+  std::vector<Comp> keep;
+  keep.reserve(list.size() - touching.size() + 1);
+  for (size_t i = 0; i < list.size(); i++) {
+    if ((int)i == survivor) keep.push_back(std::move(merged));
+    else if (!touching.count((int)i)) keep.push_back(std::move(list[i]));
+  }
+  list = std::move(keep);
+  std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
+  for (size_t i = 0; i < list.size(); i++)
+    for (int k : list[i].cells) E.L->cellComp[k] = (int32_t)i;
+  return survivor;
 }
 
 // Plant analogue of registerRigidCells for ordinary runtime placement and
 // growth registration. Re-derive species and counters from the merged cell set.
 void ComponentSystem::registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) {
-  registerRigidCells(E.L->components, E.L->nextComponentId, mat, cells, yMax, false);
-  Comp& c = E.L->components.back();
+  int componentIndex = registerRigidCells(
+    E.L->components, E.L->nextComponentId, mat, cells, yMax, false);
+  if (componentIndex < 0) return;
+  Comp& c = E.L->components[componentIndex];
   c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_STANDARD;
   for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; if (E.materialEncodesPlantType(m)) c.plantType = E.plantTypeFromMaterial(m); }
 }

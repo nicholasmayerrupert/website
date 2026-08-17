@@ -4,23 +4,101 @@
 //   node scripts/net-protocol-test.mjs
 
 import {
-  MSG, encode, decode, makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor,
+  MSG, encode, decode, decodeWithCompatibility, makeJoin, makeSnapshot, makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor,
   makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
   INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS, SOUND_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
 import {
-  CREATURE, CREATURE_ATTACK_STATE, ITEM_KIND, OFF, PROJECTILE_KIND, SOUND_EVENT,
+  CREATURE, CREATURE_ATTACK_STATE, ITEM_KIND, OBJECT_WIRE_CODECS, OFF,
+  PROJECTILE_KIND, RECORD_CODECS, SOUND_EVENT, SOUND_EVENT_MAX_RECORDS,
 } from '../src/sand/wasmBridge/abi.generated.js';
-import { MATERIALS } from '../src/sand/materials.generated.js';
+import {
+  unpackObjectWireRecord, unpackSnapshotObjectAt,
+} from '../src/sand/wasmBridge/recordCodec.js';
+import {
+  FIRST_UNDEFINED_MATERIAL_ID, MAT_DEFINED, TABLE_SIZE, isMaterialId,
+} from '../src/sand/materials.generated.js';
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 const rt = (m) => decode(encode(m)); // round trip through the wire format
+const JSON_INVALID_MATERIAL_ID = FIRST_UNDEFINED_MATERIAL_ID >= 0
+  ? FIRST_UNDEFINED_MATERIAL_ID
+  : TABLE_SIZE;
+check('material validity represents a sparse or full byte catalogue',
+  FIRST_UNDEFINED_MATERIAL_ID >= 0
+    ? !isMaterialId(FIRST_UNDEFINED_MATERIAL_ID)
+    : MAT_DEFINED.length === TABLE_SIZE
+      && MAT_DEFINED.every((defined) => defined === 1));
+
+{
+  const objectCodec = OBJECT_WIRE_CODECS.inventoryStack;
+  const snapshotCodec = RECORD_CODECS[objectCodec.sourceStruct];
+  const packed = new Array(snapshotCodec.fields.length).fill(0);
+  packed[OFF.inventorySlot.material] = 2;
+  packed[OFF.inventorySlot.isTool] = 1;
+  packed[OFF.inventorySlot.count] = 7;
+  const stack = unpackSnapshotObjectAt(packed, 'inventoryStack', 0);
+  check('inventory wire derives its limit and fields from the snapshot record',
+    objectCodec.maxRecords === INV_SLOTS
+      && objectCodec.fields.every((field) => snapshotCodec.fields.includes(field.name))
+      && Object.keys(stack).join(',') === objectCodec.fields.map((field) => field.name).join(','));
+  check('snapshot and object helpers share scalar normalization',
+    stack.material === 2 && stack.isTool === true && stack.count === 7
+      && unpackObjectWireRecord({ ...stack, isTool: 1 }, 'inventoryStack').isTool === true);
+}
 
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 19', PROTOCOL_VERSION === 19);
+  check('PROTOCOL_VERSION is 21', PROTOCOL_VERSION === 21);
+  const join = makeJoin('room', 'client');
+  check('matching network catalogue joins', rt(join)?.t === MSG.JOIN);
+  const catalogueMismatch = decodeWithCompatibility(JSON.stringify({
+    ...join, catalogue: join.catalogue + 1,
+  }));
+  const versionMismatch = decodeWithCompatibility(JSON.stringify({
+    ...join, v: join.v - 1,
+  }));
+  check('catalogue skew fails before join with a stable reason',
+    catalogueMismatch.message === null
+      && catalogueMismatch.rejection?.reason === 'catalogue');
+  check('protocol skew remains distinct from catalogue skew',
+    versionMismatch.message === null
+      && versionMismatch.rejection?.reason === 'version');
+  check('compatibility rejection reasons survive protocol validation',
+    decode(JSON.stringify({
+      t: MSG.REJECT, room: 'room', reason: 'catalogue',
+    }))?.reason === 'catalogue');
+}
+
+{
+  console.log('player projection round trip');
+  const d = rt(makeSnapshot(7, [{
+    id: 4, x: 1.5, y: -2, vx: 0.25, vy: -0.5, facing: -1,
+    grounded: true, jumpReady: true, tool: 2, health: 88, alive: true,
+    inputSeq: 0xffffffff, animState: 1, animFrame: 3, deathTicks: 0,
+    respawnReady: false, bowCharge: 0.75, heldItemKind: ITEM_KIND.BOW,
+    jetpackFuel: 0.5, jetpackActive: true, shieldHealth: 150,
+    shieldActive: false, aimX: 8, aimY: 9,
+    mineProgress: 0.4, mineTarget: { x: 12, y: -6 },
+  }]));
+  check('player aliases are projected', d?.players[0]?.jr === 1
+    && d.players[0].seq === 0xffffffff);
+  check('wire-only mining fields survive', d?.players[0]?.mineProgress === 0.4
+    && d.players[0].mineTarget?.x === 12 && d.players[0].mineTarget?.y === -6);
+  check('builders reject non-clamping values outside their wire bounds',
+    (() => {
+      try {
+        makeSnapshot(7, [{ ...d.players[0], bowCharge: -0.01 }]);
+        return false;
+      } catch (error) {
+        return error instanceof RangeError;
+      }
+    })());
+  check('player i32 overflow rejected', decode(JSON.stringify({
+    ...d, players: [{ ...d.players[0], id: 2147483648 }],
+  })) === null);
 }
 
 {
@@ -44,6 +122,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const d = rt(makeSounds(45, packed));
   check('decodes to sounds', d && d.t === MSG.SOUNDS && d.tick === 45);
   check('sound records match ABI stride', d && d.data.length === SOUND_FIELDS * 3);
+  check('sound transport and engine share the generated event cap',
+    RECORD_CODECS.soundEvent.maxRecords === SOUND_EVENT_MAX_RECORDS);
   check('position/intensity preserved', d && d.data[1] === -12.5 && d.data[2] === 44.25 && d.data[3] === 1.75);
   check('shield semantic fields preserved', d && d.data[0] === SOUND_EVENT.SHIELD_BREAK && d.data[4] === 7 && d.data[5] === 0);
   check('spawn-breach semantic fields preserved',
@@ -114,6 +194,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
       && d.cur.isTool === 0);
   const e = rt(makeCursor(1, 2, null));
   check('empty cursor preserved', e && e.cur === null);
+  const sparse = rt(makeCursor(2, 2, { material: 0, count: 2 }));
+  check('sparse non-tool cursor uses generated zero defaults',
+    sparse?.cur?.isTool === 0 && sparse.cur.toolClass === 0
+      && sparse.cur.toolTier === 0 && sparse.cur.plantType === 0
+      && sparse.cur.itemKind === 0);
 }
 
 // 4. intents round trip.
@@ -143,7 +228,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('items bad record length', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 2, 3] })) === null);
   check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.x]: Number.NaN }) })) === null);
   check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.id]: 1.5 }) })) === null);
-  check('items undefined material', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.material]: MATERIALS.length }) })) === null);
+  check('items undefined material', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.material]: JSON_INVALID_MATERIAL_ID }) })) === null);
   check('items unknown item kind', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.itemKind]: 99 }) })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
   check('creatures bad record length', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 2, 3] })) === null);
@@ -162,7 +247,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('sounds NaN intensity', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, Number.NaN, 0, 0] })) === null);
   check('sounds non-int semantic field', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0.5, 1, 2, 1, 0, 0] })) === null);
   check('sounds unknown event type', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [999, 1, 2, 1, 0, 0] })) === null);
-  check('sounds undefined material', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, MATERIALS.length, 0] })) === null);
+  check('sounds undefined material', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, JSON_INVALID_MATERIAL_ID, 0] })) === null);
   check('sounds invalid layer', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, 0, 2] })) === null);
   check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
   check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
@@ -171,12 +256,12 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   badInventoryKind[OFF.inventorySlot.itemKind] = Math.max(...Object.values(ITEM_KIND)) + 1;
   check('inventory unknown item kind', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: badInventoryKind, selected: 0, selectedFootprint: 0 })) === null);
   const badInventoryMaterial = new Array(INV_SLOTS * INV_FIELDS).fill(0);
-  badInventoryMaterial[OFF.inventorySlot.material] = MATERIALS.length;
+  badInventoryMaterial[OFF.inventorySlot.material] = JSON_INVALID_MATERIAL_ID;
   check('inventory undefined material', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: badInventoryMaterial, selected: 0, selectedFootprint: 0 })) === null);
   check('cursor bad shape', decode(JSON.stringify({ t: 'cursor', tick: 0, player: 0, cur: { material: 1.2 } })) === null);
   check('cursor undefined material', decode(JSON.stringify({
     t: 'cursor', tick: 0, player: 0,
-    cur: { material: MATERIALS.length, isTool: 0, toolClass: 0, toolTier: 0, count: 1, itemKind: 0 },
+    cur: { material: JSON_INVALID_MATERIAL_ID, isTool: 0, toolClass: 0, toolTier: 0, count: 1, itemKind: 0 },
   })) === null);
   check('select slot >= INV_SLOTS rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: INV_SLOTS })) === null);
   check('select negative slot rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: -1 })) === null);
@@ -191,9 +276,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   console.log('resource bounds');
   const huge = new Array((1024 + 1) * ITEM_FIELDS).fill(0);
   check('over-cap item snapshot rejected', decode(JSON.stringify({ t: 'items', tick: 0, data: huge })) === null);
-  const hugeCreatures = new Array((128 + 1) * CREATURE_FIELDS).fill(0);
+  const hugeCreatures = new Array(
+    (RECORD_CODECS.creatureSnapshot.maxRecords + 1) * CREATURE_FIELDS).fill(0);
   check('over-cap creature snapshot rejected', decode(JSON.stringify({ t: 'creatures', tick: 0, data: hugeCreatures })) === null);
-  const hugeSounds = new Array((192 + 1) * SOUND_FIELDS).fill(0);
+  const hugeSounds = new Array(
+    (SOUND_EVENT_MAX_RECORDS + 1) * SOUND_FIELDS).fill(0);
   check('over-cap sound snapshot rejected', decode(JSON.stringify({ t: 'sounds', tick: 0, data: hugeSounds })) === null);
 }
 

@@ -2,7 +2,14 @@
 // Procedural terrain queries are pure functions of absolute coordinates and the
 // active layer's terrain parameters. They never consume shared simulation RNG.
 
+#include "biomes.generated.hpp"
+#include "cave_profile_handlers.hpp"
+
 struct Engine;
+
+// Terrain, feature plans, and semantic identities are one compatibility unit.
+// Bump this when deterministic generation or feature containment changes.
+inline constexpr int WORLD_GENERATION_VERSION = 4;
 
 class TerrainGen {
  public:
@@ -10,8 +17,8 @@ class TerrainGen {
 
   // Generator tunables. World-space dimensions are deliberately independent of
   // the loaded buffer: a seed names one canonical world at every viewport size.
-  // These values match the former 320-row reference world.
-  static constexpr int WORLDGEN_VERSION = 3;
+  // The constants define one canonical world independent of viewport height.
+  static constexpr int WORLDGEN_VERSION = WORLD_GENERATION_VERSION;
   static constexpr int SURFACE_AMPLITUDE = 54;
   static constexpr int SEA_LEVEL = 18;
   static constexpr int BASE_SOIL_DEPTH = 3;
@@ -22,6 +29,16 @@ class TerrainGen {
   static constexpr int CAVE_REGION_WIDTH = 256;
   static constexpr int DEEP_CAVERN_WIDTH = 288;
   static constexpr int DEEP_CAVERN_HEIGHT = 208;
+  static constexpr int DEEP_CAVERN_CENTER_X_MARGIN = 56;
+  static constexpr int DEEP_CAVERN_CENTER_Y_MARGIN = 16;
+  static constexpr int DEEP_CAVERN_MIN_RADIUS_X = 82;
+  static constexpr int DEEP_CAVERN_RADIUS_X_VARIATION = 64;
+  static constexpr int DEEP_CAVERN_MIN_RADIUS_Y = 52;
+  static constexpr int DEEP_CAVERN_RADIUS_Y_VARIATION = 42;
+  static constexpr int DEEP_CAVERN_MAX_RADIUS_X =
+    DEEP_CAVERN_MIN_RADIUS_X + DEEP_CAVERN_RADIUS_X_VARIATION - 1;
+  static constexpr int DEEP_CAVERN_MAX_RADIUS_Y =
+    DEEP_CAVERN_MIN_RADIUS_Y + DEEP_CAVERN_RADIUS_Y_VARIATION - 1;
   static constexpr double SURFACE_FREQ = 0.008;
   static constexpr double CAVE_FREQ = 0.01;    // lower frequency produces larger features
   static constexpr double TREE_PROB = 0.05;

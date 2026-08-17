@@ -84,8 +84,7 @@ class ComponentSystem {
   StampSet asmOpenAir;
   std::vector<uint8_t> asmOpenAirValue;
   std::vector<int> asmOpenAirPath;
-  StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
-  std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
+  StampSet regCells;                          // registerRigidCells input-set membership
   std::vector<uint8_t> splitTouched;           // acid split: indexed touched-component mask
   StampSet splitMembers, splitRemovedSet;      // local no-cut proof + batch erased membership
   std::vector<int> splitSurvivors, splitErased, splitBlob, splitPart, splitBoundary; // split + local-proof reusable queues
@@ -131,7 +130,9 @@ class ComponentSystem {
   bool isPlantMat(uint8_t m);
   void registerSeededComponents(int colStart, int colEnd);
   void registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd);
-  void registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache);
+  int registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat,
+                         std::unordered_set<int>& cells, int yMax,
+                         bool iceCache);
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax);
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);

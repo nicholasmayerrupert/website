@@ -90,12 +90,14 @@ e.destroy();
     speedBefore > 0 && speedAfter === speedBefore);
   check(`streamed liquid retains packed velocity (${velocityBefore} -> ${velocityAfter})`,
     velocityBefore !== 0 && velocityAfter === velocityBefore);
+  streamed._setMotionSentinel(0, sandCell, 0x13572468);
   streamed.paintDisc(x, Math.floor(sandCell / cols), 0, MAT.SAND, true);
+  check('repainting a powder clears every registered state phase',
+    streamed._motionCellZero(0, sandCell));
+  streamed._setMotionSentinel(0, waterCell, 0x24681357);
   streamed.paintDisc(waterX, waterY, 0, MAT.WATER, true);
-  check('repainting a powder clears its inherited fall speed',
-    streamed._fallSpeedGrid()[sandCell] === 0);
-  check('repainting a liquid clears its inherited velocity',
-    streamed._liquidVelocityGrid()[waterCell] === 0);
+  check('repainting a liquid clears every registered state phase',
+    streamed._motionCellZero(0, waterCell));
   streamed.destroy();
 }
 

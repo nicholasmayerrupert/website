@@ -4,7 +4,7 @@
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { MAT, MATERIALS } from '../src/sand/materials.js';
+import { MAT, MATERIAL_BY_ID } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 100, ROWS = 120, SEED = 0xC0FFEE;
@@ -82,6 +82,43 @@ check(`mixed bake remains static (bodies ${e._bodyCount()})`,
   e._bodyCount() === 0);
 e.destroy();
 
+// Every loose-solid class member can yield its raster cells while a rotating
+// body settles and bakes over any loose medium.
+{
+  const C = 110, R = 145;
+  const powderBake = createEngineWasm({
+    cols: C, rows: R, worldSeed: 0xD17A, sinksOn: false, infinite: false,
+  });
+  for (let y = 132; y < R; y++) for (let x = 0; x < C; x++)
+    powderBake.paintDisc(x, y, 0, MAT.STONE, true);
+  for (let y = 124; y < 132; y++) for (let x = 38; x <= 72; x++)
+    powderBake.paintDisc(x, y, 0, MAT.DIRT, true);
+  powderBake.syncComponents();
+  powderBake.stepWorld();
+  powderBake.spawnBox(54, 38, 5, 3, MAT.GOLD_ORE);
+  const structuralBefore = Array.from(powderBake.getGrid())
+    .filter((material) => material === MAT.GOLD_ORE).length;
+  powderBake._setBodyMotion(0, 0.18, 1.25, 0.045);
+  let maxAngle = 0, bakedAt = -1;
+  for (let i = 0; i < 900; i++) {
+    powderBake.stepWorld();
+    const state = powderBake._bodyState(0);
+    if (!state) {
+      bakedAt = i;
+      break;
+    }
+    maxAngle = Math.max(maxAngle, Math.abs(state.angle));
+  }
+  const structuralAfter = Array.from(powderBake.getGrid())
+    .filter((material) => material === MAT.GOLD_ORE).length;
+  check(`rotating body bakes across non-sand powder (step ${bakedAt})`,
+    maxAngle > 0.15 && bakedAt >= 0);
+  check(`non-sand powder bake retains the structural raster `
+      + `(${structuralBefore} -> ${structuralAfter})`,
+    structuralBefore === 60 && structuralAfter >= structuralBefore - 4);
+  powderBake.destroy();
+}
+
 // A baked mixed rectangle must not merge its masonry partition into the
 // same-material floor. Cutting it into two pieces and removing the floor should
 // produce exactly two bodies whose pivots are their own mass centroids.
@@ -146,7 +183,7 @@ e.destroy();
       if (material !== MAT.BRICK && material !== MAT.WOOD) continue;
       const x = k % C, y = (k / C) | 0;
       if (y >= floorY || (left ? x >= cutX - 1 : x <= cutX + 1)) continue;
-      const cellMass = MATERIALS[material].density;
+      const cellMass = MATERIAL_BY_ID[material].density;
       weightedX += (x + 0.5) * cellMass;
       mass += cellMass;
     }

@@ -2,7 +2,9 @@
 // rock strata blend gradually, deep biomes stay diverse, and chamber-scale
 // features/monuments survive deterministic streaming.
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  initSandWasm, createEngineWasm, MAT, CAVE_BIOME_DEFS,
+} from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -65,20 +67,23 @@ function floodFromSurface(engine, region) {
 }
 
 // Deep realms are broad, but their fBm thresholds should not starve any of the
-// four identities across representative worlds.
+// every descriptor-marked deep identity across representative worlds.
 {
-  const counts = [0, 0, 0, 0];
+  const deepBiomes = CAVE_BIOME_DEFS.filter((def) => def.deep);
+  const counts = new Map(deepBiomes.map((def) => [def.id, 0]));
   for (const seed of [0xBED, 0xBEEF, 7]) {
     const engine = mk(96, 96, seed);
     for (let y = 864; y <= 2400; y += 104)
       for (let x = -3600; x <= 3600; x += 144) {
         const biome = engine.worldCaveBiomeAt(x, y);
-        if (biome >= 4 && biome <= 7) counts[biome - 4]++;
+        if (counts.has(biome)) counts.set(biome, counts.get(biome) + 1);
       }
     engine.destroy();
   }
-  check(`all deep biomes remain common (magma/geode/fossil/void ${counts.join('/')})`,
-    counts.every((count) => count >= 100));
+  const summary = deepBiomes.map((def) => `${def.name} ${counts.get(def.id)}`);
+  check(`all deep biomes remain common (${summary.join(', ')})`,
+    deepBiomes.length > 0
+      && deepBiomes.every((def) => counts.get(def.id) >= 100));
 }
 
 // Background recesses remain rare at depth. In particular, the infinite

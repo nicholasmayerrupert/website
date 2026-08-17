@@ -4,7 +4,7 @@
 
 import {
   initSandWasm, createEngineWasm, PLANET, BIOME, WORLD_AREA, WORLD_FEATURE,
-  WORLD_SITE_ROLE,
+  WORLD_SITE_ROLE, MAT,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
@@ -97,6 +97,32 @@ check('mines expose stable underground regions independently of cave materials',
     && has(mine.context, WORLD_AREA.MINE)
     && has(mine.context, WORLD_AREA.UNDERGROUND)
     && mine.context.featureId > 0);
+const mineSky = mine && earth.worldContextAt(
+  mine.x, earth.worldSurfaceAbsAt(mine.x) - 24);
+check('mine galleries do not claim untouched sky above their structure',
+  mineSky
+    && !(mineSky.featureKind === WORLD_FEATURE.MINE
+      && mineSky.siteRole === WORLD_SITE_ROLE.MINE_GALLERY));
+
+const ruin = findContext(earth,
+  (context) => context.featureKind === WORLD_FEATURE.RUIN,
+  { minDepth: 24, maxDepth: 760, xStep: 12, yStep: 6 });
+check('cave ruins are planned and exposed by the shared feature catalogue',
+  ruin
+    && ruin.context.siteRole === WORLD_SITE_ROLE.RUIN
+    && has(ruin.context, WORLD_AREA.STRUCTURE)
+    && has(ruin.context, WORLD_AREA.INDOOR)
+    && ruin.context.featureId > 0);
+
+const deepStructure = findContext(earth,
+  (context) => context.featureKind === WORLD_FEATURE.DEEP_STRUCTURE,
+  { minDepth: 560, maxDepth: 1500, xStep: 18, yStep: 10 });
+check('deep monuments are planned and exposed by the shared feature catalogue',
+  deepStructure
+    && deepStructure.context.siteRole === WORLD_SITE_ROLE.DEEP_STRUCTURE
+    && has(deepStructure.context, WORLD_AREA.DEEP)
+    && has(deepStructure.context, WORLD_AREA.STRUCTURE)
+    && deepStructure.context.featureId > 0);
 
 const ordinarySurface = villageCommons && findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.NONE
@@ -175,7 +201,45 @@ check('viewport size does not change semantic world records',
 wide.destroy();
 earth.destroy();
 
+const overlapRegression = make({ worldSeed: 0xBED, cols: 768 });
+const overlapX = -322;
+const overlapSurface = overlapRegression.worldSurfaceAbsAt(overlapX);
+const overlapY = overlapSurface - 4;
+const overlapContext = overlapRegression.worldContextAt(overlapX, overlapY);
+const overlapGridX = overlapX - overlapRegression.getWorldOffsetX();
+const overlapGridY = overlapY - overlapRegression.getWorldOffsetY();
+const overlapMaterial = overlapRegression.getGrid()[
+  overlapGridY * overlapRegression.cols + overlapGridX];
+check('overlap ownership matches the rendered settlement masonry',
+  overlapMaterial === MAT.BRICK
+    && overlapContext.featureKind === WORLD_FEATURE.VILLAGE
+    && has(overlapContext, WORLD_AREA.SETTLEMENT)
+    && !has(overlapContext, WORLD_AREA.MINE));
+const overlapSky = overlapRegression.worldContextAt(
+  overlapX, overlapSurface - 40);
+check('a mine planning box cannot claim untouched sky above an overlapping settlement',
+  !(overlapSky.featureKind === WORLD_FEATURE.MINE
+    && overlapSky.siteRole === WORLD_SITE_ROLE.MINE_GALLERY)
+    && !(has(overlapSky, WORLD_AREA.MINE)
+      && has(overlapSky, WORLD_AREA.SETTLEMENT)));
+overlapRegression.destroy();
+
 const moon = make({ planetId: PLANET.MOON });
+const outcrop = findContext(moon,
+  (context) => context.featureKind === WORLD_FEATURE.OUTCROP,
+  {
+    minX: -3000,
+    maxX: 3000,
+    minDepth: -32,
+    maxDepth: 2,
+    xStep: 2,
+    yStep: 1,
+  });
+check('off-world natural formations participate in the feature catalogue',
+  outcrop
+    && outcrop.context.siteRole === WORLD_SITE_ROLE.OUTCROP
+    && has(outcrop.context, WORLD_AREA.STRUCTURE)
+    && outcrop.context.featureId > 0);
 const facility = findContext(moon,
   (context) => context.featureKind === WORLD_FEATURE.OFFWORLD_FACILITY
     && has(context, WORLD_AREA.FACILITY),

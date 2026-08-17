@@ -3,8 +3,8 @@
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import {
-  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, OFF, PROJECTILE_KIND,
-  SOUND_EVENT, STRIDES,
+  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, CREATURE_MAX_RECORDS, OFF,
+  PROJECTILE_KIND, SOUND_EVENT, STRIDES,
 } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -14,8 +14,8 @@ const { check, done } = makeChecker('material-aware creatures');
 const COLS = 180, ROWS = 120;
 const mk = (opts = {}) => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0xC4EA7, sinksOn: false, infinite: false, ...opts });
 const actors = (e, n) => { for (let i = 0; i < n; i++) e.stepActors(); };
-const waterBox = (e, x0, y0, x1, y1) => {
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) e.paintDisc(x, y, 0, MAT.WATER, true);
+const waterBox = (e, x0, y0, x1, y1, material = MAT.WATER) => {
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) e.paintDisc(x, y, 0, material, true);
 };
 const stoneFloor = (e, top) => {
   for (let y = top; y < ROWS; y++) for (let x = 4; x < COLS - 4; x++) e.addDiscToStoneDraft(x, y, 0);
@@ -25,6 +25,51 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
 check('roster includes fauna, combatants, and authored mission actors',
   Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN,REACTOR_CORE,IRIS_COMMANDER,IRIS_ENGINEER,VILLAGER');
+
+{
+  const e = mk();
+  const invalidSpecies = [-1, Object.keys(CREATURE).length, 255, 256];
+  const rejected = invalidSpecies.every((species) =>
+    e.spawnCreature(species, 30, 30) === 0
+      && e.spawnScriptedCreature(species, 30, 30) === 0);
+  check('public creature spawns reject negative, count, 255, and 256 ids before narrowing',
+    rejected && e.getCreatures().length === 0);
+  e.destroy();
+}
+
+{
+  const e = mk();
+  const accepted = Array.from({ length: CREATURE_MAX_RECORDS }, (_, index) =>
+    e.spawnScriptedCreature(CREATURE.FOX, 20 + index % 20, 20));
+  const rejected = e.spawnScriptedCreature(CREATURE.FOX, 20, 20);
+  check('creature insertion and snapshot share the generated record capacity',
+    accepted.every((id) => id > 0) && rejected === 0
+      && e.getCreatures().length === CREATURE_MAX_RECORDS);
+  e.destroy();
+}
+
+{
+  const e = attachTestHooks(createEngineWasm({
+    cols: 448, rows: 320, worldSeed: 0xB4EAC5,
+    sinksOn: false, infinite: true,
+  }));
+  e.setViewport(1, 1, 448, 320);
+  e.cameraSet(0, 0);
+  e.spawnPlayerAtSurface(224);
+  e.setCreatureRuntime(true, false);
+  const requested = e._spawnNearFocus(CREATURE.DYNAMITEER, 0x5151);
+  const warning = e.getCreatureSnapshotData();
+  const mirror = new Float32Array(CREATURE_MAX_RECORDS * STRIDES.creatureSnapshot);
+  for (let i = 0; i < CREATURE_MAX_RECORDS; i++) {
+    mirror.set(warning, i * STRIDES.creatureSnapshot);
+    mirror[i * STRIDES.creatureSnapshot + OFF.creatureSnapshot.id] = i + 1;
+  }
+  e.setMirrorCreatures(mirror, e.getWorldOffsetX(), e.getWorldOffsetY());
+  check('authoritative mirror replacement clears pending warnings before installing the record cap',
+    requested && warning.length === STRIDES.creatureSnapshot
+      && e.getCreatures().length === CREATURE_MAX_RECORDS);
+  e.destroy();
+}
 
 // A bird may be engulfed by newly placed/falling water. Water blocks normal
 // flight entry, but a submerged bird must climb back through it instead of
@@ -78,6 +123,41 @@ check('roster includes fauna, combatants, and authored mission actors',
     return true;
   });
   check(`fish remain inside water after steering (${fish.length} survivors)`, fish.length > 0 && allWet);
+  e.destroy();
+}
+
+// Brine shares the generated aquatic habitat policy with water.
+{
+  const e = mk();
+  waterBox(e, 20, 25, 130, 70, MAT.BRINE);
+  const id = e.spawnCreature(CREATURE.MINNOW, 62, 42);
+  e.setCreatureRuntime(true, false);
+  actors(e, 160);
+  const fish = byId(e, id), grid = e.getGrid();
+  let allWet = !!fish;
+  if (fish) {
+    for (let y = Math.floor(fish.y); y < Math.ceil(fish.y + fish.h); y++)
+      for (let x = Math.floor(fish.x); x < Math.ceil(fish.x + fish.w); x++)
+        if (x >= 0 && x < COLS && y >= 0 && y < ROWS
+            && grid[y * COLS + x] !== MAT.BRINE) allWet = false;
+  }
+  check('fish spawn and remain in schema-selected brine habitat', id > 0 && allWet);
+  e.destroy();
+}
+
+// Ground habitat rejects every physical liquid, including non-aquatic fluids.
+{
+  const e = mk();
+  stoneFloor(e, 92);
+  const materials = [MAT.OIL, MAT.ACID, MAT.LAVA];
+  const rejected = materials.map((material, index) => {
+    const x = 22 + index * 36;
+    waterBox(e, x, 84, x + 18, 92, material);
+    return e.spawnCreature(CREATURE.FOX, x + 4, 88) === 0;
+  });
+  const dry = e.spawnCreature(CREATURE.FOX, 142, 88);
+  check('ground habitat rejects oil, acid, and lava while retaining dry footing',
+    rejected.every(Boolean) && dry > 0);
   e.destroy();
 }
 

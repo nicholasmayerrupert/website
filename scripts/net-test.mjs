@@ -4,7 +4,8 @@
 
 import {
   MSG, encode, decode, makeJoin, makeLeave, makeInput, makeSnapshot,
-  makeAssign, makeReject, makeWorld, makeDiff, makeView, makeSounds, makeCursor, INPUT_BITS_MAX, TOOL_MAX,
+  makeAssign, makeReject, makeWorld, makeDiff, makeView, makeSounds, makeInventory,
+  makeCursor, INPUT_BITS_MAX, TOOL_MAX, INV_SLOTS,
 } from '../src/sand/net/protocol.js';
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/server/sequencing.js';
 import { Host } from '../src/sand/net/server/host.js';
@@ -20,6 +21,8 @@ import { gridHash } from './sand-test-util.mjs';
 import { getAvailablePort } from './test-port.mjs';
 import { WebSocket } from 'ws';
 import { worldRleHash } from '../src/sand/worldPacketValidation.js';
+import { MAT } from '../src/sand/materials.js';
+import { unpackObjectWireRecord } from '../src/sand/wasmBridge/recordCodec.js';
 
 const COLS = 200, ROWS = 120;
 const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
@@ -27,6 +30,14 @@ const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 const rt = (m) => decode(encode(m)); // round trip through the wire format
+const sameWireRecord = (actual, expected, skipped = new Set()) =>
+  Object.entries(expected).every(([field, value]) => {
+    if (skipped.has(field)) return true;
+    if (value && typeof value === 'object') {
+      return actual?.[field]?.x === value.x && actual?.[field]?.y === value.y;
+    }
+    return actual?.[field] === value;
+  });
 
 // Connection setup is transactional: a socket failure rejects and leaves no
 // public client state behind.
@@ -217,15 +228,37 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   await net.joinRoom('ws://test', 'main');
   check('join waits for authoritative assignment', net.ownPlayerId === 7);
   check('join applies initial world through mirror API', net.worldReady && engine.mirrorApplies === 1 && engine.mirrorTick === 3);
-  socket.onmessage({ data: encode(makeSnapshot(4, [{
-    id: 8, x: 1, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
-    tool: 0, health: 100, alive: true, inputSeq: 0, animState: 0, animFrame: 0,
-    aimX: 8, aimY: 1, shieldHealth: 83, shieldActive: true,
-  }])) });
+  const inventorySlots = Array.from({ length: INV_SLOTS }, () => ({
+    material: MAT.EMPTY, count: 0,
+  }));
+  inventorySlots[4] = {
+    material: MAT.STONE, isTool: true, toolClass: 5, toolTier: 3,
+    count: 17, plantType: 2, itemKind: ITEM_KIND.MINIGUN,
+  };
+  socket.onmessage({ data: encode(makeInventory(4, 7, inventorySlots, 4, 6)) });
+  net.update();
+  const decodedInventory = net.getOwnInventory();
+  const decodedStack = decodedInventory?.slots[4];
+  check('client inventory decoding follows generated field metadata',
+    decodedInventory?.selected === 4 && decodedInventory.selectedFootprint === 6
+      && decodedStack?.material === MAT.STONE && decodedStack.isTool === true
+      && decodedStack.toolClass === 5 && decodedStack.toolTier === 3
+      && decodedStack.count === 17 && decodedStack.plantType === 2
+      && decodedStack.itemKind === ITEM_KIND.MINIGUN);
+  const remoteSnapshot = makeSnapshot(4, [{
+    id: 8, x: 1, y: 1, vx: 0, vy: 0, facing: -1, grounded: true,
+    jumpReady: true, tool: 2, health: 93, alive: true, inputSeq: 11,
+    animState: 3, animFrame: 7, deathTicks: 2, respawnReady: true,
+    bowCharge: 0.75, heldItemKind: 4, jetpackFuel: 0.625, jetpackActive: true,
+    aimX: 8, aimY: 1, mineProgress: 0.5, mineTarget: { x: 6, y: 7 },
+    shieldHealth: 83, shieldActive: true,
+  }]);
+  socket.onmessage({ data: encode(remoteSnapshot) });
   net.update();
   const wardRemote = net.getPlayersForRender().find((p) => p.id === 8);
-  check('multiplayer client preserves remote ward state for presentation',
-    wardRemote?.shieldHealth === 83 && wardRemote.shieldActive === true);
+  const expectedRemote = unpackObjectWireRecord(remoteSnapshot.players[0], 'player');
+  check('multiplayer client preserves every generated remote-player field',
+    sameWireRecord(wardRemote, expectedRemote, new Set(['x', 'y'])));
   socket.onmessage({ data: encode(makeSnapshot(4, [{
     id: 7, x: 1, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
     tool: 0, health: 0, alive: false, inputSeq: 0, animState: 0, animFrame: 0,
@@ -325,10 +358,16 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   net.setPaused(false);
   check('paused diff backlog requests one full resync',
     socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length === resyncsBeforePressure + 1);
-  socket.onmessage({ data: encode(makeCursor(5, 7, { material: 1, isTool: false, toolClass: 0, toolTier: 0, count: 2, plantType: 0, itemKind: 0 })) });
+  const cursorMessage = makeCursor(5, 7, {
+    material: MAT.STONE, isTool: true, toolClass: 5, toolTier: 3,
+    count: 2, plantType: 4, itemKind: ITEM_KIND.MINIGUN,
+  });
+  socket.onmessage({ data: encode(cursorMessage) });
   for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeSounds(6 + i, [])) });
   net.update();
-  check('inbound pressure preserves change-triggered cursor state', net.getOwnCursor()?.count === 2);
+  check('inbound pressure preserves every generated cursor field',
+    sameWireRecord(net.getOwnCursor(),
+      unpackObjectWireRecord(cursorMessage.cur, 'inventoryStack')));
   net.disconnect();
   globalThis.WebSocket = RealWebSocket;
 }

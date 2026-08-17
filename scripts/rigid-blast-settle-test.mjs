@@ -5,7 +5,7 @@ import {
   createEngineWasm as createEngineWasmRaw,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { KIND, MATERIALS, MAT } from '../src/sand/materials.js';
+import { KIND, MATERIALS, MAT, TABLE_SIZE } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -23,7 +23,7 @@ const SEEDS = (process.env.SEEDS ?? '2667084199,1026552672,3680988441')
 const CAPTURE_DIR = process.env.CAPTURE_DIR
   ? resolve(process.env.CAPTURE_DIR) : '';
 const GOLDEN = process.env.GOLDEN === '1';
-const STRUCTURAL = new Uint8Array(64);
+const STRUCTURAL = new Uint8Array(TABLE_SIZE);
 for (const material of MATERIALS)
   if (material.kind === KIND.COMPONENT) STRUCTURAL[material.id] = 1;
 

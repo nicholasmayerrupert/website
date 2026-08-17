@@ -1,8 +1,7 @@
 // Framework-free survival inventory HUD. C++ owns every slot/cursor mutation;
 // this module renders snapshots and forwards user intent.
 
-import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
-import { MAT } from '../materials.js';
+import { MATERIALS, MAT_CRAFT_FLAGS, MF } from '../materials.generated.js';
 import { CRAFT_INGREDIENT, ITEM_KIND, INV_HOTBAR, INV_SLOTS } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
@@ -615,11 +614,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const available = (inv, ingredient) => (inv?.slots || []).reduce((sum, slot) => {
     if (!slot?.count || slot.itemKind !== ITEM_KIND.MATERIAL) return sum;
     if (ingredient.kind === CRAFT_INGREDIENT.MATERIAL) return sum + (slot.material === ingredient.value ? slot.count : 0);
-    if (ingredient.value === MF.plantWood)
-      return sum + (slot.material === MAT.DRIFTWOOD || (MAT_FLAGS[slot.material] & MF.plantWood) !== 0 ? slot.count : 0);
-    if (ingredient.value === MF.plantLeaf)
-      return sum + (slot.material === MAT.VINE || (MAT_FLAGS[slot.material] & MF.plantLeaf) !== 0 ? slot.count : 0);
-    return sum + ((MAT_FLAGS[slot.material] & ingredient.value) !== 0 ? slot.count : 0);
+    return sum + ((MAT_CRAFT_FLAGS[slot.material] & ingredient.value) !== 0 ? slot.count : 0);
   }, 0);
   const recipeEls = recipes.map((recipe) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'craft-recipe';

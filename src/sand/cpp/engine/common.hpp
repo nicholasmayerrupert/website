@@ -13,7 +13,9 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#include <cassert>
 #include <utility>
+#include <type_traits>
 #include <emscripten.h>
 #include <emscripten/console.h>
 
@@ -55,7 +57,6 @@ static const int   LIQUID_SURFACE_LOOKAHEAD = 64, LIQUID_SURFACE_FLOW_PASSES = 2
 // BFS visit budget = min(gridLen, max(BASE, need * PER)). Keeps enclosed-pool
 // floods from freezing a tick the way a per-cell BFS would.
 static const int   LIQUID_DISP_VISIT_BASE = 4096, LIQUID_DISP_VISIT_PER = 128;
-static const float STEAM_DECAY_P = 0.018f, FIRE_DECAY_P = 0.008f;
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
@@ -71,15 +72,9 @@ static const float ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P 
 // Corrosive contact is dangerous to every living actor. Twelve damage four
 // times per second is twice the old player-only acid DPS while staying below
 // direct lava immersion.
-static const int ACID_CONTACT_DAMAGE = 12, ACID_CONTACT_INTERVAL = 15;
 static const float ACRID_SMOKE_P = 0.5f; // chance a dissolved cell emits acrid smoke instead of leaving empty space
-// Acrid smoke is wispier and shorter-lived than steam so a big acid burn doesn't
-// leave a long-lived gas cloud that keeps the layer active (each active step pays a
-// full-grid grounding reflood). ACRID_TRAPPED_DECAY_P: smoke boxed in by liquid/solid
-// can't vent, so instead of churning up through the fluid forever it dissolves fast.
-static const float ACRID_DECAY_P = 0.05f, ACRID_TRAPPED_DECAY_P = 0.30f;
-static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH = 1, TRUNK_THICKEN_UNTIL_WOOD = 52;
-static const float GROWTH_P = 0.58f, LEAF_GROWTH_P = 0.54f;
+static const int   WATER_PER_GROWTH = 1, TRUNK_THICKEN_UNTIL_WOOD = 52;
+static const float GROWTH_P = 0.58f;
 static const float LEAF_SEED_DROP_P = 0.10f;
 static const float TRUNK_SIDE_FILL_P = 0.96f, TRUNK_DOUBLE_SIDE_FILL_P = 0.78f, TRUNK_WIDE_SIDE_FILL_P = 0.34f;
 static const int   MYCELIUM_MAX_CELLS = 180, MYCELIUM_MAX_AGE = 1100;
@@ -166,12 +161,6 @@ static __attribute__((noinline)) double wridged2(uint32_t seed, double x, double
   for (int o = 0; o < octaves; o++) { double n = valueNoise2D(seed + (uint32_t)o * 1013u, x * freq, y * freq); double r = 1 - std::fabs(n * 2 - 1); sum += r * r * amp; norm += amp; amp *= gain; freq *= 2; }
   return norm > 0 ? sum / norm : 0;
 }
-
-// Flora species — drives growth rules + which wood/leaf material a tree is made of.
-// Keep the seven palette ids stable. PT_STANDARD is the plain SEED material's
-// original growth path; it lives outside that 0..6 palette range so Oak can have
-// a distinct silhouette without renumbering saved/networked species.
-enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH, PT_VINE, PT_STANDARD };
 
 struct Comp {
   int id = 0;
@@ -305,7 +294,7 @@ struct Body {
   int rasterLockCell = -1;
   int rasterLockOwner = -2;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
-  int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
+  int fuseTicks = 0; // >0 = a lit fuse-profile body counting down to detonation
   // The ignition front is a body-local point, so its next crater follows the
   // same end of a moving or rotating charge.
   double fuseLocalX = 0, fuseLocalY = 0;

@@ -27,25 +27,30 @@ void ExplosivesSystem::queueDetonation(int cell, int fuse) {
   auto& pd = E.L->pendingDetonations;
   auto inserted = pd.emplace(cell, fuse);
   auto it = inserted.first;
+  uint8_t material = E.L->grid[cell];
   if (inserted.second) {
-    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols,
+                 fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, material);
   } else if (fuse < it->second) {
     it->second = fuse;
-    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols,
+                 fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, material);
   }
 }
-void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse,
-                                         double sourceX, double sourceY) {
+void ExplosivesSystem::shortenFuseBody(Body* b, int fuse,
+                                      double sourceX, double sourceY) {
   if (!b) return;
   if (b->jointRole == 2) {
     if (!b->jointPeer) return;
     b = b->jointPeer;
   }
-  if (!E.bodyContainsMaterial(b, TNT)) return;
+  uint8_t material = E.bodyMaterialWithExplosiveProfile(b, XP_TNT_FUSE);
+  if (material == EMPTY) return;
   if (b->fuseTicks <= 0 || b->fuseTicks > fuse) {
     b->fuseTicks = fuse;
     E.rigid.setBodyFusePoint(b, sourceX, sourceY);
-    E.audio.emit(SE_FUSE, b->px, b->py, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+    E.audio.emit(SE_FUSE, b->px, b->py,
+                 fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, material);
   }
   b->awake = true; E.rigid.resetSleepTracking(b);
   if (b->jointRole == 1 && b->jointPeer) {
@@ -74,7 +79,7 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves,
         double g = whash2(wave.seed ^ 0xA511E9B3u, xx, yy);
         uint8_t m = g < TNT_ACRID_FRAC ? ACRID_SMOKE
                   : (g < TNT_ACRID_FRAC + TNT_STEAM_FRAC ? STEAM : FIRE);
-        E.writeGridIndex(k, m);
+        E.writeGridIndexUnsafe(k, m);
         E.L->vacatedStamp[k] = E.tick;
         E.L->blastGasStamp[k] = E.tick;
     };
@@ -109,7 +114,7 @@ bool ExplosivesSystem::blastBodyCandidateHasEscape(const std::vector<std::pair<i
     if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) return false;
     int k = E.I(x, y);
     footprint.insert(k);
-    if (!footprintAlreadySolid && !E.canBodyOccupy(E.L->grid[k], k, density)) return false;
+    if (!footprintAlreadySolid && !E.rigid.canBodyOccupy(E.L->grid[k], k, density)) return false;
   }
   static const int OFFS[4] = {-1, 1, 0, 0};
   static const int YOFFS[4] = {0, 0, -1, 1};
@@ -120,7 +125,7 @@ bool ExplosivesSystem::blastBodyCandidateHasEscape(const std::vector<std::pair<i
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows - 1) continue;
       int nk = E.I(nx, ny);
       if (footprint.count(nk)) continue;
-      if (E.canBodyOccupy(E.L->grid[nk], nk, density)) return true;
+      if (E.rigid.canBodyOccupy(E.L->grid[nk], nk, density)) return true;
     }
   }
   return false;
@@ -151,7 +156,7 @@ ExplosivesSystem::BlastDebrisEjection ExplosivesSystem::inferBlastDebrisEjection
       if (dd == 0 || dd > PROBE_RADIUS * PROBE_RADIUS) continue;
       int x = cx + ox, y = cy + oy;
       if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) continue;
-      if (E.isSolidForPlayer(E.L->grid[E.I(x, y)])) continue;
+      if (E.psys.isSolidForPlayer(E.L->grid[E.I(x, y)])) continue;
       double distance = std::sqrt((double)dd);
       double weight = 1.0 / distance;
       sumX += ox / distance * weight;
@@ -198,7 +203,7 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed,
     }
     std::vector<std::pair<int, int>> cells = blastBoxCells(sx, spawnY, 1, 1);
     if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
-    Body* b = E.finishSpawn(cells, debrisMat, false);
+    Body* b = E.rigid.finishSpawn(cells, debrisMat, false);
     if (!b) continue;
     b->blastDebris = true;
     if (directed) {
@@ -303,8 +308,10 @@ void ExplosivesSystem::buildBlastDamage(const BlastBatch& bb) {
   }
 }
 
-void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb,
-                                             BlastBatch* otherBb, bool massFront) {
+void ExplosivesSystem::carveStaticFuseCluster(const std::vector<int>& cells,
+                                              BlastBatch& bb,
+                                              BlastBatch* otherBb,
+                                              bool massFront) {
   if (cells.empty()) return;
   if (massFront || (int)cells.size() >= TNT_MASS_FRONT_CELLS) {
     bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
@@ -335,18 +342,23 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
   // The entire due front is part of this transaction even when only spatial
   // representatives contribute crater energy.
   for (int cell : cells) {
-    if (cell < 0 || cell >= E.cols * E.rows || E.L->grid[cell] != TNT || E.isBodyCell(cell)) continue;
+    if (cell < 0 || cell >= E.cols * E.rows
+        || !E.isFuseExplosive(E.L->grid[cell]) || E.isBodyCell(cell))
+      continue;
     int y = cell / E.cols, x = cell - y * E.cols;
     if (x - TNT_BLAST_RADIUS < bb.minX) bb.minX = x - TNT_BLAST_RADIUS;
     if (y - TNT_BLAST_RADIUS < bb.minY) bb.minY = y - TNT_BLAST_RADIUS;
     if (x + TNT_BLAST_RADIUS > bb.maxX) bb.maxX = x + TNT_BLAST_RADIUS;
     if (y + TNT_BLAST_RADIUS > bb.maxY) bb.maxY = y + TNT_BLAST_RADIUS;
-    bb.forcedStaticTnt.push_back(cell);
+    bb.forcedStaticFuse.push_back(cell);
   }
 
   for (int cell : reps) {
+    uint8_t material = E.L->grid[cell];
+    if (!E.isFuseExplosive(material)) continue;
     carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
-                          TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
+                          TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb,
+                          nullptr, material);
   }
 }
 
@@ -357,7 +369,8 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
                                  uint8_t explosiveMaterial, uint32_t seedSerial) {
   bb.any = true;
   BlastDebrisEjection debrisEjection = inferBlastDebrisEjection(cx, cy);
-  if (explosiveMaterial == METHANE) bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
+  if (E.isPocketExplosive(explosiveMaterial))
+    bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
   if (cx - radius < bb.minX) bb.minX = cx - radius;
   if (cy - radius < bb.minY) bb.minY = cy - radius;
   if (cx + radius > bb.maxX) bb.maxX = cx + radius;
@@ -407,7 +420,7 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
       bb.erasedStructural.push_back(k);
     }
     if (collectAftermath && bb.debrisStepCap > 0
-        && material != TNT && E.isRigidMaterialClass(material)
+        && !E.isFuseExplosive(material) && E.isRigidMaterialClass(material)
         && waveIndex >= 0 && waveIndex < (int)bb.waves.size()) {
       BlastWave& wave = bb.waves[waveIndex];
       static const int SAMPLE_COUNT =
@@ -431,9 +444,11 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
 
   // Dense static fronts are consumed by the transaction but do not become
   // thousands of independent crater effects.
-  for (int k : bb.forcedStaticTnt) {
-    if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != TNT || E.isBodyCell(k)) continue;
-    planStaticCut(k, TNT, -1, 0, false);
+  for (int k : bb.forcedStaticFuse) {
+    if (k < 0 || k >= E.cols * E.rows
+        || !E.isFuseExplosive(E.L->grid[k]) || E.isBodyCell(k))
+      continue;
+    planStaticCut(k, E.L->grid[k], -1, 0, false);
   }
 
   auto evaluateCell = [&](int k, double energy, int waveIndex) {
@@ -459,17 +474,17 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
       auto it = bb.bodyById.find(E.L->bodyOwner[k]);
       if (it != bb.bodyById.end()) hitBody = it->second;
     }
-    if (material == TNT && dd > 0) {
+    if (E.isFuseExplosive(material) && dd > 0) {
       if (bodyCell) {
         if (hitBody && !bb.sourceBodies.count(hitBody)) {
-          auto ignition = bb.tntBodyIgnitions.find(hitBody);
-          if (ignition == bb.tntBodyIgnitions.end()
+          auto ignition = bb.fuseBodyIgnitions.find(hitBody);
+          if (ignition == bb.fuseBodyIgnitions.end()
               || dd < ignition->second.distanceSquared)
-            bb.tntBodyIgnitions[hitBody] = {k, dd};
+            bb.fuseBodyIgnitions[hitBody] = {k, dd};
           return;
         }
       } else {
-        bb.staticTntIgnitions.push_back(k);
+        bb.staticFuseIgnitions.push_back(k);
         return;
       }
     }
@@ -509,20 +524,24 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
 
 void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
   if (!bb.any) return;
+  auto clearCellState = [&](int cell) {
+    E.writeGridIndexUnsafe(cell, EMPTY);
+    E.L->clearMotionSpan((size_t)cell, 1);
+  };
   for (int k : bb.gasCuts) {
-    if (E.isGasMaterial(E.L->grid[k])) E.L->grid[k] = EMPTY;
+    if (E.isGasMaterial(E.L->grid[k])) clearCellState(k);
   }
   for (const BlastCellRemoval& cut : bb.staticCuts) {
     if (!E.isBodyCell(cut.cell) && E.L->grid[cut.cell] == cut.material)
-      E.L->grid[cut.cell] = EMPTY;
+      clearCellState(cut.cell);
   }
   if (!bb.bodyCuts.empty() && !bb.bodyMapBuilt) {
     for (Body* b : E.L->bodies) bb.bodyById[b->id] = b;
     bb.bodyMapBuilt = true;
   }
   for (int k : bb.bodyCuts) {
-    if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) {
-      E.L->grid[k] = EMPTY;
+    if (!E.rigid.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) {
+      clearCellState(k);
       E.L->bodyOwner[k] = -1;
     }
   }
@@ -532,17 +551,18 @@ void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
       dirtyJoints.insert(body->jointRole == 1 ? body : body->jointPeer);
   // Set the fuse while every recorded body is still alive. Ordinary bodies can
   // be replaced below by split fragments, which inherit this countdown.
-  for (const auto& entry : bb.tntBodyIgnitions) {
+  for (const auto& entry : bb.fuseBodyIgnitions) {
     int cell = entry.second.cell;
-    shortenTntBodyFuse(entry.first, TNT_CHAIN_FUSE,
-                       cell % E.cols + 0.5, cell / E.cols + 0.5);
+    shortenFuseBody(entry.first, TNT_CHAIN_FUSE,
+                    cell % E.cols + 0.5, cell / E.cols + 0.5);
   }
   // The mirrored layer has not applied its cuts yet. Ordinary bodies can split
   // now; cross-layer bodies split once the complete two-layer cut is visible.
-  E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells, false);
+  E.rigid.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells, false);
   bb.dirtyBodies = std::move(dirtyJoints);
-  for (int k : bb.staticTntIgnitions) {
-    if (E.L->grid[k] == TNT && !E.isBodyCell(k)) queueDetonation(k, TNT_CHAIN_FUSE);
+  for (int k : bb.staticFuseIgnitions) {
+    if (E.isFuseExplosive(E.L->grid[k]) && !E.isBodyCell(k))
+      queueDetonation(k, TNT_CHAIN_FUSE);
   }
 }
 
@@ -613,8 +633,8 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
   if (!bb.any) return;
   if (bb.emitParticles)
     for (const BlastParticlePlan& particle : bb.particlePlans)
-      E.spawnParticle(particle.material, particle.x, particle.y,
-                      particle.vx, particle.vy, BLAST_PARTICLE_LIFE);
+      E.itemsys.spawnParticle(particle.material, particle.x, particle.y,
+                              particle.vx, particle.vy, BLAST_PARTICLE_LIFE);
 
   static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
   for (BlastWave& wave : bb.waves) {
@@ -628,9 +648,9 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
           || b->py + reach <= wave.cy - wave.radius
           || b->py - reach >= wave.cy + wave.radius) continue;
       if (applyBlastImpulse(b, wave.cx, wave.cy, wave.radius, wave.power)
-          && E.bodyContainsMaterial(b, TNT))
-        shortenTntBodyFuse(b, TNT_CHAIN_FUSE,
-                           wave.cx + 0.5, wave.cy + 0.5);
+          && E.bodyContainsExplosiveProfile(b, XP_TNT_FUSE))
+        shortenFuseBody(b, TNT_CHAIN_FUSE,
+                        wave.cx + 0.5, wave.cy + 0.5);
     }
 
     int localDebrisCap = bb.debrisStepCap;
@@ -638,9 +658,8 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
     std::vector<BlastDebrisSource> debrisSources;
     debrisSources.reserve((size_t)sourceLimit);
     uint8_t firstSample[TABLE] = {};
-    for (int material = 0;
-         material < TABLE && (int)debrisSources.size() < sourceLimit;
-         material++) {
+    for (uint8_t material : DEFINED_MATERIAL_IDS) {
+      if ((int)debrisSources.size() >= sourceLimit) break;
       int bestCandidate = -1, bestSample = -1;
       for (int sampleIndex = 0; sampleIndex < SAMPLE_COUNT; sampleIndex++) {
         int sample = material * SAMPLE_COUNT + sampleIndex;
@@ -664,9 +683,8 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
     for (int sampleIndex = 0;
          sampleIndex < SAMPLE_COUNT && (int)debrisSources.size() < sourceLimit;
          sampleIndex++)
-      for (int material = 0;
-           material < TABLE && (int)debrisSources.size() < sourceLimit;
-           material++) {
+      for (uint8_t material : DEFINED_MATERIAL_IDS) {
+        if ((int)debrisSources.size() >= sourceLimit) break;
         int sample = material * SAMPLE_COUNT + sampleIndex;
         int candidate = wave.debrisSlots[sample];
         if (candidate >= 0 && sampleIndex != firstSample[material])
@@ -683,13 +701,14 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
       uint8_t material = debrisSources[i].material;
       int source = debrisSources[i].cell;
       int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
-      int tries = wave.explosiveMaterial == METHANE
+      int tries = E.isPocketExplosive(wave.explosiveMaterial)
         ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
       spawnBlastDebrisFan(wave.cx, wave.cy, wave.seed, material,
                           sourceX, sourceY, BLAST_DEBRIS_CHUNKS, (int)i * 17,
                           bb, wave.debrisEjection, tries);
     }
-    if (wave.explosiveMaterial != METHANE && bb.debrisSpawned < localDebrisCap
+    if (!E.isPocketExplosive(wave.explosiveMaterial)
+        && bb.debrisSpawned < localDebrisCap
         && whash2(wave.seed ^ 0xD3B15u, wave.cx, wave.cy)
              < BLAST_FORCED_DEBRIS_FRAC)
       spawnBlastDebrisFan(wave.cx, wave.cy, wave.seed, DEBRIS,
@@ -767,8 +786,10 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
   carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial, seedSerial);
   if (!E.bgEnabled || !otherBb) return;
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
-  E.useLayer(other);
-  carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial, seedSerial);
+  {
+    Engine::ActiveLayerScope otherLayer(E, other);
+    carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial, seedSerial);
+  }
   // Cross-layer structural damage, support repair, and shock are mirrored.
   // Gas, particles, and physical rubble belong to the source layer.
   otherBb->debrisStepCap = 0;
@@ -799,14 +820,20 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   else if (otherBb) buildBlastDamage(*otherBb);
   // Plan both layers from the same pre-cut snapshot, then advance the
   // transaction phase for both before starting the next phase.
-  if (other) { E.useLayer(other); evaluateBlastPlan(*otherBb); }
-  E.useLayer(src);
+  if (other) {
+    Engine::ActiveLayerScope otherLayer(E, other);
+    evaluateBlastPlan(*otherBb);
+  }
   evaluateBlastPlan(bb);
-  if (other) { E.useLayer(other); applyBlastCuts(*otherBb); }
-  E.useLayer(src);
+  if (other) {
+    Engine::ActiveLayerScope otherLayer(E, other);
+    applyBlastCuts(*otherBb);
+  }
   applyBlastCuts(bb);
-  if (other) { E.useLayer(other); repairBlastStructures(*otherBb); }
-  E.useLayer(src);
+  if (other) {
+    Engine::ActiveLayerScope otherLayer(E, other);
+    repairBlastStructures(*otherBb);
+  }
   repairBlastStructures(bb);
   std::unordered_set<Body*> dirtyJoints;
   auto collectDirtyJoints = [&](const BlastBatch& batch) {
@@ -817,12 +844,13 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   collectDirtyJoints(bb);
   if (other) collectDirtyJoints(*otherBb);
   if (!dirtyJoints.empty()) {
-    E.useLayer(&E.fg);
+    Engine::ActiveLayerScope foreground(E, &E.fg);
     E.rigid.finishErasedJointBodies(dirtyJoints);
-    E.useLayer(src);
   }
-  if (other) { E.useLayer(other); applyBlastAftermath(*otherBb); }
-  E.useLayer(src);
+  if (other) {
+    Engine::ActiveLayerScope otherLayer(E, other);
+    applyBlastAftermath(*otherBb);
+  }
   applyBlastAftermath(bb);
 }
 
@@ -840,42 +868,40 @@ void ExplosivesSystem::detonate(int cx, int cy, int radius, double power,
   finishBlastBatches(bb, &otherBb);
 }
 
-// Step pass (dispatched in step.inc next to the other reactions): light TNT touching
-// fire/lava, E.tick fuses, and detonate the expired ones — all into a single batch so a
-// chain pays one finalize. Costs nothing when no TNT is present (the scan finds none;
-// both fuse maps are empty), so checksums are unaffected.
+// Step pass (dispatched in step.inc next to the other reactions): heat-sensitive
+// profiles route to their specialized fuse or pocket handler. Expired fuse fronts
+// share one blast batch, damage transaction, and finalize.
 void ExplosivesSystem::applyExplosives() {
   if (!E.L->pendingDetonations.empty()) {
     for (auto it = E.L->pendingDetonations.begin(); it != E.L->pendingDetonations.end(); ) {
       int k = it->first;
-      if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != TNT || E.isBodyCell(k)) it = E.L->pendingDetonations.erase(it);
+      if (k < 0 || k >= E.cols * E.rows
+          || !E.isFuseExplosive(E.L->grid[k]) || E.isBodyCell(k))
+        it = E.L->pendingDetonations.erase(it);
       else ++it;
     }
   }
-  // 1) Ignite TNT touching fire/lava. Scanned from the HEAT (fire/lava is always in
-  //    the active band) and lighting TNT NEIGHBOURS — mirroring how fire ignites
-  //    flammables — so a settled, inert TNT block still lights. The first TNT is all
-  //    we need: its blast chains the rest via queueDetonation in carveBlast().
+  // Heat sources are indexed by the reaction pass, so settled explosive cells do
+  // not need to keep their own simulation span active while waiting for ignition.
   std::unordered_map<int, Body*> bodyById; bool builtBodies = false;
-  auto lightTnt = [&](int igniter, int k) {
-    if (E.L->grid[k] != TNT) return;
+  auto lightFuseExplosive = [&](int igniter, int k) {
+    if (!E.isFuseExplosive(E.L->grid[k])) return;
     if (E.L->grid[igniter] == FIRE && E.L->blastGasStamp[igniter] >= 0 && E.tick - E.L->blastGasStamp[igniter] <= TNT_FUSE_TICKS) return;
     if (E.isBodyCell(k)) {
       int id = E.L->bodyOwner[k];
       if (!builtBodies) { for (Body* b : E.L->bodies) bodyById[b->id] = b; builtBodies = true; }
       auto it = bodyById.find(id);
       if (it != bodyById.end() && it->second->fuseTicks == 0)
-        shortenTntBodyFuse(it->second, TNT_FUSE_TICKS,
-                           k % E.cols + 0.5, k / E.cols + 0.5);
+        shortenFuseBody(it->second, TNT_FUSE_TICKS,
+                        k % E.cols + 0.5, k / E.cols + 0.5);
     } else queueDetonation(k, TNT_FUSE_TICKS);
   };
-  const std::vector<int>* heatCells = &E.activeHeatCells;
+  const std::vector<int>* heatCells = &E.reactions.activeHeatCells();
   if (E.L->heatAddedAfterPrepare) {
     addedHeatCells.clear();
     auto besideExplosive = [&](int k, int x, int y) {
       auto explosive = [&](int q) {
-        uint8_t material = E.L->grid[q];
-        return material == TNT || material == METHANE;
+        return E.isHeatSensitiveExplosive(E.L->grid[q]);
       };
       return (x + 1 < E.cols && explosive(k + 1))
           || (x > 0 && explosive(k - 1))
@@ -886,7 +912,7 @@ void ExplosivesSystem::applyExplosives() {
       E.forEachActiveSpan(y, 1, E.cols - 2, true, [&](int minX, int maxX) {
         for (int x = minX; x <= maxX; x++) {
           int k = E.I(x, y); uint8_t m = E.L->grid[k];
-          if ((m == FIRE || m == LAVA) && besideExplosive(k, x, y))
+          if (E.isHeatSource(m) && besideExplosive(k, x, y))
             addedHeatCells.push_back(k);
         }
       });
@@ -894,30 +920,30 @@ void ExplosivesSystem::applyExplosives() {
     heatCells = &addedHeatCells;
   }
   for (int k : *heatCells) {
-    uint8_t m = E.L->grid[k]; if (m != FIRE && m != LAVA) continue;
-    lightTnt(k, k + 1); lightTnt(k, k - 1); lightTnt(k, k + E.cols); lightTnt(k, k - E.cols);
+    uint8_t m = E.L->grid[k]; if (!E.isHeatSource(m)) continue;
+    lightFuseExplosive(k, k + 1); lightFuseExplosive(k, k - 1);
+    lightFuseExplosive(k, k + E.cols); lightFuseExplosive(k, k - E.cols);
   }
   BlastBatch bb, otherBb;
 
-  // Methane is a volume hazard, not thousands of tiny TNT cells. A heat contact
-  // consumes each connected pocket in one deterministic flood, turns the uncarved
-  // volume into a sheet of flame, and chooses only a few spatially-separated blast
-  // fronts. Work is O(pocket cells) plus a hard-capped eight weak stencils, so a
-  // giant painted cloud stays fast while still flashing across its full shape.
-  auto igniteMethanePocket = [&](int seed) {
-    if (seed < 0 || seed >= E.cols * E.rows || E.L->grid[seed] != METHANE) return;
+  // Pocket-profile gas is consumed in one deterministic flood and represented by
+  // a bounded number of spatial blast fronts.
+  auto ignitePocketExplosive = [&](int seed) {
+    if (seed < 0 || seed >= E.cols * E.rows
+        || !E.isPocketExplosive(E.L->grid[seed])) return;
+    uint8_t explosiveMaterial = E.L->grid[seed];
     std::vector<int> queue, reps;
     queue.reserve(256); reps.reserve(METHANE_BLAST_FRONT_CAP * 2);
     std::unordered_set<int> repBuckets;
-    queue.push_back(seed); E.writeGridIndex(seed, FIRE);
+    queue.push_back(seed); E.writeGridIndexUnsafe(seed, FIRE);
     for (size_t qi = 0; qi < queue.size(); qi++) {
       int k = queue[qi], y = k / E.cols, x = k - y * E.cols;
       int bucket = (y / METHANE_BLAST_REP_SPACING) * ((E.cols + METHANE_BLAST_REP_SPACING - 1) / METHANE_BLAST_REP_SPACING)
                  + x / METHANE_BLAST_REP_SPACING;
       if (repBuckets.insert(bucket).second) reps.push_back(k);
       auto visit = [&](int nk) {
-        if (E.L->grid[nk] != METHANE) return;
-        E.writeGridIndex(nk, FIRE); queue.push_back(nk);
+        if (!E.isPocketExplosive(E.L->grid[nk])) return;
+        E.writeGridIndexUnsafe(nk, FIRE); queue.push_back(nk);
       };
       if (x > 0) visit(k - 1); if (x + 1 < E.cols) visit(k + 1);
       if (y > 0) visit(k - E.cols); if (y + 1 < E.rows) visit(k + E.cols);
@@ -930,21 +956,21 @@ void ExplosivesSystem::applyExplosives() {
       int cell = reps[(size_t)i * reps.size() / fronts];
       carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
                             METHANE_BLAST_RADIUS, METHANE_BLAST_POWER,
-                            bb, &otherBb, nullptr, METHANE);
+                            bb, &otherBb, nullptr, explosiveMaterial);
     }
   };
   for (int k : *heatCells) {
-    uint8_t m = E.L->grid[k]; if (m != FIRE && m != LAVA) continue;
+    uint8_t m = E.L->grid[k]; if (!E.isHeatSource(m)) continue;
     int y = k / E.cols, x = k - y * E.cols;
-    if (x + 1 < E.cols) igniteMethanePocket(k + 1);
-    if (x > 0) igniteMethanePocket(k - 1);
-    if (y + 1 < E.rows) igniteMethanePocket(k + E.cols);
-    if (y > 0) igniteMethanePocket(k - E.cols);
+    if (x + 1 < E.cols) ignitePocketExplosive(k + 1);
+    if (x > 0) ignitePocketExplosive(k - 1);
+    if (y + 1 < E.rows) ignitePocketExplosive(k + E.cols);
+    if (y > 0) ignitePocketExplosive(k - E.cols);
   }
 
   // 2) Tick static fuses; broad due fronts consume a fixed number of spatial
   //    buckets per step. Cell and bucket order is deterministic.
-  int scheduledStaticTntCells = 0;
+  int scheduledStaticFuseCells = 0;
   if (!E.L->pendingDetonations.empty()) {
     std::vector<int> fire;
     for (auto& kv : E.L->pendingDetonations) {
@@ -954,7 +980,9 @@ void ExplosivesSystem::applyExplosives() {
     std::vector<int> dueStatic;
     dueStatic.reserve(fire.size());
     for (int cell : fire) {
-      if (cell >= 0 && cell < E.cols * E.rows && E.L->grid[cell] == TNT && !E.isBodyCell(cell)) dueStatic.push_back(cell);
+      if (cell >= 0 && cell < E.cols * E.rows
+          && E.isFuseExplosive(E.L->grid[cell]) && !E.isBodyCell(cell))
+        dueStatic.push_back(cell);
     }
     std::vector<int> staticFire;
     bool massFront = (int)dueStatic.size() >= TNT_MASS_FRONT_CELLS;
@@ -1002,29 +1030,39 @@ void ExplosivesSystem::applyExplosives() {
     } else {
       staticFire.swap(dueStatic);
     }
-    scheduledStaticTntCells = (int)staticFire.size();
+    scheduledStaticFuseCells = (int)staticFire.size();
     if ((int)staticFire.size() >= TNT_CLUSTER_FAST_THRESHOLD) {
-      carveStaticTntCluster(staticFire, bb, &otherBb, massFront);
+      carveStaticFuseCluster(staticFire, bb, &otherBb, massFront);
     } else {
-      for (int cell : staticFire)
-        carveBlastAcrossLayers(cell % E.cols, cell / E.cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
+      for (int cell : staticFire) {
+        uint8_t material = E.L->grid[cell];
+        carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
+                              TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb,
+                              nullptr, material);
+      }
     }
     for (int cell : staticFire) E.L->pendingDetonations.erase(cell);
   }
   // 3) Tick body fuses. Compact expired fronts detonate together; broad fronts
-  //    share the static TNT budget and defer their remaining bodies one tick.
-  struct DueBodyBlast { Body* body; int x, y, tntCells; };
+  //    share the static fuse budget and defer their remaining bodies one tick.
+  struct DueBodyBlast {
+    Body* body;
+    int x, y, fuseCells;
+    uint8_t material;
+  };
   std::vector<DueBodyBlast> dueBodyBlasts;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2 || b->fuseTicks <= 0) continue;
-    int tntCells = b->material == TNT && b->cellMaterials.empty()
+    uint8_t explosiveMaterial =
+      E.bodyMaterialWithExplosiveProfile(b, XP_TNT_FUSE);
+    int fuseCells = E.isFuseExplosive(b->material) && b->cellMaterials.empty()
       ? b->nPts : 0;
     if (!b->cellMaterials.empty())
       for (uint8_t material : b->cellMaterials)
-        if (material == TNT) tntCells++;
+        if (E.isFuseExplosive(material)) fuseCells++;
     for (uint8_t material : b->jointPeerMaterials)
-      if (material == TNT) tntCells++;
-    if (!tntCells) {
+      if (E.isFuseExplosive(material)) fuseCells++;
+    if (!fuseCells || explosiveMaterial == EMPTY) {
       b->fuseTicks = 0;
       continue;
     }
@@ -1035,11 +1073,12 @@ void ExplosivesSystem::applyExplosives() {
     int blastY = (int)std::lround(b->py);
     double bestDistance = 1e30;
     int bestLayer = 2, bestCell = INT_MAX;
-    auto considerTntCells = [&](Layer& layer, const std::vector<int>& cells,
-                                int ownerId, int layerIndex) {
+    auto considerFuseCells = [&](Layer& layer, const std::vector<int>& cells,
+                                 int ownerId, int layerIndex) {
       for (int k : cells) {
         if (k < 0 || k >= E.cols * E.rows
-            || layer.bodyOwner[k] != ownerId || layer.grid[k] != TNT)
+            || layer.bodyOwner[k] != ownerId
+            || !E.isFuseExplosive(layer.grid[k]))
           continue;
         int y = k / E.cols, x = k - y * E.cols;
         double dx = x + 0.5 - fuseX, dy = y + 0.5 - fuseY;
@@ -1053,36 +1092,42 @@ void ExplosivesSystem::applyExplosives() {
           bestCell = k;
           blastX = x;
           blastY = y;
+          explosiveMaterial = layer.grid[k];
         }
       }
     };
-    considerTntCells(*E.L, E.L->bodyCells, b->id, E.L == &E.bg ? 1 : 0);
+    considerFuseCells(*E.L, E.L->bodyCells, b->id,
+                      E.L == &E.bg ? 1 : 0);
     if (b->jointRole == 1 && b->jointPeer)
-      considerTntCells(E.bg, E.bg.passiveBodyCells, b->jointPeer->id, 1);
-    dueBodyBlasts.push_back({b, blastX, blastY, tntCells});
+      considerFuseCells(E.bg, E.bg.passiveBodyCells,
+                        b->jointPeer->id, 1);
+    dueBodyBlasts.push_back({
+      b, blastX, blastY, fuseCells, explosiveMaterial,
+    });
   }
-  int dueTntCells = 0;
+  int dueFuseCells = 0;
   for (const DueBodyBlast& blast : dueBodyBlasts)
-    dueTntCells += blast.tntCells;
-  int scheduledTntCells = scheduledStaticTntCells;
-  bool bodyBudgetClosed = scheduledTntCells
+    dueFuseCells += blast.fuseCells;
+  int scheduledFuseCells = scheduledStaticFuseCells;
+  bool bodyBudgetClosed = scheduledFuseCells
     >= TNT_FRONT_CELLS_PER_STEP;
-  bool pacedBodyFront = dueTntCells + scheduledStaticTntCells
+  bool pacedBodyFront = dueFuseCells + scheduledStaticFuseCells
     >= TNT_MASS_FRONT_CELLS;
   for (const DueBodyBlast& blast : dueBodyBlasts) {
-    if (pacedBodyFront && !bodyBudgetClosed && scheduledTntCells > 0
-        && scheduledTntCells + blast.tntCells
+    if (pacedBodyFront && !bodyBudgetClosed && scheduledFuseCells > 0
+        && scheduledFuseCells + blast.fuseCells
              > TNT_FRONT_CELLS_PER_STEP)
       bodyBudgetClosed = true;
     if (bodyBudgetClosed) {
       blast.body->fuseTicks = 1;
       continue;
     }
-    scheduledTntCells += blast.tntCells;
+    scheduledFuseCells += blast.fuseCells;
     carveBlastAcrossLayers(blast.x, blast.y, TNT_BLAST_RADIUS,
-                          TNT_BLAST_POWER, bb, &otherBb, blast.body);
-    // Any TNT left outside this crater continues as a short-fuse body or body
-    // fragment, so large rigid charges propagate instead of leaving inert TNT.
+                          TNT_BLAST_POWER, bb, &otherBb, blast.body,
+                          blast.material);
+    // Fuse-profile cells outside the crater continue as a short-fuse body or
+    // fragment so large rigid charges advance as a staged front.
     blast.body->fuseTicks = TNT_CHAIN_FUSE;
     E.rigid.setBodyFusePoint(blast.body, blast.x + 0.5, blast.y + 0.5);
     if (blast.body->jointRole == 1 && blast.body->jointPeer) {

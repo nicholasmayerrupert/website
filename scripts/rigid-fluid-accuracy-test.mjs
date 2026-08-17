@@ -155,15 +155,26 @@ const countMaterial = (engine, material) => {
   engine.spawnBox(90, 32, 5, 5, RIGID);
   engine._setBodyMotion(0, 0, 3, 0);
   let correctors = 0;
+  let bodyRasterStateClean = true, bodyStateCell = -1;
   for (let i = 0; i < 90; i++) {
     now = run(engine, 1, now);
     correctors += engine.getRigidSolverDebug().fluidCorrectorPasses;
+    const owners = engine._bodyOwnerGrid();
+    const velocities = engine._liquidVelocityGrid();
+    for (let k = 0; k < owners.length; k++) {
+      if (owners[k] < 0 || velocities[k] === 0) continue;
+      bodyRasterStateClean = false;
+      bodyStateCell = k;
+      break;
+    }
   }
   const waterAfter = countMaterial(engine, WATER);
   check(`strong entry used the adaptive corrector (${correctors} passes)`,
     correctors > 0);
   check(`pressure correction conserved liquid volume (${waterAfter} == ${waterBefore})`,
     waterAfter === waterBefore);
+  check(`body raster rejected projected liquid state (cell ${bodyStateCell})`,
+    bodyRasterStateClean);
   engine.destroy();
 }
 

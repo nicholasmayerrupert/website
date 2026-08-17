@@ -628,7 +628,7 @@ void ForceSystem::wakeAffectedTargets(
   bool hasUnbalancedMaterial = false;
   bool coverageChanged = false;
   bool coverageImproved = false;
-  for (int material = 0; material < TABLE; material++) {
+  for (uint8_t material : DEFINED_MATERIAL_IDS) {
     int base = material * 4;
     uint32_t counts[4] = {
       looseQuadrantCounts[base], looseQuadrantCounts[base + 1],
@@ -1574,8 +1574,7 @@ bool ForceSystem::tryMoveLoose(
       && magnitude >= CELL_STEP_FORCE
       && looseForceAge[forceLayer] >= FORCE_EQUILIBRIUM_TICKS) {
     E.L->next[k] = material;
-    E.L->nextFallSpeed[k] = 0;
-    E.L->nextLiquidVel[k] = 0;
+    E.carryPersistentStateToNext(k, k, material, PCSO_FORCE_PARK);
     return true;
   }
   std::array<std::pair<int, int>, 3> moves;
@@ -1728,11 +1727,11 @@ bool ForceSystem::tryMoveLoose(
     // The field owns this cell for the tick, but a blocked cell creates no
     // follow-up wake. Static force-balanced arrangements can therefore sleep.
     E.L->next[k] = material;
-    E.L->nextFallSpeed[k] = 0;
-    E.L->nextLiquidVel[k] = 0;
-    // Transient gases still need future ticks for their normal decay. Methane
-    // is persistent and may sleep once the repulsive field has packed it.
-    if (E.isGasMaterial(material) && material != METHANE)
+    E.carryPersistentStateToNext(k, k, material, PCSO_FORCE_PARK);
+    // Transient gases still need future ticks for their normal decay. Persistent
+    // gas may sleep once the repulsive field has packed it.
+    if (E.isGasMaterial(material)
+        && !GAS_PERSISTENT[MAT_GAS_PROFILE[material]])
       E.markCellIndex(k);
     return true;
   }

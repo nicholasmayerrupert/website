@@ -31,9 +31,8 @@ class AudioSystem {
   void sampleAmbience(double localX, double localY, int radius, float* out);
 
  private:
-  static const int MAX_EVENTS = 192;
-  static const int AMBIENCE_GROUPS = 4; // water, fire, lava, acid
-  static const int AMBIENCE_STRIDE = 3; // amount, world x, world y
+  static const int MAX_EVENTS = SOUND_EVENT_MAX_RECORDS;
+  static const int AMBIENCE_GROUPS = AMBIENCE_GROUP_COUNT;
   static const int MAX_REGIONAL_EVENTS = 24;
 
   struct RegionalEvent {

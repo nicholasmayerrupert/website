@@ -38,7 +38,7 @@ static constexpr double MINIGUN_BLAST_POWER_LOCAL = 13.0;
 void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
   if (primary) {
     if (p.bowChargeTicks < BOW_CHARGE_MAX) p.bowChargeTicks++;
     return;
@@ -55,7 +55,7 @@ void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
 }
 
 void ProjectileSystem::applyBlastGunInput(Player& p) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   spawnBlastRound(p);
   p.toolCooldown = BLAST_GUN_COOLDOWN;
@@ -63,7 +63,7 @@ void ProjectileSystem::applyBlastGunInput(Player& p) {
 }
 
 void ProjectileSystem::applyDynamiteSatchelInput(Player& p, int previousInput) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
@@ -74,7 +74,7 @@ void ProjectileSystem::applyDynamiteSatchelInput(Player& p, int previousInput) {
 }
 
 void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || p.toolCooldown > 0) { p.bowChargeTicks = 0; return; }
@@ -88,7 +88,7 @@ void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
 }
 
 void ProjectileSystem::applyAcidMortarInput(Player& p, int previousInput) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
@@ -99,7 +99,7 @@ void ProjectileSystem::applyAcidMortarInput(Player& p, int previousInput) {
 }
 
 void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
@@ -110,7 +110,7 @@ void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
 }
 
 void ProjectileSystem::applyMinigunInput(Player& p) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   spawnMinigunRound(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_MINIGUN);
@@ -119,7 +119,7 @@ void ProjectileSystem::applyMinigunInput(Player& p) {
 }
 
 void ProjectileSystem::applyRescueBeamInput(Player& p) {
-  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   fireRescueBeam(p);
   p.toolCooldown = RESCUE_BEAM_COOLDOWN_LOCAL;
@@ -512,7 +512,7 @@ void ProjectileSystem::updateProjectiles() {
                  ACID_SPLASH_DAMAGE_LOCAL, shell.owner, false);
     {
       Engine::ActiveLayerScope layerScope(E, &E.fg);
-      E.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
+      E.tools.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
     }
     E.audio.emit(SE_ACID_DISSOLVE, x, y, 1.0, ACID, 0);
   };
@@ -557,7 +557,7 @@ void ProjectileSystem::updateProjectiles() {
                                 bool bypassActorCooldown = false) {
     uint32_t seed = (uint32_t)projectile.id * 2654435761u ^
                     (uint32_t)projectile.kind * 2246822519u;
-    E.detonate(x, y, radius, power, projectile.owner > 0 ? projectile.owner : 0,
+    E.explosives.detonate(x, y, radius, power, projectile.owner > 0 ? projectile.owner : 0,
                material, seed, SE_WEAPON_EXPLOSION, actorDamageScale,
                bypassActorCooldown, projectile.owner < 0 ? -projectile.owner : 0);
   };
@@ -628,7 +628,7 @@ void ProjectileSystem::updateProjectiles() {
         int x = imax(1, imin(E.cols - 2, (int)std::lround(p.px)));
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
-        E.detonate(x, y, DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL,
+        E.explosives.detonate(x, y, DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL,
                    DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL, 0, TNT, seed,
                    SE_WEAPON_EXPLOSION);
         continue;
@@ -808,7 +808,7 @@ void ProjectileSystem::updateProjectiles() {
       } else {
         if (E.isBlockingForPlayer(material)) { hit = true; break; }
         int damage = 8 + (int)std::lround(22 * p.charge);
-        if (E.damageCreaturesAt(x, y, 1, damage)) hit = true;
+        if (E.creatures.damageAtPoint(x, y, 1, damage)) hit = true;
       }
     }
     if (hit) {
@@ -816,10 +816,10 @@ void ProjectileSystem::updateProjectiles() {
         int x = (int)std::floor(p.px), y = (int)std::floor(p.py);
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
         damageBlastOwner(p);
-        E.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner,
+        E.explosives.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner,
                    GUNPOWDER, seed, SE_WEAPON_EXPLOSION);
       } else if (p.kind == PK_ARROW) {
-        E.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
+        E.itemsys.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
         E.audio.emit(SE_ARROW_HIT, p.px, p.py, 0.45 + p.charge * .55, STONE);
       }
       continue;
@@ -842,9 +842,7 @@ int ProjectileSystem::buildSnapshot() {
   snapshot.assign(projectiles.size() * PRS_STRIDE, 0.0f);
   for (size_t i = 0; i < projectiles.size(); i++) {
     const Projectile& p = projectiles[i]; float* o = snapshot.data() + i * PRS_STRIDE;
-    o[PRS_ID] = p.id; o[PRS_OWNER] = p.owner; o[PRS_X] = p.px; o[PRS_Y] = p.py;
-    o[PRS_VX] = p.vx; o[PRS_VY] = p.vy; o[PRS_CHARGE] = p.charge;
-    o[PRS_KIND] = p.kind; o[PRS_FUSE] = p.fuse; o[PRS_ROTATION] = p.rotation;
+    writeProjectileSnapshot(o, p);
   }
   return (int)projectiles.size();
 }

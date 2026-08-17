@@ -1,7 +1,7 @@
-// Shared helpers for the headless engine tests. Keep these tiny and dependency
-// free so sand/player/net tests can all import them.
+// Shared helpers for the headless engine tests.
+import { TABLE_SIZE } from '../src/sand/materials.generated.js';
 
-export const MAT_COUNT = 64; // = materials.schema.json tableSize (countMaterials buckets)
+export const MAT_COUNT = TABLE_SIZE;
 
 // Count cells of each material id in a grid view.
 export function countMaterials(grid) {

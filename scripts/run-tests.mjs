@@ -1,12 +1,14 @@
 // Manifest-driven parallel test runner. The default runs headless suites;
-// `--browser` selects browser suites. `--only` filters, `--from` resumes by name,
-// and `--jobs` overrides the bounded worker count.
+// `--browser` selects browser suites. `--only` selects one manifest entry,
+// `--from` resumes by name, and `--jobs` overrides the bounded worker count.
 
 import { readdirSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { BROWSER_SUITES, EXCLUDED_TESTS, UNIT_SUITES } from './test-manifest.mjs';
+import {
+  BROWSER_SUITES, EXCLUDED_TESTS, FOCUSED_SUITES, UNIT_SUITES,
+} from './test-manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -18,24 +20,34 @@ const suiteSettings = ([, , rawSettings]) => {
   };
 };
 
-const executableTests = readdirSync(resolve(root, 'scripts'))
+const scriptFiles = readdirSync(resolve(root, 'scripts'));
+const executableTests = scriptFiles
   .filter((file) => /(?:-test|-e2e|-repro)\.mjs$/.test(file));
-const declared = new Map([...UNIT_SUITES, ...BROWSER_SUITES, ...EXCLUDED_TESTS]
+const aggregateSuites = [...UNIT_SUITES, ...BROWSER_SUITES];
+const selectableSuites = [...aggregateSuites, ...FOCUSED_SUITES];
+const declared = new Map([...selectableSuites, ...EXCLUDED_TESTS]
   .map((suite) => [suite[1], suite]));
 const missing = executableTests.filter((file) => !declared.has(file));
-const stale = [...declared.keys()].filter((file) => !executableTests.includes(file));
+const stale = [...declared.keys()].filter((file) => !scriptFiles.includes(file));
 if (missing.length || stale.length) {
   if (missing.length) console.error(`Test manifest is missing: ${missing.join(', ')}`);
   if (stale.length) console.error(`Test manifest has stale entries: ${stale.join(', ')}`);
   process.exit(2);
 }
-const malformed = [...UNIT_SUITES, ...BROWSER_SUITES].filter((suite) => {
+const malformed = selectableSuites.filter((suite) => {
   const { timeoutMs, concurrency } = suiteSettings(suite);
   return !Number.isInteger(timeoutMs) || timeoutMs <= 0
     || (concurrency !== 'parallel' && concurrency !== 'exclusive');
 });
 if (malformed.length) {
   console.error(`Test manifest has invalid metadata: ${malformed.map(([name]) => name).join(', ')}`);
+  process.exit(2);
+}
+const duplicateNames = selectableSuites
+  .map(([name]) => name)
+  .filter((name, index, names) => names.indexOf(name) !== index);
+if (duplicateNames.length) {
+  console.error(`Test manifest has duplicate keys: ${[...new Set(duplicateNames)].join(', ')}`);
   process.exit(2);
 }
 
@@ -61,7 +73,7 @@ for (let i = 0; i < args.length; i++) {
 }
 const only = parsed.get('--only') ?? null;
 const from = parsed.get('--from') ?? null;
-const browser = parsed.has('--browser');
+let browser = parsed.has('--browser');
 const verbose = parsed.has('--verbose');
 const listOnly = parsed.has('--list');
 const defaultJobs = browser ? 1 : 2;
@@ -72,7 +84,29 @@ if (!Number.isInteger(jobs) || jobs < 1) {
   process.exit(2);
 }
 
-let suites = browser ? BROWSER_SUITES : UNIT_SUITES;
+let suites;
+if (only) {
+  const exact = selectableSuites.filter(([name]) => name === only);
+  const matches = exact.length ? exact : selectableSuites.filter(([name, file]) => {
+    return name.includes(only) || file.includes(only);
+  });
+  if (!matches.length) {
+    console.error(`--only: no suite matches "${only}"`);
+    process.exit(2);
+  }
+  if (matches.length > 1) {
+    console.error(`--only: "${only}" is ambiguous; matches ${matches.map(([name]) => name).join(', ')}`);
+    process.exit(2);
+  }
+  if (from) {
+    console.error('--only and --from cannot be combined');
+    process.exit(2);
+  }
+  suites = matches;
+  browser = BROWSER_SUITES.includes(matches[0]);
+} else {
+  suites = browser ? BROWSER_SUITES : UNIT_SUITES;
+}
 if (from) {
   const i = suites.findIndex(([name]) => name === from);
   if (i < 0) {
@@ -80,13 +114,6 @@ if (from) {
     process.exit(2);
   }
   suites = suites.slice(i);
-}
-if (only) {
-  suites = suites.filter(([name, file]) => name.includes(only) || file.includes(only));
-  if (!suites.length) {
-    console.error(`--only: no suite matches "${only}"`);
-    process.exit(2);
-  }
 }
 if (listOnly) {
   for (const suite of suites) {
@@ -96,6 +123,33 @@ if (listOnly) {
   }
   process.exit(0);
 }
+
+// Tests import the committed WASM directly. Tests must execute generated tables
+// and an artifact built from the checked-out engine sources.
+// Invoke the underlying check scripts directly so this preflight never recurses
+// through npm or performs a rebuild.
+const preflightChecks = [
+  ['generated materials', 'generate-materials.mjs', ['--check']],
+  ['generated ABI', 'generate-abi.mjs', ['--check']],
+  ['generated biomes', 'generate-biomes.mjs', ['--check']],
+  ['sand engine source contracts', 'check-sand-contracts.mjs', []],
+  ['sand WASM provenance', 'write-wasm-build-info.mjs', ['--check', '--allow-dev']],
+];
+console.log('Checking generated sources and sand WASM provenance...');
+for (const [label, file, checkArgs] of preflightChecks) {
+  const result = spawnSync(process.execPath, [resolve(root, 'scripts', file), ...checkArgs], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.error) console.error(`${label}: ${result.error.message}`);
+    console.error(`Test preflight failed: ${label}`);
+    process.exit(result.status || 1);
+  }
+}
+console.log('Test preflight passed');
 
 const results = new Array(suites.length);
 const activeChildren = new Set();

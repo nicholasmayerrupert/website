@@ -17,16 +17,17 @@
   static const int POWDER_FALL_CAP = 3;
   int looseFallCap(uint8_t m) {
     if (isLooseSolidMaterial(m)) return POWDER_FALL_CAP;
-    if (m == LAVA) return LIQUID_FALL_PER_DENSITY;
+    uint8_t fixedCap = LIQUID_FIXED_FALL_CAP[MAT_LIQUID_PROFILE[m]];
+    if (fixedCap) return fixedCap;
     int cap = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
     return imax(1, imin(LIQUID_FALL_CAP, cap));
   }
   uint8_t acceleratedFallSpeed(int k, uint8_t m) {
-    int speed = L->fallSpeed ? (int)L->fallSpeed[k] + 1 : 1;
+    int speed = L->fallSpeed.current ? (int)L->fallSpeed.current[k] + 1 : 1;
     return (uint8_t)imin(looseFallCap(m), imax(1, speed));
   }
   void carryNextFallSpeed(int k, uint8_t speed) {
-    if (L->nextFallSpeed) L->nextFallSpeed[k] = speed;
+    if (L->fallSpeed.next) L->fallSpeed.next[k] = speed;
   }
   bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
@@ -62,7 +63,7 @@
     uint8_t self = L->grid[k];
     if (L->forceActive && forces.tryMoveLoose(x, y, k, self)) return;
     int belowK = k + cols;
-    if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
+    if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) writeNextIndex(k, self); return; }
     if (!gravityCellStepAt(x) && y + 1 < rows) {
       auto canFallInto = [&](int ik) {
         uint8_t target = L->grid[ik];
@@ -91,6 +92,7 @@
       }
       vacateForNextMove(k);
       writeNextIndex(dst, self);
+      carryPersistentStateToNext(k, dst, self, PCSO_MOVE);
       carryNextFallSpeed(dst, speed);
       audio.notePowderMove(self, dst % cols, dst / cols, (dst - k) / cols);
       if (dst != belowK) markMoveSpan(k, dst);
@@ -102,7 +104,11 @@
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
       int ik = belowK + dx; uint8_t m = L->grid[ik];
-      if (m == EMPTY && L->next[ik] == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, self); audio.notePowderMove(self, nx, y + 1); return; }
+      if (m == EMPTY && L->next[ik] == EMPTY) {
+        vacateForNextMove(k); writeNextIndex(ik, self);
+        carryPersistentStateToNext(k, ik, self, PCSO_MOVE);
+        audio.notePowderMove(self, nx, y + 1); return;
+      }
       if (canDisplaceMaterial(self, m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, self);
@@ -129,7 +135,7 @@
       uint8_t below = liquidOccupantAt(belowK), bl = liquidOccupantAt(belowK - 1), br = liquidOccupantAt(belowK + 1);
       if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
         L->next[k] = m;
-        carryNextLiquidVelocity(k, k);
+        carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
         return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
@@ -145,7 +151,7 @@
       if (gravityPath) {
         uint8_t speed = acceleratedFallSpeed(k, m);
         writeNextIndex(k, m);
-        carryNextLiquidVelocity(k, k);
+        carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
         carryNextFallSpeed(k, speed);
         markCellIndex(k);
         return;
@@ -181,7 +187,7 @@
       // buffer resurrects stale water as a ghost trail (false "duplication").
       vacateForNextMove(k);
       writeNextIndex(dst, m);
-      carryNextLiquidVelocity(k, dst);
+      carryPersistentStateToNext(k, dst, m, PCSO_MOVE);
       carryNextFallSpeed(dst, maxFall);
       audio.noteFluidFall(m, dst % cols, dst / cols, (dst - k) / cols);
       if (dst != k) markMoveSpan(k, dst);
@@ -196,7 +202,7 @@
       uint8_t occ = liquidOccupantAt(ik);
       if (occ == EMPTY) {
         vacateForNextMove(k); writeNextIndex(ik, m);
-        carryNextLiquidVelocity(k, ik);
+        carryPersistentStateToNext(k, ik, m, PCSO_MOVE);
         audio.noteFluidFall(m, nx, ny, 1);
         return;
       }
@@ -236,7 +242,7 @@
       // levelLiquidSurfaces (lighter liquid = air, drop>=2) — same as air pyramids.
       if (L->next[k] == EMPTY) {
         L->next[k] = m;
-        carryNextLiquidVelocity(k, k);
+        carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
         if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m))
             || adjacentInternalHole(k, m)) markCellIndex(k);
       }
@@ -252,7 +258,7 @@
       }
       if (L->next[k] == EMPTY) {
         L->next[k] = m;
-        carryNextLiquidVelocity(k, k);
+        carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
         bool fillableGap = false;
         for (int i = 0; i < 2; i++) {
           int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
@@ -265,34 +271,35 @@
     }
     if (L->next[k] == EMPTY) {
       L->next[k] = m;
-      carryNextLiquidVelocity(k, k);
+      carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
       if (touchesUnstableLooseDensityInterface(k, m)
           || adjacentInternalHole(k, m)) markCellIndex(k);
     }
   }
-  void settleLava(int x, int y, int k) {
+  void settleMobilityGatedLiquid(int x, int y, int k, uint8_t material) {
     if (L->next[k] != EMPTY) return;
     if (L->forceActive
-        && forces.tryMoveLoose(x, y, k, LAVA))
+        && forces.tryMoveLoose(x, y, k, material))
       return;
-    bool movementAllowed = rand() < MOBILITY[LAVA];
+    bool movementAllowed = rand() < MOBILITY[material];
     int belowK = k + cols;
-    // Viscosity limits lava's spreading, not its straight gravitational fall.
-    // Downward movement and sinking use the ordinary liquid cadence while
-    // diagonal, lateral, and surface flow retain lava's lower mobility.
-    bool straightGravityPath = gravityCellStepAt(x) && y + 1 < rows
-      && liquidColumnPassable(belowK, LAVA)
-      && !(L->forceActive && forces.overridesGravity(x, y, LAVA));
+    uint8_t profile = MAT_LIQUID_PROFILE[material];
+    // Profiles may let a clear downward path bypass the mobility gate while
+    // diagonal, lateral, and surface flow retain the configured mobility.
+    bool straightGravityPath = LIQUID_STRAIGHT_FALL[profile]
+      && gravityCellStepAt(x) && y + 1 < rows
+      && liquidColumnPassable(belowK, material)
+      && !(L->forceActive && forces.overridesGravity(x, y, material));
     if (straightGravityPath) {
-      settleLiquid(x, y, k, LAVA, false);
+      settleLiquid(x, y, k, material, false);
       return;
     }
     if (!movementAllowed) {
-      writeNextIndex(k, LAVA);
-      if (L->fallSpeed) carryNextFallSpeed(k, L->fallSpeed[k]);
+      writeNextIndex(k, material);
+      if (L->fallSpeed.current) carryNextFallSpeed(k, L->fallSpeed.current[k]);
       return;
     }
-    settleLiquid(x, y, k, LAVA, false);
+    settleLiquid(x, y, k, material, false);
   }
 
   // After liquid settle: place every lighter liquid that denser fluid displaced this
@@ -321,7 +328,8 @@
     std::vector<char> usedFallback; // parallel to a material group during resolve
     // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
     // reserved-stamp buffer (separate gen from seenStamp).
-    L->reserveSeenGenerations((size_t)(TABLE + 4) * TABLE + 2);
+    L->reserveSeenGenerations(
+      (size_t)(MATERIAL_COUNT + 4) * MATERIAL_COUNT + 2);
     int32_t reservedGen = L->nextSeenGeneration();
 
     auto plannedAt = [&](int k) -> uint8_t {
@@ -345,13 +353,22 @@
       if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY)
         L->rigidSpillReserved[fb] = reservedGen;
     };
-    auto placeAt = [&](int cell, uint8_t mat, int fromK) {
+    auto plannedStateAt = [&](int cell) {
+      int y = cell / cols, x = cell - y * cols;
+      if (activeSpanContains(L, y, x) && L->next[cell] != EMPTY)
+        return capturePersistentNextState(L, cell);
+      return capturePersistentCurrentState(L, cell);
+    };
+    auto placeAt = [&](int cell, const LiquidDisp& displacement) {
+      uint8_t mat = displacement.material;
       writeNextIndex(cell, mat);
-      markCellIndex(fromK);
+      restorePersistentNextState(
+        L, cell, mat, displacement.state, PCSO_SWAP);
+      markCellIndex(displacement.from);
       markCellIndex(cell);
     };
 
-    for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
+    for (int wave = 0; !pending.empty() && wave < MATERIAL_COUNT + 4; wave++) {
       std::sort(pending.begin(), pending.end(), [](const LiquidDisp& a, const LiquidDisp& b) {
         if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
         if (a.material != b.material) return a.material < b.material;
@@ -377,7 +394,7 @@
           if (plannedAt(fb) != EMPTY) continue;
           // Claim exclusively (may already be reservedGen from reserveFallback).
           L->rigidSpillReserved[fb] = reservedGen;
-          placeAt(fb, mat, pending[gi + i].from);
+          placeAt(fb, pending[gi + i]);
           usedFallback[i] = 1;
           remaining--;
         }
@@ -446,14 +463,14 @@
             int target = targets[ti++];
             uint8_t prev = plannedAt(target);
             if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) {
-              nextPending.push_back({prev, target, fb});
+              nextPending.push_back({prev, target, fb, plannedStateAt(target)});
               reserveFallback(fb);
             } else if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
               // BFS found other free volume; release own fallback for peers.
               L->rigidSpillReserved[fb] = reservedGen;
               spareFree.push_back(fb);
             }
-            placeAt(target, mat, pending[gi + i].from);
+            placeAt(target, pending[gi + i]);
             if (fb > 0 && fb < gridLen) markCellIndex(fb);
             usedFallback[i] = 1;
             continue;
@@ -461,7 +478,7 @@
           // Pass 3: restore into own fallback, then spare free slots.
           if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
             L->rigidSpillReserved[fb] = reservedGen;
-            placeAt(fb, mat, pending[gi + i].from);
+            placeAt(fb, pending[gi + i]);
             usedFallback[i] = 1;
             continue;
           }
@@ -470,7 +487,7 @@
             spareFree.pop_back();
             if (s > 0 && s < gridLen && plannedAt(s) == EMPTY) {
               L->rigidSpillReserved[s] = reservedGen;
-              placeAt(s, mat, pending[gi + i].from);
+              placeAt(s, pending[gi + i]);
               usedFallback[i] = 1;
               break;
             }
@@ -486,22 +503,20 @@
   void swapSettledCells(int a, int b) {
     const uint8_t materialA = L->grid[a];
     const uint8_t materialB = L->grid[b];
-    const uint32_t velocityA = L->liquidVel[a];
-    const uint32_t velocityB = L->liquidVel[b];
+    const PersistentCellSnapshot stateA = capturePersistentCurrentState(L, a);
+    const PersistentCellSnapshot stateB = capturePersistentCurrentState(L, b);
 
-    writeGridIndex(a, materialB);
-    writeGridIndex(b, materialA);
-    if (isLiquidMaterial(materialB)) L->liquidVel[a] = velocityB;
-    if (isLiquidMaterial(materialA)) L->liquidVel[b] = velocityA;
+    writeGridIndexUnsafe(a, materialB);
+    writeGridIndexUnsafe(b, materialA);
+    restorePersistentCurrentState(L, a, materialB, stateB, PCSO_SWAP);
+    restorePersistentCurrentState(L, b, materialA, stateA, PCSO_SWAP);
 
     // Tail motion runs after the simulation buffers are swapped. Mirror every
     // exchange so cells remain valid even when they leave the next active span.
     L->next[a] = materialB;
     L->next[b] = materialA;
-    L->nextFallSpeed[a] = 0;
-    L->nextFallSpeed[b] = 0;
-    L->nextLiquidVel[a] = isLiquidMaterial(materialB) ? velocityB : 0;
-    L->nextLiquidVel[b] = isLiquidMaterial(materialA) ? velocityA : 0;
+    restorePersistentNextState(L, a, materialB, stateB, PCSO_SWAP);
+    restorePersistentNextState(L, b, materialA, stateA, PCSO_SWAP);
   }
 
   template <bool spatialForces>
@@ -709,43 +724,45 @@
     uint8_t upper = L->grid[toK];
     if (upper == EMPTY) {
       writeNextIndex(toK, m);
+      carryPersistentStateToNext(fromK, toK, m, PCSO_MOVE);
       return true;
     }
     uint8_t parked = L->next[toK];
     writeNextIndex(toK, m);
-    if (parked == upper) writeNextIndex(fromK, upper);
+    carryPersistentStateToNext(fromK, toK, m, PCSO_MOVE);
+    if (parked == upper) {
+      writeNextIndex(fromK, upper);
+      carryPersistentStateToNext(toK, fromK, upper, PCSO_MOVE);
+    }
     return true;
   }
-  // Shared buoyant-gas movement. Writes the SAME material `m` it is moving (not
-  // hardcoded STEAM); acrid smoke has faster decay, while methane is persistent.
+  // Shared buoyant-gas movement. Lifetime and routing come from the material's
+  // generated gas profile; writes always preserve the source material.
   void riseSteam(int x, int y, int k, uint8_t m) {
     if (L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) { writeNextIndex(k, m); return; } // blast-shocked gas gets one visible frame before normal decay/motion
-    float decayP = STEAM_DECAY_P;
-    if (m == ACRID_SMOKE) {
-      decayP = ACRID_DECAY_P;
-      // Acrid smoke that can't vent (no empty cell above or beside it — boxed in by
-      // liquid/solid) dissolves quickly rather than churning. Re-rising through a
-      // fluid every step keeps a large region awake, and an awake layer pays a full
-      // grounding reflood per step, so a trapped cloud is pure cost with no payoff.
-      // Reads only (no extra RNG draw before the decay roll) so steam stays
-      // byte-identical and non-acrid scenes are unaffected.
+    uint8_t profile = MAT_GAS_PROFILE[m];
+    float decayP = GAS_DECAY[profile];
+    if (GAS_TRAPPED_DECAY[profile] != decayP) {
+      // Profiles with a distinct trapped lifetime check for empty or gas-passable
+      // vents above and beside the cell. The read-only probe precedes the one decay
+      // roll, so selecting this behavior does not add another random draw.
       auto ventsInto = [&](int vk) { uint8_t v = L->grid[vk]; return v == EMPTY || canGasRiseThrough(m, v); };
       bool canVent = (y > 1 && ventsInto(I(x, y - 1)))
                   || (x > 1 && ventsInto(I(x - 1, y)))
                   || (x < cols - 1 && ventsInto(I(x + 1, y)))
                   || (y > 1 && x > 1 && ventsInto(I(x - 1, y - 1)))
                   || (y > 1 && x < cols - 1 && ventsInto(I(x + 1, y - 1)));
-      if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
+      if (!canVent) decayP = GAS_TRAPPED_DECAY[profile];
     }
-    if ((m != METHANE && rand() < decayP) || y <= 1) { markCellIndex(k); return; }
+    if ((!GAS_PERSISTENT[profile] && rand() < decayP) || y <= 1) { markCellIndex(k); return; }
     if (L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
     int up = I(x, y - 1);
-    if (canRiseGasInto(up, m) && rand() < 0.72 && tryRiseGasInto(k, up, m)) return;
+    if (canRiseGasInto(up, m) && rand() < GAS_UP_CHANCE[profile] && tryRiseGasInto(k, up, m)) return;
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (tryRiseGasInto(k, ik, m)) return; }
-    auto methaneRouteLeadsUp = [&](int dx) {
-      // Reverse of liquid surface flow: methane only walks a flat ceiling when
+    auto ceilingRouteLeadsUp = [&](int dx) {
+      // Reverse of liquid surface flow: ceiling-routed gas only walks flat when
       // that corridor leads to higher empty volume. A closed level pocket therefore
       // settles instead of diffusing left/right forever, while a side tunnel to an
       // upper chamber still vents naturally.
@@ -754,33 +771,38 @@
         int nx = x + dx * d;
         if (nx <= 0 || nx >= cols - 1) return false;
         int nk = I(nx, y); uint8_t along = L->grid[nk];
-        if (along != EMPTY && along != METHANE) return false;
+        if (along != EMPTY && along != m) return false;
         if (y > 1 && L->grid[nk - cols] == EMPTY) return true;
       }
       return false;
     };
-    bool trySide = m == METHANE ? true : rand() < 0.65;
+    bool ceilingRoute = GAS_CEILING_ROUTE[profile] != 0;
+    bool trySide = ceilingRoute ? true : rand() < GAS_SIDE_CHANCE[profile];
     if (trySide) for (int i = 0; i < 2; i++) {
       int dx = dirs[i];
-      if (emptyAt(x + dx, y) && (m != METHANE || methaneRouteLeadsUp(dx))) {
-        writeNextIndex(I(x + dx, y), m); return;
+      if (emptyAt(x + dx, y) && (!ceilingRoute || ceilingRouteLeadsUp(dx))) {
+        int destination = I(x + dx, y);
+        writeNextIndex(destination, m);
+        carryPersistentStateToNext(k, destination, m, PCSO_MOVE);
+        return;
       }
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, m);
   }
-  void riseFire(int x, int y, int k) {
+  void riseFire(int x, int y, int k, uint8_t material) {
     if (L->next[k] != EMPTY) return;
-    if (L->vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
-    if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
+    if (L->vacatedStamp[k] == tick) { writeNextIndex(k, material); return; } // keep explosion fire volume through the detonation step
+    uint8_t profile = MAT_GAS_PROFILE[material];
+    if (rand() < GAS_DECAY[profile] || y <= 1) { markCellIndex(k); return; }
     int32_t blastGas = L->blastGasStamp[k];
     bool recentBlastFire = blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
-    if (L->forceActive && forces.tryMoveLoose(x, y, k, FIRE)) return;
+    if (L->forceActive && forces.tryMoveLoose(x, y, k, material)) return;
     auto writeFire = [&](int dst) {
-      writeNextIndex(dst, FIRE);
+      writeNextIndex(dst, material);
       if (recentBlastFire) L->blastGasStamp[dst] = blastGas;
     };
     auto moveFire = [&](int dst) {
-      if (!tryRiseGasInto(k, dst, FIRE)) return false;
+      if (!tryRiseGasInto(k, dst, material)) return false;
       if (recentBlastFire) L->blastGasStamp[dst] = blastGas;
       return true;
     };
@@ -790,7 +812,7 @@
     if (L->next[k] == EMPTY) writeFire(k);
   }
   void drain(int xs, int xe, int y, float liquidP, float sandP) {
-    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = L->grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }
+    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = L->grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndexUnsafe(k, EMPTY); }
   }
   void applySideSinks() {
     if (!sinksEnabled || cols < 6) return;

@@ -1,93 +1,30 @@
 // Searchable framework-free creative palette. Entries map to the generated
 // CreativeKind ABI and are forwarded through `setCreativeMaterial`.
 
-import { MATERIALS } from '../materials.generated.js';
-import { CREATURE } from '../wasmBridge/abi.generated.js';
+import {
+  MATERIALS, MAT_PALETTE_HIDDEN, PALETTE_MAIN_ORDER,
+  PALETTE_SECTIONS as GENERATED_PALETTE_SECTIONS, PLANT_SPECIES,
+} from '../materials.generated.js';
+import {
+  CREATIVE_KIND, CREATURE_CREATIVE_ENTRIES,
+} from '../wasmBridge/abi.generated.js';
 import { DEFAULT_DAY_PHASE } from '../game/dayNightCycle.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
-const CK_MATERIAL = 0;
-const CK_SEED = 1;
-const CK_ERASER = 2;
-const CK_CUBE = 3;
-const CK_CREATURE = 4;
-
-// Species order mirrors the engine's seed-species indices. Each 9x9 pattern is
-// intentionally distinct at menu size instead of presenting seven green squares.
-const SEED_SPECIES = [
-  { name: 'Oak', colors: ['#d59a5f', '#78472d'], pixels: [
-    '.........', '...222...', '..21112..', '..21112..', '..11111..', '...111...', '...121...', '....2....', '.........',
-  ] },
-  { name: 'Pine', colors: ['#72b878', '#315b46'], pixels: [
-    '....2....', '...121...', '...121...', '..11211..', '..11211..', '.1112111.', '...121...', '....2....', '.........',
-  ] },
-  { name: 'Willow', colors: ['#b7d983', '#527047'], pixels: [
-    '...111...', '..11211..', '.1112111.', '.1122211.', '..12221..', '...121...', '...121...', '....2....', '.........',
-  ] },
-  { name: 'Cactus', colors: ['#63c77a', '#28653f'], pixels: [
-    '.........', '...222...', '..21112..', '..12121..', '..21112..', '..12121..', '..21112..', '...222...', '.........',
-  ] },
-  { name: 'Mushroom', colors: ['#aaa79f', '#77736c'], pixels: [
-    '.........', '...111...', '..11111..', '.1121211.', '.1111111.', '...222...', '...222...', '..22222..', '.........',
-  ] },
-  { name: 'Bush', colors: ['#70b764', '#bd5c82'], pixels: [
-    '.........', '..12121..', '.1121211.', '.2111112.', '.1212121.', '..11111..', '...121...', '....2....', '.........',
-  ] },
-  { name: 'Vine', colors: ['#315b26', '#203f1a'], pixels: [
-    '....1....', '...111...', '....1....', '...11....', '...12....', '..11.....', '..1......', '.21......', '.........',
-  ] },
-];
+const CK_MATERIAL = CREATIVE_KIND.MATERIAL;
+const CK_SEED = CREATIVE_KIND.SEED;
+const CK_ERASER = CREATIVE_KIND.ERASER;
+const CK_CUBE = CREATIVE_KIND.CUBE;
+const CK_CREATURE = CREATIVE_KIND.CREATURE;
 
 const ERASER_SWATCH = 'rgb(254,205,211)';
 const CUBE_SWATCH = 'rgb(214,211,209)';
 
-// Kept separate from the material/tool list so these always form the final
-// entries in the creative menu. Layered gradients make the compact
-// swatches read as patterned eggs without adding image assets.
-const CREATURE_EGGS = [
-  ['Minnow', CREATURE.MINNOW, '#9de2c9', '#256f89'],
-  ['Fox', CREATURE.FOX, '#f49a46', '#7b3420'],
-  ['Mole', CREATURE.MOLE, '#ba997e', '#4b3b3a'],
-  ['Bird', CREATURE.BIRD, '#aedaf0', '#3663a0'],
-  ['Dynamiteer', CREATURE.DYNAMITEER, '#ff6b35', '#5c1720'],
-  ['Bore Sentinel', CREATURE.BORE_SENTINEL, '#f4c95d', '#343746'],
-  ['Caustic Mortarman', CREATURE.CAUSTIC_MORTARMAN, '#72dc69', '#263e30'],
-  ['Cluster Wasp', CREATURE.CLUSTER_WASP, '#f2a63d', '#4b315e'],
-  ['Minigunner', CREATURE.MINIGUNNER, '#d5a83d', '#263746'],
-  ['Villager', CREATURE.VILLAGER, '#d59d3f', '#5b8445'],
-];
-
-// Main contains the complete catalog, with this useful set pinned first. The
-// remainder is curated roughly from unusual/reactive to ordinary building
-// material; creature eggs are appended separately so they always stay last.
-const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'neutronium', 'stone', 'water', 'acid', 'lava', 'tnt', 'seed', 'sand'];
-const MAIN_TAIL_LABELS = [
-  'fire', 'methane', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
-  'brine', 'steam', 'acrid_smoke', 'ice',
-  'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed', 'vine seed',
-  'grass', 'dirt', 'snow', 'mud', 'salt', 'gold_ore', 'iron_ore', 'copper_ore', 'coal_ore',
-  'brick', 'clay', 'sandstone', 'moss', 'wood', 'oak_wood', 'pine_wood', 'oak_leaf', 'pine_needles', 'willow_leaf', 'bush_leaf', 'cactus', 'mush_cap', 'mush_stem',
-  'vine', 'plant', 'driftwood', 'debris',
-];
-const MAIN_ORDER_LABELS = [...FEATURED_LABELS, ...MAIN_TAIL_LABELS];
-
-const PALETTE_SECTIONS = [
-  { id: 'main', label: 'Main', accent: '#f6c56f', all: true },
-  { id: 'tools', label: 'Tools', accent: '#cbd5e1', labels: ['cube', 'eraser', 'rigid'] },
-  { id: 'terrain', label: 'Terrain', accent: '#c99a6b', labels: [
-    'sand', 'stone', 'neutronium', 'dirt', 'snow', 'mud', 'clay', 'sandstone', 'copper_ore', 'iron_ore',
-    'coal_ore', 'gold_ore', 'brick', 'salt', 'debris', 'crystal',
-  ] },
-  { id: 'fluids', label: 'Fluids', accent: '#70bfff', labels: ['water', 'oil', 'acid', 'lava', 'ice', 'steam', 'brine'] },
-  { id: 'flora', label: 'Flora', accent: '#7dd88a', labels: [
-    'seed', 'wood', 'plant', 'oak_wood', 'oak_leaf', 'driftwood', 'moss', 'pine_wood', 'cactus', 'mush_stem',
-    'mush_cap', 'pine_needles', 'willow_leaf', 'bush_leaf', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
-  ], kinds: [CK_SEED] },
-  { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
-    'fire', 'steam', 'methane', 'oil', 'acid', 'lava', 'neutronium', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
-  ] },
-  { id: 'creatures', label: 'Creatures', accent: '#c99cff', kinds: [CK_CREATURE] },
-];
+const PALETTE_KIND = { seed: CK_SEED, creature: CK_CREATURE };
+const PALETTE_SECTIONS = GENERATED_PALETTE_SECTIONS.map((section) => ({
+  ...section,
+  kinds: section.entryKinds?.map((kind) => PALETTE_KIND[kind]),
+}));
 
 const entryInSection = (entry, section) =>
   section.all || section.labels?.includes(entry.label) || section.kinds?.includes(entry.kind);
@@ -98,7 +35,7 @@ const entryInSection = (entry, section) =>
 export function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
-    if (m.id === 0 || m.name === 'OAK_SEED') continue; // EMPTY; Oak Seed is represented by its species entry
+    if (m.id === 0 || MAT_PALETTE_HIDDEN[m.id]) continue;
     entries.push({
       key: `mat-${m.id}`,
       label: m.name.toLowerCase(),
@@ -109,15 +46,15 @@ export function buildEntries() {
       value: m.id,
     });
   }
-  SEED_SPECIES.forEach(({ name, colors, pixels }, i) => {
+  PLANT_SPECIES.filter((species) => species.palette).forEach(({ id, label, colors, pixels }) => {
     entries.push({
-      key: `seed-${i}`,
-      label: `${name} Seed`,
+      key: `seed-${id}`,
+      label: `${label} Seed`,
       color: colors[0],
       seedColors: colors,
       seedPixels: pixels,
       kind: CK_SEED,
-      value: i,
+      value: id,
     });
   });
   // Tool labels stay lowercase to match material labels and search queries.
@@ -125,18 +62,18 @@ export function buildEntries() {
   entries.push({ key: 'cube', label: 'cube', color: CUBE_SWATCH, textureAmp: 8, kind: CK_CUBE, value: 0 });
 
   const ordered = [];
-  for (const want of MAIN_ORDER_LABELS) {
+  for (const want of PALETTE_MAIN_ORDER) {
     const hit = entries.find((e) => e.label.toLowerCase() === want);
     if (hit) ordered.push(hit);
   }
   const rest = entries.filter((e) => !ordered.includes(e));
-  const eggs = CREATURE_EGGS.map(([name, value, light, dark]) => ({
-    key: `creature-${value}`,
-    label: `${name} Spawn Egg`,
-    color: `radial-gradient(circle at 35% 28%, #fff 0 7%, ${dark} 8% 18%, ${light} 19% 61%, ${dark} 62% 72%, ${light} 73%)`,
-    eggColors: [light, dark],
+  const eggs = CREATURE_CREATIVE_ENTRIES.map(({ id, label, colors }) => ({
+    key: `creature-${id}`,
+    label,
+    color: `radial-gradient(circle at 35% 28%, #fff 0 7%, ${colors[1]} 8% 18%, ${colors[0]} 19% 61%, ${colors[1]} 62% 72%, ${colors[0]} 73%)`,
+    eggColors: colors,
     kind: CK_CREATURE,
-    value,
+    value: id,
     egg: true,
   }));
   return [...ordered, ...rest, ...eggs];

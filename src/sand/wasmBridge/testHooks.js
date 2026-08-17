@@ -8,6 +8,8 @@
 //   e._bodyState(0); e.setGroundingDebug(true, false); ...
 
 import { _wasmInternals } from './engineFactory.js';
+import { STRIDES } from './abi.generated.js';
+import { unpackSnapshotRecordAt } from './recordCodec.js';
 
 let T = null; // lazily cwrapped test-ABI table
 function table() {
@@ -21,6 +23,14 @@ function table() {
     worldDirtyTileCount: c('engine_test_world_dirty_tile_count', 'number', ['number']),
     componentStateCount: c('engine_test_component_state_count', 'number',
       ['number', 'number']),
+    componentCount: c('engine_test_component_count', 'number', ['number', 'number']),
+    componentId: c('engine_test_component_id', 'number', ['number', 'number', 'number']),
+    replaceAttached: c('engine_test_replace_attached', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number']),
+    replaceAttachedAfterLoose: c('engine_test_replace_attached_after_loose',
+      'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    replaceAttachedPair: c('engine_test_replace_attached_pair', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyTerrainBlocked: c('engine_test_body_terrain_blocked', 'number', ['number', 'number']),
     bodyBlockedLayer: c('engine_test_body_blocked_layer', 'number',
@@ -52,6 +62,18 @@ function table() {
     bodyStateLayer: c('engine_test_body_state_layer', 'number', ['number', 'number', 'number', 'number']),
     spawnBoxLayer: c('engine_test_spawn_box_layer', 'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    activeLayer: c('engine_test_active_layer', 'number', ['number']),
+    layerBuffersValid: c('engine_test_layer_buffers_valid', 'number',
+      ['number', 'number']),
+    layerBufferPhase: c('engine_test_layer_buffer_phase', 'number',
+      ['number', 'number']),
+    setMotionSentinel: c('engine_test_set_motion_sentinel', 'number',
+      ['number', 'number', 'number', 'number']),
+    motionCellZero: c('engine_test_motion_cell_zero', 'number',
+      ['number', 'number', 'number']),
+    motionChannelCount: c('engine_test_motion_channel_count', 'number', []),
+    motionCellState: c('engine_test_motion_cell_state', 'number',
+      ['number', 'number', 'number', 'number']),
     groundedPtr: c('engine_test_grounded_ptr', 'number', ['number', 'number']),
     bodyOwnerPtr: c('engine_test_body_owner_ptr', 'number', ['number', 'number']),
     fallSpeedPtr: c('engine_test_fall_speed_ptr', 'number', ['number', 'number']),
@@ -66,8 +88,8 @@ function table() {
     damagePlayer: c('engine_test_damage_player', 'number',
       ['number', 'number', 'number', 'number', 'number']),
     collectDynamicLights: c('engine_test_collect_dynamic_lights', 'number', ['number']),
-    spawnNearFocus: c('engine_test_spawn_near_focus', 'number',
-      ['number', 'number', 'number']),
+    applyCatalystProducts: c('engine_test_apply_catalyst_products', 'number',
+      ['number', 'number', 'number', 'number', 'number']),
     spawnWorldAllowed: c('engine_test_spawn_world_allowed', 'number',
       ['number', 'number', 'number', 'number']),
     spawnWorldWeight: c('engine_test_spawn_world_weight', 'number',
@@ -111,10 +133,37 @@ export function attachTestHooks(engine) {
   const t = table();
   const { mod } = t;
   const ptr = engine.ptr;
+  const readBodyState = (reader, ...args) => {
+    const length = STRIDES.testBodyState;
+    const buf = mod._malloc(length * Float64Array.BYTES_PER_ELEMENT);
+    try {
+      if (!reader(...args, buf)) return null;
+      const base = buf / Float64Array.BYTES_PER_ELEMENT;
+      return unpackSnapshotRecordAt(
+        mod.HEAPF64.subarray(base, base + length), 'testBodyState', 0,
+      );
+    } finally {
+      mod._free(buf);
+    }
+  };
   engine._bodyCount = () => t.bodyCount(ptr);
   engine._worldDirtyTileCount = () => t.worldDirtyTileCount(ptr);
   engine._componentStateCount = (layer = 0) =>
     t.componentStateCount(ptr, layer ? 1 : 0);
+  engine._componentCount = (layer = 0) => t.componentCount(ptr, layer ? 1 : 0);
+  engine._componentId = (layer, index) =>
+    t.componentId(ptr, layer ? 1 : 0, index | 0);
+  engine._replaceAttached = (layer, x, y, material, componentIndex) =>
+    t.replaceAttached(ptr, layer ? 1 : 0, x | 0, y | 0,
+      material | 0, componentIndex | 0);
+  engine._replaceAttachedAfterLoose = (
+    layer, x, y, looseMaterial, product, componentIndex,
+  ) => t.replaceAttachedAfterLoose(ptr, layer ? 1 : 0, x | 0, y | 0,
+    looseMaterial | 0, product | 0, componentIndex | 0);
+  engine._replaceAttachedPair = (
+    layer, x0, y0, x1, y1, material, componentIndex,
+  ) => t.replaceAttachedPair(ptr, layer ? 1 : 0, x0 | 0, y0 | 0,
+    x1 | 0, y1 | 0, material | 0, componentIndex | 0);
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyTerrainBlocked = (i) => t.bodyTerrainBlocked(ptr, i);
   engine._bodyBlockedLayer = (layer, i) =>
@@ -187,75 +236,40 @@ export function attachTestHooks(engine) {
   engine._damagePlayer = (id, damage, sourceX = NaN, sourceY = NaN) =>
     t.damagePlayer(ptr, id | 0, damage | 0, sourceX, sourceY);
   engine._collectDynamicLights = () => t.collectDynamicLights(ptr);
+  engine._applyCatalystProducts = (layer, sourceCell, neighborCell, product) =>
+    t.applyCatalystProducts(ptr, layer ? 1 : 0, sourceCell | 0,
+      neighborCell | 0, product | 0) === 1;
   engine._spawnNearFocus = (species, salt = 0) =>
-    t.spawnNearFocus(ptr, species | 0, salt | 0) === 1;
+    engine._testSpawnNearFocus(species, salt);
   engine._spawnWorldAllowed = (species, worldX, worldY) =>
     t.spawnWorldAllowed(ptr, species | 0, worldX, worldY) === 1;
   engine._spawnWorldWeight = (species, worldX, worldY) =>
     t.spawnWorldWeight(ptr, species | 0, worldX, worldY);
   engine._spawnNaturalAt = (species, worldX, worldY) =>
     t.spawnNaturalAt(ptr, species | 0, worldX, worldY);
-  // Continuous body state, including inverse mass and rotational inertia.
-  engine._bodyState = (i) => {
-    const buf = mod._malloc(26 * 8);
-    const ok = t.bodyState(ptr, i | 0, buf);
-    if (!ok) { mod._free(buf); return null; }
-    const base = buf >> 3;
-    const s = {
-      px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
-      vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
-      nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
-      invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
-      pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
-      pw: mod.HEAPF64[base + 12],
-      stillTicks: mod.HEAPF64[base + 13],
-      restProbeTicks: mod.HEAPF64[base + 14],
-      hadContact: mod.HEAPF64[base + 15] > 0,
-      sleepSupports: mod.HEAPF64[base + 16],
-      stampRecoveryStreak: mod.HEAPF64[base + 17],
-      stampRecoveryTotal: mod.HEAPF64[base + 18],
-      stampPreclaimAttempts: mod.HEAPF64[base + 19],
-      stampPreclaimSuccesses: mod.HEAPF64[base + 20],
-      stampPreclaimBlocked: mod.HEAPF64[base + 21],
-      stampPreclaimOutside: mod.HEAPF64[base + 22],
-      stampPreclaimMovedOutside: mod.HEAPF64[base + 23],
-      stampPreclaimStartedOutside: mod.HEAPF64[base + 24],
-      worldStillTicks: mod.HEAPF64[base + 25],
-    };
-    mod._free(buf);
-    return s;
-  };
-  engine._bodyStateLayer = (layer, i) => {
-    const buf = mod._malloc(26 * 8);
-    const ok = t.bodyStateLayer(ptr, layer ? 1 : 0, i | 0, buf);
-    if (!ok) { mod._free(buf); return null; }
-    const base = buf >> 3;
-    const s = {
-      px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
-      vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
-      nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
-      invMass: mod.HEAPF64[base + 8], invInertia: mod.HEAPF64[base + 9],
-      pvx: mod.HEAPF64[base + 10], pvy: mod.HEAPF64[base + 11],
-      pw: mod.HEAPF64[base + 12],
-      stillTicks: mod.HEAPF64[base + 13],
-      restProbeTicks: mod.HEAPF64[base + 14],
-      hadContact: mod.HEAPF64[base + 15] > 0,
-      sleepSupports: mod.HEAPF64[base + 16],
-      stampRecoveryStreak: mod.HEAPF64[base + 17],
-      stampRecoveryTotal: mod.HEAPF64[base + 18],
-      stampPreclaimAttempts: mod.HEAPF64[base + 19],
-      stampPreclaimSuccesses: mod.HEAPF64[base + 20],
-      stampPreclaimBlocked: mod.HEAPF64[base + 21],
-      stampPreclaimOutside: mod.HEAPF64[base + 22],
-      stampPreclaimMovedOutside: mod.HEAPF64[base + 23],
-      stampPreclaimStartedOutside: mod.HEAPF64[base + 24],
-      worldStillTicks: mod.HEAPF64[base + 25],
-    };
-    mod._free(buf);
-    return s;
-  };
+  engine._bodyState = (i) => readBodyState(t.bodyState, ptr, i | 0);
+  engine._bodyStateLayer = (layer, i) =>
+    readBodyState(t.bodyStateLayer, ptr, layer ? 1 : 0, i | 0);
   engine._spawnBoxLayer = (layer, cx, cy, halfW, halfH, material) =>
     t.spawnBoxLayer(ptr, layer ? 1 : 0, cx | 0, cy | 0, halfW | 0, halfH | 0, material | 0);
+  engine._activeLayer = () => t.activeLayer(ptr);
+  engine._layerBuffersValid = (layer = 0) =>
+    t.layerBuffersValid(ptr, layer ? 1 : 0) === 1;
+  engine._layerBufferPhase = (layer = 0) =>
+    t.layerBufferPhase(ptr, layer ? 1 : 0);
+  engine._setMotionSentinel = (layer, cell, value = 0x5a5a5a5a) =>
+    t.setMotionSentinel(ptr, layer ? 1 : 0, cell | 0, value | 0) === 1;
+  engine._motionCellZero = (layer, cell) =>
+    t.motionCellZero(ptr, layer ? 1 : 0, cell | 0) === 1;
+  engine._motionCellState = (layer, cell) => {
+    const channels = t.motionChannelCount();
+    const buf = mod._malloc(channels * 2 * 8);
+    const count = t.motionCellState(ptr, layer ? 1 : 0, cell | 0, buf);
+    const values = count > 0
+      ? Array.from(mod.HEAPF64.subarray(buf >> 3, (buf >> 3) + count)) : null;
+    mod._free(buf);
+    return values;
+  };
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
   engine._freezeBodyCell = (sourceLayer, bodyIndex, targetLayer, x, y) =>
     t.freezeBodyCell(ptr, sourceLayer ? 1 : 0, bodyIndex | 0,

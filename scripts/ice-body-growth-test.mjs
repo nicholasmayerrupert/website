@@ -1,6 +1,6 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { MAT, MATERIALS } from '../src/sand/materials.js';
+import { MAT, MATERIAL_BY_ID } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, SEED = 0xC0FFEE;
@@ -40,7 +40,7 @@ const iceOwnership = (engine, layer) => {
   engine._setBodyMotion(0, 1.25, -0.4, 0.13);
   const before = engine._bodyState(0);
   const bodyMass = 1 / before.invMass;
-  const waterMass = MATERIALS[MAT.WATER].density;
+  const waterMass = MATERIAL_BY_ID[MAT.WATER].density;
   const bodyMomentumX = bodyMass * before.vx;
   const bodyMomentumY = bodyMass * before.vy;
   const momentumX = bodyMomentumX + waterMass * waterVx;

@@ -18,9 +18,6 @@ double TerrainGen::genMoistureAt(int worldX) {
   return std::fmax(0.0, std::fmin(1.0, broad * 0.72 + pockets * 0.18 + coast * 0.10));
 }
 
-// Continuous temperature, moisture, altitude, and ruggedness fields choose the
-// raw biome. Height itself remains biome-independent, avoiding unstable material
-// cliffs where climates meet.
 int TerrainGen::classifyBiomeAt(int worldX) {
   double temperature = genTemperatureAt(worldX);
   double moisture = genMoistureAt(worldX);
@@ -28,37 +25,30 @@ int TerrainGen::classifyBiomeAt(int worldX) {
   double altitude = std::fmax(0.0, (double)(SEA_LEVEL - surface) / 92.0);
   double rugged = wridged2(E.L->worldSeed ^ 0xB10B12u, worldX * BIOME_FREQ * 2.2, 4.0, 3, 0.52);
 
-  if ((altitude > 0.28 && rugged > 0.58) || (altitude > 0.52 && temperature > 0.27)) return BIOME_ROCKY;
-  if (temperature < 0.29 || (altitude > 0.34 && temperature < 0.45)) return BIOME_TUNDRA;
-  if (moisture < 0.31 && temperature > 0.43) return BIOME_DESERT;
-  if (moisture > 0.72 && surface > SEA_LEVEL - 20 && temperature > 0.38) return BIOME_SWAMP;
-  if (temperature > 0.62 && moisture > 0.57) return BIOME_JUNGLE;
-  if (moisture > 0.51) return BIOME_FOREST;
-  return BIOME_PLAINS;
+  for (Biome biome : SURFACE_BIOME_SELECTION_ORDER) {
+    const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+    if (surfaceBiomeClimateMatches(def, temperature, moisture, altitude, rugged,
+                                   surface - SEA_LEVEL))
+      return biome;
+  }
+  __builtin_unreachable();
 }
 
 // Ecotones occupy a narrow band around raw climate boundaries. Four-column
 // deterministic patches borrow the neighbouring biome, producing a readable
 // transition without per-pixel speckle or a single hard material seam.
 int TerrainGen::genBiomeAt(int worldX) {
-  if (E.planetId == PL_SHIP) return BIOME_ROCKY;
-  if (E.planetId == PL_MOON || E.planetId == PL_MARS) {
-    uint32_t salt = E.planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u;
+  const PlanetDef& planet = planetDef(E.planetId);
+  PlanetGenerationProfile profile = planet.generationProfile;
+  const BiomeGenerationProfileSelection& selection =
+    biomeGenerationProfileSelection(profile);
+  if (selection.surfaceMode == SBSE_REGIONAL) {
+    uint32_t salt = planet.worldSeedSalt;
     int region = floorDiv(worldX, 1536);
-    int pick = imin(5, (int)(whash1(E.L->worldSeed ^ salt ^ 0xB10B10u, region) * 6.0));
-    if (E.planetId == PL_MOON) {
-      static constexpr int moonBiomes[6] = {
-        BIOME_TUNDRA, BIOME_DESERT, BIOME_ROCKY,
-        BIOME_FOREST, BIOME_SWAMP, BIOME_JUNGLE,
-      };
-      return moonBiomes[pick];
-    }
-    static constexpr int marsBiomes[6] = {
-      BIOME_TUNDRA, BIOME_ROCKY, BIOME_DESERT,
-      BIOME_PLAINS, BIOME_SWAMP, BIOME_JUNGLE,
-    };
-    return marsBiomes[pick];
+    double pick = whash1(E.L->worldSeed ^ salt ^ 0xB10B10u, region);
+    return selectRegionalSurfaceBiome(profile, pick);
   }
+  if (selection.surfaceMode != SBSE_CLIMATE) __builtin_unreachable();
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
   BiomeCacheEntry& cached = biomeCache[key & (BIOME_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
@@ -82,16 +72,17 @@ int TerrainGen::genBiomeAt(int worldX) {
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
 int TerrainGen::genSurfaceAbs(int worldX) {
-  if (E.planetId == PL_SHIP) return 16;
-  if (E.planetId != PL_EARTH) {
-    uint32_t planetSeed = E.L->worldSeed
-      ^ (E.planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u);
+  const PlanetDef& planet = planetDef(E.planetId);
+  if (planet.generationProfile == PGP_SHIP) return 16;
+  if (planet.generationProfile == PGP_MOON
+      || planet.generationProfile == PGP_MARS) {
+    uint32_t planetSeed = E.L->worldSeed ^ planet.worldSeedSalt;
     uint32_t key = planetSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
     SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
     if (cached.seed == planetSeed && cached.x == worldX) return cached.value;
 
     double surface = 0;
-    if (E.planetId == PL_MOON) {
+    if (planet.generationProfile == PGP_MOON) {
       double broad = wfbm2(planetSeed ^ 0x10A71u, worldX * 0.0028, 2.1, 4, 0.52);
       double rubble = wridged2(planetSeed ^ 0x10A72u, worldX * 0.014, 8.5, 3, 0.52);
       surface = (broad - 0.5) * 54.0 + (rubble - 0.5) * 15.0;
@@ -115,7 +106,7 @@ int TerrainGen::genSurfaceAbs(int worldX) {
         if (rimDistance < 1.0)
           surface -= (1.0 - rimDistance) * (3.0 + choose * 5.0);
       }
-    } else {
+    } else if (planet.generationProfile == PGP_MARS) {
       double continent = wfbm2(planetSeed ^ 0xA11CEu, worldX * 0.0017, 4.2, 4, 0.52);
       double mesas = wridged2(planetSeed ^ 0xA11CFu, worldX * 0.0048, 11.0, 4, 0.5);
       double gullies = wridged2(planetSeed ^ 0xA11D0u, worldX * 0.017, 3.0, 2, 0.55);
@@ -129,6 +120,7 @@ int TerrainGen::genSurfaceAbs(int worldX) {
     cached.value = value;
     return value;
   }
+  if (planet.generationProfile != PGP_EARTH) __builtin_unreachable();
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
   SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
@@ -159,10 +151,8 @@ int TerrainGen::genSurfaceAbs(int worldX) {
 // all-underground). Used by spawn + tree placement.
 int TerrainGen::genSurfaceAt(int worldX) { return genSurfaceAbs(worldX) - E.L->worldOffsetY; }
 int TerrainGen::genSoilDepth(int biome) {
-  if (biome == BIOME_ROCKY) return 0;            // bare stone (stays one connected mass)
-  if (biome == BIOME_DESERT) return E.L->gSoil * 3; // deep sand
-  if (biome == BIOME_JUNGLE) return E.L->gSoil + 3; // thick lush mantle
-  return E.L->gSoil + 2;                            // plains / forest / tundra / swamp
+  const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+  return E.L->gSoil * def.soilScale + def.soilAdd;
 }
 int TerrainGen::genSoilDepthAt(int worldX, int biome) {
   int total = genSoilDepth(biome);
@@ -177,45 +167,33 @@ int TerrainGen::genSoilDepthAt(int worldX, int biome) {
 }
 uint8_t TerrainGen::genSkinMat(int biome, int slope, bool underwater) {
   if (underwater) return STONE;                // solid seabed (loose powder under water just avalanches)
-  switch (biome) {
-    case BIOME_ROCKY:  return STONE;
-    case BIOME_DESERT: return SAND;
-    case BIOME_TUNDRA: return SNOW;            // snow blanket over the dirt mantle
-    case BIOME_SWAMP:  return slope <= 2 ? GRASS : MUD;
-    default:           return slope <= 2 ? GRASS : SAND; // plains/forest/jungle: grass on gentle, sand on steeps
-  }
+  const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+  return slope <= 2 ? def.flatSkin : def.steepSkin;
 }
 // Material of the mantle between the surface skin and deep stone. `d` is depth
 // within the soil band.
 uint8_t TerrainGen::genSoilMat(int biome, int d, int soil) {
-  switch (biome) {
-    case BIOME_DESERT: return d >= soil * 2 / 3 ? SANDSTONE : SAND; // sand over a sandstone base
-    case BIOME_SWAMP:  return MUD;
-    case BIOME_ROCKY:  return STONE;
-    default:           return DIRT; // plains / forest / tundra / jungle
-  }
+  const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+  bool inBase = def.soilBaseNumerator > 0
+    && d >= soil * def.soilBaseNumerator / def.soilBaseDenominator;
+  return inBase ? def.soilBase : def.soilTop;
 }
 int TerrainGen::genCaveTopAbs(int worldX) {
   int biome = genBiomeAt(worldX), soil = genSoilDepthAt(worldX, biome);
   return genSurfaceAbs(worldX) + GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
 }
 int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
-  if (E.planetId == PL_SHIP) return CAVE_DEFAULT;
-  if (E.planetId == PL_MOON || E.planetId == PL_MARS) {
-    uint32_t salt = E.planetId == PL_MOON ? 0x1A2B3301u : 0x1A2B3302u;
-    double pick = wfbm2(E.L->gCaveSeed ^ salt,
+  const PlanetDef& planet = planetDef(E.planetId);
+  PlanetGenerationProfile profile = planet.generationProfile;
+  CaveBiomeSelectionMode mode =
+    biomeGenerationProfileSelection(profile).caveMode;
+  if (mode == CBSE_FALLBACK) return CAVE_BIOME_FALLBACK;
+  if (mode == CBSE_ABSOLUTE_DEPTH_BANDS) {
+    double pick = wfbm2(E.L->gCaveSeed ^ planet.caveBiomeSalt,
                          worldX * .0019, worldY * .0021, 3, .52);
-    if (worldY >= DEEP_BLEND_TOP) {
-      if (pick < .34) return E.planetId == PL_MOON ? CAVE_DEEP_GEODE : CAVE_DEEP_MAGMA;
-      if (pick < .58) return CAVE_DEEP_FOSSIL;
-      if (pick < .78) return CAVE_DEEP_VOID;
-      return CAVE_DEEP_GEODE;
-    }
-    if (pick < .25) return CAVE_DEFAULT;
-    if (pick < .50) return CAVE_CRYSTAL;
-    if (pick < .73) return CAVE_MUSHROOM;
-    return CAVE_LUSH;
+    return selectCaveBiome(profile, worldY >= DEEP_BLEND_TOP, pick);
   }
+  if (mode != CBSE_BLENDED_DEPTH_BANDS) __builtin_unreachable();
   if (worldY >= DEEP_BLEND_TOP) {
     double transition = (double)(worldY - DEEP_BLEND_TOP)
                       / (double)(DEEP_BLEND_BOTTOM - DEEP_BLEND_TOP);
@@ -229,23 +207,16 @@ int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
       // fBm clusters around 0.5, so equal numeric quartiles would make the two
       // middle biomes dominate. These calibrated cuts keep all four broad realms
       // common while preserving their smoothly warped borders.
-      if (pick < 0.42) return CAVE_DEEP_MAGMA;
-      if (pick < 0.50) return CAVE_DEEP_GEODE;
-      if (pick < 0.58) return CAVE_DEEP_FOSSIL;
-      return CAVE_DEEP_VOID;
+      return selectCaveBiome(profile, true, pick);
     }
   }
-  if (worldY < genCaveTopAbs(worldX) + 18) return CAVE_DEFAULT;
+  if (worldY < genCaveTopAbs(worldX) + 18) return CAVE_BIOME_FALLBACK;
   double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
   if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
   double wx = worldX + (wfbm2(E.L->gCaveSeed ^ 0xB107u, worldX * 0.0029, worldY * 0.0024, 2, 0.5) - 0.5) * 128.0;
   double wy = worldY + (wfbm2(E.L->gCaveSeed ^ 0xB108u, worldX * 0.0023, worldY * 0.0029, 2, 0.5) - 0.5) * 112.0;
   double pick = wfbm2(E.L->gCaveSeed ^ 0xB109u, wx * 0.00175, wy * 0.00205, 3, 0.5);
-  // Three broad cave-biome families plus sparse unthemed caves.
-  if (pick < 0.10) return CAVE_DEFAULT;
-  if (pick < 0.40) return CAVE_CRYSTAL;
-  if (pick < 0.70) return CAVE_MUSHROOM;
-  return CAVE_LUSH;
+  return selectCaveBiome(profile, false, pick);
 }
 // Caves combine Minecraft-style density fields: broad "cheese" voids plus
 // contour-line "spaghetti/noodle" tunnels. Terraria-like detail passes decorate
@@ -305,12 +276,18 @@ TerrainGen::DeepCavernPlan TerrainGen::deepCavernPlan(int gx, int gy) {
   DeepCavernPlan plan;
   int baseX = gx * DEEP_CAVERN_WIDTH;
   int baseY = CAVE_BOTTOM + gy * DEEP_CAVERN_HEIGHT;
-  plan.centerX = baseX + 56
-               + (int)(whash2(seed ^ 0x01u, gx, gy) * (DEEP_CAVERN_WIDTH - 112));
-  plan.centerY = baseY + 16
-               + (int)(whash2(seed ^ 0x02u, gx, gy) * (DEEP_CAVERN_HEIGHT - 32));
-  plan.radiusX = 82 + (int)(whash2(seed ^ 0x03u, gx, gy) * 64);
-  plan.radiusY = 52 + (int)(whash2(seed ^ 0x04u, gx, gy) * 42);
+  plan.centerX = baseX + DEEP_CAVERN_CENTER_X_MARGIN
+               + (int)(whash2(seed ^ 0x01u, gx, gy)
+                 * (DEEP_CAVERN_WIDTH - 2 * DEEP_CAVERN_CENTER_X_MARGIN));
+  plan.centerY = baseY + DEEP_CAVERN_CENTER_Y_MARGIN
+               + (int)(whash2(seed ^ 0x02u, gx, gy)
+                 * (DEEP_CAVERN_HEIGHT - 2 * DEEP_CAVERN_CENTER_Y_MARGIN));
+  plan.radiusX = DEEP_CAVERN_MIN_RADIUS_X
+               + (int)(whash2(seed ^ 0x03u, gx, gy)
+                 * DEEP_CAVERN_RADIUS_X_VARIATION);
+  plan.radiusY = DEEP_CAVERN_MIN_RADIUS_Y
+               + (int)(whash2(seed ^ 0x04u, gx, gy)
+                 * DEEP_CAVERN_RADIUS_Y_VARIATION);
   cached.seed = seed;
   cached.gx = gx;
   cached.gy = gy;
@@ -476,8 +453,9 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
 }
 
 bool TerrainGen::genIsCave(int worldX, int worldY) {
-  if (E.planetId == PL_SHIP) return false;
-  if (E.planetId != PL_EARTH) {
+  PlanetGenerationProfile profile = planetDef(E.planetId).generationProfile;
+  if (profile == PGP_SHIP) return false;
+  if (profile == PGP_MOON || profile == PGP_MARS) {
     uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
     uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu)
       ^ ((uint32_t)worldY * 0xc2b2ae35u);
@@ -489,7 +467,7 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
     if (!result) {
       double warp = (valueNoise2D(seed ^ 0x771u,
         worldX * 0.006, worldY * 0.005) - 0.5) * 46.0;
-      if (E.planetId == PL_MOON) {
+      if (profile == PGP_MOON) {
         double tube = std::fabs(valueNoise2D(seed ^ 0x772u,
           (worldX + warp) * 0.012, worldY * 0.0065) - 0.5);
         double chamber = wfbm2(seed ^ 0x773u,
@@ -497,7 +475,7 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
         result = E.L->isBackground
           ? chamber > 0.815
           : tube < 0.048 || chamber > 0.755;
-      } else {
+      } else if (profile == PGP_MARS) {
         double canyon = std::fabs(valueNoise2D(seed ^ 0x774u,
           (worldX + warp) * 0.007, worldY * 0.014) - 0.5);
         double chamber = wfbm2(seed ^ 0x775u,
@@ -513,6 +491,7 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
     cached.value = result ? 1 : 0;
     return result;
   }
+  if (profile != PGP_EARTH) __builtin_unreachable();
   uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
   uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu) ^ ((uint32_t)worldY * 0xc2b2ae35u);
   CaveCacheEntry& cached = caveCache[key & (CAVE_CACHE_SIZE - 1)];
@@ -586,12 +565,14 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
   return result;
 }
 bool TerrainGen::genOpenCaveAt(int worldX, int worldY) {
-  if (E.planetId != PL_EARTH) {
+  PlanetGenerationProfile profile = planetDef(E.planetId).generationProfile;
+  if (profile == PGP_MOON || profile == PGP_MARS || profile == PGP_SHIP) {
     int surface = genSurfaceAbs(worldX);
     if (!E.L->isBackground && worldY >= surface
         && genIsBackboneCave(worldX, worldY)) return true;
     return worldY >= surface + 12 && genIsCave(worldX, worldY);
   }
+  if (profile != PGP_EARTH) __builtin_unreachable();
   if (!E.L->isBackground && worldY >= genSurfaceAbs(worldX) && genIsBackboneCave(worldX, worldY)) return true;
   return worldY >= genCaveTopAbs(worldX) && genIsCave(worldX, worldY);
 }
@@ -628,7 +609,8 @@ uint8_t TerrainGen::genOreFor(int biome, int worldX, int worldY) {
   double geology = wfbm2(E.L->worldSeed ^ 0x6E0106u, worldX * 0.0017, worldY * 0.0012, 3, 0.5);
   if (depth > 300 && sel > 0.88 - depth01 * 0.08 && geology > 0.48) return GOLD_ORE;
   if (depth > 105 && sel > 0.57 - depth01 * 0.16 + (geology < 0.42 ? 0.08 : 0.0)) return IRON_ORE;
-  if (depth > 38 && (sel > 0.40 || geology > 0.62 || biome == BIOME_DESERT || biome == BIOME_JUNGLE)) return COPPER_ORE;
+  if (depth > 38 && (sel > 0.40 || geology > 0.62
+                     || surfaceBiomeDef(biome).copperRich)) return COPPER_ORE;
   return COAL_ORE;
 }
 // CAVE_BOTTOM is the midpoint of the broad normal/deep transition and the
@@ -654,58 +636,69 @@ uint8_t TerrainGen::genDeepRockAt(int worldX, int worldY) {
   return patch < mix ? DEEPSTONE : STONE;
 }
 uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {
-  if (E.planetId == PL_SHIP) return EMPTY;
-  if (E.planetId != PL_EARTH) {
+  const PlanetDef& planet = planetDef(E.planetId);
+  PlanetGenerationProfile profile = planet.generationProfile;
+  if (profile == PGP_SHIP) return EMPTY;
+  if (profile == PGP_MOON || profile == PGP_MARS) {
     if (y < surf) return EMPTY;
     int depth = y - surf;
     int worldY = E.L->worldOffsetY + y;
     if (genOpenCaveAt(worldX, worldY)) return EMPTY;
     int bx = floorDiv(worldX, 2), by = floorDiv(worldY, 2);
     double pocket = whash2(E.L->gPocketSeed ^ 0x0FF0123u, bx, by);
-    if (E.planetId == PL_MOON) {
-      if (depth == 0) {
-        if (biome == BIOME_TUNDRA) return SNOW;
-        if (biome == BIOME_FOREST) return CRYSTAL;
-        if (biome == BIOME_SWAMP) return SALT;
-        if (biome == BIOME_JUNGLE) return MYCELIUM;
-        return slope <= 3 ? SALT : DEBRIS;
-      }
+    const OffworldBiomeDef& planetBiome =
+      offworldBiomeDef(planet.offworldMaterialProfile, biome);
+    auto pocketMatches = [&](double cut, bool above) {
+      return above ? pocket > cut : pocket < cut;
+    };
+    if (profile == PGP_MOON) {
+      if (depth == 0)
+        return slope <= 3 ? planetBiome.surfaceFlat : planetBiome.surfaceSteep;
       if (depth < 7) {
-        if (biome == BIOME_TUNDRA && depth < 4) return ICE;
-        if (biome == BIOME_DESERT) return SALT;
-        if (biome == BIOME_JUNGLE && pocket > .72) return MYCELIUM;
-        return DEBRIS;
+        if (planetBiome.shallowOverride != EMPTY
+            && depth < planetBiome.overrideDepth)
+          return planetBiome.shallowOverride;
+        if (planetBiome.shallowPocket != EMPTY
+            && pocketMatches(planetBiome.shallowPocketCut,
+                             planetBiome.shallowPocketAbove))
+          return planetBiome.shallowPocket;
+        return planetBiome.shallow;
       }
       if (!E.L->isBackground && depth > 42 && pocket > 0.996) return ICE;
       if (!E.L->isBackground && depth > 70 && pocket < 0.003) return CRYSTAL;
       if (!E.L->isBackground && depth > 120 && pocket > 0.991) return IRON_ORE;
-      if (!E.L->isBackground && biome == BIOME_SWAMP && depth > 24 && pocket < .012)
-        return BRINE;
+      if (!E.L->isBackground && planetBiome.deepPocket != EMPTY
+          && depth > planetBiome.deepPocketMinDepth
+          && pocketMatches(planetBiome.deepPocketCut,
+                           planetBiome.deepPocketAbove))
+        return planetBiome.deepPocket;
       return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
     }
-    if (depth == 0) {
-      if (biome == BIOME_TUNDRA) return SNOW;
-      if (biome == BIOME_ROCKY) return DEBRIS;
-      if (biome == BIOME_SWAMP) return SALT;
-      if (biome == BIOME_JUNGLE) return GRASS;
-      return slope <= 3 ? SAND : CLAY;
-    }
+    if (profile != PGP_MARS) __builtin_unreachable();
+    if (depth == 0)
+      return slope <= 3 ? planetBiome.surfaceFlat : planetBiome.surfaceSteep;
     if (depth < 6) {
-      if (biome == BIOME_TUNDRA && depth < 3) return ICE;
-      if (biome == BIOME_JUNGLE && pocket > .42) return DIRT;
-      if (biome == BIOME_SWAMP) return CLAY;
-      return CLAY;
+      if (planetBiome.shallowOverride != EMPTY
+          && depth < planetBiome.overrideDepth)
+        return planetBiome.shallowOverride;
+      if (planetBiome.shallowPocket != EMPTY
+          && pocketMatches(planetBiome.shallowPocketCut,
+                           planetBiome.shallowPocketAbove))
+        return planetBiome.shallowPocket;
+      return planetBiome.shallow;
     }
-    if (depth < 16) return biome == BIOME_ROCKY ? STONE : SANDSTONE;
+    if (depth < 16) return planetBiome.crust;
     if (!E.L->isBackground && depth > 55 && pocket > 0.996) return ICE;
     if (!E.L->isBackground && depth > 85 && pocket < 0.004) return IRON_ORE;
     if (!E.L->isBackground && depth > 150 && pocket > 0.993) return GOLD_ORE;
-    if (!E.L->isBackground && biome == BIOME_SWAMP && depth > 30 && pocket < .014)
-      return ACID;
-    if (!E.L->isBackground && biome == BIOME_JUNGLE && depth > 28 && pocket > .985)
-      return MYCELIUM;
+    if (!E.L->isBackground && planetBiome.deepPocket != EMPTY
+        && depth > planetBiome.deepPocketMinDepth
+        && pocketMatches(planetBiome.deepPocketCut,
+                         planetBiome.deepPocketAbove))
+      return planetBiome.deepPocket;
     return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
   }
+  if (profile != PGP_EARTH) __builtin_unreachable();
   int sea = E.L->gSeaRow - E.L->worldOffsetY;       // sea level as a buffer row (gSeaRow is absolute)
   if (y < surf) {
     // above the terrain: a valley below the sea row floods with water (a flat,
@@ -743,21 +736,20 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // the biome identity instead.
   if (depth >= caveTop && genIsCaveWall(worldX, worldY)) {
     int caveBiome = genCaveBiomeAt(worldX, worldY);
+    const CaveBiomeDef& caveDef = caveBiomeDef(caveBiome);
     double detail = whash2(E.L->gCaveSeed ^ 0x305bu, worldX, worldY);
-    if (caveBiome == CAVE_DEEP_GEODE && detail > 0.925) return CRYSTAL;
-    if (caveBiome == CAVE_DEEP_FOSSIL && detail > 0.940) return SANDSTONE;
-    if (caveBiome == CAVE_DEEP_VOID && detail > 0.955) return MYCELIUM;
-    if (caveBiome == CAVE_DEEP_MAGMA && detail > 0.965) return GOLD_ORE;
-    if (caveBiome == CAVE_LUSH && detail > 0.55) return MOSS;   // richer moss lining
-    if (caveBiome == CAVE_MUSHROOM) {
+    if (caveDef.wallAccent != EMPTY && detail > caveDef.wallAccentCut)
+      return caveDef.wallAccent;
+    if (caveDef.wallTendrilMaterial != EMPTY) {
       double tendril = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x4d79u, worldX * 0.035, worldY * 0.050, 2, 0.5) - 0.5);
-      if (detail > 0.960 || (detail > 0.62 && tendril < 0.024)) return MYCELIUM; // denser wall mycelium
+      if (detail > caveDef.wallTendrilDetailCut
+          && tendril < caveDef.wallTendrilNoiseCut)
+        return caveDef.wallTendrilMaterial;
     }
     // Crystal specks stud cave walls in EVERY biome (densest in the crystal
     // biome), so lone 1x1 crystals are common outside the salt caverns too.
-    // The non-crystal caves glint noticeably more now, for a bit of ambient light.
-    double crystalCut = caveBiome == CAVE_CRYSTAL ? 0.955 : 0.966;
-    if (detail > crystalCut) return CRYSTAL;
+    // Non-crystal caves receive extra glints for ambient light.
+    if (detail > caveDef.crystalCut) return CRYSTAL;
     double moss = wfbm2(E.L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
     if (moss > 0.74 && detail > 0.88) return MOSS;
   }
@@ -766,7 +758,11 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // dug wall reveals fungal rock, not just a mossy skin.
   if (depth >= caveTop && worldY < DEEP_BLEND_BOTTOM) {
     double vein = wridged2(E.L->gCaveSeed ^ 0x4d80u, worldX * 0.045, worldY * 0.055, 2, 0.5);
-    if (vein > 0.86 && genCaveBiomeAt(worldX, worldY) == CAVE_MUSHROOM) return MYCELIUM;
+    const CaveBiomeDef& caveDef = caveBiomeDef(
+      genCaveBiomeAt(worldX, worldY));
+    if (caveDef.embeddedVeinMaterial != EMPTY
+        && vein > caveDef.embeddedVeinCut)
+      return caveDef.embeddedVeinMaterial;
   }
   uint8_t ore = genOreFor(biome, worldX, worldY);
   return ore == STONE ? rock : ore;                       // preserve ores across the rock transition
@@ -774,28 +770,15 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
 // Per-biome tree density. Forest/jungle dense; plains/tundra/swamp sparser;
 // desert sparse (cacti); rocky bare.
 double TerrainGen::genTreeProb(int biome) {
-  switch (biome) {
-    case BIOME_FOREST: return TREE_PROB * 3.2;
-    case BIOME_JUNGLE: return TREE_PROB * 4.0;
-    case BIOME_SWAMP:  return TREE_PROB * 2.0;
-    case BIOME_TUNDRA: return TREE_PROB * 1.5;
-    case BIOME_PLAINS: return TREE_PROB;
-    case BIOME_DESERT: return TREE_PROB * 0.7; // cacti
-    default:           return 0.0;             // rocky
-  }
+  return TREE_PROB * surfaceBiomeDef(biome).treeProbabilityScale;
 }
 // Flora species for a surface tree column: a pure function of biome + worldX, so
 // both layers agree and the species is recoverable from the stamped wood material.
 uint8_t TerrainGen::pickTreeType(int biome, int worldX) {
   double r = whash1(E.L->gTreeSeed ^ 0x7ee7u, worldX);
-  switch (biome) {
-    case BIOME_DESERT: return PT_CACTUS;
-    case BIOME_TUNDRA: return PT_PINE;
-    case BIOME_SWAMP:  return r < 0.48 ? PT_WILLOW : r < 0.82 ? PT_OAK : PT_BUSH;
-    case BIOME_FOREST: return r < 0.5 ? PT_PINE : PT_OAK;
-    case BIOME_JUNGLE: return r < 0.35 ? PT_BUSH : PT_OAK;
-    default:           return r < 0.25 ? PT_BUSH : PT_OAK; // plains
-  }
+  const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+  return r < def.treeFirstCut ? def.treeFirst
+       : r < def.treeSecondCut ? def.treeSecond : def.treeThird;
 }
 bool TerrainGen::genTreeAt(int worldX, int surf) {
   if (surf >= E.L->gSeaRow - E.L->worldOffsetY) return false;  // at/under water -> no trees

@@ -10,7 +10,9 @@ class GrowthSystem {
 
   // Per-tree growth scratch: set at the top of each comp in growPlantComponents
   // so the growth helpers emit the right species materials.
-  uint8_t gGrowType = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
+  uint8_t gSpecies = PT_STANDARD, gWoodMat = WOOD, gLeafMat = PLANT;
+  const PlantGrowthProfileDef* gGrowth =
+    &PLANT_GROWTH_PROFILES[PGR_STANDARD];
   StampSet gPlantCells;
   bool gWillowGravity = false;
   std::vector<int> gWillowLeader;

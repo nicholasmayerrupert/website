@@ -22,7 +22,7 @@
     perfAssemblyUnionMs += emscripten_get_now() - tA;
 
     double tB = emscripten_get_now();
-    reactions.applyBodyIce();
+    reactions.runPhase(ReactionPhase::BEFORE_BODY_MOVE);
     forces.applyBodyForces();
     rigid.moveBodies();
 #ifdef SAND_INVARIANT_CHECKS
@@ -34,10 +34,8 @@
     growth.growPlantComponents();
     growth.growMyceliumComponents();
     reactions.prepareActiveLists();
-    reactions.applyReactions();
-    reactions.applyAcid();
-    reactions.applyLava();
-    reactions.applyIce(); reactions.applySalt(); explosives.applyExplosives();
+    reactions.runPhase(ReactionPhase::ACTIVE_LAYER);
+    explosives.applyExplosives();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-reactions");
 #endif
@@ -59,7 +57,7 @@
           bool currentOwned = L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0;
           if ((blastLocalCarry && isRigidMaterialClass(L->grid[k]))
               || currentOwned || isRigidMaterialClass(L->next[k]))
-            L->next[k] = L->grid[k];
+            mirrorCurrentCellToNext(k);
         }
       };
       for (int y = 0; y < rows; y++) {
@@ -78,11 +76,10 @@
         for (int k : L->prevBodyCells) {
           if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
           if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
-            L->grid[k] = EMPTY;
-            L->next[k] = EMPTY;
+            L->clearVacatedCellPhases((size_t)k);
             markCellIndex(k);
           } else if (isRigidMaterialClass(L->next[k])) {
-            L->next[k] = L->grid[k];
+            mirrorCurrentCellToNext(k);
             markCellIndex(k);
           }
         }
@@ -90,24 +87,24 @@
       }
     } else {
       L->curCompCells.clear();
-      for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->curCompCells.push_back(k); }
+      for (auto& comp : L->components) for (int k : comp.cells) { mirrorCurrentCellToNext(k); L->curCompCells.push_back(k); }
       L->curBodyCells.clear();
-      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
-      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->curBodyCells.push_back(k); }
+      for (int k : L->bodyCells) { mirrorCurrentCellToNext(k); L->curBodyCells.push_back(k); }
+      for (int k : L->passiveBodyCells) { mirrorCurrentCellToNext(k); L->curBodyCells.push_back(k); }
       for (int k : L->prevCompCells) {
         if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
         if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
-          L->grid[k] = EMPTY; L->next[k] = EMPTY; markCellIndex(k);
+          L->clearVacatedCellPhases((size_t)k); markCellIndex(k);
         } else if (isRigidMaterialClass(L->next[k])) {
-          L->next[k] = L->grid[k]; markCellIndex(k);
+          mirrorCurrentCellToNext(k); markCellIndex(k);
         }
       }
       for (int k : L->prevBodyCells) {
         if (L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0) continue;
         if (L->grid[k] == EMPTY || isRigidMaterialClass(L->grid[k])) {
-          L->grid[k] = EMPTY; L->next[k] = EMPTY; markCellIndex(k);
+          L->clearVacatedCellPhases((size_t)k); markCellIndex(k);
         } else if (isRigidMaterialClass(L->next[k])) {
-          L->next[k] = L->grid[k]; markCellIndex(k);
+          mirrorCurrentCellToNext(k); markCellIndex(k);
         }
       }
       std::swap(L->prevCompCells, L->curCompCells);
@@ -167,7 +164,9 @@
         uint8_t m = L->grid[k];
         if (!isLiquidMaterial(m)) continue;
         int x = k - rowBegin;
-        if (m == LAVA) settleLava(x, y, k);
+        uint8_t movementProfile = MAT_LIQUID_PROFILE[m];
+        if (LIQUID_MOBILITY_GATED[movementProfile])
+          settleMobilityGatedLiquid(x, y, k, m);
         else settleLiquid(x, y, k, m);
       }
     }
@@ -177,13 +176,11 @@
     perfLiquidMs += emscripten_get_now() - tL;
 
     double tG = emscripten_get_now();
-    for (int k : activeGasCells) { uint8_t m = L->grid[k]; if (!isGasMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (m == FIRE) riseFire(x, y, k); else riseSteam(x, y, k, m); }
+    for (int k : activeGasCells) { uint8_t m = L->grid[k]; if (!isGasMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (MAT_GAS_PROFILE[m] == GP_FIRE) riseFire(x, y, k, m); else riseSteam(x, y, k, m); }
     perfGasMs += emscripten_get_now() - tG;
 
     double tT = emscripten_get_now();
-    std::swap(L->grid, L->next);
-    std::swap(L->fallSpeed, L->nextFallSpeed);
-    std::swap(L->liquidVel, L->nextLiquidVel);
+    L->swapSimulationBuffers();
     double tRelax = emscripten_get_now();
     if (L->bodies.size() >= R_DENSE_RIGID_CARGO_BODIES
         || (tick & 1) == 0)
@@ -342,7 +339,7 @@
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
-    crossLayerReactions(fgA, bgA);
+    reactions.runCrossLayer(fgA, bgA);
     transferPass(fgA, bgA);
     perfCrossMs = emscripten_get_now() - tX0;
     // End-of-step structural counts (cheap O(components), not O(grid)).
@@ -377,115 +374,6 @@
     bool actors = stepActors();
     bool world = stepWorld();
     return actors || world;
-  }
-
-  // ---- cross-layer fire (uses the shared RNG) ----
-  // Fire jumps between layers: a FIRE cell in one layer ignites a flammable at the
-  // SAME (x,y) in the other layer (both directions, probabilistic). Runs after
-  // both layers have stepped, over the union of their active regions (fire is
-  // always in an active region). Gated on bgEnabled so single-layer scenes draw no
-  // RNG and stay byte-identical to a one-layer build.
-  void crossLayerReactions(bool fgA, bool bgA) {
-    if (!bgEnabled) return;
-    // Cross-layer ignition must honor the same invariants as in-layer ignition
-    // (applyReactions): a burned PLANT cell must split its component (or the
-    // comp keeps a phantom cell — found by the --dev validator), and a
-    // flammable BODY cell is owned by erodeBodies, not in-place ignition
-    // (body-material invariant). The rand() draws stay UNCONDITIONAL so the
-    // shared stream is byte-identical to before; only the write is gated.
-    bool fgIndexExact = fg.groundBaseValid && !fg.groundDirty && !fg.groundContentDirty;
-    bool bgIndexExact = bg.groundBaseValid && !bg.groundDirty && !bg.groundContentDirty;
-    Layer* previousLayer = L;
-    auto igniteCell = [&](Layer& layer, int k) {
-      useLayer(&layer);
-      writeGridIndex(k, FIRE);
-    };
-    crossFireErasedFg.clear(); crossFireErasedBg.clear();
-    crossFrozenIceFg.clear(); crossFrozenIceBg.clear();
-    crossBodyFrozenIceFg.clear(); crossBodyFrozenIceBg.clear();
-    for (int y = 1; y < rows - 1; y++) {
-      forEachActiveUnionSpan(&fg, fgA, &bg, bgA, y, 1, cols - 2, true,
-                             [&](int mn, int mx) {
-        for (int x = mn; x <= mx; x++) {
-        int k = y * cols + x;
-        uint8_t f = fg.grid[k], b = bg.grid[k];
-        if (f == FIRE && isFlammable(b)) {
-          if (rand() < FIRE_CROSS_P && bg.bodyOwner[k] == -1) {
-            if (isPlantMaterial(b)) crossFireErasedBg.push_back(k);
-            igniteCell(bg, k);
-          }
-        } else if (b == FIRE && isFlammable(f)) {
-          if (rand() < FIRE_CROSS_P && fg.bodyOwner[k] == -1) {
-            if (isPlantMaterial(f)) crossFireErasedFg.push_back(k);
-            igniteCell(fg, k);
-          }
-        }
-        // Co-occupied cells are adjacent across the two simulated planes.
-        // Static ICE registers a static target component. Body-owned ICE
-        // extends its shared-pose body into the target layer.
-        if (f == ICE && b == WATER && bg.bodyOwner[k] < 0) {
-          uint32_t phase = fg.worldSeed ^ 0x1CEB0D2u
-                         ^ ((uint32_t)tick * 0x9E3779B9u);
-          if (whash2(phase, fg.worldOffsetX + x,
-                     fg.worldOffsetY + y) < ICE_FREEZE_P) {
-            if (fg.bodyOwner[k] >= 0)
-              crossBodyFrozenIceBg.push_back({fg.bodyOwner[k], k});
-            else
-              crossFrozenIceBg.insert(k);
-          }
-        } else if (b == ICE && f == WATER && fg.bodyOwner[k] < 0) {
-          uint32_t phase = fg.worldSeed ^ 0x1CEB0D3u
-                         ^ ((uint32_t)tick * 0x9E3779B9u);
-          if (whash2(phase, fg.worldOffsetX + x,
-                     fg.worldOffsetY + y) < ICE_FREEZE_P) {
-            if (bg.bodyOwner[k] >= 0)
-              crossBodyFrozenIceFg.push_back({bg.bodyOwner[k], k});
-            else
-              crossFrozenIceFg.insert(k);
-          }
-        }
-        }
-      });
-    }
-    if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact, true); }
-    if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact, true); }
-    auto commitBodyFrozenIce = [&](Layer& source, Layer& target,
-                                   std::vector<std::pair<int, int>>& frozen) {
-      if (frozen.empty()) return;
-      std::sort(frozen.begin(), frozen.end());
-      for (size_t begin = 0; begin < frozen.size();) {
-        size_t end = begin + 1;
-        while (end < frozen.size() && frozen[end].first == frozen[begin].first) end++;
-        std::vector<int> cells;
-        cells.reserve(end - begin);
-        for (size_t i = begin; i < end; i++)
-          if (i == begin || frozen[i].second != frozen[i - 1].second)
-            cells.push_back(frozen[i].second);
-        rigid.freezeCellsOntoBody(source, frozen[begin].first,
-                                  target, cells);
-        begin = end;
-      }
-    };
-    commitBodyFrozenIce(bg, fg, crossBodyFrozenIceFg);
-    commitBodyFrozenIce(fg, bg, crossBodyFrozenIceBg);
-    auto commitFrozenIce = [&](Layer& layer, std::unordered_set<int>& cells) {
-      if (cells.empty()) return;
-      useLayer(&layer);
-      for (auto it = cells.begin(); it != cells.end();) {
-        int k = *it;
-        if (layer.grid[k] == WATER) {
-          writeGridIndex(k, ICE);
-          ++it;
-        } else {
-          it = cells.erase(it);
-        }
-      }
-      registerRigidCellsSplit(layer.components, layer.nextComponentId,
-                              ICE, cells, true);
-    };
-    commitFrozenIce(fg, crossFrozenIceFg);
-    commitFrozenIce(bg, crossFrozenIceBg);
-    useLayer(previousLayer);
   }
 
   // ---- cross-layer transfer (RNG-free) ----
@@ -545,11 +433,10 @@
       if (to->grid[k] != EMPTY) return false;
       if (!gasBlockedUpIn(from, x, y)) return false;
       if (!canRise(to, x, y)) return false;
+      PersistentCellSnapshot sourceState = capturePersistentCurrentState(from, k);
       to->grid[k] = m; from->grid[k] = EMPTY;
-      if (to->liquidVel) {
-        to->liquidVel[k] = 0;
-        from->liquidVel[k] = 0;
-      }
+      restorePersistentCurrentState(to, k, m, sourceState, PCSO_CROSS_LAYER);
+      clearPersistentCurrentState(from, k);
       markLayerRowSpan(to, y, x, x);
       markLayerRowSpan(from, y, x, x);
       markWorldTileDirty(to, k);
@@ -579,26 +466,16 @@
     }
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;
-    uint8_t srcSpeed = from->fallSpeed ? from->fallSpeed[k] : 0;
-    uint8_t dstSpeed = to->fallSpeed ? to->fallSpeed[k] : 0;
-    uint32_t srcVelocity = from->liquidVel ? from->liquidVel[k] : 0;
-    uint32_t dstVelocity = to->liquidVel ? to->liquidVel[k] : 0;
+    PersistentCellSnapshot sourceState = capturePersistentCurrentState(from, k);
+    PersistentCellSnapshot targetState = capturePersistentCurrentState(to, k);
     if (swap) {
       to->grid[k] = m; from->grid[k] = dst;
-      if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
-      if (from->fallSpeed) from->fallSpeed[k] = dstSpeed;
-      if (to->liquidVel) {
-        to->liquidVel[k] = isLiquidMaterial(m) ? srcVelocity : 0;
-        from->liquidVel[k] = isLiquidMaterial(dst) ? dstVelocity : 0;
-      }
+      restorePersistentCurrentState(to, k, m, sourceState, PCSO_CROSS_LAYER);
+      restorePersistentCurrentState(from, k, dst, targetState, PCSO_CROSS_LAYER);
     } else {
       to->grid[k] = m; from->grid[k] = EMPTY;
-      if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
-      if (from->fallSpeed) from->fallSpeed[k] = 0;
-      if (to->liquidVel) {
-        to->liquidVel[k] = isLiquidMaterial(m) ? srcVelocity : 0;
-        from->liquidVel[k] = 0;
-      }
+      restorePersistentCurrentState(to, k, m, sourceState, PCSO_CROSS_LAYER);
+      clearPersistentCurrentState(from, k);
     }
     // Cross-layer powder/liquid motion invalidates both layers' loose overlays.
     auto touchLoose = [&](Layer* lay) {

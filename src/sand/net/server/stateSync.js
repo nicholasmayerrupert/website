@@ -5,6 +5,10 @@
 // unit-tests in Node without a socket. World cells live in worldSync.js.
 
 import { makeSnapshot, makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor } from '../protocol.js';
+import { OBJECT_WIRE_CODECS } from '../../wasmBridge/abi.generated.js';
+import { projectObjectRecords } from '../../wasmBridge/recordCodec.js';
+
+const inventoryStackFields = OBJECT_WIRE_CODECS.inventoryStack.fields;
 
 export function encodePlayers(engine, tick, hash = null) {
   const players = engine.getPlayers().map((player) => ({
@@ -45,23 +49,16 @@ export function encodeCursor(engine, tick, playerId) {
 export function inventoryRevision(engine, playerId) {
   let h = 0x811c9dc5;
   const mix = (v) => { h = Math.imul(h ^ (v & 0xffffffff), 0x01000193) >>> 0; };
+  const mixStack = (stack) => {
+    const projected = projectObjectRecords([stack], 'inventoryStack')[0];
+    for (const field of inventoryStackFields) mix(projected[field.name]);
+  };
   const inv = engine.getInventory(playerId);
   mix(inv.selected);
   mix(inv.selectedFootprint ?? 0);
-  for (const s of inv.slots) {
-    mix(s.material);
-    mix(s.plantType ?? 0);
-    mix(s.itemKind ?? 0);
-    mix(s.count);
-    mix(s.isTool ? ((s.toolClass << 8) | s.toolTier | 0x10000) : 0);
-  }
+  for (const stack of inv.slots) mixStack(stack);
   const c = engine.getCursor(playerId);
   mix(c ? c.material : 0x7fffffff);
-  if (c) {
-    mix(c.count);
-    mix(c.plantType ?? 0);
-    mix(c.itemKind ?? 0);
-    mix(c.isTool ? ((c.toolClass << 8) | c.toolTier | 0x10000) : 0);
-  }
+  if (c) mixStack(c);
   return h >>> 0;
 }

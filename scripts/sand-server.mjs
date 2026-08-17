@@ -7,7 +7,9 @@
 
 import { WebSocketServer } from 'ws';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
-import { decode, encode, MSG, makeAssign, makeReject } from '../src/sand/net/protocol.js';
+import {
+  decodeWithCompatibility, encode, MSG, makeAssign, makeReject,
+} from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodePlayers, encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
@@ -59,7 +61,12 @@ export async function startSandServer(opts = {}) {
     let cid = null;
     const cleanup = () => { if (cid) { host.removeClient(cid); peers.delete(cid); cid = null; } };
     ws.on('message', (buf) => {
-      const m = decode(buf.toString());
+      const { message: m, rejection } = decodeWithCompatibility(buf.toString());
+      if (rejection) {
+        sendTo(ws, encode(makeReject(rejection.room, rejection.reason)));
+        ws.close();
+        return;
+      }
       if (!m) return; // drop malformed
       switch (m.t) {
         case MSG.JOIN: {

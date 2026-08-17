@@ -93,9 +93,7 @@ int AudioSystem::buildAndDrainSnapshot() {
   for (size_t i = 0; i < events.size(); i++) {
     const SoundEventRecord& e = events[i];
     float* out = snapshot.data() + i * SND_STRIDE;
-    out[SND_TYPE] = (float)e.type;
-    out[SND_X] = e.x; out[SND_Y] = e.y; out[SND_INTENSITY] = e.intensity;
-    out[SND_MATERIAL] = (float)e.material; out[SND_LAYER] = (float)e.layer;
+    writeSoundEventSnapshot(out, e);
   }
   int count = (int)events.size();
   events.clear();
@@ -104,7 +102,7 @@ int AudioSystem::buildAndDrainSnapshot() {
 
 void AudioSystem::sampleAmbience(double localX, double localY, int radius, float* out) {
   if (!out) return;
-  std::fill(out, out + AMBIENCE_GROUPS * AMBIENCE_STRIDE, 0.0f);
+  std::fill(out, out + AMBIENCE_GROUPS * AMBIENCE_SAMPLE_STRIDE, 0.0f);
   radius = imax(8, imin(96, radius));
   int cx = (int)std::floor(localX), cy = (int)std::floor(localY);
   int x0 = imax(1, cx - radius), x1 = imin(E.cols - 2, cx + radius);
@@ -115,12 +113,8 @@ void AudioSystem::sampleAmbience(double localX, double localY, int radius, float
   auto scan = [&](Layer& lay, double layerGain) {
     for (int y = y0; y <= y1; y += 2) for (int x = x0; x <= x1; x += 2) {
       uint8_t m = lay.grid[y * E.cols + x];
-      int group = -1;
-      if (m == WATER || m == BRINE) group = 0;
-      else if (m == FIRE) group = 1;
-      else if (m == LAVA) group = 2;
-      else if (m == ACID) group = 3;
-      if (group < 0) continue;
+      uint8_t group = MAT_AMBIENCE_GROUP[m];
+      if (group >= AMBIENCE_GROUPS) continue;
       double dx = x - localX, dy = y - localY;
       double distanceGain = 1.0 - std::min(1.0, std::sqrt(dx * dx + dy * dy) / radius);
       double w = layerGain * (0.25 + 0.75 * distanceGain);
@@ -130,10 +124,10 @@ void AudioSystem::sampleAmbience(double localX, double localY, int radius, float
   scan(E.fg, 1.0);
   if (E.bgEnabled) scan(E.bg, 0.45);
   for (int group = 0; group < AMBIENCE_GROUPS; group++) {
-    int o = group * AMBIENCE_STRIDE;
+    int o = group * AMBIENCE_SAMPLE_STRIDE;
     // Around 70 sampled cells reaches full bed volume; sqrt keeps small sources audible.
-    out[o] = (float)std::min(1.0, std::sqrt(amount[group] / 70.0));
-    out[o + 1] = amount[group] > 0 ? (float)(sumX[group] / amount[group]) : (float)(E.fg.worldOffsetX + localX);
-    out[o + 2] = amount[group] > 0 ? (float)(sumY[group] / amount[group]) : (float)(E.fg.worldOffsetY + localY);
+    out[o + ASF_AMOUNT] = (float)std::min(1.0, std::sqrt(amount[group] / 70.0));
+    out[o + ASF_WORLD_X] = amount[group] > 0 ? (float)(sumX[group] / amount[group]) : (float)(E.fg.worldOffsetX + localX);
+    out[o + ASF_WORLD_Y] = amount[group] > 0 ? (float)(sumY[group] / amount[group]) : (float)(E.fg.worldOffsetY + localY);
   }
 }

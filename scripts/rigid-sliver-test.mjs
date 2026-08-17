@@ -8,7 +8,11 @@ import {
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
-import { buildCrossLayerSliverScene } from './rigid-sliver-scenario.mjs';
+import {
+  buildCrossLayerSliverScene,
+  seedStaticDiscLayer,
+  seedStaticRectLayer,
+} from './rigid-sliver-scenario.mjs';
 
 await initSandWasm();
 const { check, done } = makeChecker('cross-layer rigid slivers');
@@ -115,14 +119,9 @@ const pile = useSolverMode(attachTestHooks(createEngineWasmRaw({
   sinksOn: false,
   infinite: false,
 })));
-const paintPileRect = (x0, y0, x1, y1, material) => {
-  for (let y = y0; y <= y1; y++)
-    for (let x = x0; x <= x1; x++)
-      pile.paintDisc(x, y, 0, material, true);
-};
-paintPileRect(0, 315, 767, 319, MAT.STONE);
-paintPileRect(390, 145, 390, 314, MAT.STONE);
-pile.paintDisc(390, 145, 7, MAT.NEUTRONIUM, true);
+seedStaticRectLayer(pile, 0, 0, 315, 767, 319, MAT.STONE);
+seedStaticRectLayer(pile, 0, 390, 145, 390, 314, MAT.STONE);
+seedStaticDiscLayer(pile, 0, 390, 145, 7, MAT.NEUTRONIUM);
 for (let i = 0; i < 48; i++)
   pile.spawnBox(255 + (i % 8) * 19, 45 + Math.floor(i / 8) * 16,
     2, 2, MAT.RIGID);

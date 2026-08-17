@@ -164,8 +164,68 @@
     }
   }
 
-  void fillOffworldStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
-    if (planetId != PL_MOON && planetId != PL_MARS) return;
+  void fillOutcropGeneratedFeature(
+    const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
+    const PlanetDef& planet = planetDef(planetId);
+    int worldLeft = L->worldOffsetX + colStart;
+    int worldRight = L->worldOffsetX + colEnd - 1;
+    auto put = [&](int worldX, int worldY, uint8_t material) {
+      int x = worldX - L->worldOffsetX, y = worldY - L->worldOffsetY;
+      if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
+      stampGeneratedFeatureCell(feature, I(x, y), material);
+    };
+    auto hline = [&](int x0, int x1, int y, uint8_t material) {
+      for (int x = imax(x0, worldLeft); x <= imin(x1, worldRight); x++)
+        put(x, y, material);
+    };
+    // Biome-keyed formations make the long stretches between facilities retain a
+    // readable planetary identity. Moon outcrops grow as narrow mineral spires;
+    // Mars outcrops weather into broad fins and hoodoos.
+    int d0 = floorDiv(worldLeft - feature.overscanX, feature.latticeWidth);
+    int d1 = floorDiv(worldRight + feature.overscanX, feature.latticeWidth);
+    for (int d = d0; d <= d1; d++) {
+      OutcropPlan plan;
+      if (!worldContext.outcropPlan(d, plan)) continue;
+      int center = plan.center, floorY = plan.floorY, biome = plan.biome;
+      const OffworldBiomeDef& biomeDef =
+        offworldBiomeDef(planet.offworldMaterialProfile, biome);
+      int height = plan.height;
+      if (plan.style == OCS_MINERAL_SPIRE) {
+        uint8_t mineral = biomeDef.formation;
+        for (int dy = 0; dy <= height; dy++) {
+          int y = floorY - dy;
+          OutcropSlice slice;
+          worldContext.outcropSlice(plan, dy, slice);
+          for (int x = slice.left; x <= slice.right; x++) {
+            bool edge = x == slice.left || x == slice.right || dy == height;
+            if (L->isBackground || edge) put(x, y, mineral);
+          }
+          if (slice.hasShard
+              && (L->isBackground || dy == plan.shardHeight || dy % 2 == 0))
+            put(slice.shardX, y, biomeDef.formationAccent);
+        }
+      } else if (plan.style == OCS_WEATHERED_HOODOO) {
+        uint8_t rock = biomeDef.formation;
+        for (int dy = 0; dy <= height; dy++) {
+          OutcropSlice slice;
+          worldContext.outcropSlice(plan, dy, slice);
+          for (int x = slice.left; x <= slice.right; x++) {
+            bool edge = x == slice.left || x == slice.right || dy == height;
+            if (slice.contains(x) && (L->isBackground || edge))
+              put(x, floorY - dy, rock);
+          }
+        }
+        hline(center - plan.halfBase - 3, center + plan.halfBase + 3, floorY,
+              biomeDef.foundation);
+      }
+    }
+  }
+
+  void fillFacilityGeneratedFeature(
+    const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
+    const PlanetDef& planet = planetDef(planetId);
     int worldLeft = L->worldOffsetX + colStart;
     int worldRight = L->worldOffsetX + colEnd - 1;
     int worldTop = L->worldOffsetY + rowStart;
@@ -173,7 +233,7 @@
     auto put = [&](int worldX, int worldY, uint8_t material) {
       int x = worldX - L->worldOffsetX, y = worldY - L->worldOffsetY;
       if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
-      L->grid[I(x, y)] = material;
+      stampGeneratedFeatureCell(feature, I(x, y), material);
     };
     auto hline = [&](int x0, int x1, int y, uint8_t material) {
       for (int x = imax(x0, worldLeft); x <= imin(x1, worldRight); x++)
@@ -188,82 +248,20 @@
         hline(x0, x1, y, material);
     };
 
-    // Biome-keyed formations make the long stretches between facilities retain a
-    // readable planetary identity. Moon outcrops grow as narrow mineral spires;
-    // Mars outcrops weather into broad fins and hoodoos.
-    constexpr int OUTCROP_LATTICE = 92;
-    constexpr int OUTCROP_REACH = 28;
-    int d0 = floorDiv(worldLeft - OUTCROP_REACH, OUTCROP_LATTICE);
-    int d1 = floorDiv(worldRight + OUTCROP_REACH, OUTCROP_LATTICE);
-    uint32_t outcropSalt = planetId == PL_MOON ? 0x0A117001u : 0x0A117002u;
-    for (int d = d0; d <= d1; d++) {
-      if (whash1(L->worldSeed ^ outcropSalt, d) < .43) continue;
-      int center = d * OUTCROP_LATTICE + 18
-        + (int)std::lround(whash1(L->worldSeed ^ outcropSalt ^ 0x11u, d) * 56.0);
-      int floorY = terrain.genSurfaceAbs(center) - 1;
-      int biome = terrain.genBiomeAt(center);
-      int height = 8 + (int)std::lround(
-        whash1(L->worldSeed ^ outcropSalt ^ 0x12u, d) * 17.0);
-      if (planetId == PL_MOON) {
-        uint8_t mineral = biome == BIOME_TUNDRA ? ICE
-                        : biome == BIOME_FOREST ? CRYSTAL
-                        : biome == BIOME_JUNGLE ? MYCELIUM
-                        : biome == BIOME_ROCKY ? DEEPSTONE
-                        : biome == BIOME_SWAMP ? STONE : DEBRIS;
-        int lean = whash1(L->worldSeed ^ outcropSalt ^ 0x13u, d) < .5 ? -1 : 1;
-        for (int dy = 0; dy <= height; dy++) {
-          int y = floorY - dy;
-          int spine = center + lean * dy / 5;
-          int half = imax(0, 4 - dy * 4 / imax(1, height));
-          for (int x = spine - half; x <= spine + half; x++) {
-            bool edge = x == spine - half || x == spine + half || dy == height;
-            if (L->isBackground || edge) put(x, y, mineral);
-          }
-        }
-        int shardHeight = imax(5, height * 2 / 3);
-        for (int dy = 0; dy <= shardHeight; dy++) {
-          int x = center - lean * (6 + dy / 7);
-          if (L->isBackground || dy == shardHeight || dy % 2 == 0)
-            put(x, floorY - dy, biome == BIOME_FOREST ? LIGHT : mineral);
-        }
-      } else {
-        uint8_t rock = biome == BIOME_TUNDRA ? ICE
-                     : biome == BIOME_ROCKY ? DEEPSTONE
-                     : biome == BIOME_DESERT ? SANDSTONE
-                     : biome == BIOME_SWAMP ? CLAY
-                     : biome == BIOME_JUNGLE ? MYCELIUM : BRICK;
-        int halfBase = 6 + height / 5;
-        for (int dy = 0; dy <= height; dy++) {
-          int half = dy < height / 3 ? halfBase
-                   : dy < height * 2 / 3 ? imax(3, halfBase - 4) : imax(2, halfBase - 2);
-          int notch = dy > height / 3 && dy < height * 2 / 3 ? 2 : 0;
-          for (int x = center - half; x <= center + half; x++) {
-            bool edge = x == center - half || x == center + half || dy == height;
-            bool hollow = notch && std::abs(x - center) < notch;
-            if (!hollow && (L->isBackground || edge)) put(x, floorY - dy, rock);
-          }
-        }
-        hline(center - halfBase - 3, center + halfBase + 3, floorY,
-              biome == BIOME_DESERT ? SANDSTONE : CLAY);
-      }
-    }
-
-    constexpr int BASE_LATTICE = WorldContextSystem::OFFWORLD_FACILITY_LATTICE;
-    constexpr int BASE_REACH = 112;
-    int q0 = floorDiv(worldLeft - BASE_REACH, BASE_LATTICE);
-    int q1 = floorDiv(worldRight + BASE_REACH, BASE_LATTICE);
+    int q0 = floorDiv(worldLeft - feature.overscanX, feature.latticeWidth);
+    int q1 = floorDiv(worldRight + feature.overscanX, feature.latticeWidth);
     for (int q = q0; q <= q1; q++) {
       OffworldFacilityPlan plan;
       if (!worldContext.offworldFacilityPlan(q, plan)) continue;
-      int center = plan.center, kind = plan.kind;
+      int center = plan.center;
       int halfWidth = (plan.right - plan.left) / 2;
       int deckY = plan.deckY;
       int facilityTop = plan.facilityTop;
       int facilityBottom = plan.facilityBottom;
       int facilityHalf = plan.facilityRight - plan.center;
-      uint8_t shell = planetId == PL_MOON ? STONE : BRICK;
-      uint8_t wall = planetId == PL_MOON ? DEEPSTONE : SANDSTONE;
-      uint8_t trim = planetId == PL_MOON ? CRYSTAL : COPPER_ORE;
+      uint8_t shell = planet.facilityShell;
+      uint8_t wall = planet.facilityWall;
+      uint8_t trim = planet.facilityTrim;
 
       // A broad landing apron follows the highest point under the facility.
       // Regular pylons reach the local terrain instead of leaving a floating pad.
@@ -281,7 +279,8 @@
       if (L->isBackground) {
         rect(center - facilityHalf, center + facilityHalf,
              facilityTop, facilityBottom, wall);
-        for (int floor = facilityTop + 4; floor < facilityBottom - 5; floor += 34) {
+        for (int deck = 0; deck < plan.roomDeckCount; deck++) {
+          int floor = plan.roomDeckFloor[deck];
           hline(center - facilityHalf + 4, center + facilityHalf - 4,
                 floor, shell);
           hline(center - facilityHalf + 4, center + facilityHalf - 4,
@@ -296,11 +295,16 @@
                x <= center + facilityHalf - 12; x += 28)
             put(x, floor - 13, LIGHT);
         }
-        vline(center - facilityHalf + 5, facilityTop + 4,
-              facilityBottom - 5, trim);
-        vline(center + facilityHalf - 5, facilityTop + 4,
-              facilityBottom - 5, trim);
-        for (int y = facilityTop + 16; y < facilityBottom - 8; y += 34) {
+        vline(center - facilityHalf + 5,
+              facilityTop + OFFWORLD_FACILITY_FIRST_ROOM_OFFSET,
+              facilityBottom - OFFWORLD_FACILITY_BOTTOM_ROOM_CLEARANCE,
+              trim);
+        vline(center + facilityHalf - 5,
+              facilityTop + OFFWORLD_FACILITY_FIRST_ROOM_OFFSET,
+              facilityBottom - OFFWORLD_FACILITY_BOTTOM_ROOM_CLEARANCE,
+              trim);
+        for (int y = facilityTop + 16; y < facilityBottom - 8;
+             y += OFFWORLD_FACILITY_DECK_SPACING) {
           hline(center - facilityHalf + 8, center - 10, y, IRON_ORE);
           hline(center + 10, center + facilityHalf - 8, y, IRON_ORE);
         }
@@ -315,7 +319,8 @@
           vline(center - facilityHalf + t, facilityTop, facilityBottom, shell);
           vline(center + facilityHalf - t, facilityTop, facilityBottom, shell);
         }
-        for (int floor = facilityTop + 34; floor < facilityBottom; floor += 34) {
+        for (int divider = 0; divider < plan.dividerCount; divider++) {
+          int floor = plan.dividerFloor[divider];
           hline(center - facilityHalf + 3, center - 7, floor, shell);
           hline(center + 7, center + facilityHalf - 3, floor, shell);
           hline(center - facilityHalf + 3, center - 7, floor + 1, shell);
@@ -323,7 +328,8 @@
         }
         for (int x : {center - facilityHalf / 3, center + facilityHalf / 3}) {
           for (int y = facilityTop + 3; y <= facilityBottom - 3; y++) {
-            int roomY = (y - facilityTop) % 34;
+            int roomY =
+              (y - facilityTop) % OFFWORLD_FACILITY_DECK_SPACING;
             if (roomY >= 19 && roomY <= 28) continue;
             put(x, y, shell);
             put(x + 1, y, shell);
@@ -334,7 +340,7 @@
         vline(center + 7, deckY, facilityTop + 12, shell);
       }
 
-      if (planetId == PL_MOON && kind == 0) {
+      auto stampMoonObservatory = [&] {
         // Selenographic observatory: a broad pressure dome, flanking labs, and
         // an offset telescope dish distinguish it from every Martian complex.
         for (int x = center - 67; x <= center + 67; x++) {
@@ -358,7 +364,8 @@
               L->isBackground ? CRYSTAL : GLASS);
         for (int x = center - 54; x <= center + 54; x += 18)
           put(x, deckY - 18, LIGHT);
-      } else if (planetId == PL_MOON && kind == 1) {
+      };
+      auto stampMoonMassDriver = [&] {
         // Helium-3 mass driver: long magnetic rails cross a skeletal gantry over
         // a deep central drill, with operator cabins suspended on both sides.
         hline(center - 100, center + 100, deckY - 30, IRON_ORE);
@@ -384,7 +391,8 @@
         if (L->isBackground)
           for (int y = deckY - 48; y < facilityBottom; y += 12)
             hline(center - 8, center + 8, y, GOLD_ORE);
-      } else if (planetId == PL_MOON) {
+      };
+      auto stampMoonRelay = [&] {
         // Far-side relay monastery: three linked pressure cells sit beneath a
         // towering phased array and a pair of crescent communications dishes.
         for (int pod : {-58, 0, 58}) {
@@ -408,7 +416,8 @@
           int edge = (int)std::lround(std::sqrt(144.0 - dy * dy));
           put(center + side * (43 + edge), deckY - 50 + dy, GLASS);
         }
-      } else if (kind == 0) {
+      };
+      auto stampMarsGarden = [&] {
         // Martian garden arcology: three overlapping greenhouse vaults carry
         // terraced hydroponics, hanging plants, irrigation, and warm grow lights.
         for (int pod : {-62, 0, 62}) {
@@ -435,7 +444,8 @@
         }
         for (int x = center - 88; x <= center + 88; x += 16)
           put(x, deckY - 14, LIGHT);
-      } else if (kind == 1) {
+      };
+      auto stampMarsRefinery = [&] {
         // Red Furnace refinery: paired cracking towers, pressure tanks, overhead
         // pipes, and a heat-exchanger hall create a dense industrial skyline.
         for (int side : {-1, 1}) {
@@ -464,7 +474,8 @@
             hline(center + tank - 9, center + tank + 9, deckY - 12, GOLD_ORE);
           }
         }
-      } else {
+      };
+      auto stampMarsSpaceport = [&] {
         // Canyon foundry: a stepped armored hangar surrounds a broad blast door,
         // side cranes, radar vanes, and a high command bridge.
         for (int step = 0; step < 5; step++) {
@@ -492,6 +503,15 @@
         hline(center - 36, center + 36, deckY - 53, GLASS);
         for (int x = center - 28; x <= center + 28; x += 14)
           put(x, deckY - 56, LIGHT);
+      };
+      switch (plan.kind) {
+#define WORLDGEN_FACILITY_ARCHETYPE(symbol, id, name, mask, ordinal, width, depth, above, stamp) \
+        case OFK_##symbol: stamp(); break;
+#define WORLDGEN_RUIN_ARCHETYPE(...)
+#include "worldgen_structure_archetypes.def"
+#undef WORLDGEN_RUIN_ARCHETYPE
+#undef WORLDGEN_FACILITY_ARCHETYPE
+        case OFK_COUNT: assert(false && "invalid facility archetype"); break;
       }
       if (!L->isBackground) {
         // Keep one generous, continuous lift well from the surface apron through

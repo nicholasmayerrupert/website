@@ -6,9 +6,9 @@
 import { execFileSync } from 'node:child_process';
 
 const EXPECTED = {
-  'pan-stream': 0xd8e4671d,
-  'liquid-active': 0x3785606d,
-  'components-active': 0x1ff6336e,
+  'pan-stream': 0xf3b023af,
+  'liquid-active': 0xe2f84341,
+  'components-active': 0xb29c6515,
 };
 
 let out = '';

@@ -113,6 +113,10 @@ try {
     if ((await info()).cols * (await info()).rows > 1_200_000) break;
     await page.keyboard.press('-');
     await page.waitForTimeout(50);
+    // Each resize is authoritative-worker owned. Finish it before sending the
+    // next zoom command so rapid input cannot outrun the resize transaction.
+    await page.waitForFunction(() => !window.__sandPerf().workerResizePending,
+      null, { timeout: 30000 });
   }
   await page.waitForFunction(() => window.__sandTest.info().cols * window.__sandTest.info().rows > 1_200_000,
     null, { timeout: 30000 });

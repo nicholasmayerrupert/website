@@ -4,14 +4,19 @@
 
 struct Engine;
 
-// One displaced loose cell (material + source index) pending relocation.
-struct Disp { uint8_t material; int from; };
+// One displaced loose cell and its registered side-channel state pending
+// relocation around a rigid footprint.
+struct Disp {
+  uint8_t material;
+  int from;
+  PersistentCellSnapshot state;
+};
 
 class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
   static constexpr size_t SPILL_GENERATION_BUDGET =
-    (size_t)(TABLE + 4) * TABLE + 2;
+    (size_t)(MATERIAL_COUNT + 4) * MATERIAL_COUNT + 2;
 
   int solverMode = 45;
   double solverResidualTolerance = 1e-4;
@@ -161,6 +166,7 @@ class RigidBodySystem {
                                   const std::vector<int>& edgeFootprint,
                                   int32_t footprintGen, int bodyId,
                                   double bodyDensity,
+                                  PersistentCellOperation operation,
                                   const std::vector<int>* vacated = nullptr);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
@@ -180,8 +186,9 @@ class RigidBodySystem {
   bool bodyTouchesStaticSupport(Body* b);
   bool bodyHasLooseSupport(Body* b);
   bool rasterStableForBake(Body* b);
-  void stampJointFollower(Body* leader);
-  void restampBodiesAfterStream();
+  void stampJointFollower(Body* leader,
+                          PersistentCellOperation operation);
+  void restampBodiesAfterStream(PersistentCellOperation operation);
   void bakeRestingBodies();
   void resolveStructureRasterOverlaps(bool allowPreviousPoseRollback = true);
   void moveBodies();

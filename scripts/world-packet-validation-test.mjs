@@ -1,5 +1,7 @@
 import { MAT } from '../src/sand/materials.js';
-import { MATERIALS } from '../src/sand/materials.generated.js';
+import {
+  FIRST_UNDEFINED_MATERIAL_ID, MAT_DEFINED, TABLE_SIZE, isMaterialId,
+} from '../src/sand/materials.generated.js';
 import {
   applyDiffMessage,
   applyWorldMessage,
@@ -16,6 +18,13 @@ import { createEngineWasm, initSandWasm } from '../src/sand/wasmBridge/engineFac
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('world packet validation');
+const HAS_UNDEFINED_MATERIAL_BYTE = FIRST_UNDEFINED_MATERIAL_ID >= 0
+  && FIRST_UNDEFINED_MATERIAL_ID < TABLE_SIZE;
+check('material byte validity supports sparse and full catalogues',
+  HAS_UNDEFINED_MATERIAL_BYTE
+    ? !isMaterialId(FIRST_UNDEFINED_MATERIAL_ID)
+    : MAT_DEFINED.length === TABLE_SIZE
+      && MAT_DEFINED.every((defined) => defined === 1));
 
 const world = Uint8Array.of(
   4, 0, 0, 0, MAT.SAND,
@@ -24,11 +33,19 @@ const world = Uint8Array.of(
 check('two-layer RLE accepts defined materials', isValidWorldRle(world, 4));
 check('two-layer RLE rejects truncation', !isValidWorldRle(world.subarray(0, 5), 4));
 const invalidWorldMaterial = world.slice();
-invalidWorldMaterial[4] = MATERIALS.length;
-check('two-layer RLE rejects undefined material slots',
+if (HAS_UNDEFINED_MATERIAL_BYTE)
+  invalidWorldMaterial[4] = FIRST_UNDEFINED_MATERIAL_ID;
+else
+  invalidWorldMaterial[0] = 0;
+check(HAS_UNDEFINED_MATERIAL_BYTE
+  ? 'two-layer RLE rejects undefined material slots'
+  : 'two-layer RLE rejects malformed runs at full material capacity',
   !isValidWorldRle(invalidWorldMaterial, 4));
 const invalidBackgroundWorldMaterial = world.slice();
-invalidBackgroundWorldMaterial[9] = MATERIALS.length;
+if (HAS_UNDEFINED_MATERIAL_BYTE)
+  invalidBackgroundWorldMaterial[9] = FIRST_UNDEFINED_MATERIAL_ID;
+else
+  invalidBackgroundWorldMaterial[5] = 0;
 check('two-layer RLE validates the background after a valid foreground',
   !isValidWorldRle(invalidBackgroundWorldMaterial, 4));
 
@@ -39,14 +56,21 @@ const diff = Uint8Array.of(
 );
 check('two-layer diff accepts a bounded material rectangle', isValidWorldDiff(diff, 2, 2));
 const invalidDiffMaterial = diff.slice();
-invalidDiffMaterial[10] = MATERIALS.length;
-check('two-layer diff rejects undefined material slots',
+if (HAS_UNDEFINED_MATERIAL_BYTE)
+  invalidDiffMaterial[10] = FIRST_UNDEFINED_MATERIAL_ID;
+else
+  invalidDiffMaterial[6] = 0;
+check(HAS_UNDEFINED_MATERIAL_BYTE
+  ? 'two-layer diff rejects undefined material slots'
+  : 'two-layer diff rejects malformed rectangles at full material capacity',
   !isValidWorldDiff(invalidDiffMaterial, 2, 2));
 const invalidBackgroundDiffMaterial = Uint8Array.of(
   0, 0,
   1, 0,
-  0, 0, 0, 0, 1, 0, 1, 0, MATERIALS.length,
+  0, 0, 0, 0, 1, 0, 1, 0,
+  HAS_UNDEFINED_MATERIAL_BYTE ? FIRST_UNDEFINED_MATERIAL_ID : MAT.WATER,
 );
+if (!HAS_UNDEFINED_MATERIAL_BYTE) invalidBackgroundDiffMaterial[8] = 0;
 check('two-layer diff validates the background after a valid foreground',
   !isValidWorldDiff(invalidBackgroundDiffMaterial, 2, 2));
 check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1), 2, 2));
@@ -103,7 +127,9 @@ check('world envelope validates its decoded packet', validateWorldMessage(messag
 check('world envelope verifies its advertised hash before a rebuild',
   validateWorldMessage(message, { verifyHash: true }) !== null
     && validateWorldMessage({ ...message, hash: message.hash ^ 1 }, { verifyHash: true }) === null);
-check('world envelope rejects an undefined material',
+check(HAS_UNDEFINED_MATERIAL_BYTE
+  ? 'world envelope rejects an undefined material'
+  : 'world envelope rejects malformed runs at full material capacity',
   validateWorldMessage({ ...message, data: bytesToB64(invalidWorldMaterial) }) === null);
 
 let worldCalls = 0;
@@ -155,7 +181,10 @@ while (filled < native.cols * native.rows) {
   backgroundOffset += 5;
 }
 const nativeBadBackgroundWorld = nativeWorld.slice();
-nativeBadBackgroundWorld[backgroundOffset + 4] = MATERIALS.length;
+if (HAS_UNDEFINED_MATERIAL_BYTE)
+  nativeBadBackgroundWorld[backgroundOffset + 4] = FIRST_UNDEFINED_MATERIAL_ID;
+else
+  nativeBadBackgroundWorld.fill(0, backgroundOffset, backgroundOffset + 4);
 check('native world rejection is transactional when only the background is invalid',
   native.applyWorld(nativeBadBackgroundWorld) === false && native.gridHash() === nativeHash);
 check('native diff rejection is transactional when only the background is invalid',

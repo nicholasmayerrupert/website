@@ -5,8 +5,10 @@ import {
   ITEM_KIND,
   MISSION,
   PLANET,
+  PLANET_GAMEPLAY_FLAG,
+  planetHasGameplayFlag,
 } from '../wasmBridge/abi.generated.js';
-import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
+import { isMaterialId, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
 import { createTurnDeadline, SIM_STEP_MS } from '../timing/fixedRateClock.js';
 import {
@@ -599,7 +601,9 @@ self.onmessage = async ({ data }) => {
       localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
       missionId = survival ? data.missionId | 0 : MISSION.NONE;
       activePlanetId = data.planetId | 0;
-      if (localPlayerId && activePlanetId === PLANET.SHIP) {
+      if (localPlayerId && planetHasGameplayFlag(
+        activePlanetId, PLANET_GAMEPLAY_FLAG.SCRIPTED_CREW,
+      )) {
         engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
         engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
         engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
@@ -611,7 +615,7 @@ self.onmessage = async ({ data }) => {
           if (!count) continue;
           if (itemKind === ITEM_KIND.MATERIAL) {
             const material = stack?.material | 0;
-            if (material > MAT.EMPTY && material < MATERIALS.length) {
+            if (material > MAT.EMPTY && isMaterialId(material)) {
               engine.addToInventory(localPlayerId, material, count);
             }
           } else if (itemKind >= ITEM_KIND.DYNAMITE_SATCHEL
@@ -685,7 +689,9 @@ self.onmessage = async ({ data }) => {
       survivalSpawnViewReady = true;
       engine.setCreatureRuntime(
         true,
-        missionId || activePlanetId === PLANET.SHIP ? false : true,
+        !missionId && planetHasGameplayFlag(
+          activePlanetId, PLANET_GAMEPLAY_FLAG.NATURAL_SPAWNS,
+        ),
       );
     }
   } else if (data.type === 'input') {

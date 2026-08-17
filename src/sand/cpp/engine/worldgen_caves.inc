@@ -1,58 +1,49 @@
-  void fillDeepStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
+  void fillDeepGeneratedFeature(
+      const GeneratedFeatureDef& feature,
+      int colStart, int colEnd, int rowStart, int rowEnd) {
     bool background = L->isBackground;
     auto put = [&](int wx, int wy, uint8_t mat) {
       int x = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
-      L->grid[y * cols + x] = mat;
+      stampGeneratedFeatureCell(feature, y * cols + x, mat);
     };
-    const int REACH_X = 170, REACH_Y = 110;
+    if (feature.family != GFF_DEEP_STRUCTURE) return;
     int rectX0 = L->worldOffsetX + colStart, rectX1 = L->worldOffsetX + colEnd - 1;
     int rectY0 = L->worldOffsetY + rowStart, rectY1 = L->worldOffsetY + rowEnd - 1;
-    int wx0 = rectX0 - REACH_X, wx1 = rectX1 + REACH_X;
-    int wy0 = rectY0 - REACH_Y, wy1 = rectY1 + REACH_Y;
+    int wx0 = rectX0 - feature.overscanX;
+    int wx1 = rectX1 + feature.overscanX;
+    int wy0 = rectY0 - feature.overscanY;
+    int wy1 = rectY1 + feature.overscanY;
     if (wy1 < TerrainGen::DEEP_BLEND_TOP) return;
-    int gx0 = floorDiv(wx0, TerrainGen::DEEP_CAVERN_WIDTH) - 1;
-    int gx1 = floorDiv(wx1, TerrainGen::DEEP_CAVERN_WIDTH) + 1;
+    int gx0 = floorDiv(wx0, feature.latticeWidth);
+    int gx1 = floorDiv(wx1, feature.latticeWidth);
     int gy0 = imax(0, floorDiv(wy0 - TerrainGen::CAVE_BOTTOM,
-                              TerrainGen::DEEP_CAVERN_HEIGHT) - 1);
+                              feature.latticeHeight));
     int gy1 = imax(0, floorDiv(wy1 - TerrainGen::CAVE_BOTTOM,
-                              TerrainGen::DEEP_CAVERN_HEIGHT) + 1);
+                              feature.latticeHeight));
     uint32_t seed = L->worldSeed ^ 0xD33A900u;
 
     // All placement queries use the foreground graph, including during
     // background generation and predictive prefetch.
     ForegroundTerrainScope foregroundQuery(L);
     for (int gy = gy0; gy <= gy1; gy++) for (int gx = gx0; gx <= gx1; gx++) {
-      if (whash2(seed ^ 0x01u, gx, gy) > 0.64) continue;
-      TerrainGen::DeepCavernPlan p = terrain.deepCavernPlan(gx, gy);
-      int biome = terrain.genCaveBiomeAt(p.centerX, p.centerY);
-      if (biome < CAVE_DEEP_MAGMA) continue;
+      DeepStructurePlan plan;
+      if (!worldContext.deepStructurePlan(gx, gy, plan)) continue;
+      TerrainGen::DeepCavernPlan p{
+        plan.cavernCenterX, plan.cavernCenterY,
+        plan.cavernRadiusX, plan.cavernRadiusY,
+      };
+      int biome = plan.caveBiome;
+      const CaveBiomeDef& biomeDef = caveBiomeDef(biome);
+      int width = plan.naveRight - plan.naveLeft + 1;
+      int height = plan.floorY - plan.naveTop + 1;
+      int floorY = plan.floorY;
+      int left = plan.naveLeft, right = plan.naveRight, top = plan.naveTop;
+      if (plan.right < rectX0 || plan.left > rectX1
+          || plan.bottom < rectY0 || plan.top - 3 > rectY1) continue;
 
-      int width = 86 + (int)(whash2(seed ^ 0x02u, gx, gy) * 25);
-      int height = 40 + (int)(whash2(seed ^ 0x03u, gx, gy) * 12);
-      width = imin(width, p.radiusX * 2 - 24);
-      int floorY = INT_MIN;
-      if (biome == CAVE_DEEP_MAGMA) {
-        floorY = p.centerY + p.radiusY / 4 - 3; // a causeway above the lava sea
-      } else {
-        for (int y = p.centerY; y <= p.centerY + p.radiusY + 36; y++) {
-          if (terrain.genOpenCaveAt(p.centerX, y)
-              && !terrain.genOpenCaveAt(p.centerX, y + 1)) {
-            floorY = y;
-            break;
-          }
-        }
-      }
-      if (floorY == INT_MIN) continue;
-      int left = p.centerX - width / 2, right = left + width - 1;
-      int top = floorY - height + 1;
-      if (right + 22 < rectX0 || left - 22 > rectX1
-          || floorY + 22 < rectY0 || top - 3 > rectY1) continue;
-
-      uint8_t wall = biome == CAVE_DEEP_FOSSIL ? SANDSTONE : BRICK;
-      uint8_t accent = biome == CAVE_DEEP_MAGMA ? LAVA
-                     : biome == CAVE_DEEP_GEODE ? CRYSTAL
-                     : biome == CAVE_DEEP_FOSSIL ? DEBRIS : GLOWSHROOM;
+      uint8_t wall = biomeDef.monumentWall;
+      uint8_t accent = biomeDef.monumentAccent;
       int half = imax(1, width / 2);
 
       // Clear a genuinely roomy nave in front. Behind it, repair any rare natural
@@ -82,7 +73,8 @@
       // Massive exterior buttresses carry the hall into the cavern floor or lava.
       for (int bx : {left + 7, p.centerX, right - 7}) {
         int baseWidth = bx == p.centerX ? 3 : 2;
-        for (int y = floorY + 1; y <= floorY + 20; y++) {
+        for (int y = floorY + 1;
+             y <= floorY + DeepStructurePlan::BUTTRESS_DEPTH; y++) {
           int flare = (y - floorY) / 7;
           for (int dx = -baseWidth - flare; dx <= baseWidth + flare; dx++) put(bx + dx, y, DEEPSTONE);
         }
@@ -92,12 +84,14 @@
       // into a rough wall. At 14 cells high they clear the player with room to jump.
       if (!background) for (int side : {-1, 1}) {
         int edge = side < 0 ? left : right;
-        for (int d = 0; d <= 22; d++)
+        for (int d = 0; d <= DeepStructurePlan::SIDE_PORTAL_REACH; d++)
           for (int y = floorY - PLAYER_H - 6; y < floorY; y++)
             put(edge + side * d, y, EMPTY);
       }
 
-      if (biome == CAVE_DEEP_MAGMA) {
+      CaveDeepStructureHandler structureHandler =
+        caveProfileHandler(biomeDef.profile).deepStructure;
+      if (structureHandler == CDSH_MAGMA) {
         // Furnace citadel: tall arched bays, molten hearths, chains, and an
         // uninterrupted central causeway above the surrounding lava.
         for (int bay = 0; bay < 4; bay++) {
@@ -123,7 +117,7 @@
           put(x, floorY - 2, IRON_ORE);
           if ((x - left) % 12 == 3) put(x, floorY - 3, GOLD_ORE);
         }
-      } else if (biome == CAVE_DEEP_GEODE) {
+      } else if (structureHandler == CDSH_GEODE) {
         // Crystal observatory: concentric luminous arches frame a broad altar,
         // with a star-map mosaic living safely in the background.
         for (int ring = 0; ring < 3; ring++) {
@@ -143,7 +137,7 @@
           for (int x = p.centerX - 10; x <= p.centerX + 10; x++)
             put(x, floorY - 4 - std::abs(x - p.centerX) / 4, CRYSTAL);
         }
-      } else if (biome == CAVE_DEEP_FOSSIL) {
+      } else if (structureHandler == CDSH_FOSSIL) {
         // Fossil conservatory: broad timber scaffolds, excavation tables, rail
         // carts, and carefully mounted remains make this feel actively studied.
         for (int sx = left + 10; sx < right - 8; sx += 18) {
@@ -173,7 +167,7 @@
             put(x, y, SANDSTONE);
           }
         }
-      } else {
+      } else if (structureHandler == CDSH_VOID) {
         // Hanging archive: high galleries, packed shelves, fungal tapestries,
         // lamps, and a clear ceremonial aisle through the center.
         for (int level = 0; level < 2; level++) {
@@ -199,6 +193,8 @@
             put(x + 1, top + 15, GLOWSHROOM);
           }
         }
+      } else if (structureHandler != CDSH_NONE) {
+        __builtin_trap();
       }
 
       // Reopen a generous central aisle after every archetype's foreground
@@ -213,7 +209,8 @@
   // Deterministic ocean gardens rooted in the background seabed. VINE is used as
   // flexible kelp, with leafy forks and occasional luminous berries attached to
   // the stalk so every generated plant cell belongs to a grounded component.
-  void fillOceanFlora(int colStart, int colEnd, int rowStart, int rowEnd) {
+  void fillOceanFlora(int colStart, int colEnd, int rowStart, int rowEnd,
+                      int reachX) {
     if (!L->isBackground) return;
     auto put = [&](int wx, int wy, uint8_t m) {
       if (wy < L->gSeaRow) return; // ocean flora never breaches the water surface
@@ -221,8 +218,7 @@
       if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
       int k = y * cols + x; if (L->grid[k] == WATER || L->grid[k] == EMPTY) L->grid[k] = m;
     };
-    const int REACH = 5;
-    for (int x = colStart - REACH; x < colEnd + REACH; x++) {
+    for (int x = colStart - reachX; x < colEnd + reachX; x++) {
       int wx = L->worldOffsetX + x, surfAbs = terrain.genSurfaceAbs(wx);
       if (surfAbs <= L->gSeaRow + 3) continue;
       double spawn = whash1(L->worldSeed ^ 0x5EA9EEDu, wx);
@@ -246,14 +242,18 @@
   // Foreground cave biomes. The terrain pass decides the cave shape; this pass
   // attaches biome detail to floors, ceilings and walls so features blend into the
   // existing cave network rather than carving detached oval rooms.
-  void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd) {
+  void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd,
+                        int reachX, int reachY) {
     if (L->isBackground) return;
     uint32_t sseed = L->gCaveSeed ^ 0xF3A741u;
-    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 40; // >= widest feature (big acid lakes)
-    int wx0 = L->worldOffsetX + colStart - FEATURE_REACH, wx1 = L->worldOffsetX + colEnd + FEATURE_REACH;
-    int wy0 = L->worldOffsetY + rowStart - FEATURE_REACH, wy1 = L->worldOffsetY + rowEnd + FEATURE_REACH;
-    int lxMin = floorDiv(wx0, FEATURE_LATTICE), lxMax = floorDiv(wx1, FEATURE_LATTICE);
-    int lyMin = floorDiv(wy0, FEATURE_LATTICE), lyMax = floorDiv(wy1, FEATURE_LATTICE);
+    int wx0 = L->worldOffsetX + colStart - reachX;
+    int wx1 = L->worldOffsetX + colEnd + reachX;
+    int wy0 = L->worldOffsetY + rowStart - reachY;
+    int wy1 = L->worldOffsetY + rowEnd + reachY;
+    int lxMin = floorDiv(wx0, CAVE_DRESSING_LATTICE);
+    int lxMax = floorDiv(wx1, CAVE_DRESSING_LATTICE);
+    int lyMin = floorDiv(wy0, CAVE_DRESSING_LATTICE);
+    int lyMax = floorDiv(wy1, CAVE_DRESSING_LATTICE);
     auto findFloor = [&](int wx, int wy, int& floorY) {
       for (int dy = -8; dy <= 12; dy++) {
         int yy = wy + dy;
@@ -382,9 +382,12 @@
       }
     };
     for (int gy = lyMin; gy <= lyMax; gy++) for (int gx = lxMin; gx <= lxMax; gx++) {
-      int wx = gx * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x11u, gx, gy) * FEATURE_LATTICE);
-      int wy = gy * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x22u, gx, gy) * FEATURE_LATTICE);
+      int wx = gx * CAVE_DRESSING_LATTICE
+             + (int)(whash2(sseed ^ 0x11u, gx, gy) * CAVE_DRESSING_LATTICE);
+      int wy = gy * CAVE_DRESSING_LATTICE
+             + (int)(whash2(sseed ^ 0x22u, gx, gy) * CAVE_DRESSING_LATTICE);
       int caveBiome = terrain.genCaveBiomeAt(wx, wy);
+      const CaveBiomeDef& caveDef = caveBiomeDef(caveBiome);
       int caveTop = terrain.genCaveTopAbs(wx);
       int hazardRampBottom = terrain.caveBottomAbs() * 4 / 5;
       double depth01 = std::fmax(0.0, std::fmin(1.0,
@@ -402,9 +405,7 @@
       // Lava pools are the main light source in the caves that grow nothing
       // luminous of their own: plain and (to a lesser extent) mushroom/lush caves
       // get them far more often. Crystal caves stay lava-light — they glow already.
-      double lavaThr = (caveBiome == CAVE_DEFAULT ? 0.0100
-                     : caveBiome == CAVE_CRYSTAL ? 0.0012
-                     : 0.0034) * (hazardDepth * 2.50);
+      double lavaThr = caveDef.lavaHazard * (hazardDepth * 2.50);
       if (hasFloor && lavaH < lavaThr) {
         stampLavaBasin(wx, floorY, gx, gy);
         continue;
@@ -414,15 +415,15 @@
       // are richest; crystal caves are nearly methane-free. Keeping this sparse
       // avoids filling every generated window with permanently active gas.
       double methaneH = whash2(sseed ^ 0x6A52u, gx, gy);
-      double methaneThr = (caveBiome == CAVE_MUSHROOM ? 0.009
-                          : caveBiome == CAVE_DEFAULT ? 0.006
-                          : caveBiome == CAVE_LUSH ? 0.002 : 0.001) * (hazardDepth * 1.30);
+      double methaneThr = caveDef.methaneHazard * (hazardDepth * 1.30);
       if (hasCeil && methaneH < methaneThr) {
         stampMethanePocket(wx, ceilY, gx, gy);
         continue;
       }
 
-      if (caveBiome == CAVE_CRYSTAL) {
+      CaveUpperDressingHandler upperHandler =
+        caveProfileHandler(caveDef.profile).upperDressing;
+      if (upperHandler == CUDH_CRYSTAL) {
         double acidThreshold = hazardDepth > 0 ? 0.003 + hazardDepth * 0.038 : 0.0;
         if (hasFloor && h < acidThreshold) stampCrystalAcidBasin(wx, floorY, gx, gy);
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
@@ -445,7 +446,7 @@
           int ht = 3 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 8); // 3..10 slender spikes
           stampCrystalSpike(wx, baseY, dir, ht, 1);
         }
-      } else if (caveBiome == CAVE_MUSHROOM) {
+      } else if (upperHandler == CUDH_MUSHROOM) {
         if (hasFloor && h < 0.50) stampMyceliumTendril(wx, floorY, gx, gy);
         if (hasCeil && h > 0.82) stampMyceliumTendril(wx, ceilY, gx ^ 0x31, gy ^ 0x17);
         if (hasFloor && h > 0.60) {
@@ -468,7 +469,7 @@
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 5), whash2(sseed ^ 0x22Au, gx, gy) < 0.4 ? 1 : 0);
         }
-      } else if (caveBiome == CAVE_LUSH) {
+      } else if (upperHandler == CUDH_LUSH) {
         // Independent per-feature rolls (not one shared h) so a lush cell can carry a
         // mossy floor AND drooping vines AND a leafy bush at once -> visibly greener.
         double pMoss = whash2(sseed ^ 0x101u, gx, gy);
@@ -508,13 +509,16 @@
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 5), whash2(sseed ^ 0x113u, gx, gy) < 0.4 ? 1 : 0);
         }
-      } else {   // CAVE_DEFAULT: the darkest caves — seed them with the most glinting minerals
+      } else if (upperHandler == CUDH_DEFAULT) {
+        // The darkest caves are seeded with the most glinting minerals.
         if ((hasFloor || hasCeil) && h > 0.86) {
           int baseY = hasFloor ? floorY : ceilY, dir = hasFloor ? -1 : 1;
           // occasionally a small clustered spike, otherwise a lone slender one
           if (h > 0.95) stampCrystalSpike(wx, baseY, dir, 4 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 5), 1);
           else stampCrystalSpike(wx, baseY, dir, 3 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 4), whash2(sseed ^ 0x22Bu, gx, gy) < 0.35 ? 1 : 0);
         }
+      } else if (upperHandler != CUDH_NONE) {
+        __builtin_trap();
       }
     }
     sealHazardBoundaries(colStart, colEnd, rowStart, rowEnd);
@@ -523,13 +527,13 @@
   // small and local; these compositions use the same deterministic deep-cavern
   // plans as the terrain, so lava seas, geodes, fossils, and fungal gardens fill
   // the room they belong to and remain identical across streamed band seams.
-  void fillDeepCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd) {
+  void fillDeepCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd,
+                            int reachX, int reachY) {
     if (L->isBackground) return;
-    const int REACH_X = 150, REACH_Y = 82;
-    int wx0 = L->worldOffsetX + colStart - REACH_X;
-    int wx1 = L->worldOffsetX + colEnd + REACH_X;
-    int wy0 = L->worldOffsetY + rowStart - REACH_Y;
-    int wy1 = L->worldOffsetY + rowEnd + REACH_Y;
+    int wx0 = L->worldOffsetX + colStart - reachX;
+    int wx1 = L->worldOffsetX + colEnd + reachX;
+    int wy0 = L->worldOffsetY + rowStart - reachY;
+    int wy1 = L->worldOffsetY + rowEnd + reachY;
     if (wy1 < TerrainGen::DEEP_BLEND_TOP) return;
     int gx0 = floorDiv(wx0, TerrainGen::DEEP_CAVERN_WIDTH) - 1;
     int gx1 = floorDiv(wx1, TerrainGen::DEEP_CAVERN_WIDTH) + 1;
@@ -574,9 +578,12 @@
       if (p.centerX + p.radiusX + 8 < wx0 || p.centerX - p.radiusX - 8 > wx1
           || p.centerY + p.radiusY + 8 < wy0 || p.centerY - p.radiusY - 8 > wy1) continue;
       int biome = terrain.genCaveBiomeAt(p.centerX, p.centerY);
-      if (biome < CAVE_DEEP_MAGMA) continue; // preserve the blended upper-cave pockets
+      const CaveBiomeDef& caveDef = caveBiomeDef(biome);
+      if (!caveDef.deep) continue; // preserve the blended upper-cave pockets
 
-      if (biome == CAVE_DEEP_MAGMA) {
+      CaveDeepDressingHandler deepHandler =
+        caveProfileHandler(caveDef.profile).deepDressing;
+      if (deepHandler == CDDH_MAGMA) {
         // A broad, shallow lava sea rests in an irregular deepstone basin. Its
         // surface is level like a real liquid; only the shoreline and bed vary.
         int lakeY = p.centerY + p.radiusY / 4;
@@ -613,7 +620,7 @@
           if (findFloor(sx, p.centerY, p.radiusY + 20, floorY))
             crystalSpire(sx, floorY, -1, 4 + (i & 1) * 3, 1);
         }
-      } else if (biome == CAVE_DEEP_GEODE) {
+      } else if (deepHandler == CDDH_GEODE) {
         // Floor and ceiling crystal crowns converge toward a luminous nave.
         for (int i = -4; i <= 4; i++) {
           int wx = p.centerX + i * imax(9, p.radiusX / 10);
@@ -636,7 +643,7 @@
             putOpen(p.centerX + dx, p.centerY + dy + t, CRYSTAL);
           }
         }
-      } else if (biome == CAVE_DEEP_FOSSIL) {
+      } else if (deepHandler == CDDH_FOSSIL) {
         // A cathedral-sized rib cage embedded in the cavern, with a broken skull
         // at one end. Gaps and missing ribs keep it ancient rather than schematic.
         int ribRx = imin(68, p.radiusX * 3 / 5);
@@ -664,7 +671,7 @@
                             || (ox - 6) * (ox - 6) + (oy + 2) * (oy + 2) < 14);
           if (d > 0.72 && d < 1.18 && !eye) putOpen(skullX + ox, skullY + oy, SANDSTONE);
         }
-      } else {
+      } else if (deepHandler == CDDH_VOID) {
         // Void gardens hang from the roof in long fungal curtains while enormous
         // glowshrooms rise from the floor, producing vertical layers of light.
         for (int i = -6; i <= 6; i++) {
@@ -688,6 +695,8 @@
             for (int dy = 0; dy < crown; dy++) putOpen(wx + dx, capY + dy, GLOWSHROOM);
           }
         }
+      } else if (deepHandler != CDDH_NONE) {
+        __builtin_trap();
       }
     }
   }
@@ -715,5 +724,7 @@
     }
   }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
-    for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; L->next[k] = L->grid[k]; }
+    for (int lx = colStart; lx < colEnd; lx++)
+      for (int y = rowStart; y < rowEnd; y++)
+        mirrorCurrentCellToNext(y * cols + lx);
   }

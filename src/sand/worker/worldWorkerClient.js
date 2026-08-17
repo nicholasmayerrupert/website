@@ -1,6 +1,7 @@
 import WorldWorker from './worldWorkerConstructor.js';
 import { Predictor } from '../net/predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
+import { packRecords } from '../wasmBridge/recordCodec.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 import { prepareMirrorShift } from './mirrorShift.js';
@@ -527,32 +528,14 @@ export function createWorldWorkerClient(ctx) {
           translatePackedPositions(items, STRIDES.itemSnapshot,
             OFF.itemSnapshot.x, OFF.itemSnapshot.y, itemDx, itemDy);
         } else if (packet.items !== undefined) {
-          const O = OFF.itemSnapshot;
-          items = new Float32Array(packet.items.length * STRIDES.itemSnapshot);
-          for (let i = 0; i < packet.items.length; i++) {
-            const item = packet.items[i], o = i * STRIDES.itemSnapshot;
-            items[o + O.id] = item.id; items[o + O.kind] = item.kind; items[o + O.material] = item.material;
-            items[o + O.count] = item.count; items[o + O.x] = item.x; items[o + O.y] = item.y;
-            items[o + O.life] = item.life; items[o + O.plantType] = item.plantType || 0;
-            items[o + O.itemKind] = item.itemKind || 0; items[o + O.isTool] = item.isTool ? 1 : 0;
-            items[o + O.toolClass] = item.toolClass || 0; items[o + O.toolTier] = item.toolTier || 0;
-          }
+          items = packRecords(packet.items, 'itemSnapshot', Float32Array);
         }
         if (packet.projectileData !== undefined) {
           projectiles = new Float32Array(packet.projectileData);
           translatePackedPositions(projectiles, STRIDES.projectileSnapshot,
             OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, itemDx, itemDy);
         } else if (packet.projectiles !== undefined) {
-          const O = OFF.projectileSnapshot;
-          projectiles = new Float32Array(packet.projectiles.length * STRIDES.projectileSnapshot);
-          for (let i = 0; i < packet.projectiles.length; i++) {
-            const projectile = packet.projectiles[i], o = i * STRIDES.projectileSnapshot;
-            projectiles[o + O.id] = projectile.id; projectiles[o + O.owner] = projectile.owner;
-            projectiles[o + O.x] = projectile.x; projectiles[o + O.y] = projectile.y;
-            projectiles[o + O.vx] = projectile.vx; projectiles[o + O.vy] = projectile.vy;
-            projectiles[o + O.charge] = projectile.charge; projectiles[o + O.kind] = projectile.kind ?? 0;
-            projectiles[o + O.fuse] = projectile.fuse ?? 0; projectiles[o + O.rotation] = projectile.rotation ?? 0;
-          }
+          projectiles = packRecords(packet.projectiles, 'projectileSnapshot', Float32Array);
         }
         mineProgress = packet.mineProgress || 0;
         mineTarget = packet.mineTarget || null;

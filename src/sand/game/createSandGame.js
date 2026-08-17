@@ -13,7 +13,8 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
-import { CREATURE, MISSION, PLANET } from '../wasmBridge/abi.generated.js';
+import { CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
+import { resolvePlanetId } from './planetSelection.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -44,11 +45,7 @@ export function createSandGame(container, opts = {}) {
     onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
-  const planetId = typeof planet === 'number'
-    ? planet
-    : ({ earth: PLANET.EARTH, moon: PLANET.MOON, mars: PLANET.MARS, ship: PLANET.SHIP }[
-      String(planet).toLowerCase()
-    ] ?? PLANET.EARTH);
+  const planetId = resolvePlanetId(planet);
   const resolvedGravityScale = Number.isFinite(gravityScale)
     ? gravityScale
     : undefined;

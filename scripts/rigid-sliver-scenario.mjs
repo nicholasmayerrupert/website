@@ -2,10 +2,41 @@ import { MAT } from '../src/sand/materials.js';
 
 export const SLIVER_ERASER_TOOL = 11;
 
-const paintRectLayer = (engine, layer, x0, y0, x1, y1, material) => {
-  for (let y = y0; y <= y1; y++)
-    for (let x = x0; x <= x1; x++)
-      engine.paintDiscLayer(layer, x, y, 0, material, true);
+const layerGrid = (engine, layer) => (
+  layer ? engine.getGridBg() : engine.getGrid()
+);
+
+// Fixture cells are composed in the raw grids before one component sync.
+export const seedStaticRectLayer = (
+  engine, layer, x0, y0, x1, y1, material,
+) => {
+  const grid = layerGrid(engine, layer);
+  const left = Math.max(1, x0);
+  const right = Math.min(engine.cols - 2, x1);
+  const top = Math.max(1, y0);
+  const bottom = Math.min(engine.rows - 1, y1);
+  for (let y = top; y <= bottom; y++)
+    for (let x = left; x <= right; x++)
+      grid[y * engine.cols + x] = material;
+};
+
+export const seedStaticDiscLayer = (
+  engine, layer, cx, cy, radius, material,
+) => {
+  const grid = layerGrid(engine, layer);
+  const left = Math.max(1, cx - radius);
+  const right = Math.min(engine.cols - 2, cx + radius);
+  const top = Math.max(1, cy - radius);
+  const bottom = Math.min(engine.rows - 1, cy + radius);
+  const radius2 = radius * radius;
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      if (dx * dx + dy * dy <= radius2)
+        grid[y * engine.cols + x] = material;
+    }
+  }
 };
 
 export function buildCrossLayerSliverScene(engine, {
@@ -21,18 +52,18 @@ export function buildCrossLayerSliverScene(engine, {
 } = {}) {
   engine.setBgEnabled(true);
   for (const layer of [0, 1]) {
-    paintRectLayer(engine, layer, 0, floorY, engine.cols - 1,
+    seedStaticRectLayer(engine, layer, 0, floorY, engine.cols - 1,
       engine.rows - 1, MAT.STONE);
-    paintRectLayer(engine, layer, left, top, right, bottom,
+    seedStaticRectLayer(engine, layer, left, top, right, bottom,
       layer ? MAT.BRICK : MAT.STONE);
-    paintRectLayer(engine, layer, left, bottom + 1, left + 2, floorY - 1,
+    seedStaticRectLayer(engine, layer, left, bottom + 1, left + 2, floorY - 1,
       MAT.STONE);
-    paintRectLayer(engine, layer, right - 2, bottom + 1, right, floorY - 1,
+    seedStaticRectLayer(engine, layer, right - 2, bottom + 1, right, floorY - 1,
       MAT.STONE);
   }
-  paintRectLayer(engine, 0, sourceX, sourceY, sourceX, floorY - 1,
+  seedStaticRectLayer(engine, 0, sourceX, sourceY, sourceX, floorY - 1,
     MAT.STONE);
-  engine.paintDiscLayer(0, sourceX, sourceY, 10, MAT.NEUTRONIUM, true);
+  seedStaticDiscLayer(engine, 0, sourceX, sourceY, 10, MAT.NEUTRONIUM);
   engine.syncComponentsLayer(0);
   engine.syncComponentsLayer(1);
 
@@ -55,4 +86,3 @@ export function buildCrossLayerSliverScene(engine, {
   }
   return { strokes };
 }
-

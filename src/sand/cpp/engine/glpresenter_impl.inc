@@ -17,6 +17,7 @@ static bool glAllocateCellTexture(GLuint& texture, int cols, int rows) {
 }
 
 int GLPresenter::glInit(const char* target) {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   glTarget = target ? target : "";
   glc = sandgl::acquire(target);
   if (!glc) return 0;
@@ -37,16 +38,16 @@ int GLPresenter::glInit(const char* target) {
   // uploading both empty layers here only blocks page startup; the first
   // authoritative present fills the visible window below.
   if (E.storageRole != ESR_PRESENTATION) {
-    E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
-    E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+    { Engine::ActiveLayerScope active(E, &E.fg); E.renderer.renderFull(); glUploadFull(glTex); }
+    { Engine::ActiveLayerScope active(E, &E.bg); E.renderer.renderFull(); glUploadFull(glTexBg); }
   } else {
     glCheapFirstPresent = true;
   }
-  E.useLayer(&E.fg);
   return 1;
 }
 
 int GLPresenter::glRestore() {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   if (!glc) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   if (!sandgl::restoreProgram(*glc)) return 0;
@@ -74,9 +75,8 @@ int GLPresenter::glRestore() {
   glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
   glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
   glCheapFirstPresent = false;
-  E.useLayer(&E.fg); E.markAllDirty();
-  E.useLayer(&E.bg); E.markAllDirty();
-  E.useLayer(&E.fg);
+  { Engine::ActiveLayerScope active(E, &E.fg); E.markAllDirty(); }
+  { Engine::ActiveLayerScope active(E, &E.bg); E.markAllDirty(); }
   return 1;
 }
 
@@ -164,14 +164,14 @@ void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, in
 }
 void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y) {
   glSurvivalPreviewOn = on != 0;
-  glSurvivalPreviewFootprint = E.clampSurvivalFootprintId(footprint);
+  glSurvivalPreviewFootprint = E.tools.clampSurvivalFootprintId(footprint);
   glSurvivalPreviewErasing = erasing != 0;
   glSurvivalPreviewLocked = locked != 0;
   glSurvivalPreviewX = x;
   glSurvivalPreviewY = y;
 }
-// Client E.itemsys.items override: when external, glDrawItems draws these instead of the
-// engine's own (a client doesn't simulate the world, so it has no local E.itemsys.items).
+// Client item override: when external, glDrawItems draws these instead of the
+// engine-owned item list (a client does not simulate local item actors).
 void GLPresenter::glSetItems(int useExternal, const float* data, int count) {
   glUseExtItems = useExternal != 0;
   if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
@@ -369,9 +369,8 @@ void GLPresenter::glShift(int dx) {
   if (!dx || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dx >= E.cols || -dx >= E.cols) {
-    E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
-    E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
-    E.useLayer(&E.fg);
+    { Engine::ActiveLayerScope active(E, &E.fg); E.renderer.renderFull(); glUploadFull(glTex); }
+    { Engine::ActiveLayerScope active(E, &E.bg); E.renderer.renderFull(); glUploadFull(glTexBg); }
     return;
   }
   // The browser mirror receives already-shifted authority snapshots, so this
@@ -405,9 +404,8 @@ void GLPresenter::glShiftV(int dy) {
   if (!dy || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dy >= E.rows || -dy >= E.rows) {
-    E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
-    E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
-    E.useLayer(&E.fg);
+    { Engine::ActiveLayerScope active(E, &E.fg); E.renderer.renderFull(); glUploadFull(glTex); }
+    { Engine::ActiveLayerScope active(E, &E.bg); E.renderer.renderFull(); glUploadFull(glTexBg); }
     return;
   }
   if (!glTex2 && !glAllocateCellTexture(glTex2, E.cols, E.rows)) {
@@ -938,12 +936,12 @@ void GLPresenter::glDrawPlayers() {
   }
 }
 
-// Dropped E.itemsys.items + particles overlay, drawn after E.psys.players (same world->screen
+// Dropped items + particles overlay, drawn after players (same world->screen
 // transform). Each is a small rect centered on its cell at the material's color;
-// particles shrink/fade by remaining life. The engine draws from its own `E.itemsys.items`
+// particles shrink/fade by remaining life. The engine draws from its own item list
 // vector — no JS state push, exactly like host-side player drawing.
-// Draw one dropped item/particle. Identical for engine-owned E.itemsys.items and the
-// client's host-snapshot E.itemsys.items, so id-keyed bob/glimmer stay in sync.
+// Draw one dropped item/particle. Engine-owned and host-snapshot items share this
+// path, so id-keyed bob/glimmer stay in sync.
 void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
                    int camCol, int camRow) {
   uint32_t c = itemKind == IK_MATERIAL ? MAT_COLOR[material]
@@ -1355,7 +1353,18 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     double attackProgress,
                     double aimX, double aimY, double spawnProgress, float light,
                     int camCol, int camRow) {
-  static const float pal[CS_COUNT][6][4] = {
+  static_assert(CRA_COUNT == 20
+                && CRA_MINNOW == 0 && CRA_PIKE == 1 && CRA_FOX == 2
+                && CRA_HARE == 3 && CRA_CRAWLER == 4 && CRA_MOLE == 5
+                && CRA_BIRD == 6 && CRA_DYNAMITEER == 7
+                && CRA_BORE_SENTINEL == 8 && CRA_CAUSTIC_MORTARMAN == 9
+                && CRA_CLUSTER_WASP == 10 && CRA_MINIGUNNER == 11
+                && CRA_SURVEYOR == 12 && CRA_SHIELD_ANCHOR == 13
+                && CRA_QUARRY_FOREMAN == 14 && CRA_REACTOR_WARDEN == 15
+                && CRA_REACTOR_CORE == 16 && CRA_IRIS_COMMANDER == 17
+                && CRA_IRIS_ENGINEER == 18 && CRA_VILLAGER == 19,
+                "Creature render asset order must match palette and sprite rows");
+  static const float pal[CRA_COUNT][6][4] = {
     {{0,0,0,0},{12/255.f,31/255.f,43/255.f,1},{37/255.f,111/255.f,137/255.f,1},{74/255.f,174/255.f,180/255.f,1},{157/255.f,226/255.f,201/255.f,1},{244/255.f,218/255.f,104/255.f,1}},
     {{0,0,0,0},{20/255.f,29/255.f,27/255.f,1},{46/255.f,91/255.f,58/255.f,1},{80/255.f,139/255.f,72/255.f,1},{151/255.f,188/255.f,92/255.f,1},{238/255.f,199/255.f,72/255.f,1}},
     {{0,0,0,0},{39/255.f,25/255.f,23/255.f,1},{123/255.f,52/255.f,32/255.f,1},{204/255.f,89/255.f,42/255.f,1},{244/255.f,154/255.f,70/255.f,1},{244/255.f,225/255.f,184/255.f,1}},
@@ -1387,7 +1396,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {"000111000","001555100","001545100","000353010","001333010",
      "001343110","000222000","000202000","002202200","022000220"},
   };
-  static const char* const grids[CS_COUNT][4][7] = {
+  static const char* const grids[CRA_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
      {"0000000000000","0000003000000","0100333332100","0112233444510","0100333332100","0000003000000","0000000000000"},
      {"0100000000000","0110033000000","0011333332100","0002233444510","0000333332100","0000003000000","0000000000000"},
@@ -1490,12 +1499,11 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000011100000","0000155510000","0001254521000","0012333322100","0012334445100","0011000110000","0110000011000"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
-  int spriteId = speciesId;
-  int paletteId = speciesId;
-  bool humanNpc = speciesId == CS_SURVEYOR
-    || speciesId == CS_IRIS_COMMANDER
-    || speciesId == CS_IRIS_ENGINEER
-    || speciesId == CS_VILLAGER;
+  const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
+  const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
+  int spriteId = creatureRenderProfile(speciesDef).asset;
+  int paletteId = spriteId;
+  bool humanNpc = speciesDef.humanNpc;
   const int sw = humanNpc ? 9 : 13;
   const int sh = humanNpc ? 10 : 7;
   double cell = glCellDev;
@@ -1541,9 +1549,9 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(cx - slitW * .5, cy - slitH * .5, slitW, slitH);
     return;
   }
-  bool bossBore = (speciesId == CS_QUARRY_FOREMAN ||
-                   speciesId == CS_REACTOR_WARDEN) && attackPattern == 2;
-  if (alive && (speciesId == CS_BORE_SENTINEL || bossBore) &&
+  bool bossBore = (behavior.telegraph == CTH_QUARRY
+                   || behavior.telegraph == CTH_WARDEN) && attackPattern == 2;
+  if (alive && (behavior.telegraph == CTH_BORE || bossBore) &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double ox = px + CREATURE_SPECIES[speciesId].w * 0.5;
     double oy = py + CREATURE_SPECIES[speciesId].h * 0.42;
@@ -1579,7 +1587,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       }
     }
   }
-  if (alive && speciesId == CS_CAUSTIC_MORTARMAN &&
+  if (alive && behavior.telegraph == CTH_MORTAR &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double ox = px + CREATURE_SPECIES[speciesId].w * .60;
     double oy = py + CREATURE_SPECIES[speciesId].h * .28;
@@ -1615,7 +1623,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                  (oy - camRow) * cell + glOffY - cell * .55, cell * 1.10, cell * 1.10);
     }
   }
-  if (alive && speciesId == CS_CLUSTER_WASP &&
+  if (alive && behavior.telegraph == CTH_CLUSTER &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double ox = px + CREATURE_SPECIES[speciesId].w * .58;
     double oy = py + CREATURE_SPECIES[speciesId].h * .55;
@@ -1645,7 +1653,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(bx - cell * .11, by - (sySign < 0 ? 0 : arm), cell * .22, arm);
     }
   }
-  if (alive && speciesId == CS_QUARRY_FOREMAN && attackPattern == 1 &&
+  if (alive && behavior.telegraph == CTH_QUARRY && attackPattern == 1 &&
       attackState == CAS_CHARGING) {
     double progress = std::max(0.0, std::min(1.0, attackProgress));
     double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
@@ -1658,7 +1666,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(cx - cell * .12, cy - radius * .20, cell * .24, radius * .40);
     }
   }
-  if (alive && speciesId == CS_REACTOR_WARDEN && attackPattern == 1 &&
+  if (alive && behavior.telegraph == CTH_WARDEN && attackPattern == 1 &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double progress = std::max(0.0, std::min(1.0, attackProgress));
     double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
@@ -1679,17 +1687,17 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
-  int frame = (speciesId == CS_SHIELD_ANCHOR || speciesId == CS_REACTOR_CORE)
+  int frame = speciesDef.stationaryCycle
     ? (int)((E.actorTick / 8) & 3)
     : animFrame & 3;
   // A little whole-sprite follow-through keeps the detailed limbs from feeling
   // like a flipbook pasted to the AABB. Walkers rise on their passing steps,
   // swimmers roll gently, and the downstroke gives the bird visible lift.
   if (alive) {
-    if (speciesId == CS_BIRD) sy += (frame == 0 ? -0.35 : frame == 2 ? 0.20 : 0.0) * cell;
-    else if (speciesId == CS_CLUSTER_WASP) sy += (frame == 0 ? -0.28 : frame == 2 ? 0.16 : 0.0) * cell;
-    else if (CREATURE_SPECIES[speciesId].locomotion == CL_AQUATIC) sy += (frame == 1 ? -0.12 : frame == 3 ? 0.12 : 0.0) * cell;
-    else if (speciesId != CS_HARE && (frame & 1)) sy -= 0.10 * cell;
+    if (speciesDef.renderBob == CRB_BIRD) sy += (frame == 0 ? -0.35 : frame == 2 ? 0.20 : 0.0) * cell;
+    else if (speciesDef.renderBob == CRB_WASP) sy += (frame == 0 ? -0.28 : frame == 2 ? 0.16 : 0.0) * cell;
+    else if (speciesDef.renderBob == CRB_AQUATIC) sy += (frame == 1 ? -0.12 : frame == 3 ? 0.12 : 0.0) * cell;
+    else if (speciesDef.renderBob == CRB_WALKER && (frame & 1)) sy -= 0.10 * cell;
   }
   if (alive && CREATURE_SPECIES[speciesId].locomotion == CL_AMPHIBIOUS) {
     double shadowY = (py - camRow + CREATURE_SPECIES[speciesId].h) * cell + glOffY - 0.16 * cell;
@@ -1710,8 +1718,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     double drawY = alive ? sy + r * cell : corpseBase - (sh - r) * pixelH;
     glSolidDev(sx + cc * cell, drawY, cell, pixelH);
   }
-  if (alive && (speciesId == CS_MINIGUNNER ||
-                speciesId == CS_REACTOR_WARDEN)) {
+  if (alive && behavior.weaponOverlay == CWO_MINIGUN) {
     // Draw the active weapon over the body sprite so its grip remains attached
     // while the barrel pack follows the authoritative target in both axes.
     double gunX = px + CREATURE_SPECIES[speciesId].w * .56;
@@ -1841,7 +1848,7 @@ void GLPresenter::glDrawPreview() {
     for (int k : E.tools.draft) { int y = k / E.cols; cell(k - y * E.cols, y); }
   }
   if (E.tools.draftingSeed && E.tools.hasSeedOrigin) {
-    bool valid = E.canPlaceSeedAt(E.tools.seedOriginX, E.tools.seedOriginY);
+    bool valid = E.tools.canPlaceSeedAt(E.tools.seedOriginX, E.tools.seedOriginY);
     if (valid) glUniform4f(glc->uColor, df * 120 / 255.0f, df * 190 / 255.0f, df * 100 / 255.0f, 0.32f);
     else       glUniform4f(glc->uColor, 255 / 255.0f, 80 / 255.0f, 80 / 255.0f, 0.24f);
     cell(E.tools.seedOriginX, E.tools.seedOriginY); // a seed is a single cell
@@ -1869,13 +1876,13 @@ void GLPresenter::glDrawPreview() {
       const SurvivalFootprint* fp = nullptr;
       if (glSurvivalPreviewOn) {
         erasing = glSurvivalPreviewErasing;
-        fp = &E.getSurvivalFootprint(glSurvivalPreviewFootprint);
+        fp = &E.tools.getSurvivalFootprint(glSurvivalPreviewFootprint);
         if (glSurvivalPreviewLocked) { ax = glSurvivalPreviewX; ay = glSurvivalPreviewY; }
       } else if (E.survivalInventory) {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
         if (sel.count > 0 && sel.itemKind != IK_MATERIAL && sel.itemKind != IK_MINING_TOOL) return;
         erasing = sel.isTool || sel.count <= 0;
-        fp = &E.getSurvivalFootprint(*lp);
+        fp = &E.tools.getSurvivalFootprint(*lp);
         // Hold-lock: dig overlay tracks the locked origin, not the cursor.
         if (erasing && lp->mineActive && lp->mineFootprint >= 0) {
           ax = lp->mineX;
@@ -1952,9 +1959,11 @@ void GLPresenter::glDrawPreview() {
 // startup (shift/day-night/texture rebuild) still solve the full buffer, and a
 // pure pan re-solves only when the window drifts outside the last solve's exact zone.
 void GLPresenter::glPresentWindow(int forceFull) {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   E.perfLightMs = E.perfFillMs = E.perfUploadMs = 0;
-  E.useLayer(&E.fg); E.buildDirtyRects(); bool fgDirty = E.fg.dirtyRenderCount > 0;
-  E.useLayer(&E.bg); E.buildDirtyRects(); bool bgDirty = E.bg.dirtyRenderCount > 0;
+  bool fgDirty = false, bgDirty = false;
+  { Engine::ActiveLayerScope active(E, &E.fg); E.buildDirtyRects(); fgDirty = E.fg.dirtyRenderCount > 0; }
+  { Engine::ActiveLayerScope active(E, &E.bg); E.buildDirtyRects(); bgDirty = E.bg.dirtyRenderCount > 0; }
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   bool worldShifted = E.fg.worldOffsetX != glLastWorldOffX || E.fg.worldOffsetY != glLastWorldOffY;
   bool skyChanged = (int)E.renderer.renderSkyLight != glLastSkyLight;
@@ -2058,8 +2067,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
         rx0 = imax(x0, rx0); ry0 = imax(y0, ry0);
         rx1 = imin(x1, rx1); ry1 = imin(y1, ry1);
         if (rx0 > rx1 || ry0 > ry1) return;
-        E.useLayer(&E.fg); E.markDirtyRect(rx0, ry0, rx1, ry1);
-        E.useLayer(&E.bg); E.markDirtyRect(rx0, ry0, rx1, ry1);
+        { Engine::ActiveLayerScope active(E, &E.fg); E.markDirtyRect(rx0, ry0, rx1, ry1); }
+        { Engine::ActiveLayerScope active(E, &E.bg); E.markDirtyRect(rx0, ry0, rx1, ry1); }
         lightUpdated = true;
       };
       // Direct skylight travels down a whole column. Re-solving each touched
@@ -2165,8 +2174,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
           glLightX1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN);
           glLightY1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
         }
-        E.useLayer(&E.fg); E.foldRowMarksToRender();
-        E.useLayer(&E.bg); E.foldRowMarksToRender();
+        { Engine::ActiveLayerScope active(E, &E.fg); E.foldRowMarksToRender(); }
+        { Engine::ActiveLayerScope active(E, &E.bg); E.foldRowMarksToRender(); }
         E.perfLightMs = emscripten_get_now() - t0;
       }
       // A patch makes the visible structural shadow current, but other changed
@@ -2186,7 +2195,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
   int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
   auto fillLayer = [&](Layer& lay, std::vector<uint8_t>& animatedChunks) {
-    E.useLayer(&lay);
+    Engine::ActiveLayerScope active(E, &lay);
     size_t chunkTotal = (size_t)E.chunkCols * E.chunkRows;
     if (animatedChunks.size() != chunkTotal) animatedChunks.assign(chunkTotal, 0);
     for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++) {
@@ -2216,7 +2225,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
     return false;
   };
   auto uploadChanged = [&](Layer& lay, GLuint tex, const std::vector<uint8_t>& animatedChunks) {
-    E.useLayer(&lay);
+    Engine::ActiveLayerScope active(E, &lay);
     for (int cy = cy0; cy <= cy1; cy++) {
       int cx = cx0;
       while (cx <= cx1) {
@@ -2241,22 +2250,22 @@ void GLPresenter::glPresentWindow(int forceFull) {
   E.perfFillMs = emscripten_get_now() - tf;
   double tu = emscripten_get_now();
   if (fullWindowRefresh) {
-    E.useLayer(&E.fg); glUploadWindow(glTex, x0, y0, x1, y1);
-    E.useLayer(&E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
+    { Engine::ActiveLayerScope active(E, &E.fg); glUploadWindow(glTex, x0, y0, x1, y1); }
+    { Engine::ActiveLayerScope active(E, &E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1); }
   } else {
     uploadChanged(E.fg, glTex, glAnimatedFg);
     uploadChanged(E.bg, glTexBg, glAnimatedBg);
     for (int ri = 0; ri < exposedCount; ri++) {
       const int* r = exposed + ri * 4;
-      E.useLayer(&E.fg); glUploadWindow(glTex, r[0], r[1], r[2], r[3]);
-      E.useLayer(&E.bg); glUploadWindow(glTexBg, r[0], r[1], r[2], r[3]);
+      { Engine::ActiveLayerScope active(E, &E.fg); glUploadWindow(glTex, r[0], r[1], r[2], r[3]); }
+      { Engine::ActiveLayerScope active(E, &E.bg); glUploadWindow(glTexBg, r[0], r[1], r[2], r[3]); }
     }
   }
   glVisibleAnimated = fgAnimated || bgAnimated;
   E.perfUploadMs = emscripten_get_now() - tu;
 
   auto clearPresentedDirty = [&](Layer& lay) {
-    E.useLayer(&lay);
+    Engine::ActiveLayerScope active(E, &lay);
     memset(lay.dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows);
     lay.dirtyRenderCount = 0;
     // Authority/full engines retain row marks for beginStepDirty's scheduler.
@@ -2279,15 +2288,15 @@ void GLPresenter::glPresentWindow(int forceFull) {
 }
 
 // One presented frame: window-upload both layers, then composite background (darker)
-// then foreground, then E.psys.players + preview. forceFull forces a full-window refresh
+// then foreground, then players + preview. forceFull forces a full-window refresh
 // (init/resize). Returns 1 if drawn.
 int GLPresenter::glRenderFrame(int forceFull) {
+  Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
   if (!glReady()) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glSyncCamera();
   glCollectDynamicLights();
   glPresentWindow(forceFull);
-  E.useLayer(&E.fg); // preview/seed checks read the foreground grid
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, glDevW, glDevH);
   glDisable(GL_DEPTH_TEST);

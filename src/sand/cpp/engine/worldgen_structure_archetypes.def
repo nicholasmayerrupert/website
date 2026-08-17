@@ -1,0 +1,37 @@
+// Stable structure-archetype identities, planning metadata, and local stamp
+// callbacks share these rows. Consumers define both row macros before include.
+WORLDGEN_FACILITY_ARCHETYPE(MOON_OBSERVATORY, 0,
+  "selenographic observatory", 1u << PGP_MOON, 0, 92, 116, 96,
+  stampMoonObservatory)
+WORLDGEN_FACILITY_ARCHETYPE(MOON_MASS_DRIVER, 1,
+  "helium-3 mass driver", 1u << PGP_MOON, 1, 100, 116, 96,
+  stampMoonMassDriver)
+WORLDGEN_FACILITY_ARCHETYPE(MOON_RELAY, 2,
+  "far-side relay monastery", 1u << PGP_MOON, 2, 92, 102, 96,
+  stampMoonRelay)
+WORLDGEN_FACILITY_ARCHETYPE(MARS_GARDEN, 3,
+  "garden arcology", 1u << PGP_MARS, 0, 104, 116, 96,
+  stampMarsGarden)
+WORLDGEN_FACILITY_ARCHETYPE(MARS_REFINERY, 4,
+  "red furnace refinery", 1u << PGP_MARS, 1, 96, 116, 96,
+  stampMarsRefinery)
+WORLDGEN_FACILITY_ARCHETYPE(MARS_SPACEPORT, 5,
+  "canyon foundry", 1u << PGP_MARS, 2, 96, 102, 96,
+  stampMarsSpaceport)
+
+WORLDGEN_RUIN_ARCHETYPE(HOUSE, 0, "house", -1, 0.0, true,
+  RSP_VARIABLE, 0, 0, 0, HOUSE, stampHouse)
+WORLDGEN_RUIN_ARCHETYPE(VAULT, 1, "vault", -1, 0.0, true,
+  RSP_VARIABLE, 0, 0, 0, VAULT, stampVault)
+WORLDGEN_RUIN_ARCHETYPE(COLONNADE, 2, "colonnade", -1, 0.0, true,
+  RSP_VARIABLE, 4, 0, 0, COLONNADE, stampColonnade)
+WORLDGEN_RUIN_ARCHETYPE(FORGE, 3, "forge", -1, 0.0, true,
+  RSP_VARIABLE, 0, 0, 180, HOUSE, stampForge)
+WORLDGEN_RUIN_ARCHETYPE(ARCHIVE, 4, "archive", -1, 0.0, true,
+  RSP_VARIABLE, 8, 4, 0, ARCHIVE, stampArchive)
+WORLDGEN_RUIN_ARCHETYPE(OVERGROWN, 5, "overgrown", CBP_LUSH, .60, true,
+  RSP_VARIABLE, 0, 0, 0, OVERGROWN, stampOvergrown)
+WORLDGEN_RUIN_ARCHETYPE(SHRINE, 6, "shrine", CBP_CRYSTAL, .55, true,
+  RSP_SHRINE, 0, 0, 0, SHRINE, stampShrine)
+WORLDGEN_RUIN_ARCHETYPE(MUSHGROVE, 7, "mushroom grove", CBP_MUSHROOM,
+  .55, false, RSP_VARIABLE, 0, 0, 0, MUSHGROVE, stampMushGrove)

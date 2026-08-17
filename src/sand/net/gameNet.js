@@ -6,13 +6,16 @@ import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
   makeView,
   makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
-  INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS,
+  ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS,
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage, validateWorldMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { translatePackedPositions } from './localCoordinates.js';
 import { mergePlayerPrediction } from '../worker/playerPresentation.js';
+import {
+  unpackObjectWireRecord, unpackObjectWireRecords,
+} from '../wasmBridge/recordCodec.js';
 
 const MAX_REMOTE_EXTRAPOLATION_TICKS = 8;
 const REMOTE_CORRECTION_SNAP = 16;
@@ -44,8 +47,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   let pendingJoin = null;
   let dbgSent = 0;                 // diagnostics
   const inQueue = [];              // inbound decoded messages, drained each step
-  const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
-  let itemsForRender = new Float32Array(0); // packed [id,kind,material,count,x,y,life] from the server
+  const remotes = new Map();       // projected player records by id for presentation
+  let itemsForRender = new Float32Array(0); // generated itemSnapshot records from the server
   let creaturesForRender = new Float32Array(0);
   let projectilesForRender = new Float32Array(0);
   let soundBatches = [];
@@ -329,7 +332,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   function ingestSnapshot(m) {
     remotePresentationTick = Math.max(remotePresentationTick, m.tick);
     const seen = new Set();
-    for (const p of m.players) {
+    for (const wirePlayer of m.players) {
+      const p = unpackObjectWireRecord(wirePlayer, 'player');
       seen.add(p.id);
       let r = remotes.get(p.id);
       const size = fallbackPlayerSize(engineNow());
@@ -346,17 +350,10 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       }
       r.snapshotX = r.tx = p.x; r.snapshotY = r.ty = p.y;
       r.snapshotTick = m.tick;
-      r.vx = p.vx; r.vy = p.vy;
-      r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
-      r.health = p.health | 0; r.alive = p.alive !== 0;
-      r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
-      r.bowCharge = p.bowCharge; r.heldItemKind = p.heldItemKind | 0;
-      r.jetpackFuel = p.jetpackFuel; r.jetpackActive = p.jetpackActive !== 0;
-      r.shieldHealth = p.shieldHealth | 0; r.shieldActive = p.shieldActive !== 0;
-      r.aimX = p.aimX; r.aimY = p.aimY;
-      r.mineProgress = p.mineProgress;
+      for (const [field, value] of Object.entries(p)) {
+        if (field !== 'x' && field !== 'y') r[field] = value;
+      }
       r.mineTarget = p.mineTarget ? { ...p.mineTarget } : null;
-      r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
       if (p.id === ownPlayerId && !r.alive) {
         predictor = null;
@@ -380,17 +377,13 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     else projectilesForRender = Float32Array.from(m.data);
   }
   function ingestInventory(m) {
-    const slots = new Array(INV_SLOTS);
-    for (let i = 0; i < INV_SLOTS; i++) {
-      const o = i * INV_FIELDS;
-      slots[i] = { material: m.data[o] | 0, isTool: m.data[o + 1] === 1, toolClass: m.data[o + 2] | 0, toolTier: m.data[o + 3] | 0, count: m.data[o + 4] | 0, plantType: m.data[o + 5] | 0, itemKind: m.data[o + 6] | 0 };
-    }
+    const slots = unpackObjectWireRecords(m.data, 'inventoryStack');
     invByPlayer.set(m.player, { slots, selected: m.selected | 0, selectedFootprint: m.selectedFootprint | 0 });
     if (m.player === ownPlayerId) invDirty = true;
   }
   function ingestCursor(m) {
-    const c = m.cur;
-    curByPlayer.set(m.player, c ? { material: c.material | 0, isTool: c.isTool === 1, toolClass: c.toolClass | 0, toolTier: c.toolTier | 0, count: c.count | 0, plantType: c.plantType | 0, itemKind: c.itemKind | 0 } : null);
+    curByPlayer.set(m.player,
+      m.cur ? unpackObjectWireRecord(m.cur, 'inventoryStack') : null);
   }
 
   // Called once per fixed step from the game loop.

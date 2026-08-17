@@ -1,7 +1,9 @@
 // Predictive worldgen must preserve both layers byte-for-byte while turning
 // horizontal and vertical stream shifts into cache hits.
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  initSandWasm, createEngineWasm, MAT, PLANET,
+} from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
 // Chunk-aligned buffer (cols/rows multiples of 32) so whole tiles persist — the
@@ -16,15 +18,16 @@ let failures = 0;
 const check = (name, cond, extra = '') => { console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); if (!cond) failures++; };
 
 await initSandWasm();
-const mk = () => attachTestHooks(createEngineWasm({
+const mk = (options = {}) => attachTestHooks(createEngineWasm({
   cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true,
+  ...options,
 }));
 
 // Drive a one-axis pan of `shiftsWanted` shifts; B runs prefetchAdvance each frame,
 // A does not. Compare fg+bg checksums after every shift. Returns the two engines'
 // shift-fill stats so the caller can assert prefetch engaged.
-function panAxis(axis, shiftsWanted) {
-  const A = mk(), B = mk();
+function panAxis(axis, shiftsWanted, options = {}) {
+  const A = mk(options), B = mk(options);
   const PAN = 2; // cells/frame
   let cam = MARGIN + 6;           // panning toward the far (right/bottom) edge
   const trigger = (axis === 'x' ? COLS - VIS : ROWS - VISR) - MARGIN;
@@ -72,6 +75,14 @@ console.log('prefetch determinism — vertical pan (down into novel terrain)');
     r.mism ? `first divergence at shift ${r.firstMismatchShift}` : `(${r.shifts} shifts matched)`);
   check('prefetch turned vertical shifts into cache HITS (miss==0)', r.statsB.miss === 0, `B hit=${r.statsB.hit} miss=${r.statsB.miss}`);
   check('prefetch actually engaged (hits > 0)', r.statsB.hit > 0, `B hit=${r.statsB.hit}`);
+}
+
+console.log('the shared synchronous/prefetch pipeline covers every planet');
+for (const [name, planetId] of Object.entries(PLANET)) {
+  const r = panAxis('x', 3, { planetId });
+  check(`${name.toLowerCase()} prefetch matches synchronous generation`,
+    r.shifts === 3 && r.mism === 0 && r.statsB.miss === 0,
+    `shifts=${r.shifts} mismatches=${r.mism} hit=${r.statsB.hit} miss=${r.statsB.miss}`);
 }
 
 // A perpendicular world shift changes one absolute coordinate of every pending

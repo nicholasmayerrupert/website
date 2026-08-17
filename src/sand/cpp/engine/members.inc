@@ -6,13 +6,22 @@
   Layer fg, bg;       // the two simulations
   Layer* L = &fg;     // active layer
 
-  // Hot paths address the active layer through L->.
+  inline Layer& layer(bool background) { return background ? bg : fg; }
+  inline const Layer& layer(bool background) const { return background ? bg : fg; }
+  inline int activeLayerIndex() const { return L == &fg ? 0 : (L == &bg ? 1 : -1); }
+
+  // Hot coordinator paths address the active layer through L->. New temporary
+  // switches should use ActiveLayerScope so early returns restore the caller's
+  // layer. Direct useLayer remains for top-level phase transitions whose active
+  // layer deliberately outlives the current scope.
   inline void useLayer(Layer* lay) { L = lay; }
   struct ActiveLayerScope {
     Engine& engine;
     Layer* previous;
     inline ActiveLayerScope(Engine& owner, Layer* layer)
         : engine(owner), previous(owner.L) { owner.L = layer; }
+    inline ActiveLayerScope(Engine& owner, Layer* layer, Layer* restoreLayer)
+        : engine(owner), previous(restoreLayer) { owner.L = layer; }
     inline ~ActiveLayerScope() { engine.L = previous; }
     ActiveLayerScope(const ActiveLayerScope&) = delete;
     ActiveLayerScope& operator=(const ActiveLayerScope&) = delete;
@@ -46,15 +55,39 @@
     }
     return false;
   }
+  uint8_t bodyMaterialWithExplosiveProfile(Body* b, uint8_t profile) {
+    if (b->cellMaterials.empty())
+      return explosiveProfile(b->material) == profile ? b->material : EMPTY;
+    for (int i = 0; i < (int)b->occ.size(); i++) {
+      if (!b->occ[i]) continue;
+      uint8_t material = b->cellMaterials[i];
+      if (explosiveProfile(material) == profile) return material;
+      if (b->jointRole) {
+        material = b->jointPeerMaterials[i];
+        if (explosiveProfile(material) == profile) return material;
+      }
+    }
+    return EMPTY;
+  }
+  bool bodyContainsExplosiveProfile(Body* b, uint8_t profile) {
+    return bodyMaterialWithExplosiveProfile(b, profile) != EMPTY;
+  }
   bool bodyContainsGrowthOrigin(Body* b) {
-    return bodyContainsMaterial(b, SEED)
-        || bodyContainsMaterial(b, OAK_SEED)
-        || bodyContainsMaterial(b, MYCELIUM_SPORE);
+    if (b->cellMaterials.empty())
+      return isSeedMaterial(b->material) || b->material == MYCELIUM_SPORE;
+    for (int i = 0; i < (int)b->occ.size(); i++) {
+      if (!b->occ[i]) continue;
+      if (isSeedMaterial(b->cellMaterials[i])
+          || b->cellMaterials[i] == MYCELIUM_SPORE
+          || (b->jointRole && (isSeedMaterial(b->jointPeerMaterials[i])
+              || b->jointPeerMaterials[i] == MYCELIUM_SPORE))) return true;
+    }
+    return false;
   }
   bool layerBakeRetryDeferred(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
-      if (bodyContainsMaterial(b, TNT)) return true;
+      if (bodyContainsExplosiveProfile(b, XP_TNT_FUSE)) return true;
     return false;
   }
   bool bodyNeedsBakeTick(Body* b) {
@@ -150,11 +183,7 @@
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   std::vector<int> acidErasedStructural, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
-  std::vector<int> crossFireErasedFg, crossFireErasedBg;
   std::vector<std::pair<int, int>> bodyFrozenIceScratch;
-  std::vector<std::pair<int, int>> crossBodyFrozenIceFg, crossBodyFrozenIceBg;
-  std::unordered_set<int> crossFrozenIceFg, crossFrozenIceBg;
-  std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
   struct StoredItem { Item value; double wx = 0, wy = 0; };
   struct StoredProjectile { Projectile value; double wx = 0, wy = 0; };
@@ -171,7 +200,12 @@
   // settle pass by a multi-source BFS (resolveLiquidDisplacements in core.inc).
   // from = cell the lighter liquid occupied; fallback = a real free cell (denser's
   // vacated source), propagated through chains — never the overwritten target.
-  struct LiquidDisp { uint8_t material; int from; int fallback; };
+  struct LiquidDisp {
+    uint8_t material;
+    int from;
+    int fallback;
+    PersistentCellSnapshot state;
+  };
   std::vector<LiquidDisp> liquidDispPending;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
@@ -187,12 +221,10 @@
     return (double)(t ^ (t >> 14)) / 4294967296.0;
   }
   static inline PlanetId normalizedPlanet(int id) {
-    return id == PL_MOON ? PL_MOON
-         : id == PL_MARS ? PL_MARS
-         : id == PL_SHIP ? PL_SHIP : PL_EARTH;
+    return planetDef(id).id;
   }
   static inline double defaultGravityForPlanet(PlanetId id) {
-    return id == PL_MOON ? 0.33 : (id == PL_MARS ? 0.76 : 1.0);
+    return planetDef(id).gravity;
   }
   void setGravityScale(double scale) {
     if (!std::isfinite(scale)) scale = defaultGravityForPlanet(planetId);
@@ -261,9 +293,9 @@
     }
     useLayer(&fg);
     renderer.init(seed); // render-only RNG + shade/noise tables (separate stream)
-    initSurvivalFootprints();
+    tools.initSurvivalFootprints();
   }
-  ~Engine() { glDestroy(); }
+  ~Engine() { glp.glDestroy(); }
 
   // ---- material predicates ----
   // Material id is exact identity. MAT_CLASS is the broad gameplay/physics
@@ -284,6 +316,27 @@
   inline bool isPlantMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTFAMILY; }
   inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
   inline bool isFlammable(uint8_t m) { return MAT_FLAGS[m] & MF_FLAMMABLE; }
+  inline bool isSpawnHazard(uint8_t m) { return MAT_FLAGS[m] & MF_SPAWNHAZARD; }
+  inline bool isHeatSource(uint8_t m) { return MAT_FLAGS[m] & MF_HEATSOURCE; }
+  inline uint8_t explosiveProfile(uint8_t m) { return MAT_EXPLOSIVE_PROFILE[m]; }
+  inline uint8_t materialReactionProfile(uint8_t m) {
+    return MAT_REACTION_PROFILE[m];
+  }
+  inline bool hasMaterialReactionProfile(uint8_t m, uint8_t profile) {
+    return materialReactionProfile(m) == profile;
+  }
+  inline bool isHeatSensitiveExplosive(uint8_t m) {
+    return MAT_HEAT_SENSITIVE_EXPLOSIVE[m] != 0;
+  }
+  inline bool isFuseExplosive(uint8_t m) {
+    return explosiveProfile(m) == XP_TNT_FUSE;
+  }
+  inline bool isPocketExplosive(uint8_t m) {
+    return explosiveProfile(m) == XP_METHANE_POCKET;
+  }
+  inline bool isPlayerContactHazard(uint8_t m) {
+    return CONTACT_HAZARD_PLAYER_DAMAGE[MAT_CONTACT_HAZARD_PROFILE[m]] > 0;
+  }
   inline bool isLavaQuencher(uint8_t m) { return MAT_FLAGS[m] & MF_QUENCHESLAVA; }
   // Liquids that fill 1-cell gaps in a resting layer (relaxLiquidGaps).
   // LAVA still omits the flag (slow/thick); BRINE has it so submerged/free
@@ -292,6 +345,8 @@
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isBlastDamageable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
   inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
+  inline bool persistentLooseState(uint8_t m) { return isLooseMedium(m); }
+  inline bool persistentLiquidState(uint8_t m) { return isLiquidMaterial(m); }
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
   inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
@@ -302,21 +357,29 @@
   // seed, trunk, or foliage, and the species/material mapping. Species-specific
   // cells are authoritative when components are reconstructed from the grid.
   // DRIFTWOOD is neither, so it never acts as a growth source.
-  inline bool isSeedMaterial(uint8_t m) { return m == SEED || m == OAK_SEED; }
+  inline bool isSeedMaterial(uint8_t m) { return MAT_IS_PLANT_SEED[m] != 0; }
   inline bool componentHasSeed(const Layer& lay, const Comp& component) {
     for (int k : component.cells) if (isSeedMaterial(lay.grid[k])) return true;
     return false;
   }
   inline bool isPlantWood(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTWOOD; }
   inline bool isPlantLeaf(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTLEAF; }
-  inline uint8_t plantSeedMat(uint8_t pt) { return pt == PT_OAK ? OAK_SEED : SEED; }
-  inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_OAK ? OAK_WOOD : pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : pt == PT_VINE ? VINE : WOOD; }
-  inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_OAK ? OAK_LEAF : pt == PT_PINE ? PINE_NEEDLES : pt == PT_WILLOW ? WILLOW_LEAF : pt == PT_MUSHROOM ? MUSH_CAP : pt == PT_BUSH ? BUSH_LEAF : pt == PT_VINE ? GLOWBERRY : PLANT; }
-  inline bool materialEncodesPlantType(uint8_t m) { return m == OAK_SEED || m == OAK_WOOD || m == OAK_LEAF || m == PINE_WOOD || m == PINE_NEEDLES || m == WILLOW_LEAF || m == CACTUS || m == MUSH_STEM || m == MUSH_CAP || m == BUSH_LEAF || m == VINE || m == GLOWBERRY; }
-  inline uint8_t plantTypeFromMaterial(uint8_t m) { return m == OAK_SEED || m == OAK_WOOD || m == OAK_LEAF ? PT_OAK : m == PINE_WOOD || m == PINE_NEEDLES ? PT_PINE : m == WILLOW_LEAF ? PT_WILLOW : m == CACTUS ? PT_CACTUS : m == MUSH_STEM || m == MUSH_CAP ? PT_MUSHROOM : m == BUSH_LEAF ? PT_BUSH : m == VINE || m == GLOWBERRY ? PT_VINE : PT_STANDARD; }
-  inline void canonicalizeSeed(uint8_t& material, uint8_t& plantType) { if (material == OAK_SEED) plantType = PT_OAK; else if (material == SEED && plantType == PT_OAK) material = OAK_SEED; }
+  inline uint8_t validPlantType(uint8_t pt) { return pt < PLANT_SPECIES_COUNT ? pt : PT_STANDARD; }
+  inline uint8_t plantSeedMat(uint8_t pt) { return PLANT_SEED_MATERIAL[validPlantType(pt)]; }
+  inline uint8_t plantWoodMat(uint8_t pt) { return PLANT_WOOD_MATERIAL[validPlantType(pt)]; }
+  inline uint8_t plantLeafMat(uint8_t pt) { return PLANT_LEAF_MATERIAL[validPlantType(pt)]; }
+  inline bool materialEncodesPlantType(uint8_t m) { return MAT_PLANT_SPECIES[m] != NO_PLANT_SPECIES; }
+  inline uint8_t plantTypeFromMaterial(uint8_t m) { uint8_t pt = MAT_PLANT_SPECIES[m]; return pt != NO_PLANT_SPECIES ? pt : PT_STANDARD; }
+  inline void canonicalizeSeed(uint8_t& material, uint8_t& plantType) {
+    if (!isSeedMaterial(material)) return;
+    uint8_t encoded = MAT_PLANT_SPECIES[material];
+    if (encoded != NO_PLANT_SPECIES) plantType = encoded;
+    else material = plantSeedMat(plantType);
+  }
   inline bool isMyceliumMaterial(uint8_t m) { return m == MYCELIUM || m == MYCELIUM_SPORE; }
-  inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquidMaterial(m) || isGasMaterial(m); }
+  inline bool componentDisplaceable(uint8_t m) {
+    return m == EMPTY || isLooseMedium(m) || isGasMaterial(m);
+  }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 
   // ===== BODY-MATERIAL INVARIANT (read this once; it explains the whole rewrite) =====
@@ -337,8 +400,8 @@
   //     Growth origins also bake at stable fluid equilibrium so their cellular
   //     growth can begin; the resulting component is re-evaluated dynamically.
   //     RIGID bodies and ordinary bodies floating on liquid remain free.
-  // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
-  // detonates whether it is static or body-owned.
+  // Fuse-profile explosives are body-agnostic and detonate whether static or
+  // body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
 
   inline void mergeRowSpan(
@@ -580,6 +643,17 @@
     std::unordered_set<Body*> liveBg(bg.bodies.begin(), bg.bodies.end());
     auto checkLayer = [&](Layer& lay, bool background) {
       size_t n = (size_t)cols * rows;
+#define SAND_CHECK_PERSISTENT_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+      if (lay.name.current) \
+        for (size_t k = 0; k < n; k++) \
+          if (lay.name.current[k] != (type)(empty) && !accepts(lay.grid[k])) \
+            fail(#name " current state rejects material", (int)k, lay.grid[k], 0); \
+      if (lay.name.next) \
+        for (size_t k = 0; k < n; k++) \
+          if (lay.name.next[k] != (type)(empty) && !accepts(lay.next[k])) \
+            fail(#name " next state rejects material", (int)k, lay.next[k], 0);
+      SAND_PERSISTENT_CELL_CHANNELS(SAND_CHECK_PERSISTENT_CELL_CHANNEL)
+#undef SAND_CHECK_PERSISTENT_CELL_CHANNEL
       std::unordered_map<int, Body*> bodiesById;
       bodiesById.reserve(lay.bodies.size() * 2);
       for (Body* body : lay.bodies) {
@@ -899,11 +973,84 @@
         int minX = span.first, maxX = span.second;
         size_t width = (size_t)(maxX - minX + 1);
         memset(L->next + rs + minX, EMPTY, width);
-        if (L->nextFallSpeed) memset(L->nextFallSpeed + rs + minX, 0, width);
-        if (L->nextLiquidVel)
-          memset(L->nextLiquidVel + rs + minX, 0, width * sizeof(uint32_t));
+#define SAND_CLEAR_NEXT_CHANNEL_SPAN(name, type, empty, store, encode, decode, accepts, operations) \
+        if (L->name.next) \
+          std::fill(L->name.next + rs + minX, L->name.next + rs + minX + width, \
+                    (type)(empty));
+        SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_NEXT_CHANNEL_SPAN)
+#undef SAND_CLEAR_NEXT_CHANNEL_SPAN
       }
     }
+  }
+
+  inline bool clearPersistentCurrentState(Layer* layer, int k) {
+    bool changed = false;
+#define SAND_CLEAR_CURRENT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.current) { \
+      changed = changed || layer->name.current[k] != (type)(empty); \
+      layer->name.current[k] = (type)(empty); \
+    }
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_CURRENT_CHANNEL)
+#undef SAND_CLEAR_CURRENT_CHANNEL
+    return changed;
+  }
+  inline void clearPersistentNextState(Layer* layer, int k) {
+#define SAND_CLEAR_NEXT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.next) layer->name.next[k] = (type)(empty);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CLEAR_NEXT_CHANNEL)
+#undef SAND_CLEAR_NEXT_CHANNEL
+  }
+  inline PersistentCellSnapshot capturePersistentCurrentState(
+      const Layer* layer, int k) const {
+    PersistentCellSnapshot snapshot;
+#define SAND_CAPTURE_CURRENT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.current) snapshot.name = layer->name.current[k];
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CAPTURE_CURRENT_CHANNEL)
+#undef SAND_CAPTURE_CURRENT_CHANNEL
+    return snapshot;
+  }
+  inline PersistentCellSnapshot capturePersistentNextState(
+      const Layer* layer, int k) const {
+    PersistentCellSnapshot snapshot;
+#define SAND_CAPTURE_NEXT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.next) snapshot.name = layer->name.next[k];
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CAPTURE_NEXT_CHANNEL)
+#undef SAND_CAPTURE_NEXT_CHANNEL
+    return snapshot;
+  }
+  inline void restorePersistentCurrentState(
+      Layer* layer, int k, uint8_t material,
+      const PersistentCellSnapshot& snapshot, PersistentCellOperation operation) {
+#define SAND_RESTORE_CURRENT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.current) \
+      layer->name.current[k] = ((operations) & operation) && accepts(material) \
+        ? snapshot.name : (type)(empty);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_RESTORE_CURRENT_CHANNEL)
+#undef SAND_RESTORE_CURRENT_CHANNEL
+  }
+  inline void restorePersistentNextState(
+      Layer* layer, int k, uint8_t material,
+      const PersistentCellSnapshot& snapshot, PersistentCellOperation operation) {
+#define SAND_RESTORE_NEXT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (layer->name.next) \
+      layer->name.next[k] = ((operations) & operation) && accepts(material) \
+        ? snapshot.name : (type)(empty);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_RESTORE_NEXT_CHANNEL)
+#undef SAND_RESTORE_NEXT_CHANNEL
+  }
+  inline void carryPersistentStateToNext(
+      int fromK, int toK, uint8_t material, PersistentCellOperation operation) {
+#define SAND_CARRY_NEXT_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
+    if (L->name.next) \
+      L->name.next[toK] = ((operations) & operation) && accepts(material) \
+        ? L->name.current[fromK] : (type)(empty);
+    SAND_PERSISTENT_CELL_CHANNELS(SAND_CARRY_NEXT_CHANNEL)
+#undef SAND_CARRY_NEXT_CHANNEL
+  }
+  inline void mirrorCurrentCellToNext(int k) {
+    uint8_t material = L->grid[k];
+    L->next[k] = material;
+    carryPersistentStateToNext(k, k, material, PCSO_STATIONARY);
   }
 
   // ---- cell helpers ----
@@ -977,25 +1124,23 @@
     if (isLooseOverlayMat(a) || isLooseOverlayMat(b))
       noteLooseDirtyCol(k - (k / cols) * cols);
   }
-  inline void writeGridIndex(int k, uint8_t m) {
+  // Low-level grid storage only. This deliberately does not repair component or
+  // body membership; runtime edits/reactions must use CellMutationBatch.
+  inline void writeGridIndexUnsafe(int k, uint8_t m) {
     if (k < 0 || k >= cols * rows) return;
     if (L->grid[k] == m) {
-      bool momentumChanged = (L->fallSpeed && L->fallSpeed[k] != 0)
-        || (L->liquidVel && L->liquidVel[k] != 0);
-      if (L->fallSpeed) L->fallSpeed[k] = 0;
-      if (L->liquidVel) L->liquidVel[k] = 0;
+      bool momentumChanged = clearPersistentCurrentState(L, k);
       if (momentumChanged) markCellIndex(k);
       return;
     }
-    if (L->fallSpeed) L->fallSpeed[k] = 0;
-    if (L->liquidVel) L->liquidVel[k] = 0;
+    clearPersistentCurrentState(L, k);
     uint8_t old = L->grid[k];
     if (m == NEUTRONIUM) L->forceSourcePresent = true;
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
       forces.noteNeutroniumWrite(L, k, old, m);
     }
     noteLooseGroundTouch2At(k, old, m);
-    if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;
+    if (isHeatSource(m) && !isHeatSource(old)) L->heatAddedAfterPrepare = true;
     L->grid[k] = m;
     markCellIndex(k);
   }
@@ -1047,13 +1192,9 @@
     markDirtyRect(imin(fx, tx), imin(fy, ty), imax(fx, tx), imax(fy, ty));
   }
   inline void writeNextIndex(int k, uint8_t m) {
-    if (L->nextFallSpeed) L->nextFallSpeed[k] = 0;
-    if (L->nextLiquidVel) {
-      L->nextLiquidVel[k] = 0;
-      if (isLiquidMaterial(m) && L->grid[k] == m && L->vacatedStamp[k] != tick) {
-        L->nextLiquidVel[k] = L->liquidVel[k];
-      }
-    }
+    clearPersistentNextState(L, k);
+    if (L->grid[k] == m && L->vacatedStamp[k] != tick)
+      carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
     // Even when next[] already holds m (stale double-buffer residue), still mark
     // if the committed grid differs — otherwise a reclaim that early-outs here
     // leaves the vacated source without a dirty mark and ghosts can return.
@@ -1067,7 +1208,10 @@
     noteLooseGroundTouch2At(k, L->grid[k], m);
     noteLooseGroundTouch2At(k, L->next[k], EMPTY); // vacating/replacing prior next material
     L->next[k] = m;
-    if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+    if (L->grid[k] != m
+        || (isGasMaterial(m) && !GAS_PERSISTENT[MAT_GAS_PROFILE[m]])
+        || (isLiquidMaterial(m) && liquidCanEscape(k))
+        || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
   inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGasMaterial(d)) return true; return canDisplaceByLooseDensity(m, d); }
   // Free volume for liquid movement: EMPTY, gas, or a strictly less-dense liquid.
@@ -1144,10 +1288,6 @@
   }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
   inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }
-  inline void carryNextLiquidVelocity(int fromK, int toK) {
-    if (!L->nextLiquidVel) return;
-    L->nextLiquidVel[toK] = L->liquidVel[fromK];
-  }
   // True if something stacks pressure on this liquid cell: more of the same
   // material above, OR a strictly lighter liquid (e.g. water over brine). Without
   // the latter, submerged denser fluid never equalizes sideways and freezes into
@@ -1162,12 +1302,19 @@
   void moveMaterialInto(int fromK, int toK, uint8_t m) {
     // For liquids, displace the effective occupant (next if set, else grid) so a
     // denser cell can overwrite a lighter liquid that already settled into next[].
+    bool displacedFromNext = isLiquidMaterial(m) && L->next[toK] != EMPTY;
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
+    PersistentCellSnapshot displacedState;
+    if (displaced != EMPTY && displaced != m && canDisplaceMaterial(m, displaced)) {
+      displacedState = displacedFromNext
+        ? capturePersistentNextState(L, toK)
+        : capturePersistentCurrentState(L, toK);
+    }
     writeNextIndex(toK, m);
-    if (isLiquidMaterial(m)) carryNextLiquidVelocity(fromK, toK);
+    carryPersistentStateToNext(fromK, toK, m, PCSO_MOVE);
     int fromY = fromK / cols, fromX = fromK - fromY * cols;
     int toY = toK / cols, toX = toK - toY * cols;
-    if (toY > fromY && toX == fromX)
+    if (toY > fromY && toX == fromX && persistentLooseState(m))
       carryNextFallSpeed(toK, acceleratedFallSpeed(fromK, m));
     vacateForNextMove(fromK);
     if (isLiquidMaterial(m)) {
@@ -1184,7 +1331,7 @@
     // Liquid→liquid: denser claims the cell; lighter is relocated by multi-source BFS
     // after the settle pass (density chain). Do not swap into the source.
     if (isLiquidMaterial(m) && isLiquidMaterial(displaced)) {
-      liquidDispPending.push_back({displaced, toK, fromK});
+      liquidDispPending.push_back({displaced, toK, fromK, displacedState});
       return;
     }
     // Gas / lighter powder: swap into the mover's vacated source (one cell).
@@ -1194,12 +1341,20 @@
     // the vacatedStamp[toK] powder guard below is for powder→powder ghosts and
     // would drop liquid-displaced snow/steam (water "eats" snow).
     if (isGasMaterial(displaced) || isLooseSolidMaterial(displaced)) {
-      if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
+      if (L->next[fromK] == EMPTY) {
+        writeNextIndex(fromK, displaced);
+        restorePersistentNextState(
+          L, fromK, displaced, displacedState, PCSO_SWAP);
+      }
       return;
     }
     // Other displacees (should be rare): only emit if grid occupant still present.
     if (L->vacatedStamp[toK] == tick) return;
-    if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
+    if (L->next[fromK] == EMPTY) {
+      writeNextIndex(fromK, displaced);
+      restorePersistentNextState(
+        L, fromK, displaced, displacedState, PCSO_SWAP);
+    }
   }
   inline void moveLiquidInto(int fromK, int x, int y, uint8_t m) { moveMaterialInto(fromK, I(x, y), m); }
 

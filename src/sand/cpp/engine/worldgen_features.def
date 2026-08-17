@@ -1,0 +1,47 @@
+// One authoritative registry row per generated feature family.
+//
+// ID, name, semantic kind/role/tags, generation profiles, candidate lattice,
+// reach, ownership priority, stage, layer/write/exclusion policy, and the three
+// executable callbacks are deliberately kept together. Include this file only
+// with SAND_GENERATED_FEATURE defined.
+SAND_GENERATED_FEATURE(
+  VILLAGE, "village", WF_VILLAGE, WSR_NONE,
+  (WA_STRUCTURE | WA_SETTLEMENT), (1u << PGP_EARTH),
+  VILLAGE_LATTICE, 0, 256, 128, 200,
+  GFS_SURFACE_CONSTRUCTED, GFL_BOTH, GFSP_REPLACE, 0,
+  queryVillage, overlapsVillage, stampVillageGeneratedFeature)
+SAND_GENERATED_FEATURE(
+  MINE, "mine", WF_MINE, WSR_MINE_GALLERY,
+  (WA_STRUCTURE | WA_MINE), (1u << PGP_EARTH),
+  MINE_LATTICE, 0, 256, 64, 400,
+  GFS_SURFACE_CONSTRUCTED, GFL_BOTH, GFSP_REPLACE, 0,
+  queryMine, overlapsMine, stampMineGeneratedFeature)
+SAND_GENERATED_FEATURE(
+  RUIN, "cave ruin", WF_RUIN, WSR_RUIN,
+  (WA_STRUCTURE | WA_BUILDING | WA_INDOOR), (1u << PGP_EARTH),
+  RUIN_LATTICE, RUIN_LATTICE,
+  RuinPlan::CANDIDATE_OVERSCAN_X, RuinPlan::CANDIDATE_OVERSCAN_Y, 500,
+  GFS_SURFACE_CONSTRUCTED, GFL_BOTH, GFSP_REPLACE, (1u << GFF_MINE),
+  queryRuin, overlapsRuin, stampRuinGeneratedFeature)
+SAND_GENERATED_FEATURE(
+  DEEP_STRUCTURE, "deep monument", WF_DEEP_STRUCTURE, WSR_DEEP_STRUCTURE,
+  (WA_STRUCTURE | WA_BUILDING | WA_INDOOR), (1u << PGP_EARTH),
+  TerrainGen::DEEP_CAVERN_WIDTH, TerrainGen::DEEP_CAVERN_HEIGHT,
+  DeepStructurePlan::CANDIDATE_OVERSCAN_X,
+  DeepStructurePlan::CANDIDATE_OVERSCAN_Y, 500,
+  GFS_DEEP_CONSTRUCTED, GFL_BOTH, GFSP_REPLACE, 0,
+  queryDeepStructure, overlapsDeepStructure, stampDeepGeneratedFeature)
+SAND_GENERATED_FEATURE(
+  OUTCROP, "outcrop", WF_OUTCROP, WSR_OUTCROP,
+  WA_STRUCTURE, OUTCROP_GENERATION_PROFILE_MASK,
+  OUTCROP_LATTICE, 0,
+  OutcropPlan::BOUND_HALF_WIDTH, OutcropPlan::BOUND_VERTICAL_REACH, 300,
+  GFS_OFFWORLD_FORMATION, GFL_BOTH, GFSP_REPLACE, 0,
+  queryOutcrop, overlapsOutcrop, stampOutcropGeneratedFeature)
+SAND_GENERATED_FEATURE(
+  OFFWORLD_FACILITY, "offworld facility", WF_OFFWORLD_FACILITY, WSR_FACILITY,
+  (WA_STRUCTURE | WA_FACILITY), OFFWORLD_FACILITY_GENERATION_PROFILE_MASK,
+  OFFWORLD_FACILITY_LATTICE, 0,
+  OFFWORLD_FACILITY_OVERSCAN_X, OFFWORLD_FACILITY_OVERSCAN_Y, 600,
+  GFS_OFFWORLD_CONSTRUCTED, GFL_BOTH, GFSP_REPLACE, 0,
+  queryOffworldFacility, overlapsOffworldFacility, stampFacilityGeneratedFeature)

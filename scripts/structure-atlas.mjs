@@ -1,11 +1,13 @@
-// Find and render representative generated structures from the actual two-layer
-// cell grids. Usage: npm run worldgen:structure-atlas -- [output.png] [seed]
+// Render representative generated structures discovered through semantic world
+// context. Usage: npm run worldgen:structure-atlas -- [output.png] [seed]
 
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
-import { MATERIALS } from '../src/sand/materials.generated.js';
+import {
+  initSandWasm, createEngineWasm, CAVE_BIOME_DEFS, WORLD_FEATURE,
+} from '../src/sand/wasmBridge/engineFactory.js';
+import { MATERIAL_BY_ID } from '../src/sand/materials.generated.js';
 import { MAT } from '../src/sand/materials.js';
 
 const output = resolve(process.argv[2] || 'bench/structure-atlas.png');
@@ -17,7 +19,8 @@ function crc32(buffer) {
   let crc = 0xffffffff;
   for (const byte of buffer) {
     crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    for (let bit = 0; bit < 8; bit++)
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -55,15 +58,19 @@ function encodePng(width, height, rgba) {
 
 function colorOf(id, background) {
   if (id === MAT.EMPTY) return [17, 24, 36];
-  const packed = MATERIALS[id]?.color >>> 0;
+  const packed = MATERIAL_BY_ID[id]?.color >>> 0;
   const color = [packed & 255, (packed >>> 8) & 255, (packed >>> 16) & 255];
-  return background ? color.map((v) => Math.round(v * 0.52)) : color;
+  return background ? color.map((value) => Math.round(value * 0.52)) : color;
 }
 
-function capture(engine, name, centerX, centerY, width, height) {
+function capture(engine, name, bounds, width, height) {
+  const centerX = (bounds.left + bounds.right) / 2;
+  const centerY = (bounds.top + bounds.bottom) / 2;
   const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
-  const x0 = Math.max(offX, Math.min(offX + COLS - width, Math.round(centerX - width / 2)));
-  const y0 = Math.max(offY, Math.min(offY + ROWS - height, Math.round(centerY - height / 2)));
+  const x0 = Math.max(offX,
+    Math.min(offX + COLS - width, Math.round(centerX - width / 2)));
+  const y0 = Math.max(offY,
+    Math.min(offY + ROWS - height, Math.round(centerY - height / 2)));
   const fg = engine.getGrid(), bg = engine.getGridBg();
   const pixels = Buffer.alloc(width * SCALE * height * SCALE * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -72,197 +79,123 @@ function capture(engine, name, centerX, centerY, width, height) {
     const color = foreground ? colorOf(fg[k], false) : colorOf(bg[k], true);
     for (let sy = 0; sy < SCALE; sy++) for (let sx = 0; sx < SCALE; sx++) {
       const p = ((y * SCALE + sy) * width * SCALE + x * SCALE + sx) * 4;
-      pixels[p] = color[0]; pixels[p + 1] = color[1]; pixels[p + 2] = color[2]; pixels[p + 3] = 255;
+      pixels[p] = color[0];
+      pixels[p + 1] = color[1];
+      pixels[p + 2] = color[2];
+      pixels[p + 3] = 255;
     }
   }
-  panels.push({ name, x0, y0, width: width * SCALE, height: height * SCALE, pixels });
+  panels.push({ name, width: width * SCALE, height: height * SCALE, pixels });
 }
 
-function findSurfaceStructure(engine) {
-  for (let attempt = 0; attempt < 28; attempt++) {
-    const bg = engine.getGridBg();
-    const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
-    let score = 0, weightedX = 0;
-    const occupied = new Uint8Array(COLS);
-    for (let x = 12; x < COLS - 12; x++) {
-      const surface = engine.worldSurfaceAbsAt(offX + x) - offY;
-      let column = 0;
-      for (let y = Math.max(0, surface - 62); y < Math.min(ROWS, surface); y++)
-        if (bg[y * COLS + x] === MAT.BRICK || bg[y * COLS + x] === MAT.SANDSTONE) column++;
-      if (column >= 8) {
-        occupied[x] = 1;
-        score += column;
-        weightedX += (offX + x) * column;
-      }
-    }
-    const runs = [];
-    for (let x = 0; x < COLS;) {
-      if (!occupied[x]) { x++; continue; }
-      const start = x;
-      while (x < COLS && occupied[x]) x++;
-      if (x - start >= 12) runs.push([start, x - 1]);
-    }
-    const span = runs.length > 1 ? runs.at(-1)[1] - runs[0][0] + 1 : 0;
-    if (score >= 420 && runs.length >= 2 && span >= 90) {
-      const centerX = weightedX / score;
-      return { x: centerX, y: engine.worldSurfaceAbsAt(Math.round(centerX)) - 27 };
-    }
-    engine.shiftWorldXY(192, 0);
-  }
-  return null;
-}
-
-function findMine(engine) {
-  for (let depth = 0; depth < 3; depth++) {
-    for (let attempt = 0; attempt < 28; attempt++) {
-      const fg = engine.getGrid();
+function findFeature(engine, featureKind, {
+  horizontalWindows = 32, verticalWindows = 1, step = 8,
+} = {}) {
+  for (let depth = 0; depth < verticalWindows; depth++) {
+    for (let attempt = 0; attempt < horizontalWindows; attempt++) {
       const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
-      for (let y = 16; y < ROWS - 8; y++) {
-        let count = 0, first = -1, last = -1;
-        for (let x = 0; x < COLS; x++) if (fg[y * COLS + x] === MAT.IRON_ORE) {
-          count++; if (first < 0) first = x; last = x;
+      for (let y = step; y < ROWS - step; y += step) {
+        for (let x = step; x < COLS - step; x += step) {
+          const context = engine.worldContextAt(offX + x, offY + y);
+          if (context.featureKind === featureKind) return context;
         }
-        if (count >= 70 && last - first >= 100 && first >= 24 && last < COLS - 24)
-          return { x: offX + (first + last) / 2, y: offY + y - 28 };
       }
       engine.shiftWorldXY(192, 0);
-    }
-    engine.shiftWorldXY(0, 96);
-  }
-  return null;
-}
-
-function findRuin(engine) {
-  for (let depth = 0; depth < 3; depth++) {
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const fg = engine.getGrid();
-      const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
-      const seen = new Uint8Array(fg.length);
-      const stack = [];
-      for (let start = 0; start < fg.length; start++) {
-        if (seen[start] || fg[start] !== MAT.BRICK) continue;
-        seen[start] = 1; stack.push(start);
-        let count = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1;
-        while (stack.length) {
-          const k = stack.pop();
-          const x = k % COLS, y = (k / COLS) | 0;
-          count++; minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-          for (const nk of [x ? k - 1 : -1, x + 1 < COLS ? k + 1 : -1, y ? k - COLS : -1, y + 1 < ROWS ? k + COLS : -1])
-            if (nk >= 0 && !seen[nk] && fg[nk] === MAT.BRICK) { seen[nk] = 1; stack.push(nk); }
-        }
-        const width = maxX - minX + 1, height = maxY - minY + 1;
-        const centerX = offX + (minX + maxX) / 2, centerY = offY + (minY + maxY) / 2;
-        let interiorEmpty = 0;
-        for (let y = minY + 1; y < maxY; y++) for (let x = minX + 1; x < maxX; x++)
-          interiorEmpty += fg[y * COLS + x] === MAT.EMPTY;
-        if (count >= 45 && width >= 16 && width <= 70 && height >= 7
-            && interiorEmpty > Math.max(30, width * height * 0.30)
-            && centerY > engine.worldSurfaceAbsAt(Math.round(centerX)) + 30)
-          return { x: centerX, y: centerY };
-      }
-      engine.shiftWorldXY(160, 0);
     }
     engine.shiftWorldXY(0, 128);
   }
   return null;
 }
 
+function centerFeature(engine, context) {
+  const centerX = (context.bounds.left + context.bounds.right) / 2;
+  const centerY = (context.bounds.top + context.bounds.bottom) / 2;
+  const shiftX = Math.round((centerX - engine.getWorldOffsetX() - COLS / 2) / 32) * 32;
+  const shiftY = Math.round((centerY - engine.getWorldOffsetY() - ROWS / 2) / 32) * 32;
+  if (shiftX || shiftY) engine.shiftWorldXY(shiftX, shiftY);
+}
+
 function captureDeepMonuments(engine) {
-  const names = ['magma citadel', 'crystal observatory', 'fossil conservatory', 'hanging archive'];
-  const found = new Set();
+  const deepBiomes = CAVE_BIOME_DEFS.filter((def) => def.deep);
+  const deepById = new Map(deepBiomes.map((def) => [def.id, def]));
+  const foundBiomes = new Set();
+  const foundFeatures = new Set();
   while (engine.getWorldOffsetY() < 640) engine.shiftWorldXY(0, 160);
-  for (let depth = 0; depth < 6 && found.size < 4; depth++) {
+  for (let depth = 0; depth < 6 && foundBiomes.size < deepBiomes.length; depth++) {
     for (let attempt = 0; attempt < 36; attempt++) {
-      const fg = engine.getGrid();
       const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
-      const seen = new Uint8Array(fg.length);
-      const stack = [];
-      for (let start = 0; start < fg.length; start++) {
-        if (seen[start] || (fg[start] !== MAT.BRICK && fg[start] !== MAT.SANDSTONE)) continue;
-        seen[start] = 1;
-        stack.push(start);
-        let count = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1;
-        while (stack.length) {
-          const k = stack.pop(), x = k % COLS, y = (k / COLS) | 0;
-          count++; minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-          for (const nk of [x ? k - 1 : -1, x + 1 < COLS ? k + 1 : -1,
-            y ? k - COLS : -1, y + 1 < ROWS ? k + COLS : -1])
-            if (nk >= 0 && !seen[nk] && (fg[nk] === MAT.BRICK || fg[nk] === MAT.SANDSTONE)) {
-              seen[nk] = 1;
-              stack.push(nk);
-            }
-        }
-        const width = maxX - minX + 1, height = maxY - minY + 1;
-        if (count > 140 && width >= 70 && height >= 24) {
-          const bg = engine.getGridBg();
-          let furnishedWall = 0;
-          for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++)
-            furnishedWall += bg[y * COLS + x] === MAT.BRICK
-              || bg[y * COLS + x] === MAT.SANDSTONE
-              || bg[y * COLS + x] === MAT.WOOD;
-          if (furnishedWall < 100) continue;
-          const x = offX + (minX + maxX) / 2, y = offY + (minY + maxY) / 2;
-          const biome = engine.worldCaveBiomeAt(Math.round(x), Math.round(y));
-          if (biome >= 4 && biome <= 7 && !found.has(biome)) {
-            capture(engine, names[biome - 4], x, y, 220, 112);
-            found.add(biome);
-          }
+      const pending = [];
+      for (let y = 8; y < ROWS - 8; y += 8) {
+        for (let x = 8; x < COLS - 8; x += 8) {
+          const context = engine.worldContextAt(offX + x, offY + y);
+          if (context.featureKind !== WORLD_FEATURE.DEEP_STRUCTURE
+              || foundFeatures.has(context.featureId)
+              || !deepById.has(context.caveBiome)
+              || foundBiomes.has(context.caveBiome)) continue;
+          pending.push(context);
+          foundFeatures.add(context.featureId);
+          foundBiomes.add(context.caveBiome);
         }
       }
+      for (const context of pending) {
+        const def = deepById.get(context.caveBiome);
+        capture(engine, def.name, context.bounds, 220, 112);
+      }
       engine.shiftWorldXY(160, 0);
-      if (found.size === 4) break;
     }
     engine.shiftWorldXY(0, 160);
   }
-  return found.size;
+  return { found: foundBiomes.size, expected: deepBiomes.length };
 }
 
 await initSandWasm();
-const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: true });
-const alignShift = (delta) => Math.round(delta / 32) * 32;
+const engine = createEngineWasm({
+  cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: true,
+});
 
-const surface = findSurfaceStructure(engine);
-if (surface) {
-  engine.shiftWorldXY(alignShift(surface.x - engine.getWorldOffsetX() - COLS / 2), 0);
-  capture(engine, 'surface settlement', surface.x, surface.y, 300, 100);
+const representatives = [
+  { kind: WORLD_FEATURE.VILLAGE, name: 'surface settlement', width: 300, height: 100,
+    search: {} },
+  { kind: WORLD_FEATURE.MINE, name: 'railroad mine', width: 240, height: 112,
+    search: { verticalWindows: 3 } },
+  { kind: WORLD_FEATURE.RUIN, name: 'underground ruin', width: 180, height: 96,
+    search: { horizontalWindows: 30, verticalWindows: 3 } },
+];
+for (const representative of representatives) {
+  const context = findFeature(engine, representative.kind, representative.search);
+  if (!context) continue;
+  centerFeature(engine, context);
+  capture(engine, representative.name, context.bounds,
+          representative.width, representative.height);
 }
 
-engine.shiftWorldXY(0, 96);
-const mine = findMine(engine);
-if (mine) {
-  engine.shiftWorldXY(alignShift(mine.x - engine.getWorldOffsetX() - COLS / 2), 0);
-  capture(engine, 'railroad mine', mine.x, mine.y, 240, 112);
-}
-
-engine.shiftWorldXY(0, 128);
-const ruin = findRuin(engine);
-if (ruin) {
-  engine.shiftWorldXY(alignShift(ruin.x - engine.getWorldOffsetX() - COLS / 2), 0);
-  capture(engine, 'underground ruin', ruin.x, ruin.y, 180, 96);
-}
-
-const deepCount = captureDeepMonuments(engine);
+const deep = captureDeepMonuments(engine);
 engine.destroy();
 
-if (panels.length !== 7)
-  throw new Error(`could only find ${panels.length - 3}/4 deep structure types for seed ${seed} (found ${deepCount})`);
-const width = Math.max(...panels.map((p) => p.width));
-const height = panels.reduce((sum, p) => sum + p.height, 0) + GAP * (panels.length - 1);
+const expectedPanels = representatives.length + deep.expected;
+if (panels.length !== expectedPanels)
+  throw new Error(`found ${panels.length}/${expectedPanels} structure panels; deep ${deep.found}/${deep.expected}`);
+const width = Math.max(...panels.map((panel) => panel.width));
+const height = panels.reduce((sum, panel) => sum + panel.height, 0)
+  + GAP * (panels.length - 1);
 const pixels = Buffer.alloc(width * height * 4);
 for (let p = 0; p < pixels.length; p += 4) {
-  pixels[p] = 8; pixels[p + 1] = 11; pixels[p + 2] = 17; pixels[p + 3] = 255;
+  pixels[p] = 8;
+  pixels[p + 1] = 11;
+  pixels[p + 2] = 17;
+  pixels[p + 3] = 255;
 }
 let destY = 0;
 for (const panel of panels) {
   const destX = Math.floor((width - panel.width) / 2);
-  for (let y = 0; y < panel.height; y++)
-    panel.pixels.copy(pixels, ((destY + y) * width + destX) * 4, y * panel.width * 4, (y + 1) * panel.width * 4);
-  console.log(`${panel.name}: world (${panel.x0}, ${panel.y0}) ${panel.width / SCALE}x${panel.height / SCALE}`);
+  for (let y = 0; y < panel.height; y++) {
+    const source = y * panel.width * 4;
+    const destination = ((destY + y) * width + destX) * 4;
+    panel.pixels.copy(pixels, destination, source, source + panel.width * 4);
+  }
   destY += panel.height + GAP;
 }
 
 mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, encodePng(width, height, pixels));
-console.log(`structure atlas: ${output} (${width}x${height}, seed ${seed})`);
+console.log(`structure atlas: ${output} (${width}x${height}, seed ${seed}; ${panels.map((panel) => panel.name).join(', ')})`);

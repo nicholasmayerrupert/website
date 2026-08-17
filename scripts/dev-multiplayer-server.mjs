@@ -2,7 +2,9 @@
 // forwards room messages without simulating; the first browser peer is authority.
 
 import { WebSocketServer } from 'ws';
-import { decode, encode, MSG, makeLeave } from '../src/sand/net/protocol.js';
+import {
+  decodeWithCompatibility, encode, MSG, makeLeave, makeReject,
+} from '../src/sand/net/protocol.js';
 
 const MAX_ROOM_PLAYERS = 8;
 
@@ -20,7 +22,12 @@ export function startServer(port = 5191) {
     let joined = null; // { roomId, clientId }
     ws.on('message', (buf) => {
       const raw = buf.toString();
-      const m = decode(raw);
+      const { message: m, rejection } = decodeWithCompatibility(raw);
+      if (rejection) {
+        ws.send(encode(makeReject(rejection.room, rejection.reason)));
+        ws.close();
+        return;
+      }
       if (!m) return; // drop malformed
       if (m.t === MSG.JOIN) {
         const room = roomOf(m.room);

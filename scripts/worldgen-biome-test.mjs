@@ -1,7 +1,16 @@
 // Biomes vary surface and soil materials without affecting terrain height, and
 // the generated loose mantle must settle without churn.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  initSandWasm, createEngineWasm, BIOME, CAVE_BIOME,
+  PLANET, PLANET_COUNT,
+  SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
+  CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS,
+  SURFACE_BIOME_SELECTION_ORDER,
+  SHALLOW_CAVE_BIOME_SELECTION_ORDER,
+  DEEP_CAVE_BIOME_SELECTION_ORDER,
+} from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { MAT_FLAGS, MF } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -9,6 +18,65 @@ import { makeChecker } from './sand-test-util.mjs';
 const COLS = 220, ROWS = 140, SEED = 0xBED;
 await initSandWasm();
 const { check, done } = makeChecker('worldgen biomes');
+check('surface biome ABI metadata is dense and exhaustive',
+  Object.keys(BIOME).length === SURFACE_BIOME_COUNT
+    && SURFACE_BIOME_ALL_MASK === (2 ** SURFACE_BIOME_COUNT) - 1);
+check('cave biome ABI metadata is dense and exhaustive',
+  Object.keys(CAVE_BIOME).length === CAVE_BIOME_COUNT
+    && CAVE_BIOME_ALL_MASK === (2 ** CAVE_BIOME_COUNT) - 1);
+const surfaceIds = SURFACE_BIOME_DEFS.map((def) => def.id);
+const caveIds = CAVE_BIOME_DEFS.map((def) => def.id);
+check('surface biome behavior and selection metadata cover every stable ID',
+  surfaceIds.length === SURFACE_BIOME_COUNT
+    && surfaceIds.every((id, index) => id === index)
+    && new Set(SURFACE_BIOME_SELECTION_ORDER).size
+      === SURFACE_BIOME_SELECTION_ORDER.length
+    && SURFACE_BIOME_SELECTION_ORDER.every((id) => surfaceIds.includes(id))
+    && SURFACE_BIOME_DEFS.every((def) =>
+      def.climate.length > 0 || Object.keys(def.profileSelection).length > 0)
+    && SURFACE_BIOME_DEFS.every((def) => /^#[0-9a-f]{6}$/i.test(def.atlasColor)));
+const caveSelection = [
+  ...SHALLOW_CAVE_BIOME_SELECTION_ORDER,
+  ...DEEP_CAVE_BIOME_SELECTION_ORDER,
+];
+check('cave biome behavior and selection metadata cover every stable ID',
+  caveIds.length === CAVE_BIOME_COUNT
+    && caveIds.every((id, index) => id === index)
+    && new Set(caveSelection).size === caveSelection.length
+    && caveSelection.every((id) => caveIds.includes(id))
+    && CAVE_BIOME_DEFS.every((def) =>
+      Object.values(def.profileSelection).some((entries) => entries.length > 0))
+    && CAVE_BIOME_DEFS.every((def) => /^#[0-9a-f]{6}$/i.test(def.atlasColor)));
+
+const reachedSurface = new Set();
+const reachedCaves = new Set();
+const caveReachByPlanet = new Map();
+for (const planetId of Object.values(PLANET)) {
+  const planetCaves = new Set();
+  caveReachByPlanet.set(planetId, planetCaves);
+  for (const reachSeed of [0xBED, 0xBEEF, 7]) {
+    const reach = createEngineWasm({
+      cols: 96, rows: 96, worldSeed: reachSeed, planetId,
+      sinksOn: false, infinite: true,
+    });
+    for (let x = -30_000; x <= 30_000; x += 24) {
+      reachedSurface.add(reach.worldBiomeAt(x));
+      for (const y of [180, 420, 760, 960, 1400]) {
+        const cave = reach.worldCaveBiomeAt(x, y);
+        reachedCaves.add(cave);
+        planetCaves.add(cave);
+      }
+    }
+    reach.destroy();
+  }
+}
+check('runtime reachability scans every declared planet profile',
+  caveReachByPlanet.size === PLANET_COUNT
+    && [...caveReachByPlanet.values()].every((ids) => ids.size > 0));
+check('every authored surface biome is reachable through descriptor selection',
+  SURFACE_BIOME_DEFS.every((def) => reachedSurface.has(def.id)));
+check('every authored cave biome is reachable through descriptor selection',
+  CAVE_BIOME_DEFS.every((def) => reachedCaves.has(def.id)));
 const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
 // Surface height is a pure function of worldX (no biome term), so it must be

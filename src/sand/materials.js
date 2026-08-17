@@ -7,11 +7,11 @@
 // (0 = opaque, 1 = invisible).
 // density 0 = weightless (air/gas). looseSorted marks materials that participate
 // in density-sorted loose settling (powders + flowing liquids). mobility is the
-// per-tick chance for viscosity-limited settling and spreading; unobstructed
-// vertical lava fall uses the ordinary gravity cadence.
-import { KIND, MATERIALS, MAT_CLASS, MC } from './materials.generated.js';
+// per-tick chance for viscosity-limited settling and spreading; a generated
+// movement profile may keep unobstructed vertical fall on the gravity cadence.
+import { KIND, MATERIALS, MATERIAL_BY_ID, MAT_CLASS, MC, TABLE_SIZE } from './materials.generated.js';
 
-export { KIND, MATERIALS, MAT_CLASS, MC };
+export { KIND, MATERIALS, MATERIAL_BY_ID, MAT_CLASS, MC, TABLE_SIZE };
 
 // MAT.<NAME> = id, derived from the registry so ids live in exactly one place.
 export const MAT = Object.fromEntries(MATERIALS.map((m) => [m.name, m.id]));

@@ -1,4 +1,8 @@
-import { CREATURE, PLANET } from '../wasmBridge/abi.generated.js';
+import {
+  CREATURE,
+  PLANET_GAMEPLAY_FLAG,
+  planetHasGameplayFlag,
+} from '../wasmBridge/abi.generated.js';
 
 const TALKABLES = Object.freeze({
   [CREATURE.SURVEYOR]: {
@@ -15,6 +19,15 @@ const TALKABLES = Object.freeze({
     dialogue: 'I keep the transporter, armory, and hull systems running. The central deck is clear—nothing aboard should obstruct your movement.',
   },
 });
+
+export function recoveryBeamIsActive(
+  planetId,
+  playerWorldY,
+  hasGameplayFlag = planetHasGameplayFlag,
+) {
+  return Number.isFinite(playerWorldY) && playerWorldY > 48
+    && hasGameplayFlag(planetId, PLANET_GAMEPLAY_FLAG.VOID_RECOVERY);
+}
 
 const STYLE = `
 .sg-talk-layer { position:absolute; inset:0; z-index:78; overflow:hidden; pointer-events:none;
@@ -201,8 +214,10 @@ export function createTalkHud(root, game, onAction) {
       }
     }
 
-    const recovering = game.getPlanetState?.().id === PLANET.SHIP &&
-      Number.isFinite(view.playerWorldY) && view.playerWorldY > 48;
+    const recovering = recoveryBeamIsActive(
+      game.getPlanetState?.().id,
+      view.playerWorldY,
+    );
     const playerX = (view.playerWorldX - view.cameraWorldX) / view.viewCols * width;
     const playerY = (view.playerWorldY - view.cameraWorldY) / view.viewRows * height;
     recoveryBeam.classList.toggle('on', recovering);

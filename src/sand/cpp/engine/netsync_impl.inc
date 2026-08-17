@@ -36,7 +36,7 @@ int NetSync::rleValidate(const uint8_t* buf, int len, int p) const {
       | ((uint32_t)buf[p + 2] << 16)
       | ((uint32_t)buf[p + 3] << 24);
     uint8_t material = buf[p + 4];
-    if (run == 0 || run > n - idx || material >= MATERIAL_COUNT) return -1;
+    if (run == 0 || run > n - idx || !isMaterialId(material)) return -1;
     idx += run;
     p += 5;
   }
@@ -49,25 +49,22 @@ bool NetSync::applyWorld(const uint8_t* buf, int len) {
   if (bgEnd != len) return false;
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
-  if (E.fg.fallSpeed) {
-    std::fill(E.fg.fallSpeedA.begin(), E.fg.fallSpeedA.end(), (uint8_t)0);
-    std::fill(E.fg.fallSpeedB.begin(), E.fg.fallSpeedB.end(), (uint8_t)0);
-    std::fill(E.bg.fallSpeedA.begin(), E.bg.fallSpeedA.end(), (uint8_t)0);
-    std::fill(E.bg.fallSpeedB.begin(), E.bg.fallSpeedB.end(), (uint8_t)0);
-    std::fill(E.fg.liquidVelA.begin(), E.fg.liquidVelA.end(), (uint32_t)0);
-    std::fill(E.fg.liquidVelB.begin(), E.fg.liquidVelB.end(), (uint32_t)0);
-    std::fill(E.bg.liquidVelA.begin(), E.bg.liquidVelA.end(), (uint32_t)0);
-    std::fill(E.bg.liquidVelB.begin(), E.bg.liquidVelB.end(), (uint32_t)0);
-  }
+  E.fg.clearMotionState();
+  E.bg.clearMotionState();
   // A full snapshot replaces grid[] without replacing the alternate buffers.
   // Force one ordinary carry before a prior cave-blast sparse proof can be reused.
   E.fg.blastSparseCarryReady = false;
   E.bg.blastSparseCarryReady = false;
   E.fg.skyWorldReachY.clear(); E.fg.skyValid = false; E.fg.skyDirty = true;
   E.bg.skyWorldReachY.clear(); E.bg.skyValid = false; E.bg.skyDirty = true;
-  E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols); E.markAllDirty();
-  E.useLayer(&E.bg); E.registerSeededComponents(0, E.cols); E.markAllDirty();
-  E.useLayer(&E.fg);
+  {
+    Engine::ActiveLayerScope active(E, &E.fg);
+    E.comps.registerSeededComponents(0, E.cols); E.markAllDirty();
+  }
+  {
+    Engine::ActiveLayerScope active(E, &E.bg);
+    E.comps.registerSeededComponents(0, E.cols); E.markAllDirty();
+  }
   return true;
 }
 
@@ -88,10 +85,9 @@ bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
   // Fresh/resized mirror engines already begin with skyValid=false and no cache.
   E.fg.skyDirty = true;
   E.bg.skyDirty = true;
-  E.useLayer(&E.fg); E.markAllDirty();
-  E.useLayer(&E.bg); E.markAllDirty();
+  { Engine::ActiveLayerScope active(E, &E.fg); E.markAllDirty(); }
+  { Engine::ActiveLayerScope active(E, &E.bg); E.markAllDirty(); }
   E.bgEnabled = true;
-  E.useLayer(&E.fg);
   return true;
 }
 
@@ -99,7 +95,8 @@ bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
 // row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
 void NetSync::writeDiffLayer(bool background) {
   Layer* lay = background ? &E.bg : &E.fg;
-  E.useLayer(lay); E.buildDirtyRects();
+  Engine::ActiveLayerScope active(E, lay);
+  E.buildDirtyRects();
   int rc = (int)(lay->dirtyRects.size() / 4);
   size_t section = blob.size(), cursor = section + 2;
   diffRectOffsets.resize(rc);
@@ -134,7 +131,7 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
   Layer* lay = background ? &E.bg : &E.fg;
   if (p + 2 > len) return p;
   int rc = readLE16(buf, p); p += 2;
-  E.useLayer(lay);
+  Engine::ActiveLayerScope active(E, lay);
   for (int r = 0; r < rc; r++) {
     if (p + 8 > len) break;
     int x0 = readLE16(buf, p), y0 = readLE16(buf, p + 2), x1 = readLE16(buf, p + 4), y1 = readLE16(buf, p + 6);
@@ -152,7 +149,7 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
           for (int x = 0; x < width; x++) {
             uint8_t oldM = current[x], newM = incoming[x];
             bool immediateLightChange = oldM != newM &&
-              ((oldM < TABLE && MAT_CLASS[oldM] == MC_RIGID)
+              ((isMaterialId(oldM) && MAT_CLASS[oldM] == MC_RIGID)
                || MAT_CLASS[newM] == MC_RIGID ||
                (x0 + x >= lightEditX0 && x0 + x <= lightEditX1));
             if (immediateLightChange && runX0 < 0) runX0 = x0 + x;
@@ -164,13 +161,7 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
           }
         }
         std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
-        if (lay->fallSpeed) std::memset(lay->fallSpeed + y * E.cols + x0, 0, (size_t)width);
-        if (lay->liquidVel) {
-          size_t offset = (size_t)y * E.cols + x0;
-          size_t bytes = (size_t)width * sizeof(uint32_t);
-          std::memset(lay->liquidVel + offset, 0, bytes);
-          std::memset(lay->nextLiquidVel + offset, 0, bytes);
-        }
+        lay->clearMotionSpan((size_t)y * E.cols + x0, (size_t)width);
       }
       p += width;
     }
@@ -191,7 +182,7 @@ int NetSync::validateDiffLayer(const uint8_t* buf, int len, int p) const {
     size_t area = (size_t)(x1 - x0) * (size_t)(y1 - y0);
     if (area > (size_t)(len - p)) return -1;
     for (size_t i = 0; i < area; i++)
-      if (buf[p + i] >= MATERIAL_COUNT) return -1;
+      if (!isMaterialId(buf[p + i])) return -1;
     p += (int)area;
   }
   return p;
@@ -203,9 +194,8 @@ bool NetSync::applyDiff(const uint8_t* buf, int len) {
   int p = readDiffLayer(buf, len, 0, false);
   readDiffLayer(buf, len, p, true);
   E.fg.skyDirty = true; E.bg.skyDirty = true;
-  E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols);
-  E.useLayer(&E.bg); E.registerSeededComponents(0, E.cols);
-  E.useLayer(&E.fg);
+  { Engine::ActiveLayerScope active(E, &E.fg); E.comps.registerSeededComponents(0, E.cols); }
+  { Engine::ActiveLayerScope active(E, &E.bg); E.comps.registerSeededComponents(0, E.cols); }
   return true;
 }
 
@@ -217,7 +207,6 @@ bool NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int 
   readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.bgEnabled = true;
-  E.useLayer(&E.fg);
   return true;
 }
 

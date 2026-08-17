@@ -10,18 +10,41 @@
 import createSandModule from '../wasm/sandEngine.js';
 import { MAT } from '../materials.js';
 import {
-  ABI_VERSION, OFF, STRIDES, INPUT, PLANET,
-  BIOME, CAVE_BIOME, WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
+  AMBIENCE_GROUP_COUNT, AMBIENCE_SAMPLE_STRIDE,
+} from '../materials.generated.js';
+import {
+  ABI_VERSION, ABI_FINGERPRINT, OFF, STRIDES, INPUT,
+  PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
+  PLANET_PRESENTATION, PLANET_PRESENTATION_PROFILE_COUNT,
+  PLANET_PRESENTATION_BY_ID,
+  BIOME, SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
+  CAVE_BIOME, CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
 } from './abi.generated.js';
+import {
+  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS,
+  SURFACE_BIOME_SELECTION_ORDER,
+  SHALLOW_CAVE_BIOME_SELECTION_ORDER,
+  DEEP_CAVE_BIOME_SELECTION_ORDER,
+} from './biomes.generated.js';
 import {
   withPatchedCanvasWebGLContext,
   withResizableTextDecoder,
 } from './resizableBrowserBuffers.js';
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
 import { maxWorldDiffBytes, maxWorldRleBytes } from '../worldPacketValidation.js';
+import {
+  unpackRecordAt, unpackRecords, unpackSnapshotObjectAt,
+} from './recordCodec.js';
 
 export {
-  MAT, PLANET, BIOME, CAVE_BIOME,
+  MAT, PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
+  PLANET_PRESENTATION, PLANET_PRESENTATION_PROFILE_COUNT,
+  PLANET_PRESENTATION_BY_ID,
+  BIOME, SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
+  CAVE_BIOME, CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS, SURFACE_BIOME_SELECTION_ORDER,
+  SHALLOW_CAVE_BIOME_SELECTION_ORDER, DEEP_CAVE_BIOME_SELECTION_ORDER,
   WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
 };
 // Player input bitmask + snapshot layouts come from the generated ABI manifest
@@ -54,9 +77,14 @@ export function initSandWasm() {
       if (wasmAbi !== ABI_VERSION) {
         throw new Error(`sand wasm ABI version ${wasmAbi} != JS manifest ${ABI_VERSION} — rebuild the wasm (npm run build:sand) or regenerate (npm run generate:abi)`);
       }
+      const wasmFingerprint = c('engine_abi_fingerprint', 'number', [])();
+      if (wasmFingerprint !== ABI_FINGERPRINT) {
+        throw new Error(`sand wasm ABI fingerprint ${wasmFingerprint.toString(16)} != JS manifest ${ABI_FINGERPRINT.toString(16)} — rebuild the wasm (npm run build:sand)`);
+      }
       M = {
         mod,
         create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        worldGenerationVersion: c('engine_world_generation_version', 'number', []),
         getPlanet: c('engine_get_planet', 'number', ['number']),
         getGravityScale: c('engine_get_gravity_scale', 'number', ['number']),
         setGravityScale: c('engine_set_gravity_scale', null, ['number', 'number']),
@@ -280,8 +308,7 @@ export function createEngineWasm({
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   assertEngineDimensions(cols, rows);
-  if (planetId !== PLANET.EARTH && planetId !== PLANET.MOON &&
-      planetId !== PLANET.MARS && planetId !== PLANET.SHIP) {
+  if (!Number.isInteger(planetId) || planetId < 0 || planetId >= PLANET_COUNT) {
     throw new RangeError(`invalid sand engine planet ${planetId}`);
   }
   if (gravityScale !== undefined
@@ -363,7 +390,10 @@ const renderStrides = Object.freeze({
     glOffOut = fixedAlloc(8, 'GL offset result');
     camOut = fixedAlloc(16, 'camera result'); // 2 doubles: cameraGet / aimCell
     perfOut = fixedAlloc(STRIDES.perfSnapshot * 8, 'performance result');
-    ambienceOut = fixedAlloc(12 * 4, 'ambience result'); // 4 groups × [amount, worldX, worldY]
+    ambienceOut = fixedAlloc(
+      AMBIENCE_GROUP_COUNT * AMBIENCE_SAMPLE_STRIDE * 4,
+      'ambience result',
+    );
     worldContextOut = fixedAlloc(STRIDES.worldContext * 4, 'world context result');
   } catch (error) {
     for (const allocation of fixedScratch) mod._free(allocation);
@@ -392,23 +422,9 @@ const renderStrides = Object.freeze({
   // must fully consume one draft before requesting the other.
   const draftCells = (count) => (count ? new Int32Array(mod.HEAP32.buffer, M.draftPtr(ptr), count) : emptyRects);
 
-  // Decode one player from the packed snapshot at float offset o into `out`
-  // (named offsets from the generated ABI manifest).
-  const P = OFF.playerSnapshot;
-  const readPlayer = (f, o, out) => {
-    out.id = f[o + P.id] | 0; out.active = f[o + P.active] === 1;
-    out.x = f[o + P.x]; out.y = f[o + P.y]; out.vx = f[o + P.vx]; out.vy = f[o + P.vy];
-    out.w = f[o + P.w] | 0; out.h = f[o + P.h] | 0; out.facing = f[o + P.facing] | 0;
-    out.grounded = f[o + P.grounded] === 1; out.tool = f[o + P.tool] | 0;
-    out.aimX = f[o + P.aimX]; out.aimY = f[o + P.aimY]; out.health = f[o + P.health] | 0;
-    out.inputSeq = f[o + P.inputSeq] >>> 0; out.alive = f[o + P.alive] === 1; out.jumpReady = f[o + P.jumpReady] === 1;
-    out.animState = f[o + P.animState] | 0; out.animFrame = f[o + P.animFrame] | 0;
-    out.deathTicks = f[o + P.deathTicks] | 0; out.respawnReady = f[o + P.respawnReady] === 1;
-    out.bowCharge = f[o + P.bowCharge]; out.heldItemKind = f[o + P.heldItemKind] | 0;
-    out.jetpackFuel = f[o + P.jetpackFuel]; out.jetpackActive = f[o + P.jetpackActive] === 1;
-    out.shieldHealth = f[o + P.shieldHealth] | 0; out.shieldActive = f[o + P.shieldActive] === 1;
-    return out;
-  };
+  const readPlayer = (packed, offset, out) => unpackRecordAt(
+    packed, 'playerSnapshot', offset / STRIDES.playerSnapshot, out,
+  );
 
   const api = {
     cols: liveCols,
@@ -416,6 +432,7 @@ const renderStrides = Object.freeze({
     chunkCols: liveChunkCols,
     chunkRows: liveChunkRows,
     getPlanet() { return M.getPlanet(ptr); },
+    getWorldGenerationVersion() { return M.worldGenerationVersion(); },
     getGravityScale() { return M.getGravityScale(ptr); },
     setGravityScale(scale) {
       if (!Number.isFinite(scale) || scale < 0.05 || scale > 1)
@@ -432,7 +449,10 @@ const renderStrides = Object.freeze({
     },
     sampleAmbience(x, y, radius = 64) {
       M.audioAmbience(ptr, x, y, radius | 0, ambienceOut);
-      return new Float32Array(mod.HEAPF32.buffer, ambienceOut, 12).slice();
+      return new Float32Array(
+        mod.HEAPF32.buffer, ambienceOut,
+        AMBIENCE_GROUP_COUNT * AMBIENCE_SAMPLE_STRIDE,
+      ).slice();
     },
     getGrid() { return gridView(); },
     // Build the coalesced dirty rects in C++ and hand back a zero-copy view.
@@ -514,8 +534,8 @@ const renderStrides = Object.freeze({
     },
     glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
     // Players to overlay. Host/local draws the engine's own players (own = the
-    // local id, blue). A client passes a packed [x,y,w,h,facing,own] Float32Array
-    // of host-authoritative snapshot players.
+    // local id, blue). A client passes host-authoritative records packed with the
+    // generated glPlayerExt layout.
     glSetPlayers(useExternal, packed, ownId) {
       if (useExternal) {
         const len = packed ? packed.length : 0;
@@ -543,8 +563,8 @@ const renderStrides = Object.freeze({
       );
     },
     // Dropped items to overlay. Host/local draws the engine's own items. A client
-    // passes a packed [id,kind,material,count,x,y,life] Float32Array of the host's
-    // item snapshot; null/empty makes the engine draw its own (single-player).
+    // passes records packed with the generated itemSnapshot layout; null/empty
+    // makes the engine draw its own (single-player).
     glSetItems(packed) {
       if (packed === null || packed === undefined) { M.glSetItems(ptr, 0, 0, 0); return; }
       const len = packed.length;
@@ -1014,8 +1034,7 @@ const renderStrides = Object.freeze({
     getCursor(id) {
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
       const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), STRIDES.inventorySlot);
-      const O = OFF.inventorySlot;
-      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0, plantType: f[O.plantType] | 0, itemKind: f[O.itemKind] | 0 };
+      return unpackSnapshotObjectAt(f, 'inventoryStack', 0);
     },
     // Cheap change detector for the HUD: hash the packed snapshot (all fields
     // are int-valued) without building the 36 slot objects. Includes the
@@ -1039,7 +1058,7 @@ const renderStrides = Object.freeze({
       const O = OFF.inventorySlot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0, plantType: f[o + O.plantType] | 0, itemKind: f[o + O.itemKind] | 0 };
+        slots[i] = unpackSnapshotObjectAt(f, 'inventoryStack', i);
         if (f[o + O.selected] === 1) selected = i;
       }
       return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
@@ -1067,13 +1086,7 @@ const renderStrides = Object.freeze({
       if (!n) return [];
       const stride = STRIDES.itemSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.itemSnapshotPtr(ptr), n * stride);
-      const out = new Array(n);
-      const O = OFF.itemSnapshot;
-      for (let i = 0; i < n; i++) {
-        const o = i * stride;
-        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0, itemKind: f[o + O.itemKind] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0 };
-      }
-      return out;
+      return unpackRecords(f, 'itemSnapshot');
     },
     // Local presentation uses one compact copy per actor tick. Unlike network
     // item replication, this includes short-lived cosmetic debris.
@@ -1086,17 +1099,7 @@ const renderStrides = Object.freeze({
     getProjectiles() {
       const n = M.projectileSnapshot(ptr); if (!n) return [];
       const f = new Float32Array(mod.HEAPF32.buffer, M.projectileSnapshotPtr(ptr), n * STRIDES.projectileSnapshot);
-      const O = OFF.projectileSnapshot, out = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const o = i * STRIDES.projectileSnapshot;
-        out[i] = {
-          id: f[o + O.id] | 0, owner: f[o + O.owner] | 0,
-          x: f[o + O.x], y: f[o + O.y], vx: f[o + O.vx], vy: f[o + O.vy],
-          charge: f[o + O.charge], kind: f[o + O.kind] | 0,
-          fuse: f[o + O.fuse] | 0, rotation: f[o + O.rotation],
-        };
-      }
-      return out;
+      return unpackRecords(f, 'projectileSnapshot');
     },
     getProjectileSnapshotData() {
       const n = M.projectileSnapshot(ptr); if (!n) return new Float32Array();
@@ -1107,22 +1110,7 @@ const renderStrides = Object.freeze({
       if (!n) return [];
       const stride = STRIDES.creatureSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.creatureSnapshotPtr(ptr), n * stride);
-      const out = new Array(n), O = OFF.creatureSnapshot;
-      for (let i = 0; i < n; i++) {
-        const o = i * stride;
-        out[i] = {
-          id: f[o + O.id] | 0, species: f[o + O.species] | 0,
-          x: f[o + O.x], y: f[o + O.y], vx: f[o + O.vx], vy: f[o + O.vy],
-          w: f[o + O.w] | 0, h: f[o + O.h] | 0, facing: f[o + O.facing] | 0,
-          health: f[o + O.health] | 0, maxHealth: f[o + O.maxHealth] | 0,
-          alive: f[o + O.alive] === 1, animFrame: f[o + O.animFrame] | 0,
-          attackState: f[o + O.attackState] | 0, attackProgress: f[o + O.attackProgress],
-          attackPattern: f[o + O.attackPattern] | 0,
-          aimX: f[o + O.aimX], aimY: f[o + O.aimY],
-          spawnProgress: f[o + O.spawnProgress],
-        };
-      }
-      return out;
+      return unpackRecords(f, 'creatureSnapshot');
     },
     getCreatureSnapshotData() {
       const n = M.creatureSnapshot(ptr);

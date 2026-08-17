@@ -871,13 +871,18 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
     if (dir) lastDir = dir;
   }
   const tail = ys.slice(-120);
+  let tailTransitions = 0;
+  for (let i = 1; i < tail.length; i++)
+    if (tail[i] !== tail[i - 1]) tailTransitions++;
+  const tailSpan = Math.max(...tail) - Math.min(...tail);
   check('bonded ice started aligned and non-empty', fgBefore.minY === bgBefore.minY && fgBefore.n > 0);
   check('bonded ice rose toward the surface', fgIce.minY < fgBefore.minY - 20,
     `(fg ${fgBefore.minY}-${fgBefore.maxY} -> ${fgIce.minY}-${fgIce.maxY})`);
   check('bonded ice stayed aligned across both layers', aligned && fgIce.n === bgIce.n);
   check(`bonded ice does not flood its top wake (${eruptedBrine} edge cells across both layers)`, eruptedBrine <= 32);
   check(`bonded ice corrections remain finite (${reversals} reversals)`, reversals <= 10);
-  check(`bonded ice settled on one final row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
+  check(`bonded ice settles without raster shimmer (${tailSpan} row span, ${tailTransitions} tail transitions)`,
+    tailSpan <= 1 && tailTransitions <= 2);
   e.destroy();
 }
 

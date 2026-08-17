@@ -130,17 +130,16 @@ bool PlayerSystem::spawnOverlapsPlayer(double px, double py, const Player* ignor
 }
 
 // A safe spawn is immediately supported (never hanging high in the air), has a
-// clear body box, and has no fire/corrosive/molten cells close enough to deal
-// damage before the player can move. Foreground is the only player-physical
+// clear body box, and has no contact-hazard cells close enough to deal damage
+// before the player can move. Foreground is the only player-physical
 // layer, so background decoration intentionally does not reject a candidate.
 bool PlayerSystem::safeSpawnAt(double px, double py, const Player* ignore) {
   if (!spawnAreaLoaded(px, py, P_SPAWN_HAZARD_MARGIN) || spawnOverlapsPlayer(px, py, ignore)) return false;
   int x0 = (int)std::floor(px), x1 = (int)std::floor(px + PLAYER_W - 1e-6);
   int y0 = (int)std::floor(py), y1 = (int)std::floor(py + PLAYER_H - 1e-6);
-  auto harmful = [](uint8_t m) { return m == FIRE || m == ACID || m == LAVA; };
   for (int y = y0 - P_SPAWN_HAZARD_MARGIN; y <= y1 + P_SPAWN_HAZARD_MARGIN; y++)
     for (int x = x0 - P_SPAWN_HAZARD_MARGIN; x <= x1 + P_SPAWN_HAZARD_MARGIN; x++)
-      if (harmful(E.fg.grid[E.I(x, y)])) return false;
+      if (E.isPlayerContactHazard(E.fg.grid[E.I(x, y)])) return false;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     uint8_t m = E.fg.grid[E.I(x, y)];
     if (E.isBlockingForPlayer(m)) return false;
@@ -148,7 +147,7 @@ bool PlayerSystem::safeSpawnAt(double px, double py, const Player* ignore) {
   int support = 0;
   for (int x = x0; x <= x1; x++) {
     uint8_t m = E.fg.grid[E.I(x, y1 + 1)];
-    if (E.isBlockingForPlayer(m) && !harmful(m)) support++;
+    if (E.isBlockingForPlayer(m) && !E.isPlayerContactHazard(m)) support++;
   }
   return support >= imax(2, PLAYER_W / 2);
 }
@@ -216,13 +215,15 @@ bool PlayerSystem::buildSafeSpawnPad(double worldX, double worldY, double* out, 
         erase.push_back(E.I(pillarLeft, y));
         erase.push_back(E.I(pillarRight, y));
       }
-      E.useLayer(&E.fg);
-      E.eraseStrokeCells(erase, left, top, right, pillarBottom);
-      for (int y = platformY; y <= platformY + 1; y++)
-        for (int x = left; x <= right; x++) E.placeMaterialAt(x, y, 0, STONE);
-      for (int y = platformY + 2; y <= pillarBottom; y++) {
-        E.placeMaterialAt(pillarLeft, y, 0, STONE);
-        E.placeMaterialAt(pillarRight, y, 0, STONE);
+      {
+        Engine::ActiveLayerScope active(E, &E.fg);
+        E.tools.eraseStrokeCells(erase, left, top, right, pillarBottom);
+        for (int y = platformY; y <= platformY + 1; y++)
+          for (int x = left; x <= right; x++) E.tools.placeMaterialAt(x, y, 0, STONE);
+        for (int y = platformY + 2; y <= pillarBottom; y++) {
+          E.tools.placeMaterialAt(pillarLeft, y, 0, STONE);
+          E.tools.placeMaterialAt(pillarRight, y, 0, STONE);
+        }
       }
       if (!safeSpawnAt(x0, y0, ignore)) continue;
       out[0] = x0; out[1] = y0;
@@ -241,15 +242,15 @@ int PlayerSystem::spawnPlayer(double x, double y) {
   p.aimX = x; p.aimY = y;
   p.jetpackFuel = 1.0;
   players.push_back(p);
-  if (E.survivalInventory) E.seedStarterTools(players.back());
+  if (E.survivalInventory) E.inv.seedStarterTools(players.back());
   return p.id;
 }
 void PlayerSystem::playerSurfaceSpawn(int col, double* out) {
   col = std::max(PLAYER_W, std::min(E.cols - PLAYER_W - 1, col));
   int worldX0 = E.fg.worldOffsetX;
-  int top = E.fg.infinite ? E.genSurfaceAt(worldX0 + col) : E.rows / 2;
+  int top = E.fg.infinite ? E.terrain.genSurfaceAt(worldX0 + col) : E.rows / 2;
   for (int c = col - PLAYER_W; c <= col + PLAYER_W; c++) {
-    int surf = E.fg.infinite ? E.genSurfaceAt(worldX0 + c) : E.rows / 2;
+    int surf = E.fg.infinite ? E.terrain.genSurfaceAt(worldX0 + c) : E.rows / 2;
     if (surf < top) top = surf;
   }
   double roughX = col - PLAYER_W / 2.0;
@@ -289,7 +290,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
   // Death drops the old loadout into the world; always restore the starter gun
   // so respawning cannot leave the combat mode soft-locked with empty hands.
-  if (E.survivalInventory) E.seedStarterTools(p);
+  if (E.survivalInventory) E.inv.seedStarterTools(p);
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
   return true;
 }
@@ -369,20 +370,28 @@ void PlayerSystem::updatePlayerVitals(Player& p) {
                           p.shieldHealth + P_SHIELD_RECHARGE_PER_TICK);
   int x0 = imax(0, (int)std::floor(p.px)), x1 = imin(E.cols - 1, (int)std::floor(p.px + p.w - 1e-6));
   int y0 = imax(0, (int)std::floor(p.py)), y1 = imin(E.rows - 1, (int)std::floor(p.py + p.h - 1e-6));
-  int cells = 0, blocked = 0; bool fire = false, acid = false, lava = false;
+  int cells = 0, blocked = 0;
+  uint8_t selectedHazard = CHP_NONE;
+  bool contactHazard = false;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     uint8_t m = E.fg.grid[E.I(x, y)]; cells++; blocked += E.isBlockingForPlayer(m) ? 1 : 0;
-    fire |= m == FIRE; acid |= m == ACID; lava |= m == LAVA;
+    uint8_t profile = MAT_CONTACT_HAZARD_PROFILE[m];
+    if (CONTACT_HAZARD_PLAYER_DAMAGE[profile] == 0) continue;
+    contactHazard = true;
+    uint8_t cadence = CONTACT_HAZARD_CADENCE[profile];
+    if (E.actorTick % cadence == 0
+        && CONTACT_HAZARD_PRIORITY[profile]
+             > CONTACT_HAZARD_PRIORITY[selectedHazard])
+      selectedHazard = profile;
   }
   if (cells > 0 && blocked * 2 >= cells) p.buriedTicks++; else p.buriedTicks = 0;
   if (p.landingImpact > 3.0) damagePlayer(p, imin(45, (int)std::floor((p.landingImpact - 3.0) * 15.0)), 12);
   p.landingImpact = 0;
-  if (lava && E.actorTick % 15 == 0) damagePlayer(p, 15, 15);
-  else if (acid && E.actorTick % ACID_CONTACT_INTERVAL == 0)
-    damagePlayer(p, ACID_CONTACT_DAMAGE, ACID_CONTACT_INTERVAL);
-  else if (fire && E.actorTick % 30 == 0) damagePlayer(p, 4, 30);
+  if (selectedHazard != CHP_NONE)
+    damagePlayer(p, CONTACT_HAZARD_PLAYER_DAMAGE[selectedHazard],
+                 CONTACT_HAZARD_CADENCE[selectedHazard]);
   else if (p.buriedTicks >= 120 && E.actorTick % 30 == 0) damagePlayer(p, 2, 30);
-  bool hazard = fire || acid || lava || p.buriedTicks >= 120;
+  bool hazard = contactHazard || p.buriedTicks >= 120;
   if (!hazard && p.health < 100 && E.actorTick - p.lastDamageTick >= 300 && E.actorTick % 30 == 0) p.health++;
 }
 Player* PlayerSystem::findPlayer(int id) {
@@ -592,25 +601,26 @@ bool PlayerSystem::playerBuildOverlapsSelf(Player& p, int ax, int ay, int r) {
 // would block building on yourself) applies to foreground builds only.
 bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
   int layerId = layer == &E.bg ? 1 : 0;
-  E.useLayer(layer);
   bool checkSelf = (layer == &E.fg);
   bool ok = false;
-  switch (p.selectedTool) {
-    case T_SAND: case T_WATER: case T_OIL: case T_FIRE: case T_ACID: case T_LAVA:
-      E.paintDisc(ax, ay, P_PAINT_R, toolMaterial(p.selectedTool), false); ok = true; break;
-    case T_SEED: {
-      int x0, y0;
-      if (E.getSeedOrigin(ax, ay, x0, y0) && E.canPlaceSeedAt(x0, y0)) { E.placeSeedAt(x0, y0); ok = true; }
-      break;
-    }
-    case T_CUBE:
-      if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, CUBE_HALF))) {
-        E.spawnBox(ax, ay, CUBE_HALF, CUBE_HALF, RIGID); ok = true;
+  {
+    Engine::ActiveLayerScope active(E, layer);
+    switch (p.selectedTool) {
+      case T_SAND: case T_WATER: case T_OIL: case T_FIRE: case T_ACID: case T_LAVA:
+        E.tools.paintDisc(ax, ay, P_PAINT_R, toolMaterial(p.selectedTool), false); ok = true; break;
+      case T_SEED: {
+        int x0, y0;
+        if (E.tools.getSeedOrigin(ax, ay, x0, y0) && E.tools.canPlaceSeedAt(x0, y0)) { E.tools.placeSeedAt(x0, y0); ok = true; }
+        break;
       }
-      break;
-    default: break; // solids (stone/driftwood/ice) use the persistent E.tools.draft in applyPlayerTools
+      case T_CUBE:
+        if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, CUBE_HALF))) {
+          E.rigid.spawnBox(ax, ay, CUBE_HALF, CUBE_HALF, RIGID); ok = true;
+        }
+        break;
+      default: break; // solids use the persistent ToolSystem draft
+    }
   }
-  E.useLayer(&E.fg);
   if (ok) E.audio.emit(SE_PLACE, ax, ay, 0.55, toolMaterial(p.selectedTool), layerId);
   return ok;
 }
@@ -622,9 +632,9 @@ bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD 
 void PlayerSystem::resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
   auto clearLayer = [&](Layer* layer) {
-    E.useLayer(layer);
-    if (p.mineFootprint >= 0) E.clearMineDamageFootprint(p.mineX, p.mineY, E.getSurvivalFootprint(p.mineFootprint));
-    else E.clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
+    Engine::ActiveLayerScope active(E, layer);
+    if (p.mineFootprint >= 0) E.tools.clearMineDamageFootprint(p.mineX, p.mineY, E.tools.getSurvivalFootprint(p.mineFootprint));
+    else E.tools.clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
   };
   if (p.mineLayer == 2) {
     clearLayer(&E.fg);
@@ -632,16 +642,15 @@ void PlayerSystem::resetPlayerMine(Player& p) {
   } else {
     clearLayer(p.mineLayer ? &E.bg : &E.fg);
   }
-  E.useLayer(&E.fg);
   p.mineActive = false;
   p.mineFootprint = -1;
 }
 // Any non-EMPTY cell in the footprint counts as still-mineable (solids, powders,
 // liquids). Used to release a held mine-lock once the locked area is cleared.
 bool PlayerSystem::mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer) {
-  const SurvivalFootprint& fp = E.getSurvivalFootprint(E.clampSurvivalFootprintId(footprintId));
+  const SurvivalFootprint& fp = E.tools.getSurvivalFootprint(E.tools.clampSurvivalFootprintId(footprintId));
   auto layerHas = [&](Layer* L) {
-    E.useLayer(L);
+    Engine::ActiveLayerScope active(E, L);
     for (const SurvivalFootprintCell& o : fp.cells) {
       int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
       if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
@@ -655,7 +664,6 @@ bool PlayerSystem::mineFootprintHasContent(int cx, int cy, int footprintId, Laye
   } else {
     has = layerHas(layer);
   }
-  E.useLayer(&E.fg);
   return has;
 }
 void PlayerSystem::resolveMineDrops(Player& p) {
@@ -670,7 +678,8 @@ void PlayerSystem::resolveMineDrops(Player& p) {
     bool drop = false;
     if (E.isPlantLeaf(m) && p.heldToolClass == TC_DIG) {
       double r = whash2(((uint32_t)E.actorTick ^ 0x51ED5EEDu), cxk, cyk);
-      if (r < LEAF_SEED_DROP_P) E.spawnItem(E.plantSeedMat(mc.plantType), 1, cxk + 0.5, cyk + 0.5, 0, -0.35, mc.plantType);
+      if (r < LEAF_SEED_DROP_P) E.itemsys.spawnItem(E.plantSeedMat(mc.plantType), 1,
+          cxk + 0.5, cyk + 0.5, 0, -0.35, mc.plantType);
       else drop = true;
     } else if (E.isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {
@@ -680,8 +689,9 @@ void PlayerSystem::resolveMineDrops(Player& p) {
       else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
     }
     double j = whash2((uint32_t)E.actorTick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
-    if (drop) E.spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
-    E.spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6, IT_PARTICLE_LIFE);
+    if (drop) E.itemsys.spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
+    E.itemsys.spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6,
+                            IT_PARTICLE_LIFE);
   }
 }
 bool PlayerSystem::mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed) {
@@ -690,10 +700,12 @@ bool PlayerSystem::mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaled
     resetPlayerMine(p);
     p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay; p.mineFootprint = -1;
   }
-  E.useLayer(layer);
-  bool changed = E.mineDamageDisc(ax, ay, P_MINE_R, p, scaledSpeed) != 0;
-  resolveMineDrops(p);
-  E.useLayer(&E.fg);
+  bool changed = false;
+  {
+    Engine::ActiveLayerScope active(E, layer);
+    changed = E.tools.mineDamageDisc(ax, ay, P_MINE_R, p, scaledSpeed) != 0;
+    resolveMineDrops(p);
+  }
   return changed;
 }
 // Survival hold-to-mine: lock the footprint origin on press and keep hitting that
@@ -702,7 +714,7 @@ bool PlayerSystem::mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaled
 // or (2) the caller stops invoking us (button released / out of reach).
 bool PlayerSystem::mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed) {
   int layerId = layer == &E.bg ? 1 : 0;
-  int footprintId = E.clampSurvivalFootprintId(p.selectedFootprint);
+  int footprintId = E.tools.clampSurvivalFootprintId(p.selectedFootprint);
   if (p.mineActive && p.mineLayer == layerId && p.mineFootprint == footprintId) {
     ax = p.mineX;
     ay = p.mineY;
@@ -714,15 +726,17 @@ bool PlayerSystem::mineFootprint(Player& p, int ax, int ay, Layer* layer, bool s
     resetPlayerMine(p);
     return false;
   }
-  E.useLayer(layer);
-  bool changed = E.mineDamageFootprint(ax, ay, E.getSurvivalFootprint(footprintId), p, scaledSpeed) != 0;
-  resolveMineDrops(p);
-  E.useLayer(&E.fg);
+  bool changed = false;
+  {
+    Engine::ActiveLayerScope active(E, layer);
+    changed = E.tools.mineDamageFootprint(ax, ay, E.tools.getSurvivalFootprint(footprintId), p, scaledSpeed) != 0;
+    resolveMineDrops(p);
+  }
   if (!mineFootprintHasContent(ax, ay, footprintId, layer)) resetPlayerMine(p);
   return changed;
 }
 bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed) {
-  int footprintId = E.clampSurvivalFootprintId(p.selectedFootprint);
+  int footprintId = E.tools.clampSurvivalFootprintId(p.selectedFootprint);
   if (p.mineActive && p.mineLayer == 2 && p.mineFootprint == footprintId) {
     ax = p.mineX;
     ay = p.mineY;
@@ -734,15 +748,19 @@ bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed
     resetPlayerMine(p);
     return false;
   }
-  const SurvivalFootprint& fp = E.getSurvivalFootprint(footprintId);
-  E.useLayer(&E.fg);
-  bool changed = E.mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
-  resolveMineDrops(p);
+  const SurvivalFootprint& fp = E.tools.getSurvivalFootprint(footprintId);
+  bool changed = false;
+  {
+    Engine::ActiveLayerScope active(E, &E.fg);
+    changed = E.tools.mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
+    resolveMineDrops(p);
+  }
   E.bgEnabled = true;
-  E.useLayer(&E.bg);
-  changed |= E.mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
-  resolveMineDrops(p);
-  E.useLayer(&E.fg);
+  {
+    Engine::ActiveLayerScope active(E, &E.bg);
+    changed |= E.tools.mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
+    resolveMineDrops(p);
+  }
   if (!mineFootprintHasContent(ax, ay, footprintId, nullptr)) resetPlayerMine(p);
   return changed;
 }
@@ -750,33 +768,33 @@ bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed
 // connected piece and release to finalize it in the selected layer.
 void PlayerSystem::playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
   E.tools.draftLayer = btn; E.tools.draftOwner = p.id;
-  E.useLayer(btn ? &E.bg : &E.fg);
+  Engine::ActiveLayerScope active(E, btn ? &E.bg : &E.fg);
   E.tools.drafting = true;
   E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
   E.tools.draftMaterial = (tool == T_ICE) ? ICE : (tool == T_DRIFTWOOD) ? DRIFTWOOD : STONE;
-  E.addDiscToDraft(E.tools.draft, ax, ay, E.brushFor(E.tools.draftMaterial), E.tools.draftMaterial == ICE ? E.rows - 1 : E.rows);
-  E.useLayer(&E.fg);
+  E.tools.addDiscToDraft(E.tools.draft, ax, ay, E.tools.brushFor(E.tools.draftMaterial), E.tools.draftMaterial == ICE ? E.rows - 1 : E.rows);
 }
-// Finalize the in-progress E.tools.draft into its layer (one connected component) and clear.
+// Finalize the in-progress tool draft into its layer and clear it.
 void PlayerSystem::playerFinalizeSolidDraft() {
   int layer = E.tools.draftLayer;
   uint8_t material = E.tools.draftMaterial;
   int x = E.tools.lastDraftCx, y = E.tools.lastDraftCy;
-  E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
-  if (E.tools.drafting) { E.finalizeDraft(); E.tools.drafting = false; E.tools.draftStrokeActive = false; E.tools.draft.clear(); }
-  E.tools.draftOwner = -1;
-  E.useLayer(&E.fg);
+  {
+    Engine::ActiveLayerScope active(E, E.tools.draftLayer ? &E.bg : &E.fg);
+    if (E.tools.drafting) { E.tools.finalizeDraft(); E.tools.drafting = false; E.tools.draftStrokeActive = false; E.tools.draft.clear(); }
+    E.tools.draftOwner = -1;
+  }
   E.audio.emit(SE_PLACE, x, y, 0.9, material, layer);
 }
 // Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the BACKGROUND.
 // Eraser sweeps toward the cursor and fluids/sand paint — both repeat while held
 // (cooldown-throttled). Seed + cube fire once per press. Solids use the persistent
-// creative E.tools.draft: begin on press, extend (preview) while held, finalize on release.
+// Creative draft: begin on press, extend while held, and finalize on release.
 void PlayerSystem::applyPlayerTools() {
   for (auto& p : players) {
     // Survival inventory drives the controls (selected slot = mine-tool or place-
     // material). Creative keeps the classic tool flow below.
-    if (E.survivalInventory) { E.applyInventoryPlayer(p); continue; }
+    if (E.survivalInventory) { E.inv.applyInventoryPlayer(p); continue; }
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
     int prev = p.prevInput;
@@ -804,14 +822,14 @@ void PlayerSystem::applyPlayerTools() {
       bool busy = E.tools.drafting;
       if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); E.playerActionCount++; }
       else if (inReach && !busy && secondaryRising) { E.bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); E.playerActionCount++; }
-      else if (inReach && busy && E.tools.draftOwner == p.id && (primary || secondary)) E.continueDrafts(ax, ay); // extend + preview
+      else if (inReach && busy && E.tools.draftOwner == p.id && (primary || secondary)) E.tools.continueDrafts(ax, ay); // extend + preview
       else if (!inReach && busy && E.tools.draftOwner == p.id) E.tools.draftStrokeActive = false;
       continue;
     }
 
     // Paint and erase continuously; seed/cube tools act once per press.
     if (!primary && !secondary) { resetPlayerMine(p); continue; }
-    bool continuous = E.isPaintTool(t) || t == T_ERASER;
+    bool continuous = E.tools.isPaintTool(t) || t == T_ERASER;
     bool doPrimary = continuous ? primary : primaryRising;
     bool doSecondary = continuous ? secondary : secondaryRising;
     if (continuous && p.toolCooldown > 0) { doPrimary = doSecondary = false; }
@@ -819,7 +837,7 @@ void PlayerSystem::applyPlayerTools() {
     if (!inReach) { resetPlayerMine(p); continue; }
     if (t != T_ERASER) resetPlayerMine(p);
     bool acted = false;
-    if (t == T_ERASER) acted |= E.damageCreaturesAt(ax, ay, P_MINE_R + 1, 14);
+    if (t == T_ERASER) acted |= E.creatures.damageAtPoint(ax, ay, P_MINE_R + 1, 14);
     if (doPrimary) {
       if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &E.fg, false);
       else acted |= playerUseTool(p, ax, ay, &E.fg);
@@ -842,7 +860,8 @@ void PlayerSystem::updatePlayers() {
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.shieldHurtCooldown > 0) p.shieldHurtCooldown--;
     if (p.active && p.alive) integratePlayer(p);
-    if (p.active && p.alive && E.planetId == PL_SHIP) {
+    if (p.active && p.alive
+        && planetHasGameplayFlag(E.planetId, PGF_VOID_RECOVERY)) {
       double worldY = E.fg.worldOffsetY + p.py + p.h * .5;
       p.deathTicks = worldY > 52.0 ? p.deathTicks + 1 : 0;
       if (p.deathTicks >= 42) {
@@ -891,36 +910,17 @@ int PlayerSystem::buildPlayerSnapshot() {
   for (size_t i = 0; i < players.size(); i++) {
     const Player& p = players[i];
     float* o = snapshot.data() + i * PS_STRIDE;
-    o[PS_ID]         = (float)p.id;
-    o[PS_ACTIVE]     = p.active ? 1.0f : 0.0f;
-    o[PS_X]          = (float)p.px;
-    o[PS_Y]          = (float)p.py;
-    o[PS_VX]         = (float)p.vx;
-    o[PS_VY]         = (float)p.vy;
-    o[PS_W]          = (float)p.w;
-    o[PS_H]          = (float)p.h;
-    o[PS_FACING]     = (float)p.facing;
-    o[PS_GROUNDED]   = p.grounded ? 1.0f : 0.0f;
-    o[PS_TOOL]       = (float)p.selectedTool;
-    o[PS_AIM_X]      = (float)p.aimX;
-    o[PS_AIM_Y]      = (float)p.aimY;
-    o[PS_HEALTH]     = (float)p.health;
-    o[PS_INPUT_SEQ]  = (float)p.inputSeq;
-    o[PS_ALIVE]      = p.alive ? 1.0f : 0.0f;
-    o[PS_JUMP_READY] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
-    o[PS_ANIM_STATE] = (float)p.animState;
-    o[PS_ANIM_FRAME] = (float)p.animFrame;
-    o[PS_DEATH_TICKS] = (float)p.deathTicks;
-    o[PS_RESPAWN_READY] = (!p.alive && !p.respawnPending) ? 1.0f : 0.0f;
     const InvSlot& held = p.inv[p.selectedSlot];
     double chargeMax = held.count > 0 && held.itemKind == IK_BORE_CANNON
       ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
-    o[PS_BOW_CHARGE] = (float)(p.bowChargeTicks / chargeMax);
-    o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
-    o[PS_JETPACK_FUEL] = (float)p.jetpackFuel;
-    o[PS_JETPACK_ACTIVE] = p.jetpackActive ? 1.0f : 0.0f;
-    o[PS_SHIELD_HEALTH] = (float)p.shieldHealth;
-    o[PS_SHIELD_ACTIVE] = p.shieldActive ? 1.0f : 0.0f;
+    writePlayerSnapshot(o, p, {
+      .respawnReady = WritePlayerSnapshotRespawnReady{
+        !p.alive && !p.respawnPending},
+      .bowCharge = WritePlayerSnapshotBowCharge{
+        (float)(p.bowChargeTicks / chargeMax)},
+      .heldItemKind = WritePlayerSnapshotHeldItemKind{
+        held.count > 0 ? held.itemKind : IK_MATERIAL},
+    });
   }
   return (int)players.size();
 }

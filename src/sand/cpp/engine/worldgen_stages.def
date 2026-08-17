@@ -1,0 +1,29 @@
+// Stable generation-stage identity, applicability, ordering, and execution.
+SAND_WORLDGEN_STAGE(SPACESHIP, 0, "spaceship", 1u << PGP_SHIP,
+  GFS_COUNT, 0, 0, runSpaceshipGenerationStage)
+SAND_WORLDGEN_STAGE(CAVE_DRESSING, 1, "cave dressing", 1u << PGP_EARTH,
+  GFS_COUNT, CAVE_DRESSING_REACH_X, CAVE_DRESSING_REACH_Y,
+  runCaveDressingGenerationStage)
+SAND_WORLDGEN_STAGE(DEEP_CAVE_DRESSING, 2, "deep cave dressing",
+  1u << PGP_EARTH, GFS_COUNT, DEEP_DRESSING_REACH_X,
+  DEEP_DRESSING_REACH_Y, runDeepCaveDressingGenerationStage)
+SAND_WORLDGEN_STAGE(OCEAN_FLORA, 3, "ocean flora", 1u << PGP_EARTH,
+  GFS_COUNT, OCEAN_FLORA_REACH_X, OCEAN_FLORA_REACH_Y,
+  runOceanFloraGenerationStage)
+SAND_WORLDGEN_STAGE(OFFWORLD_FORMATIONS, 4, "offworld formations",
+  GENERATION_PROFILE_ALL_MASK, GFS_OFFWORLD_FORMATION, 0, 0,
+  runGeneratedFeatureStage)
+SAND_WORLDGEN_STAGE(SURFACE_STRUCTURES, 5, "surface structures",
+  GENERATION_PROFILE_ALL_MASK, GFS_SURFACE_CONSTRUCTED, 0, 0,
+  runGeneratedFeatureStage)
+SAND_WORLDGEN_STAGE(DEEP_STRUCTURES, 6, "deep structures",
+  GENERATION_PROFILE_ALL_MASK, GFS_DEEP_CONSTRUCTED, 0, 0,
+  runGeneratedFeatureStage)
+SAND_WORLDGEN_STAGE(OFFWORLD_STRUCTURES, 7, "offworld structures",
+  GENERATION_PROFILE_ALL_MASK, GFS_OFFWORLD_CONSTRUCTED, 0, 0,
+  runGeneratedFeatureStage)
+SAND_WORLDGEN_STAGE(HAZARD_BOUNDARIES, 8, "hazard boundaries",
+  1u << PGP_EARTH, GFS_COUNT, 0, 0, runHazardBoundaryGenerationStage)
+SAND_WORLDGEN_STAGE(TREES, 9, "trees", 1u << PGP_EARTH,
+  GFS_COUNT, PLANT_WORLDGEN_MAX_HORIZONTAL_REACH,
+  PLANT_WORLDGEN_MAX_UPWARD_REACH, runTreeGenerationStage)

@@ -6,6 +6,10 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { CREATIVE_KIND, OFF, SOUND_EVENT, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { MAT } from '../src/sand/materials.js';
 import {
+  AMBIENCE_GROUP, AMBIENCE_GROUP_COUNT,
+  AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
+} from '../src/sand/materials.generated.js';
+import {
   buildTntExplosionBuffer, derivePlayerEffectState,
   sandMediaMetadata, semanticEventCooldownMs, spatializeSound,
 } from '../src/sand/audio/sandAudio.js';
@@ -267,17 +271,43 @@ check('beam cues have an explicit presentation cooldown',
 // Continuous sources are measured as four stable groups, not emitted per cell.
 {
   const e = mk();
-  const groups = [MAT.WATER, MAT.FIRE, MAT.LAVA, MAT.ACID];
+  const groups = [
+    [MAT.WATER, AMBIENCE_GROUP.WATER],
+    [MAT.FIRE, AMBIENCE_GROUP.FIRE],
+    [MAT.LAVA, AMBIENCE_GROUP.LAVA],
+    [MAT.ACID, AMBIENCE_GROUP.ACID],
+  ];
   const xs = [25, 41, 57, 73];
-  for (let i = 0; i < groups.length; i++) e.paintDiscLayer(0, xs[i], 34, 5, groups[i], true);
+  for (let i = 0; i < groups.length; i++)
+    e.paintDiscLayer(0, xs[i], 34, 5, groups[i][0], true);
   const ambience = e.sampleAmbience(48, 34, 40);
-  check('ambience snapshot is four amount/position records', ambience.length === 12);
-  for (let i = 0; i < groups.length; i++) {
-    const o = i * 3;
-    check(`ambience group ${i} is audible and located`,
-      ambience[o] > 0 && ambience[o] <= 1 && Number.isFinite(ambience[o + 1]) && Number.isFinite(ambience[o + 2]));
+  check('ambience snapshot matches the generated group count',
+    ambience.length === AMBIENCE_GROUP_COUNT * AMBIENCE_SAMPLE_STRIDE);
+  for (const [, group] of groups) {
+    const o = group * AMBIENCE_SAMPLE_STRIDE;
+    check(`ambience group ${group} is audible and located`,
+      ambience[o + AMBIENCE_SAMPLE_FIELD.AMOUNT] > 0
+        && ambience[o + AMBIENCE_SAMPLE_FIELD.AMOUNT] <= 1
+        && Number.isFinite(ambience[o + AMBIENCE_SAMPLE_FIELD.WORLD_X])
+        && Number.isFinite(ambience[o + AMBIENCE_SAMPLE_FIELD.WORLD_Y]));
   }
   check('ambience sampling does not enter the event queue', e.drainSoundEvents().length === 0);
+  e.destroy();
+}
+
+// Brine selects the generated water ambience policy.
+{
+  const e = mk();
+  e.paintDiscLayer(0, 48, 34, 7, MAT.BRINE, true);
+  const ambience = e.sampleAmbience(48, 34, 40);
+  const waterOffset = AMBIENCE_GROUP.WATER * AMBIENCE_SAMPLE_STRIDE;
+  check('brine contributes to the generated water ambience group',
+    ambience[waterOffset + AMBIENCE_SAMPLE_FIELD.AMOUNT] > 0
+      && Array.from({ length: AMBIENCE_GROUP_COUNT }, (_, group) => group)
+        .filter((group) => group !== AMBIENCE_GROUP.WATER)
+        .every((group) => ambience[
+          group * AMBIENCE_SAMPLE_STRIDE + AMBIENCE_SAMPLE_FIELD.AMOUNT
+        ] === 0));
   e.destroy();
 }
 

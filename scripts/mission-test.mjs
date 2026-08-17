@@ -5,7 +5,7 @@ import {
   createEngineWasm,
   initSandWasm,
 } from '../src/sand/wasmBridge/engineFactory.js';
-import { KIND, MATERIALS, MAT } from '../src/sand/materials.js';
+import { KIND, MATERIAL_BY_ID, MAT } from '../src/sand/materials.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import {
   CREATURE,
@@ -68,14 +68,14 @@ function safelyPlacedInWorld(engine, creature) {
   }
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const kind = MATERIALS[grid[y * engine.cols + x]].kind;
+      const kind = MATERIAL_BY_ID[grid[y * engine.cols + x]].kind;
       if (kind !== KIND.NONE && kind !== KIND.GAS) return false;
     }
   }
   let support = 0;
   for (let x = x0; x <= x1; x++) {
     const material = grid[(y1 + 1) * engine.cols + x];
-    const kind = MATERIALS[material].kind;
+    const kind = MATERIAL_BY_ID[material].kind;
     if (kind !== KIND.NONE && kind !== KIND.GAS && kind !== KIND.LIQUID &&
         !dangerous.has(material)) support++;
   }

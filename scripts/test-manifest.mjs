@@ -57,7 +57,7 @@ export const UNIT_SUITES = [
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-jitter', 'rigid-jitter-test.mjs', exclusive(120_000)],
   ['rigid-massive-stack', 'rigid-massive-stack-test.mjs', exclusive(240_000)],
-  ['rigid-complex-stack', 'rigid-complex-stack-test.mjs', exclusive(300_000)],
+  ['rigid-world-raster', 'rigid-world-raster-test.mjs', exclusive(120_000)],
   ['rigid-tnt-rubble', 'rigid-tnt-rubble-test.mjs', exclusive(300_000)],
   ['rigid-large-body', 'rigid-large-body-test.mjs', exclusive(240_000)],
   ['rigid-terrain-contact', 'rigid-terrain-contact-test.mjs'],
@@ -131,10 +131,8 @@ export const BROWSER_SUITES = [
 // headless or browser aggregates.
 export const FOCUSED_SUITES = [
   ['tnt-u', 'repro-tnt-u.mjs', exclusive(120_000)],
+  // Multi-seed settling soak; the aggregate uses the bounded exact-raster case.
+  ['rigid-complex-stack', 'rigid-complex-stack-test.mjs', exclusive(300_000)],
 ];
 
-// This strict diagnostic reproduces the unresolved transactional projection
-// contract for a foreground/background joint beside an independent body.
-export const EXCLUDED_TESTS = [
-  ['rigid-world-raster-blocker', 'rigid-world-raster-test.mjs'],
-];
+export const EXCLUDED_TESTS = [];

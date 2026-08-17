@@ -95,6 +95,7 @@ class RigidBodySystem {
   void beginWorldContactRelax();
   void captureTracePose(int stage);
   void relaxWorldContacts();
+  void resolveWorldRasterAssignment();
   void bakeWorldBodies(bool foregroundActive, bool backgroundActive);
   int worldContactCount() const;
   double worldContactState(int index, int field) const;
@@ -356,6 +357,17 @@ class RigidBodySystem {
   std::array<StampSet, 2> bakeRasterAliases;
   std::vector<Body*> rasterProjectionBodies;
   std::vector<std::pair<int, int>> rasterProjectionPairs;
+  struct WorldRasterNode {
+    Body* body = nullptr;
+    Body* foreground = nullptr;
+    Body* background = nullptr;
+    int bodyLayer = 0;
+  };
+  std::vector<WorldRasterNode> worldRasterNodes;
+  std::vector<MovePose> worldRasterCurrentPoses;
+  std::vector<uint8_t> worldRasterViolating, worldRasterRollback;
+  std::unordered_map<uint64_t, int> worldRasterPairCounts;
+  bool worldRasterAssignmentValid = true;
   struct WorldContact {
     int aLayer = 0, bLayer = -1;
     int aId = -1, bId = -1;

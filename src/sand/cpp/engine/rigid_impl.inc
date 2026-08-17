@@ -224,6 +224,27 @@ void RigidBodySystem::beginWorldContactRelax() {
     for (Body* body : E.fg.bodies)
       if (body->jointRole == 1) syncJointFollower(body);
   }
+  if (E.bgEnabled && worldRasterAssignmentValid) {
+    auto checkpoint = [&](Body* body, Layer& layer) {
+      body->acceptedWorldPx = layer.worldOffsetX + body->px;
+      body->acceptedWorldPy = layer.worldOffsetY + body->py;
+      body->acceptedAngle = body->angle;
+      body->acceptedRasterPoseValid = true;
+    };
+    for (Body* body : E.fg.bodies) {
+      if (body->jointRole == 2) continue;
+      checkpoint(body, E.fg);
+      if (body->jointRole == 1 && body->jointPeer) {
+        Body* follower = body->jointPeer;
+        follower->acceptedWorldPx = body->acceptedWorldPx;
+        follower->acceptedWorldPy = body->acceptedWorldPy;
+        follower->acceptedAngle = body->acceptedAngle;
+        follower->acceptedRasterPoseValid = true;
+      }
+    }
+    for (Body* body : E.bg.bodies)
+      if (body->jointRole == 0) checkpoint(body, E.bg);
+  }
   worldContacts.clear();
   worldHasPeerContact = false;
   worldPreviousPoses.clear();
@@ -952,6 +973,240 @@ void RigidBodySystem::relaxWorldContacts() {
   }
 }
 
+void RigidBodySystem::resolveWorldRasterAssignment() {
+  if (!E.bgEnabled) {
+    worldRasterAssignmentValid = true;
+    return;
+  }
+  bool needsExactValidation = rigidOwnershipConflicts > 0
+    || rigidRejectedCells > 0
+    || rigidRasterCorrections > 0
+    || rigidRasterProjectionFailures > 0;
+  if (!needsExactValidation) {
+    worldRasterAssignmentValid = true;
+    return;
+  }
+  bool hasJoint = false;
+  for (Body* body : E.fg.bodies)
+    hasJoint = hasJoint
+      || (body->jointRole == 1 && body->jointPeer);
+  bool hasIndependentBackground = false;
+  for (Body* body : E.bg.bodies)
+    hasIndependentBackground = hasIndependentBackground
+      || body->jointRole == 0;
+  if (!hasJoint || !hasIndependentBackground) {
+    worldRasterAssignmentValid = true;
+    return;
+  }
+
+  worldRasterNodes.clear();
+  worldRasterNodes.reserve(E.fg.bodies.size() + E.bg.bodies.size());
+  for (Body* body : E.fg.bodies) {
+    if (body->jointRole == 2) continue;
+    WorldRasterNode node;
+    node.body = body;
+    node.foreground = body;
+    node.bodyLayer = 0;
+    if (body->jointRole == 1 && body->jointPeer) {
+      node.background = body->jointPeer;
+    }
+    worldRasterNodes.push_back(node);
+  }
+  for (Body* body : E.bg.bodies) {
+    if (body->jointRole != 0) continue;
+    WorldRasterNode node;
+    node.body = body;
+    node.background = body;
+    node.bodyLayer = 1;
+    worldRasterNodes.push_back(node);
+  }
+
+  size_t gridSize = (size_t)E.cols * E.rows;
+  if (rasterProjectionOwner.size() != gridSize) {
+    rasterProjectionOwner.assign(gridSize, -1);
+    rasterProjectionTouched.clear();
+  }
+  auto clearOwners = [&]() {
+    for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
+    rasterProjectionTouched.clear();
+  };
+  auto assignmentValid = [&](std::vector<uint8_t>* violating) {
+    if (violating)
+      violating->assign(worldRasterNodes.size(), 0);
+    bool valid = true;
+    for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+      Layer& layer = layerIndex ? E.bg : E.fg;
+      clearOwners();
+      worldRasterPairCounts.clear();
+      for (int nodeIndex = 0;
+           nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
+        WorldRasterNode& node = worldRasterNodes[nodeIndex];
+        std::array<Body*, 2> members{{nullptr, nullptr}};
+        int memberCount = 0;
+        if (node.body->jointRole == 1) {
+          if (node.foreground) members[memberCount++] = node.foreground;
+          if (node.background) members[memberCount++] = node.background;
+        } else {
+          Body* member = layerIndex ? node.background : node.foreground;
+          if (member) members[memberCount++] = member;
+        }
+        for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
+          Body* member = members[memberIndex];
+          ensureBodyRaster(member);
+          for (const BodyRasterCell& cell : member->rasterFootprint) {
+            int k = cell.y * E.cols + cell.x;
+            int previous = rasterProjectionOwner[k];
+            if (previous < 0) {
+              rasterProjectionOwner[k] = nodeIndex;
+              rasterProjectionTouched.push_back(k);
+            } else if (previous != nodeIndex) {
+              int first = imin(previous, nodeIndex);
+              int second = imax(previous, nodeIndex);
+              uint64_t key = ((uint64_t)(uint32_t)first << 32)
+                           | (uint32_t)second;
+              if (++worldRasterPairCounts[key]
+                  > R_STRUCTURE_RASTER_ALIAS_CELLS) {
+                valid = false;
+                if (violating) {
+                  (*violating)[previous] = 1;
+                  (*violating)[nodeIndex] = 1;
+                }
+              }
+            }
+            if (layer.infinite
+                && (cell.x == 0 || cell.x == E.cols - 1))
+              continue;
+            if (layer.bodyOwner[k] >= 0) continue;
+            uint8_t material = layer.grid[k];
+            if (material != EMPTY && !E.isGasMaterial(material)
+                && !E.isBuoyantMedium(material)) {
+              valid = false;
+              if (violating) (*violating)[nodeIndex] = 1;
+            }
+          }
+        }
+      }
+    }
+    clearOwners();
+    return valid;
+  };
+
+  if (assignmentValid(&worldRasterViolating)) {
+    worldRasterAssignmentValid = true;
+    rigidRasterProjectionFailures = 0;
+    return;
+  }
+
+  worldRasterCurrentPoses.clear();
+  worldRasterCurrentPoses.reserve(worldRasterNodes.size());
+  for (WorldRasterNode& node : worldRasterNodes) {
+    worldRasterCurrentPoses.push_back({
+      node.body->px, node.body->py, node.body->angle,
+    });
+  }
+
+  auto setPose = [&](WorldRasterNode& node, const MovePose& pose) {
+    node.body->px = pose.px;
+    node.body->py = pose.py;
+    node.body->angle = pose.angle;
+    node.body->cs = std::cos(pose.angle);
+    node.body->sn = std::sin(pose.angle);
+    node.body->rasterFootprintValid = false;
+    if (node.body->jointRole == 1) syncJointFollower(node.body);
+  };
+  worldRasterRollback = worldRasterViolating;
+  bool recovered = false;
+  for (int pass = 0; pass < (int)worldRasterNodes.size(); pass++) {
+    bool canRollback = true;
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+      if (!worldRasterRollback[index]) continue;
+      WorldRasterNode& node = worldRasterNodes[index];
+      if (!node.body->acceptedRasterPoseValid) {
+        canRollback = false;
+        break;
+      }
+      Layer& layer = node.bodyLayer ? E.bg : E.fg;
+      setPose(node, {
+        node.body->acceptedWorldPx - layer.worldOffsetX,
+        node.body->acceptedWorldPy - layer.worldOffsetY,
+        node.body->acceptedAngle,
+      });
+    }
+    if (!canRollback) break;
+    if (assignmentValid(&worldRasterViolating)) {
+      recovered = true;
+      break;
+    }
+    bool expanded = false;
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+      if (!worldRasterViolating[index] || worldRasterRollback[index])
+        continue;
+      worldRasterRollback[index] = 1;
+      expanded = true;
+    }
+    if (!expanded) break;
+  }
+  if (!recovered) {
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+      setPose(worldRasterNodes[index], worldRasterCurrentPoses[index]);
+    rigidRasterProjectionFailures = imax(
+      1, rigidRasterProjectionFailures);
+    worldRasterAssignmentValid = false;
+    return;
+  }
+
+  int movedBodies = 0;
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+    if (!worldRasterRollback[index]) continue;
+    Body* body = worldRasterNodes[index].body;
+    const MovePose& current = worldRasterCurrentPoses[index];
+    double translation = std::hypot(body->px - current.px,
+                                    body->py - current.py);
+    double travel = translation
+      + std::fabs(body->angle - current.angle) * body->maxR;
+    if (travel <= 1e-9) continue;
+    movedBodies++;
+    body->vx = body->vy = body->omega = 0;
+    body->pvx = body->pvy = body->pw = 0;
+    body->awake = false;
+    resetSleepTracking(body);
+    body->stillTicks = R_SLEEP_TICKS;
+    body->hadContact = true;
+    if (body->jointRole == 1) syncJointFollower(body);
+    rigidRasterMaxCorrection = std::fmax(
+      rigidRasterMaxCorrection, translation);
+  }
+  rigidPositionCorrections += movedBodies;
+  rigidRasterCorrections += movedBodies;
+  rigidRasterProjectionFailures = 0;
+  worldRasterAssignmentValid = true;
+
+  auto clearLayerRasters = [&](Layer& layer) {
+    Engine::ActiveLayerScope layerScope(E, &layer);
+    auto clear = [&](std::vector<int>& cells) {
+      for (int k : cells) {
+        if (k < 0 || k >= E.cols * E.rows) continue;
+        if (E.isBodyCell(k)) layer.clearVacatedCellPhases((size_t)k);
+        else layer.bodyOwner[k] = -1;
+      }
+      cells.clear();
+    };
+    clear(layer.bodyCells);
+    clear(layer.passiveBodyCells);
+    layer.blastSparseCarryReady = false;
+  };
+  clearLayerRasters(E.fg);
+  clearLayerRasters(E.bg);
+  {
+    Engine::ActiveLayerScope foreground(E, &E.fg);
+    restampBodiesAfterStream(PCSO_BODY_MOTION);
+  }
+  {
+    Engine::ActiveLayerScope background(E, &E.bg);
+    restampBodiesAfterStream(PCSO_BODY_MOTION);
+  }
+}
+
 void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
   double lx = b->points[i * 2], ly = b->points[i * 2 + 1];
   ox = b->px + lx * cs - ly * sn; oy = b->py + lx * sn + ly * cs;
@@ -1013,7 +1268,17 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   if (nPts == 0) return false;
   double divisor = b->cellMaterials.empty() && !b->jointRole ? nPts : totalMass;
   double dx = sumX / divisor, dy = sumY / divisor;
-  if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
+  if (preserveWorld && (dx != 0 || dy != 0)) {
+    double c = std::cos(b->angle), s = std::sin(b->angle);
+    double worldDx = dx * c - dy * s;
+    double worldDy = dx * s + dy * c;
+    b->px += worldDx;
+    b->py += worldDy;
+    if (b->acceptedRasterPoseValid) {
+      b->acceptedWorldPx += worldDx;
+      b->acceptedWorldPy += worldDy;
+    }
+  }
   if (b->fuseTicks > 0) {
     b->fuseLocalX -= dx;
     b->fuseLocalY -= dy;
@@ -2185,6 +2450,10 @@ void RigidBodySystem::syncJointFollower(Body* leader) {
   follower->restProbeTicks = leader->restProbeTicks;
   follower->sleepSupports = leader->sleepSupports;
   follower->bakeSupportedPoseTicks = leader->bakeSupportedPoseTicks;
+  follower->acceptedWorldPx = leader->acceptedWorldPx;
+  follower->acceptedWorldPy = leader->acceptedWorldPy;
+  follower->acceptedAngle = leader->acceptedAngle;
+  follower->acceptedRasterPoseValid = leader->acceptedRasterPoseValid;
   follower->cs = leader->cs; follower->sn = leader->sn;
 }
 void RigidBodySystem::breakJointBody(Body* member) {

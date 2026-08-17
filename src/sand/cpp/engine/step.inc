@@ -278,6 +278,7 @@
     if (bgA) stepLayer(&bg);
     rigid.captureTracePose(2);
     rigid.relaxWorldContacts();
+    rigid.resolveWorldRasterAssignment();
     double tBake = emscripten_get_now();
     rigid.bakeWorldBodies(fgA, bgA);
     rigid.captureTracePose(5);

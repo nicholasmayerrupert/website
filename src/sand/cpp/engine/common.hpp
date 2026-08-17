@@ -263,6 +263,10 @@ struct Body {
   uint8_t jointRole = 0;
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
+  // Last pose whose complete foreground/background raster assignment was
+  // unique. World coordinates keep the checkpoint stable across streaming.
+  double acceptedWorldPx = 0, acceptedWorldPy = 0, acceptedAngle = 0;
+  bool acceptedRasterPoseValid = false;
   double vx = 0, vy = 0, omega = 0;
   // Actor collision proxies keep a fixed solver pose while exposing the
   // actor's velocity to contact friction and normal impulses.

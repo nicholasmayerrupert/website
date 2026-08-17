@@ -224,27 +224,6 @@ void RigidBodySystem::beginWorldContactRelax() {
     for (Body* body : E.fg.bodies)
       if (body->jointRole == 1) syncJointFollower(body);
   }
-  if (E.bgEnabled && worldRasterAssignmentValid) {
-    auto checkpoint = [&](Body* body, Layer& layer) {
-      body->acceptedWorldPx = layer.worldOffsetX + body->px;
-      body->acceptedWorldPy = layer.worldOffsetY + body->py;
-      body->acceptedAngle = body->angle;
-      body->acceptedRasterPoseValid = true;
-    };
-    for (Body* body : E.fg.bodies) {
-      if (body->jointRole == 2) continue;
-      checkpoint(body, E.fg);
-      if (body->jointRole == 1 && body->jointPeer) {
-        Body* follower = body->jointPeer;
-        follower->acceptedWorldPx = body->acceptedWorldPx;
-        follower->acceptedWorldPy = body->acceptedWorldPy;
-        follower->acceptedAngle = body->acceptedAngle;
-        follower->acceptedRasterPoseValid = true;
-      }
-    }
-    for (Body* body : E.bg.bodies)
-      if (body->jointRole == 0) checkpoint(body, E.bg);
-  }
   worldContacts.clear();
   worldHasPeerContact = false;
   worldPreviousPoses.clear();
@@ -976,26 +955,102 @@ void RigidBodySystem::relaxWorldContacts() {
 void RigidBodySystem::resolveWorldRasterAssignment() {
   if (!E.bgEnabled) {
     worldRasterAssignmentValid = true;
-    return;
-  }
-  bool needsExactValidation = rigidOwnershipConflicts > 0
-    || rigidRejectedCells > 0
-    || rigidRasterCorrections > 0
-    || rigidRasterProjectionFailures > 0;
-  if (!needsExactValidation) {
-    worldRasterAssignmentValid = true;
+    worldRasterAcceptedRosterValid = false;
     return;
   }
   bool hasJoint = false;
-  for (Body* body : E.fg.bodies)
+  size_t nodeCount = 0;
+  for (Body* body : E.fg.bodies) {
+    if (body->jointRole == 2) continue;
+    nodeCount++;
     hasJoint = hasJoint
       || (body->jointRole == 1 && body->jointPeer);
+  }
   bool hasIndependentBackground = false;
-  for (Body* body : E.bg.bodies)
-    hasIndependentBackground = hasIndependentBackground
-      || body->jointRole == 0;
+  for (Body* body : E.bg.bodies) {
+    if (body->jointRole != 0) continue;
+    nodeCount++;
+    hasIndependentBackground = true;
+  }
   if (!hasJoint || !hasIndependentBackground) {
     worldRasterAssignmentValid = true;
+    worldRasterAcceptedRosterValid = false;
+    return;
+  }
+
+  auto geometryMatchesAccepted = [&](Body* body) {
+    return body->acceptedRasterPoseValid
+      && body->acceptedRasterGeometryRevision == body->geometryRevision;
+  };
+  auto checkpointBody = [&](Body* body, Layer& layer) {
+    body->acceptedWorldPx = layer.worldOffsetX + body->px;
+    body->acceptedWorldPy = layer.worldOffsetY + body->py;
+    body->acceptedAngle = body->angle;
+    body->acceptedRasterGeometryRevision = body->geometryRevision;
+    body->acceptedRasterPoseValid = true;
+  };
+  size_t rosterIndex = 0;
+  auto rosterEntryMatches = [&](Body* body, int bodyLayer, Body* peer) {
+    if (rosterIndex >= worldRasterAcceptedRoster.size()) return false;
+    const WorldRasterRosterEntry& accepted =
+      worldRasterAcceptedRoster[rosterIndex++];
+    return accepted.bodyId == body->id
+      && accepted.peerId == (peer ? peer->id : -1)
+      && accepted.bodyLayer == bodyLayer
+      && accepted.jointRole == body->jointRole;
+  };
+  bool needsExactValidation = !worldRasterAssignmentValid
+    || !worldRasterAcceptedRosterValid
+    || worldRasterAcceptedRoster.size() != nodeCount
+    || rigidOwnershipConflicts > 0
+    || rigidRejectedCells > 0
+    || rigidRasterCorrections > 0
+    || rigidRasterProjectionFailures > 0
+    || rigidWorldMaxPositionTranslation > 0
+    || rigidWorldMaxPositionRotation > 0;
+  if (!needsExactValidation) {
+    for (Body* body : E.fg.bodies) {
+      if (body->jointRole == 2) continue;
+      Body* peer = body->jointRole == 1 ? body->jointPeer : nullptr;
+      if (!rosterEntryMatches(body, 0, peer)
+          || !geometryMatchesAccepted(body)
+          || (body->jointRole == 1 && body->jointPeer
+            && (!body->jointPeer->acceptedRasterPoseValid
+              || body->jointPeer->acceptedRasterGeometryRevision
+                != body->jointPeer->geometryRevision))) {
+        needsExactValidation = true;
+        break;
+      }
+    }
+  }
+  if (!needsExactValidation) {
+    for (Body* body : E.bg.bodies) {
+      if (body->jointRole != 0) continue;
+      if (!rosterEntryMatches(body, 1, nullptr)
+          || !geometryMatchesAccepted(body)) {
+        needsExactValidation = true;
+        break;
+      }
+    }
+  }
+  if (!needsExactValidation
+      && rosterIndex != worldRasterAcceptedRoster.size())
+    needsExactValidation = true;
+  if (!needsExactValidation) {
+    for (Body* body : E.fg.bodies) {
+      if (body->jointRole == 2) continue;
+      checkpointBody(body, E.fg);
+      if (body->jointRole == 1 && body->jointPeer) {
+        Body* follower = body->jointPeer;
+        follower->acceptedWorldPx = body->acceptedWorldPx;
+        follower->acceptedWorldPy = body->acceptedWorldPy;
+        follower->acceptedAngle = body->acceptedAngle;
+        follower->acceptedRasterGeometryRevision = follower->geometryRevision;
+        follower->acceptedRasterPoseValid = true;
+      }
+    }
+    for (Body* body : E.bg.bodies)
+      if (body->jointRole == 0) checkpointBody(body, E.bg);
     return;
   }
 
@@ -1021,6 +1076,34 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     worldRasterNodes.push_back(node);
   }
 
+  auto acceptAssignment = [&]() {
+    for (WorldRasterNode& node : worldRasterNodes) {
+      Layer& layer = node.bodyLayer ? E.bg : E.fg;
+      checkpointBody(node.body, layer);
+      if (node.body->jointRole == 1 && node.background) {
+        Body* follower = node.background;
+        follower->acceptedWorldPx = node.body->acceptedWorldPx;
+        follower->acceptedWorldPy = node.body->acceptedWorldPy;
+        follower->acceptedAngle = node.body->acceptedAngle;
+        follower->acceptedRasterGeometryRevision = follower->geometryRevision;
+        follower->acceptedRasterPoseValid = true;
+      }
+    }
+    worldRasterAcceptedRoster.clear();
+    worldRasterAcceptedRoster.reserve(worldRasterNodes.size());
+    for (const WorldRasterNode& node : worldRasterNodes) {
+      worldRasterAcceptedRoster.push_back({
+        node.body->id,
+        node.body->jointRole == 1 && node.background
+          ? node.background->id : -1,
+        node.bodyLayer,
+        node.body->jointRole,
+      });
+    }
+    worldRasterAcceptedRosterValid = true;
+    worldRasterAssignmentValid = true;
+  };
+
   size_t gridSize = (size_t)E.cols * E.rows;
   if (rasterProjectionOwner.size() != gridSize) {
     rasterProjectionOwner.assign(gridSize, -1);
@@ -1037,7 +1120,6 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
       Layer& layer = layerIndex ? E.bg : E.fg;
       clearOwners();
-      worldRasterPairCounts.clear();
       for (int nodeIndex = 0;
            nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
         WorldRasterNode& node = worldRasterNodes[nodeIndex];
@@ -1060,17 +1142,10 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
               rasterProjectionOwner[k] = nodeIndex;
               rasterProjectionTouched.push_back(k);
             } else if (previous != nodeIndex) {
-              int first = imin(previous, nodeIndex);
-              int second = imax(previous, nodeIndex);
-              uint64_t key = ((uint64_t)(uint32_t)first << 32)
-                           | (uint32_t)second;
-              if (++worldRasterPairCounts[key]
-                  > R_STRUCTURE_RASTER_ALIAS_CELLS) {
-                valid = false;
-                if (violating) {
-                  (*violating)[previous] = 1;
-                  (*violating)[nodeIndex] = 1;
-                }
+              valid = false;
+              if (violating) {
+                (*violating)[previous] = 1;
+                (*violating)[nodeIndex] = 1;
               }
             }
             if (layer.infinite
@@ -1092,7 +1167,9 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   };
 
   if (assignmentValid(&worldRasterViolating)) {
-    worldRasterAssignmentValid = true;
+    acceptAssignment();
+    rigidOwnershipConflicts = 0;
+    rigidRejectedCells = 0;
     rigidRasterProjectionFailures = 0;
     return;
   }
@@ -1115,9 +1192,275 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     if (node.body->jointRole == 1) syncJointFollower(node.body);
   };
   worldRasterRollback = worldRasterViolating;
+  std::vector<uint8_t> worldRasterMove = worldRasterRollback;
+  // Every body whose exact raster touches a violation belongs to the same
+  // transaction, including diagonal contacts that can receive the correction.
+  std::vector<int> contactParent(worldRasterNodes.size());
+  for (int index = 0; index < (int)contactParent.size(); index++)
+    contactParent[index] = index;
+  for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+    clearOwners();
+    for (int nodeIndex = 0;
+         nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
+      WorldRasterNode& node = worldRasterNodes[nodeIndex];
+      std::array<Body*, 2> members{{nullptr, nullptr}};
+      int memberCount = 0;
+      if (node.body->jointRole == 1) {
+        if (node.foreground) members[memberCount++] = node.foreground;
+        if (node.background) members[memberCount++] = node.background;
+      } else {
+        Body* member = layerIndex ? node.background : node.foreground;
+        if (member) members[memberCount++] = member;
+      }
+      for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
+        Body* member = members[memberIndex];
+        ensureBodyRaster(member);
+        for (const BodyRasterCell& cell : member->rasterFootprint) {
+          int k = cell.y * E.cols + cell.x;
+          int previous = rasterProjectionOwner[k];
+          if (previous < 0) {
+            rasterProjectionOwner[k] = nodeIndex;
+            rasterProjectionTouched.push_back(k);
+          } else if (previous != nodeIndex) {
+            ufUnite(contactParent, previous, nodeIndex);
+          }
+        }
+      }
+    }
+    for (int k : rasterProjectionTouched) {
+      int owner = rasterProjectionOwner[k];
+      int x = k % E.cols;
+      for (const auto& offset : std::array<std::pair<int, int>, 4>{{
+             {1, 0}, {-1, 1}, {0, 1}, {1, 1},
+           }}) {
+        int nx = x + offset.first;
+        int neighbor = k + offset.second * E.cols + offset.first;
+        if (nx < 0 || nx >= E.cols
+            || neighbor < 0 || neighbor >= E.cols * E.rows)
+          continue;
+        int peer = rasterProjectionOwner[neighbor];
+        if (peer >= 0 && peer != owner)
+          ufUnite(contactParent, owner, peer);
+      }
+    }
+  }
+  auto contactNode = [&](int layer, int id) {
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+      Body* member = layer
+        ? worldRasterNodes[index].background
+        : worldRasterNodes[index].foreground;
+      if (member && member->id == id) return index;
+    }
+    return -1;
+  };
+  for (const WorldContact& contact : worldContacts) {
+    if (contact.bLayer < 0) continue;
+    int first = contactNode(contact.aLayer, contact.aId);
+    int second = contactNode(contact.bLayer, contact.bId);
+    if (first >= 0 && second >= 0) ufUnite(contactParent, first, second);
+  }
+  clearOwners();
+  std::vector<uint8_t> rollbackRoots(worldRasterNodes.size(), 0);
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+    if (worldRasterRollback[index])
+      rollbackRoots[ufFind(contactParent, index)] = 1;
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+    worldRasterRollback[index] =
+      rollbackRoots[ufFind(contactParent, index)];
   bool recovered = false;
-  for (int pass = 0; pass < (int)worldRasterNodes.size(); pass++) {
+
+  // Build both layers' claims directly from canonical-node footprints. The
+  // recursive search only mutates trial poses; the sand grids remain unchanged
+  // until one complete assignment has passed every claim and terrain check.
+  auto searchBoundedAssignment = [&](
+      const std::vector<uint8_t>& moving,
+      const std::vector<uint8_t>& included) {
+    size_t ownerSize = gridSize * 2;
+    if (worldRasterSearchOwner.size() != ownerSize)
+      worldRasterSearchOwner.assign(ownerSize, -1);
+    for (int claim : worldRasterSearchTouched)
+      worldRasterSearchOwner[claim] = -1;
+    worldRasterSearchTouched.clear();
+
+    auto releaseClaims = [&](size_t start) {
+      while (worldRasterSearchTouched.size() > start) {
+        int claim = worldRasterSearchTouched.back();
+        worldRasterSearchTouched.pop_back();
+        worldRasterSearchOwner[claim] = -1;
+      }
+    };
+    auto claimNode = [&](int nodeIndex) {
+      size_t start = worldRasterSearchTouched.size();
+      WorldRasterNode& node = worldRasterNodes[nodeIndex];
+      for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+        Layer& layer = layerIndex ? E.bg : E.fg;
+        Body* member = layerIndex ? node.background : node.foreground;
+        if (!member) continue;
+        ensureBodyRaster(member);
+        for (const BodyRasterCell& cell : member->rasterFootprint) {
+          int k = cell.y * E.cols + cell.x;
+          int claim = layerIndex * (int)gridSize + k;
+          if (worldRasterSearchOwner[claim] >= 0) {
+            releaseClaims(start);
+            return false;
+          }
+          if (!(layer.infinite
+                && (cell.x == 0 || cell.x == E.cols - 1))
+              && layer.bodyOwner[k] < 0) {
+            uint8_t material = layer.grid[k];
+            if (material != EMPTY && !E.isGasMaterial(material)
+                && !E.isBuoyantMedium(material)) {
+              releaseClaims(start);
+              return false;
+            }
+          }
+          worldRasterSearchOwner[claim] = nodeIndex;
+          worldRasterSearchTouched.push_back(claim);
+        }
+      }
+      return true;
+    };
+
+    std::vector<int> searchNodes;
+    searchNodes.reserve(worldRasterNodes.size());
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+      if (moving[index]) searchNodes.push_back(index);
+      else if (included[index] && !claimNode(index)) {
+        releaseClaims(0);
+        return false;
+      }
+    }
+    std::stable_sort(searchNodes.begin(), searchNodes.end(),
+      [&](int a, int b) {
+        return worldRasterMove[a] > worldRasterMove[b];
+      });
+
+    static constexpr double directions[16][2] = {
+      {1, 0}, {0.9238795325112867, 0.3826834323650898},
+      {0.7071067811865476, 0.7071067811865476},
+      {0.3826834323650898, 0.9238795325112867}, {0, 1},
+      {-0.3826834323650898, 0.9238795325112867},
+      {-0.7071067811865476, 0.7071067811865476},
+      {-0.9238795325112867, 0.3826834323650898}, {-1, 0},
+      {-0.9238795325112867, -0.3826834323650898},
+      {-0.7071067811865476, -0.7071067811865476},
+      {-0.3826834323650898, -0.9238795325112867}, {0, -1},
+      {0.3826834323650898, -0.9238795325112867},
+      {0.7071067811865476, -0.7071067811865476},
+      {0.9238795325112867, -0.3826834323650898},
+    };
+    // Contended islands fall back to their accepted assignment after a fixed
+    // amount of bounded local work, so search cost cannot grow combinatorially.
+    int remainingCandidates = 4096;
+    auto search = [&](auto&& self, int depth) -> bool {
+      if (depth == (int)searchNodes.size()) return true;
+      if (remainingCandidates <= 0) return false;
+      int nodeIndex = searchNodes[depth];
+      WorldRasterNode& node = worldRasterNodes[nodeIndex];
+      const MovePose& current = worldRasterCurrentPoses[nodeIndex];
+      auto tryPose = [&](const MovePose& pose) {
+        if (remainingCandidates-- <= 0) return false;
+        setPose(node, pose);
+        size_t start = worldRasterSearchTouched.size();
+        if (!claimNode(nodeIndex)) return false;
+        if (self(self, depth + 1)) return true;
+        releaseClaims(start);
+        return false;
+      };
+      if (tryPose(current)) return true;
+      if (node.body->acceptedRasterPoseValid) {
+        Layer& layer = node.bodyLayer ? E.bg : E.fg;
+        MovePose accepted{
+          node.body->acceptedWorldPx - layer.worldOffsetX,
+          node.body->acceptedWorldPy - layer.worldOffsetY,
+          node.body->acceptedAngle,
+        };
+        double acceptedTranslation = std::hypot(
+          accepted.px - current.px, accepted.py - current.py);
+        for (int sample = 1;
+             sample <= 16 && remainingCandidates > 0; sample++) {
+          double fraction = (double)sample / 16;
+          if (acceptedTranslation * fraction > 2) break;
+          if (tryPose({
+                current.px + (accepted.px - current.px) * fraction,
+                current.py + (accepted.py - current.py) * fraction,
+                current.angle
+                  + (accepted.angle - current.angle) * fraction,
+              }))
+            return true;
+        }
+      }
+      for (double amount = 0.125;
+           amount <= 2.0 && remainingCandidates > 0; amount += 0.125) {
+        for (const auto& direction : directions) {
+          if (remainingCandidates <= 0) break;
+          if (tryPose({
+                current.px + direction[0] * amount,
+                current.py + direction[1] * amount,
+                current.angle,
+              }))
+            return true;
+        }
+      }
+      setPose(node, current);
+      return false;
+    };
+    bool found = search(search, 0);
+    releaseClaims(0);
+    return found;
+  };
+  std::vector<int> violatingRoots;
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+    if (!worldRasterMove[index]) continue;
+    int root = ufFind(contactParent, index);
+    if (std::find(violatingRoots.begin(), violatingRoots.end(), root)
+        == violatingRoots.end())
+      violatingRoots.push_back(root);
+  }
+  recovered = true;
+  std::vector<uint8_t> islandMove(worldRasterNodes.size(), 0);
+  std::vector<uint8_t> islandIncluded(worldRasterNodes.size(), 0);
+  for (int root : violatingRoots) {
+    for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+      int nodeRoot = ufFind(contactParent, index);
+      islandMove[index] = 0;
+      islandIncluded[index] = !worldRasterRollback[index]
+        || nodeRoot == root;
+    }
+    bool islandRecovered = false;
+    for (int index = 0;
+         !islandRecovered && index < (int)worldRasterNodes.size(); index++) {
+      if (!worldRasterMove[index]
+          || ufFind(contactParent, index) != root)
+        continue;
+      islandMove[index] = 1;
+      islandRecovered = searchBoundedAssignment(
+        islandMove, islandIncluded);
+      islandMove[index] = 0;
+    }
+    if (!islandRecovered) {
+      for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+        islandMove[index] = worldRasterMove[index]
+          && ufFind(contactParent, index) == root;
+      islandRecovered = searchBoundedAssignment(
+        islandMove, islandIncluded);
+    }
+    if (!islandRecovered) {
+      for (int index = 0; index < (int)worldRasterNodes.size(); index++)
+        islandMove[index] = ufFind(contactParent, index) == root;
+      islandRecovered = searchBoundedAssignment(
+        islandMove, islandIncluded);
+    }
+    if (!islandRecovered) {
+      recovered = false;
+      break;
+    }
+  }
+  if (recovered) recovered = assignmentValid(&worldRasterViolating);
+  for (int pass = 0;
+       !recovered && pass < (int)worldRasterNodes.size(); pass++) {
     bool canRollback = true;
+    double maxRollbackTravel = 0;
     for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
       if (!worldRasterRollback[index]) continue;
       WorldRasterNode& node = worldRasterNodes[index];
@@ -1126,14 +1469,60 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         break;
       }
       Layer& layer = node.bodyLayer ? E.bg : E.fg;
-      setPose(node, {
+      MovePose accepted{
         node.body->acceptedWorldPx - layer.worldOffsetX,
         node.body->acceptedWorldPy - layer.worldOffsetY,
         node.body->acceptedAngle,
-      });
+      };
+      const MovePose& current = worldRasterCurrentPoses[index];
+      maxRollbackTravel = std::fmax(maxRollbackTravel,
+        std::hypot(accepted.px - current.px, accepted.py - current.py)
+          + std::fabs(accepted.angle - current.angle) * node.body->maxR);
     }
     if (!canRollback) break;
-    if (assignmentValid(&worldRasterViolating)) {
+
+    auto setRollbackFraction = [&](double fraction) {
+      for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+        WorldRasterNode& node = worldRasterNodes[index];
+        const MovePose& current = worldRasterCurrentPoses[index];
+        if (!worldRasterRollback[index]) {
+          setPose(node, current);
+          continue;
+        }
+        Layer& layer = node.bodyLayer ? E.bg : E.fg;
+        MovePose accepted{
+          node.body->acceptedWorldPx - layer.worldOffsetX,
+          node.body->acceptedWorldPy - layer.worldOffsetY,
+          node.body->acceptedAngle,
+        };
+        setPose(node, {
+          current.px + (accepted.px - current.px) * fraction,
+          current.py + (accepted.py - current.py) * fraction,
+          current.angle + (accepted.angle - current.angle) * fraction,
+        });
+      }
+    };
+    int samples = imin(64, imax(
+      1, (int)std::ceil(maxRollbackTravel / 0.25)));
+    double lower = 0, upper = -1;
+    for (int sample = 1; sample <= samples; sample++) {
+      double fraction = (double)sample / samples;
+      setRollbackFraction(fraction);
+      if (assignmentValid(&worldRasterViolating)) {
+        upper = fraction;
+        break;
+      }
+      lower = fraction;
+    }
+    if (upper > 0) {
+      for (int search = 0; search < 6; search++) {
+        double middle = (lower + upper) * 0.5;
+        setRollbackFraction(middle);
+        if (assignmentValid(nullptr)) upper = middle;
+        else lower = middle;
+      }
+      setRollbackFraction(upper);
+      if (!assignmentValid(&worldRasterViolating)) break;
       recovered = true;
       break;
     }
@@ -1147,12 +1536,29 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     if (!expanded) break;
   }
   if (!recovered) {
-    for (int index = 0; index < (int)worldRasterNodes.size(); index++)
-      setPose(worldRasterNodes[index], worldRasterCurrentPoses[index]);
-    rigidRasterProjectionFailures = imax(
-      1, rigidRasterProjectionFailures);
-    worldRasterAssignmentValid = false;
-    return;
+    worldRasterRollback.assign(worldRasterNodes.size(), 1);
+    bool allAccepted = true;
+    for (WorldRasterNode& node : worldRasterNodes) {
+      if (!node.body->acceptedRasterPoseValid) {
+        allAccepted = false;
+        break;
+      }
+      Layer& layer = node.bodyLayer ? E.bg : E.fg;
+      setPose(node, {
+        node.body->acceptedWorldPx - layer.worldOffsetX,
+        node.body->acceptedWorldPy - layer.worldOffsetY,
+        node.body->acceptedAngle,
+      });
+    }
+    recovered = allAccepted && assignmentValid(&worldRasterViolating);
+  }
+  if (!recovered) {
+    char message[180];
+    snprintf(message, sizeof(message),
+      "SAND RASTER ASSIGNMENT FAILURE tick=%d nodes=%d",
+      E.tick, (int)worldRasterNodes.size());
+    emscripten_console_error(message);
+    abort();
   }
 
   int movedBodies = 0;
@@ -1164,8 +1570,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
                                     body->py - current.py);
     double travel = translation
       + std::fabs(body->angle - current.angle) * body->maxR;
-    if (travel <= 1e-9) continue;
-    movedBodies++;
+    if (travel > 1e-9) {
+      movedBodies++;
+      rigidRasterMaxCorrection = std::fmax(
+        rigidRasterMaxCorrection, translation);
+    }
     body->vx = body->vy = body->omega = 0;
     body->pvx = body->pvy = body->pw = 0;
     body->awake = false;
@@ -1173,13 +1582,13 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     body->stillTicks = R_SLEEP_TICKS;
     body->hadContact = true;
     if (body->jointRole == 1) syncJointFollower(body);
-    rigidRasterMaxCorrection = std::fmax(
-      rigidRasterMaxCorrection, translation);
   }
   rigidPositionCorrections += movedBodies;
   rigidRasterCorrections += movedBodies;
+  rigidOwnershipConflicts = 0;
+  rigidRejectedCells = 0;
   rigidRasterProjectionFailures = 0;
-  worldRasterAssignmentValid = true;
+  acceptAssignment();
 
   auto clearLayerRasters = [&](Layer& layer) {
     Engine::ActiveLayerScope layerScope(E, &layer);
@@ -1526,6 +1935,11 @@ Body* RigidBodySystem::spawnBodyImpl(const std::vector<std::pair<int, int>>& cel
   b->px = cx; b->py = cy; b->angle = 0; b->vx = 0; b->vy = 0; b->omega = 0;
   b->material = material; b->density = density; b->id = E.L->nextBodyId++;
   computeDerived(b, false);
+  b->acceptedWorldPx = E.L->worldOffsetX + b->px;
+  b->acceptedWorldPy = E.L->worldOffsetY + b->py;
+  b->acceptedAngle = b->angle;
+  b->acceptedRasterGeometryRevision = b->geometryRevision;
+  b->acceptedRasterPoseValid = true;
   E.L->bodies.push_back(b);
   return b;
 }
@@ -4133,7 +4547,11 @@ void RigidBodySystem::stampJointFollower(
   std::vector<int> footprint;
   forEachBodyCell(follower, [&](int x, int y, int local) {
     int k = y * E.cols + x;
-    if (E.bg.bodyOwner[k] != -1) return;
+    int owner = E.bg.bodyOwner[k];
+    if (owner != -1) {
+      if (owner != follower->id) rigidOwnershipConflicts++;
+      return;
+    }
     uint8_t material = E.bg.grid[k];
     if (!canBodyOccupy(material, k, follower->density)) {
       rigidRejectedCells++;

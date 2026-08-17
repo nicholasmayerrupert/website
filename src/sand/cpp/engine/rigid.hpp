@@ -369,7 +369,13 @@ class RigidBodySystem {
   std::vector<WorldRasterNode> worldRasterNodes;
   std::vector<MovePose> worldRasterCurrentPoses;
   std::vector<uint8_t> worldRasterViolating, worldRasterRollback;
-  std::unordered_map<uint64_t, int> worldRasterPairCounts;
+  std::vector<int> worldRasterSearchOwner, worldRasterSearchTouched;
+  struct WorldRasterRosterEntry {
+    int bodyId = -1, peerId = -1;
+    int bodyLayer = 0, jointRole = 0;
+  };
+  std::vector<WorldRasterRosterEntry> worldRasterAcceptedRoster;
+  bool worldRasterAcceptedRosterValid = false;
   bool worldRasterAssignmentValid = true;
   struct WorldContact {
     int aLayer = 0, bLayer = -1;

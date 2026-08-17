@@ -86,6 +86,7 @@
     "test:rigid-massive-stack": "node scripts/run-tests.mjs --only rigid-massive-stack",
     "test:rigid-complex-stack": "node scripts/run-tests.mjs --only rigid-complex-stack",
     "test:rigid-world-raster": "node scripts/run-tests.mjs --only rigid-world-raster",
+    "test:rigid-world-raster-island": "node scripts/run-tests.mjs --only rigid-world-raster-island",
     "test:rigid-large-body": "node scripts/run-tests.mjs --only rigid-large-body",
     "test:rigid-terrain-contact": "node scripts/run-tests.mjs --only rigid-terrain-contact",
     "test:rigid-blast-impulse": "node scripts/run-tests.mjs --only rigid-blast-impulse",

@@ -266,6 +266,7 @@ struct Body {
   // Last pose whose complete foreground/background raster assignment was
   // unique. World coordinates keep the checkpoint stable across streaming.
   double acceptedWorldPx = 0, acceptedWorldPy = 0, acceptedAngle = 0;
+  uint32_t acceptedRasterGeometryRevision = 0;
   bool acceptedRasterPoseValid = false;
   double vx = 0, vy = 0, omega = 0;
   // Actor collision proxies keep a fixed solver pose while exposing the

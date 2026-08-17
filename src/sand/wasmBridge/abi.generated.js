@@ -2,11 +2,11 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 32;
 
-export const ABI_FINGERPRINT = 0xe3d0a47667b2;
+export const ABI_FINGERPRINT = 0xb4993485dfaa;
 
 export const ACTOR_WIRE_FINGERPRINT = 0x43aea36d1f1d;
 
-export const NETWORK_CATALOGUE_FINGERPRINT = 0x3f290d3d2c9d;
+export const NETWORK_CATALOGUE_FINGERPRINT = 0xa701c1b80d11;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive) {
   if (arguments.length !== 15) throw new TypeError('writeGlPlayerExtSnapshot requires 15 arguments');

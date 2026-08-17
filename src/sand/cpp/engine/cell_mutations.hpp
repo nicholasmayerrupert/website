@@ -19,6 +19,14 @@ class CellMutationBatch {
   bool replaceLoose(int cell, uint8_t material);
   bool erase(int cell) { return replaceLoose(cell, EMPTY); }
 
+  // Route a product through its generated placement policy. FREE_RIGID is
+  // intentionally left to ReactionTransaction because it needs a body shape.
+  bool replaceAuto(int cell, uint8_t material);
+
+  // Keep structural membership when both the existing owner and product can
+  // represent it. Loose products still erode the owner through replaceAuto.
+  bool replacePreservingOwner(int cell, uint8_t material);
+
   // Create a new static component island during commit.
   bool replaceWithStatic(int cell, uint8_t material);
 
@@ -48,6 +56,7 @@ class CellMutationBatch {
 
  private:
   bool replaceImpl(int cell, uint8_t material, bool queueStatic);
+  int componentOwnerIndex(int cell);
   bool hasStaticMembership(int cell);
   void detachOldTopology(int cell, uint8_t oldMaterial);
   void compactCanceledRemovals();

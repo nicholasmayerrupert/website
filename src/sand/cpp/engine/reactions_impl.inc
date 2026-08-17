@@ -30,35 +30,18 @@ static constexpr ReactionPassDescriptor REACTION_PASS_CATALOGUE[] = {
   {"ice", ReactionPhase::ACTIVE_LAYER,
    ReactionLayerPolicy::CURRENT_LAYER, {{}}, 0, 40, 1,
    NO_REACTION_RETRY, &ReactionSystem::applyIce},
-  {"simple material rules",
+  {"generated material rules",
    ReactionPhase::ACTIVE_LAYER, ReactionLayerPolicy::CURRENT_LAYER,
    {{}}, 0, 50, 1, NO_REACTION_RETRY,
-   &ReactionSystem::applySimpleRules},
+   &ReactionSystem::applyGeneratedRules},
   {"cross-layer material contact",
    ReactionPhase::CROSS_LAYER, ReactionLayerPolicy::LAYER_OVERLAP,
    {{}}, 0, 10, 1, NO_REACTION_RETRY,
    &ReactionSystem::applyCrossLayerMaterialContact},
-  {"simple cross-layer rules",
+  {"generated cross-layer rules",
    ReactionPhase::CROSS_LAYER, ReactionLayerPolicy::LAYER_OVERLAP,
    {{}}, 0, 20, 1, NO_REACTION_RETRY,
-   &ReactionSystem::applySimpleCrossLayer},
-};
-
-// Simple pair rules live entirely in this catalogue and match exact ids,
-// generated reaction profiles, or trait flags. Rules for the same source are
-// priority ordered. Complex topology/RNG behavior uses optimized custom passes
-// registered in REACTION_PASS_CATALOGUE above.
-static constexpr SimpleReactionDescriptor SIMPLE_REACTION_CATALOGUE[] = {
-  {"salt dissolves in water",
-   ReactionMatchKind::MATERIAL, SALT,
-   ReactionMatchKind::MATERIAL, WATER,
-   BRINE, BRINE, ReactionLayerPolicy::CURRENT_LAYER,
-   0x5A1701u, 10, 1, 1.0f},
-  {"salt melts snow",
-   ReactionMatchKind::MATERIAL, SALT,
-   ReactionMatchKind::MATERIAL, SNOW,
-   BRINE, BRINE, ReactionLayerPolicy::CURRENT_LAYER,
-   0x5A1702u, 20, 1, 1.0f},
+   &ReactionSystem::applyGeneratedCrossLayer},
 };
 
 static constexpr bool reactionNamesEqual(const char* a, const char* b) {
@@ -136,93 +119,44 @@ static constexpr bool validReactionPassCatalogue(
   return true;
 }
 
-static constexpr bool validSimpleReactionDescriptor(
-    const SimpleReactionDescriptor& rule) {
-  if (rule.name == nullptr || !isMaterialId(rule.sourceProduct)
-      || !isMaterialId(rule.neighborProduct)
-      || rule.effectCadence == 0 || rule.directionChannel == 0
-      || rule.probability <= 0.0f || rule.probability > 1.0f) return false;
-  if (rule.layerPolicy != ReactionLayerPolicy::CURRENT_LAYER
-      && rule.layerPolicy != ReactionLayerPolicy::LAYER_OVERLAP) return false;
-  if ((MAT_PLACEMENT[rule.sourceProduct] == MP_STRUCTURE
-       && MAT_KIND[rule.sourceProduct] != K_COMPONENT)
-      || (MAT_PLACEMENT[rule.neighborProduct] == MP_STRUCTURE
-          && MAT_KIND[rule.neighborProduct] != K_COMPONENT)) return false;
-  if (rule.sourceMatch != ReactionMatchKind::MATERIAL
-      && rule.sourceMatch != ReactionMatchKind::FLAG
-      && rule.sourceMatch != ReactionMatchKind::PROFILE) return false;
-  if (rule.neighborMatch != ReactionMatchKind::MATERIAL
-      && rule.neighborMatch != ReactionMatchKind::FLAG
-      && rule.neighborMatch != ReactionMatchKind::PROFILE) return false;
-  if (rule.sourceMatch == ReactionMatchKind::MATERIAL
-      && !isMaterialId((int)rule.sourceValue)) return false;
-  if (rule.neighborMatch == ReactionMatchKind::MATERIAL
-      && !isMaterialId((int)rule.neighborValue)) return false;
-  if (rule.sourceMatch == ReactionMatchKind::FLAG && rule.sourceValue == 0)
-    return false;
-  if (rule.neighborMatch == ReactionMatchKind::FLAG && rule.neighborValue == 0)
-    return false;
-  if (rule.sourceMatch == ReactionMatchKind::PROFILE
-      && (rule.sourceValue == MRP_NONE
-          || rule.sourceValue >= MATERIAL_REACTION_PROFILE_COUNT)) return false;
-  if (rule.neighborMatch == ReactionMatchKind::PROFILE
-      && (rule.neighborValue == MRP_NONE
-          || rule.neighborValue >= MATERIAL_REACTION_PROFILE_COUNT)) return false;
-  return true;
-}
-
 static constexpr bool reactionSelectorMatchesMaterial(
     ReactionMatchKind match, uint32_t value, uint8_t material) {
-  return match == ReactionMatchKind::MATERIAL
-    ? value == material
-    : match == ReactionMatchKind::FLAG
-      ? (MAT_FLAGS[material] & value) != 0
-      : match == ReactionMatchKind::PROFILE
-        && MAT_REACTION_PROFILE[material] == value;
-}
-
-static constexpr bool reactionSelectorsOverlap(
-    ReactionMatchKind aMatch, uint32_t aValue,
-    ReactionMatchKind bMatch, uint32_t bValue) {
-  for (uint8_t material : DEFINED_MATERIAL_IDS)
-    if (reactionSelectorMatchesMaterial(aMatch, aValue, material)
-        && reactionSelectorMatchesMaterial(bMatch, bValue, material))
-      return true;
+  switch (match) {
+    case ReactionMatchKind::ANY: return true;
+    case ReactionMatchKind::MATERIAL: return value == material;
+    case ReactionMatchKind::FLAG: return (MAT_FLAGS[material] & value) != 0;
+    case ReactionMatchKind::CLASS: return MAT_CLASS[material] == value;
+    case ReactionMatchKind::PROFILE:
+      return MAT_REACTION_PROFILE[material] == value;
+  }
   return false;
 }
 
-static constexpr bool simpleReactionNeedsRetry(
-    const SimpleReactionDescriptor& rule) {
-  return rule.effectCadence > 1 || rule.probability < 1.0f;
-}
-
-static constexpr bool validSimpleReactionPair(
-    const SimpleReactionDescriptor& earlier,
-    const SimpleReactionDescriptor& rule) {
-  if (reactionNamesEqual(earlier.name, rule.name)
-      || earlier.directionChannel == rule.directionChannel) return false;
-  if (earlier.layerPolicy == rule.layerPolicy
-      && earlier.sourceMatch == rule.sourceMatch
-      && earlier.sourceValue == rule.sourceValue
-      && earlier.neighborMatch == rule.neighborMatch
-      && earlier.neighborValue == rule.neighborValue) return false;
-  if (earlier.layerPolicy == rule.layerPolicy
-      && earlier.priority == rule.priority
-      && reactionSelectorsOverlap(
-           earlier.sourceMatch, earlier.sourceValue,
-           rule.sourceMatch, rule.sourceValue)) return false;
-  return true;
+static constexpr bool generatedSelectorMatchesMaterial(
+    const GeneratedReactionSelector& selector, uint8_t material) {
+  return (selector.materialMask[material >> 6]
+          & (1ULL << (material & 63))) != 0;
 }
 
 template <size_t N>
-static constexpr bool validSimpleReactionCatalogue(
-    const SimpleReactionDescriptor (&catalogue)[N]) {
+static constexpr bool validGeneratedReactionCatalogue(
+    const GeneratedReactionRule (&catalogue)[N]) {
   for (size_t i = 0; i < N; i++) {
     const auto& rule = catalogue[i];
-    if (!validSimpleReactionDescriptor(rule)) return false;
-    for (size_t j = 0; j < i; j++) {
-      if (!validSimpleReactionPair(catalogue[j], rule)) return false;
-    }
+    if (!rule.id || !rule.id[0] || rule.channel == 0 || rule.cadence == 0
+        || rule.probability <= 0 || rule.probability > 1
+        || rule.effectCount == 0 || rule.effectCount > rule.effects.size()
+        || rule.source.topologyMask == 0
+        || (rule.source.topologyMask & ~RTM_ANY) != 0
+        || rule.target.topologyMask == 0
+        || (rule.target.topologyMask & ~RTM_ANY) != 0) return false;
+    bool sourceMaterial = false, targetMaterial = false;
+    for (uint64_t word : rule.source.materialMask) sourceMaterial |= word != 0;
+    for (uint64_t word : rule.target.materialMask) targetMaterial |= word != 0;
+    if (!sourceMaterial || !targetMaterial) return false;
+    for (size_t j = 0; j < i; j++)
+      if (reactionNamesEqual(catalogue[j].id, rule.id)
+          || catalogue[j].channel == rule.channel) return false;
   }
   return true;
 }
@@ -241,50 +175,13 @@ static constexpr ReactionPassDescriptor CADENCED_CROSS_PASS_FIXTURE[] = {
    {{{ReactionMatchKind::MATERIAL, SALT}}}, 1, 1, 2,
    {ReactionRetryPolicy::LAYER_OVERLAP, 0,
     {ReactionMatchKind::MATERIAL, WATER}, false},
-   &ReactionSystem::applySimpleCrossLayer},
+   &ReactionSystem::applyGeneratedCrossLayer},
 };
 static constexpr ReactionPassDescriptor UNSAFE_CADENCED_PASS_FIXTURE[] = {
   {"unsafe cadence contract", ReactionPhase::CROSS_LAYER,
    ReactionLayerPolicy::LAYER_OVERLAP, {{}}, 0, 1, 2,
    NO_REACTION_RETRY,
-   &ReactionSystem::applySimpleCrossLayer},
-};
-static constexpr SimpleReactionDescriptor CROSS_LAYER_DESCRIPTOR_FIXTURE = {
-  "cross-layer descriptor contract",
-  ReactionMatchKind::MATERIAL, SALT,
-  ReactionMatchKind::MATERIAL, WATER,
-  BRINE, BRINE, ReactionLayerPolicy::LAYER_OVERLAP,
-  0xC2055A17u, 1, 2, 0.5f,
-};
-static constexpr SimpleReactionDescriptor CATALYST_DESCRIPTOR_FIXTURE = {
-  "catalyst descriptor contract",
-  ReactionMatchKind::MATERIAL, SALT,
-  ReactionMatchKind::MATERIAL, WATER,
-  SALT, BRINE, ReactionLayerPolicy::CURRENT_LAYER,
-  0xCA7A1157u, 1, 1, 1.0f,
-};
-static constexpr SimpleReactionDescriptor UNSAFE_BODY_PRODUCT_FIXTURE = {
-  "body product contract",
-  ReactionMatchKind::MATERIAL, SALT,
-  ReactionMatchKind::MATERIAL, WATER,
-  RIGID, BRINE, ReactionLayerPolicy::CURRENT_LAYER,
-  0xB0D15A17u, 1, 1, 1.0f,
-};
-static constexpr SimpleReactionDescriptor DISJOINT_PRIORITY_FIXTURE[] = {
-  {"disjoint salt source", ReactionMatchKind::MATERIAL, SALT,
-   ReactionMatchKind::MATERIAL, WATER, BRINE, BRINE,
-   ReactionLayerPolicy::CURRENT_LAYER, 0xD15001u, 7, 1, 1.0f},
-  {"disjoint snow source", ReactionMatchKind::MATERIAL, SNOW,
-   ReactionMatchKind::MATERIAL, WATER, BRINE, BRINE,
-   ReactionLayerPolicy::CURRENT_LAYER, 0xD15002u, 7, 1, 1.0f},
-};
-static constexpr SimpleReactionDescriptor OVERLAPPING_PRIORITY_FIXTURE[] = {
-  {"overlapping salt and water", ReactionMatchKind::MATERIAL, SALT,
-   ReactionMatchKind::MATERIAL, WATER, BRINE, BRINE,
-   ReactionLayerPolicy::CURRENT_LAYER, 0x0A1501u, 7, 1, 1.0f},
-  {"overlapping salt and snow", ReactionMatchKind::MATERIAL, SALT,
-   ReactionMatchKind::MATERIAL, SNOW, BRINE, BRINE,
-   ReactionLayerPolicy::CURRENT_LAYER, 0x0A1502u, 7, 1, 1.0f},
+   &ReactionSystem::applyGeneratedCrossLayer},
 };
 
 static_assert(validReactionPassCatalogue(REACTION_PASS_CATALOGUE),
@@ -295,20 +192,10 @@ static_assert(validReactionPassCatalogue(CADENCED_CROSS_PASS_FIXTURE),
               "cross-layer cadence uses overlap retry semantics");
 static_assert(!validReactionPassCatalogue(UNSAFE_CADENCED_PASS_FIXTURE),
               "cadenced passes cannot silently skip matched-source retries");
-static_assert(validSimpleReactionCatalogue(SIMPLE_REACTION_CATALOGUE),
-              "simple reactions contain an invalid or duplicate descriptor");
-static_assert(validSimpleReactionDescriptor(CROSS_LAYER_DESCRIPTOR_FIXTURE),
-              "cross-layer simple descriptors must satisfy the registry contract");
-static_assert(validSimpleReactionDescriptor(CATALYST_DESCRIPTOR_FIXTURE),
-              "catalysts may preserve their source material");
-static_assert(simpleReactionNeedsRetry(CROSS_LAYER_DESCRIPTOR_FIXTURE),
-              "delayed and probabilistic rules must retry while matched");
-static_assert(!validSimpleReactionDescriptor(UNSAFE_BODY_PRODUCT_FIXTURE),
-              "body-only products cannot use the declarative topology path");
-static_assert(validSimpleReactionCatalogue(DISJOINT_PRIORITY_FIXTURE),
-              "disjoint source selectors may share a priority");
-static_assert(!validSimpleReactionCatalogue(OVERLAPPING_PRIORITY_FIXTURE),
-              "overlapping source selectors need deterministic priority");
+static_assert(validGeneratedReactionCatalogue(GENERATED_REACTION_RULES),
+              "generated reactions must have stable valid descriptors");
+static_assert(validGeneratedReactionCatalogue(GENERATED_REACTION_FIXTURES),
+              "generated reaction fixtures must have stable valid descriptors");
 
 ReactionSystem::ReactionSystem(Engine& engine) : E(engine) {
   sourceMask.fill(0);
@@ -323,21 +210,20 @@ ReactionSystem::ReactionSystem(Engine& engine) : E(engine) {
     }
   }
   for (uint8_t material : DEFINED_MATERIAL_IDS) {
-    for (const auto& rule : SIMPLE_REACTION_CATALOGUE) {
-      bool matches = reactionSelectorMatchesMaterial(
-        rule.sourceMatch, rule.sourceValue, material);
+    for (const auto& rule : GENERATED_REACTION_RULES) {
+      bool matches = generatedSelectorMatchesMaterial(rule.source, material);
       if (!matches) continue;
       sourceMask[material] = 1;
-      simpleRulesBySource[material].push_back(&rule);
+      generatedRulesBySource[material].push_back(&rule);
       if (rule.layerPolicy == ReactionLayerPolicy::LAYER_OVERLAP)
-        hasCrossSimpleRules = true;
+        hasGeneratedCrossRules = true;
     }
-    auto& rules = simpleRulesBySource[material];
+    auto& rules = generatedRulesBySource[material];
     if (!rules.empty()) {
       std::sort(rules.begin(), rules.end(), [](const auto* a, const auto* b) {
         return a->priority < b->priority;
       });
-      simpleSourceMaterials.push_back((uint8_t)material);
+      generatedSourceMaterials.push_back((uint8_t)material);
     }
   }
 }
@@ -347,9 +233,14 @@ const ReactionPassDescriptor* ReactionSystem::catalogue(size_t& count) {
   return REACTION_PASS_CATALOGUE;
 }
 
-const SimpleReactionDescriptor* ReactionSystem::simpleCatalogue(size_t& count) {
-  count = sizeof(SIMPLE_REACTION_CATALOGUE) / sizeof(SIMPLE_REACTION_CATALOGUE[0]);
-  return SIMPLE_REACTION_CATALOGUE;
+const GeneratedReactionRule* ReactionSystem::generatedCatalogue(size_t& count) {
+  count = GENERATED_REACTION_RULE_COUNT;
+  return GENERATED_REACTION_RULES;
+}
+
+const GeneratedReactionRule* ReactionSystem::fixtureCatalogue(size_t& count) {
+  count = GENERATED_REACTION_FIXTURE_COUNT;
+  return GENERATED_REACTION_FIXTURES;
 }
 
 void ReactionSystem::runPhase(ReactionPhase phase) {
@@ -454,6 +345,164 @@ static int reactionCardinalMatch(
   return -1;
 }
 
+ReactionSubject ReactionSystem::resolveSubject(Layer& layer, int cell) {
+  ReactionSubject subject;
+  subject.layer = &layer;
+  subject.cell = cell;
+  if (cell < 0 || cell >= E.cols * E.rows) return subject;
+  subject.material = layer.grid[cell];
+  int bodyId = layer.bodyOwner[cell];
+  if (bodyId >= 0) {
+    for (Body* body : layer.bodies) {
+      if (!body || body->id != bodyId) continue;
+      subject.topology = RTM_BODY;
+      subject.ownerId = bodyId;
+      subject.body = body;
+      int x = cell % E.cols, y = cell / E.cols;
+      subject.localCell = E.rigid.localCellAt(body, x + 0.5, y + 0.5);
+      return subject;
+    }
+  }
+  if (!E.isComponentMaterial(subject.material)) {
+    subject.topology = RTM_LOOSE;
+#if SAND_HAS_REACTION_AGE_CHANNEL
+    if (layer.reactionAge.current)
+      subject.age = layer.reactionAge.current[cell];
+#endif
+    return subject;
+  }
+  int componentIndex = -1;
+  if (layer.componentIndexExact && cell < (int)layer.cellComp.size())
+    componentIndex = layer.cellComp[cell];
+  if (componentIndex < 0 || componentIndex >= (int)layer.components.size()) {
+    for (int index = 0; index < (int)layer.components.size(); index++) {
+      const auto& cells = layer.components[index].cells;
+      if (std::find(cells.begin(), cells.end(), cell) == cells.end()) continue;
+      componentIndex = index;
+      break;
+    }
+  }
+  if (componentIndex >= 0 && componentIndex < (int)layer.components.size()) {
+    subject.topology = RTM_COMPONENT;
+    subject.ownerIndex = componentIndex;
+    subject.ownerId = layer.components[componentIndex].id;
+    return subject;
+  }
+  subject.topology = RTM_LOOSE;
+#if SAND_HAS_REACTION_AGE_CHANNEL
+  if (layer.reactionAge.current)
+    subject.age = layer.reactionAge.current[cell];
+#endif
+  return subject;
+}
+
+bool ReactionSystem::selectorMatches(
+    const ReactionSubject& subject,
+    const GeneratedReactionSelector& selector) const {
+  return subject.layer && subject.cell >= 0
+    && (selector.topologyMask & subject.topology) != 0
+    && generatedSelectorMatchesMaterial(selector, subject.material);
+}
+
+bool ReactionSystem::selectorMatchesCell(
+    Layer& layer, int cell, const GeneratedReactionSelector& selector) {
+  if (cell < 0 || cell >= E.cols * E.rows
+      || !generatedSelectorMatchesMaterial(selector, layer.grid[cell]))
+    return false;
+  return selector.topologyMask == RTM_ANY
+    || selectorMatches(resolveSubject(layer, cell), selector);
+}
+
+uint32_t ReactionSystem::subjectAge(const ReactionSubject& subject) const {
+  return subject.topology == RTM_LOOSE ? subject.age : 0;
+}
+
+int ReactionSystem::targetCellFor(
+    const GeneratedReactionRule& rule, const ReactionSubject& source) {
+  if (!source.layer || source.cell < 0) return -1;
+  if (rule.direction == ReactionDirection::SELF
+      || rule.direction == ReactionDirection::OVERLAP) return source.cell;
+  int y = source.cell / E.cols, x = source.cell - y * E.cols;
+  int dx = 0, dy = 0;
+  if (rule.direction == ReactionDirection::LEFT) dx = -1;
+  else if (rule.direction == ReactionDirection::RIGHT) dx = 1;
+  else if (rule.direction == ReactionDirection::ABOVE) dy = -1;
+  else if (rule.direction == ReactionDirection::BELOW) dy = 1;
+  if (rule.direction == ReactionDirection::CARDINAL) {
+    Engine::ActiveLayerScope active(E, source.layer);
+    return reactionCardinalMatch(E, source.cell, rule.channel, [&](int cell) {
+      return selectorMatchesCell(*source.layer, cell, rule.target);
+    });
+  }
+  int nx = x + dx, ny = y + dy;
+  if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) return -1;
+  return ny * E.cols + nx;
+}
+
+bool ReactionSystem::executeRule(
+    const GeneratedReactionRule& rule, const ReactionSubject& source,
+    const ReactionSubject& target, double impact,
+    double normalX, double normalY) {
+  if (!selectorMatches(source, rule.source)
+      || (rule.trigger != ReactionTriggerKind::SELF
+          && !selectorMatches(target, rule.target))
+      || subjectAge(source) < rule.minimumAge
+      || impact < rule.minimumImpact
+      || E.tick % rule.cadence != 0) return false;
+  if (rule.probability < 1.0f) {
+    int y = source.cell / E.cols, x = source.cell - y * E.cols;
+    uint32_t phase = source.layer->worldSeed ^ rule.channel
+      ^ ((uint32_t)E.tick * 0x9E3779B9u)
+      ^ (source.layer->isBackground ? 0xB6A4D5u : 0u);
+    if (whash2(phase,
+               reactionWorldCoordinate(source.layer->worldOffsetX, x),
+               reactionWorldCoordinate(source.layer->worldOffsetY, y))
+        >= rule.probability) return false;
+  }
+  ReactionTransaction sourceTransaction(E, *source.layer);
+  for (uint8_t effect = 0; effect < rule.effectCount; effect++)
+    sourceTransaction.queue(rule.effects[effect], source, target,
+                            normalX, normalY);
+  bool changed = sourceTransaction.commit();
+  if (target.layer && target.layer != source.layer) {
+    ReactionTransaction targetTransaction(E, *target.layer);
+    for (uint8_t effect = 0; effect < rule.effectCount; effect++)
+      targetTransaction.queue(rule.effects[effect], source, target,
+                              normalX, normalY);
+    changed = targetTransaction.commit() || changed;
+  }
+  return changed;
+}
+
+bool ReactionSystem::executeFixture(
+    size_t fixture, Layer& layer, int sourceCell,
+    int targetCell, double impact, uint32_t sourceAge) {
+  if (fixture >= GENERATED_REACTION_FIXTURE_COUNT) return false;
+  const auto& rule = GENERATED_REACTION_FIXTURES[fixture];
+  ReactionSubject source = resolveSubject(layer, sourceCell);
+  if (sourceAge != UINT32_MAX) source.age = sourceAge;
+  if (targetCell < 0) targetCell = targetCellFor(rule, source);
+  ReactionSubject target = rule.trigger == ReactionTriggerKind::SELF
+    ? source : resolveSubject(layer, targetCell);
+  return executeRule(rule, source, target, impact);
+}
+
+void ReactionSystem::beginRigidContacts(Layer& layer) {
+  rigidContactLayer = &layer;
+  rigidContactEvents.clear();
+}
+
+void ReactionSystem::recordRigidContact(const ReactionContactEvent& contact) {
+  if (!acceptsRigidContacts() || contact.layer != rigidContactLayer) return;
+  for (ReactionContactEvent& existing : rigidContactEvents) {
+    if (existing.sourceBodyId != contact.sourceBodyId
+        || existing.targetBodyId != contact.targetBodyId) continue;
+    if (contact.impact > existing.impact) existing = contact;
+    return;
+  }
+  rigidContactEvents.push_back(contact);
+}
+
 void ReactionSystem::prepareActiveLists() {
   for (auto& cells : activeByMaterial) cells.clear();
   for (auto& cells : activeByReactionProfile) cells.clear();
@@ -475,6 +524,13 @@ void ReactionSystem::prepareActiveLists() {
       for (int x = minX; x <= maxX; x++) {
         int k = rb + x;
         uint8_t material = E.L->grid[k];
+#if SAND_HAS_REACTION_AGE_CHANNEL
+        if (MAT_REACTION_AGE_ENABLED[material] && E.L->reactionAge.current) {
+          uint32_t& age = E.L->reactionAge.current[k];
+          if (age != UINT32_MAX) age++;
+          E.markLayerSimCell(E.L, k);
+        }
+#endif
         if (sourceMask[material]) {
           activeByMaterial[material].push_back(k);
           uint8_t profile = MAT_REACTION_PROFILE[material];
@@ -819,55 +875,71 @@ void ReactionSystem::applyIce(bool effectEnabled, bool, bool) {
   }
   mutations.commitRigidErosion(true);
 }
-// Declarative same-layer X + Y -> products. Source buckets are precomputed once
-// from identities, profiles, and traits, then populated during the active-span
-// scan, so adding a rule does not add a full-grid scan. Chance uses a
-// coordinate/tick hash channel; inserting a descriptor cannot perturb any shared
-// RNG stream.
-void ReactionSystem::applySimpleRules(bool effectEnabled, bool, bool) {
+// Generated rules reuse the active material buckets and stable per-rule hash
+// channels. Topology changes commit through ReactionTransaction.
+void ReactionSystem::applyGeneratedRules(bool effectEnabled, bool, bool) {
   if (!effectEnabled) return;
-  constexpr ReactionLayerPolicy layerPolicy =
-    ReactionLayerPolicy::CURRENT_LAYER;
-  CellMutationBatch mutations(E, mutationRemovedScratch);
-  auto writeProduct = [&](int cell, uint8_t product) {
-    if (MAT_PLACEMENT[product] == MP_STRUCTURE)
-      mutations.replaceWithStatic(cell, product);
-    else
-      mutations.replaceLoose(cell, product);
-  };
-  for (uint8_t sourceMaterial : simpleSourceMaterials) {
-    const auto& rules = simpleRulesBySource[sourceMaterial];
+  for (uint8_t sourceMaterial : generatedSourceMaterials) {
+    const auto& rules = generatedRulesBySource[sourceMaterial];
     for (int cell : activeCells(sourceMaterial)) {
-      uint8_t liveSource = E.L->grid[cell];
-      for (const SimpleReactionDescriptor* rule : rules) {
-        if (rule->layerPolicy != layerPolicy
-            || !materialMatches(liveSource, rule->sourceMatch,
-                                rule->sourceValue)) continue;
-        int neighbor = reactionCardinalMatch(E, cell, rule->directionChannel,
-          [&](int candidate) {
-            return materialMatches(E.L->grid[candidate], rule->neighborMatch,
-                                   rule->neighborValue);
-          });
-        if (neighbor < 0) continue;
-        if (simpleReactionNeedsRetry(*rule)) E.markLayerSimCell(E.L, cell);
-        if (E.tick % rule->effectCadence != 0) break;
-        if (rule->probability < 1.0f) {
-          int y = cell / E.cols, x = cell - y * E.cols;
-          uint32_t phase = E.L->worldSeed ^ rule->directionChannel
-            ^ ((uint32_t)E.tick * 0x9E3779B9u)
-            ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
-          if (whash2(phase,
-                     reactionWorldCoordinate(E.L->worldOffsetX, x),
-                     reactionWorldCoordinate(E.L->worldOffsetY, y))
-              >= rule->probability) break;
-        }
-        writeProduct(neighbor, rule->neighborProduct);
-        writeProduct(cell, rule->sourceProduct);
+      ReactionSubject source = resolveSubject(*E.L, cell);
+      for (const GeneratedReactionRule* rule : rules) {
+        if (rule->layerPolicy != ReactionLayerPolicy::CURRENT_LAYER
+            || rule->trigger == ReactionTriggerKind::LAYER_OVERLAP
+            || rule->trigger == ReactionTriggerKind::BODY_CONTACT
+            || !selectorMatches(source, rule->source)) continue;
+        int targetCell = targetCellFor(*rule, source);
+        ReactionSubject target = rule->trigger == ReactionTriggerKind::SELF
+          ? source : resolveSubject(*E.L, targetCell);
+        if (rule->trigger != ReactionTriggerKind::SELF
+            && !selectorMatches(target, rule->target)) continue;
+        if (rule->minimumAge > subjectAge(source)
+            || rule->cadence > 1 || rule->probability < 1.0f)
+          E.markLayerSimCell(E.L, cell);
+        executeRule(*rule, source, target);
         break;
       }
     }
   }
-  mutations.commitGeneral();
+  for (const ReactionContactEvent& contact : rigidContactEvents) {
+    auto subjectAtContact = [&](int bodyId, double wx, double wy) {
+      int bestCell = -1;
+      double bestDistance = 1e18;
+      int cx = (int)std::floor(wx), cy = (int)std::floor(wy);
+      for (int radius = 0; radius <= 3 && bestCell < 0; radius++) {
+        for (int y = cy - radius; y <= cy + radius; y++) {
+          if (y < 0 || y >= E.rows) continue;
+          for (int x = cx - radius; x <= cx + radius; x++) {
+            if (x < 0 || x >= E.cols) continue;
+            int cell = y * E.cols + x;
+            if (contact.layer->bodyOwner[cell] != bodyId) continue;
+            double dx = x + 0.5 - wx, dy = y + 0.5 - wy;
+            double distance = dx * dx + dy * dy;
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              bestCell = cell;
+            }
+          }
+        }
+      }
+      return resolveSubject(*contact.layer, bestCell);
+    };
+    ReactionSubject source = subjectAtContact(
+      contact.sourceBodyId, contact.sourceX, contact.sourceY);
+    ReactionSubject target = subjectAtContact(
+      contact.targetBodyId, contact.targetX, contact.targetY);
+    if (source.topology != RTM_BODY || target.topology != RTM_BODY) continue;
+    for (const GeneratedReactionRule* rule
+         : generatedRulesBySource[source.material]) {
+      if (rule->trigger != ReactionTriggerKind::BODY_CONTACT
+          || rule->layerPolicy != ReactionLayerPolicy::CURRENT_LAYER
+          || !selectorMatches(source, rule->source)
+          || !selectorMatches(target, rule->target)) continue;
+      executeRule(*rule, source, target, contact.impact,
+                  contact.normalX, contact.normalY);
+      break;
+    }
+  }
 }
 
 // Cross-layer fire and ice use the same topology-aware mutation path as local
@@ -975,86 +1047,45 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
   commitFrozenIce(E.bg, crossFrozenIceBg);
 }
 
-// Generic overlap rules treat co-occupied foreground/background cells as
-// neighbors. Foreground-source wins an ambiguous bid; descriptor priority wins
-// within one source direction. Products commit layer-by-layer through the same
-// topology repair used by local rules.
-void ReactionSystem::applySimpleCrossLayer(bool effectEnabled,
-                                           bool foregroundActive,
-                                           bool backgroundActive) {
-  if (!effectEnabled || !hasCrossSimpleRules) return;
-  crossSimpleMutations.clear();
+// Overlap rules treat co-occupied foreground/background cells as typed subjects.
+// Foreground wins an ambiguous source bid and rule priority resolves each source.
+void ReactionSystem::applyGeneratedCrossLayer(bool effectEnabled,
+                                              bool foregroundActive,
+                                              bool backgroundActive) {
+  if (!effectEnabled || !hasGeneratedCrossRules) return;
   for (int y = 1; y < E.rows; y++) {
     E.forEachActiveUnionSpan(&E.fg, foregroundActive, &E.bg, backgroundActive,
                              y, 1, E.cols - 2, true,
                              [&](int minX, int maxX) {
       for (int x = minX; x <= maxX; x++) {
         int cell = y * E.cols + x;
-        uint8_t foreground = E.fg.grid[cell];
-        uint8_t background = E.bg.grid[cell];
-        const SimpleReactionDescriptor* selected = nullptr;
-        bool foregroundIsSource = true;
-        auto select = [&](uint8_t source, uint8_t neighbor) {
-          for (const auto* rule : simpleRulesBySource[source]) {
+        ReactionSubject foreground = resolveSubject(E.fg, cell);
+        ReactionSubject background = resolveSubject(E.bg, cell);
+        auto select = [&](const ReactionSubject& source,
+                          const ReactionSubject& target) {
+          for (const GeneratedReactionRule* rule
+               : generatedRulesBySource[source.material]) {
             if (rule->layerPolicy != ReactionLayerPolicy::LAYER_OVERLAP
-                || !materialMatches(source, rule->sourceMatch, rule->sourceValue)
-                || !materialMatches(neighbor, rule->neighborMatch,
-                                    rule->neighborValue)) continue;
+                || rule->trigger != ReactionTriggerKind::LAYER_OVERLAP
+                || !selectorMatches(source, rule->source)
+                || !selectorMatches(target, rule->target)) continue;
             return rule;
           }
-          return (const SimpleReactionDescriptor*)nullptr;
+          return (const GeneratedReactionRule*)nullptr;
         };
-        selected = select(foreground, background);
+        const GeneratedReactionRule* selected = select(foreground, background);
+        ReactionSubject* source = &foreground;
+        ReactionSubject* target = &background;
         if (!selected) {
           selected = select(background, foreground);
-          foregroundIsSource = false;
+          source = &background;
+          target = &foreground;
         }
         if (!selected) continue;
-        Layer& sourceLayer = foregroundIsSource ? E.fg : E.bg;
-        if (simpleReactionNeedsRetry(*selected))
-          E.markLayerSimCell(&sourceLayer, cell);
-        if (E.tick % selected->effectCadence != 0) continue;
-        if (selected->probability < 1.0f) {
-          uint32_t direction = foregroundIsSource ? 0xF60A1u : 0xB60A1u;
-          uint32_t phase = E.fg.worldSeed ^ selected->directionChannel
-            ^ direction ^ ((uint32_t)E.tick * 0x9E3779B9u);
-          if (whash2(phase, E.fg.worldOffsetX + x,
-                     E.fg.worldOffsetY + y) >= selected->probability) continue;
-        }
-        crossSimpleMutations.push_back({
-          cell,
-          foreground,
-          background,
-          foregroundIsSource ? selected->sourceProduct
-                             : selected->neighborProduct,
-          foregroundIsSource ? selected->neighborProduct
-                             : selected->sourceProduct,
-        });
+        if (selected->cadence > 1 || selected->probability < 1.0f)
+          E.markLayerSimCell(source->layer, cell);
+        executeRule(*selected, *source, *target);
       }
     });
   }
-  if (crossSimpleMutations.empty()) return;
-  crossSimpleMutations.erase(
-    std::remove_if(crossSimpleMutations.begin(), crossSimpleMutations.end(),
-      [&](const CrossSimpleMutation& mutation) {
-        return E.fg.grid[mutation.cell] != mutation.expectedForeground
-          || E.bg.grid[mutation.cell] != mutation.expectedBackground;
-      }),
-    crossSimpleMutations.end());
-  if (crossSimpleMutations.empty()) return;
-  auto applyLayer = [&](Layer& layer, bool foregroundLayer) {
-    Engine::ActiveLayerScope layerScope(E, &layer);
-    CellMutationBatch mutations(E, mutationRemovedScratch);
-    for (const auto& mutation : crossSimpleMutations) {
-      uint8_t product = foregroundLayer ? mutation.foregroundProduct
-                                        : mutation.backgroundProduct;
-      if (MAT_PLACEMENT[product] == MP_STRUCTURE)
-        mutations.replaceWithStatic(mutation.cell, product);
-      else
-        mutations.replaceLoose(mutation.cell, product);
-    }
-    mutations.commitGeneral();
-  };
-  applyLayer(E.fg, true);
-  applyLayer(E.bg, false);
 }

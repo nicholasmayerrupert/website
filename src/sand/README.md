@@ -335,8 +335,8 @@ The extension path for each registry is explicit:
 | Extension | Authoritative edit | Generated/runtime path | Focused verification |
 | --- | --- | --- | --- |
 | Basic material using existing policies | One stable-ID `materials[]` record in `materials.schema.json`, selecting its class, `kind`, and existing movement, habitat, ambience, render, hazard, and trait profiles | `kind` derives placement; `materials.generated.{js,hpp}` supplies sparse validity and indexed behavior tables | `node scripts/run-tests.mjs --only mat-generator` and `node scripts/run-tests.mjs --only mat-flags` |
-| Declarative reaction | One `SimpleReactionDescriptor` in `SIMPLE_REACTION_CATALOGUE` | Indexed source buckets apply exact-ID or trait matching, cadence, probability, layer policy, products, topology repair, and retry liveness | `node scripts/run-tests.mjs --only mat-behavior` and the relevant chemistry suite by manifest key |
-| Complex reaction | One `ReactionPassDescriptor` plus one uniformly shaped handler in `reactions.hpp` / `reactions_impl.inc` | The descriptor owns phase, priority, source selectors, cadence, layer policy, retry matching, and its callable; the handler owns only specialized topology or sequencing | `node scripts/run-tests.mjs --only acid-stuck`, `node scripts/run-tests.mjs --only structural-stress`, and a handler-specific suite |
+| Declarative reaction | One rule in `reactions.schema.json` | The reaction generator compiles material/trait/class/profile unions into fixed masks; indexed source buckets apply self, directional, overlap, or rigid-contact triggers with age, impact, cadence, probability, up to four effects, and topology-aware component/body transactions. The first production age rule also compiles in its persistent cell channel; catalogues without age rules pay no channel cost | `node scripts/run-tests.mjs --only reaction-generator`, `node scripts/run-tests.mjs --only reactions`, and the relevant chemistry suite |
+| Specialized reaction pass | One `ReactionPassDescriptor` plus one uniformly shaped handler in `reactions.hpp` / `reactions_impl.inc` | The descriptor owns phase, priority, source selectors, cadence, layer policy, retry matching, and its callable; the handler is reserved for algorithms outside the generated trigger/effect vocabulary | `node scripts/run-tests.mjs --only acid-stuck`, `node scripts/run-tests.mjs --only structural-stress`, and a handler-specific suite |
 | Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, network replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
 | Plant species using existing policies | One `plantSpecies` record plus any seed/wood/leaf material identity records it references, all in `materials.schema.json`; select reusable growth and worldgen profiles | Generated material/species tables drive growth, worldgen, crafting, and palette metadata | `node scripts/run-tests.mjs --only mat-generator`, `node scripts/run-tests.mjs --only flora`, and `node scripts/run-tests.mjs --only biomes` |
 | Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its named palette/sprite asset in `glpresenter_impl.inc` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
@@ -765,9 +765,10 @@ Choose the narrowest extension mechanism that expresses the behavior:
   profile. A genuinely distinct policy adds one generated selector and one
   table-driven implementation in the subsystem that owns it.
 - A local material-to-material transformation is a reaction descriptor.
-- History attached to a loose cell uses a persistent-channel row plus the
-  producer/consumer in its owning subsystem. State attached to a component or
-  free body belongs in that topology record instead.
+- A generated reaction's age threshold automatically carries its loose-cell age
+  through movement and streaming. Other history attached to a loose cell uses a
+  persistent-channel row plus the producer/consumer in its owning subsystem.
+  State attached to a component or free body belongs in that topology record.
 - A custom reaction pass or topology handler is reserved for behavior whose
   ordering or structural mutation cannot be represented by those paths.
 
@@ -781,11 +782,17 @@ Choose the narrowest extension mechanism that expresses the behavior:
    Flora species, seed artwork, seed/trunk/foliage mapping, and
    crafting-equivalent flags also live in this schema, and the C++ engine and
    JavaScript HUD consume the same tables.
-3. Express ordinary contact transformations as a `SimpleReactionDescriptor` in
-   `cpp/engine/reactions_impl.inc`. Its matcher, products, cadence, probability,
-   layer policy, derived retry liveness, and hash channel are one row. Use a
-   registered custom pass only for topology or sequencing that the simple path
-   cannot model.
+3. Express ordinary transformations as one rule in `reactions.schema.json`.
+   Select materials directly or with `anyOf`, a material flag, class, or reaction
+   profile; constrain each selector to loose cells, components, bodies, or any
+   topology. Choose a self, directional target/contact, layer-overlap, or
+   body-contact trigger, then declare age/impact thresholds, cadence,
+   probability, and up to four effects. Effects can replace, place, remove,
+   spawn a body, detach a component, or apply an impulse. `auto`, `static`,
+   `body`, and `preserveOwner` policies prevent structural products from becoming
+   orphan grid cells; `place` requires an empty target, while `replace` performs
+   an explicit transmutation. Use a registered custom pass only when the
+   generated vocabulary cannot express the algorithm or phase ordering.
 4. Run `npm run generate`, rebuild WASM, run the focused suites through
    `scripts/run-tests.mjs --only <manifest-key>`, then compare the relevant engine
    benchmark. A behavior-preserving catalogue change must retain the

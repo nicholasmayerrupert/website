@@ -90,6 +90,11 @@ function table() {
     collectDynamicLights: c('engine_test_collect_dynamic_lights', 'number', ['number']),
     applyCatalystProducts: c('engine_test_apply_catalyst_products', 'number',
       ['number', 'number', 'number', 'number', 'number']),
+    reactionFixture: c('engine_test_reaction_fixture', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    reactionFixtureCount: c('engine_test_reaction_fixture_count', 'number', []),
+    reactionContactCount: c('engine_test_reaction_contact_count', 'number',
+      ['number']),
     spawnWorldAllowed: c('engine_test_spawn_world_allowed', 'number',
       ['number', 'number', 'number', 'number']),
     spawnWorldWeight: c('engine_test_spawn_world_weight', 'number',
@@ -239,6 +244,12 @@ export function attachTestHooks(engine) {
   engine._applyCatalystProducts = (layer, sourceCell, neighborCell, product) =>
     t.applyCatalystProducts(ptr, layer ? 1 : 0, sourceCell | 0,
       neighborCell | 0, product | 0) === 1;
+  engine._reactionFixture = (
+    fixture, layer, sourceCell, targetCell = -1, sourceAge = 0, impact = 0,
+  ) => t.reactionFixture(ptr, fixture | 0, layer ? 1 : 0,
+    sourceCell | 0, targetCell | 0, sourceAge | 0, impact) === 1;
+  engine._reactionFixtureCount = () => t.reactionFixtureCount();
+  engine._reactionContactCount = () => t.reactionContactCount(ptr);
   engine._spawnNearFocus = (species, salt = 0) =>
     engine._testSpawnNearFocus(species, salt);
   engine._spawnWorldAllowed = (species, worldX, worldY) =>

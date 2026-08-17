@@ -144,8 +144,8 @@ detach as one mixed-material body.
 Registration topology is chosen from material behavior within that registry.
 Plant-family materials use the `plantFamily` flag; specialized growth, freezing,
 ignition, dissolving, and other interactions dispatch from generated traits,
-declarative reaction descriptors, or optimized handlers when topology demands
-one.
+generated reaction rules, or optimized handlers when an algorithm needs a
+specialized pass.
 
 ### bodyOwner
 
@@ -166,9 +166,13 @@ already represented:
    genuinely distinct policy, add one generated selector and implement that
    selector in the subsystem that owns the behavior; do not add parallel
    material-ID switches to multiple consumers.
-3. Express a local pair transformation as a `SimpleReactionDescriptor`. Use a
-   registered reaction pass only when topology or ordering requires a custom
-   handler.
+3. Express self, directional, overlap, and rigid-contact transformations in
+   `reactions.schema.json`. One generated rule owns selector unions, topology,
+   timing/chance, products, component/body mutation, and optional body spawning.
+   A production age threshold conditionally compiles the persistent loose-cell
+   age channel; catalogues without an age rule do not allocate it.
+   Use a registered reaction pass only when the bounded vocabulary cannot express
+   the algorithm or phase ordering.
 4. Put state that follows a loose cell across ticks in one
    `SAND_PERSISTENT_CELL_CHANNELS` row. The row declares its empty value,
    material predicate, streaming codec, and supported `PCSO_*` operations; the
@@ -240,7 +244,7 @@ with `mat-generator` and `mat-flags`; interactions add `mat-behavior`; plants ad
   `MAT_AMBIENCE_GROUP`.
 - Recipe trait matching: `MAT_CRAFT_FLAGS`.
 - Light, emission, and highlights: generated render profiles.
-- Common pair transformations: the reaction descriptor catalogue.
+- Material transformations: the generated reaction catalogue.
 - Specialized structural behavior: exact material ID/flags in an optimized
-  handler when it cannot be expressed safely as a simple descriptor.
+  handler when it cannot be expressed safely as a generated rule.
 - Static-vs-body distinction: `bodyOwner` / `isBodyCell`.

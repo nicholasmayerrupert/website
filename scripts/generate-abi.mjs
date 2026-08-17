@@ -27,6 +27,9 @@ const materialsSchemaPath = process.env.SAND_MATERIALS_SCHEMA_PATH
 const biomesSchemaPath = process.env.SAND_BIOMES_SCHEMA_PATH
   ? resolve(process.env.SAND_BIOMES_SCHEMA_PATH)
   : resolve(root, 'src/sand/biomes.schema.json');
+const reactionsSchemaPath = process.env.SAND_REACTIONS_SCHEMA_PATH
+  ? resolve(process.env.SAND_REACTIONS_SCHEMA_PATH)
+  : resolve(root, 'src/sand/reactions.schema.json');
 const abiSourcePath = resolve(root, 'src/sand/cpp/engine/abi.inc');
 const hppPath = resolve(root, 'src/sand/cpp/engine/abi.generated.hpp');
 const jsPath = resolve(root, 'src/sand/wasmBridge/abi.generated.js');
@@ -48,6 +51,7 @@ const bridgePaths = [
 const schema = readSchemaJson(schemaPath);
 const materialsSchema = readSchemaJson(materialsSchemaPath);
 const biomesSchema = readSchemaJson(biomesSchemaPath);
+const reactionsSchema = readSchemaJson(reactionsSchemaPath);
 const {
   abiVersion, objectWires: declaredObjectWires = {}, structs,
   wireEnums = [], enums, constants,
@@ -926,10 +930,15 @@ const actorWireContract = {
 const wireFingerprintInput = JSON.stringify(actorWireContract);
 const wireFingerprintHex = createHash('sha256')
   .update(wireFingerprintInput).digest('hex').slice(0, 12);
+const reactionRuntimeContract = {
+  version: reactionsSchema.version,
+  rules: reactionsSchema.rules,
+};
 const fingerprintInput = JSON.stringify({
   schema: contractOnly(schema),
   materials: contractOnly(materialsSchema),
   biomes: contractOnly(biomesSchema),
+  reactions: contractOnly(reactionRuntimeContract),
   exports: abiExports.map(({ name, cppReturn, cppArgs }) => ({ name, cppReturn, cppArgs })),
 });
 const fingerprintHex = createHash('sha256').update(fingerprintInput).digest('hex').slice(0, 12);
@@ -939,6 +948,7 @@ const networkCatalogueInput = JSON.stringify({
   constants: contractOnly(constants),
   materials: contractOnly(materialsSchema),
   biomes: contractOnly(biomesSchema),
+  reactions: contractOnly(reactionRuntimeContract),
 });
 const networkCatalogueFingerprintHex = createHash('sha256')
   .update(networkCatalogueInput).digest('hex').slice(0, 12);

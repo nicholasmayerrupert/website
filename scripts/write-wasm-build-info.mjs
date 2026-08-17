@@ -28,6 +28,7 @@ const sourcePathPrefixes = [
   'src/sand/cpp/',
   'src/sand/materials.schema.json',
   'src/sand/materials.generated.js',
+  'src/sand/reactions.schema.json',
   'src/sand/abi.schema.json',
   'src/sand/biomes.schema.json',
   'wasm/build.mjs',
@@ -35,10 +36,12 @@ const sourcePathPrefixes = [
   'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
   'scripts/generate-biomes.mjs',
+  'scripts/generate-reactions.mjs',
 ];
 const sourceRoots = [
   'src/sand/cpp',
   'src/sand/materials.schema.json',
+  'src/sand/reactions.schema.json',
   'src/sand/abi.schema.json',
   'src/sand/biomes.schema.json',
   'wasm/build.mjs',
@@ -46,6 +49,7 @@ const sourceRoots = [
   'wasm/emscripten-version.txt',
   'scripts/write-wasm-build-info.mjs',
   'scripts/generate-biomes.mjs',
+  'scripts/generate-reactions.mjs',
 ];
 
 const safeExec = (cmd, argv = []) => {

@@ -2,6 +2,8 @@
 // Per-layer grids, dirty state, components, bodies, world stores, and rendering
 // buffers. Engine owns foreground and background instances.
 
+#include "reaction_state.generated.hpp"
+
 template <class T>
 struct PingPongCellState {
   static_assert(std::is_trivially_copyable<T>::value,
@@ -79,7 +81,8 @@ enum PersistentCellOperation : uint8_t {
 // paths expand this same list at compile time.
 #define SAND_PERSISTENT_CELL_CHANNELS(X) \
   X(fallSpeed, uint8_t, 0, fallSpeedStore, encodeTile, decodeTile, persistentLooseState, PCSO_CROSS_LAYER) \
-  X(liquidVel, uint32_t, 0, liquidVelocityStore, encodeVelocityTile, decodeVelocityTile, persistentLiquidState, PCSO_STATIONARY | PCSO_MOVE | PCSO_SWAP | PCSO_CROSS_LAYER | PCSO_BODY_DISPLACE)
+  X(liquidVel, uint32_t, 0, liquidVelocityStore, encodeVelocityTile, decodeVelocityTile, persistentLiquidState, PCSO_STATIONARY | PCSO_MOVE | PCSO_SWAP | PCSO_CROSS_LAYER | PCSO_BODY_DISPLACE) \
+  SAND_REACTION_AGE_CHANNEL(X)
 
 #define SAND_VALIDATE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
   static_assert(std::is_trivially_copyable<type>::value, #name " state must be trivially copyable"); \

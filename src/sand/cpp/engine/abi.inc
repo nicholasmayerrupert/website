@@ -604,6 +604,26 @@ EMSCRIPTEN_KEEPALIVE int engine_test_apply_catalyst_products(
   return neighborChanged && e->L->grid[sourceCell] == sourceProduct
       && e->L->grid[neighborCell] == neighborProduct;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_reaction_fixture(
+    Engine* e, int fixture, int layer, int sourceCell, int targetCell,
+    int sourceAge, double impact) {
+  if ((layer != 0 && layer != 1) || fixture < 0
+      || sourceCell < 0 || sourceCell >= e->cols * e->rows
+      || targetCell >= e->cols * e->rows || sourceAge < 0) return 0;
+  Layer& targetLayer = e->layer(layer != 0);
+  Engine::ActiveLayerScope active(*e, &targetLayer, &e->fg);
+  return e->reactions.executeFixture(
+    (size_t)fixture, targetLayer, sourceCell, targetCell, impact,
+    (uint32_t)sourceAge) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_reaction_fixture_count() {
+  size_t count = 0;
+  ReactionSystem::fixtureCatalogue(count);
+  return (int)count;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_reaction_contact_count(Engine* e) {
+  return (int)e->reactions.rigidContactCount();
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];

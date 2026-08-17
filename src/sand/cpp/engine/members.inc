@@ -347,6 +347,9 @@
   inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
   inline bool persistentLooseState(uint8_t m) { return isLooseMedium(m); }
   inline bool persistentLiquidState(uint8_t m) { return isLiquidMaterial(m); }
+  inline bool persistentReactionAgeState(uint8_t m) {
+    return MAT_REACTION_AGE_ENABLED[m] != 0;
+  }
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
   inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }

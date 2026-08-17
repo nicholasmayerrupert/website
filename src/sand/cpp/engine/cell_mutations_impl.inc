@@ -75,6 +75,47 @@ bool CellMutationBatch::replaceLoose(int cell, uint8_t material) {
   return replaceImpl(cell, material, false);
 }
 
+bool CellMutationBatch::replaceAuto(int cell, uint8_t material) {
+  if (!isMaterialId(material)) return false;
+  if (MAT_PLACEMENT[material] != MP_STRUCTURE)
+    return replaceLoose(cell, material);
+  if (E.isComponentMaterial(material))
+    return replaceWithStatic(cell, material);
+  return false;
+}
+
+int CellMutationBatch::componentOwnerIndex(int cell) {
+  if (cell < 0 || cell >= E.cols * E.rows) return -1;
+  if (E.L->componentIndexExact) return E.L->cellComp[cell];
+  int owner = -1;
+  for (size_t index = 0; index < E.L->components.size(); index++) {
+    const Comp& component = E.L->components[index];
+    if (std::find(component.cells.begin(), component.cells.end(), cell)
+        == component.cells.end()) continue;
+    if (owner >= 0) return -1;
+    owner = (int)index;
+  }
+  return owner;
+}
+
+bool CellMutationBatch::replacePreservingOwner(int cell, uint8_t material) {
+  if (!isMaterialId(material) || cell < 0 || cell >= E.cols * E.rows)
+    return false;
+  if (E.isBodyCell(cell)) {
+    if (MAT_PLACEMENT[material] != MP_STRUCTURE) return replaceAuto(cell, material);
+    if (bodyById.empty())
+      for (Body* body : E.L->bodies) bodyById[body->id] = body;
+    bool replaced = E.rigid.replaceBodyCellMaterialIndex(
+      cell, material, bodyById, dirtyBodies);
+    changed = changed || replaced;
+    return replaced;
+  }
+  int owner = componentOwnerIndex(cell);
+  if (owner >= 0 && E.isComponentMaterial(material))
+    return replaceAttached(cell, material, owner);
+  return replaceAuto(cell, material);
+}
+
 bool CellMutationBatch::replaceWithStatic(int cell, uint8_t material) {
   if (!E.isComponentMaterial(material)) return false;
   return replaceImpl(cell, material, true);

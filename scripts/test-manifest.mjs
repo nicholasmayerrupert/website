@@ -26,6 +26,8 @@ export const UNIT_SUITES = [
   ['throw', 'throw-test.mjs'],
   ['mat-flags', 'materials-flags-test.mjs'],
   ['mat-generator', 'material-generator-test.mjs'],
+  ['reaction-generator', 'reaction-generator-test.mjs'],
+  ['reactions', 'reaction-system-test.mjs'],
   ['abi-generator', 'abi-generator-test.mjs'],
   ['biome-generator', 'biome-generator-test.mjs'],
   ['abi-snapshot-writers', 'abi-snapshot-writer-test.mjs'],

@@ -1,0 +1,152 @@
+{
+  "$comment": "Declarative material reactions. The generator resolves material/profile/flag selectors and emits fixed C++ plans; runtime code never parses this file. Rules are deterministic by stable id and may use only the bounded trigger/effect vocabulary validated by scripts/generate-reactions.mjs.",
+  "version": 1,
+  "rules": [
+    {
+      "id": "salt_dissolves_in_water",
+      "source": { "material": "SALT", "topology": "any" },
+      "trigger": {
+        "type": "contact",
+        "direction": "cardinal",
+        "target": { "material": "WATER", "topology": "any" }
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "replace", "subject": "source", "material": "BRINE", "topology": "auto" },
+        { "op": "replace", "subject": "target", "material": "BRINE", "topology": "auto" }
+      ],
+      "layer": "current",
+      "priority": 10
+    },
+    {
+      "id": "salt_melts_snow",
+      "source": { "material": "SALT", "topology": "any" },
+      "trigger": {
+        "type": "contact",
+        "direction": "cardinal",
+        "target": { "material": "SNOW", "topology": "any" }
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "replace", "subject": "source", "material": "BRINE", "topology": "auto" },
+        { "op": "replace", "subject": "target", "material": "BRINE", "topology": "auto" }
+      ],
+      "layer": "current",
+      "priority": 20
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "fixture_aged_gas_condenses",
+      "source": { "material": "ACRID_SMOKE", "topology": "loose" },
+      "trigger": { "type": "self", "minimumAge": 3 },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "replace", "subject": "source", "material": "WATER", "topology": "auto" }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_gas_deposits_component",
+      "source": { "material": "ACRID_SMOKE", "topology": "loose" },
+      "trigger": {
+        "type": "target",
+        "direction": "below",
+        "target": { "material": "EMPTY", "topology": "loose" }
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "place", "subject": "target", "material": "STONE", "topology": "static" }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_gas_spawns_body",
+      "source": { "material": "METHANE", "topology": "loose" },
+      "trigger": {
+        "type": "target",
+        "direction": "below",
+        "target": { "material": "EMPTY", "topology": "loose" }
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "spawnBody", "subject": "target", "material": "RIGID", "shape": "singleCell" }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_gas_becomes_body",
+      "source": { "material": "METHANE", "topology": "loose" },
+      "trigger": { "type": "self" },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        {
+          "op": "replace",
+          "subject": "source",
+          "material": "RIGID",
+          "topology": "body",
+          "shape": "box",
+          "halfWidth": 2,
+          "halfHeight": 1
+        }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_probabilistic_gas_deposits_fluid",
+      "source": { "material": "ACRID_SMOKE", "topology": "loose" },
+      "trigger": {
+        "type": "target",
+        "direction": "below",
+        "target": { "material": "EMPTY", "topology": "loose" }
+      },
+      "schedule": { "every": 1, "probability": 0.5 },
+      "effects": [
+        { "op": "place", "subject": "target", "material": "WATER", "topology": "auto" }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_gas_transmutes_component",
+      "source": { "material": "ACRID_SMOKE", "topology": "loose" },
+      "trigger": {
+        "type": "target",
+        "direction": "below",
+        "target": {
+          "anyOf": [
+            { "material": "STONE" },
+            { "material": "ICE" },
+            { "material": "GOLD_ORE" }
+          ],
+          "topology": "component"
+        }
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "replace", "subject": "target", "material": "IRON_ORE", "topology": "preserveOwner" }
+      ],
+      "layer": "current",
+      "priority": 1
+    },
+    {
+      "id": "fixture_body_contact_transmutes_member",
+      "source": { "material": "RIGID", "topology": "body" },
+      "trigger": {
+        "type": "bodyContact",
+        "target": { "material": "GOLD_ORE", "topology": "body" },
+        "minimumImpact": 0
+      },
+      "schedule": { "every": 1, "probability": 1 },
+      "effects": [
+        { "op": "replace", "subject": "target", "material": "IRON_ORE", "topology": "preserveOwner" }
+      ],
+      "layer": "current",
+      "priority": 1
+    }
+  ]
+}

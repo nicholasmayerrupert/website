@@ -20,6 +20,8 @@ const sourceMaterialsSchema = JSON.parse(readFileSync(
   resolve(root, 'src/sand/materials.schema.json'), 'utf8'));
 const sourceBiomesSchema = JSON.parse(readFileSync(
   resolve(root, 'src/sand/biomes.schema.json'), 'utf8'));
+const sourceReactionsSchema = JSON.parse(readFileSync(
+  resolve(root, 'src/sand/reactions.schema.json'), 'utf8'));
 const sourceBehaviorProfiles = readFileSync(
   resolve(root, 'src/sand/cpp/engine/creature_behavior_profiles.def'), 'utf8');
 const sourceBehaviorPolicies = readFileSync(
@@ -99,16 +101,20 @@ const readFingerprints = (name, mutate = {}) => {
   const schema = structuredClone(sourceSchema);
   const materials = structuredClone(sourceMaterialsSchema);
   const biomes = structuredClone(sourceBiomesSchema);
+  const reactions = structuredClone(sourceReactionsSchema);
   mutate.schema?.(schema);
   mutate.materials?.(materials);
   mutate.biomes?.(biomes);
+  mutate.reactions?.(reactions);
   const stem = name.replaceAll(' ', '-');
   const schemaPath = resolve(temp, `${stem}-abi.json`);
   const materialsPath = resolve(temp, `${stem}-materials.json`);
   const biomesPath = resolve(temp, `${stem}-biomes.json`);
+  const reactionsPath = resolve(temp, `${stem}-reactions.json`);
   writeFileSync(schemaPath, `${JSON.stringify(schema, null, 2)}\n`);
   writeFileSync(materialsPath, `${JSON.stringify(materials, null, 2)}\n`);
   writeFileSync(biomesPath, `${JSON.stringify(biomes, null, 2)}\n`);
+  writeFileSync(reactionsPath, `${JSON.stringify(reactions, null, 2)}\n`);
   const result = spawnSync(process.execPath, [
     generator, '--validate-only', '--print-fingerprints',
   ], {
@@ -118,6 +124,7 @@ const readFingerprints = (name, mutate = {}) => {
       SAND_ABI_SCHEMA_PATH: schemaPath,
       SAND_MATERIALS_SCHEMA_PATH: materialsPath,
       SAND_BIOMES_SCHEMA_PATH: biomesPath,
+      SAND_REACTIONS_SCHEMA_PATH: reactionsPath,
     },
     encoding: 'utf8',
   });
@@ -370,6 +377,14 @@ const materialFingerprints = readFingerprints('material fingerprint mutation', {
 const biomeFingerprints = readFingerprints('biome fingerprint mutation', {
   biomes: (biomes) => { biomes.surfaceBiomes[0].soilAdd += 1; },
 });
+const reactionFingerprints = readFingerprints('reaction fingerprint mutation', {
+  reactions: (reactions) => { reactions.rules[0].schedule.every += 1; },
+});
+const reactionFixtureFingerprints = readFingerprints(
+  'reaction fixture fingerprint mutation', {
+    reactions: (reactions) => { reactions.fixtures[0].schedule.every += 1; },
+  },
+);
 const protocolEnumFingerprints = readFingerprints(
   'protocol enum fingerprint mutation', {
     schema: (schema) => {
@@ -396,6 +411,18 @@ check('biome semantics invalidate runtime and network catalogues',
     && biomeFingerprints.abi !== baselineFingerprints?.abi
     && biomeFingerprints.networkCatalogue !== baselineFingerprints?.networkCatalogue
     && biomeFingerprints.actorWire === baselineFingerprints?.actorWire);
+check('reaction semantics invalidate runtime and network catalogues',
+  reactionFingerprints
+    && reactionFingerprints.abi !== baselineFingerprints?.abi
+    && reactionFingerprints.networkCatalogue
+      !== baselineFingerprints?.networkCatalogue
+    && reactionFingerprints.actorWire === baselineFingerprints?.actorWire);
+check('test-only reaction fixtures do not invalidate runtime catalogues',
+  reactionFixtureFingerprints
+    && reactionFixtureFingerprints.abi === baselineFingerprints?.abi
+    && reactionFixtureFingerprints.networkCatalogue
+      === baselineFingerprints?.networkCatalogue
+    && reactionFixtureFingerprints.actorWire === baselineFingerprints?.actorWire);
 check('every generated protocol enum participates in peer compatibility',
   protocolEnumFingerprints
     && protocolEnumFingerprints.abi !== baselineFingerprints?.abi

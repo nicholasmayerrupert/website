@@ -130,6 +130,7 @@ if (listOnly) {
 // through npm or performs a rebuild.
 const preflightChecks = [
   ['generated materials', 'generate-materials.mjs', ['--check']],
+  ['generated reactions', 'generate-reactions.mjs', ['--check']],
   ['generated ABI', 'generate-abi.mjs', ['--check']],
   ['generated biomes', 'generate-biomes.mjs', ['--check']],
   ['sand engine source contracts', 'check-sand-contracts.mjs', []],

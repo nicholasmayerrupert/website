@@ -2505,6 +2505,24 @@ void RigidBodySystem::rigidStep(double tickDt) {
   if (E.L == &E.bg)
     for (const auto& entry : peerJointLeaders)
       syncJointFollower(entry.second);
+  if (E.reactions.acceptsRigidContacts()) {
+    for (const Contact& contact : contacts) {
+      if (!contact.b || !contact.bIntegrated
+          || contact.a->kinematic || contact.b->kinematic) continue;
+      double ax = contact.a->px + contact.rax;
+      double ay = contact.a->py + contact.ray;
+      double bx = contact.b->px + contact.rbx;
+      double by = contact.b->py + contact.rby;
+      E.reactions.recordRigidContact({
+        E.L, contact.a->id, contact.b->id,
+        ax, ay, bx, by, contact.impactSpeed, contact.nx, contact.ny,
+      });
+      E.reactions.recordRigidContact({
+        E.L, contact.b->id, contact.a->id,
+        bx, by, ax, ay, contact.impactSpeed, -contact.nx, -contact.ny,
+      });
+    }
+  }
 }
 void RigidBodySystem::ensureBodyRaster(Body* b) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
@@ -2927,6 +2945,42 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
   }
   if (!eraseLocalCell(b, idx)) return false;
   E.writeGridIndexUnsafe(k, EMPTY); E.L->bodyOwner[k] = -1; dirty.insert(b); return true;
+}
+bool RigidBodySystem::replaceBodyCellMaterialIndex(
+    int k, uint8_t material, std::unordered_map<int, Body*>& bodyById,
+    std::unordered_set<Body*>& dirty) {
+  if (k < 0 || k >= E.cols * E.rows || !isMaterialId(material)
+      || MAT_PLACEMENT[material] != MP_STRUCTURE) return false;
+  int id = E.L->bodyOwner[k];
+  auto found = bodyById.find(id);
+  if (id < 0 || found == bodyById.end()) return false;
+  Body* member = found->second;
+  int y = k / E.cols, x = k - y * E.cols;
+  int local = localCellAt(member, x + 0.5, y + 0.5);
+  if (local < 0 || bodyMaterialAt(member, local) == material) return false;
+  Body* leader = member->jointRole == 2 ? member->jointPeer : member;
+  if (!leader) return false;
+  if (member->jointRole) {
+    if (member->cellMaterials.size() != member->occ.size()
+        || member->jointPeer->jointPeerMaterials.size()
+          != member->jointPeer->occ.size()) return false;
+    member->cellMaterials[local] = material;
+    member->jointPeer->jointPeerMaterials[local] = material;
+    member->rasterFootprintValid = false;
+    member->jointPeer->rasterFootprintValid = false;
+  } else {
+    if (member->cellMaterials.empty()) {
+      member->cellMaterials.assign(member->occ.size(), EMPTY);
+      for (size_t index = 0; index < member->occ.size(); index++)
+        if (member->occ[index]) member->cellMaterials[index] = member->material;
+    }
+    member->cellMaterials[local] = material;
+    member->rasterFootprintValid = false;
+  }
+  E.writeGridIndexUnsafe(k, material);
+  E.L->bodyOwner[k] = id;
+  dirty.insert(leader);
+  return true;
 }
 void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
                                          std::vector<int>& cells,
@@ -4601,6 +4655,7 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
 
 void RigidBodySystem::moveBodies() {
   double bodyPhaseStart = emscripten_get_now();
+  if (E.reactions.acceptsRigidContacts()) E.reactions.beginRigidContacts(*E.L);
   if (E.L == &E.fg) {
     rigidRejectedCells = rigidDepenetrations = 0;
     rigidOwnershipConflicts = rigidRecoveryBodies = 0;

@@ -46,6 +46,7 @@ console.log(\`runner probe MAX_CASES=\${process.env.MAX_CASES ?? ''}\`);
 
   const preflights = [
     ['generate-materials.mjs', 'materials'],
+    ['generate-reactions.mjs', 'reactions'],
     ['generate-abi.mjs', 'abi'],
     ['generate-biomes.mjs', 'biomes'],
     ['check-sand-contracts.mjs', 'contracts'],
@@ -91,7 +92,7 @@ appendFileSync(process.env.RUN_TESTS_TRACE, '${label}\\n');
   });
   assert.equal(ordered.status, 0, `${ordered.stdout}\n${ordered.stderr}`);
   assert.deepEqual(readFileSync(tracePath, 'utf8').trim().split('\n'), [
-    'materials', 'abi', 'biomes', 'contracts', 'provenance', 'suite',
+    'materials', 'reactions', 'abi', 'biomes', 'contracts', 'provenance', 'suite',
   ]);
   const preflightPassed = ordered.stdout.indexOf('Test preflight passed');
   const suiteStarted = ordered.stdout.indexOf('[RUN ] test-runner');
@@ -120,6 +121,7 @@ appendFileSync(process.env.RUN_TESTS_TRACE, '${label}\\n');
   for (const [path, contents] of [
     ['src/sand/cpp/sand.cpp', 'int sand_source = 1;\n'],
     ['src/sand/materials.schema.json', '{}\n'],
+    ['src/sand/reactions.schema.json', '{}\n'],
     ['src/sand/abi.schema.json', '{}\n'],
     ['src/sand/biomes.schema.json', '{}\n'],
     ['src/sand/wasm/sandEngine.js', 'export default true;\n'],
@@ -128,6 +130,7 @@ appendFileSync(process.env.RUN_TESTS_TRACE, '${label}\\n');
     ['wasm/emscripten.mjs', '// fixture toolchain\n'],
     ['wasm/emscripten-version.txt', 'fixture\n'],
     ['scripts/generate-biomes.mjs', '// fixture generator\n'],
+    ['scripts/generate-reactions.mjs', '// fixture generator\n'],
   ]) writeFileSync(resolve(provenanceRoot, path), contents);
   const provenance = (...args) => spawnSync(process.execPath, [
     resolve(provenanceRoot, 'scripts/write-wasm-build-info.mjs'), ...args,

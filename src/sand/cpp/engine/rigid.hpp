@@ -171,6 +171,9 @@ class RigidBodySystem {
                                   const std::vector<int>* vacated = nullptr);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
+  bool replaceBodyCellMaterialIndex(
+    int k, uint8_t material, std::unordered_map<int, Body*>& bodyById,
+    std::unordered_set<Body*>& dirty);
   void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells,
                           bool splitJointBodies = true);
   void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);

@@ -22,6 +22,7 @@ if (dev)
   console.log('=== DEV BUILD (SAND_INVARIANT_CHECKS) - do NOT commit this artifact ===');
 
 run(process.execPath, ['scripts/generate-materials.mjs', '--check']);
+run(process.execPath, ['scripts/generate-reactions.mjs', '--check']);
 run(process.execPath, ['scripts/generate-abi.mjs', '--check']);
 run(process.execPath, ['scripts/generate-biomes.mjs', '--check']);
 run(process.execPath, ['scripts/check-sand-contracts.mjs']);

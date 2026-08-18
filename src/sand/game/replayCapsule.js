@@ -78,6 +78,55 @@ export function validateReplayCapsule(value) {
   return value;
 }
 
+function packReplayCapsule(capsule) {
+  let previousNow = 0;
+  const turns = capsule.turns.map((turn) => {
+    const delta = turn.now - previousNow;
+    const time = previousNow + delta === turn.now ? delta : [turn.now];
+    previousNow = turn.now;
+    const flags = (turn.awaitingAck ? 1 : 0)
+      | (turn.fullResyncRequested ? 2 : 0);
+    return [time, flags, turn.inputSeq];
+  });
+  return [
+    capsule.abiVersion,
+    capsule.abiFingerprint,
+    capsule.init,
+    turns,
+    capsule.events.map((event) => [event.tick, event.message]),
+    capsule.view || {},
+    capsule.final,
+  ];
+}
+
+function unpackReplayCapsule(value) {
+  if (!Array.isArray(value) || value.length !== 7
+      || !Array.isArray(value[3]) || !Array.isArray(value[4]))
+    throw new Error('This is not a supported sand replay capsule.');
+  let previousNow = 0;
+  const turns = value[3].map(([time, flags, inputSeq]) => {
+    const now = Array.isArray(time) ? time[0] : previousNow + time;
+    previousNow = now;
+    return {
+      now,
+      awaitingAck: !!(flags & 1),
+      fullResyncRequested: !!(flags & 2),
+      inputSeq,
+    };
+  });
+  return {
+    format: REPLAY_FORMAT,
+    version: REPLAY_VERSION,
+    abiVersion: value[0],
+    abiFingerprint: value[1],
+    init: value[2],
+    turns,
+    events: value[4].map(([tick, message]) => ({ tick, message })),
+    view: value[5],
+    final: value[6],
+  };
+}
+
 function bytesToBase64(bytes) {
   let binary = '';
   const chunkSize = 0x8000;
@@ -119,7 +168,7 @@ async function readLimited(stream) {
 
 export async function encodeReplayCapsule(capsule) {
   validateReplayCapsule(capsule);
-  const bytes = new TextEncoder().encode(JSON.stringify(capsule));
+  const bytes = new TextEncoder().encode(JSON.stringify(packReplayCapsule(capsule)));
   if (typeof CompressionStream === 'function') {
     const compressed = await readLimited(
       new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
@@ -147,5 +196,6 @@ export async function decodeReplayCapsule(text) {
   } else if (encoding !== 'json') {
     throw new Error('Replay text uses an unknown encoding.');
   }
-  return validateReplayCapsule(JSON.parse(new TextDecoder().decode(bytes)));
+  const value = JSON.parse(new TextDecoder().decode(bytes));
+  return validateReplayCapsule(unpackReplayCapsule(value));
 }

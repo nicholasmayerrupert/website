@@ -230,6 +230,8 @@ continuous-tool turn. Replaying reconstructs a fresh authority and verifies the
 final tick, streamed offset, actor/topology totals, and both-layer grid checksum.
 Capsules are ABI-versioned and intentionally reject incompatible engine builds;
 multiplayer sessions cannot be captured because their authority is remote.
+The text codec stores turn-time deltas and compact turn/event arrays before
+optional gzip compression.
 
 ## Source map
 

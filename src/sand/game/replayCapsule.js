@@ -2,8 +2,8 @@ import { ABI_FINGERPRINT, ABI_VERSION } from '../wasmBridge/abi.generated.js';
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
 
 export const REPLAY_FORMAT = 'sand-input-replay';
-export const REPLAY_VERSION = 1;
-export const REPLAY_PREFIX = 'SAND-REPLAY-1:';
+export const REPLAY_VERSION = 2;
+export const REPLAY_PREFIX = 'SAND-REPLAY-2:';
 
 export const REPLAY_EVENT_TYPES = new Set([
   'control', 'input', 'intent', 'edge', 'config', 'resize',
@@ -40,28 +40,31 @@ export function validateReplayCapsule(value) {
 
   const turns = value.turns;
   const events = value.events;
-  if (!Array.isArray(turns) || turns.length > MAX_REPLAY_TURNS)
-    throw new Error('Replay turn list is invalid or too large.');
+  const gates = value.gates;
+  if (!finiteInteger(turns, 0, MAX_REPLAY_TURNS))
+    throw new Error('Replay turn count is invalid or too large.');
   if (!Array.isArray(events) || events.length > MAX_REPLAY_TURNS * 4)
     throw new Error('Replay event list is invalid or too large.');
-  for (const turn of turns) {
-    if (!turn || typeof turn !== 'object'
-        || !Number.isFinite(turn.now) || turn.now < 0
-        || typeof turn.awaitingAck !== 'boolean'
-        || typeof turn.fullResyncRequested !== 'boolean'
-        || (turn.inputSeq !== null
-          && !finiteInteger(turn.inputSeq, 0, 0xffffffff)))
-      throw new Error('Replay contains an invalid turn timestamp.');
-  }
+  if (!Array.isArray(gates) || gates.length > MAX_REPLAY_TURNS)
+    throw new Error('Replay transport gate list is invalid or too large.');
   let previousTick = -1;
   for (const event of events) {
     if (!event || typeof event !== 'object'
-        || !finiteInteger(event.tick, 0, turns.length)
+        || !finiteInteger(event.tick, 0, turns)
         || event.tick < previousTick
         || !event.message || typeof event.message !== 'object'
         || !REPLAY_EVENT_TYPES.has(event.message.type))
       throw new Error('Replay contains an invalid authority event.');
     previousTick = event.tick;
+  }
+  let previousEnd = 0;
+  for (const gate of gates) {
+    if (!gate || typeof gate !== 'object'
+        || !finiteInteger(gate.start, previousEnd, turns)
+        || !finiteInteger(gate.end, gate.start + 1, turns)
+        || !finiteInteger(gate.flags, 1, 3))
+      throw new Error('Replay contains an invalid transport gate range.');
+    previousEnd = gate.end;
   }
 
   const final = value.final;
@@ -79,123 +82,42 @@ export function validateReplayCapsule(value) {
 }
 
 function packReplayCapsule(capsule) {
-  let previousNow = 0;
-  const turns = capsule.turns.map((turn) => {
-    const delta = turn.now - previousNow;
-    const time = previousNow + delta === turn.now ? delta : [turn.now];
-    previousNow = turn.now;
-    const flags = (turn.awaitingAck ? 1 : 0)
-      | (turn.fullResyncRequested ? 2 : 0);
-    return [time, flags, turn.inputSeq];
-  });
-  return [
-    capsule.abiVersion,
-    capsule.abiFingerprint,
-    capsule.init,
-    turns,
-    capsule.events.map((event) => [event.tick, event.message]),
-    capsule.view || {},
-    capsule.final,
-  ];
-}
-
-function unpackReplayCapsule(value) {
-  if (!Array.isArray(value) || value.length !== 7
-      || !Array.isArray(value[3]) || !Array.isArray(value[4]))
-    throw new Error('This is not a supported sand replay capsule.');
-  let previousNow = 0;
-  const turns = value[3].map(([time, flags, inputSeq]) => {
-    const now = Array.isArray(time) ? time[0] : previousNow + time;
-    previousNow = now;
-    return {
-      now,
-      awaitingAck: !!(flags & 1),
-      fullResyncRequested: !!(flags & 2),
-      inputSeq,
-    };
-  });
   return {
-    format: REPLAY_FORMAT,
-    version: REPLAY_VERSION,
-    abiVersion: value[0],
-    abiFingerprint: value[1],
-    init: value[2],
-    turns,
-    events: value[4].map(([tick, message]) => ({ tick, message })),
-    view: value[5],
-    final: value[6],
+    ...capsule,
+    events: capsule.events.map((event) => [event.tick, event.message]),
+    gates: capsule.gates.map((gate) => [gate.start, gate.end, gate.flags]),
   };
 }
 
-function bytesToBase64(bytes) {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+function unpackReplayCapsule(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || !Array.isArray(value.events) || !Array.isArray(value.gates))
+    throw new Error('This is not a supported sand replay capsule.');
+  return {
+    ...value,
+    events: value.events.map(([tick, message]) => ({ tick, message })),
+    gates: value.gates.map(([start, end, flags]) => ({ start, end, flags })),
+  };
 }
 
-function base64ToBytes(value) {
-  const binary = atob(value);
-  if (binary.length > MAX_REPLAY_TEXT_BYTES)
-    throw new Error('Replay capsule is too large.');
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
+const replayTextBytes = (text) => new TextEncoder().encode(text).length;
 
-async function readLimited(stream) {
-  const reader = stream.getReader();
-  const chunks = [];
-  let length = 0;
-  let finished = false;
-  while (!finished) {
-    const { value, done } = await reader.read();
-    if (done) { finished = true; continue; }
-    length += value.length;
-    if (length > MAX_REPLAY_TEXT_BYTES) {
-      await reader.cancel();
-      throw new Error('Replay capsule expands beyond the size limit.');
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  return bytes;
-}
-
-export async function encodeReplayCapsule(capsule) {
+export function encodeReplayCapsule(capsule) {
   validateReplayCapsule(capsule);
-  const bytes = new TextEncoder().encode(JSON.stringify(packReplayCapsule(capsule)));
-  if (typeof CompressionStream === 'function') {
-    const compressed = await readLimited(
-      new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
-    );
-    return `${REPLAY_PREFIX}gzip:${bytesToBase64(compressed)}`;
-  }
-  return `${REPLAY_PREFIX}json:${bytesToBase64(bytes)}`;
+  const text = `${REPLAY_PREFIX}${JSON.stringify(packReplayCapsule(capsule))}`;
+  if (replayTextBytes(text) > MAX_REPLAY_TEXT_BYTES)
+    throw new Error('Replay capsule is too large.');
+  return text;
 }
 
-export async function decodeReplayCapsule(text) {
+export function decodeReplayCapsule(text) {
   const compact = String(text || '').trim();
   if (!compact.startsWith(REPLAY_PREFIX))
-    throw new Error('Replay text must start with SAND-REPLAY-1:.');
+    throw new Error('Replay text must start with SAND-REPLAY-2:.');
+  if (replayTextBytes(compact) > MAX_REPLAY_TEXT_BYTES)
+    throw new Error('Replay capsule is too large.');
   const payload = compact.slice(REPLAY_PREFIX.length);
-  const separator = payload.indexOf(':');
-  if (separator < 0) throw new Error('Replay text is incomplete.');
-  const encoding = payload.slice(0, separator);
-  let bytes = base64ToBytes(payload.slice(separator + 1));
-  if (encoding === 'gzip') {
-    if (typeof DecompressionStream !== 'function')
-      throw new Error('This browser cannot decompress replay capsules.');
-    bytes = await readLimited(
-      new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
-    );
-  } else if (encoding !== 'json') {
-    throw new Error('Replay text uses an unknown encoding.');
-  }
-  const value = JSON.parse(new TextDecoder().decode(bytes));
+  if (!payload) throw new Error('Replay text is incomplete.');
+  const value = JSON.parse(payload);
   return validateReplayCapsule(unpackReplayCapsule(value));
 }

@@ -32,6 +32,7 @@
     "test:players": "node scripts/run-tests.mjs --only players",
     "test:actor-rigid": "node scripts/run-tests.mjs --only actor-rigid",
     "test:timing": "node scripts/run-tests.mjs --only timing",
+    "test:replay": "node scripts/run-tests.mjs --only replay-capsule",
     "test:anim": "node scripts/run-tests.mjs --only anim",
     "test:net": "node scripts/run-tests.mjs --only net",
     "test:net-protocol": "node scripts/run-tests.mjs --only net-protocol",

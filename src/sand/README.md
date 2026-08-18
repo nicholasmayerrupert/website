@@ -225,13 +225,13 @@ more of the world.
 Pressing `L` while the local simulation surface owns keyboard input pauses the
 authority and opens the deterministic replay panel. Its copy/paste capsule keeps
 the real generated seed, initialization options, authority-turn input/config/
-resize events, streaming transport gates, and the exact time sampled by each
-continuous-tool turn. Replaying reconstructs a fresh authority and verifies the
-final tick, streamed offset, actor/topology totals, and both-layer grid checksum.
+resize events, the total turn count, and sparse ranges for streaming transport
+gates. Continuous tools use deterministic turn time. Replaying reconstructs a
+fresh authority and verifies the final tick, streamed offset, actor/topology
+totals, and both-layer grid checksum.
 Capsules are ABI-versioned and intentionally reject incompatible engine builds;
 multiplayer sessions cannot be captured because their authority is remote.
-The text codec stores turn-time deltas and compact turn/event arrays before
-optional gzip compression.
+The copy/paste format is plain JSON with compact event and gate entries.
 
 ## Source map
 

@@ -78,6 +78,8 @@ let replayCaptureStarting = false;
 let replayInputSignature = '';
 let replayRunning = false;
 let replayTransportSuppressed = false;
+const REPLAY_GATE_AWAITING_ACK = 1;
+const REPLAY_GATE_FULL_RESYNC = 2;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
 
 function replayInitOptions(data) {
@@ -96,7 +98,8 @@ function beginReplayCapture(data) {
     abiFingerprint: ABI_FINGERPRINT,
     init: replayInitOptions(data),
     events: [],
-    turns: [],
+    gates: [],
+    turns: 0,
   };
 }
 
@@ -104,32 +107,39 @@ function recordReplayMessage(data) {
   if (!replayCapture || replayRunning || !REPLAY_EVENT_TYPES.has(data.type)) return;
   if (data.type === 'input') return;
   replayCapture.events.push({
-    tick: replayCaptureStarting ? 0 : replayCapture.turns.length,
+    tick: replayCaptureStarting ? 0 : replayCapture.turns,
     message: copyReplayValue(data),
   });
 }
 
-function recordReplayTurn(started) {
-  let inputSeq = null;
+function recordReplayTurn() {
   if (latestInput) {
-    inputSeq = latestInput.seq >>> 0;
     const inputState = copyReplayValue(latestInput);
     delete inputState.seq;
     const signature = JSON.stringify(inputState);
     if (signature !== replayInputSignature) {
       replayInputSignature = signature;
       replayCapture.events.push({
-        tick: replayCapture.turns.length,
+        tick: replayCapture.turns,
         message: { type: 'input', input: copyReplayValue(latestInput) },
       });
     }
   }
-  replayCapture.turns.push({
-    now: started,
-    awaitingAck,
-    fullResyncRequested,
-    inputSeq,
-  });
+  const flags = (awaitingAck ? REPLAY_GATE_AWAITING_ACK : 0)
+    | (fullResyncRequested ? REPLAY_GATE_FULL_RESYNC : 0);
+  if (flags) {
+    const previous = replayCapture.gates.at(-1);
+    if (previous?.end === replayCapture.turns && previous.flags === flags) {
+      previous.end++;
+    } else {
+      replayCapture.gates.push({
+        start: replayCapture.turns,
+        end: replayCapture.turns + 1,
+        flags,
+      });
+    }
+  }
+  replayCapture.turns++;
 }
 
 function replayFinalState() {
@@ -585,7 +595,8 @@ function executeTurn(started, scheduleNext = true) {
   }
   if (!survival) {
     applyEdges();
-    applyContinuous(started);
+    // Held-tool cadence belongs to authority turn time, independent of worker scheduling jitter.
+    applyContinuous(engine.getTick() * SIM_STEP_MS);
   }
   const stepStart = performance.now();
   if (survival && latestInput && localPlayerId) {
@@ -648,7 +659,7 @@ function run() {
     schedule();
     return;
   }
-  if (replayCapture) recordReplayTurn(started);
+  if (replayCapture) recordReplayTurn();
   executeTurn(started);
 }
 
@@ -855,7 +866,7 @@ function exportReplay(requestId, view) {
   const capsule = {
     ...replayCapture,
     events: replayCapture.events.slice(),
-    turns: replayCapture.turns.slice(),
+    gates: replayCapture.gates.slice(),
     view: copyReplayValue(view || {}),
     final: replayFinalState(),
   };
@@ -892,6 +903,7 @@ async function runReplayCapsule(requestId, value) {
   }
 
   let eventIndex = 0;
+  let gateIndex = 0;
   let turnIndex = 0;
   const applyEventsAtTurn = (turn) => {
     while (eventIndex < capsule.events.length
@@ -923,7 +935,7 @@ async function runReplayCapsule(requestId, value) {
       replayCapture = {
         ...capsule,
         events: capsule.events.slice(),
-        turns: capsule.turns.slice(),
+        gates: capsule.gates.slice(),
       };
       postFull('replay', { replayView: capsule.view || null });
       postActors(true);
@@ -939,23 +951,26 @@ async function runReplayCapsule(requestId, value) {
   const replaySlice = () => {
     if (closing || !replayRunning) return;
     try {
-      const end = Math.min(capsule.turns.length, turnIndex + 120);
+      const end = Math.min(capsule.turns, turnIndex + 120);
       while (turnIndex < end) {
         applyEventsAtTurn(turnIndex);
-        const turn = capsule.turns[turnIndex];
-        awaitingAck = turn.awaitingAck;
-        fullResyncRequested = turn.fullResyncRequested;
-        if (latestInput && turn.inputSeq !== null) latestInput.seq = turn.inputSeq;
-        executeTurn(turn.now, false);
+        while (gateIndex < capsule.gates.length
+               && capsule.gates[gateIndex].end <= turnIndex) gateIndex++;
+        const gate = capsule.gates[gateIndex];
+        const flags = gate && gate.start <= turnIndex && turnIndex < gate.end
+          ? gate.flags : 0;
+        awaitingAck = !!(flags & REPLAY_GATE_AWAITING_ACK);
+        fullResyncRequested = !!(flags & REPLAY_GATE_FULL_RESYNC);
+        executeTurn(performance.now(), false);
         turnIndex++;
       }
-      if (turnIndex >= capsule.turns.length) {
+      if (turnIndex >= capsule.turns) {
         finish();
         return;
       }
       self.postMessage({
         type: 'replay-progress', requestId,
-        turn: turnIndex, turns: capsule.turns.length,
+        turn: turnIndex, turns: capsule.turns,
       });
       setTimeout(replaySlice, 0);
     } catch (error) {

@@ -70,6 +70,7 @@ export const UNIT_SUITES = [
   ['rigid-placement-weld', 'rigid-placement-weld-test.mjs'],
   ['rigid-shape-stress', 'rigid-shape-stress-test.mjs', exclusive(180_000)],
   ['rigid-sliver', 'rigid-sliver-test.mjs'],
+  ['floating-body', 'floating-body-repro.mjs'],
   ['house-blast-float', 'house-blast-float-test.mjs'],
   ['rigid-topple', 'rigid-topple-test.mjs'],
   ['rigidmat', 'rigidmat-test.mjs'],

@@ -158,10 +158,21 @@
           return;
       b->sleepSupports.push_back({x, y, owner, (uint8_t)layer});
     };
+    uint8_t bodyTerrainSideDirections = 0;
+    for (const Contact& contact : contacts)
+      if (contact.a == b && !contact.b && std::fabs(contact.ny) < 0.1)
+        bodyTerrainSideDirections |= contact.nx < 0 ? 1 : 2;
     for (const Contact& contact : contacts) {
       double impulseY = contact.accJn * contact.ny
                       + contact.accJt * contact.nx;
-      if (contact.a == b && impulseY < -1e-8) {
+      bool unloadedTerrainSide = !contact.b && std::fabs(contact.ny) < 0.1
+        && b->jointRole == 0 && !b->blastDebris
+        && b->nPts >= R_WALL_RELEASE_MIN_CELLS
+        && bodyTerrainSideDirections != 3;
+      // Tangential impact friction can point upward at a terrain wall, but
+      // a one-sided wall is not a load-bearing anchor after the solver sleeps.
+      if (contact.a == b && impulseY < -1e-8
+          && !unloadedTerrainSide) {
         int layer = contact.b && !contact.bIntegrated
           && !contact.b->kinematic ? 1 - currentLayer : currentLayer;
         addSupport(b->px + contact.rax, b->py + contact.ray,

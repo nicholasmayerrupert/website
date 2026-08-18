@@ -978,6 +978,39 @@
     }
     rigidTerrainContactMs += emscripten_get_now() - terrainContactStart;
     nc = (int)contacts.size();
+    std::fill(upwardContact.begin(), upwardContact.end(), 0);
+    std::fill(bodyContact.begin(), bodyContact.end(), 0);
+    std::fill(terrainSideContactDirections.begin(),
+              terrainSideContactDirections.end(), 0);
+    for (const Contact& contact : contacts) {
+      if (contact.ny < -0.1) upwardContact[contact.a->idx] = 1;
+      if (contact.b) bodyContact[contact.a->idx] = 1;
+      if (!contact.b && std::fabs(contact.ny) < 0.1)
+        terrainSideContactDirections[contact.a->idx]
+          |= contact.nx < 0 ? 1 : 2;
+      if (contact.b && contact.bIntegrated
+          && contact.b->idx >= 0 && contact.b->idx < n) {
+        bodyContact[contact.b->idx] = 1;
+        if (contact.ny > 0.1) upwardContact[contact.b->idx] = 1;
+      }
+    }
+    // An isolated body beside terrain keeps impact friction, but an unloaded
+    // resting wall cannot supply the persistent tangent force that holds it up.
+    for (Contact& contact : contacts) {
+      bool unloadedSideContact = !contact.b
+        && std::fabs(contact.ny) < 0.1
+        && contact.impactSpeed < R_BOUNCE_MIN_SPEED
+        && contact.a->jointRole == 0
+        && !contact.a->blastDebris
+        && contact.a->nPts >= R_WALL_RELEASE_MIN_CELLS
+        && !upwardContact[contact.a->idx]
+        && !bodyContact[contact.a->idx]
+        && terrainSideContactDirections[contact.a->idx] != 3;
+      if (!unloadedSideContact) continue;
+      contact.staticFriction = 0;
+      contact.dynamicFriction = 0;
+      contact.accJt = 0;
+    }
     rigidContactMs += emscripten_get_now() - contactStart;
     double solveStart = emscripten_get_now();
     bool softLayer = solverMode == 7 || solverMode == 8

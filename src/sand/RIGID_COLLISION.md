@@ -137,8 +137,12 @@ contact, spatial forces, fluid-only support, fast point motion, geometry changes
 and explicit wakes reset the envelope. Brief raster-manifold gaps retain an
 already established probe; actual free fall leaves the speed band or pose
 envelope before the sleep interval. The whole island sleeps together, and its
-solved load-bearing anchors preserve diagonal and cross-layer support without
-treating unrelated nearby terrain as ground. Component-backed bodies pass
+solved load-bearing anchors preserve diagonal and cross-layer support. For a
+substantial ordinary body, a one-sided static terrain contact never becomes a
+sleep anchor and carries no persistent friction when the body has no upward or
+body contact, so a nearby wall cannot counter gravity after an impact ends.
+Opposing walls can still support a genuinely wedged body. Tiny blast debris and
+cross-layer joints retain their pile/contact policy. Component-backed bodies pass
 through the same stable-raster and support checks before baking.
 
 The exact inverse-raster footprint is cached for one pose and geometry revision.

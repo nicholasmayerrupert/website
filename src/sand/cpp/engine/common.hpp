@@ -794,6 +794,7 @@ static const double R_STATIC_FRICTION_SPEED = 0.025;
 static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
 static const int    R_CONTACT_CACHE_MISSED_SUBSTEPS = 2;
 static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;
+static const int    R_WALL_RELEASE_MIN_CELLS = 256;
 static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
 static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
 static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;

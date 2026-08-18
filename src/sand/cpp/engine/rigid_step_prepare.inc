@@ -562,6 +562,9 @@
   int nc = 0;
   std::vector<uint8_t> actorContact(n, 0);
   std::vector<uint8_t> solidContact(n, 0);
+  std::vector<uint8_t> upwardContact(n, 0);
+  std::vector<uint8_t> bodyContact(n, 0);
+  std::vector<uint8_t> terrainSideContactDirections(n, 0);
   std::vector<int> solveParent(n), solveBodyCount(n);
   std::vector<int> contactOrder, contactRoot;
   std::vector<double> solveMaxRadius(n);

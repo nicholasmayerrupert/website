@@ -128,10 +128,13 @@ lives in `rigid_impl.inc`.
 - Raster depenetration remains a last-resort fallback.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
-contact is consistently converting a fall into a real topple. A body crossing an
-infinite world's loaded-window boundary stays fixed until streaming brings its
-complete occupied shape back into the window. Finite-world boundaries remain
-solid, and camera-driven streaming persists bodies through the chunk store.
+contact is consistently converting a fall into a real topple. In the current
+world-bridge solver, a structure-scale body pivoting directly on terrain also
+stays outside angular rest damping until its perimeter speed enters the rest
+band. A body crossing an infinite world's loaded-window boundary stays fixed
+until streaming brings its complete occupied shape back into the window. Finite-
+world boundaries remain solid, and camera-driven streaming persists bodies
+through the chunk store.
 
 The ordinary sleep path uses tight instantaneous linear and angular velocity
 thresholds. A cold fallback also tracks the centre of mass and two shape-scale

@@ -1543,15 +1543,19 @@
         b->vx *= R_CONTACT_LIN_DAMP;
         b->vy *= R_CONTACT_LIN_DAMP;
       }
-      // Don't damp a spin the contact solve is actively building in one direction
-      // (a body toppling about a corner): that is real rotation, not jitter, and
-      // damping it every substep is what made hand-drawn bodies creep over
-      // agonizingly slowly instead of tipping. Rest jitter oscillates sign / decays
-      // (omega*omegaPre <= 0 or |omega| not growing) and is still damped, so bodies
-      // whose centre of mass sits over their support stay put and settle as before.
+      // Contact-generated spin that grows in one direction is a real topple.
+      // A structure-scale body pivoting directly on terrain also keeps its spin
+      // while its perimeter motion is outside the rest band. Oscillating or
+      // decaying motion inside the band is damped so supported bodies settle.
       bool spinGrowing = b->omega * b->omegaPre > 0 && std::fabs(b->omega) > std::fabs(b->omegaPre);
-      if (frictionalContact && !spinGrowing
-          && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG) {
+      bool spinInsideRestBand =
+        b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG
+        && (!rigidWorldBridgeMode(solverMode)
+          || !upwardContact[bi] || bodyContact[bi]
+          || !rigidStructureScaleBody(b)
+          || std::fabs(b->omega) * b->maxR
+            < R_CONTACT_ANG_DAMP_POINT_SPEED);
+      if (frictionalContact && !spinGrowing && spinInsideRestBand) {
         b->omega *= R_CONTACT_ANG_DAMP;
         int shortSide = imin(b->w, b->h);
         int longSide = imax(b->w, b->h);

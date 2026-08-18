@@ -65,6 +65,33 @@ const speed = (state) =>
 }
 
 {
+  const cols = 360, rows = 420, floorY = 400;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x70b1, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  staticRectangle(engine, 0, 60, 100, 79, floorY - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+  engine.spawnBody(rectangle(72, 94, 291, 98));
+  engine._setBodyMotion(0, 0, 0, 0.001);
+
+  let earlyPeak = 0, lateMinimum = Infinity;
+  for (let tick = 0; tick < 100; tick++) {
+    engine.stepWorld();
+    const state = engine._bodyState(0);
+    if (state.angle >= 0.25 && state.angle <= 0.35)
+      earlyPeak = Math.max(earlyPeak, state.omega);
+    if (state.angle >= 0.45 && state.angle <= 0.55)
+      lateMinimum = Math.min(lateMinimum, state.omega);
+  }
+  check(`220-cell beam accelerates while pivoting over a narrow support `
+      + `(early ${earlyPeak.toFixed(4)}, late ${lateMinimum.toFixed(4)})`,
+    earlyPeak > 0 && Number.isFinite(lateMinimum)
+      && lateMinimum >= earlyPeak);
+  engine.destroy();
+}
+
+{
   const cols = 420, rows = 260, floorY = rows - 3;
   const engine = createEngineWasm({
     cols, rows, worldSeed: 0x1a2b, sinksOn: false, infinite: false,

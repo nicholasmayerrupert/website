@@ -88,6 +88,7 @@
     "test:rigid-world-raster": "node scripts/run-tests.mjs --only rigid-world-raster",
     "test:rigid-world-raster-island": "node scripts/run-tests.mjs --only rigid-world-raster-island",
     "test:rigid-large-body": "node scripts/run-tests.mjs --only rigid-large-body",
+    "test:rigid-rotation": "node scripts/run-tests.mjs --only rigid-rotation",
     "test:rigid-terrain-contact": "node scripts/run-tests.mjs --only rigid-terrain-contact",
     "test:rigid-blast-impulse": "node scripts/run-tests.mjs --only rigid-blast-impulse",
     "test:rigid-blast-settle": "node scripts/run-tests.mjs --only rigid-blast-settle",

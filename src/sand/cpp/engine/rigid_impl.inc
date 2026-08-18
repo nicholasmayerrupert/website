@@ -952,6 +952,36 @@ void RigidBodySystem::relaxWorldContacts() {
   }
 }
 
+bool RigidBodySystem::preserveRasterRecoveryMotion(
+    Body* body, const MovePose& rejectedPose) {
+  if (!rigidWorldBridgeMode(solverMode)) return false;
+  double pointSpeed = std::hypot(body->vx, body->vy)
+    + std::fabs(body->omega) * body->maxR;
+  if (pointSpeed <= R_WORLD_SLEEP_VELOCITY
+      && !body->spatialForceApplied)
+    return false;
+
+  // The accepted pose is an exact positional constraint. Remove only linear
+  // motion aimed back through its correction; tangential velocity and angular
+  // momentum remain available to roll or slide along the blocking surface.
+  double dx = body->px - rejectedPose.px;
+  double dy = body->py - rejectedPose.py;
+  double translation = std::hypot(dx, dy);
+  if (translation > 1e-9) {
+    double nx = dx / translation;
+    double ny = dy / translation;
+    double inwardSpeed = body->vx * nx + body->vy * ny;
+    if (inwardSpeed < 0) {
+      body->vx -= inwardSpeed * nx;
+      body->vy -= inwardSpeed * ny;
+    }
+  }
+  body->pvx = body->pvy = body->pw = 0;
+  body->hadContact = true;
+  wakeBody(body);
+  return true;
+}
+
 void RigidBodySystem::resolveWorldRasterAssignment() {
   if (!E.bgEnabled) {
     worldRasterAssignmentValid = true;
@@ -1644,25 +1674,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       rigidRasterMaxCorrection = std::fmax(
         rigidRasterMaxCorrection, translation);
     }
-    double pointSpeed = std::hypot(body->vx, body->vy)
-      + std::fabs(body->omega) * body->maxR;
-    bool keepMotion = worldBridge
-      && (pointSpeed > R_WORLD_SLEEP_VELOCITY || body->spatialForceApplied);
-    if (keepMotion) {
-      // The committed pose is a positional constraint, so remove only linear
-      // motion that immediately drives back through that correction. Tangential
-      // velocity and angular momentum remain owned by the world solver.
-      if (translation > 1e-9) {
-        double nx = (body->px - current.px) / translation;
-        double ny = (body->py - current.py) / translation;
-        double inwardSpeed = body->vx * nx + body->vy * ny;
-        if (inwardSpeed < 0) {
-          body->vx -= inwardSpeed * nx;
-          body->vy -= inwardSpeed * ny;
-        }
-      }
-      wakeBody(body);
-    } else {
+    if (!preserveRasterRecoveryMotion(body, current)) {
       // A body inside the world sleep band, or a solver without a cross-layer
       // contact coordinator, parks with the completed assignment.
       body->vx = body->vy = body->omega = 0;
@@ -5030,8 +5042,10 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
             syncPose(candidate);
             return false;
           }
-          candidate->vx = candidate->vy = candidate->omega = 0;
-          candidate->pvx = candidate->pvy = candidate->pw = 0;
+          if (!preserveRasterRecoveryMotion(candidate, current)) {
+            candidate->vx = candidate->vy = candidate->omega = 0;
+            candidate->pvx = candidate->pvy = candidate->pw = 0;
+          }
           candidate->hadContact = true;
           rigidPositionCorrections++;
           rigidRasterCorrections++;
@@ -5123,10 +5137,14 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
             syncPose(B);
             return false;
           }
-          A->vx = A->vy = A->omega = 0;
-          A->pvx = A->pvy = A->pw = 0;
-          B->vx = B->vy = B->omega = 0;
-          B->pvx = B->pvy = B->pw = 0;
+          if (!preserveRasterRecoveryMotion(A, aCurrent)) {
+            A->vx = A->vy = A->omega = 0;
+            A->pvx = A->pvy = A->pw = 0;
+          }
+          if (!preserveRasterRecoveryMotion(B, bCurrent)) {
+            B->vx = B->vy = B->omega = 0;
+            B->pvx = B->pvy = B->pw = 0;
+          }
           A->hadContact = true;
           B->hadContact = true;
           rigidPositionCorrections += 2;
@@ -5549,12 +5567,14 @@ void RigidBodySystem::moveBodies() {
 
     for (const auto& entry : proposed) {
       Body* member = entry.first;
-      member->vx = member->vy = member->omega = 0;
-      member->pvx = member->pvy = member->pw = 0;
-      member->awake = false;
+      if (!preserveRasterRecoveryMotion(member, entry.second)) {
+        member->vx = member->vy = member->omega = 0;
+        member->pvx = member->pvy = member->pw = 0;
+        member->awake = false;
+        resetSleepTracking(member);
+      }
       member->hadContact = true;
       member->rasterMayOverlapSolid = false;
-      resetSleepTracking(member);
       if (member->jointRole == 1) syncJointFollower(member);
       rigidRecoveryBodies++;
       rigidTerrainRecoveryBodies++;

@@ -119,7 +119,11 @@ lives in `rigid_impl.inc`.
   evaluates complete support islands; if it changes a pose, exact body-pair
   reconciliation runs once more so neither constraint class can invalidate the
   other. A pair that cannot be separated locally retains one or both bodies at
-  their last jointly clear poses. One-cell lattice aliasing is tolerated while
+  their last jointly clear poses. An active body restored to an exact clear pose
+  keeps its angular and tangential velocity; only linear velocity directed back
+  through the rejected correction is removed. Bodies already in the world rest
+  band park there, as does the final whole-stamp fallback for a body with no
+  representable proposed cells. One-cell lattice aliasing is tolerated while
   bodies remain dynamic, but overlapping bodies cannot bake into static terrain.
 - Raster depenetration remains a last-resort fallback.
 

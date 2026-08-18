@@ -346,6 +346,8 @@ class RigidBodySystem {
   struct MovePose {
     double px = 0, py = 0, angle = 0;
   };
+  bool preserveRasterRecoveryMotion(
+    Body* body, const MovePose& rejectedPose);
   std::vector<MovePose> movePreviousPoses;
   std::vector<std::vector<int>> movePreviousFootprints;
   std::vector<std::vector<uint8_t>> movePreviousMaterials;

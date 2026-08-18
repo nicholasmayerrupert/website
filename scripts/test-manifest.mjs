@@ -63,6 +63,7 @@ export const UNIT_SUITES = [
   ['rigid-world-raster-island', 'rigid-world-raster-island-test.mjs', exclusive(120_000)],
   ['rigid-tnt-rubble', 'rigid-tnt-rubble-test.mjs', exclusive(300_000)],
   ['rigid-large-body', 'rigid-large-body-test.mjs', exclusive(240_000)],
+  ['rigid-rotation', 'rigid-rotation-test.mjs'],
   ['rigid-terrain-contact', 'rigid-terrain-contact-test.mjs'],
   ['rigid-blast-impulse', 'rigid-blast-impulse-test.mjs'],
   ['rigid-blast-settle', 'rigid-blast-settle-test.mjs'],

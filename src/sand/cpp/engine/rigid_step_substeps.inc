@@ -1555,8 +1555,14 @@
         b->omega *= R_CONTACT_ANG_DAMP;
         int shortSide = imin(b->w, b->h);
         int longSide = imax(b->w, b->h);
+        // A small angular velocity can still move a structure-scale body's
+        // perimeter enough to roll. Snap it only after that point motion also
+        // enters the rest band; compact bodies retain the angular threshold.
         if (shortSide > 0 && longSide < shortSide * 2
-            && std::fabs(b->omega) < R_CONTACT_ZERO_SQUAT_ANG)
+            && std::fabs(b->omega) < R_CONTACT_ZERO_SQUAT_ANG
+            && (!rigidStructureScaleBody(b)
+              || std::fabs(b->omega) * b->maxR
+                < R_CONTACT_ZERO_SQUAT_POINT_SPEED))
           b->omega = 0;
       }
       bool fluidOnlyContact = liquidContact[bi] && !frictionalContact;

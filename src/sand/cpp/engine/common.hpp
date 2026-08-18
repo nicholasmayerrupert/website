@@ -803,6 +803,7 @@ static const double R_STRUCTURE_WARM_START_FACTOR = 1.0;
 static const double R_STRUCTURE_WARM_START_MAX_IMPACT = 0.1;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
+static const double R_CONTACT_ZERO_SQUAT_POINT_SPEED = 0.015;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_WORLD_SLEEP_VELOCITY = 0.05;
 static const double R_REST_PROBE_RADIUS = 2.0;

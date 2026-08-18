@@ -1,0 +1,175 @@
+import { decodeReplayCapsule, encodeReplayCapsule } from './replayCapsule.js';
+
+const buttonStyle = [
+  'border:2px solid #080a0c',
+  'padding:8px 11px',
+  'background:#3a424b',
+  'color:#f3f4f6',
+  'font:800 11px/1 system-ui,sans-serif',
+  'letter-spacing:.06em',
+  'text-transform:uppercase',
+  'cursor:pointer',
+  'box-shadow:inset 0 0 0 1px #69737e,3px 3px 0 #080a0c',
+].join(';');
+
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
+export function createReplayPanel(ctx) {
+  const overlay = document.createElement('section');
+  overlay.hidden = true;
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Deterministic replay capsule');
+  overlay.style.cssText = [
+    'position:absolute', 'inset:12px', 'z-index:100', 'display:none',
+    'place-items:center', 'background:rgba(7,9,12,.82)', 'padding:12px',
+  ].join(';');
+
+  const panel = document.createElement('div');
+  panel.style.cssText = [
+    'width:min(760px,100%)', 'max-height:calc(100% - 8px)', 'display:grid',
+    'grid-template-rows:auto auto minmax(120px,1fr) auto', 'gap:10px',
+    'padding:14px', 'background:#20262c', 'border:3px solid #080a0c',
+    'box-shadow:inset 0 0 0 1px #59636c,7px 7px 0 rgba(0,0,0,.5)',
+    'color:#f3f4f6', 'font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace',
+  ].join(';');
+
+  const title = document.createElement('div');
+  title.textContent = 'DETERMINISTIC REPLAY';
+  title.style.cssText = 'color:#f0d465;font:900 13px/1 system-ui,sans-serif;letter-spacing:.16em';
+  const status = document.createElement('div');
+  status.textContent = 'Collecting the authority log…';
+  status.style.cssText = 'min-height:18px;color:#cbd2d9';
+  const textarea = document.createElement('textarea');
+  textarea.spellcheck = false;
+  textarea.setAttribute('aria-label', 'Replay capsule text');
+  textarea.style.cssText = [
+    'box-sizing:border-box', 'width:100%', 'height:100%', 'min-height:120px',
+    'resize:none', 'border:2px solid #080a0c', 'outline:none', 'padding:10px',
+    'background:#101418', 'color:#dce8d8', 'font:10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace',
+    'user-select:text', '-webkit-user-select:text',
+  ].join(';');
+
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px';
+  const makeButton = (label) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.style.cssText = buttonStyle;
+    return button;
+  };
+  const copy = makeButton('Copy');
+  const replay = makeButton('Run replay');
+  const inspect = makeButton('Inspect paused');
+  const close = makeButton('Resume & close');
+  replay.style.background = '#a37c28';
+  inspect.style.background = '#315b5d';
+  actions.append(copy, replay, inspect, close);
+  panel.append(title, status, textarea, actions);
+  overlay.appendChild(panel);
+  ctx.container.appendChild(overlay);
+
+  let openGeneration = 0;
+  let busy = false;
+  const currentView = () => {
+    const engine = ctx.engine;
+    const cam = engine?.getCam();
+    return {
+      cameraWorldX: engine && cam ? engine.getWorldOffsetX() + cam.x : 0,
+      cameraWorldY: engine && cam ? engine.getWorldOffsetY() + cam.y : 0,
+      viewCols: ctx.viewCols,
+      viewRows: ctx.viewRows,
+      zoom: ctx.zoom,
+    };
+  };
+  const setBusy = (on) => {
+    busy = on;
+    copy.disabled = on;
+    replay.disabled = on;
+    close.disabled = on;
+  };
+  const showError = (error) => {
+    status.textContent = error?.message || String(error);
+    status.style.color = '#ff9a8f';
+  };
+  const open = async () => {
+    if (!overlay.hidden || busy) return;
+    overlay.hidden = false;
+    overlay.style.display = 'grid';
+    status.style.color = '#cbd2d9';
+    status.textContent = 'Freezing this tick and collecting the authority log…';
+    textarea.value = '';
+    setBusy(true);
+    const generation = ++openGeneration;
+    try {
+      if (ctx.netClientReady())
+        throw new Error('Replay capture currently requires the local single-player authority.');
+      if (!ctx.worldWorker) throw new Error('The local simulation is not ready yet.');
+      const capsule = await ctx.worldWorker.exportReplay(currentView());
+      const text = await encodeReplayCapsule(capsule);
+      if (generation !== openGeneration) return;
+      textarea.value = text;
+      status.textContent = `${capsule.final.tick.toLocaleString()} ticks and ${capsule.events.length.toLocaleString()} authority events captured. Paste another capsule here to replay it.`;
+      textarea.focus({ preventScroll: true });
+      textarea.select();
+    } catch (error) {
+      if (generation === openGeneration) showError(error);
+    } finally {
+      if (generation === openGeneration) setBusy(false);
+    }
+  };
+  const hide = (resume) => {
+    openGeneration++;
+    overlay.hidden = true;
+    overlay.style.display = 'none';
+    if (resume) ctx.worldWorker?.config({ paused: false });
+    ctx.container.focus({ preventScroll: true });
+  };
+
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(textarea.value);
+      status.style.color = '#b9e6b1';
+      status.textContent = 'Replay capsule copied.';
+    } catch {
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      status.textContent = 'Replay capsule selected and copied.';
+    }
+  });
+  replay.addEventListener('click', async () => {
+    if (busy) return;
+    setBusy(true);
+    status.style.color = '#cbd2d9';
+    status.textContent = 'Decoding replay capsule…';
+    try {
+      const capsule = await decodeReplayCapsule(textarea.value);
+      status.textContent = `Replaying ${capsule.turns.length.toLocaleString()} ticks…`;
+      const result = await ctx.worldWorker.runReplay(capsule, (turn, turns) => {
+        status.textContent = `Replaying tick ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
+      });
+      status.style.color = result.matched ? '#b9e6b1' : '#ffca78';
+      status.textContent = result.matched
+        ? 'Replay verified: tick, streamed offset, actors, topology totals, and both-layer grid checksum match. The simulation is paused for inspection.'
+        : `Replay finished but verification differed (expected grid ${result.expected.gridHash}, got ${result.actual.gridHash}).`;
+    } catch (error) {
+      showError(error);
+    } finally {
+      setBusy(false);
+    }
+  });
+  inspect.addEventListener('click', () => hide(false));
+  close.addEventListener('click', () => hide(true));
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); hide(true); }
+  });
+
+  return {
+    open,
+    destroy() {
+      openGeneration++;
+      overlay.remove();
+    },
+  };
+}

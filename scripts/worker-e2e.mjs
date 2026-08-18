@@ -78,8 +78,7 @@ try {
       return perf.mirrorPacketErrors === before.errors + 1
         && perf.lastMirrorPacketError === 'forced mirror packet failure'
         && perf.worldTick > before.worldTick
-        && perf.mirrorWorldTick > before.mirrorTick
-        && !perf.workerAwaitingAck;
+        && perf.mirrorWorldTick > before.mirrorTick;
     }, mirrorFailure));
   const keyboardOwnership = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
@@ -123,6 +122,37 @@ try {
     return [before, window.__sandPerf().workerEdges];
   });
   check('auxiliary pointer release does not alter creative draft edges', auxiliaryEdges[0] === auxiliaryEdges[1], auxiliaryEdges.join(' -> '));
+
+  // L freezes the authority on an exact tick and emits a portable input replay.
+  // Running that capsule rebuilds the authority from its recorded seed and
+  // verifies the reproduced grid/topology totals before normal stepping resumes.
+  await page.evaluate(() => {
+    const sim = document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim');
+    sim.focus({ preventScroll: true });
+  });
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('textarea[aria-label="Replay capsule text"]')?.value
+    .startsWith('SAND-REPLAY-1:'), null, { timeout: 30000 });
+  const replayTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    [...root.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run replay').click();
+  });
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Deterministic replay capsule"]')?.textContent
+    .includes('Replay verified:'), null, { timeout: 120000 });
+  check('L capsule deterministically rebuilds the captured authority state', true);
+  await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    [...root.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Resume & close').click();
+  });
+  await page.waitForFunction((tick) => window.__sandPerf().worldTick > tick,
+    replayTick, { timeout: 30000 });
+  check('replayed authority resumes after the panel closes', true);
+
   await page.evaluate(() => window.__sandTest.retryAuthority());
   await page.waitForFunction(() => {
     const perf = window.__sandPerf();

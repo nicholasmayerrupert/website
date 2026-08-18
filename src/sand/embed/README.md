@@ -157,6 +157,7 @@ Mission, planet, phase, objective-type, and objective-state values come from
 | `E` | Open inventory and crafting |
 | `Q` | Choose placement/mining footprint |
 | `+`, `-`, `0` | Zoom in / out / reset |
+| `L` | Pause and open the deterministic replay copy/paste panel (local sessions) |
 
 ## Multiplayer
 

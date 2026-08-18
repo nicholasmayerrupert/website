@@ -13,6 +13,7 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
+import { createReplayPanel } from './replayPanel.js';
 import { CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
 import { resolvePlanetId } from './planetSelection.js';
 
@@ -282,6 +283,7 @@ export function createSandGame(container, opts = {}) {
 
   // Compose modules; order matters only for initial fit/attach.
   const lifecycle = createEngineLifecycle(ctx, { onLayoutChange });
+  const replayPanel = createReplayPanel(ctx);
   const inputs = createInputBindings(ctx, {
     refreshBounds: lifecycle.refreshBounds,
     zoomBy: lifecycle.zoomBy,
@@ -289,6 +291,7 @@ export function createSandGame(container, opts = {}) {
     onInteraction,
     onToggleInventory,
     onToggleFootprintMenu,
+    onReplay: replayPanel.open,
   });
   const loop = createGameLoop(ctx, {
     fit: lifecycle.fit,
@@ -300,6 +303,7 @@ export function createSandGame(container, opts = {}) {
     onMission,
   });
   ctx.fns.render = loop.render;
+  ctx.fns.rebuildEngineForReplay = lifecycle.rebuildEngineForDims;
   const netGlue = createNetGlue(ctx, {
     fit: lifecycle.fit,
     rebuildEngineForDims: lifecycle.rebuildEngineForDims,
@@ -376,6 +380,7 @@ export function createSandGame(container, opts = {}) {
       mqReduced.removeListener?.(onReducedChange);
     }
     uninstallDevHooks?.();
+    replayPanel.destroy();
     canvas.remove();
   };
 
@@ -463,6 +468,7 @@ export function createSandGame(container, opts = {}) {
         playerWorldY: player ? offsetY + player.y + player.h * 0.5 : null,
       };
     },
+    openReplayPanel() { replayPanel.open(); },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
     cursorPick(slot, half) {
       if (ctx.netClientReady()) ctx.net.sendPick(slot | 0, half);

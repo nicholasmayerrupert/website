@@ -222,6 +222,15 @@ outside it until they settle. Loaded cells outside those regions remain visible,
 streamable, and persistent without being advanced merely because zoom exposed
 more of the world.
 
+Pressing `L` while the local simulation surface owns keyboard input pauses the
+authority and opens the deterministic replay panel. Its copy/paste capsule keeps
+the real generated seed, initialization options, authority-tick input/config/
+resize events, streaming transport gates, and the exact time sampled by each
+continuous-tool turn. Replaying reconstructs a fresh authority and verifies the
+final tick, streamed offset, actor/topology totals, and both-layer grid checksum.
+Capsules are ABI-versioned and intentionally reject incompatible engine builds;
+multiplayer sessions cannot be captured because their authority is remote.
+
 ## Source map
 
 - `cpp/sand.cpp`: unity translation unit and `Engine` composition.
@@ -256,6 +265,8 @@ more of the world.
 - `wasmBridge/testHooks.js`: test-only ABI adapters.
 - `game/createSandGame.js`: browser runtime and presentation loop.
 - `worker/`: offline authority worker and main-thread replica client.
+- `game/replayCapsule.js`, `game/replayPanel.js`: versioned replay text codec
+  and the `L` copy/paste UI.
 - `net/`: multiplayer protocol, prediction, replication, and server authority.
 - `embed/`: the Web Component and framework-free UI.
 - `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.

@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onReplay }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button state is edge-owned: pointerdown sets bits and pointerup clears them.
@@ -170,12 +170,14 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
-    // Creative camera movement should survive focus moving to palette buttons
-    // and should not require a priming click. Keep all other shortcuts scoped
-    // to explicit surface focus so an embedded game does not capture page keys.
+    // Creative camera movement and replay capture should survive focus moving to
+    // palette buttons and should not require a priming click. Survival and the
+    // remaining shortcuts stay scoped to explicit surface focus.
     const visibleCreativeWasd = !ctx.playMode && surfaceIsVisible() &&
       (key === 'w' || key === 'a' || key === 's' || key === 'd');
-    if (!ownsKeyboard() && !visibleCreativeWasd) return;
+    const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
+    if (!ownsKeyboard() && !visibleCreativeWasd && !visibleReplayKey) return;
+    if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
     // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
     // any loaded-window resize (local worker or multiplayer server). Handled
     // before movement/hotbar keys ('0' is unused there).

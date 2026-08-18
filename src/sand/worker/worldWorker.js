@@ -1,5 +1,7 @@
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
+  ABI_FINGERPRINT,
+  ABI_VERSION,
   CREATIVE_KIND,
   CREATURE,
   ITEM_KIND,
@@ -8,6 +10,13 @@ import {
   PLANET_GAMEPLAY_FLAG,
   planetHasGameplayFlag,
 } from '../wasmBridge/abi.generated.js';
+import {
+  copyReplayValue,
+  REPLAY_EVENT_TYPES,
+  REPLAY_FORMAT,
+  REPLAY_VERSION,
+  validateReplayCapsule,
+} from '../game/replayCapsule.js';
 import { isMaterialId, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
 import { createTurnDeadline, SIM_STEP_MS } from '../timing/fixedRateClock.js';
@@ -64,7 +73,92 @@ let pendingResize = null;
 let livenessStage = WORKER_LIVENESS_STAGE.INITIALIZING;
 let livenessTurn = 0;
 let livenessProbeArmed = false;
+let replayCapture = null;
+let replayCaptureStarting = false;
+let replayInputSignature = '';
+let replayRunning = false;
+let replayTransportSuppressed = false;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
+
+function replayInitOptions(data) {
+  const options = copyReplayValue(data);
+  delete options.type;
+  return options;
+}
+
+function beginReplayCapture(data) {
+  replayCaptureStarting = true;
+  replayInputSignature = '';
+  replayCapture = {
+    format: REPLAY_FORMAT,
+    version: REPLAY_VERSION,
+    abiVersion: ABI_VERSION,
+    abiFingerprint: ABI_FINGERPRINT,
+    init: replayInitOptions(data),
+    events: [],
+    turns: [],
+  };
+}
+
+function recordReplayMessage(data) {
+  if (!replayCapture || replayRunning || !REPLAY_EVENT_TYPES.has(data.type)) return;
+  if (data.type === 'input') return;
+  replayCapture.events.push({
+    tick: replayCaptureStarting ? 0 : (engine?.getTick?.() || 0),
+    message: copyReplayValue(data),
+  });
+}
+
+function recordReplayTurn(started) {
+  let inputSeq = null;
+  if (latestInput) {
+    inputSeq = latestInput.seq >>> 0;
+    const inputState = copyReplayValue(latestInput);
+    delete inputState.seq;
+    const signature = JSON.stringify(inputState);
+    if (signature !== replayInputSignature) {
+      replayInputSignature = signature;
+      replayCapture.events.push({
+        tick: engine.getTick(),
+        message: { type: 'input', input: copyReplayValue(latestInput) },
+      });
+    }
+  }
+  replayCapture.turns.push({
+    now: started,
+    awaitingAck,
+    fullResyncRequested,
+    inputSeq,
+  });
+}
+
+function replayFinalState() {
+  const perfState = engine.getPerf();
+  return {
+    tick: engine.getTick(),
+    actorTick: engine.getActorTick(),
+    gridHash: engine.gridHash(),
+    worldOffsetX: engine.getWorldOffsetX(),
+    worldOffsetY: engine.getWorldOffsetY(),
+    cols: engine.cols,
+    rows: engine.rows,
+    componentCount: perfState.componentCount || 0,
+    componentCellCount: perfState.componentCellCount || 0,
+    crossBondCount: perfState.crossBondCount || 0,
+    playerCount: engine.getPlayers().length,
+    itemCount: engine.itemCount(),
+    creatureCount: engine.creatureCount(),
+    projectileCount: engine.getProjectiles().length,
+  };
+}
+
+function replayStateMatches(expected, actual) {
+  return [
+    'tick', 'actorTick', 'gridHash', 'worldOffsetX', 'worldOffsetY',
+    'cols', 'rows', 'componentCount', 'componentCellCount', 'crossBondCount',
+    'playerCount', 'itemCount', 'creatureCount', 'projectileCount',
+  ].every((key) => expected[key] === actual[key]);
+}
 
 function setLivenessStage(stage, publish = false) {
   livenessStage = stage;
@@ -120,6 +214,7 @@ function seedReactionInterface(material, cap, phase) {
 }
 
 const postBytes = (message, bytes) => {
+  if (replayTransportSuppressed) return;
   const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   self.postMessage({ ...message, data }, [data]);
 };
@@ -148,6 +243,7 @@ function postDraft() {
   for (let i = 0; i < cells.length; i++) signature += `:${cells[i]}`;
   if (signature === lastDraftSignature) return;
   lastDraftSignature = signature;
+  if (replayTransportSuppressed) return;
   const data = cells.buffer;
   self.postMessage({
     type: 'draft', epoch, revision: ++draftRevision, material,
@@ -159,6 +255,7 @@ function postCreatures() {
   const creatures = engine.getCreatureSnapshotData();
   if (!creatures.length && !mirroredCreatures) return;
   mirroredCreatures = creatures.length > 0;
+  if (replayTransportSuppressed) return;
   const data = creatures.buffer;
   self.postMessage({
     type: 'creatures', epoch,
@@ -179,6 +276,7 @@ function postActors(force = false) {
   const itemData = engine.getItemSnapshotData();
   const projectileData = engine.getProjectileSnapshotData();
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;
+  if (replayTransportSuppressed) return;
   const itemBuffer = itemData.buffer;
   const projectileBuffer = projectileData.buffer;
   self.postMessage({
@@ -198,7 +296,7 @@ function postActors(force = false) {
 
 function postSounds() {
   const sounds = engine.drainSoundEvents();
-  if (!sounds.length) return;
+  if (!sounds.length || replayTransportSuppressed) return;
   const data = sounds.buffer;
   self.postMessage({ type: 'sounds', epoch, data }, [data]);
 }
@@ -259,7 +357,7 @@ function applyResize(data) {
   postActors(true);
 }
 
-function postFull(reason) {
+function postFull(reason, fields = {}) {
   sequence++;
   awaitingAck = true;
   const bytes = engine.serializeWorld();
@@ -269,7 +367,7 @@ function postFull(reason) {
     resizeId,
     cols: engine.cols, rows: engine.rows,
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
-    worldTick: engine.getTick(), perf: perf(),
+    worldTick: engine.getTick(), perf: perf(), ...fields,
   }, bytes);
   lightEditX0 = Infinity;
   lightEditX1 = -Infinity;
@@ -453,19 +551,7 @@ function schedule(delay = null) {
   timer = setTimeout(run, wait);
 }
 
-function run() {
-  if (closing || !engine) return;
-  const started = performance.now();
-  if (paused) {
-    setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED);
-    schedule();
-    return;
-  }
-  if (!control) {
-    setLivenessStage(WORKER_LIVENESS_STAGE.WAITING_CONTROL);
-    schedule();
-    return;
-  }
+function executeTurn(started, scheduleNext = true) {
   const detailedLiveness = livenessProbeArmed;
   livenessProbeArmed = false;
   livenessTurn++;
@@ -530,7 +616,8 @@ function run() {
   postSounds();
   if (started - lastStatsPost >= 250) {
     lastStatsPost = started;
-    self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
+    if (!replayTransportSuppressed)
+      self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
   }
   postDraft();
   postCreatures();
@@ -539,33 +626,45 @@ function run() {
   // was posted immediately before the shift.
   postActors(shifted);
   if (!shifted && !postedFull) postDiffIfReady();
-  const targetTurnMs = Math.max(SIM_STEP_MS, artificialDelayMs);
-  if (targetTurnMs > SIM_STEP_MS)
-    schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
-  else schedule();
+  if (scheduleNext) {
+    const targetTurnMs = Math.max(SIM_STEP_MS, artificialDelayMs);
+    if (targetTurnMs > SIM_STEP_MS)
+      schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
+    else schedule();
+  }
   setLivenessStage(WORKER_LIVENESS_STAGE.SCHEDULED, detailedLiveness);
 }
 
-self.onmessage = async ({ data }) => {
-  if (!data) return;
-  if (data.type === 'destroy') {
-    shutdown();
+function run() {
+  if (closing || !engine || replayRunning) return;
+  const started = performance.now();
+  if (paused) {
+    setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED);
+    schedule();
     return;
   }
-  if (closing) return;
-  if (data.type === 'init') {
-    livenessProbeArmed = false;
-    const generation = ++initGeneration;
-    clearTimeout(timer);
-    try {
-      await initSandWasm();
-    } catch (error) {
-      if (closing || generation !== initGeneration) return;
+  if (!control) {
+    setLivenessStage(WORKER_LIVENESS_STAGE.WAITING_CONTROL);
+    schedule();
+    return;
+  }
+  if (replayCapture) recordReplayTurn(started);
+  executeTurn(started);
+}
+
+async function initializeAuthority(data, { scheduleRuns = true, usePending = true } = {}) {
+  livenessProbeArmed = false;
+  const generation = ++initGeneration;
+  clearTimeout(timer);
+  try {
+    await initSandWasm();
+  } catch (error) {
+    if (!closing && generation === initGeneration)
       self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
-      return;
-    }
-    if (closing || generation !== initGeneration) return;
-    try {
+    return false;
+  }
+  if (closing || generation !== initGeneration) return false;
+  try {
       const previous = engine;
       engine = null;
       previous?.destroy();
@@ -593,7 +692,7 @@ self.onmessage = async ({ data }) => {
       // Preserve the selected startup tool. The initial creative selection is an
       // EMPTY placeholder until the palette emits a real material selection.
       engine.setTool(data.tool | 0);
-      if (pendingRuntimeConfig) {
+      if (usePending && pendingRuntimeConfig) {
         const config = pendingRuntimeConfig;
         pendingRuntimeConfig = null;
         applyRuntimeConfig(config);
@@ -632,16 +731,19 @@ self.onmessage = async ({ data }) => {
         });
         engine.destroy();
         engine = null;
-        return;
+        return false;
       }
       latestInput = null;
       lastInventoryHash = -1;
       epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null; livenessTurn = 0;
       lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
+      draftRevision = 0; lastDraftSignature = '';
+      controlsReceived = 0; edgesProcessed = 0; toolWrites = 0;
       survivalSpawnViewReady = false;
       rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
+      lastStatsPost = 0;
       turnDeadline.reset(performance.now());
-      if (pendingResize) {
+      if (usePending && pendingResize) {
         const resize = pendingResize;
         pendingResize = null;
         applyResize(resize);
@@ -649,33 +751,23 @@ self.onmessage = async ({ data }) => {
         postFull('init');
         postActors(true);
       }
-      schedule();
+      replayCaptureStarting = false;
+      if (scheduleRuns) schedule();
       setLivenessStage(paused
         ? WORKER_LIVENESS_STAGE.PAUSED
         : WORKER_LIVENESS_STAGE.SCHEDULED, true);
-    } catch (error) {
-      engine?.destroy();
-      engine = null;
-      if (!closing && generation === initGeneration) {
-        self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
-      }
+      return true;
+  } catch (error) {
+    engine?.destroy();
+    engine = null;
+    if (!closing && generation === initGeneration) {
+      self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
     }
-    return;
+    return false;
   }
-  if (data.type === 'config' && !engine) {
-    pendingRuntimeConfig = { ...pendingRuntimeConfig, ...data };
-    return;
-  }
-  if (data.type === 'resize' && !engine) {
-    pendingResize = data;
-    return;
-  }
-  if (data.type === 'liveness-probe') {
-    livenessProbeArmed = true;
-    setLivenessStage(livenessStage, true);
-    return;
-  }
-  if (!engine) return;
+}
+
+function applyRuntimeMessage(data) {
   if (data.type === 'ack') {
     if (data.epoch === epoch && data.sequence === sequence) awaitingAck = false;
   } else if (data.type === 'resync') {
@@ -749,6 +841,177 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'resize') {
     applyResize(data);
   }
+}
+
+function exportReplay(requestId, view) {
+  if (!engine || !replayCapture) {
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'The local authority has not finished starting.',
+    });
+    return;
+  }
+  paused = true;
+  const capsule = {
+    ...replayCapture,
+    events: replayCapture.events.slice(),
+    turns: replayCapture.turns.slice(),
+    view: copyReplayValue(view || {}),
+    final: replayFinalState(),
+  };
+  self.postMessage({ type: 'replay-capsule', requestId, capsule });
+}
+
+async function runReplayCapsule(requestId, value) {
+  let capsule;
+  try {
+    capsule = validateReplayCapsule(value);
+  } catch (error) {
+    self.postMessage({ type: 'replay-error', requestId, message: error.message });
+    return;
+  }
+
+  clearTimeout(timer);
+  replayRunning = true;
+  replayTransportSuppressed = true;
+  replayCaptureStarting = false;
+  pendingRuntimeConfig = null;
+  pendingResize = null;
+  const initialized = await initializeAuthority(
+    { type: 'init', ...capsule.init },
+    { scheduleRuns: false, usePending: false },
+  );
+  if (!initialized || closing) {
+    replayRunning = false;
+    replayTransportSuppressed = false;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'The replay engine could not be initialized.',
+    });
+    return;
+  }
+
+  let eventIndex = 0;
+  let turnIndex = 0;
+  const applyEventsAtTick = (tick) => {
+    while (eventIndex < capsule.events.length
+           && capsule.events[eventIndex].tick === tick) {
+      applyRuntimeMessage(capsule.events[eventIndex].message);
+      eventIndex++;
+    }
+  };
+  const fail = (error) => {
+    replayRunning = false;
+    replayTransportSuppressed = false;
+    paused = true;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: error?.message || String(error),
+    });
+    schedule();
+  };
+  const finish = () => {
+    try {
+      applyEventsAtTick(engine.getTick());
+      if (eventIndex !== capsule.events.length)
+        throw new Error('Replay ended before all authority events were applied.');
+      const actual = replayFinalState();
+      const matched = replayStateMatches(capsule.final, actual);
+      paused = true;
+      replayRunning = false;
+      replayTransportSuppressed = false;
+      replayCapture = {
+        ...capsule,
+        events: capsule.events.slice(),
+        turns: capsule.turns.slice(),
+      };
+      postFull('replay', { replayView: capsule.view || null });
+      postActors(true);
+      self.postMessage({
+        type: 'replay-complete', requestId, matched,
+        expected: capsule.final, actual,
+      });
+      schedule();
+    } catch (error) {
+      fail(error);
+    }
+  };
+  const replaySlice = () => {
+    if (closing || !replayRunning) return;
+    try {
+      const end = Math.min(capsule.turns.length, turnIndex + 120);
+      while (turnIndex < end) {
+        const tick = engine.getTick();
+        applyEventsAtTick(tick);
+        const turn = capsule.turns[turnIndex];
+        awaitingAck = turn.awaitingAck;
+        fullResyncRequested = turn.fullResyncRequested;
+        if (latestInput && turn.inputSeq !== null) latestInput.seq = turn.inputSeq;
+        executeTurn(turn.now, false);
+        turnIndex++;
+        if (engine.getTick() !== turnIndex)
+          throw new Error(`Replay tick diverged at turn ${turnIndex}.`);
+      }
+      if (turnIndex >= capsule.turns.length) {
+        finish();
+        return;
+      }
+      self.postMessage({
+        type: 'replay-progress', requestId,
+        turn: turnIndex, turns: capsule.turns.length,
+      });
+      setTimeout(replaySlice, 0);
+    } catch (error) {
+      fail(error);
+    }
+  };
+  replaySlice();
+}
+
+self.onmessage = async ({ data }) => {
+  if (!data) return;
+  if (data.type === 'destroy') {
+    shutdown();
+    return;
+  }
+  if (closing) return;
+  if (data.type === 'replay-export') {
+    exportReplay(data.requestId, data.view);
+    return;
+  }
+  if (data.type === 'replay-run') {
+    if (replayRunning) {
+      self.postMessage({
+        type: 'replay-error', requestId: data.requestId,
+        message: 'A replay is already running.',
+      });
+      return;
+    }
+    await runReplayCapsule(data.requestId, data.capsule);
+    return;
+  }
+  if (replayRunning) return;
+  if (data.type === 'init') {
+    beginReplayCapture(data);
+    await initializeAuthority(data);
+    return;
+  }
+  if (REPLAY_EVENT_TYPES.has(data.type)) recordReplayMessage(data);
+  if (data.type === 'config' && !engine) {
+    pendingRuntimeConfig = { ...pendingRuntimeConfig, ...data };
+    return;
+  }
+  if (data.type === 'resize' && !engine) {
+    pendingResize = data;
+    return;
+  }
+  if (data.type === 'liveness-probe') {
+    livenessProbeArmed = true;
+    setLivenessStage(livenessStage, true);
+    return;
+  }
+  if (!engine) return;
+  applyRuntimeMessage(data);
 };
 
 setLivenessStage(WORKER_LIVENESS_STAGE.INITIALIZING, true);

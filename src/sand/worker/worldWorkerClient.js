@@ -51,6 +51,8 @@ export function createWorldWorkerClient(ctx) {
   let missionSignature = '';
   let missionDirty = false;
   let appliedEpoch = 0;
+  let replayRequestId = 0;
+  const replayRequests = new Map();
   const liveness = createWorkerLivenessMonitor();
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
@@ -62,6 +64,11 @@ export function createWorldWorkerClient(ctx) {
     if (closed) return false;
     worker.postMessage(message);
     return true;
+  };
+
+  const rejectReplayRequests = (message) => {
+    for (const request of replayRequests.values()) request.reject(new Error(message));
+    replayRequests.clear();
   };
 
   const probeLiveness = () => {
@@ -82,6 +89,38 @@ export function createWorldWorkerClient(ctx) {
     }
     if (!data) return;
     liveness.noteMessage(receivedAt);
+    if (data.type === 'replay-capsule') {
+      const request = replayRequests.get(data.requestId);
+      if (request) {
+        replayRequests.delete(data.requestId);
+        request.resolve(data.capsule);
+      }
+      return;
+    }
+    if (data.type === 'replay-progress') {
+      replayRequests.get(data.requestId)?.onProgress?.(data.turn, data.turns);
+      return;
+    }
+    if (data.type === 'replay-complete') {
+      const request = replayRequests.get(data.requestId);
+      if (request) {
+        replayRequests.delete(data.requestId);
+        request.resolve({
+          matched: !!data.matched,
+          expected: data.expected,
+          actual: data.actual,
+        });
+      }
+      return;
+    }
+    if (data.type === 'replay-error') {
+      const request = replayRequests.get(data.requestId);
+      if (request) {
+        replayRequests.delete(data.requestId);
+        request.reject(new Error(data.message || 'Replay failed.'));
+      }
+      return;
+    }
     if (data.type === 'full' || data.type === 'shift' || data.type === 'diff') {
       liveness.notePacket(data.worldTick, receivedAt);
       if ((data.epoch | 0) < appliedEpoch) {
@@ -275,6 +314,52 @@ export function createWorldWorkerClient(ctx) {
     testStepActors(steps = 1) {
       post({ type: 'test-step-actors', steps: steps | 0 });
     },
+    exportReplay(view) {
+      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      const requestId = ++replayRequestId;
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, { resolve, reject });
+        if (!post({ type: 'replay-export', requestId, view })) {
+          replayRequests.delete(requestId);
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
+    runReplay(capsule, onProgress) {
+      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      if (!!capsule?.init?.survival !== ctx.survival)
+        return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
+      const cols = capsule?.final?.cols | 0;
+      const rows = capsule?.final?.rows | 0;
+      if (!cols || !rows)
+        return Promise.reject(new Error('Replay dimensions are missing.'));
+      pending = null;
+      pendingDraft = null;
+      pendingCreatures = null;
+      pendingActors = null;
+      awaitingResizeId = 0;
+      appliedEpoch = 0;
+      lastControl = '';
+      predictor = null;
+      predictorEngine = null;
+      predictorPlayerId = 0;
+      authoritativePlayerId = 0;
+      players = [];
+      items = new Float32Array(0);
+      projectiles = new Float32Array(0);
+      ctx.worldSeed = capsule.init.worldSeed >>> 0;
+      if (Number.isFinite(capsule.init.planetId)) ctx.planetId = capsule.init.planetId | 0;
+      if (Number.isFinite(capsule.init.gravityScale)) ctx.gravityScale = capsule.init.gravityScale;
+      ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      const requestId = ++replayRequestId;
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, { resolve, reject, onProgress });
+        if (!post({ type: 'replay-run', requestId, capsule })) {
+          replayRequests.delete(requestId);
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
     testFailNextMirrorApply() {
       failNextMirrorApply = true;
     },
@@ -339,8 +424,12 @@ export function createWorldWorkerClient(ctx) {
           }
         if (packet.type === 'full') {
           const { cam, offsetX: oldOffsetX, offsetY: oldOffsetY } = mirrorFrame;
-          const worldCamX = oldOffsetX + cam.x;
-          const worldCamY = oldOffsetY + cam.y;
+          const worldCamX = Number.isFinite(packet.replayView?.cameraWorldX)
+            ? packet.replayView.cameraWorldX
+            : oldOffsetX + cam.x;
+          const worldCamY = Number.isFinite(packet.replayView?.cameraWorldY)
+            ? packet.replayView.cameraWorldY
+            : oldOffsetY + cam.y;
           const containsView = worldCamX >= packet.worldOffsetX && worldCamY >= packet.worldOffsetY &&
             worldCamX + ctx.viewCols <= packet.worldOffsetX + packet.cols &&
             worldCamY + ctx.viewRows <= packet.worldOffsetY + packet.rows;
@@ -562,6 +651,7 @@ export function createWorldWorkerClient(ctx) {
     destroy() {
       if (closed) return;
       closed = true;
+      rejectReplayRequests('Simulation worker was closed.');
       clearTimeout(resizeTimer);
       resizeTimer = 0;
       clearInterval(livenessTimer);
@@ -636,6 +726,7 @@ export function createWorldWorkerClient(ctx) {
   };
   const handleError = (event) => {
     if (closed) return;
+    rejectReplayRequests('Simulation worker failed during replay.');
     liveness.noteFailure();
     clearTimeout(destroyTimer);
     console.error('sand world worker failed', event.message || event);

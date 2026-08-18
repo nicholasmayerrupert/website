@@ -1149,6 +1149,9 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     bool valid = true;
     for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
       Layer& layer = layerIndex ? E.bg : E.fg;
+      // A single shared lattice sample is an alias, as in the per-layer
+      // projection. Repeated overlap still invalidates the whole assignment.
+      std::unordered_map<uint64_t, int> overlapCounts;
       clearOwners();
       for (int nodeIndex = 0;
            nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
@@ -1172,6 +1175,12 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
               rasterProjectionOwner[k] = nodeIndex;
               rasterProjectionTouched.push_back(k);
             } else if (previous != nodeIndex) {
+              int first = imin(previous, nodeIndex);
+              int second = imax(previous, nodeIndex);
+              uint64_t key = ((uint64_t)(uint32_t)first << 32)
+                           | (uint32_t)second;
+              if (++overlapCounts[key] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
+                continue;
               valid = false;
               if (violating) {
                 (*violating)[previous] = 1;

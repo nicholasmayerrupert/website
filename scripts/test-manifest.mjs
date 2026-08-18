@@ -81,6 +81,7 @@ export const UNIT_SUITES = [
   ['grounding', 'grounding-incremental-test.mjs', exclusive(180_000)],
   ['pure-perf', 'pure-perf-checksum-test.mjs', exclusive(480_000)],
   ['timing', 'timing-test.mjs'],
+  ['replay-capsule', 'replay-capsule-test.mjs'],
   ['worker-order', 'world-worker-order-test.mjs'],
   ['worker-liveness', 'worker-liveness-test.mjs'],
   ['viewport-pause', 'viewport-pause-test.mjs'],

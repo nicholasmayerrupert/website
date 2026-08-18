@@ -110,7 +110,7 @@ export function createReplayPanel(ctx) {
       const text = await encodeReplayCapsule(capsule);
       if (generation !== openGeneration) return;
       textarea.value = text;
-      status.textContent = `${capsule.turns.length.toLocaleString()} authority turns and ${capsule.events.length.toLocaleString()} events captured. Paste another capsule here to replay it.`;
+      status.textContent = `${capsule.turns.toLocaleString()} authority turns and ${capsule.events.length.toLocaleString()} events captured. Paste another capsule here to replay it.`;
       textarea.focus({ preventScroll: true });
       textarea.select();
     } catch (error) {
@@ -147,7 +147,7 @@ export function createReplayPanel(ctx) {
     status.textContent = 'Decoding replay capsule…';
     try {
       const capsule = await decodeReplayCapsule(textarea.value);
-      status.textContent = `Replaying ${capsule.turns.length.toLocaleString()} authority turns…`;
+      status.textContent = `Replaying ${capsule.turns.toLocaleString()} authority turns…`;
       const result = await ctx.worldWorker.runReplay(capsule, (turn, turns) => {
         status.textContent = `Replaying turn ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
       });

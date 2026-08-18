@@ -26,9 +26,10 @@ const signature = (planetId) => {
     foreground: gridHash(engine.getGrid()),
     background: gridHash(engine.getGridBg()),
     surfaces: [-192, -64, 0, 64, 192].map((x) => engine.worldSurfaceAbsAt(x)),
-    biomes: BIOME_SAMPLE_X.map((x) => engine.worldBiomeAt(x)),
+    biomes: BIOME_SAMPLE_X.map((x) => engine.worldBiomeSample(
+      x, engine.worldSurfaceAbsAt(x)).owner.biome),
     caveBiomes: BIOME_SAMPLE_X.flatMap((x) =>
-      [96, 320, 700, 900].map((y) => engine.worldCaveBiomeAt(x, y))),
+      [96, 320, 700, 900].map((y) => engine.worldBiomeSample(x, y).owner.biome)),
   };
   engine.destroy();
   return result;
@@ -47,9 +48,9 @@ check('default engine is explicit Earth',
   defaultEarth.planet === PLANET.EARTH
     && JSON.stringify(defaultEarth) === JSON.stringify(earth));
 check(`Earth foreground checksum remains frozen (0x${earth.foreground.toString(16)})`,
-  earth.foreground === 0x400dc742);
+  earth.foreground === 0x1fc9cc87);
 check(`Earth background checksum remains frozen (0x${earth.background.toString(16)})`,
-  earth.background === 0x4a88ebda);
+  earth.background === 0x29efe7e2);
 check('Moon generation repeats for the same seed',
   JSON.stringify(moonA) === JSON.stringify(moonB));
 check('Mars generation repeats for the same seed',

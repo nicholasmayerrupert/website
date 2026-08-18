@@ -9,7 +9,28 @@ struct Engine;
 
 // Terrain, feature plans, and semantic identities are one compatibility unit.
 // Bump this when deterministic generation or feature containment changes.
-inline constexpr int WORLD_GENERATION_VERSION = 4;
+inline constexpr int WORLD_GENERATION_VERSION = 5;
+
+struct BiomeRef {
+  int family = BF_SURFACE;
+  int biome = BIOME_PLAINS;
+
+  bool operator==(const BiomeRef& other) const {
+    return family == other.family && biome == other.biome;
+  }
+  bool operator!=(const BiomeRef& other) const { return !(*this == other); }
+};
+
+struct BiomeSample {
+  int ownerFamily = BF_SURFACE;
+  int ownerBiome = BIOME_PLAINS;
+  int neighborFamily = BF_SURFACE;
+  int neighborBiome = BIOME_PLAINS;
+  int blend = 0;
+
+  BiomeRef owner() const { return {ownerFamily, ownerBiome}; }
+  BiomeRef neighbor() const { return {neighborFamily, neighborBiome}; }
+};
 
 class TerrainGen {
  public:
@@ -27,6 +48,11 @@ class TerrainGen {
   static constexpr int DEEP_BLEND_TOP = CAVE_BOTTOM - 96;
   static constexpr int DEEP_BLEND_BOTTOM = CAVE_BOTTOM + 128;
   static constexpr int CAVE_REGION_WIDTH = 256;
+  static constexpr int BIOME_REGION_WIDTH = 768;
+  static constexpr int BIOME_REGION_HEIGHT = 512;
+  static constexpr int BIOME_REGION_JITTER_X = 153;
+  static constexpr int BIOME_REGION_JITTER_Y = 102;
+  static constexpr int BIOME_FAMILY_BLEND_DEPTH = 96;
   static constexpr int DEEP_CAVERN_WIDTH = 288;
   static constexpr int DEEP_CAVERN_HEIGHT = 208;
   static constexpr int DEEP_CAVERN_CENTER_X_MARGIN = 56;
@@ -48,9 +74,8 @@ class TerrainGen {
   static constexpr int SURFACE_OCT = 5;
   static constexpr int GEN_SKIN = 1;
 
-  int genBiomeAt(int worldX);
-  double genTemperatureAt(int worldX);
-  double genMoistureAt(int worldX);
+  BiomeSample genBiomeSampleAt(int worldX, int worldY);
+  BiomeRef genMaterialBiomeAt(int worldX, int worldY);
   int genSurfaceAbs(int worldX);
   int genSurfaceAt(int worldX);
   int genSoilDepth(int biome);
@@ -58,7 +83,6 @@ class TerrainGen {
   uint8_t genSkinMat(int biome, int slope, bool underwater);
   uint8_t genSoilMat(int biome, int d, int soil);
   int genCaveTopAbs(int worldX);
-  int genCaveBiomeAt(int worldX, int worldY);
   bool genIsBackboneCave(int worldX, int worldY);
   bool genIsDeepCave(int worldX, int worldY);
   bool genIsCave(int worldX, int worldY);
@@ -68,7 +92,9 @@ class TerrainGen {
   uint8_t genOreFor(int biome, int worldX, int worldY);
   int caveBottomAbs();
   uint8_t genDeepRockAt(int worldX, int worldY);
-  uint8_t genCellAt(int worldX, int surf, int slope, int biome, int soil, int y);
+  uint8_t genCellAt(
+    int worldX, int surf, int slope, int biome, int surfaceMaterialBiome,
+    int soil, int y);
   double genTreeProb(int biome);
   uint8_t pickTreeType(int biome, int worldX);
   bool genTreeAt(int worldX, int surf);
@@ -85,10 +111,19 @@ class TerrainGen {
     int x = INT_MIN;
     int value = 0;
   };
-  struct BiomeCacheEntry {
+  struct BiomeSite {
+    int x = 0, y = 0;
+    BiomeRef ref;
+  };
+  struct BiomeSiteCacheEntry {
     uint32_t seed = 0;
-    int x = INT_MIN;
-    uint8_t value = BIOME_PLAINS;
+    int gx = INT_MIN, gy = INT_MIN;
+    BiomeSite site;
+  };
+  struct BiomeSampleCacheEntry {
+    uint32_t seed = 0;
+    int x = INT_MIN, y = INT_MIN;
+    BiomeSample sample;
   };
   struct CaveCacheEntry {
     uint32_t seed = 0;
@@ -114,20 +149,27 @@ class TerrainGen {
   };
 
   static constexpr int SURFACE_CACHE_SIZE = 4096;
-  static constexpr int BIOME_CACHE_SIZE = 2048;
+  static constexpr int BIOME_SITE_CACHE_SIZE = 4096;
+  static constexpr int BIOME_SAMPLE_CACHE_SIZE = 16384;
   static constexpr int CAVE_CACHE_SIZE = 16384;
   static constexpr int CAVE_PLAN_CACHE_SIZE = 256;
   static constexpr int DEEP_PLAN_CACHE_SIZE = 256;
 
   Engine& E;
   std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> surfaceCache{};
-  std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> biomeCache{};
+  std::array<BiomeSiteCacheEntry, BIOME_SITE_CACHE_SIZE> biomeSiteCache{};
+  std::array<BiomeSampleCacheEntry, BIOME_SAMPLE_CACHE_SIZE> biomeSampleCache{};
   std::array<CaveCacheEntry, CAVE_CACHE_SIZE> caveCache{};
   std::array<CavePlanCacheEntry, CAVE_PLAN_CACHE_SIZE> cavePlanCache{};
   std::array<DeepPlanCacheEntry, DEEP_PLAN_CACHE_SIZE> deepPlanCache{};
 
   static int floorDiv(int value, int divisor);
-  int classifyBiomeAt(int worldX);
+  double genTemperatureAt(int worldX, int worldY);
+  double genMoistureAt(int worldX, int worldY);
+  int classifySurfaceBiomeAt(int worldX, int worldY);
+  int selectSurfaceBiomeAtSite(int worldX, int worldY);
+  int selectCaveBiomeAtSite(int worldX, int worldY);
+  BiomeSite biomeSite(int gridX, int gridY);
   CaveRegionPlan cavePlan(int region);
   bool taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
                               double startRadius, double endRadius, uint32_t salt);

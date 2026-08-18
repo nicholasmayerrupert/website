@@ -6,6 +6,7 @@ import {
   PLANET, PLANET_COUNT,
   SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
   CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  BIOME_FAMILY,
   SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS,
   SURFACE_BIOME_SELECTION_ORDER,
   SHALLOW_CAVE_BIOME_SELECTION_ORDER,
@@ -60,11 +61,14 @@ for (const planetId of Object.values(PLANET)) {
       sinksOn: false, infinite: true,
     });
     for (let x = -30_000; x <= 30_000; x += 24) {
-      reachedSurface.add(reach.worldBiomeAt(x));
+      const surface = reach.worldBiomeSample(x, reach.worldSurfaceAbsAt(x));
+      if (surface.owner.family === BIOME_FAMILY.SURFACE)
+        reachedSurface.add(surface.owner.biome);
       for (const y of [180, 420, 760, 960, 1400]) {
-        const cave = reach.worldCaveBiomeAt(x, y);
-        reachedCaves.add(cave);
-        planetCaves.add(cave);
+        const cave = reach.worldBiomeSample(x, y);
+        if (cave.owner.family !== BIOME_FAMILY.CAVE) continue;
+        reachedCaves.add(cave.owner.biome);
+        planetCaves.add(cave.owner.biome);
       }
     }
     reach.destroy();
@@ -78,6 +82,44 @@ check('every authored surface biome is reachable through descriptor selection',
 check('every authored cave biome is reachable through descriptor selection',
   CAVE_BIOME_DEFS.every((def) => reachedCaves.has(def.id)));
 const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
+
+let invalidSamples = 0;
+let verticalSurfaceChanges = 0;
+let verticalCaveChanges = 0;
+let blendedSamples = 0;
+for (let x = -4096; x <= 4096; x += 256) {
+  const surface = e.worldSurfaceAbsAt(x);
+  let previousSurface = null;
+  let previousCave = null;
+  for (let y = surface - 2048; y <= surface + 1600; y += 96) {
+    const sample = e.worldBiomeSample(x, y);
+    const ownerCount = sample.owner.family === BIOME_FAMILY.SURFACE
+      ? SURFACE_BIOME_COUNT : CAVE_BIOME_COUNT;
+    const neighborCount = sample.neighbor.family === BIOME_FAMILY.SURFACE
+      ? SURFACE_BIOME_COUNT : CAVE_BIOME_COUNT;
+    invalidSamples += ![BIOME_FAMILY.SURFACE, BIOME_FAMILY.CAVE]
+      .includes(sample.owner.family)
+      || ![BIOME_FAMILY.SURFACE, BIOME_FAMILY.CAVE]
+        .includes(sample.neighbor.family)
+      || sample.owner.biome < 0 || sample.owner.biome >= ownerCount
+      || sample.neighbor.biome < 0 || sample.neighbor.biome >= neighborCount
+      || sample.blend < 0 || sample.blend > 0.502;
+    blendedSamples += sample.blend > 0;
+    if (sample.owner.family === BIOME_FAMILY.SURFACE) {
+      verticalSurfaceChanges += previousSurface !== null
+        && previousSurface !== sample.owner.biome;
+      previousSurface = sample.owner.biome;
+    } else {
+      verticalCaveChanges += previousCave !== null
+        && previousCave !== sample.owner.biome;
+      previousCave = sample.owner.biome;
+    }
+  }
+}
+check('the unified field returns one valid owner and a bounded visual neighbour',
+  invalidSamples === 0 && blendedSamples > 0);
+check('surface and cave biomes form finite 2D regions instead of vertical strips',
+  verticalSurfaceChanges > 8 && verticalCaveChanges > 8);
 
 // Surface height is a pure function of worldX (no biome term), so it must be
 // smooth — adjacent columns differ by ~1 cell, never a biome-seam cliff.

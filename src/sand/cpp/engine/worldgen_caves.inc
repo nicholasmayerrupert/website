@@ -386,8 +386,9 @@
              + (int)(whash2(sseed ^ 0x11u, gx, gy) * CAVE_DRESSING_LATTICE);
       int wy = gy * CAVE_DRESSING_LATTICE
              + (int)(whash2(sseed ^ 0x22u, gx, gy) * CAVE_DRESSING_LATTICE);
-      int caveBiome = terrain.genCaveBiomeAt(wx, wy);
-      const CaveBiomeDef& caveDef = caveBiomeDef(caveBiome);
+      BiomeSample sample = terrain.genBiomeSampleAt(wx, wy);
+      if (sample.ownerFamily != BF_CAVE) continue;
+      const CaveBiomeDef& caveDef = caveBiomeDef(sample.ownerBiome);
       int caveTop = terrain.genCaveTopAbs(wx);
       int hazardRampBottom = terrain.caveBottomAbs() * 4 / 5;
       double depth01 = std::fmax(0.0, std::fmin(1.0,
@@ -577,8 +578,9 @@
       TerrainGen::DeepCavernPlan p = terrain.deepCavernPlan(gx, gy);
       if (p.centerX + p.radiusX + 8 < wx0 || p.centerX - p.radiusX - 8 > wx1
           || p.centerY + p.radiusY + 8 < wy0 || p.centerY - p.radiusY - 8 > wy1) continue;
-      int biome = terrain.genCaveBiomeAt(p.centerX, p.centerY);
-      const CaveBiomeDef& caveDef = caveBiomeDef(biome);
+      BiomeSample sample = terrain.genBiomeSampleAt(p.centerX, p.centerY);
+      if (sample.ownerFamily != BF_CAVE) continue;
+      const CaveBiomeDef& caveDef = caveBiomeDef(sample.ownerBiome);
       if (!caveDef.deep) continue; // preserve the blended upper-cave pockets
 
       CaveDeepDressingHandler deepHandler =

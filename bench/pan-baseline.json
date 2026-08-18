@@ -73,94 +73,114 @@
   },
   "parallaxHorizontal": {
     "axis": "x",
-    "worst": 0.0468,
+    "worst": 0.02889,
     "layers": [
       {
-        "mismatch": 0.0468,
-        "shift": 1
+        "mismatch": 0.02889,
+        "shift": 1,
+        "covered": 2561
       },
       {
         "mismatch": 0,
-        "shift": 3
-      },
-      {
-        "mismatch": 0.0002,
-        "shift": 4
+        "shift": 3,
+        "covered": 2563
       },
       {
         "mismatch": 0,
-        "shift": 6
+        "shift": 4,
+        "covered": 10535
+      },
+      {
+        "mismatch": 0,
+        "shift": 6,
+        "covered": 8106
       }
     ]
   },
   "parallaxVertical": {
     "axis": "y",
-    "worst": 0.01856,
+    "worst": 0.06113,
     "layers": [
       {
-        "mismatch": 0.00061,
-        "shift": 5
+        "mismatch": 0,
+        "shift": 5,
+        "covered": 2415
       },
       {
-        "mismatch": 0.00057,
-        "shift": 6
+        "mismatch": 0.06113,
+        "shift": 5,
+        "covered": 2830
       },
       {
-        "mismatch": 0.00387,
-        "shift": 7
+        "mismatch": 0,
+        "shift": 7,
+        "covered": 10215
       },
       {
-        "mismatch": 0.01856,
-        "shift": 7
+        "mismatch": 0,
+        "shift": 7,
+        "covered": 8703
       }
     ]
   },
   "perf": {
     "stepMs": 0,
     "actorMs": 0,
-    "renderMs": 5,
+    "renderMs": 127.2,
     "lightMs": 0,
     "fillMs": 0.1,
-    "uploadMs": 0.1,
-    "groundingMs": 0,
-    "crossLayerGroundingMs": 0,
+    "uploadMs": 0.2,
+    "groundingMs": 0.3,
+    "crossLayerGroundingMs": 1.4,
     "componentIndexMs": 0,
-    "assemblyUnionMs": 0,
+    "assemblyUnionMs": 0.4,
     "carryMs": 0,
     "bodyMs": 0,
     "sandMs": 0,
     "liquidMs": 0,
     "gasMs": 0,
-    "reactMs": 0,
+    "reactMs": 0.1,
     "tailMs": 0,
-    "layersMs": 0,
-    "crossMs": 0,
-    "avgFrameMs": 12.177,
-    "p95FrameMs": 83.4,
-    "samples": 26,
-    "dirtyChunks": 0,
-    "dirtyRows": 0,
-    "dirtyCells": 0,
-    "componentCount": 0,
-    "componentCellCount": 0,
-    "crossBondCount": 0,
+    "layersMs": 0.2,
+    "crossMs": 0.4,
+    "avgFrameMs": 16.09,
+    "p95FrameMs": 99.9,
+    "samples": 29,
+    "dirtyChunks": 2,
+    "dirtyRows": 6,
+    "dirtyCells": 154,
+    "componentCount": 1878,
+    "componentCellCount": 124193,
+    "crossBondCount": 628,
     "worldShifts": 0,
-    "actorTick": 535,
-    "worldTick": 168,
-    "mirrorWorldTick": 168,
-    "worldTps": 32.07112804636024,
-    "workerControls": 15,
+    "actorTick": 555,
+    "worldTick": 179,
+    "mirrorWorldTick": 179,
+    "worldTps": 39.2809116002548,
+    "workerStatus": "live-no-diffs",
+    "workerStage": "scheduled",
+    "workerStageAgeMs": 378.6,
+    "workerProgressAgeMs": 378.6,
+    "workerAwaitingAck": false,
+    "workerTickLag": 0,
+    "authorityHeapMB": 96,
+    "workerControls": 18,
     "workerResizePending": false,
     "workerResizeControls": 0,
-    "workerControlWorldX": -51,
+    "workerControlWorldX": -40,
     "workerControlWorldY": -97,
     "workerEdges": 0,
     "workerToolWrites": 0,
-    "mirrorApplyMs": 0.10000002384185791,
-    "mirrorPacketBytes": 6172,
+    "mirrorApplyMs": 0.19999998807907104,
+    "mirrorPacketBytes": 50268,
+    "mirrorPacketType": "diff",
+    "mirrorShiftPackets": 1,
+    "mirrorShiftPacketBytes": 191692,
+    "mirrorPacketErrors": 0,
+    "lastMirrorPacketError": "",
     "actorSteps": 3,
     "actorDebtMs": 0,
-    "actorDroppedMs": 66.6,
+    "actorDroppedMs": 133.5,
     "worldStepped": false,
     "wasmHeapMB": 96,
     "rows": 352,

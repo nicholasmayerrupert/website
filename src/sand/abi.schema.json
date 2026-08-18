@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 32,
+  "abiVersion": 33,
   "objectWires": {
     "player": {
       "$comment": "Player object projection shared by the WASM snapshot adapter, authority protocol, prediction, and presentation. `source` declares aliases from the engine object shape; mine fields exist only on the wire object.",
@@ -355,12 +355,25 @@
       "snapshotStorage": "int32",
       "snapshotWriters": [{ "name": "writeObjectiveSnapshot" }]
     },
+    "biomeSample": {
+      "$comment": "int32 owner/neighbor sample from the authoritative 2D biome field. blend is quantized to 0..128, where 128 is an equal boundary mix.",
+      "cPrefix": "BS",
+      "fields": [
+        { "name": "ownerFamily", "kind": "i32", "snapshotMember": "ownerFamily" },
+        { "name": "ownerBiome", "kind": "i32", "snapshotMember": "ownerBiome" },
+        { "name": "neighborFamily", "kind": "i32", "snapshotMember": "neighborFamily" },
+        { "name": "neighborBiome", "kind": "i32", "snapshotMember": "neighborBiome" },
+        { "name": "blend", "kind": "i32", "snapshotMember": "blend" }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeBiomeSampleSnapshot" }]
+    },
     "worldContext": {
       "$comment": "int32 semantic description of one absolute world coordinate. Feature bounds are inclusive and feature ids are stable for a worldgen version.",
       "cPrefix": "WC",
       "fields": [
-        { "name": "surfaceBiome", "kind": "i32", "snapshotMember": "surfaceBiome" },
-        { "name": "caveBiome", "kind": "i32", "snapshotMember": "caveBiome" },
+        { "name": "biomeFamily", "kind": "i32", "snapshotMember": "biomeFamily" },
+        { "name": "biome", "kind": "i32", "snapshotMember": "biome" },
         { "name": "surfaceY", "kind": "i32", "snapshotMember": "surfaceY" },
         { "name": "depth", "kind": "i32", "snapshotMember": "depth" },
         { "name": "tags", "kind": "u32", "snapshotMember": "tags" },
@@ -725,6 +738,17 @@
           "facilityShell": "IRON_ORE", "facilityWall": "IRON_ORE", "facilityTrim": "LIGHT"
         }
       ]
+    },
+    "BiomeFamily": {
+      "$comment": "Namespace for ids returned by the unified 2D biome field.",
+      "cName": "BiomeFamily",
+      "cType": "uint8_t",
+      "jsName": "BIOME_FAMILY",
+      "jsPrefix": "BF",
+      "values": {
+        "BF_SURFACE": 0,
+        "BF_CAVE": 1
+      }
     },
     "SurfaceBiome": {
       "$comment": "Surface climate classification returned by semantic world queries.",

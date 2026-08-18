@@ -167,12 +167,10 @@ try {
       }
       return { count, minY, maxY, meanY: count ? sumY / count : -1 };
     };
-    let visualKey = 0;
     const sample = (camY, phase) => {
       background.draw({
         camY,
         dayNight: sampleDayNight(phase),
-        dayVisualKey: ++visualKey,
       });
       return {
         stars: stats(['#e1f1f3', '#f9e7b7', '#b9dcff']),

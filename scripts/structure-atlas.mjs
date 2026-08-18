@@ -130,15 +130,15 @@ function captureDeepMonuments(engine) {
           const context = engine.worldContextAt(offX + x, offY + y);
           if (context.featureKind !== WORLD_FEATURE.DEEP_STRUCTURE
               || foundFeatures.has(context.featureId)
-              || !deepById.has(context.caveBiome)
-              || foundBiomes.has(context.caveBiome)) continue;
+              || !deepById.has(context.biome)
+              || foundBiomes.has(context.biome)) continue;
           pending.push(context);
           foundFeatures.add(context.featureId);
-          foundBiomes.add(context.caveBiome);
+          foundBiomes.add(context.biome);
         }
       }
       for (const context of pending) {
-        const def = deepById.get(context.caveBiome);
+        const def = deepById.get(context.biome);
         capture(engine, def.name, context.bounds, 220, 112);
       }
       engine.shiftWorldXY(160, 0);

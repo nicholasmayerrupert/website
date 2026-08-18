@@ -116,7 +116,6 @@ export function createSandGame(container, opts = {}) {
     // Render-only day/night state is initialized by gameLoop before the first
     // engine build. Engine recreation reapplies its current quantized skylight.
     dayNight: null,
-    dayVisualKey: 0,
     dayPhaseOverride: null,
     appliedSkyLight: -1,
 

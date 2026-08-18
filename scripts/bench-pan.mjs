@@ -11,6 +11,11 @@ import { readFileSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { comparePanResults } from './bench-pan-compare.mjs';
+import { sampleDayNight } from '../src/sand/game/dayNightCycle.js';
+import { surfaceRidgeColors } from '../src/sand/game/parallaxBackground.js';
+import {
+  BIOME, BIOME_FAMILY, PLANET_PRESENTATION,
+} from '../src/sand/wasmBridge/abi.generated.js';
 
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
@@ -19,6 +24,14 @@ const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : n
 const comparePath = flag('--compare');
 const updatePath = flag('--update');
 const pngDir = flag('--png');
+const PARALLAX_PROBE_SAMPLE = Object.freeze({
+  owner: Object.freeze({ family: BIOME_FAMILY.SURFACE, biome: BIOME.FOREST }),
+  neighbor: Object.freeze({ family: BIOME_FAMILY.SURFACE, biome: BIOME.FOREST }),
+  blend: 0,
+});
+const PARALLAX_PROBE_COLORS = surfaceRidgeColors(
+  PLANET_PRESENTATION.EARTH, sampleDayNight(0.5), PARALLAX_PROBE_SAMPLE.owner,
+);
 
 // --- start dev server ---
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', '5179', '--strictPort'], {
@@ -110,7 +123,7 @@ const PROBE = ({ subSteps, noSnap, axis }) => {
   return { axis, subSteps, cam0: axis === 'x' ? cam0.x : cam0.y, instability: +instability.toFixed(3), perStep: +(instability / subSteps).toFixed(4), worst: +worst.toFixed(4), dbg };
 };
 
-const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
+const PARALLAX_RIGIDITY_PROBE = ({ axis, targetColors, biomeSample }) => {
   const T = window.__sandTest;
   const canvas = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
   const ctx = canvas.getContext('2d');
@@ -120,11 +133,12 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
   const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
   // Exact noon ridge fills isolate the four scenery layers from clouds, facets,
   // and lighting so the comparison measures shape changes rather than motion.
-  const target = [rgb('#718d9a'), rgb('#527264'), rgb('#35634f'), rgb('#222b29')];
+  const target = targetColors.map(rgb);
   const matches = (pixels, index, color) =>
     ((pixels[index] << 16) | (pixels[index + 1] << 8) | pixels[index + 2]) === color;
 
   T.setPaused(true);
+  T.setBackdropSample(biomeSample);
   T.setDayPhase(0.5);
   const cam0 = T.getCam();
   if (axis === 'y') {
@@ -142,7 +156,7 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
   const after = grab();
 
   const layers = target.map((color) => {
-    let best = Infinity, bestShift = 0;
+    let best = Infinity, bestShift = 0, bestCovered = 0;
     for (let shift = -12; shift <= 12; shift++) {
       let changed = 0, covered = 0;
       for (let y = 12; y < H - 12; y += stride) for (let x = 12; x < W - 12; x += stride) {
@@ -155,14 +169,19 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
         covered++;
         if (a !== b) changed++;
       }
-      const ratio = covered ? changed / covered : 0;
-      if (ratio < best) { best = ratio; bestShift = shift; }
+      const ratio = covered ? changed / covered : 1;
+      if (ratio < best) {
+        best = ratio;
+        bestShift = shift;
+        bestCovered = covered;
+      }
     }
-    return { mismatch: +best.toFixed(5), shift: bestShift };
+    return { mismatch: +best.toFixed(5), shift: bestShift, covered: bestCovered };
   });
 
   T.setCam(cam0.x, cam0.y);
   T.clearDayPhase();
+  T.setBackdropSample(null);
   T.setPaused(false);
   return {
     axis,
@@ -228,8 +247,14 @@ try {
   // Sub-cell pan instability (root-cause flicker metric).
   const flicker = await page.evaluate(PROBE, { axis: 'x', subSteps: 24, noSnap: !!process.env.NO_SNAP });
   const verticalFlicker = await page.evaluate(PROBE, { axis: 'y', subSteps: 24, noSnap: !!process.env.NO_SNAP });
-  const parallaxHorizontal = await page.evaluate(PARALLAX_RIGIDITY_PROBE, { axis: 'x' });
-  const parallaxVertical = await page.evaluate(PARALLAX_RIGIDITY_PROBE, { axis: 'y' });
+  const parallaxHorizontal = await page.evaluate(PARALLAX_RIGIDITY_PROBE, {
+    axis: 'x', targetColors: PARALLAX_PROBE_COLORS,
+    biomeSample: PARALLAX_PROBE_SAMPLE,
+  });
+  const parallaxVertical = await page.evaluate(PARALLAX_RIGIDITY_PROBE, {
+    axis: 'y', targetColors: PARALLAX_PROBE_COLORS,
+    biomeSample: PARALLAX_PROBE_SAMPLE,
+  });
 
   // Optionally dump downscaled frames at two sub-cell pan phases so the moiré
   // banding (what the user sees) is visible to the eye.
@@ -295,8 +320,8 @@ const report = [
   `  cursor->cell round-trip worst error: ${result.cursor.worstCellErr} cells (must be 0)`,
   `  horizontal sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`,
   `  vertical sub-cell instability: total ${result.verticalFlicker.instability}  perStep ${result.verticalFlicker.perStep}  worst ${result.verticalFlicker.worst}`,
-  `  horizontal parallax rigidity: worst ${(result.parallaxHorizontal.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxHorizontal.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}`).join('  ')}`,
-  `  vertical parallax rigidity: worst ${(result.parallaxVertical.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxVertical.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}`).join('  ')}`,
+  `  horizontal parallax rigidity: worst ${(result.parallaxHorizontal.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxHorizontal.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}/n${layer.covered}`).join('  ')}`,
+  `  vertical parallax rigidity: worst ${(result.parallaxVertical.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxVertical.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}/n${layer.covered}`).join('  ')}`,
 ];
 if (result.flicker.dbg) report.push(`  horizontal dbg cam0=${result.flicker.cam0} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
 if (result.verticalFlicker.dbg) report.push(`  vertical dbg cam0=${result.verticalFlicker.cam0} steps(resid/shift): ${result.verticalFlicker.dbg.join('  ')}`);

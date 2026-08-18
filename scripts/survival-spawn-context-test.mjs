@@ -5,7 +5,7 @@
 
 import {
   initSandWasm, createEngineWasm, PLANET, BIOME, CAVE_BIOME,
-  WORLD_AREA, WORLD_FEATURE,
+  WORLD_AREA, WORLD_FEATURE, BIOME_FAMILY,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
@@ -116,8 +116,9 @@ for (let radius = 0; radius <= 24000
     const context = earth.worldContextAt(x, y);
     if (context.featureKind !== WORLD_FEATURE.NONE
         || !has(context, WORLD_AREA.SURFACE)
-        || surfacePoints.has(context.surfaceBiome)) continue;
-    surfacePoints.set(context.surfaceBiome, { context, x, y });
+        || context.biomeFamily !== BIOME_FAMILY.SURFACE
+        || surfacePoints.has(context.biome)) continue;
+    surfacePoints.set(context.biome, { context, x, y });
   }
 }
 for (const biome of Object.values(BIOME)) {
@@ -137,8 +138,9 @@ for (let x = -12000; x <= 12000
     const context = earth.worldContextAt(x, y);
     if (context.featureKind !== WORLD_FEATURE.NONE
         || !has(context, WORLD_AREA.UNDERGROUND)
-        || cavePoints.has(context.caveBiome)) continue;
-    cavePoints.set(context.caveBiome, { context, x, y });
+        || context.biomeFamily !== BIOME_FAMILY.CAVE
+        || cavePoints.has(context.biome)) continue;
+    cavePoints.set(context.biome, { context, x, y });
   }
 }
 for (const biome of Object.values(CAVE_BIOME)) {
@@ -184,7 +186,7 @@ const settlement = findContext(earth,
     && !has(context, WORLD_AREA.INDOOR),
   { minX: -60000, maxX: 60000, xStep: 4, minDepth: -4, maxDepth: 0 });
 const ordinarySettlementBiome = settlement
-  ? surfacePoints.get(settlement.context.surfaceBiome) : null;
+  ? surfacePoints.get(settlement.context.biome) : null;
 check('settlements raise dynamiteer affinity without narrowing the surface pool',
   settlement && ordinarySettlementBiome
     && samePool(poolAt(earth, settlement.x, settlement.y), SURFACE_ROSTER)

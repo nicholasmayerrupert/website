@@ -114,15 +114,14 @@ bool CreatureSystem::worldRuleAllows(
       || (context.tags & rule.excludedTags) != 0
       || context.depth < rule.minDepth || context.depth > rule.maxDepth)
     return false;
-  uint32_t surfaceBit = context.surfaceBiome >= 0
-      && context.surfaceBiome < SURFACE_BIOME_COUNT
-    ? 1u << context.surfaceBiome : 0;
-  uint32_t caveBit = context.caveBiome >= 0
-      && context.caveBiome < CAVE_BIOME_COUNT
-    ? 1u << context.caveBiome : 0;
-  bool biomeAllowed = (context.tags & WA_UNDERGROUND)
-    ? (rule.allowedCaveBiomes & caveBit) != 0
-    : (rule.allowedSurfaceBiomes & surfaceBit) != 0;
+  uint32_t biomeBit = context.biome >= 0 && context.biome < 32
+    ? 1u << context.biome : 0;
+  bool biomeAllowed = context.biomeFamily == BF_CAVE
+    ? context.biome < CAVE_BIOME_COUNT
+      && (rule.allowedCaveBiomes & biomeBit) != 0
+    : context.biomeFamily == BF_SURFACE
+      && context.biome < SURFACE_BIOME_COUNT
+      && (rule.allowedSurfaceBiomes & biomeBit) != 0;
   return biomeAllowed;
 }
 
@@ -141,15 +140,11 @@ int CreatureSystem::worldSpawnWeight(
   int weight = rule.baseWeight;
   if (rule.preferredTags && (context.tags & rule.preferredTags))
     weight += rule.preferredBonus;
-  uint32_t surfaceBit = context.surfaceBiome >= 0
-      && context.surfaceBiome < SURFACE_BIOME_COUNT
-    ? 1u << context.surfaceBiome : 0;
-  uint32_t caveBit = context.caveBiome >= 0
-      && context.caveBiome < CAVE_BIOME_COUNT
-    ? 1u << context.caveBiome : 0;
-  if ((context.tags & WA_UNDERGROUND)
-      ? (rule.preferredCaveBiomes & caveBit) != 0
-      : (rule.preferredSurfaceBiomes & surfaceBit) != 0)
+  uint32_t biomeBit = context.biome >= 0 && context.biome < 32
+    ? 1u << context.biome : 0;
+  if (context.biomeFamily == BF_CAVE
+      ? (rule.preferredCaveBiomes & biomeBit) != 0
+      : (rule.preferredSurfaceBiomes & biomeBit) != 0)
     weight += rule.preferredBonus;
   return weight;
 }
@@ -513,12 +508,12 @@ void CreatureSystem::updateVillageResidents() {
         || village.right < E.fg.worldOffsetX
         || village.left >= E.fg.worldOffsetX + E.cols) continue;
 
-    int outdoorCandidates[16] = {};
+    int outdoorCandidates[64] = {};
     int outdoorCount = 0;
     int span = imax(1, village.right - village.left - 16);
     int start = 8 + (int)(whash1(
       E.fg.worldSeed ^ 0x711A6E51u, q) * span);
-    for (int attempt = 0; attempt < 8; attempt++) {
+    for (int attempt = 0; attempt < 32; attempt++) {
       int x = village.left + 8 + (start + attempt * 37) % span;
       int surface = E.terrain.genSurfaceAbs(x);
       outdoorCandidates[outdoorCount++] = x;

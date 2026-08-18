@@ -102,6 +102,11 @@ export function installDevHooks(ctx, {
   window.__sandTest = {
     setCam(x, y) { engine()?.cameraSet(x, y); render(false); },
     getCam() { return engine() ? engine().getCam() : { x: 0, y: 0 }; },
+    getBackdropState() { return ctx.parallax.getState(); },
+    setBackdropSample(sample) {
+      ctx.parallax.setBiomeSampleOverride(sample);
+      render(false);
+    },
     render(full = false) { render(full); },
     // vertical-streaming hooks (browser test): trigger a stream pass + read the
     // 2D world offset, to verify a world shift is seamless on screen.

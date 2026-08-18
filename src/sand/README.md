@@ -245,6 +245,8 @@ optional gzip compression.
   renderer, rigid bodies, terrain, tools, and semantic world context.
 - `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
   feature hierarchy and absolute-coordinate semantic queries.
+- `cpp/engine/terrain.hpp` and `terrain_impl.inc`: the deterministic 2D biome
+  region field, terrain profiles, and absolute-coordinate cell generation.
 - `cpp/engine/missions.hpp`, `missions.inc`, and `missions_impl.inc`: authored
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
@@ -266,6 +268,8 @@ optional gzip compression.
 - `wasmBridge/engineFactory.js`: production JS adapter for the WASM ABI.
 - `wasmBridge/testHooks.js`: test-only ABI adapters.
 - `game/createSandGame.js`: browser runtime and presentation loop.
+- `game/parallaxBackground.js` and `parallaxProfiles.js`: reusable pixel-art
+  backdrop renderer and the composable planet/biome presentation catalogue.
 - `worker/`: offline authority worker and main-thread replica client.
 - `game/replayCapsule.js`, `game/replayPanel.js`: versioned replay text codec
   and the `L` copy/paste UI.
@@ -343,6 +347,13 @@ to generated cells, feature containment, or semantic identity increments that
 version and adds the matching `GOLDEN_BY_VERSION` entry in
 `scripts/worldgen-version-test.mjs` after the output has been inspected.
 
+Biome ownership comes from one deterministic two-dimensional region field.
+`engine.worldBiomeSample(worldX, worldY)` returns an owning family/biome, its
+nearest distinct neighbor, and a bounded blend weight. Terrain, context,
+spawning, and the parallax backdrop consume that same sample. Terrain ecotones
+use stable coordinate dithering; the backdrop alpha-blends distant scenery and
+uses a complementary 4x4 mask for crisp near silhouettes.
+
 The extension path for each registry is explicit:
 
 | Extension | Authoritative edit | Generated/runtime path | Focused verification |
@@ -353,7 +364,7 @@ The extension path for each registry is explicit:
 | Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, network replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
 | Plant species using existing policies | One `plantSpecies` record plus any seed/wood/leaf material identity records it references, all in `materials.schema.json`; select reusable growth and worldgen profiles | Generated material/species tables drive growth, worldgen, crafting, and palette metadata | `node scripts/run-tests.mjs --only mat-generator`, `node scripts/run-tests.mjs --only flora`, and `node scripts/run-tests.mjs --only biomes` |
 | Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its named palette/sprite asset in `glpresenter_impl.inc` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
-| Biome | Append one stable-ID surface or cave record in `biomes.schema.json`; climate is optional for profile-only biomes, surface rows declare structure eligibility, and offworld records inherit `offworldMaterialDefaults`; `cave_profile_handlers.def` composes selectors from `cave_handler_policies.def`; manually bump `abiVersion` because public biome enums import these IDs | Generated C++/JS descriptors own selection, terrain, flora, hazards, structure-material constraints, policy selectors, and ABI enum imports | `node scripts/run-tests.mjs --only biome-generator`, `node scripts/run-tests.mjs --only biomes`, and the relevant prefetch/seam suite; include `--only worldgen-version` when output changes |
+| Biome | Append one stable-ID surface or cave record in `biomes.schema.json`; add its visual motif to `game/parallaxProfiles.js`; climate is optional for profile-only biomes, surface rows declare structure eligibility, and offworld records inherit `offworldMaterialDefaults`; `cave_profile_handlers.def` composes selectors from `cave_handler_policies.def`; manually bump `abiVersion` because public biome enums import these IDs | Generated C++/JS descriptors own selection, terrain, flora, hazards, structure-material constraints, policy selectors, and ABI enum imports; the shared 2D sample drives terrain, context, spawning, and backdrop blending | `node scripts/run-tests.mjs --only biome-generator`, `node scripts/run-tests.mjs --only biomes`, `node scripts/run-tests.mjs --only day-night`, and the relevant prefetch/seam suite; include `--only worldgen-version` when output changes |
 | Planet using existing profiles | One explicit-ID `PlanetId.descriptors` record in `abi.schema.json`, selecting compatible generation/off-world-material and presentation profiles plus gameplay capabilities | Generated C++/JS descriptors own identity, gravity, load-bearing facility materials, capability flags, and lookup helpers | `node scripts/run-tests.mjs --only planet-selection`, `node scripts/run-tests.mjs --only planet-gravity`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generated feature/site family | One `worldgen_features.def` row plus its localized plan/query/overlap/stamp callbacks; add stable semantic enums in `abi.schema.json` only for a public identity | The row generates the family enum, callback declarations, dispatch, reach, composition, and context registration | `node scripts/run-tests.mjs --only world-context`, `node scripts/run-tests.mjs --only structures`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generation stage | One dense-ID `worldgen_stages.def` row in execution order plus a stage callback in `world_context_impl.inc`, or the shared generated-feature callback; insertion/reordering is a worldgen-version change | The row owns profile applicability, order, feature-stage selection, overscan, and dispatch | `node scripts/run-tests.mjs --only worldgen-quality`, `node scripts/run-tests.mjs --only worldgen-version`, and the affected domain suite |

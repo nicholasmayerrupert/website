@@ -15,7 +15,10 @@
     // background or a prefetched scratch band is active. This keeps placement
     // decisions byte-identical across both layers.
     auto groundAnchorY = [&](int x) {
-      int biome = terrain.genBiomeAt(x);
+      BiomeSample sample = terrain.genBiomeSampleAt(
+        x, terrain.genSurfaceAbs(x));
+      int biome = sample.ownerFamily == BF_SURFACE
+        ? sample.ownerBiome : BIOME_PLAINS;
       return terrain.genSurfaceAbs(x) + TerrainGen::GEN_SKIN
            + terrain.genSoilDepthAt(x, biome);
     };
@@ -342,7 +345,10 @@
     int wx0 = rectX0 - feature.overscanX;
     int wx1 = rectX1 + feature.overscanX;
     auto groundAnchorY = [&](int x) {
-      int biome = terrain.genBiomeAt(x);
+      BiomeSample sample = terrain.genBiomeSampleAt(
+        x, terrain.genSurfaceAbs(x));
+      int biome = sample.ownerFamily == BF_SURFACE
+        ? sample.ownerBiome : BIOME_PLAINS;
       return terrain.genSurfaceAbs(x) + TerrainGen::GEN_SKIN
            + terrain.genSoilDepthAt(x, biome);
     };

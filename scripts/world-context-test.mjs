@@ -4,7 +4,7 @@
 
 import {
   initSandWasm, createEngineWasm, PLANET, BIOME, WORLD_AREA, WORLD_FEATURE,
-  WORLD_SITE_ROLE, MAT,
+  WORLD_SITE_ROLE, MAT, BIOME_FAMILY,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
@@ -126,7 +126,8 @@ check('deep monuments are planned and exposed by the shared feature catalogue',
 
 const ordinarySurface = villageCommons && findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.NONE
-    && context.surfaceBiome === villageCommons.context.surfaceBiome
+    && context.biomeFamily === BIOME_FAMILY.SURFACE
+    && context.biome === villageCommons.context.biome
     && has(context, WORLD_AREA.SURFACE),
   {
     minX: villageCommons.x - 1000,
@@ -149,11 +150,13 @@ check('settlements raise the dynamiteer spawn-pool affinity',
         CREATURE.DYNAMITEER, ordinarySurface.x, ordinarySurface.y));
 
 const plains = findContext(earth,
-  (context) => context.surfaceBiome === BIOME.PLAINS
+  (context) => context.biomeFamily === BIOME_FAMILY.SURFACE
+    && context.biome === BIOME.PLAINS
     && context.featureKind === WORLD_FEATURE.NONE,
   { minX: -12000, maxX: 12000, minDepth: 0, maxDepth: 0, xStep: 16 });
 const swamp = findContext(earth,
-  (context) => context.surfaceBiome === BIOME.SWAMP
+  (context) => context.biomeFamily === BIOME_FAMILY.SURFACE
+    && context.biome === BIOME.SWAMP
     && context.featureKind === WORLD_FEATURE.NONE,
   { minX: -12000, maxX: 12000, minDepth: 0, maxDepth: 0, xStep: 16 });
 check('surface biome changes caustic-mortarman spawn-pool affinity',
@@ -164,7 +167,8 @@ check('surface biome changes caustic-mortarman spawn-pool affinity',
 
 const ordinaryCave = mine && findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.NONE
-    && context.caveBiome === mine.context.caveBiome
+    && context.biomeFamily === BIOME_FAMILY.CAVE
+    && context.biome === mine.context.biome
     && has(context, WORLD_AREA.UNDERGROUND)
     === has(mine.context, WORLD_AREA.UNDERGROUND)
     && has(context, WORLD_AREA.DEEP) === has(mine.context, WORLD_AREA.DEEP),
@@ -197,7 +201,8 @@ check('viewport size does not change semantic world records',
   beforeShift && wideContext
     && beforeShift.featureId === wideContext.featureId
     && beforeShift.siteRole === wideContext.siteRole
-    && beforeShift.surfaceBiome === wideContext.surfaceBiome);
+    && beforeShift.biomeFamily === wideContext.biomeFamily
+    && beforeShift.biome === wideContext.biome);
 wide.destroy();
 earth.destroy();
 

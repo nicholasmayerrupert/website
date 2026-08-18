@@ -3,7 +3,7 @@
 // features/monuments survive deterministic streaming.
 
 import {
-  initSandWasm, createEngineWasm, MAT, CAVE_BIOME_DEFS,
+  initSandWasm, createEngineWasm, MAT, CAVE_BIOME_DEFS, BIOME_FAMILY,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -75,8 +75,10 @@ function floodFromSurface(engine, region) {
     const engine = mk(96, 96, seed);
     for (let y = 864; y <= 2400; y += 104)
       for (let x = -3600; x <= 3600; x += 144) {
-        const biome = engine.worldCaveBiomeAt(x, y);
-        if (counts.has(biome)) counts.set(biome, counts.get(biome) + 1);
+        const sample = engine.worldBiomeSample(x, y);
+        if (sample.owner.family === BIOME_FAMILY.CAVE
+            && counts.has(sample.owner.biome))
+          counts.set(sample.owner.biome, counts.get(sample.owner.biome) + 1);
       }
     engine.destroy();
   }
@@ -234,8 +236,8 @@ function deepWindowMetrics(engine, cols, rows) {
 {
   let movedCells = 0, compared = 0;
   for (const [worldX, worldY, wall] of [
-    [5927, 883, MAT.BRICK],       // crystal observatory
-    [3467, 768, MAT.SANDSTONE],   // fossil conservatory
+    [420, 780, MAT.BRICK],          // deep brick hall
+    [13420, 820, MAT.SANDSTONE],    // fossil conservatory
   ]) {
     const COLS = 320, ROWS = 240;
     const engine = mk(COLS, ROWS, 3053);

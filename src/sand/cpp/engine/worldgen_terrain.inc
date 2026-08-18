@@ -38,8 +38,17 @@
       int worldX = L->worldOffsetX + lx;
       int surf = surfAbsScratch[j + 1] - L->worldOffsetY;
       int slope = std::abs(surfAbsScratch[j + 2] - surfAbsScratch[j]);
-      int biome = terrain.genBiomeAt(worldX); int soil = terrain.genSoilDepthAt(worldX, biome);
-      for (int y = rowStart; y < rowEnd; y++) L->grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
+      int worldSurface = surfAbsScratch[j + 1];
+      BiomeSample biomeSample = terrain.genBiomeSampleAt(worldX, worldSurface);
+      int biome = biomeSample.ownerFamily == BF_SURFACE
+        ? biomeSample.ownerBiome : BIOME_PLAINS;
+      BiomeRef materialBiome = terrain.genMaterialBiomeAt(worldX, worldSurface);
+      int materialBiomeId = materialBiome.family == BF_SURFACE
+        ? materialBiome.biome : BIOME_PLAINS;
+      int soil = terrain.genSoilDepthAt(worldX, biome);
+      for (int y = rowStart; y < rowEnd; y++)
+        L->grid[y * cols + lx] = terrain.genCellAt(
+          worldX, surf, slope, biome, materialBiomeId, soil, y);
     }
   }
   // Trees are background silhouettes over already-generated terrain. The generated
@@ -67,7 +76,10 @@
       }
       if (nearVillage) continue;
       if (!terrain.genTreeAt(worldX, surf)) continue;
-      int biome = terrain.genBiomeAt(worldX);
+      BiomeSample sample = terrain.genBiomeSampleAt(
+        worldX, surf + L->worldOffsetY);
+      if (sample.ownerFamily != BF_SURFACE) continue;
+      int biome = sample.ownerBiome;
       uint8_t pt = terrain.pickTreeType(biome, worldX);
       const PlantWorldgenProfileDef& plantProfile =
         plantWorldgenProfileForSpecies(pt);

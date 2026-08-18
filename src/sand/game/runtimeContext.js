@@ -35,7 +35,6 @@
  * @property {boolean} previewDirty
  * @property {number} perfRenderMs
  * @property {*|null} dayNight
- * @property {number} dayVisualKey
  * @property {number|null} dayPhaseOverride
  * @property {number} appliedSkyLight
  * @property {string} currentToolName

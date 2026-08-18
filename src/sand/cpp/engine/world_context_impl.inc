@@ -72,8 +72,10 @@ bool WorldContextSystem::villageBuildingPlan(
   int left = center - width / 2;
   if (queryX != INT_MIN
       && (queryX <= left || queryX >= left + width)) return false;
-  int biome = E.terrain.genBiomeAt(center);
   int ground = E.terrain.genSurfaceAbs(center);
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(center, ground);
+  if (biomeSample.ownerFamily != BF_SURFACE) return false;
+  int biome = biomeSample.ownerBiome;
   if (ground >= E.L->gSeaRow
       || !surfaceBiomeDef(biome).allowsSurfaceStructures) return false;
 
@@ -123,9 +125,10 @@ bool WorldContextSystem::minePlan(int latticeX, MinePlan& out) const {
     + (int)(whash1(seed ^ 0xD16D0002u, latticeX)
             * (MINE_LATTICE - 224));
   int surface = E.terrain.genSurfaceAbs(center);
-  if (surface >= E.L->gSeaRow
-      || !surfaceBiomeDef(
-        E.terrain.genBiomeAt(center)).allowsSurfaceStructures) return false;
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(center, surface);
+  if (surface >= E.L->gSeaRow || biomeSample.ownerFamily != BF_SURFACE
+      || !surfaceBiomeDef(biomeSample.ownerBiome).allowsSurfaceStructures)
+    return false;
 
   int width = 152 + (int)(whash1(seed ^ 0xD16D0003u, latticeX) * 57);
   int levels = whash1(seed ^ 0xD16D0004u, latticeX) < 0.38 ? 4 : 3;
@@ -259,9 +262,10 @@ bool WorldContextSystem::ruinPlan(
             * RUIN_BASE_HEIGHT_VARIATION);
 
   Engine::ForegroundTerrainScope foregroundQuery(E.L);
-  int caveBiome = E.terrain.genCaveBiomeAt(
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(
     left + width / 2, candidateY + height / 2);
-  CaveBiomeProfile caveProfile = caveBiomeDef(caveBiome).profile;
+  if (biomeSample.ownerFamily != BF_CAVE) return false;
+  CaveBiomeProfile caveProfile = caveBiomeDef(biomeSample.ownerBiome).profile;
   double pick = whash2(seed ^ 0x9001u, latticeX, latticeY);
   RuinKind kind = RK_COUNT;
   for (const RuinArchetypeDef& archetype : RUIN_ARCHETYPES) {
@@ -340,7 +344,10 @@ bool WorldContextSystem::deepStructurePlan(
 
   Engine::ForegroundTerrainScope foregroundQuery(E.L);
   TerrainGen::DeepCavernPlan cavern = E.terrain.deepCavernPlan(gridX, gridY);
-  int biome = E.terrain.genCaveBiomeAt(cavern.centerX, cavern.centerY);
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(
+    cavern.centerX, cavern.centerY);
+  if (biomeSample.ownerFamily != BF_CAVE) return false;
+  int biome = biomeSample.ownerBiome;
   const CaveBiomeDef& biomeDef = caveBiomeDef(biome);
   if (!biomeDef.deep) return false;
 
@@ -408,7 +415,9 @@ bool WorldContextSystem::outcropPlan(int latticeX, OutcropPlan& out) const {
   out.latticeX = latticeX;
   out.center = center;
   out.floorY = floorY;
-  out.biome = E.terrain.genBiomeAt(center);
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(center, floorY);
+  if (biomeSample.ownerFamily != BF_SURFACE) return false;
+  out.biome = biomeSample.ownerBiome;
   out.height = height;
   out.style = outcropProfile.style;
   out.lean = outcropProfile.style == OCS_MINERAL_SPIRE
@@ -762,8 +771,9 @@ bool WorldContextSystem::queryOffworldFacility(
 WorldContext WorldContextSystem::at(int worldX, int worldY) const {
   Engine::ForegroundTerrainScope foregroundQuery(E.L);
   WorldContext context;
-  context.surfaceBiome = E.terrain.genBiomeAt(worldX);
-  context.caveBiome = E.terrain.genCaveBiomeAt(worldX, worldY);
+  BiomeSample biomeSample = E.terrain.genBiomeSampleAt(worldX, worldY);
+  context.biomeFamily = biomeSample.ownerFamily;
+  context.biome = biomeSample.ownerBiome;
   context.surfaceY = E.terrain.genSurfaceAbs(worldX);
   context.depth = worldY - context.surfaceY;
   context.tags = context.depth > 10 ? WA_UNDERGROUND : WA_SURFACE;

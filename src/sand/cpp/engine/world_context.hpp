@@ -7,8 +7,8 @@ struct Engine;
 class WorldContextSystem;
 
 struct WorldContext {
-  int surfaceBiome = BIOME_PLAINS;
-  int caveBiome = CAVE_DEFAULT;
+  int biomeFamily = BF_SURFACE;
+  int biome = BIOME_PLAINS;
   int surfaceY = 0;
   int depth = 0;
   uint32_t tags = 0;

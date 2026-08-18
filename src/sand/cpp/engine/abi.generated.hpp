@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 32;
+static const int ABI_VERSION = 33;
 
-static const uint64_t ABI_FINGERPRINT = 0xb4993485dfaaULL;
+static const uint64_t ABI_FINGERPRINT = 0x98f0c1bf7f39ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -600,10 +600,29 @@ inline void writeObjectiveSnapshot(int32_t* out, const Record& record) {
   out[OS_FLAGS] = static_cast<int32_t>(record.flags);
 }
 
-// worldContext: surfaceBiome, caveBiome, surfaceY, depth, tags, featureKind, siteRole, featureId, parentFeatureId, left, top, right, bottom
+// biomeSample: ownerFamily, ownerBiome, neighborFamily, neighborBiome, blend
+enum BiomeSampleField : int {
+  BS_OWNER_FAMILY = 0,
+  BS_OWNER_BIOME = 1,
+  BS_NEIGHBOR_FAMILY = 2,
+  BS_NEIGHBOR_BIOME = 3,
+  BS_BLEND = 4,
+};
+static const int BS_STRIDE = 5;
+
+template <class Record>
+inline void writeBiomeSampleSnapshot(int32_t* out, const Record& record) {
+  out[BS_OWNER_FAMILY] = static_cast<int32_t>(record.ownerFamily);
+  out[BS_OWNER_BIOME] = static_cast<int32_t>(record.ownerBiome);
+  out[BS_NEIGHBOR_FAMILY] = static_cast<int32_t>(record.neighborFamily);
+  out[BS_NEIGHBOR_BIOME] = static_cast<int32_t>(record.neighborBiome);
+  out[BS_BLEND] = static_cast<int32_t>(record.blend);
+}
+
+// worldContext: biomeFamily, biome, surfaceY, depth, tags, featureKind, siteRole, featureId, parentFeatureId, left, top, right, bottom
 enum WorldContextField : int {
-  WC_SURFACE_BIOME = 0,
-  WC_CAVE_BIOME = 1,
+  WC_BIOME_FAMILY = 0,
+  WC_BIOME = 1,
   WC_SURFACE_Y = 2,
   WC_DEPTH = 3,
   WC_TAGS = 4,
@@ -620,8 +639,8 @@ static const int WC_STRIDE = 13;
 
 template <class Record>
 inline void writeWorldContextSnapshot(int32_t* out, const Record& record) {
-  out[WC_SURFACE_BIOME] = static_cast<int32_t>(record.surfaceBiome);
-  out[WC_CAVE_BIOME] = static_cast<int32_t>(record.caveBiome);
+  out[WC_BIOME_FAMILY] = static_cast<int32_t>(record.biomeFamily);
+  out[WC_BIOME] = static_cast<int32_t>(record.biome);
   out[WC_SURFACE_Y] = static_cast<int32_t>(record.surfaceY);
   out[WC_DEPTH] = static_cast<int32_t>(record.depth);
   out[WC_TAGS] = static_cast<int32_t>(record.tags);
@@ -944,6 +963,20 @@ static constexpr bool isPlanetIdValue(int value) {
 
 static const int PLANET_COUNT = 4;
 static const uint32_t PLANET_ALL_MASK = 0xfu;
+
+enum BiomeFamily : uint8_t {
+  BF_SURFACE = 0,
+  BF_CAVE = 1,
+};
+
+static constexpr bool isBiomeFamilyValue(int value) {
+  switch (value) {
+    case BF_SURFACE:
+    case BF_CAVE:
+      return true;
+    default: return false;
+  }
+}
 
 enum Biome : int {
   BIOME_PLAINS = 0,

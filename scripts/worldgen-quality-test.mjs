@@ -16,12 +16,16 @@ const mk = (cols, rows, seed) => createEngineWasm({
   const seed = 0x51A7E;
   const small = mk(192, 160, seed);
   const large = mk(320, 320, seed);
+  const biomeKey = (sample) => [
+    sample.owner.family, sample.owner.biome,
+    sample.neighbor.family, sample.neighbor.biome, sample.blend,
+  ].join(':');
   let queryMismatches = 0;
   for (let x = -1200; x <= 1200; x += 7) {
     if (small.worldSurfaceAbsAt(x) !== large.worldSurfaceAbsAt(x)) queryMismatches++;
-    if (small.worldBiomeAt(x) !== large.worldBiomeAt(x)) queryMismatches++;
     for (let y = 24; y <= 560; y += 29) {
-      if (small.worldCaveBiomeAt(x, y) !== large.worldCaveBiomeAt(x, y)) queryMismatches++;
+      if (biomeKey(small.worldBiomeSample(x, y))
+          !== biomeKey(large.worldBiomeSample(x, y))) queryMismatches++;
       if (small.worldIsCaveAt(0, x, y) !== large.worldIsCaveAt(0, x, y)) queryMismatches++;
       if (small.worldIsCaveAt(1, x, y) !== large.worldIsCaveAt(1, x, y)) queryMismatches++;
     }

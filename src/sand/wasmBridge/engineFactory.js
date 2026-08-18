@@ -19,6 +19,7 @@ import {
   PLANET_PRESENTATION_BY_ID,
   BIOME, SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
   CAVE_BIOME, CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  BIOME_FAMILY,
   WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
 } from './abi.generated.js';
 import {
@@ -43,6 +44,7 @@ export {
   PLANET_PRESENTATION_BY_ID,
   BIOME, SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
   CAVE_BIOME, CAVE_BIOME_COUNT, CAVE_BIOME_ALL_MASK,
+  BIOME_FAMILY,
   SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS, SURFACE_BIOME_SELECTION_ORDER,
   SHALLOW_CAVE_BIOME_SELECTION_ORDER, DEEP_CAVE_BIOME_SELECTION_ORDER,
   WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
@@ -103,8 +105,8 @@ export function initSandWasm() {
         worldOffsetY: c('engine_world_offset_y', 'number', ['number']),
         worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
         worldSurfaceAbsAt: c('engine_world_surface_abs_at', 'number', ['number', 'number']),
-        worldBiomeAt: c('engine_world_biome_at', 'number', ['number', 'number']),
-        worldCaveBiomeAt: c('engine_world_cave_biome_at', 'number', ['number', 'number', 'number']),
+        worldBiomeSample: c('engine_world_biome_sample', null,
+          ['number', 'number', 'number', 'number']),
         worldContextAt: c('engine_world_context_at', null,
           ['number', 'number', 'number', 'number']),
         worldIsCaveAt: c('engine_world_is_cave_at', 'number', ['number', 'number', 'number', 'number']),
@@ -383,7 +385,8 @@ const renderStrides = Object.freeze({
     fixedScratch.push(allocation);
     return allocation;
   };
-  let seedOut, seedDraftOut, glOffOut, camOut, perfOut, ambienceOut, worldContextOut;
+  let seedOut, seedDraftOut, glOffOut, camOut, perfOut, ambienceOut,
+    biomeSampleOut, worldContextOut;
   try {
     seedOut = fixedAlloc(8, 'seed result');
     seedDraftOut = fixedAlloc(12, 'seed draft result');
@@ -394,6 +397,7 @@ const renderStrides = Object.freeze({
       AMBIENCE_GROUP_COUNT * AMBIENCE_SAMPLE_STRIDE * 4,
       'ambience result',
     );
+    biomeSampleOut = fixedAlloc(STRIDES.biomeSample * 4, 'biome sample result');
     worldContextOut = fixedAlloc(STRIDES.worldContext * 4, 'world context result');
   } catch (error) {
     for (const allocation of fixedScratch) mod._free(allocation);
@@ -775,6 +779,7 @@ const renderStrides = Object.freeze({
       mod._free(camOut);
       mod._free(perfOut);
       mod._free(ambienceOut);
+      mod._free(biomeSampleOut);
       mod._free(worldContextOut);
       M.destroy(ptr);
       if (releaseGlTarget && glTargetKey) {
@@ -804,16 +809,31 @@ const renderStrides = Object.freeze({
     getWorldOffsetY() { return M.worldOffsetY(ptr); },
     worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
     worldSurfaceAbsAt(worldX) { return M.worldSurfaceAbsAt(ptr, worldX); },
-    worldBiomeAt(worldX) { return M.worldBiomeAt(ptr, worldX); },
-    worldCaveBiomeAt(worldX, worldY) { return M.worldCaveBiomeAt(ptr, worldX, worldY); },
+    worldBiomeSample(worldX, worldY) {
+      M.worldBiomeSample(ptr, worldX | 0, worldY | 0, biomeSampleOut);
+      const values = new Int32Array(
+        mod.HEAP32.buffer, biomeSampleOut, STRIDES.biomeSample);
+      const B = OFF.biomeSample;
+      return {
+        owner: {
+          family: values[B.ownerFamily],
+          biome: values[B.ownerBiome],
+        },
+        neighbor: {
+          family: values[B.neighborFamily],
+          biome: values[B.neighborBiome],
+        },
+        blend: values[B.blend] / 255,
+      };
+    },
     worldContextAt(worldX, worldY) {
       M.worldContextAt(ptr, worldX | 0, worldY | 0, worldContextOut);
       const values = new Int32Array(
         mod.HEAP32.buffer, worldContextOut, STRIDES.worldContext);
       const W = OFF.worldContext;
       return {
-        surfaceBiome: values[W.surfaceBiome],
-        caveBiome: values[W.caveBiome],
+        biomeFamily: values[W.biomeFamily],
+        biome: values[W.biome],
         surfaceY: values[W.surfaceY],
         depth: values[W.depth],
         tags: values[W.tags] >>> 0,

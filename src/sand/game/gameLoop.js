@@ -33,11 +33,9 @@ export function createGameLoop(ctx, {
   const dayCycleStart = performance.now();
   let dayVisualBucket = 0;
   ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
-  ctx.dayVisualKey = 0;
 
-  const applyDayPhase = (phase, visualKey) => {
+  const applyDayPhase = (phase) => {
     ctx.dayNight = sampleDayNight(phase);
-    ctx.dayVisualKey = visualKey;
     if (ctx.engine) {
       // Always resend the sampled value. This keeps rapid manual changes and
       // Auto resumption from trusting a stale JS cache; the C++ presenter still
@@ -54,20 +52,20 @@ export function createGameLoop(ctx, {
     const bucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
     if (bucket === dayVisualBucket) return false;
     dayVisualBucket = bucket;
-    return applyDayPhase(dayPhaseAt(elapsed), bucket);
+    return applyDayPhase(dayPhaseAt(elapsed));
   };
 
   const setDayPhase = (phase) => {
     const p = normalizeDayPhase(phase);
     ctx.dayPhaseOverride = p;
-    return applyDayPhase(p, `forced:${p.toFixed(6)}`);
+    return applyDayPhase(p);
   };
 
   const clearDayPhase = () => {
     ctx.dayPhaseOverride = null;
     const elapsed = Math.max(0, performance.now() - dayCycleStart);
     dayVisualBucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
-    return applyDayPhase(dayPhaseAt(elapsed), dayVisualBucket);
+    return applyDayPhase(dayPhaseAt(elapsed));
   };
 
   // Rolling perf samples for window.__sandPerf / perfStats()

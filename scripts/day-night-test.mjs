@@ -13,9 +13,16 @@ import {
   celestialOrbitY,
   cloudCycleOffset,
   paletteForPhase,
+  neighborDitherSelected,
   ridgeFacetDepths,
   skyAltitudeLayout,
 } from '../src/sand/game/parallaxBackground.js';
+import {
+  backdropProfilesComplete,
+} from '../src/sand/game/parallaxProfiles.js';
+import {
+  CAVE_BIOME_COUNT, SURFACE_BIOME_COUNT,
+} from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('day/night cycle');
@@ -108,6 +115,16 @@ check('the star boundary descends at exactly the far mountain rate',
 check('space eventually fills the viewport with the upper atmosphere',
   close(spaceSky.starBottom, 180)
     && spaceSky.gradientTop > 180);
+check('every biome has one composable backdrop profile',
+  backdropProfilesComplete(SURFACE_BIOME_COUNT, CAVE_BIOME_COUNT));
+const lowHalf = Array.from({ length: 16 }, (_, rank) =>
+  neighborDitherSelected(rank, 0.5, true));
+const highHalf = Array.from({ length: 16 }, (_, rank) =>
+  neighborDitherSelected(rank, 0.5, false));
+check('near-plane boundary dither is balanced and complementary',
+  lowHalf.filter(Boolean).length === 8
+    && highHalf.filter(Boolean).length === 8
+    && lowHalf.every((selected, rank) => selected !== highHalf[rank]));
 
 const failures = done();
 process.exit(failures === 0 ? 0 : 1);

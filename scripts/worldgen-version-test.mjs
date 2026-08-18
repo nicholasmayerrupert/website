@@ -9,6 +9,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const GOLDEN_BY_VERSION = Object.freeze({
   4: 0x713a6ff7,
+  5: 0xb4143f84,
 });
 const SEEDS = [0, 0xBED, 0xC0FFEE];
 const WINDOWS = [
@@ -40,8 +41,8 @@ function hashBytes(values) {
   for (const value of values) hashByte(value);
 }
 function hashContext(context) {
-  hashU32(context.surfaceBiome);
-  hashU32(context.caveBiome);
+  hashU32(context.biomeFamily);
+  hashU32(context.biome);
   hashU32(context.surfaceY);
   hashU32(context.depth);
   hashU32(context.tags);

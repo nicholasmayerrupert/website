@@ -7,9 +7,29 @@ The infinite world has two kinds of state:
 - Mutated cells and live actors are stored by the streaming and actor systems.
 
 `WorldContextSystem` owns the generated facts used outside terrain stamping. A
-query returns the surface biome, cave biome, surface Y, depth, composable area
-tags, and the innermost generated feature at one absolute world coordinate.
+query returns the owning biome family and biome, surface Y, depth, composable
+area tags, and the innermost generated feature at one absolute world coordinate.
 Feature IDs and parent IDs are stable within a worldgen/context version.
+
+## Unified biome field
+
+`engine.worldBiomeSample(worldX, worldY)` is the public biome query. One
+deterministic, warped two-dimensional region field returns:
+
+- `owner`: the nearest biome region's family and biome ID
+- `neighbor`: the nearest distinct biome region
+- `blend`: a normalized weight near their boundary
+
+Surface and cave are families in this single field rather than independent
+coordinate lookups. A narrow depth gate keeps the surface/cave handoff aligned
+with the generated cave roof. Raster generation, semantic context, natural
+spawning, and background presentation all consume the same result.
+
+The owner controls topology and semantic identity. Material skins choose between
+same-family neighbors with stable absolute-coordinate dithering, so chunk order
+and streaming cannot move an ecotone. The backdrop uses the same pair and weight:
+distant opaque layers crossfade, while near pixel silhouettes use complementary
+4x4 masks to stay sharp.
 
 The compile-time catalogue is authored one row per family in
 `cpp/engine/worldgen_features.def`. That row generates the family enum,
@@ -46,8 +66,9 @@ surrounding `VILLAGE`. A mine gallery uses `UNDERGROUND`, `STRUCTURE`, and
 `MINE`.
 
 `engine.worldContextAt(worldX, worldY)` exposes the packed context through the
-WASM adapter. Bounds are inclusive. The query is independent of the loaded
-window, camera, and viewport size.
+WASM adapter as `biomeFamily`, `biome`, terrain fields, tags, and feature
+identity. Bounds are inclusive. The query is independent of the loaded window,
+camera, and viewport size.
 
 ## Natural spawn composition
 

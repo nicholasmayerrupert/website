@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
   initSandWasm, createEngineWasm,
-  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS,
+  SURFACE_BIOME_DEFS, CAVE_BIOME_DEFS, BIOME_FAMILY,
 } from '../src/sand/wasmBridge/engineFactory.js';
 
 const output = resolve(process.argv[2] || 'bench/worldgen-atlas.png');
@@ -80,7 +80,7 @@ const biomes = new Uint8Array(WIDTH);
 for (let px = 0; px < WIDTH; px++) {
   const wx = WORLD_X0 + px * X_SCALE;
   surfaces[px] = engine.worldSurfaceAbsAt(wx);
-  biomes[px] = engine.worldBiomeAt(wx);
+  biomes[px] = engine.worldBiomeSample(wx, surfaces[px]).owner.biome;
 }
 
 function paintPixel(x, y, color) {
@@ -109,7 +109,9 @@ for (let layer = 0; layer < 2; layer++) {
           color = mix([19, 31, 52], [72, 112, 145], sky);
         }
       } else if (engine.worldIsCaveAt(layer, wx, wy)) {
-        color = caveColors[engine.worldCaveBiomeAt(wx, wy)];
+        const sample = engine.worldBiomeSample(wx, wy);
+        color = sample.owner.family === BIOME_FAMILY.CAVE
+          ? caveColors[sample.owner.biome] : biomeColor;
         if (layer) color = mix([15, 18, 24], color, 0.58);
       } else {
         const depth = Math.max(0, wy - surface);

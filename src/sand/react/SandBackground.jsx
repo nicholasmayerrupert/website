@@ -24,7 +24,6 @@ export function SandBackground({ className = '' }) {
       background.draw({
         camY: SURFACE_CAM_Y,
         dayNight: INITIAL_DAY_NIGHT,
-        dayVisualKey: 'hero',
       });
     };
     const resizeObserver = new ResizeObserver(draw);

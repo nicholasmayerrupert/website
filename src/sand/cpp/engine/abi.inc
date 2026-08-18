@@ -61,8 +61,16 @@ EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->fg.worldOf
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_y(Engine* e) { return e->fg.worldOffsetY; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_abs_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genSurfaceAbs(worldX) : 0; }
-EMSCRIPTEN_KEEPALIVE int engine_world_biome_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genBiomeAt(worldX) : 0; }
-EMSCRIPTEN_KEEPALIVE int engine_world_cave_biome_at(Engine* e, int worldX, int worldY) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genCaveBiomeAt(worldX, worldY) : 0; }
+EMSCRIPTEN_KEEPALIVE void engine_world_biome_sample(
+    Engine* e, int worldX, int worldY, int* out) {
+  Engine::ActiveLayerScope active(*e, &e->fg, &e->fg);
+  if (e->fg.infinite) {
+    BiomeSample sample = e->terrain.genBiomeSampleAt(worldX, worldY);
+    writeBiomeSampleSnapshot(out, sample);
+  } else {
+    memset(out, 0, BS_STRIDE * sizeof(int));
+  }
+}
 EMSCRIPTEN_KEEPALIVE void engine_world_context_at(
     Engine* e, int worldX, int worldY, int* out) {
   Engine::ActiveLayerScope active(*e, &e->fg, &e->fg);

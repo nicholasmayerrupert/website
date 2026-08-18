@@ -13,7 +13,7 @@ import {
   celestialOrbitY,
   cloudCycleOffset,
   paletteForPhase,
-  neighborDitherSelected,
+  neighborMountainSelected,
   ridgeFacetDepths,
   skyAltitudeLayout,
 } from '../src/sand/game/parallaxBackground.js';
@@ -117,14 +117,14 @@ check('space eventually fills the viewport with the upper atmosphere',
     && spaceSky.gradientTop > 180);
 check('every biome has one composable backdrop profile',
   backdropProfilesComplete(SURFACE_BIOME_COUNT, CAVE_BIOME_COUNT));
-const lowHalf = Array.from({ length: 16 }, (_, rank) =>
-  neighborDitherSelected(rank, 0.5, true));
-const highHalf = Array.from({ length: 16 }, (_, rank) =>
-  neighborDitherSelected(rank, 0.5, false));
-check('near-plane boundary dither is balanced and complementary',
-  lowHalf.filter(Boolean).length === 8
-    && highHalf.filter(Boolean).length === 8
-    && lowHalf.every((selected, rank) => selected !== highHalf[rank]));
+const lowHalf = Array.from({ length: 128 }, (_, slot) =>
+  neighborMountainSelected(slot, 0.5, true));
+const highHalf = Array.from({ length: 128 }, (_, slot) =>
+  neighborMountainSelected(slot, 0.5, false));
+check('mountain-scale biome weaving is balanced and stable across owner swaps',
+  lowHalf.filter(Boolean).length > 48
+    && lowHalf.filter(Boolean).length < 80
+    && lowHalf.every((selected, slot) => selected !== highHalf[slot]));
 
 const failures = done();
 process.exit(failures === 0 ? 0 : 1);

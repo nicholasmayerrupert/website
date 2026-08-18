@@ -351,8 +351,10 @@ Biome ownership comes from one deterministic two-dimensional region field.
 `engine.worldBiomeSample(worldX, worldY)` returns an owning family/biome, its
 nearest distinct neighbor, and a bounded blend weight. Terrain, context,
 spawning, and the parallax backdrop consume that same sample. Terrain ecotones
-use stable coordinate dithering; the backdrop alpha-blends distant scenery and
-uses a complementary 4x4 mask for crisp near silhouettes.
+use stable coordinate dithering. The backdrop keeps its sky and distant ridges
+stable, then assigns connected foreground mountain sections to same-family
+neighbors with deterministic absolute-coordinate slots. Cave biomes change
+only the nearest cave silhouettes and their details.
 
 The extension path for each registry is explicit:
 

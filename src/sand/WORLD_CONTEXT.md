@@ -28,8 +28,9 @@ spawning, and background presentation all consume the same result.
 The owner controls topology and semantic identity. Material skins choose between
 same-family neighbors with stable absolute-coordinate dithering, so chunk order
 and streaming cannot move an ecotone. The backdrop uses the same pair and weight:
-distant opaque layers crossfade, while near pixel silhouettes use complementary
-4x4 masks to stay sharp.
+the sky and distant ridges stay stable, while deterministic mountain-scale slots
+weave same-family artwork across one connected foreground silhouette. Cave biome
+identity is confined to the nearest cave layer.
 
 The compile-time catalogue is authored one row per family in
 `cpp/engine/worldgen_features.def`. That row generates the family enum,

@@ -30,7 +30,7 @@ const PARALLAX_PROBE_SAMPLE = Object.freeze({
   blend: 0,
 });
 const PARALLAX_PROBE_COLORS = surfaceRidgeColors(
-  PLANET_PRESENTATION.EARTH, sampleDayNight(0.5), PARALLAX_PROBE_SAMPLE.owner,
+  PLANET_PRESENTATION.EARTH, sampleDayNight(0.5),
 );
 
 // --- start dev server ---

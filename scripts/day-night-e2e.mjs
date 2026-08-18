@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { NOON_SKY_LIGHT, SUNRISE_PHASE, SUNSET_PHASE } from '../src/sand/game/dayNightCycle.js';
 import { SURFACE_CAM_Y } from '../src/sand/game/parallaxBackground.js';
+import { BIOME_FAMILY, CAVE_BIOME } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { getAvailablePort } from './test-port.mjs';
 
@@ -234,6 +235,43 @@ try {
   await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
   const cloudFrameA2 = await backgroundHash();
   check('clouds move with manual time and return deterministically', cloudFrameC !== cloudFrameA && cloudFrameA2 === cloudFrameA);
+
+  const caveIsolation = await page.evaluate(({ family, crystal, mushroom }) => {
+    const test = window.__sandTest;
+    const canvas = document.querySelector('sand-game').shadowRoot
+      .querySelector('.sand-parallax-bg');
+    const context = canvas.getContext('2d');
+    const pixelsFor = (biome) => {
+      test.setBackdropSample({
+        owner: { family, biome }, neighbor: { family, biome }, blend: 0,
+      });
+      return context.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+    const a = pixelsFor(crystal);
+    const b = pixelsFor(mushroom);
+    let distantChanges = 0;
+    let foregroundChanges = 0;
+    for (let y = 0; y < canvas.height; y++) {
+      const foreground = y < canvas.height * 0.18 || y >= canvas.height * 0.78;
+      const distant = y >= canvas.height * 0.20 && y < canvas.height * 0.72;
+      if (!foreground && !distant) continue;
+      for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        const changed = a[i] !== b[i] || a[i + 1] !== b[i + 1]
+          || a[i + 2] !== b[i + 2];
+        if (changed && foreground) foregroundChanges++;
+        if (changed && distant) distantChanges++;
+      }
+    }
+    test.setBackdropSample(null);
+    return { distantChanges, foregroundChanges };
+  }, {
+    family: BIOME_FAMILY.CAVE,
+    crystal: CAVE_BIOME.CRYSTAL,
+    mushroom: CAVE_BIOME.MUSHROOM,
+  });
+  check(`cave biome art is isolated to the foreground (${caveIsolation.foregroundChanges} foreground, ${caveIsolation.distantChanges} distant changes)`,
+    caveIsolation.foregroundChanges > 20 && caveIsolation.distantChanges === 0);
 
   await page.evaluate(() => window.__sandTest.clearDayPhase());
   const desktopTime = page.locator('sand-game').locator('.sg-time');

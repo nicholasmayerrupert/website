@@ -1,6 +1,6 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
 import {
-  BIOME, BIOME_FAMILY, PLANET, PLANET_PRESENTATION,
+  BIOME, BIOME_FAMILY, CAVE_BIOME, PLANET, PLANET_PRESENTATION,
   PLANET_PRESENTATION_BY_ID,
 } from '../wasmBridge/abi.generated.js';
 import { resolveBackdropProfile } from './parallaxProfiles.js';
@@ -339,7 +339,6 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   const surfaceWorldBaseRawY = (worldX) => ridgeY(worldX, base, amp, seed);
   const surfaceWorldRawY = (worldX) => surfaceWorldBaseRawY(worldX) - offY;
   const surfaceWorldY = (worldX) => Math.round(surfaceWorldBaseRawY(worldX)) - offY;
-  const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
   const surfaceY = (x) => surfaceWorldY(x + offX);
   const surfacePoints = [];
   const firstWorldX = Math.floor((offX - RIDGE_SAMPLE_STEP) / RIDGE_SAMPLE_STEP) * RIDGE_SAMPLE_STEP;
@@ -417,12 +416,8 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   return {
     offX,
     offY,
-    minimumSurfaceY: base - offY - amp * 1.23,
-    surfaceRawY,
     surfaceWorldRawY,
     surfaceWorldY,
-    surfaceY,
-    surfacePoints,
   };
 }
 
@@ -450,28 +445,6 @@ function drawSnowCap(ctx, points, snow, snowLine, amp) {
       if (depth > 0) ctx.fillRect(x, left.y, 1, depth);
     }
   }
-}
-
-function drawSnowCaps(ctx, ridge, base, amp, color, daylight) {
-  const snowLine = base - ridge.offY - amp * 0.16;
-  const snow = mixColor(color, '#f5f5e9', 0.42 + daylight * 0.34);
-  const points = ridge.surfacePoints;
-
-  let previous = points[0];
-  let cap = [];
-  for (let i = 1; i < points.length; i++) {
-    const point = points[i];
-    if (point.rawY < snowLine) {
-      if (cap.length === 0) cap.push(previous);
-      cap.push(point);
-    } else if (cap.length) {
-      cap.push(point);
-      drawSnowCap(ctx, cap, snow, snowLine, amp);
-      cap = [];
-    }
-    previous = point;
-  }
-  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp);
 }
 
 function drawPine(ctx, x, groundY, height, dark, light) {
@@ -602,7 +575,7 @@ function drawLodge(ctx, x, platformY, variant, light, ridge, worldX) {
   ctx.globalAlpha = 1;
 }
 
-function drawLodges(ctx, w, ridge, seed, daylight) {
+function drawLodges(ctx, w, ridge, seed, daylight, accepts) {
   const period = 540;
   const first = Math.floor((ridge.offX - period) / period) * period;
   const light = 1 - smooth01((daylight - 0.08) / 0.68);
@@ -619,6 +592,7 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
         worldX = candidate;
       }
     }
+    if (!accepts(worldX)) continue;
     const x = worldX - ridge.offX;
     if (x < -28 || x > w + 28 || slope > 6) continue;
     const platformY = Math.min(
@@ -638,31 +612,26 @@ function paletteForPresentation(presentationProfile, dayNight) {
   return NIGHT;
 }
 
-function biomePalette(palette, profile, planet) {
-  const tint = {
+function surfaceTint(profile) {
+  return {
     grass: '#789467', pine: '#315f4a', cactus: '#b5784b',
     spire: '#77777a', tundra: '#b6ccd1', jungle: '#26704a',
     reeds: '#405d4c',
-  }[profile.motif] || palette.ridgeNear;
-  const amount = planet.key === 'earth' ? 0.22 : 0.10;
-  return {
-    ...palette,
-    ridgeFar: mixColor(palette.ridgeFar, tint, amount * 0.42),
-    ridgeMid: mixColor(palette.ridgeMid, tint, amount * 0.68),
-    ridgeNear: mixColor(palette.ridgeNear, tint, amount),
-  };
+  }[profile.motif] || '#526c61';
 }
 
-export function surfaceRidgeColors(presentationProfile, dayNight, biomeRef) {
-  const resolved = resolveBackdropProfile(presentationProfile, biomeRef);
-  if (resolved.biome.cave) throw new RangeError('surface biome required');
-  const palette = biomePalette(
-    paletteForPresentation(presentationProfile, dayNight),
-    resolved.biome,
-    resolved.planet,
-  );
+function surfaceAccentColor(palette, profile, planet) {
+  const amount = planet.key === 'earth' ? 0.38 : 0.18;
+  return mixColor(palette.ridgeNear, surfaceTint(profile), amount);
+}
+
+export function surfaceRidgeColors(presentationProfile, dayNight) {
+  const palette = paletteForPresentation(presentationProfile, dayNight);
   return [
-    palette.ridgeFar, palette.ridgeMid, palette.ridgeNear, palette.ridgeDeep,
+    palette.ridgeFar,
+    palette.ridgeMid,
+    palette.ridgeNear,
+    palette.ridgeDeep,
   ];
 }
 
@@ -673,19 +642,56 @@ function resolvedSurfaceMotif(profile, planet) {
     ? 'spire' : profile.motif;
 }
 
-function drawSurfaceMotifs(ctx, w, h, ridge, profile, palette, planet, seed) {
-  const motif = resolvedSurfaceMotif(profile, planet);
-  const spacing = Math.max(6, Math.round(19 - profile.density * 10));
+const BIOME_MOUNTAIN_SPAN = 48;
+
+function biomeRefKey(ref) {
+  return ref.family * 256 + ref.biome;
+}
+
+export function neighborMountainSelected(slot, blend, ownerFirst) {
+  const rank = rand01(slot * 1877 + 0x51a7);
+  return ownerFirst ? rank < blend : rank >= 1 - blend;
+}
+
+function biomePair(sample, family, fallback) {
+  const owner = sample?.owner?.family === family ? sample.owner : fallback;
+  const neighbor = sample?.neighbor?.family === family
+    ? sample.neighbor : owner;
+  const distinct = biomeRefKey(owner) !== biomeRefKey(neighbor);
+  return {
+    owner,
+    neighbor,
+    blend: distinct ? clamp(Number(sample?.blend) || 0, 0, 0.5) : 0,
+  };
+}
+
+function createProfilePicker(presentationProfile, pair) {
+  const ownerFirst = biomeRefKey(pair.owner) < biomeRefKey(pair.neighbor);
+  return (worldX) => {
+    const slot = Math.floor(worldX / BIOME_MOUNTAIN_SPAN);
+    const useNeighbor = pair.blend > 0
+      && neighborMountainSelected(slot, pair.blend, ownerFirst);
+    return resolveBackdropProfile(
+      presentationProfile, useNeighbor ? pair.neighbor : pair.owner,
+    );
+  };
+}
+
+function drawSurfaceMotifs(ctx, w, h, ridge, profileAt, palette, planet) {
+  const spacing = 9;
   const first = Math.floor((ridge.offX - spacing) / spacing) * spacing;
-  const dark = mixColor(palette.ridgeNear, '#050b09', 0.62);
-  const light = mixColor(palette.ridgeNear, palette.skyLow, 0.34);
   for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
-    const roll = rand01(worldX + seed * 613);
+    const profile = profileAt(worldX).biome;
+    const motif = resolvedSurfaceMotif(profile, planet);
+    const roll = rand01(worldX + 7612);
     if (roll > profile.density) continue;
     const x = worldX - ridge.offX;
     const ground = ridge.surfaceWorldY(worldX) + 1;
-    const height = 3 + Math.floor(rand01(worldX + seed * 991) * 7);
+    const height = 3 + Math.floor(rand01(worldX + 12289) * 7);
     if (ground - height > h) continue;
+    const accent = surfaceAccentColor(palette, profile, planet);
+    const dark = mixColor(accent, '#050b09', 0.62);
+    const light = mixColor(accent, palette.skyLow, 0.34);
     ctx.fillStyle = dark;
     if (motif === 'pine' || motif === 'tundra') {
       drawPine(ctx, x, ground, motif === 'tundra' ? Math.max(4, height - 2) : height, dark, light);
@@ -728,12 +734,9 @@ function drawSurfaceMotifs(ctx, w, h, ridge, profile, palette, planet, seed) {
   }
 }
 
-function drawSurfaceBase(ctx, w, h, args, resolved) {
+function drawSurfaceBase(ctx, w, h, args, planet) {
   const { camX, camY, scale, dayNight, horizon, skyHeight } = args;
-  const { planet, biome: profile } = resolved;
-  const palette = biomePalette(
-    paletteForPresentation(args.presentationProfile, dayNight), profile, planet,
-  );
+  const palette = paletteForPresentation(args.presentationProfile, dayNight);
   const altitude = skyAltitudeLayout(camY, h, horizon);
   const sky = ctx.createLinearGradient(
     0, planet.key === 'earth' ? altitude.gradientTop : 0,
@@ -766,38 +769,89 @@ function drawSurfaceBase(ctx, w, h, args, resolved) {
     drawCloudLayer(ctx, w, skyHeight, camX, camY, 0.14,
       palette.cloudLight, 2, 210, dayNight.phase, scale);
   }
-  const relief = profile.relief * planet.relief;
-  const far = drawRidge(ctx, w, h, camX, camY, FAR_RIDGE_DEPTH,
+  const relief = planet.relief;
+  drawRidge(ctx, w, h, camX, camY, FAR_RIDGE_DEPTH,
     horizon + 17, 18 * relief, palette.ridgeFar, 3.2,
     palette.skyLow, 2, scale);
-  if (profile.snow) drawSnowCaps(ctx, far, horizon + 17, 18 * relief,
-    palette.ridgeFar, dayNight.daylight);
-  const mid = drawRidge(ctx, w, h, camX, camY, 0.34,
+  drawRidge(ctx, w, h, camX, camY, 0.34,
     horizon + 29, 17 * relief, palette.ridgeMid, 7.9,
     palette.skyLow, 3, scale);
-  if (profile.landmark && planet.key === 'earth')
-    drawLodges(ctx, w, mid, 7.9, dayNight.daylight);
-  if (profile.haze) {
-    ctx.globalAlpha = profile.haze * 0.12;
-    ctx.fillStyle = palette.skyLow;
-    ctx.fillRect(0, horizon + 22, w, 3 + profile.haze * 5);
-    ctx.globalAlpha = 1;
+}
+
+function mountainBoundary(ridge, nominalX) {
+  let bestX = nominalX;
+  let bestY = -Infinity;
+  for (let dx = -12; dx <= 12; dx += RIDGE_SAMPLE_STEP) {
+    const y = ridge.surfaceWorldY(nominalX + dx);
+    if (y > bestY) {
+      bestX = nominalX + dx;
+      bestY = y;
+    }
+  }
+  return bestX;
+}
+
+function drawSurfaceBiomeAccents(
+  ctx, w, ridge, profileAt, palette, planet, daylight, base, amp,
+) {
+  const firstSlot = Math.floor((ridge.offX - BIOME_MOUNTAIN_SPAN)
+    / BIOME_MOUNTAIN_SPAN);
+  const lastSlot = Math.ceil((ridge.offX + w + BIOME_MOUNTAIN_SPAN)
+    / BIOME_MOUNTAIN_SPAN);
+  for (let slot = firstSlot; slot <= lastSlot; slot++) {
+    const nominalLeft = slot * BIOME_MOUNTAIN_SPAN;
+    const left = mountainBoundary(ridge, nominalLeft);
+    const right = mountainBoundary(ridge, nominalLeft + BIOME_MOUNTAIN_SPAN);
+    const profile = profileAt(nominalLeft + BIOME_MOUNTAIN_SPAN * 0.5).biome;
+    const accent = surfaceAccentColor(palette, profile, planet);
+    const points = [];
+    for (let worldX = left; worldX < right; worldX += RIDGE_SAMPLE_STEP) {
+      points.push({
+        x: worldX - ridge.offX,
+        y: ridge.surfaceWorldY(worldX),
+        rawY: ridge.surfaceWorldRawY(worldX),
+        worldX,
+      });
+    }
+    points.push({
+      x: right - ridge.offX,
+      y: ridge.surfaceWorldY(right),
+      rawY: ridge.surfaceWorldRawY(right),
+      worldX: right,
+    });
+    ctx.fillStyle = mixColor(accent, palette.skyLow, 0.34);
+    for (let i = 1; i < points.length; i++)
+      ctx.fillRect(points[i - 1].x, points[i - 1].y + 1,
+        points[i].x - points[i - 1].x, 1);
+    if (profile.snow) {
+      const snowLine = base - ridge.offY - amp * 0.16;
+      const snow = mixColor(
+        accent, '#f5f5e9', 0.28 + profile.snow * 0.28 + daylight * 0.24,
+      );
+      drawSnowCap(ctx, points, snow, snowLine, amp);
+    }
   }
 }
 
-function drawSurfaceNear(ctx, w, h, args, resolved) {
+function drawSurfaceNear(ctx, w, h, args, pair) {
   const { camX, camY, scale, dayNight, horizon } = args;
-  const { planet, biome: profile } = resolved;
-  const palette = biomePalette(
-    paletteForPresentation(args.presentationProfile, dayNight), profile, planet,
-  );
-  const relief = profile.relief * planet.relief;
+  const profileAt = createProfilePicker(args.presentationProfile, pair);
+  const { planet } = profileAt(camX);
+  const palette = paletteForPresentation(args.presentationProfile, dayNight);
+  const relief = planet.relief;
+  const amp = 21 * relief;
   const near = drawRidge(ctx, w, h, camX, camY, 0.52,
-    horizon + 47, 21 * relief, palette.ridgeNear, 12.4,
+    horizon + 47, amp, palette.ridgeNear, 12.4,
     palette.skyLow, 4, scale);
-  if (profile.snow) drawSnowCaps(ctx, near, horizon + 47, 21 * relief,
-    palette.ridgeNear, dayNight.daylight);
-  drawSurfaceMotifs(ctx, w, h, near, profile, palette, planet, 12.4);
+  drawSurfaceBiomeAccents(
+    ctx, w, near, profileAt, palette, planet, dayNight.daylight,
+    horizon + 47, amp,
+  );
+  drawSurfaceMotifs(ctx, w, h, near, profileAt, palette, planet);
+  if (planet.key === 'earth') {
+    drawLodges(ctx, w, near, 12.4, dayNight.daylight,
+      (worldX) => !!profileAt(worldX).biome.landmark);
+  }
   drawRidge(ctx, w, h, camX, camY, 0.70,
     horizon + 103, 13, palette.ridgeDeep, 18.5,
     palette.skyLow, 2, scale);
@@ -832,106 +886,23 @@ function drawCaveBand(ctx, w, h, camX, camY, depth, fromTop,
   return { offX, contour };
 }
 
-function drawCaveBase(ctx, w, h, args, resolved) {
-  const { planet, biome: profile } = resolved;
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, mixColor(planet.caveFar, profile.glow, 0.08));
-  gradient.addColorStop(0.5, planet.caveRock);
-  gradient.addColorStop(1, planet.caveNear);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, w, h);
-  ctx.globalAlpha = 0.14 + profile.density * 0.10;
-  ctx.fillStyle = profile.glow;
-  ctx.fillRect(0, h * 0.39, w, Math.max(2, h * 0.13));
-  ctx.globalAlpha = 1;
-  drawCaveBand(ctx, w, h, args.camX, args.camY, 0.16, true,
-    h * 0.18, h * 0.09, mixColor(planet.caveFar, profile.glow, 0.22),
-    3.7, args.scale);
-  drawCaveBand(ctx, w, h, args.camX, args.camY, 0.22, false,
-    h * 0.18, h * 0.08, mixColor(planet.caveFar, profile.glow, 0.18),
-    8.3, args.scale);
-  const landmarkPeriod = 52;
-  const landmarkOffset = args.camX * 0.28 - w * 0.5;
-  const landmarkFirst = Math.floor((landmarkOffset - landmarkPeriod)
-    / landmarkPeriod) * landmarkPeriod;
-  ctx.globalAlpha = 0.34;
-  for (let worldX = landmarkFirst;
-    worldX < landmarkOffset + w + landmarkPeriod; worldX += landmarkPeriod) {
-    const x = worldX - landmarkOffset;
-    const roll = rand01(worldX + profile.motif.length * 811);
-    if (roll > 0.42 + profile.density * 0.48) continue;
-    const size = 8 + Math.floor(rand01(worldX + 97) * 10);
-    const baseY = h * (0.70 + rand01(worldX + 131) * 0.11);
-    ctx.fillStyle = profile.glow;
-    if (profile.motif === 'crystal' || profile.motif === 'geode') {
-      for (let row = 0; row < size; row++) {
-        const half = Math.floor((size - row) / 5);
-        ctx.fillRect(x - half, baseY - row, half * 2 + 1, 1);
-      }
-      ctx.fillStyle = mixColor(profile.glow, '#ffffff', 0.52);
-      ctx.fillRect(x, baseY - size + 2, 1, Math.max(2, size - 5));
-      if (profile.motif === 'geode') {
-        ctx.fillStyle = mixColor(planet.caveRock, profile.glow, 0.48);
-        ctx.fillRect(x - size, baseY + 3, size * 2, 2);
-      }
-    } else if (profile.motif === 'mushroom') {
-      ctx.fillStyle = mixColor(profile.glow, '#e5d4c4', 0.55);
-      ctx.fillRect(x - 1, baseY - size, 3, size);
-      ctx.fillStyle = profile.glow;
-      ctx.fillRect(x - size / 2, baseY - size - 4, size + 1, 4);
-      ctx.fillRect(x - size / 3, baseY - size - 6, size * 0.66, 2);
-    } else if (profile.motif === 'roots') {
-      const top = h * 0.17;
-      ctx.fillRect(x, top, 2, size + 7);
-      ctx.fillRect(x - 4, top + 5, 1, size);
-      ctx.fillRect(x + 4, top + 2, 1, size + 3);
-    } else if (profile.motif === 'magma') {
-      ctx.globalAlpha = 0.16;
-      ctx.fillRect(x - size, baseY - 5, size * 2, 7);
-      ctx.globalAlpha = 0.58;
-      ctx.fillRect(x - size, baseY - 1, size * 2, 2);
-      ctx.fillRect(x, baseY - size, 2, size);
-    } else if (profile.motif === 'fossil') {
-      ctx.fillStyle = mixColor(profile.glow, '#f3e0b9', 0.42);
-      ctx.fillRect(x, baseY - size, 2, size);
-      for (let rib = 2; rib < size; rib += 3) {
-        const reach = Math.min(9, rib);
-        ctx.fillRect(x - reach, baseY - size + rib, reach * 2 + 2, 1);
-      }
-    } else if (profile.motif === 'void') {
-      ctx.globalAlpha = 0.52;
-      ctx.fillRect(x - 2, h * (0.30 + roll * 0.35), 5, 1);
-      ctx.fillRect(x, h * (0.30 + roll * 0.35) - 2, 1, 5);
-    } else {
-      ctx.fillStyle = mixColor(planet.caveRock, '#aab1b5', 0.24);
-      ctx.fillRect(x - size / 2, baseY - 3, size, 3);
-    }
-  }
-  ctx.globalAlpha = 1;
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = profile.glow;
-  for (let x = 3; x < w; x += 17) {
-    const y = 8 + Math.floor(rand01(x * 71 + profile.motif.length * 37) * (h - 16));
-    if (rand01(x * 113) < profile.density * 0.42) ctx.fillRect(x, y, 1, 1);
-  }
-  ctx.globalAlpha = 1;
-}
-
-function drawCaveNear(ctx, w, h, args, resolved) {
-  const { planet, biome: profile } = resolved;
+function drawCaveNear(ctx, w, h, args, pair) {
+  const profileAt = createProfilePicker(args.presentationProfile, pair);
+  const { planet } = profileAt(args.camX);
   const ceiling = drawCaveBand(ctx, w, h, args.camX, args.camY, 0.48, true,
-    h * 0.11, h * 0.08, mixColor(planet.caveNear, profile.glow, 0.08),
+    h * 0.11, h * 0.08, planet.caveNear,
     12.1, args.scale);
   const floor = drawCaveBand(ctx, w, h, args.camX, args.camY, 0.56, false,
-    h * 0.13, h * 0.09, mixColor(planet.caveNear, profile.glow, 0.10),
+    h * 0.13, h * 0.09, planet.caveNear,
     17.9, args.scale);
-  const spacing = Math.max(7, Math.round(18 - profile.density * 9));
+  const spacing = 8;
   const first = Math.floor((floor.offX - spacing) / spacing) * spacing;
   for (let worldX = first; worldX < floor.offX + w + spacing; worldX += spacing) {
+    const profile = profileAt(worldX).biome;
     if (rand01(worldX + profile.motif.length * 401) > profile.density) continue;
     const x = worldX - floor.offX;
     const floorY = Math.round(floor.contour(worldX));
-    const ceilingY = Math.round(ceiling.contour(worldX));
+    const ceilingY = Math.round(ceiling.contour(x + ceiling.offX));
     const size = 3 + Math.floor(rand01(worldX * 7 + 19) * 6);
     ctx.fillStyle = profile.glow;
     if (profile.motif === 'crystal' || profile.motif === 'geode') {
@@ -970,7 +941,7 @@ function drawCaveNear(ctx, w, h, args, resolved) {
       ctx.fillRect(x, ceilingY + size - 1, 1, 3);
       ctx.globalAlpha = 1;
     } else {
-      ctx.fillStyle = mixColor(planet.caveRock, '#aab1b5', 0.2);
+      ctx.fillStyle = mixColor(planet.caveNear, '#aab1b5', 0.2);
       ctx.fillRect(x - 2, floorY - 1, 5, 1);
     }
   }
@@ -981,15 +952,9 @@ const DEFAULT_BIOME_SAMPLE = Object.freeze({
   neighbor: Object.freeze({ family: BIOME_FAMILY.SURFACE, biome: BIOME.FOREST }),
   blend: 0,
 });
-
-function biomeRefKey(ref) {
-  return ref.family * 256 + ref.biome;
-}
-
-export function neighborDitherSelected(rankIndex, blend, ownerFirst) {
-  const rank = (rankIndex + 0.5) / 16;
-  return ownerFirst ? rank < blend : rank >= 1 - blend;
-}
+const DEFAULT_CAVE_REF = Object.freeze({
+  family: BIOME_FAMILY.CAVE, biome: CAVE_BIOME.DEFAULT,
+});
 
 export function createParallaxBackground(container, { planetId = PLANET.EARTH } = {}) {
   const presentationProfile = PLANET_PRESENTATION_BY_ID[planetId];
@@ -997,6 +962,9 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     PLANET_PRESENTATION.MARS, PLANET_PRESENTATION.SHIP].includes(presentationProfile)) {
     throw new RangeError(`unsupported planet presentation profile for id ${planetId}`);
   }
+  const planetStyle = resolveBackdropProfile(
+    presentationProfile, DEFAULT_BIOME_SAMPLE.owner,
+  ).planet;
   const canvas = document.createElement('canvas');
   canvas.className = 'sand-parallax-bg';
   canvas.style.position = 'absolute';
@@ -1019,20 +987,8 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     layerCtx.imageSmoothingEnabled = false;
     return { canvas: layerCanvas, ctx: layerCtx };
   };
-  const baseA = makeLayer(false);
-  const baseB = makeLayer(false);
-  const nearA = makeLayer(true);
-  const nearB = makeLayer(true);
-  const maskA = document.createElement('canvas');
-  const maskB = document.createElement('canvas');
-  maskA.width = maskA.height = maskB.width = maskB.height = 4;
-  const maskACtx = maskA.getContext('2d');
-  const maskBCtx = maskB.getContext('2d');
-  const maskAImage = maskACtx.createImageData(4, 4);
-  const maskBImage = maskBCtx.createImageData(4, 4);
-  const maskAPattern = nearA.ctx.createPattern(maskA, 'repeat');
-  const maskBPattern = nearB.ctx.createPattern(maskB, 'repeat');
-  const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const baseLayer = makeLayer(false);
+  const nearLayer = makeLayer(true);
 
   let lastKey = '';
   let lastState = null;
@@ -1046,7 +1002,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     if (canvas.width !== pxW || canvas.height !== pxH) {
       canvas.width = pxW;
       canvas.height = pxH;
-      for (const layer of [baseA, baseB, nearA, nearB]) {
+      for (const layer of [baseLayer, nearLayer]) {
         layer.canvas.width = pxW;
         layer.canvas.height = pxH;
         layer.ctx.imageSmoothingEnabled = false;
@@ -1056,60 +1012,40 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     }
   };
 
-  const renderLayer = (layer, args, resolved, near) => {
+  const prepareLayer = (layer) => {
     const layerCtx = layer.ctx;
     layerCtx.setTransform(1, 0, 0, 1, 0, 0);
     layerCtx.globalAlpha = 1;
     layerCtx.globalCompositeOperation = 'source-over';
     layerCtx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+    return layerCtx;
+  };
+
+  const renderBase = (args) => {
+    const layerCtx = prepareLayer(baseLayer);
     layerCtx.setTransform(
       PIXEL_SCALE * args.scale, 0, 0, PIXEL_SCALE * args.scale, 0, 0,
     );
     if (presentationProfile === PLANET_PRESENTATION.SHIP) {
-      if (!near) {
-        layerCtx.fillStyle = '#02040a';
-        layerCtx.fillRect(0, 0, args.w, args.h);
-        drawStars(layerCtx, args.w, args.h, 1);
-        drawPixelOrb(layerCtx, args.w * 0.82, args.h * 0.22,
-          '#174a76', '#74b9d7');
-      }
+      layerCtx.fillStyle = '#02040a';
+      layerCtx.fillRect(0, 0, args.w, args.h);
+      drawStars(layerCtx, args.w, args.h, 1);
+      drawPixelOrb(layerCtx, args.w * 0.82, args.h * 0.22,
+        '#174a76', '#74b9d7');
       return;
     }
-    if (resolved.biome.cave) {
-      if (near) drawCaveNear(layerCtx, args.w, args.h, args, resolved);
-      else drawCaveBase(layerCtx, args.w, args.h, args, resolved);
-    } else if (near) {
-      drawSurfaceNear(layerCtx, args.w, args.h, args, resolved);
-    } else {
-      drawSurfaceBase(layerCtx, args.w, args.h, args, resolved);
-    }
+    drawSurfaceBase(layerCtx, args.w, args.h, args, planetStyle);
   };
 
-  const updateNearMasks = (blend, ownerFirst) => {
-    for (let i = 0; i < 16; i++) {
-      const neighbor = neighborDitherSelected(bayer[i], blend, ownerFirst);
-      const p = i * 4;
-      for (const image of [maskAImage, maskBImage]) {
-        image.data[p] = 255;
-        image.data[p + 1] = 255;
-        image.data[p + 2] = 255;
-      }
-      maskAImage.data[p + 3] = neighbor ? 0 : 255;
-      maskBImage.data[p + 3] = neighbor ? 255 : 0;
-    }
-    maskACtx.putImageData(maskAImage, 0, 0);
-    maskBCtx.putImageData(maskBImage, 0, 0);
-  };
-
-  const applyNearMask = (layer, pattern, args) => {
-    layer.ctx.save();
-    layer.ctx.setTransform(
+  const renderNear = (args, pair) => {
+    const layerCtx = prepareLayer(nearLayer);
+    layerCtx.setTransform(
       PIXEL_SCALE * args.scale, 0, 0, PIXEL_SCALE * args.scale, 0, 0,
     );
-    layer.ctx.globalCompositeOperation = 'destination-in';
-    layer.ctx.fillStyle = pattern;
-    layer.ctx.fillRect(0, 0, args.w, args.h);
-    layer.ctx.restore();
+    if (presentationProfile === PLANET_PRESENTATION.SHIP) return;
+    if (pair.owner.family === BIOME_FAMILY.CAVE)
+      drawCaveNear(layerCtx, args.w, args.h, args, pair);
+    else drawSurfaceNear(layerCtx, args.w, args.h, args, pair);
   };
 
   // `camX` is the viewport center in absolute world coordinates. Draw into a
@@ -1127,15 +1063,15 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
     const activeSample = sampleOverride || biomeSample || DEFAULT_BIOME_SAMPLE;
-    const owner = activeSample.owner || DEFAULT_BIOME_SAMPLE.owner;
-    const neighbor = activeSample.neighbor || owner;
-    const sameBiome = owner.family === neighbor.family
-      && owner.biome === neighbor.biome;
-    const blend = sameBiome ? 0 : clamp(Number(activeSample.blend) || 0, 0, 0.5);
-    const blendKey = Math.round(blend * 255);
+    const family = activeSample.owner?.family === BIOME_FAMILY.CAVE
+      ? BIOME_FAMILY.CAVE : BIOME_FAMILY.SURFACE;
+    const pair = biomePair(activeSample, family,
+      family === BIOME_FAMILY.CAVE
+        ? DEFAULT_CAVE_REF : DEFAULT_BIOME_SAMPLE.owner);
+    const blendKey = Math.round(pair.blend * 255);
     const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}`
-      + `:${dayNight.phase}:${owner.family}:${owner.biome}`
-      + `:${neighbor.family}:${neighbor.biome}:${blendKey}`;
+      + `:${dayNight.phase}:${pair.owner.family}:${pair.owner.biome}`
+      + `:${pair.neighbor.family}:${pair.neighbor.biome}:${blendKey}`;
     if (key === lastKey) return;
     lastKey = key;
 
@@ -1149,34 +1085,17 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       camX: qx, camY: qy, scale: s, dayNight,
       presentationProfile, w, h, horizon, skyHeight,
     };
-    const resolvedOwner = resolveBackdropProfile(presentationProfile, owner);
-    const resolvedNeighbor = blend > 0
-      ? resolveBackdropProfile(presentationProfile, neighbor) : resolvedOwner;
-    renderLayer(baseA, args, resolvedOwner, false);
-    renderLayer(nearA, args, resolvedOwner, true);
-    if (blend > 0) {
-      renderLayer(baseB, args, resolvedNeighbor, false);
-      renderLayer(nearB, args, resolvedNeighbor, true);
-      const ownerFirst = biomeRefKey(owner) < biomeRefKey(neighbor);
-      updateNearMasks(blend, ownerFirst);
-      applyNearMask(nearA, maskAPattern, args);
-      applyNearMask(nearB, maskBPattern, args);
-    }
+    renderBase(args);
+    renderNear(args, pair);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    ctx.drawImage(baseA.canvas, 0, 0);
-    if (blend > 0) {
-      ctx.globalAlpha = blend;
-      ctx.drawImage(baseB.canvas, 0, 0);
-      ctx.globalAlpha = 1;
-    }
-    ctx.drawImage(nearA.canvas, 0, 0);
-    if (blend > 0) ctx.drawImage(nearB.canvas, 0, 0);
+    ctx.drawImage(baseLayer.canvas, 0, 0);
+    ctx.drawImage(nearLayer.canvas, 0, 0);
     lastState = {
-      owner: { ...owner },
-      neighbor: { ...neighbor },
-      blend,
+      owner: { ...pair.owner },
+      neighbor: { ...pair.neighbor },
+      blend: pair.blend,
       presentationProfile,
     };
   };

@@ -104,7 +104,7 @@ function recordReplayMessage(data) {
   if (!replayCapture || replayRunning || !REPLAY_EVENT_TYPES.has(data.type)) return;
   if (data.type === 'input') return;
   replayCapture.events.push({
-    tick: replayCaptureStarting ? 0 : (engine?.getTick?.() || 0),
+    tick: replayCaptureStarting ? 0 : replayCapture.turns.length,
     message: copyReplayValue(data),
   });
 }
@@ -119,7 +119,7 @@ function recordReplayTurn(started) {
     if (signature !== replayInputSignature) {
       replayInputSignature = signature;
       replayCapture.events.push({
-        tick: engine.getTick(),
+        tick: replayCapture.turns.length,
         message: { type: 'input', input: copyReplayValue(latestInput) },
       });
     }
@@ -893,9 +893,9 @@ async function runReplayCapsule(requestId, value) {
 
   let eventIndex = 0;
   let turnIndex = 0;
-  const applyEventsAtTick = (tick) => {
+  const applyEventsAtTurn = (turn) => {
     while (eventIndex < capsule.events.length
-           && capsule.events[eventIndex].tick === tick) {
+           && capsule.events[eventIndex].tick === turn) {
       applyRuntimeMessage(capsule.events[eventIndex].message);
       eventIndex++;
     }
@@ -912,7 +912,7 @@ async function runReplayCapsule(requestId, value) {
   };
   const finish = () => {
     try {
-      applyEventsAtTick(engine.getTick());
+      applyEventsAtTurn(turnIndex);
       if (eventIndex !== capsule.events.length)
         throw new Error('Replay ended before all authority events were applied.');
       const actual = replayFinalState();
@@ -941,16 +941,13 @@ async function runReplayCapsule(requestId, value) {
     try {
       const end = Math.min(capsule.turns.length, turnIndex + 120);
       while (turnIndex < end) {
-        const tick = engine.getTick();
-        applyEventsAtTick(tick);
+        applyEventsAtTurn(turnIndex);
         const turn = capsule.turns[turnIndex];
         awaitingAck = turn.awaitingAck;
         fullResyncRequested = turn.fullResyncRequested;
         if (latestInput && turn.inputSeq !== null) latestInput.seq = turn.inputSeq;
         executeTurn(turn.now, false);
         turnIndex++;
-        if (engine.getTick() !== turnIndex)
-          throw new Error(`Replay tick diverged at turn ${turnIndex}.`);
       }
       if (turnIndex >= capsule.turns.length) {
         finish();

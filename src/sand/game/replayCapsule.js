@@ -74,8 +74,6 @@ export function validateReplayCapsule(value) {
       || !Number.isInteger(final.worldOffsetX)
       || !Number.isInteger(final.worldOffsetY))
     throw new Error('Replay final-state check is invalid.');
-  if (final.tick !== turns.length)
-    throw new Error('Replay turn count does not match its final tick.');
 
   return value;
 }

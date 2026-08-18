@@ -134,21 +134,29 @@ try {
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
     .startsWith('SAND-REPLAY-1:'), null, { timeout: 30000 });
-  const replayTick = await page.evaluate(() => window.__sandPerf().worldTick);
-  await page.evaluate(() => {
+  const firstReplayTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  await page.keyboard.press('l');
+  await page.waitForFunction((tick) => {
     const root = document.querySelector('sand-game').shadowRoot;
-    [...root.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Run replay').click();
+    return root.querySelector('[aria-label="Deterministic replay capsule"]')?.hidden
+      && window.__sandPerf().worldTick > tick;
+  }, firstReplayTick, { timeout: 30000 });
+  check('L closes the focused replay panel and resumes the authority', true);
+  await page.evaluate(() => {
+    document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim')
+      .focus({ preventScroll: true });
   });
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('textarea[aria-label="Replay capsule text"]')?.value
+    .startsWith('SAND-REPLAY-1:'), null, { timeout: 30000 });
+  const replayTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  await page.getByRole('button', { name: 'Run replay', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('[aria-label="Deterministic replay capsule"]')?.textContent
     .includes('Replay verified:'), null, { timeout: 120000 });
   check('L capsule deterministically rebuilds the captured authority state', true);
-  await page.evaluate(() => {
-    const root = document.querySelector('sand-game').shadowRoot;
-    [...root.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Resume & close').click();
-  });
+  await page.getByRole('button', { name: 'Resume & close', exact: true }).click();
   await page.waitForFunction((tick) => window.__sandPerf().worldTick > tick,
     replayTick, { timeout: 30000 });
   check('replayed authority resumes after the panel closes', true);

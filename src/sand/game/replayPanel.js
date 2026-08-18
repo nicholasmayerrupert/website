@@ -22,6 +22,7 @@ export function createReplayPanel(ctx) {
   overlay.style.cssText = [
     'position:absolute', 'inset:12px', 'z-index:100', 'display:none',
     'place-items:center', 'background:rgba(7,9,12,.82)', 'padding:12px',
+    'pointer-events:auto', 'touch-action:manipulation',
   ].join(';');
 
   const panel = document.createElement('div');
@@ -84,9 +85,9 @@ export function createReplayPanel(ctx) {
   };
   const setBusy = (on) => {
     busy = on;
+    overlay.setAttribute('aria-busy', String(on));
     copy.disabled = on;
     replay.disabled = on;
-    close.disabled = on;
   };
   const showError = (error) => {
     status.textContent = error?.message || String(error);
@@ -109,7 +110,7 @@ export function createReplayPanel(ctx) {
       const text = await encodeReplayCapsule(capsule);
       if (generation !== openGeneration) return;
       textarea.value = text;
-      status.textContent = `${capsule.final.tick.toLocaleString()} ticks and ${capsule.events.length.toLocaleString()} authority events captured. Paste another capsule here to replay it.`;
+      status.textContent = `${capsule.turns.length.toLocaleString()} authority turns and ${capsule.events.length.toLocaleString()} events captured. Paste another capsule here to replay it.`;
       textarea.focus({ preventScroll: true });
       textarea.select();
     } catch (error) {
@@ -120,6 +121,7 @@ export function createReplayPanel(ctx) {
   };
   const hide = (resume) => {
     openGeneration++;
+    setBusy(false);
     overlay.hidden = true;
     overlay.style.display = 'none';
     if (resume) ctx.worldWorker?.config({ paused: false });
@@ -145,9 +147,9 @@ export function createReplayPanel(ctx) {
     status.textContent = 'Decoding replay capsule…';
     try {
       const capsule = await decodeReplayCapsule(textarea.value);
-      status.textContent = `Replaying ${capsule.turns.length.toLocaleString()} ticks…`;
+      status.textContent = `Replaying ${capsule.turns.length.toLocaleString()} authority turns…`;
       const result = await ctx.worldWorker.runReplay(capsule, (turn, turns) => {
-        status.textContent = `Replaying tick ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
+        status.textContent = `Replaying turn ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
       });
       status.style.color = result.matched ? '#b9e6b1' : '#ffca78';
       status.textContent = result.matched
@@ -162,7 +164,13 @@ export function createReplayPanel(ctx) {
   inspect.addEventListener('click', () => hide(false));
   close.addEventListener('click', () => hide(true));
   overlay.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); hide(true); }
+    if (event.key === 'Escape' || (
+      event.key.toLowerCase() === 'l' && !event.ctrlKey && !event.metaKey && !event.altKey
+    )) {
+      event.preventDefault();
+      event.stopPropagation();
+      hide(true);
+    }
   });
 
   return {

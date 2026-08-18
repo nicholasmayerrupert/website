@@ -127,9 +127,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     // Authoritative release edge: drop only the released button's bit. Other
     // buttons stay latched until their own pointerup (or blur/cancel).
     const button = logicalButton(e);
-    ctx.mouseButtons &= ~(BUTTON_BITS[button] || 0);
+    const bit = BUTTON_BITS[button] || 0;
+    const wasDown = (ctx.mouseButtons & bit) !== 0;
+    ctx.mouseButtons &= ~bit;
     updatePointer(e.clientX, e.clientY);
-    if (!ctx.playMode && ctx.worldWorker && (button === 0 || button === 2)) {
+    if (!ctx.playMode && ctx.worldWorker && wasDown && (button === 0 || button === 2)) {
       ctx.worldWorker.edge('up', button);
       e.preventDefault();
       return;

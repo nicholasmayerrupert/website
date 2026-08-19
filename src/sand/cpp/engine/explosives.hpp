@@ -19,8 +19,8 @@ class ExplosivesSystem {
   static const int    TNT_MASS_FRONT_BUCKETS_PER_STEP = 6; // compact spatial work budget for broad live fronts
   static const int    TNT_FRONT_CELLS_PER_STEP = 1200; // source-cell budget shared by static TNT and body fragments
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
-  static const int    METHANE_BLAST_RADIUS = 16; // one-third broader pressure flash, still smaller than TNT
-  static constexpr double METHANE_BLAST_POWER = 14.0; // fractures a wider stone shell; hard ores survive
+  static const int    METHANE_BLAST_RADIUS = 16; // smaller crater than TNT
+  static constexpr double METHANE_BLAST_POWER = 14.0; // weaker than TNT; hard ores survive
   static const int    METHANE_BLAST_MIN_CELLS = 10;
   static const int    METHANE_BLAST_CELLS_PER_FRONT = 48;
   static const int    METHANE_BLAST_REP_SPACING = 12;
@@ -30,7 +30,7 @@ class ExplosivesSystem {
   // Debris and shockwave. Velocities come from geometry and
   // whash2 (the same rand-free hash the item drops use), never rand().
   static const int    BLAST_DEBRIS_CHUNKS = 1;    // physical rubble chunks ejected per destroyed material source
-  static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // try the old fan positions, but stop after the smaller budget
+  static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // placement attempts per destroyed-material debris source
   static const int    BLAST_FORCED_DEBRIS_CHUNKS = 1; // extra generic blast debris, even in open air
   static const int    BLAST_FORCED_DEBRIS_TRIES = 3; // nearby placement attempts after the debris roll succeeds
   static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.75; // generic open-air debris spawns on three quarters of blasts
@@ -41,7 +41,7 @@ class ExplosivesSystem {
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
   static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
   static const int    BLAST_PARTICLE_LIFE = 26;
-  static const int    BLAST_PARTICLE_CAP = 48;    // hard cap on cosmetic flecks per step (steam carries the visual now)
+  static const int    BLAST_PARTICLE_CAP = 48;    // hard cap on cosmetic flecks per step
   static constexpr double BLAST_PUSH = 3.0;       // outward shove given to nearby free bodies
   // Blast gas: pre-existing gas inside the blast is cleared; fresh gas is stamped
   // into the outer crater ring after all carving and component cleanup.

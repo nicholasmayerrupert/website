@@ -456,7 +456,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
         if (shade == 7) c = jitterShade(c, 11);
       } else if (animKind == RA_LAVA) {
         // Keep the molten patches fixed in world space and pulse their brightness.
-        // The material itself can still flow; its texture no longer slides over it.
+        // The material itself can still flow.
         int nx = wx & 63, ny = wy & 63;
         int molten = (int)renderNoise[(ny << 6) + nx] * 2
                    + (int)renderNoise[(ny << 6) + ((nx - 1) & 63)]

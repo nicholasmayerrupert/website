@@ -263,9 +263,9 @@ component registration, and restoration. Browser presentation exposes
   cross-origin isolation on every deployment surface, which the current
   framework-free embed and Cloudflare configuration do not provide.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six
-  regions and containing more than 2,048 due cells consume one compact
-  six-by-two-region window per tick until their backlog drains; smaller fronts
-  finish atomically.
+  regions consume the six nearest regions to the lowest-id bucket per tick
+  until their backlog drains; smaller fronts finish atomically. Body-owned TNT
+  shares a 1,200 source-cell budget with the static front.
 - Presentation diffs use validated row copies and keep only one packet in flight.
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot

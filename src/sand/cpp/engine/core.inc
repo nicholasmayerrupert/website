@@ -39,8 +39,7 @@
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
     // Liquid↔liquid density is handled by settleLiquid (deep sink through lighter
-    // fluid + multi-source BFS relocate). One-cell swaps here recreated the old
-    // row-by-row bubble-sort look. Keep this pass for powder↔powder / powder↔liquid.
+    // fluid + multi-source BFS relocate). This pass is powder↔powder / powder↔liquid.
     auto trySink = [&](int ik) {
       if (!canDisplaceByLooseDensity(m, L->grid[ik]) || L->next[ik] != EMPTY) return false;
       if (isLiquidMaterial(m) && isLiquidMaterial(L->grid[ik])) return false;
@@ -125,8 +124,7 @@
     int belowK = k + cols;
     // Packed early-out must use effective occupancy (next / vacated), not raw grid[].
     // Otherwise a denser cell above one that just sank still sees "solid pack of m"
-    // in grid and goes inert — killing same-tick cascade through a lighter pool and
-    // recreating the old row-by-row bubble.
+    // in grid and goes inert, killing same-tick cascade through a lighter pool.
     // Also: do NOT early-out when a strictly lighter liquid is above (submerged denser
     // free surface) — that cell still needs lateral equalize into the lighter body or
     // a brine mound under water freezes into a permanent pyramid.

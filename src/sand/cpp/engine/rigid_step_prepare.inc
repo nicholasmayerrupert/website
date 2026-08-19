@@ -292,8 +292,8 @@
     return first.id < second.id;
   });
   // Build conservative tick islands before sub-stepping. Candidate bodies share
-  // one cadence; unrelated slow islands no longer inherit the fastest body's
-  // rotational or translational substep count.
+  // one cadence; unrelated slow islands keep their own rotational and
+  // translational substep counts.
   double cadenceStart = emscripten_get_now();
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
   double globalPointSpeed = 0;

@@ -30,8 +30,8 @@
 // editing it and bump abiVersion on any layout change.
 #include "abi.generated.hpp"
 
-// WebGL presentation: per-canvas context + shader program registry. The Engine
-// (gl.inc) uploads the CPU-generated pixel buffer into a texture and composites.
+// WebGL presentation: per-canvas context + shader program registry.
+// GLPresenter uploads the CPU-generated pixel buffer and composites.
 #include "gl_shared.hpp"
 
 // Simulation tunables.
@@ -69,9 +69,6 @@ static const float FIRE_CROSS_P = 0.18f;
 static const int ACID_REACT_INTERVAL = 3;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_BATCH_DISSOLVE_P = 0.75f;
 static const float ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
-// Corrosive contact is dangerous to every living actor. Twelve damage four
-// times per second is twice the old player-only acid DPS while staying below
-// direct lava immersion.
 static const float ACRID_SMOKE_P = 0.5f; // chance a dissolved cell emits acrid smoke instead of leaving empty space
 static const int   WATER_PER_GROWTH = 1, TRUNK_THICKEN_UNTIL_WOOD = 52;
 static const float GROWTH_P = 0.58f;
@@ -109,8 +106,9 @@ struct StampSet {
 };
 
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool
-// policy: brush radii, which tool paints/erases/drafts/spawns, the right-click
-// eraser, draft lifecycle, seed placement, and emit throttling.
+// policy: brush radii, which tool paints/erases/drafts/spawns, background
+// targeting (creative right-click / survival secondary), draft lifecycle,
+// seed placement, and emit throttling.
 
 // Held movement/pan keys forwarded from the browser (createSandGame maps the
 // physical keys onto these). The engine owns camera and input policy:
@@ -586,10 +584,9 @@ static const double AS_RUN_SPEED = P_MAX_RUN * 0.95; // run only past ~walk top 
 static const double AS_RISE_EPS = 0.05;            // airborne |vy| below -> treat as fall (apex)
 static const uint8_t ANIM_N[AS_COUNT] = {2, 4, 4, 2, 2, 2, 4}; // frames per state
 static const uint8_t ANIM_T[AS_COUNT] = {36, 8, 5, 6, 6, 14, 7}; // ticks per frame
-// Sprite: 8x12 authored pixels at 3/4 of a world cell each. The denser grid keeps
-// the same six-cell silhouette as the old 6x10 art while giving the face, jacket,
-// belt, and gait enough resolution to read. Arms are articulated by the presenter
-// so hands can follow locomotion and exact weapon grip anchors independently.
+// Sprite: 8x12 authored pixels at 0.75 world cells each (6x9 cell silhouette).
+// Arms are articulated by the presenter so hands can follow locomotion and
+// exact weapon grip anchors independently.
 static const int SPR_W = 8, SPR_H = 12;
 static constexpr double SPR_PIXEL_SCALE = 0.75;
 static const float SPR_PAL[10][4] = {

@@ -7,16 +7,17 @@ Cloudflare via Wrangler (`npm run dev`, `npm run build`, `npm run deploy`).
 
 Its centerpiece is a **2D falling-sand simulation** rendered to a canvas in the
 home-page hero (creative) and at `/game` (survival). Most agent work happens
-there. The simulation, **WebGL2 rendering**,
-the **view camera**, **input policy**, tool semantics, and world streaming are
-written in **C++ and compiled to WebAssembly**; JavaScript is a thin shell (sizes
-the canvas, runs the RAF/fixed-step loop, forwards raw DOM events, carries the net
-transport). It ships as a framework-free `<sand-game>` Web Component
-(`src/sand/embed/`); a tiny React shim mounts it on this site. The engine runs
-**two fully-simulated layers** — foreground + a darker background (`struct Layer`
-in `cpp/engine/layer.hpp`; `useLayer()` repoints the Engine's active-layer
-pointer `L`). `step()` steps `fg` then `bg` under one tick, then a
-`transferPass()` moves stuck loose materials and blocked gas between layers. Every simulation
+there. The simulation, **WebGL2 rendering**, the **view camera**, **input
+policy**, tools, actors, authored missions, and world streaming run in **C++
+compiled to WebAssembly**. JavaScript owns browser lifecycle, canvas sizing, raw
+DOM events, audio presentation, workers, WebSocket transport, and the
+ship/debrief presentation. It ships as a framework-free `<sand-game>` Web
+Component (`src/sand/embed/`); a tiny React shim mounts it on this site. The
+engine runs **two fully-simulated layers** — foreground + a darker background
+(`struct Layer` in `cpp/engine/layer.hpp`). Temporary layer selection uses
+`Engine::ActiveLayerScope`; raw `useLayer()` is limited to top-level step phase
+transitions. A world tick steps `fg` then `bg`, then runs cross-layer reactions
+and `transferPass()` (stuck loose materials and blocked gas). Every simulation
 subsystem is a named class under `cpp/engine/`, composed by the Engine, which
 keeps the coordinator role and settle core. Right-click in creative paints into
 the background.
@@ -25,10 +26,10 @@ Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/cpp/` | The C++ engine: eighteen subsystem classes under `engine/`, composed by a coordinator Engine (`sand.cpp`, one unity TU). From the repository root, rebuild on any OS with `npm run build:sand` (emits the committed `src/sand/wasm/sandEngine.{js,wasm}`); `npm run build:sand -- --dev` adds the post-step invariant validator. See `wasm/README.md` for toolchain setup. |
+| `src/sand/cpp/` | The C++ engine: twenty-one subsystem classes under `engine/`, composed by a coordinator Engine (`sand.cpp`, one unity TU). From the repository root, rebuild on any OS with `npm run build:sand` (emits the committed `src/sand/wasm/sandEngine.{js,wasm}`); `npm run build:sand -- --dev` adds the post-step invariant validator. See `wasm/README.md` for toolchain setup. |
 | `src/sand/wasmBridge/engineFactory.js` | Loads the wasm module; `createEngineWasm()` is the simulation/render/camera handle. Grid and render pixels are zero-copy views into wasm memory. |
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
-| `src/sand/game/createSandGame.js` | The thin browser shell: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events to the engine, and drives `engine.glRenderFrame()`/`streamWorld()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
+| `src/sand/game/createSandGame.js` | Browser runtime: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events, owns workers/audio/replay/net glue, and drives `engine.glRenderFrame()`/`streamWorld()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
 | `src/sand/embed/` | The `<sand-game>` Web Component (`sandGame.js`) + vanilla palette (`toolPalette.js`). `npm run build:embed` → one self-contained `dist-embed/sand-game.js`. |
 | `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
 

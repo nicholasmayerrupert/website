@@ -806,10 +806,8 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
   }
   return changed;
 }
-// Track button release (mirrors the old buttons==0 reset on move/up). Releasing
-// all buttons ends the active stroke, so the NEXT press starts a fresh stroke
-// instead of interpolating a paint/erase line from the previous stroke's last
-// emit cell (which would draw across whatever lies between two separate clicks).
+// Releasing all buttons ends the active stroke, so the next press starts
+// fresh instead of interpolating a paint/erase line from the previous stroke.
 void ToolSystem::pointerButtons(int buttons) { if (buttons == 0) { rmbDown = false; lmbDown = false; emitStrokeActive = false; } }
 int ToolSystem::pointerUp(int button) {
   if (button == 2) rmbDown = false;

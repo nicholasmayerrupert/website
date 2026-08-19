@@ -38,14 +38,11 @@ class ComponentSystem {
   // pure-loose ticks refresh dirty columns without rebuilding the joint graph.
   bool jointSupportValid = false;
   bool jointSupportSleeping = false;
-  // Sticky: bonds were invalidated (acid/erase/split) and computeGroundedBoth
-  // must run on the next step even if the acid pure-bore path left groundDirty
-  // and groundContentDirty false and cleared cgBonds. Without this, the joint
-  // pass can skip, ensureGroundedSingleLayer re-grounds without cross-layer
-  // support, and a held beam creeps down one cell at a time until co-occupation
-  // is lost and it free-falls.
-  // NOTE: invalidation must NOT clear jointGroundReady mid-step — the other
-  // layer may still need this tick's joint grounded flags for moveRigidAssemblies.
+  // Sticky: acid/erase/split invalidated bonds even when groundDirty and
+  // groundContentDirty stayed false and cgBonds was cleared. computeGroundedBoth
+  // must still run next step so the peer layer keeps cross-support.
+  // Invalidation must not clear jointGroundReady mid-step — the other layer may
+  // still need this tick's joint grounded flags for moveRigidAssemblies.
   bool jointDirty = false;
   // Reusable scratch for computeGroundedBoth() (sized to cols*rows once).
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgVisited;

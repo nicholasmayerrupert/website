@@ -1,7 +1,8 @@
 // Framework-agnostic browser runtime for the C++/WASM sand engine. It owns one
-// shared `ctx`, composes lifecycle/input/loop/network modules, and returns the
-// handle used by the Web Component. C++ owns simulation, rendering, camera,
-// pointer mapping, actors, tools, and terrain; JS owns DOM events and lifecycle.
+// shared `ctx`, composes lifecycle/input/loop/network/audio/worker modules, and
+// returns the handle used by the Web Component. C++ owns simulation, rendering,
+// camera, pointer mapping, actors, tools, and terrain; JS owns DOM events,
+// lifecycle, audio presentation, workers, replay, and net glue.
 
 import { BUTTON_BITS, DEFAULT_TOOL, SIZING, TOOL_IDS } from './runtimeConfig';
 import { createParallaxBackground } from './parallaxBackground';

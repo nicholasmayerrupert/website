@@ -8,8 +8,7 @@ static constexpr double DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL = 30.0;
 static constexpr int ACID_MORTAR_COOLDOWN_LOCAL = 75;
 static constexpr int ACID_SHELL_LIFE_LOCAL = 180;
 static constexpr double ACID_SHELL_GRAVITY_LOCAL = 0.055;
-// Nine cells is a little over twice the old six-cell footprint. The falling-sand
-// reactions quickly roughen that initial disc into a natural corrosive pool.
+// Initial corrosive disc; falling-sand reactions roughen it into a pool.
 static constexpr int ACID_SPLASH_RADIUS_LOCAL = 9;
 static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;

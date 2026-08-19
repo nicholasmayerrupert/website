@@ -27,7 +27,7 @@ uint32_t GrowthSystem::plantGrowthSignature(Comp& comp) {
   return E.L->worldSeed ^ (wx * 0x85ebca6bu) ^ (wy * 0xc2b2ae35u) ^ ((uint32_t)comp.id * 0x27d4eb2du) ^ ((uint32_t)comp.plantType * 0x165667b1u);
 }
 void GrowthSystem::refreshPlantCache(Comp& comp) {
-  if (!comp.cacheDirty && !comp.woodCells.empty()) return; // approximates the JS guard
+  if (!comp.cacheDirty && !comp.woodCells.empty()) return;
   comp.woodCells.clear(); comp.seedWoodCells.clear();
   for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { comp.woodCells.push_back(k); comp.seedWoodCells.push_back(k); } else if (E.isSeedMaterial(m)) comp.seedWoodCells.push_back(k); }
   auto byRow = [this](int a, int b) { return (a / E.cols) < (b / E.cols); };

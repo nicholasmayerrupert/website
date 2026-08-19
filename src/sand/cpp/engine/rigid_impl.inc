@@ -3623,11 +3623,10 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
     for (Body* b : E.L->bodies) { if (removedIds.count(b->id)) delete b; else keep.push_back(b); }
     E.L->bodies = std::move(keep);
   }
-  // Re-assign ownership from scratch over the FORMER body cells. Body cells carry
-  // the body's real material now (not RIGID), so the old `E.L->grid[k] == RIGID` no longer
-  // identifies them — `wasBody` (the prior body-cell set) is the authoritative source,
-  // and disambiguates a body cell from identical-looking static terrain of the same
-  // material that the rebuilt footprint may overlap.
+  // Re-assign ownership from scratch over the former body cells. Body cells
+  // carry the body's real material; `wasBody` (the prior body-cell set) is the
+  // owner set, and disambiguates a body cell from identical-looking static
+  // terrain of the same material that the rebuilt footprint may overlap.
   splitWasBodyStamp.reset((size_t)E.cols * E.rows);
   splitClaimedStamp.reset((size_t)E.cols * E.rows);
   for (int k : cells) splitWasBodyStamp.add(k);

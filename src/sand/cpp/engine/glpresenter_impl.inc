@@ -722,8 +722,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
 
   for (int r = 0; r < SPR_H; r++) {
     const char* row = SPR_GRID[animState][animFrame][r];
-    // Merge adjacent authored pixels of the same color. This is visually exact
-    // and keeps the denser sprite near the old presenter's draw-call cost.
+    // Merge adjacent authored pixels of the same color into one quad.
     for (int c = 0; c < SPR_W;) {
       int source = facing >= 0 ? c : (SPR_W - 1 - c);
       int idx = row[source] - '0';
@@ -1863,7 +1862,7 @@ void GLPresenter::glDrawPreview() {
   if (E.cam.playModeOn && glOwnPlayerId) {
     // Browser/worker play always supplies the authority-derived preview policy.
     // `off` is meaningful there: the held item is a weapon (or the player is
-    // dead), so do not fall back to the prediction body's legacy tool cursor.
+    // dead), so do not fall back to a tool cursor.
     if (glUseExtPlayers && !glSurvivalPreviewOn) return;
     Player* lp = nullptr;
     for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }

@@ -1080,9 +1080,8 @@
   // 1-lower neighbouring column (empty over liquid = a gentle slope) is NOT an
   // internal hole, so a flat-but-ragged surface or a settled puddle still goes inert.
   inline bool adjacentInternalHole(int k, uint8_t m) {
-    // Only materials that participate in relaxLiquidGaps benefit from staying
-    // awake on an internal hole. BRINE (historically no relaxesGaps) would
-    // re-mark forever on a ragged free surface and never go inert.
+    // Only materials that participate in relaxLiquidGaps stay awake on an
+    // internal hole. Others would re-mark forever on a ragged free surface.
     if (!relaxesGaps(m)) return false;
     int x = k % cols, y = k / cols;
     if (y + 1 >= rows) return false;

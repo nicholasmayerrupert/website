@@ -551,8 +551,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   }
   double impactVy = p.vy;
   if (tryMoveY(p, p.vy)) p.vy = 0;
-  // grounded := stable downward-edge contact (solid directly under the feet) OR
-  // buried — flicker-free vs. the old "was the down-move blocked" test.
+  // grounded := solid directly under the feet, or buried.
   int feetRow = (int)std::floor(p.py + p.h - 1e-6);
   p.grounded = rowSolid(p.px, p.w, feetRow + 1) || buryDepth(p) > 0;
   if (!wasGrounded && p.grounded && !inLiquid) p.landingImpact = impactVy;

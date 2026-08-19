@@ -530,10 +530,11 @@ completed removal set. Cross-layer structural damage and shock are mirrored;
 gas, flecks, and physical rubble remain in the layer containing the explosive.
 Blast-ignited TNT uses a three-tick chain fuse. Due TNT is divided into stable
 14-cell spatial regions.
-Fronts spanning at most six regions finish atomically, as do due fronts of at
-most 2,048 cells. Broader fronts consume one compact six-by-two-region window per
-tick until their live backlog drains. Waiting TNT remains visible and simulated,
-while every consumed region immediately runs its crater representative.
+Fronts spanning at most six regions finish atomically. Broader fronts consume
+the six nearest regions to the lowest-id bucket per tick until their live
+backlog drains. Body-owned TNT shares a 1,200 source-cell budget with that
+static front. Waiting TNT remains visible and simulated, while every consumed
+region immediately runs its crater representative.
 Blasts eject bounded physical rubble sampled from the undisturbed terrain toward
 local open space. Dense chain fronts retain material flecks, gas from two
 spatially distributed crater representatives per tick, and their staged crater

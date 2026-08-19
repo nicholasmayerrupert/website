@@ -625,9 +625,9 @@ void ComponentSystem::computeGrounded() {
   E.refreshMobileComponentRegistry(lay);
 #ifdef SAND_INVARIANT_CHECKS
   if (!jointSupportValid) {
-    // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
-    // (fresh index) and require byte-identical grounded[]/cellComp[]/comp
-    // flags. On cached passes this also proves the base cache is not stale.
+    // Parity probe: re-run a single-layer flood from scratch (fresh index)
+    // and require byte-identical grounded[]/cellComp[]/comp flags. On cached
+    // passes this also proves the base cache is not stale.
     // A live joint closure may legitimately contain cross-layer support patches,
     // which this single-layer reference cannot reproduce; joint-cache parity is
     // instead covered by the forced-full grounding verification suite.
@@ -774,8 +774,8 @@ void ComponentSystem::incrementalGroundingRefresh() {
 void ComponentSystem::ensureGroundedSingleLayer() {
   // Skip the whole pass when nothing that affects grounding changed since the
   // last one: no loose/liquid motion (looseGroundDirty), no structural change
-  // (groundDirty), and no acid fast-path removal (groundContentDirty). Powder
-  // sitting still no longer forces a per-pass refresh. When all are clear the
+  // (groundDirty), and no acid fast-path removal (groundContentDirty). Settled
+  // powder does not force a refresh. When all are clear the
   // cached E.L->cellComp[]/groundedCell[]/comp.grounded are the exact grounding
   // of the current grid. Otherwise run computeGrounded(), whose internal tiers
   // do the cheapest valid thing (skip / rigid-base reuse + overlay / full flood).
@@ -1021,9 +1021,8 @@ int ComponentSystem::compCount(Layer& lay) { return (int)lay.components.size(); 
 
 // Union same-layer 8-adjacent components into `parent` (and `groundParent` when
 // non-null), restricted to the components reachable from a cross-layer bonded
-// comp. This replaces the old O(E.cols*E.rows) full-grid uniteLayerAdj pass that ran
-// up to 4x per step. Cross-layer bond unions + the global grounded scan are done
-// by the caller; here we only add same-layer adjacency.
+// comp. Cross-layer bond unions + the global grounded scan are done by the
+// caller; here we only add same-layer adjacency.
 //
 // We seed from each layer's UNGROUNDED cross-bonded comps and walk same-layer
 // adjacency. computeGrounded floods grounding across 8-adjacency, so an
@@ -1155,10 +1154,10 @@ void ComponentSystem::computeGroundedBoth() {
   // bases — otherwise the "clean" peer keeps stale grounded=1 forever.
   bool jointInv = jointDirty || jointBondsInvalid;
   // Wake snapshots BEFORE wipe/flood: a joint rebuild can drop joint-stamped
-  // support on EITHER layer even when that layer's rigid topology is unchanged
-  // (peer wipe / bond loss). Snapshot whenever we already had a joint closure
-  // or either base may change — missing the peer was the "BG freezes mid-air
-  // after FG contact erase" bug (ungrounded but never woken into moveRigidAssemblies).
+  // support on either layer even when that layer's rigid topology is unchanged
+  // (peer wipe / bond loss). Snapshot both layers whenever a joint closure
+  // existed or either base may change, so ungrounded cells still wake into
+  // moveRigidAssemblies.
   bool prevFg = jointSupportValid || rf || jointInv;
   bool prevBg = jointSupportValid || rb || jointInv;
   if (prevFg) cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
@@ -1285,8 +1284,7 @@ void ComponentSystem::computeGroundedBoth() {
   // Idle-structure release: once every component is grounded (base or via bonds),
   // drop the transient bond list so step() can skip joint next tick. Support is
   // already stamped into groundedCell/comp.grounded; topology/jointDirty will
-  // force a re-joint if bonds can break. Leaving bonds would force joint every
-  // step and (historically) re-dirty both layers even when nothing moved.
+  // force a re-joint if bonds can break.
   bool stillUngrounded = false;
   for (int i = 0; i < nf && !stillUngrounded; i++) if (!compById(E.fg, i)->grounded) stillUngrounded = true;
   for (int i = 0; i < nb && !stillUngrounded; i++) if (!compById(E.bg, i)->grounded) stillUngrounded = true;
@@ -2763,13 +2761,11 @@ void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedE
 void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased,
                                            int& nextId, bool iceCache, bool markGroundDirty,
                                            int indexedOffset, ConnectivitySplitMode splitMode) {
-  // Dirty joints for the NEXT step when bg is live. Even acid pure-bore
-  // (markGroundDirty=false) must force a recompute — but do NOT clear
-  // jointGroundReady mid-step. step() grounds jointly, then stepLayer(fg) then
-  // stepLayer(bg). Acid transferred into the first layer can dissolve there and
-  // used to clear jointGroundReady before the second layer moved; that layer
-  // then ran ensureGroundedSingleLayer (no cross-support) and crept down one
-  // cell per dissolve until co-occupation was lost and it free-fell.
+  // Dirty joints for the next step when bg is live. Even acid pure-bore
+  // (markGroundDirty=false) must force a recompute. Do not clear
+  // jointGroundReady mid-step: step() grounds jointly, then stepLayer(fg)
+  // then stepLayer(bg), and the second layer still needs this tick's joint
+  // flags for moveRigidAssemblies.
   if (E.bgEnabled && !erased.empty()) { jointBondsInvalid = true; jointDirty = true; }
   if (!erased.empty()) {
     E.L->componentCarryDirty = true;

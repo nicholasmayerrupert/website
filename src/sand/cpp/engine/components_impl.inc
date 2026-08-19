@@ -1660,14 +1660,30 @@ bool ComponentSystem::splitRigidAfterStableErase(
       }
       return fragment;
     };
+    // Fragments reuse the lowest unused slot. The ordered free list is
+    // collected once; later tombstones insert back in index order.
+    std::vector<int> freeSlots;
+    for (int i = 0; i < (int)lay.components.size(); i++)
+      if (lay.components[i].cells.empty() && !splitTouched[i])
+        freeSlots.push_back(i);
+    size_t freeAt = 0;
     auto freeSlot = [&]() {
-      for (int i = 0; i < (int)lay.components.size(); i++)
-        if (lay.components[i].cells.empty() && !splitTouched[i]) return i;
+      while (freeAt < freeSlots.size()) {
+        int i = freeSlots[freeAt++];
+        if (i < (int)lay.components.size()
+            && lay.components[i].cells.empty() && !splitTouched[i])
+          return i;
+      }
       lay.components.push_back({});
       lay.groundBaseFlags.push_back(1);
       lay.crossBondedComp.push_back(0);
       splitTouched.push_back(0);
       return (int)lay.components.size() - 1;
+    };
+    auto recycleSlot = [&](int slot) {
+      auto insertAt = std::lower_bound(
+        freeSlots.begin() + freeAt, freeSlots.end(), slot);
+      freeSlots.insert(insertAt, slot);
     };
 
     bool first = true;
@@ -1706,6 +1722,7 @@ bool ComponentSystem::splitRigidAfterStableErase(
       lay.groundBaseFlags[slot] = 1;
       lay.crossBondedComp[slot] = 0;
       lay.componentTombstones++;
+      recycleSlot(slot);
     }
   }
 
@@ -1727,6 +1744,37 @@ bool ComponentSystem::splitRigidAfterStableErase(
 
 void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
   splitRigidAfterStableErase(erased, false);
+}
+
+bool ComponentSystem::detachedMyceliumRequiresScan(
+    Layer& lay, const std::unordered_set<int>& detached) {
+  // Stone-only detach cannot create or destroy mycelium, so the presence
+  // latches stay as they are. A spore or growing loss rescans remaining
+  // components after the slots are retired.
+  if (!lay.myceliumActive && !lay.myceliumSporePresent) return false;
+  for (int slot : detached) {
+    Comp* component = compById(lay, slot);
+    if (!component) continue;
+    if (component->growing) return true;
+    for (int k : component->cells)
+      if (k >= 0 && k < E.cols * E.rows && lay.grid[k] == MYCELIUM_SPORE)
+        return true;
+  }
+  return false;
+}
+
+void ComponentSystem::refreshMyceliumFlags(Layer& lay, bool rescan) {
+  if (!rescan) return;
+  lay.myceliumActive = false;
+  lay.myceliumSporePresent = false;
+  for (const Comp& component : lay.components) {
+    if (component.growing) lay.myceliumActive = true;
+    for (int k : component.cells)
+      if (lay.grid[k] == MYCELIUM_SPORE) {
+        lay.myceliumSporePresent = true;
+        break;
+      }
+  }
 }
 
 void ComponentSystem::detachComponentGroups(Layer& lay,
@@ -1805,6 +1853,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     }
   }
   if (pending.empty()) return;
+  bool rescanMycelium = detachedMyceliumRequiresScan(lay, detached);
   lay.componentCarryDirty = true;
   lay.componentRegistryDirty = true;
   lay.blastSparseCarryReady = false;
@@ -1831,8 +1880,11 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   }
   patchStableComponentTopology(lay, changedSlots);
 
+  std::vector<std::pair<int, int>> wakeCells;
+  for (const PendingBody& source : pending)
+    wakeCells.insert(wakeCells.end(), source.cells.begin(), source.cells.end());
+  E.rigid.wakeBodiesTouchingCells(lay, wakeCells);
   for (PendingBody& source : pending) {
-    E.rigid.wakeBodiesTouchingCells(lay, source.cells);
     Body* body = E.rigid.spawnBodyImpl(source.cells, source.materials);
     if (!body) continue;
     body->fuseTicks = source.fuseTicks;
@@ -1850,13 +1902,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   }
 
   lay.sleepingBodySupportDirty = true;
-  lay.myceliumActive = false;
-  lay.myceliumSporePresent = false;
-  for (const Comp& component : lay.components) {
-    if (component.growing) lay.myceliumActive = true;
-    for (int k : component.cells)
-      if (lay.grid[k] == MYCELIUM_SPORE) { lay.myceliumSporePresent = true; break; }
-  }
+  refreshMyceliumFlags(lay, rescanMycelium);
 }
 
 void ComponentSystem::detachCrossLayerComponentGroups(
@@ -1940,6 +1986,8 @@ void ComponentSystem::detachCrossLayerComponentGroups(
     }
   }
   if (pending.empty()) return;
+  bool rescanFg = detachedMyceliumRequiresScan(E.fg, detachedFg);
+  bool rescanBg = detachedMyceliumRequiresScan(E.bg, detachedBg);
 
   E.fg.componentCarryDirty = true;
   E.bg.componentCarryDirty = true;
@@ -1975,11 +2023,17 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   retire(E.fg, detachedFg);
   retire(E.bg, detachedBg);
 
+  std::vector<std::pair<int, int>> wakeFg, wakeBg;
+  for (const PendingJoint& source : pending) {
+    wakeFg.insert(wakeFg.end(), source.fgCells.begin(), source.fgCells.end());
+    wakeBg.insert(wakeBg.end(), source.bgCells.begin(), source.bgCells.end());
+  }
+  E.rigid.wakeBodiesTouchingCells(E.fg, wakeFg);
+  E.rigid.wakeBodiesTouchingCells(E.bg, wakeBg);
+
   std::vector<Body*> spawnedJoints;
   spawnedJoints.reserve(pending.size());
   for (PendingJoint& source : pending) {
-    E.rigid.wakeBodiesTouchingCells(E.fg, source.fgCells);
-    E.rigid.wakeBodiesTouchingCells(E.bg, source.bgCells);
     Body* leader = E.rigid.spawnJointBodyImpl(
       source.fgCells, source.fgMaterials, source.bgCells, source.bgMaterials);
     if (!leader || !leader->jointPeer) continue;
@@ -2011,21 +2065,10 @@ void ComponentSystem::detachCrossLayerComponentGroups(
 
   E.rigid.resolveSpawnedJointOverlaps(spawnedJoints);
 
-  auto refresh = [&](Layer& lay) {
-    lay.sleepingBodySupportDirty = true;
-    lay.myceliumActive = false;
-    lay.myceliumSporePresent = false;
-    for (const Comp& component : lay.components) {
-      if (component.growing) lay.myceliumActive = true;
-      for (int k : component.cells)
-        if (lay.grid[k] == MYCELIUM_SPORE) {
-          lay.myceliumSporePresent = true;
-          break;
-        }
-    }
-  };
-  refresh(E.fg);
-  refresh(E.bg);
+  E.fg.sleepingBodySupportDirty = true;
+  E.bg.sleepingBodySupportDirty = true;
+  refreshMyceliumFlags(E.fg, rescanFg);
+  refreshMyceliumFlags(E.bg, rescanBg);
   cgBonds.erase(std::remove_if(cgBonds.begin(), cgBonds.end(), [&](const CrossLayerBond& bond) {
     return detachedFg.count(bond.fgComp) || detachedBg.count(bond.bgComp);
   }), cgBonds.end());

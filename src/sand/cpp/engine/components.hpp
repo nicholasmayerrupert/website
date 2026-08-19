@@ -148,5 +148,7 @@ class ComponentSystem {
 
  private:
   bool isGroundingRigidCell(const Layer& lay, int k) const;
+  bool detachedMyceliumRequiresScan(Layer& lay, const std::unordered_set<int>& detached);
+  void refreshMyceliumFlags(Layer& lay, bool rescan);
   Engine& E;
 };

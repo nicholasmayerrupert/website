@@ -133,7 +133,7 @@ try {
   await page.keyboard.press('l');
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
-    .startsWith('SAND-REPLAY-2:{'), null, { timeout: 30000 });
+    .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
   const firstReplayTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.keyboard.press('l');
   await page.waitForFunction((tick) => {
@@ -149,7 +149,7 @@ try {
   await page.keyboard.press('l');
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
-    .startsWith('SAND-REPLAY-2:{'), null, { timeout: 30000 });
+    .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
   const replayTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.getByRole('button', { name: 'Run replay', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot

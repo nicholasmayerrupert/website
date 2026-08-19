@@ -12,6 +12,8 @@ import {
 } from '../wasmBridge/abi.generated.js';
 import {
   copyReplayValue,
+  normalizeReplayInit,
+  normalizeReplayMessage,
   REPLAY_EVENT_TYPES,
   REPLAY_FORMAT,
   REPLAY_VERSION,
@@ -82,12 +84,6 @@ const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
 
-function replayInitOptions(data) {
-  const options = copyReplayValue(data);
-  delete options.type;
-  return options;
-}
-
 function beginReplayCapture(data) {
   replayCaptureStarting = true;
   replayInputSignature = '';
@@ -96,7 +92,7 @@ function beginReplayCapture(data) {
     version: REPLAY_VERSION,
     abiVersion: ABI_VERSION,
     abiFingerprint: ABI_FINGERPRINT,
-    init: replayInitOptions(data),
+    init: normalizeReplayInit(data),
     events: [],
     gates: [],
     turns: 0,
@@ -106,23 +102,23 @@ function beginReplayCapture(data) {
 function recordReplayMessage(data) {
   if (!replayCapture || replayRunning || !REPLAY_EVENT_TYPES.has(data.type)) return;
   if (data.type === 'input') return;
+  const message = normalizeReplayMessage(data, !!replayCapture.init.survival);
+  if (!message) return;
   replayCapture.events.push({
     tick: replayCaptureStarting ? 0 : replayCapture.turns,
-    message: copyReplayValue(data),
+    message,
   });
 }
 
 function recordReplayTurn() {
   if (latestInput) {
-    const inputState = copyReplayValue(latestInput);
-    delete inputState.seq;
-    const signature = JSON.stringify(inputState);
+    const message = normalizeReplayMessage(
+      { type: 'input', input: latestInput }, !!replayCapture.init.survival,
+    );
+    const signature = JSON.stringify(message);
     if (signature !== replayInputSignature) {
       replayInputSignature = signature;
-      replayCapture.events.push({
-        tick: replayCapture.turns,
-        message: { type: 'input', input: copyReplayValue(latestInput) },
-      });
+      replayCapture.events.push({ tick: replayCapture.turns, message });
     }
   }
   const flags = (awaitingAck ? REPLAY_GATE_AWAITING_ACK : 0)
@@ -937,6 +933,10 @@ async function runReplayCapsule(requestId, value) {
         events: capsule.events.slice(),
         gates: capsule.gates.slice(),
       };
+      replayInputSignature = latestInput
+        ? JSON.stringify(normalizeReplayMessage(
+          { type: 'input', input: latestInput }, !!capsule.init.survival,
+        )) : '';
       postFull('replay', { replayView: capsule.view || null });
       postActors(true);
       self.postMessage({

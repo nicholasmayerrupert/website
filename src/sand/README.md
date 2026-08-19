@@ -231,7 +231,9 @@ fresh authority and verifies the final tick, streamed offset, actor/topology
 totals, and both-layer grid checksum.
 Capsules are ABI-versioned and intentionally reject incompatible engine builds;
 multiplayer sessions cannot be captured because their authority is remote.
-The copy/paste format is plain JSON with compact event and gate entries.
+The copy/paste codec stores delta-tick event tuples, changed control/input fields,
+and sparse transport-gate ranges, then uses gzip when the compressed text is
+smaller. Version 2 plain-JSON capsules remain importable.
 
 ## Source map
 

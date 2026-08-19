@@ -253,7 +253,13 @@ function drawCelestialBodies(ctx, w, horizon, viewportHeight, dayNight) {
   }
 }
 
-function drawCloud(ctx, x, y, size, color, variant) {
+function drawCloud(ctx, x, y, size, color, variant, scale) {
+  // Keep the block geometry on its logical grid while the complete cloud moves
+  // in backing-store-pixel steps.
+  ctx.save();
+  ctx.translate(snapScreenPixel(x, scale), snapScreenPixel(y, scale));
+  x = 0;
+  y = 0;
   const shadow = mixColor(color, '#435566', 0.28);
   const highlight = mixColor(color, '#ffffff', 0.32);
   const wide = variant > 0.48;
@@ -280,6 +286,7 @@ function drawCloud(ctx, x, y, size, color, variant) {
   ctx.globalAlpha = 0.34;
   fillRect(ctx, x + size * 2, y + size * 3, size * 5, 1, shadow);
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 export function cloudCycleOffset(phase, period) {
@@ -301,7 +308,7 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
-      drawCloud(ctx, x, y, size, color, rand01(seed + 12));
+      drawCloud(ctx, x, y, size, color, rand01(seed + 12), scale);
     }
   }
 }

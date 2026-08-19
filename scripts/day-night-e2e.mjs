@@ -142,6 +142,79 @@ try {
   check(`clouds retain vertical parallax (${(skyPan.clouds.overlap * 100).toFixed(1)}% fixed pixels)`,
     skyPan.clouds.before > 20 && skyPan.clouds.after > 20 && skyPan.clouds.overlap < 0.9);
 
+  const cloudPan = await page.evaluate(async (surfaceCamY) => {
+    const { createParallaxBackground } = await import('/src/sand/game/parallaxBackground.js');
+    const { sampleDayNight } = await import('/src/sand/game/dayNightCycle.js');
+    const host = document.createElement('div');
+    const background = createParallaxBackground(host);
+    background.resize(640, 360);
+    const canvas = host.querySelector('canvas');
+    const context = canvas.getContext('2d');
+    let visualKey = 0;
+
+    const largestLightCloudCenter = () => {
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const matches = new Uint8Array(canvas.width * canvas.height);
+      for (let i = 0; i < matches.length; i++) {
+        const p = i * 4;
+        matches[i] = pixels[p] === 237 && pixels[p + 1] === 244 && pixels[p + 2] === 242 ? 1 : 0;
+      }
+      let best = null;
+      const stack = [];
+      for (let start = 0; start < matches.length; start++) {
+        if (!matches[start]) continue;
+        matches[start] = 0;
+        stack.push(start);
+        let count = 0, sumX = 0, sumY = 0;
+        while (stack.length) {
+          const cell = stack.pop();
+          const x = cell % canvas.width;
+          const y = Math.floor(cell / canvas.width);
+          count++;
+          sumX += x;
+          sumY += y;
+          const left = cell - 1, right = cell + 1;
+          const up = cell - canvas.width, down = cell + canvas.width;
+          if (x > 0 && matches[left]) { matches[left] = 0; stack.push(left); }
+          if (x + 1 < canvas.width && matches[right]) { matches[right] = 0; stack.push(right); }
+          if (y > 0 && matches[up]) { matches[up] = 0; stack.push(up); }
+          if (y + 1 < canvas.height && matches[down]) { matches[down] = 0; stack.push(down); }
+        }
+        if (!best || count > best.count) best = { count, x: sumX / count, y: sumY / count };
+      }
+      return best;
+    };
+
+    const sample = (camX, camY) => {
+      background.draw({
+        camX,
+        camY,
+        dayNight: sampleDayNight(0.5),
+        dayVisualKey: ++visualKey,
+      });
+      return largestLightCloudCenter();
+    };
+    const axis = (horizontal) => {
+      const centers = [];
+      const distance = horizontal ? 12 : 4;
+      for (let offset = 0; offset <= distance; offset += 0.25) {
+        centers.push(sample(horizontal ? offset : 0, horizontal ? surfaceCamY : surfaceCamY + offset));
+      }
+      const values = centers.map((center) => horizontal ? center.x : center.y);
+      let maxStep = 0;
+      for (let i = 1; i < values.length; i++) maxStep = Math.max(maxStep, Math.abs(values[i] - values[i - 1]));
+      return { maxStep, travel: Math.abs(values.at(-1) - values[0]), count: Math.min(...centers.map((center) => center.count)) };
+    };
+    const horizontal = axis(true);
+    const vertical = axis(false);
+    background.destroy();
+    return { horizontal, vertical };
+  }, SURFACE_CAM_Y);
+  check(`cloud camera motion advances by single screen pixels in both axes (max step ${cloudPan.horizontal.maxStep.toFixed(2)}x, ${cloudPan.vertical.maxStep.toFixed(2)}y)`,
+    cloudPan.horizontal.count > 20 && cloudPan.vertical.count > 20
+      && cloudPan.horizontal.travel >= 4 && cloudPan.vertical.travel >= 6
+      && cloudPan.horizontal.maxStep <= 1.01 && cloudPan.vertical.maxStep <= 1.01);
+
   const altitudeSky = await page.evaluate(async () => {
     const { createParallaxBackground, SURFACE_CAM_Y } =
       await import('/src/sand/game/parallaxBackground.js');

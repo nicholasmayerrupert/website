@@ -1584,14 +1584,15 @@ void ComponentSystem::patchStableComponentTopology(
   lay.compsReshaped = false;
 }
 
-// Blast repair has one topology path. The pre-cut cell index is exact; each
-// touched slot is rebuilt into its real connected pieces, with the first piece
-// retaining the slot and additional pieces using tombstones or appended slots.
-void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
-  if (erased.empty()) return;
+// Repair an exact pre-cut component index in place. Each touched slot is rebuilt
+// into its real connected pieces, with the first piece retaining the slot and
+// additional pieces using tombstones or appended slots.
+bool ComponentSystem::splitRigidAfterStableErase(
+    const std::vector<int>& erased, bool deferJointRefresh) {
+  if (erased.empty()) return true;
 #ifdef SAND_INVARIANT_CHECKS
   if (!E.L->componentIndexExact) {
-    emscripten_console_error("BLAST REPAIR REQUIRES AN EXACT COMPONENT INDEX");
+    emscripten_console_error("STABLE ERASE REPAIR REQUIRES AN EXACT COMPONENT INDEX");
     abort();
   }
 #endif
@@ -1715,10 +1716,19 @@ void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
   lay.groundContentDirty = false;
   lay.blastSparseCarryReady = !lay.componentCarryDirty;
   if (E.bgEnabled) {
-    jointDirty = true;
-    jointBondsInvalid = true;
-    jointSupportSleeping = false;
+    if (deferJointRefresh) {
+      jointDirtyDeferred = true;
+    } else {
+      jointDirty = true;
+      jointBondsInvalid = true;
+      jointSupportSleeping = false;
+    }
   }
+  return groundingPreserved;
+}
+
+void ComponentSystem::splitRigidAfterBlast(const std::vector<int>& erased) {
+  splitRigidAfterStableErase(erased, false);
 }
 
 void ComponentSystem::detachComponentGroups(Layer& lay,
@@ -2719,21 +2729,30 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
   E.L->components = std::move(updated);
 }
 
-// Fire usually nibbles leaves or an exposed face without disconnecting any
-// surviving support. Keep that common case local: split only components named
-// by the exact cellComp index, prove the removed blobs are not cuts, patch the
-// cached cells, and request only an index refresh. Acid retains its established
-// split order; real cuts on either path retain the full grounding reflood.
+// Fire repairs an exact component index in stable slots, including real splits.
+// When the index is unavailable, retain the full rebuild path.
 void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh) {
   if (erased.empty()) return;
+  Layer& lay = *E.L;
+  if (indexedExact && lay.componentIndexExact
+      && lay.groundBaseFlags.size() == lay.components.size()
+      && lay.crossBondedComp.size() == lay.components.size()) {
+    bool jointDeferredBefore = jointDirtyDeferred;
+    lay.componentCarryDirty = true;
+    bool groundingPreserved = splitRigidAfterStableErase(erased, deferJointRefresh);
+    if (E.bgEnabled && groundingPreserved && jointSupportValid && cgBonds.empty())
+      jointDirtyDeferred = jointDeferredBefore;
+    return;
+  }
+
   E.L->compsReshaped = false;
   splitPlantAfterErase(&erased, indexedExact ? 0 : -1, false, deferJointRefresh, deferJointRefresh);
   if (!indexedExact || !removalsKeepGroundingValid(erased)) {
-    E.L->groundDirty = true;
+    lay.groundDirty = true;
     return;
   }
-  for (int k : erased) E.L->cellComp[k] = -1;
-  E.L->groundContentDirty = true;
+  for (int k : erased) lay.cellComp[k] = -1;
+  lay.groundContentDirty = true;
 }
 
 // Split static structural components after an erase.

@@ -10,7 +10,7 @@ let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
 const COLS = 160, ROWS = 160;
-const EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, ACID = 10, LAVA = 11, ICE = 12, PLANT = 9, WOOD = 8;
+const EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 5, ACID = 10, LAVA = 11, ICE = 12, PLANT = 9, WOOD = 8;
 
 // A small deterministic PRNG so the fuzz scenario is reproducible (no Math.random).
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
@@ -352,6 +352,56 @@ function buildScript(seed) {
   }
   check(`stream+loose grids identical across ${steps} steps (first divergence: ${diverged})`, diverged === -1);
   a.destroy(); b.destroy();
+}
+
+// ---------------------------------------------------------------------------
+// 8. STRUCTURAL PLANT EROSION: fire repeatedly cuts an overlapping two-layer
+//    plant lattice. Stable-slot component repair must keep the joint grounding
+//    cache byte-identical to the verifier's full reflood.
+{
+  console.log('structural plant erosion: stable-slot repair matches full grounding');
+  const e = createEngineWasm({
+    cols: COLS, rows: ROWS, worldSeed: 0x51A7, sinksOn: false, bgEnabled: true,
+  });
+  e.setGroundingDebug(true, false);
+  if (typeof e.setBgEnabled === 'function') e.setBgEnabled(true);
+  const place = (x, y, material, layer) => {
+    if (typeof e.placeMaterial === 'function') e.placeMaterial(x, y, 0, material, layer);
+    else if (layer === 0) e.paintDisc(x, y, 0, material, true);
+  };
+  for (let x = 0; x < COLS; x++) {
+    place(x, ROWS - 1, STONE, 0);
+    place(x, ROWS - 1, STONE, 1);
+  }
+  for (let layer = 0; layer <= 1; layer++) {
+    for (let y = 42; y < ROWS - 8; y++) for (let x = 24; x < COLS - 24; x++) {
+      if (x % 12 < 3) place(x, y, WOOD, layer);
+      else if (y % 15 < 3) place(x, y, PLANT, layer);
+    }
+  }
+  e.syncComponents();
+  const countPlant = () => {
+    let n = 0;
+    for (const grid of [e.getGrid(), e.getGridBg()])
+      for (const material of grid) if (material === WOOD || material === PLANT) n++;
+    return n;
+  };
+  const before = countPlant();
+  let t = 0, peakFire = 0;
+  for (let step = 0; step < 220; step++) {
+    if (step < 80) for (let x = 24; x < COLS - 24; x += 3)
+      place(x, ROWS - 9, FIRE, 0);
+    t += 16;
+    e.step(t);
+    let fire = 0;
+    for (const grid of [e.getGrid(), e.getGridBg()])
+      for (const material of grid) if (material === FIRE) fire++;
+    peakFire = Math.max(peakFire, fire);
+  }
+  const after = countPlant();
+  check(`plant-fire grounding matches reflood (${e.groundingMismatches()} mismatches)`, e.groundingMismatches() === 0);
+  check(`fire eroded the structural lattice (${before} -> ${after}, peak fire ${peakFire})`, peakFire > 20 && after < before - 100);
+  e.destroy();
 }
 
 console.log(failures ? `\n${failures} checks FAILED` : '\nall checks passed');

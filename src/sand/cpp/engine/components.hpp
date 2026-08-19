@@ -122,6 +122,8 @@ class ComponentSystem {
     const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups);
   void patchStableComponentTopology(Layer& lay, const std::vector<int>& changedSlots);
   void trimTrailingComponentTombstones(Layer& lay);
+  bool splitRigidAfterStableErase(const std::vector<int>& erased,
+                                  bool deferJointRefresh);
   void splitRigidAfterBlast(const std::vector<int>& erased);
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();

@@ -52,7 +52,7 @@ function run(kind) {
   const e = createEngineWasm({ cols, rows, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
   let injected = injectAtInterfaces(e, kind, 0, 1200);
   const stepMs = [], reactMs = [], groundMs = [], jointMs = [], dirtyCells = [];
-  const phaseKeys = ['carryMs', 'sandMs', 'liquidMs', 'gasMs', 'tailMs', 'layersMs', 'crossMs'];
+  const phaseKeys = ['componentIndexMs', 'carryMs', 'sandMs', 'liquidMs', 'gasMs', 'tailMs', 'layersMs', 'crossMs'];
   const phaseSamples = Object.fromEntries(phaseKeys.map((key) => [key, []]));
   for (let i = 0; i < steps; i++) {
     if (i > 0 && i % 12 === 0) injected += injectAtInterfaces(e, kind, i / 12, 600);

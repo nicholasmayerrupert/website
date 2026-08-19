@@ -1,11 +1,10 @@
 // Tiny helpers shared by the framework-free embed widgets (palette, inventory
 // HUD, footprint menu, connect panel).
 
-// Stop the given events from bubbling to the window-level game input (which
-// would latch mouse buttons / mine through a panel). See inputBindings.js for
-// why pointermove must be included: a drag
-// that leaves a widget while held must not feed the window's `|=  e.buttons`
-// latch without its matching pointerup.
+// Stop overlay presses from bubbling to the window-level game input (which
+// would start a sim click through a panel). Release listeners in
+// inputBindings.js run in the capture phase so a paint/WASD gesture that
+// ends on a widget still unlatches even when these handlers stopPropagation.
 export const SWALLOW_POINTER_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu', 'wheel'];
 export function swallowEvents(el, events = SWALLOW_POINTER_EVENTS) {
   for (const ev of events) el.addEventListener(ev, (e) => e.stopPropagation());

@@ -11,10 +11,12 @@ import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onReplay }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
-  // Button state is edge-owned: pointerdown sets bits and pointerup clears them.
+  // Button/key state is edge-owned: down latches, up/cancel/blur clears.
   // Pointermove never infers a new press from `buttons`: browsers can send a
   // held-looking move while a tab/window is being re-entered even though this
   // page never received the matching down/up pair.
+  // Release listeners use the capture phase so a HUD `stopPropagation()` cannot
+  // hide the matching up (a paint/WASD gesture that ends over a menu).
 
   // Forward only when something actually changed (the loop calls this every
   // frame): the engine stores the pointer and derives the aim cell on demand,
@@ -125,19 +127,28 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   const onPointerUp = (e) => {
     if (!ctx.engine) return;
     // Authoritative release edge: drop only the released button's bit. Other
-    // buttons stay latched until their own pointerup (or blur/cancel).
+    // buttons stay latched until their own pointerup (or blur/cancel). Capture
+    // phase still delivers this when the up lands on a widget that swallows
+    // bubble-phase pointerup; skip the engine release if this page never saw
+    // the matching down (a click that started on the HUD).
     const button = logicalButton(e);
     const bit = BUTTON_BITS[button] || 0;
     const wasDown = (ctx.mouseButtons & bit) !== 0;
     ctx.mouseButtons &= ~bit;
     updatePointer(e.clientX, e.clientY);
-    if (!ctx.playMode && ctx.worldWorker && wasDown && (button === 0 || button === 2)) {
-      ctx.worldWorker.edge('up', button);
-      e.preventDefault();
-      return;
+    if (wasDown) {
+      if (!ctx.playMode && ctx.worldWorker && (button === 0 || button === 2)) {
+        ctx.worldWorker.edge('up', button);
+        e.preventDefault();
+      } else {
+        ctx.engine.pointerButtons(ctx.mouseButtons); // clears RMB/LMB when no buttons remain
+        if (ctx.engine.pointerUp(button)) ctx.previewDirty = true;
+      }
     }
-    ctx.engine.pointerButtons(ctx.mouseButtons); // clears RMB/LMB when no buttons remain
-    if (ctx.engine.pointerUp(button)) ctx.previewDirty = true;
+    // Clicking or releasing over a HUD control can suppress the matching keyup
+    // (preventDefault on pointerdown, or a widget that swallows keyup). Drop
+    // held keys; a still-physically-held key re-latches on the next keydown.
+    if (!isSurfaceEvent(e)) ctx.engine?.inputClearKeys();
   };
 
   const onContextMenu = (e) => {
@@ -212,7 +223,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     const code = KEY_CODES[e.key.toLowerCase()];
     if (code !== undefined) ctx.engine?.inputKey(code, 0);
   };
-  const onBlur = () => {
+  const clearLatchedInput = () => {
     ctx.engine?.inputClearKeys();  // avoid keys "sticking" on focus loss
     ctx.stickX = ctx.stickY = 0;
     ctx.engine?.inputStick(0, 0);
@@ -220,6 +231,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     ctx.engine?.pointerButtons(0);
     updatePointer(ctx.clientX, ctx.clientY); // push the cleared state so PI_PRIMARY drops -> draft finalizes
   };
+  const onBlur = clearLatchedInput;
+  const onVisibilityChange = () => { if (document.hidden) clearLatchedInput(); };
   // Pointer capture can be revoked (e.g. an OS gesture); treat it as a release
   // so a held button can never get stranded latched.
   const onPointerCancel = (e) => {
@@ -228,6 +241,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (e.button < 0) ctx.mouseButtons = 0; // pointercancel has no button -> clear all
     updatePointer(e.clientX, e.clientY);
     ctx.engine?.pointerButtons(ctx.mouseButtons);
+    if (!isSurfaceEvent(e)) ctx.engine?.inputClearKeys();
   };
 
   // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
@@ -252,13 +266,14 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     window.addEventListener('touchmove', onTouchMove, { passive: false });
     if (ctx.survival) window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerCancel);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('pointercancel', onPointerCancel, true);
     window.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     focusSurvivalSurfaceAtStartup();
   };
   const detach = () => {
@@ -266,13 +281,14 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     window.removeEventListener('touchmove', onTouchMove);
     window.removeEventListener('wheel', onWheel);
     window.removeEventListener('pointerdown', onPointerDown);
-    window.removeEventListener('pointerup', onPointerUp);
-    window.removeEventListener('pointercancel', onPointerCancel);
+    window.removeEventListener('pointerup', onPointerUp, true);
+    window.removeEventListener('pointercancel', onPointerCancel, true);
     window.removeEventListener('contextmenu', onContextMenu);
     window.removeEventListener('scroll', onScroll);
     window.removeEventListener('keydown', onKeyDown);
-    window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('keyup', onKeyUp, true);
     window.removeEventListener('blur', onBlur);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     if (!hadTabIndex) ctx.container.removeAttribute('tabindex');
     else ctx.container.setAttribute('tabindex', originalTabIndex);
   };

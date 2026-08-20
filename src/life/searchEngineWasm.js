@@ -11,6 +11,7 @@ export async function initLifeSearchWasm() {
 const fn = (module, name, result, args) => module.cwrap(name, result, args);
 
 export async function createLifeSearchEngine(size) {
+  const normalizedSize = Math.max(3, Math.min(64, Math.round(size) || 16));
   const module = await initLifeSearchWasm();
   const api = {
     create: fn(module, 'life_create', 'number', ['number']),
@@ -33,21 +34,35 @@ export async function createLifeSearchEngine(size) {
     soupLoopResultSerial: fn(module, 'life_soup_loop_result_serial', 'number', ['number', 'number']),
     soupLoopResultCells: fn(module, 'life_soup_loop_result_cells', 'number', ['number', 'number']),
     step: fn(module, 'life_step', null, ['number', 'number', 'number']),
-    measureLifetime: fn(module, 'life_measure_lifetime', 'number', ['number', 'number', 'number']),
-    measurePeriod: fn(module, 'life_measure_period', 'number', ['number', 'number', 'number']),
-    measureTransient: fn(module, 'life_measure_transient', 'number', ['number', 'number', 'number']),
+    measureOrbit: fn(module, 'life_measure_orbit', null, ['number', 'number', 'number', 'number']),
   };
-  const handle = api.create(size);
+  const handle = api.create(normalizedSize);
   if (!handle) throw new Error('Unable to create Life search engine');
-  const cellCount = size * size;
+  const cellCount = normalizedSize * normalizedSize;
 
   const copyCells = (pointer) => pointer
     ? module.HEAPU8.slice(pointer, pointer + cellCount)
     : new Uint8Array(cellCount);
   const splitSeed = (seed) => [Number(seed & 0xffffffffn), Number((seed >> 32n) & 0xffffffffn)];
+  const measureOrbit = (cells, horizon) => {
+    const input = module._malloc(cellCount);
+    const output = module._malloc(4 * Float64Array.BYTES_PER_ELEMENT);
+    module.HEAPU8.set(cells, input);
+    api.measureOrbit(normalizedSize, input, horizon, output);
+    const offset = output / Float64Array.BYTES_PER_ELEMENT;
+    const result = {
+      lifetime: module.HEAPF64[offset],
+      transient: module.HEAPF64[offset + 1],
+      period: module.HEAPF64[offset + 2],
+      reason: module.HEAPF64[offset + 3],
+    };
+    module._free(input);
+    module._free(output);
+    return result;
+  };
 
   return {
-    size,
+    size: normalizedSize,
     startSoup({ density, horizon, seed, leaderboardSize }) {
       const [low, high] = splitSeed(seed);
       const boundedHorizon = Math.min(0x7fffffff, Math.max(0, Math.trunc(horizon) || 0));
@@ -85,28 +100,17 @@ export async function createLifeSearchEngine(size) {
       const input = module._malloc(cellCount);
       const output = module._malloc(cellCount);
       module.HEAPU8.set(cells, input);
-      api.step(size, input, output);
+      api.step(normalizedSize, input, output);
       const result = copyCells(output);
       module._free(input);
       module._free(output);
       return result;
     },
     measureLifetime(cells, horizon) {
-      const input = module._malloc(cellCount);
-      module.HEAPU8.set(cells, input);
-      const packed = api.measureLifetime(size, input, horizon);
-      module._free(input);
-      return { lifetime: packed >> 2, reason: packed & 3 };
+      const orbit = measureOrbit(cells, horizon);
+      return { lifetime: orbit.lifetime, reason: orbit.reason };
     },
-    measureOrbit(cells, horizon) {
-      const input = module._malloc(cellCount);
-      module.HEAPU8.set(cells, input);
-      const packed = api.measureLifetime(size, input, horizon);
-      const period = api.measurePeriod(size, input, horizon);
-      const transient = api.measureTransient(size, input, horizon);
-      module._free(input);
-      return { lifetime: packed >> 2, reason: packed & 3, transient, period };
-    },
+    measureOrbit,
     stop() { api.stop(handle); },
     destroy() { api.destroy(handle); },
   };

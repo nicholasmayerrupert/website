@@ -1,10 +1,17 @@
 import { createLifeSearchEngine } from './searchEngineWasm.js';
+import {
+  MAX_LIFE_SEARCH_BATCH,
+  tuneLifeSearchBatch,
+} from './searchLimits.js';
 
 let engine = null;
 let runToken = 0;
 let settings = null;
 let startedAt = 0;
 let lastProgressAt = 0;
+let nextBatchSize = 32;
+
+const pumpChannel = typeof MessageChannel === 'undefined' ? null : new MessageChannel();
 
 const hashSeed = (value) => {
   const text = String(value || 'life-search');
@@ -15,11 +22,6 @@ const hashSeed = (value) => {
   }
   return hash;
 };
-
-async function replaceEngine(size) {
-  engine?.destroy();
-  engine = await createLifeSearchEngine(size);
-}
 
 function postProgress(force = false) {
   const now = performance.now();
@@ -39,9 +41,17 @@ function postProgress(force = false) {
 
 function pump(token) {
   if (token !== runToken || !engine || !settings) return;
-  engine.pumpSoup(settings.batchSize);
+  const before = performance.now();
+  const completed = engine.pumpSoup(nextBatchSize);
+  const elapsed = performance.now() - before;
+  nextBatchSize = tuneLifeSearchBatch(nextBatchSize, completed, elapsed);
   postProgress();
-  setTimeout(() => pump(token), 0);
+  if (pumpChannel) pumpChannel.port2.postMessage(token);
+  else setTimeout(() => pump(token), 0);
+}
+
+if (pumpChannel) {
+  pumpChannel.port1.onmessage = ({ data: token }) => pump(token);
 }
 
 self.onmessage = async ({ data }) => {
@@ -61,9 +71,25 @@ self.onmessage = async ({ data }) => {
       return;
     }
     if (data.type === 'start-soup') {
-      runToken++;
-      await replaceEngine(data.size);
+      const token = ++runToken;
+      let replacement;
+      try {
+        replacement = await createLifeSearchEngine(data.size);
+      } catch (error) {
+        if (token !== runToken) return;
+        throw error;
+      }
+      if (token !== runToken) {
+        replacement.destroy();
+        return;
+      }
+      engine?.destroy();
+      engine = replacement;
       settings = data;
+      nextBatchSize = Math.max(1, Math.min(
+        MAX_LIFE_SEARCH_BATCH,
+        Math.round(data.batchSize) || 32,
+      ));
       engine.startSoup({
         density: data.density,
         horizon: data.horizon,
@@ -75,7 +101,8 @@ self.onmessage = async ({ data }) => {
       const phase = Math.max(0, Math.min(1, data.progressPhase || 0));
       lastProgressAt = startedAt - interval * phase;
       self.postMessage({ type: 'started', mode: 'soup' });
-      pump(runToken);
+      if (pumpChannel) pumpChannel.port2.postMessage(token);
+      else setTimeout(() => pump(token), 0);
     }
   } catch (error) {
     settings = null;

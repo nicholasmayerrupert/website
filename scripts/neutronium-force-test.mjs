@@ -276,6 +276,36 @@ const createOpenSuspendedSource = () => {
   engine.destroy();
 }
 
+// A strong field changes the direction of liquid separation without bypassing
+// the shared density-contrast exchange gate.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 40, 80, 140, 82, MAT.NEUTRONIUM);
+  paintRect(engine, 140, 83, 140, 111, MAT.STONE);
+  paintRect(engine, 45, 60, 135, 79, MAT.OIL);
+  paintRect(engine, 45, 59, 135, 59, MAT.WATER);
+  engine.syncComponents();
+
+  const waterBefore = countMaterial(engine, MAT.WATER);
+  const oilBefore = countMaterial(engine, MAT.OIL);
+  engine.stepWorld();
+  const grid = engine.getGrid();
+  let waterInsideOil = 0;
+  for (let y = 60; y <= 79; y++) {
+    for (let x = 45; x <= 135; x++) {
+      if (grid[y * COLS + x] === MAT.WATER) waterInsideOil++;
+    }
+  }
+  check(`neutronium keeps water/oil exchange rate-limited (${waterInsideOil}/${waterBefore})`,
+    waterInsideOil > 0 && waterInsideOil < waterBefore * 0.6);
+  check('rate-limited neutronium liquid exchange conserves both materials',
+    countMaterial(engine, MAT.WATER) === waterBefore
+      && countMaterial(engine, MAT.OIL) === oilBefore);
+  engine.destroy();
+}
+
 // Material arriving from one direction spreads along force tangents once its
 // inward path is pressure-blocked, allowing it to wrap around the source.
 for (const [label, mat, limit] of [
@@ -447,9 +477,6 @@ for (const [label, mat, limit] of [
   const oil = materialStats(engine, MAT.OIL, sourceX, sourceY);
   check(`oil poured after water sinks toward neutronium (${oilBefore.meanRadius.toFixed(2)} -> ${oil.meanRadius.toFixed(2)})`,
     oil.count > 0 && oil.meanRadius < oilBefore.meanRadius - 4);
-  const oilQuads = quadrantCounts(engine, MAT.OIL, sourceX, sourceY);
-  check('oil wraps around the water toward neutronium',
-    (oilQuads[2] + oilQuads[3]) > 8);
   check(`water stays inside the oil shell (${water.meanRadius.toFixed(2)} < ${oil.meanRadius.toFixed(2)})`,
     water.meanRadius < oil.meanRadius);
   check('water/oil force sinking conserves both liquids',

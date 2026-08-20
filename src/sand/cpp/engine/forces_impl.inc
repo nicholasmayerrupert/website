@@ -1626,23 +1626,14 @@ bool ForceSystem::tryMoveLoose(
         && nextMaterial == E.L->grid[toK]
         && E.L->vacatedStamp[toK] != E.tick
         && E.canDisplaceMaterial(material, nextMaterial);
-      // One adjacent density swap toward the source. Ordinary gravity movement
-      // still treats other liquids as blocking; this is the force-directed
-      // counterpart of the post-settle liquid density pass.
-      uint8_t occupant = nextMaterial == EMPTY ? E.L->grid[toK] : nextMaterial;
-      bool canDisplaceLighterLiquid = E.L->assemblyWakeStamp[toK] != E.tick
-        && E.L->vacatedStamp[toK] != E.tick
-        && (nextMaterial == EMPTY || nextMaterial == E.L->grid[toK])
-        && E.isLiquidMaterial(occupant)
-        && E.canDisplaceByLooseDensity(material, occupant);
       // Radial moves reject same-material vacancies because they are not new
       // volume. Pressure chains may follow one after a frontier cell moves.
+      // Liquid density exchange stays in the shared post-settle pass.
       return (followPressureVacancy
               || E.L->vacatedStamp[toK] != E.tick
               || E.L->grid[toK] != material)
           && (E.liquidCanClaim(toK, material)
-              || canDisplaceParkedPowder
-              || canDisplaceLighterLiquid);
+              || canDisplaceParkedPowder);
     }
     if (E.isGasMaterial(material)) {
       uint8_t occupant = E.L->grid[toK];

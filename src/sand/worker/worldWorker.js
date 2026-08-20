@@ -74,10 +74,11 @@ let pendingRuntimeConfig = null;
 let pendingResize = null;
 let livenessStage = WORKER_LIVENESS_STAGE.INITIALIZING;
 let livenessTurn = 0;
-let livenessProbeArmed = false;
 let replayCapture = null;
 let replayCaptureStarting = false;
 let replayInputSignature = '';
+let replayJournalEvents = [];
+let replayJournalGateFlags = 0;
 let replayRunning = false;
 let replayTransportSuppressed = false;
 const REPLAY_GATE_AWAITING_ACK = 1;
@@ -87,16 +88,20 @@ const turnDeadline = createTurnDeadline({ now: performance.now() });
 function beginReplayCapture(data) {
   replayCaptureStarting = true;
   replayInputSignature = '';
+  replayJournalEvents = [];
+  replayJournalGateFlags = 0;
+  const init = normalizeReplayInit(data);
   replayCapture = {
     format: REPLAY_FORMAT,
     version: REPLAY_VERSION,
     abiVersion: ABI_VERSION,
     abiFingerprint: ABI_FINGERPRINT,
-    init: normalizeReplayInit(data),
+    init,
     events: [],
     gates: [],
     turns: 0,
   };
+  self.postMessage({ type: 'replay-journal-reset', init });
 }
 
 function recordReplayMessage(data) {
@@ -104,9 +109,24 @@ function recordReplayMessage(data) {
   if (data.type === 'input') return;
   const message = normalizeReplayMessage(data, !!replayCapture.init.survival);
   if (!message) return;
-  replayCapture.events.push({
+  const event = {
     tick: replayCaptureStarting ? 0 : replayCapture.turns,
     message,
+  };
+  replayCapture.events.push(event);
+  const flags = (awaitingAck ? REPLAY_GATE_AWAITING_ACK : 0)
+    | (fullResyncRequested ? REPLAY_GATE_FULL_RESYNC : 0);
+  // Runtime messages can enter synchronous engine work before the next turn.
+  // Publish the normalized event first so the main thread retains its trigger.
+  self.postMessage({
+    type: 'replay-journal-event',
+    event,
+    flags,
+    phase: `apply-${message.type}`,
+    worldTick: engine ? engine.getTick() : 0,
+    actorTick: engine ? engine.getActorTick() : 0,
+    epoch,
+    sequence,
   });
 }
 
@@ -118,11 +138,14 @@ function recordReplayTurn() {
     const signature = JSON.stringify(message);
     if (signature !== replayInputSignature) {
       replayInputSignature = signature;
-      replayCapture.events.push({ tick: replayCapture.turns, message });
+      const event = { tick: replayCapture.turns, message };
+      replayCapture.events.push(event);
+      replayJournalEvents.push(event);
     }
   }
   const flags = (awaitingAck ? REPLAY_GATE_AWAITING_ACK : 0)
     | (fullResyncRequested ? REPLAY_GATE_FULL_RESYNC : 0);
+  replayJournalGateFlags = flags;
   if (flags) {
     const previous = replayCapture.gates.at(-1);
     if (previous?.end === replayCapture.turns && previous.flags === flags) {
@@ -136,6 +159,27 @@ function recordReplayTurn() {
     }
   }
   replayCapture.turns++;
+}
+
+function publishReplayTurn() {
+  if (!replayCapture || replayCapture.turns < 1) return false;
+  const events = replayJournalEvents;
+  replayJournalEvents = [];
+  self.postMessage({
+    type: 'replay-journal-turn',
+    turns: replayCapture.turns,
+    flags: replayJournalGateFlags,
+    events,
+    phase: 'turn-start',
+    worldTick: engine.getTick(),
+    actorTick: engine.getActorTick(),
+    epoch,
+    sequence,
+    liveness: encodeWorkerLiveness(
+      WORKER_LIVENESS_STAGE.STREAM, livenessTurn + 1, awaitingAck, !!control,
+    ),
+  });
+  return true;
 }
 
 function replayFinalState() {
@@ -557,11 +601,15 @@ function schedule(delay = null) {
   timer = setTimeout(run, wait);
 }
 
-function executeTurn(started, scheduleNext = true) {
-  const detailedLiveness = livenessProbeArmed;
-  livenessProbeArmed = false;
+function executeTurn(started, scheduleNext = true, streamBreadcrumbPublished = false) {
+  const publishBreadcrumbs = !replayRunning;
   livenessTurn++;
-  setLivenessStage(WORKER_LIVENESS_STAGE.STREAM, detailedLiveness);
+  // The live capture journal already carries this packed stream marker. Reuse
+  // it instead of posting a duplicate message on every authority turn.
+  setLivenessStage(
+    WORKER_LIVENESS_STAGE.STREAM,
+    publishBreadcrumbs && !streamBreadcrumbPublished,
+  );
   const fromWorldOffsetX = engine.getWorldOffsetX();
   const fromWorldOffsetY = engine.getWorldOffsetY();
   const shifted = streamForControl();
@@ -589,6 +637,7 @@ function executeTurn(started, scheduleNext = true) {
       control.camWorldY - engine.getWorldOffsetY(),
     );
   }
+  setLivenessStage(WORKER_LIVENESS_STAGE.APPLY_TOOLS, publishBreadcrumbs);
   if (!survival) {
     applyEdges();
     // Held-tool cadence belongs to authority turn time, independent of worker scheduling jitter.
@@ -602,11 +651,11 @@ function executeTurn(started, scheduleNext = true) {
   }
   // Authority time advances as one coherent tick. An over-budget world slows
   // actors by the same amount instead of letting an actor catch-up loop race ahead.
-  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_ACTORS, detailedLiveness);
+  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_ACTORS, publishBreadcrumbs);
   engine.stepActors();
-  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_WORLD, detailedLiveness);
+  setLivenessStage(WORKER_LIVENESS_STAGE.STEP_WORLD, publishBreadcrumbs);
   engine.stepWorld();
-  setLivenessStage(WORKER_LIVENESS_STAGE.TRANSPORT, detailedLiveness);
+  setLivenessStage(WORKER_LIVENESS_STAGE.TRANSPORT, publishBreadcrumbs);
   // The DEV delay hook isolates scheduling without burning a browser CPU core.
   lastStepMs = performance.now() - stepStart;
   rateSteps++;
@@ -633,13 +682,15 @@ function executeTurn(started, scheduleNext = true) {
   // was posted immediately before the shift.
   postActors(shifted);
   if (!shifted && !postedFull) postDiffIfReady();
+  // Mark the scheduling handoff before calling into the timer API so the last
+  // delivered breadcrumb distinguishes it from unfinished transport work.
+  setLivenessStage(WORKER_LIVENESS_STAGE.SCHEDULED, publishBreadcrumbs);
   if (scheduleNext) {
     const targetTurnMs = Math.max(SIM_STEP_MS, artificialDelayMs);
     if (targetTurnMs > SIM_STEP_MS)
       schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
     else schedule();
   }
-  setLivenessStage(WORKER_LIVENESS_STAGE.SCHEDULED, detailedLiveness);
 }
 
 function run() {
@@ -655,12 +706,17 @@ function run() {
     schedule();
     return;
   }
-  if (replayCapture) recordReplayTurn();
-  executeTurn(started);
+  let streamBreadcrumbPublished = false;
+  if (replayCapture) {
+    recordReplayTurn();
+    // Flush accepted events before streaming, tool application, actors, or the
+    // world step can enter a long synchronous path.
+    streamBreadcrumbPublished = publishReplayTurn();
+  }
+  executeTurn(started, true, streamBreadcrumbPublished);
 }
 
 async function initializeAuthority(data, { scheduleRuns = true, usePending = true } = {}) {
-  livenessProbeArmed = false;
   const generation = ++initGeneration;
   clearTimeout(timer);
   try {
@@ -762,7 +818,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       if (scheduleRuns) schedule();
       setLivenessStage(paused
         ? WORKER_LIVENESS_STAGE.PAUSED
-        : WORKER_LIVENESS_STAGE.SCHEDULED, true);
+        : WORKER_LIVENESS_STAGE.SCHEDULED, !replayRunning);
       return true;
   } catch (error) {
     engine?.destroy();
@@ -859,6 +915,7 @@ function exportReplay(requestId, view) {
     return;
   }
   paused = true;
+  setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED, true);
   const capsule = {
     ...replayCapture,
     events: replayCapture.events.slice(),
@@ -882,6 +939,8 @@ async function runReplayCapsule(requestId, value) {
   replayRunning = true;
   replayTransportSuppressed = true;
   replayCaptureStarting = false;
+  replayJournalEvents = [];
+  replayJournalGateFlags = 0;
   pendingRuntimeConfig = null;
   pendingResize = null;
   const initialized = await initializeAuthority(
@@ -1018,7 +1077,6 @@ self.onmessage = async ({ data }) => {
     return;
   }
   if (data.type === 'liveness-probe') {
-    livenessProbeArmed = true;
     setLivenessStage(livenessStage, true);
     return;
   }

@@ -15,7 +15,7 @@ import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
 import { createReplayPanel } from './replayPanel.js';
-import { CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
+import { CREATIVE_KIND, CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
 import { resolvePlanetId } from './planetSelection.js';
 
 export function createSandGame(container, opts = {}) {
@@ -45,6 +45,7 @@ export function createSandGame(container, opts = {}) {
     onInteraction = null,
     onToggleInventory = null,
     onToggleFootprintMenu = null,
+    onEquipCreativeMaterial = null,
   } = opts;
   const survival = mode === 'survival';
   const planetId = resolvePlanetId(planet);
@@ -130,6 +131,7 @@ export function createSandGame(container, opts = {}) {
     worldWorker: null,
     creativeKind: 0,
     creativeValue: 0,
+    lastCreativeMaterial: null,
     creatureSimulationRequested: false,
     inputSeq: 0,
 
@@ -191,6 +193,26 @@ export function createSandGame(container, opts = {}) {
     const authority = ctx.worldWorker;
     ctx.worldWorker = null;
     authority?.destroy();
+  };
+  const applyCreativeSelection = () => {
+    ctx.engine?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
+    applyCreatureRuntimePolicy(ctx);
+    ctx.worldWorker?.config({
+      creativeKind: ctx.creativeKind,
+      creativeValue: ctx.creativeValue,
+    });
+  };
+  const setCreativeSelection = (kind, value) => {
+    ctx.creativeKind = kind | 0;
+    ctx.creativeValue = value | 0;
+    if (ctx.creativeKind === CREATIVE_KIND.MATERIAL)
+      ctx.lastCreativeMaterial = ctx.creativeValue;
+    applyCreativeSelection();
+  };
+  const equipLastCreativeMaterial = () => {
+    if (ctx.lastCreativeMaterial === null) return;
+    if (onEquipCreativeMaterial?.(ctx.lastCreativeMaterial)) return;
+    setCreativeSelection(CREATIVE_KIND.MATERIAL, ctx.lastCreativeMaterial);
   };
 
   const authorityFailure = document.createElement('div');
@@ -292,6 +314,7 @@ export function createSandGame(container, opts = {}) {
     onInteraction,
     onToggleInventory,
     onToggleFootprintMenu,
+    onEquipLastCreativeMaterial: equipLastCreativeMaterial,
     onReplay: replayPanel.open,
   });
   const loop = createGameLoop(ctx, {
@@ -532,11 +555,7 @@ export function createSandGame(container, opts = {}) {
     },
     // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {
-      ctx.creativeKind = kind | 0;
-      ctx.creativeValue = value | 0;
-      ctx.engine?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
-      applyCreatureRuntimePolicy(ctx);
-      ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
+      setCreativeSelection(kind, value);
     },
     // Live performance snapshot for the on-screen perf HUD (the /fps route).
     // Mirrors the DEV-only window.__sandPerf but is always available. fps/

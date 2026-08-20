@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onReplay }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onReplay }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button/key state is edge-owned: down latches, up/cancel/blur clears.
@@ -42,6 +42,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     return b.width > 0 && b.height > 0 && b.right > 0 && b.bottom > 0 &&
       b.left < window.innerWidth && b.top < window.innerHeight;
   };
+  const hasDesktopPointer = () => !window.matchMedia
+    || !window.matchMedia('(pointer: coarse)').matches;
   const focusSurvivalSurfaceAtStartup = () => {
     if (!ctx.survival || !surfaceIsVisible()) return;
     const root = ctx.container.getRootNode?.();
@@ -183,13 +185,15 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
-    // Creative camera movement and replay capture should survive focus moving to
-    // palette buttons and should not require a priming click. Survival and the
-    // remaining shortcuts stay scoped to explicit surface focus.
-    const visibleCreativeWasd = !ctx.playMode && surfaceIsVisible() &&
-      (key === 'w' || key === 'a' || key === 's' || key === 'd');
+    // Creative camera movement, selection restore, and replay capture should
+    // survive focus moving to palette buttons and should not require a priming
+    // click. Survival and the remaining shortcuts stay scoped to explicit
+    // surface focus.
+    const visibleCreativeShortcut = !ctx.playMode && surfaceIsVisible() &&
+      (key === 'w' || key === 'a' || key === 's' || key === 'd'
+        || (key === 'q' && hasDesktopPointer()));
     const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
-    if (!ownsKeyboard() && !visibleCreativeWasd && !visibleReplayKey) return;
+    if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey) return;
     if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
     // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
     // any loaded-window resize (local worker or multiplayer server). Handled
@@ -209,6 +213,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
       if (key === 'q') { onToggleFootprintMenu?.(); e.preventDefault(); return; }
+    }
+    if (!ctx.survival && key === 'q' && hasDesktopPointer()) {
+      onEquipLastCreativeMaterial?.();
+      e.preventDefault();
+      return;
     }
     const code = KEY_CODES[key];
     if (code === undefined) return;

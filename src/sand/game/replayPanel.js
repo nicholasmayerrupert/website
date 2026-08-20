@@ -1,5 +1,14 @@
 import { decodeReplayCapsule, encodeReplayCapsule } from './replayCapsule.js';
 
+export async function materializeReplayFallback(capture, encode = encodeReplayCapsule) {
+  if (!capture?.fallback)
+    throw new Error('No completed authority turn is available to capture yet.');
+  return {
+    capsule: capture.fallback,
+    text: await encode(capture.fallback),
+  };
+}
+
 const buttonStyle = [
   'border:2px solid #080a0c',
   'padding:8px 11px',
@@ -93,6 +102,18 @@ export function createReplayPanel(ctx) {
     status.textContent = error?.message || String(error);
     status.style.color = '#ff9a8f';
   };
+  const fallbackStatus = (capsule) => {
+    const journal = capsule.final?.diagnostics?.journal || {};
+    const marker = journal.progress;
+    const progress = marker
+      ? ` Last authority marker: turn ${marker.turns.toLocaleString()}, ${marker.phase}, world tick ${marker.worldTick.toLocaleString()}, ACK ${marker.awaitingAck ? 'pending' : 'clear'}.`
+      : '';
+    if (journal.truncated || journal.discontinuous) {
+      const reason = journal.truncated ? 'hit its size limit' : 'became discontinuous';
+      return `The independent capture ${reason}; its exact ${capsule.turns.toLocaleString()}-turn prefix is copyable but incomplete.${progress}`;
+    }
+    return `${capsule.turns.toLocaleString()} accepted authority turns and ${capsule.events.length.toLocaleString()} events are copyable now.${progress} Waiting for the authority's final-state export…`;
+  };
   const open = async () => {
     if (!overlay.hidden || busy) return;
     overlay.hidden = false;
@@ -106,16 +127,43 @@ export function createReplayPanel(ctx) {
       if (ctx.netClientReady())
         throw new Error('Replay capture currently requires the local single-player authority.');
       if (!ctx.worldWorker) throw new Error('The local simulation is not ready yet.');
-      const capsule = await ctx.worldWorker.exportReplay(currentView());
-      const text = await encodeReplayCapsule(capsule);
+      const capture = ctx.worldWorker.captureReplay(currentView());
+      // Install both continuations before compression yields. A worker failure
+      // or a superseding capture must never turn into an unhandled rejection.
+      const authority = Promise.resolve(capture.verified);
+      const authorityUpdate = authority
+        .then(async (capsule) => ({
+          ok: true,
+          capsule,
+          text: await encodeReplayCapsule(capsule),
+        }))
+        .catch((error) => ({ ok: false, error }));
+      const fallback = await materializeReplayFallback(capture);
       if (generation !== openGeneration) return;
-      textarea.value = text;
-      status.textContent = `${capsule.turns.toLocaleString()} authority turns and ${capsule.events.length.toLocaleString()} events captured. Paste another capsule here to replay it.`;
+      textarea.value = fallback.text;
+      status.style.color = '#ffca78';
+      status.textContent = fallbackStatus(fallback.capsule);
+      setBusy(false);
+      replay.disabled = true;
       textarea.focus({ preventScroll: true });
       textarea.select();
+      void authorityUpdate.then((result) => {
+        if (generation !== openGeneration) return;
+        if (!result.ok) {
+          replay.disabled = false;
+          status.style.color = '#ffca78';
+          status.textContent = `The independent capture remains copyable; the authority did not provide a final-state export: ${result.error?.message || String(result.error)}`;
+          return;
+        }
+        const { capsule, text } = result;
+        replay.disabled = false;
+        const untouched = textarea.value === fallback.text;
+        if (untouched) textarea.value = text;
+        status.style.color = '#b9e6b1';
+        status.textContent = `${capsule.turns.toLocaleString()} authority turns and ${capsule.events.length.toLocaleString()} events captured with the authority's final state.${untouched ? ' Paste another capsule here to replay it.' : ' The text was edited, so it was not replaced.'}`;
+      });
     } catch (error) {
       if (generation === openGeneration) showError(error);
-    } finally {
       if (generation === openGeneration) setBusy(false);
     }
   };
@@ -142,6 +190,7 @@ export function createReplayPanel(ctx) {
   });
   replay.addEventListener('click', async () => {
     if (busy) return;
+    openGeneration++;
     setBusy(true);
     status.style.color = '#cbd2d9';
     status.textContent = 'Decoding replay capsule…';

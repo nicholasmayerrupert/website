@@ -3462,11 +3462,6 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
     E.writeGridIndexUnsafe(k, EMPTY);
     E.L->bodyOwner[k] = -1;
     dirty.insert(leader);
-    if (b->jointRole == 2) {
-      E.L->passiveBodyCells.erase(
-        std::remove(E.L->passiveBodyCells.begin(), E.L->passiveBodyCells.end(), k),
-        E.L->passiveBodyCells.end());
-    }
     return true;
   }
   if (!eraseLocalCell(b, idx)) return false;
@@ -3671,18 +3666,48 @@ void RigidBodySystem::finishErasedJointBodies(
     if (body->jointRole == 1 && dirtyIds.count(body->id))
       leaders.push_back(body);
 
+  struct IndexedRosterCell { int cell; size_t position; };
+  struct IndexedJointCells {
+    std::vector<IndexedRosterCell> fg, bgPassive, bgActive;
+  };
+  std::unordered_map<int, IndexedJointCells> cellsByJoint;
+  auto rebuildJointCellIndex = [&]() {
+    cellsByJoint.clear();
+    cellsByJoint.reserve(dirtyIds.size() * 2);
+    for (int id : dirtyIds) cellsByJoint.try_emplace(id);
+    auto collect = [&](Layer& layer, const std::vector<int>& roster,
+                       int rosterKind) {
+      for (size_t position = 0; position < roster.size(); position++) {
+        int k = roster[position];
+        if (k < 0 || k >= E.cols * E.rows) continue;
+        auto found = cellsByJoint.find(layer.bodyOwner[k]);
+        if (found == cellsByJoint.end()) continue;
+        IndexedRosterCell cell{k, position};
+        if (rosterKind == 0) found->second.fg.push_back(cell);
+        else if (rosterKind == 1) found->second.bgPassive.push_back(cell);
+        else found->second.bgActive.push_back(cell);
+      }
+    };
+    collect(E.fg, E.fg.bodyCells, 0);
+    collect(E.bg, E.bg.passiveBodyCells, 1);
+    collect(E.bg, E.bg.bodyCells, 2);
+  };
+  rebuildJointCellIndex();
+
   Engine::ActiveLayerScope layerScope(E, E.L);
   for (Body* leader : leaders) {
     Body* follower = leader->jointPeer;
     if (!follower) continue;
     int oldId = leader->id;
+    auto indexed = cellsByJoint.find(oldId);
+    if (indexed == cellsByJoint.end()) continue;
     std::vector<int> worldCells;
-    for (int k : E.fg.bodyCells)
-      if (k >= 0 && k < E.cols * E.rows && E.fg.bodyOwner[k] == oldId)
-        worldCells.push_back(k);
-    for (int k : E.bg.passiveBodyCells)
-      if (k >= 0 && k < E.cols * E.rows && E.bg.bodyOwner[k] == oldId)
-        worldCells.push_back(k);
+    worldCells.reserve(indexed->second.fg.size()
+                       + indexed->second.bgPassive.size());
+    for (const IndexedRosterCell& cell : indexed->second.fg)
+      worldCells.push_back(cell.cell);
+    for (const IndexedRosterCell& cell : indexed->second.bgPassive)
+      worldCells.push_back(cell.cell);
     std::sort(worldCells.begin(), worldCells.end());
     worldCells.erase(std::unique(worldCells.begin(), worldCells.end()),
                      worldCells.end());
@@ -3773,23 +3798,19 @@ void RigidBodySystem::finishErasedJointBodies(
     if (fuseTicks > 0) bodyFusePoint(leader, fuseX, fuseY);
     uint8_t fgPlantType = leader->plantType;
     uint8_t bgPlantType = follower->plantType;
-    auto removeOwnedCells = [&](Layer& layer, std::vector<int>& cells) {
-      std::vector<int> keep;
-      keep.reserve(cells.size());
-      for (int k : cells) {
-        if (k < 0 || k >= E.cols * E.rows) continue;
-        int owner = layer.bodyOwner[k];
-        if (owner == oldId) {
-          layer.bodyOwner[k] = -1;
-        } else if (owner >= 0 && layer.grid[k] != EMPTY) {
-          keep.push_back(k);
-        }
+    auto retireOwnedCells = [&](Layer& layer, std::vector<int>& roster,
+                                const std::vector<IndexedRosterCell>& cells) {
+      for (const IndexedRosterCell& entry : cells) {
+        int k = entry.cell;
+        if (layer.bodyOwner[k] == oldId) layer.bodyOwner[k] = -1;
+        if (entry.position < roster.size() && roster[entry.position] == k)
+          roster[entry.position] = -1;
       }
-      cells = std::move(keep);
     };
-    removeOwnedCells(E.fg, E.fg.bodyCells);
-    removeOwnedCells(E.bg, E.bg.passiveBodyCells);
-    removeOwnedCells(E.bg, E.bg.bodyCells);
+    retireOwnedCells(E.fg, E.fg.bodyCells, indexed->second.fg);
+    retireOwnedCells(E.bg, E.bg.passiveBodyCells,
+                     indexed->second.bgPassive);
+    retireOwnedCells(E.bg, E.bg.bodyCells, indexed->second.bgActive);
     E.bg.passiveBodyIds.erase(oldId);
     E.fg.bodies.erase(std::remove(E.fg.bodies.begin(), E.fg.bodies.end(), leader),
                       E.fg.bodies.end());
@@ -3869,7 +3890,10 @@ void RigidBodySystem::finishErasedJointBodies(
     }
     {
       Engine::ActiveLayerScope foreground(E, &E.fg);
+      int separationsBefore = rigidSpawnSeparations;
       resolveSpawnedJointOverlaps(spawnedJoints);
+      if (rigidSpawnSeparations != separationsBefore)
+        rebuildJointCellIndex();
     }
     E.fg.sleepingBodySupportDirty = true;
     E.bg.sleepingBodySupportDirty = true;

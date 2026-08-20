@@ -8,6 +8,7 @@ export const WORKER_LIVENESS_STAGE = Object.freeze({
   PAUSED: 6,
   WAITING_CONTROL: 7,
   FAILED: 8,
+  APPLY_TOOLS: 9,
 });
 
 const SIGNAL_UNIT = 64;
@@ -25,6 +26,7 @@ const STAGE_NAMES = Object.freeze([
   'paused',
   'waiting-control',
   'failed',
+  'apply-tools',
 ]);
 
 export function encodeWorkerLiveness(stage, turn, awaitingAck, hasControl) {
@@ -166,6 +168,9 @@ export function createWorkerLivenessMonitor({
     else if (stageCode === WORKER_LIVENESS_STAGE.STREAM
              && state.stageAgeMs >= stallMs)
       state.status = 'blocked-streaming';
+    else if (stageCode === WORKER_LIVENESS_STAGE.APPLY_TOOLS
+             && state.stageAgeMs >= stallMs)
+      state.status = 'blocked-apply-tools';
     else if (stageCode === WORKER_LIVENESS_STAGE.STEP_ACTORS
              && state.stageAgeMs >= stallMs)
         state.status = 'blocked-step-actors';

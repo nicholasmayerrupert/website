@@ -1049,6 +1049,8 @@ void ExplosivesSystem::applyExplosives() {
     Body* body;
     int x, y, fuseCells;
     uint8_t material;
+    double fuseX, fuseY, bestDistance;
+    int bestLayer, bestCell;
   };
   std::vector<DueBodyBlast> dueBodyBlasts;
   for (Body* b : E.L->bodies) {
@@ -1071,39 +1073,52 @@ void ExplosivesSystem::applyExplosives() {
     E.rigid.bodyFusePoint(b, fuseX, fuseY);
     int blastX = (int)std::lround(b->px);
     int blastY = (int)std::lround(b->py);
-    double bestDistance = 1e30;
-    int bestLayer = 2, bestCell = INT_MAX;
+    dueBodyBlasts.push_back({
+      b, blastX, blastY, fuseCells, explosiveMaterial,
+      fuseX, fuseY, 1e30, 2, INT_MAX,
+    });
+  }
+  if (!dueBodyBlasts.empty()) {
+    std::unordered_map<int, size_t> ownDueById, peerDueById;
+    ownDueById.reserve(dueBodyBlasts.size() * 2);
+    peerDueById.reserve(dueBodyBlasts.size() * 2);
+    for (size_t i = 0; i < dueBodyBlasts.size(); i++) {
+      Body* body = dueBodyBlasts[i].body;
+      ownDueById.emplace(body->id, i);
+      if (body->jointRole == 1 && body->jointPeer)
+        peerDueById.emplace(body->jointPeer->id, i);
+    }
     auto considerFuseCells = [&](Layer& layer, const std::vector<int>& cells,
-                                 int ownerId, int layerIndex) {
+                                 const std::unordered_map<int, size_t>& dueById,
+                                 int layerIndex) {
       for (int k : cells) {
-        if (k < 0 || k >= E.cols * E.rows
-            || layer.bodyOwner[k] != ownerId
-            || !E.isFuseExplosive(layer.grid[k]))
+        if (k < 0 || k >= E.cols * E.rows) continue;
+        auto found = dueById.find(layer.bodyOwner[k]);
+        if (found == dueById.end() || !E.isFuseExplosive(layer.grid[k]))
           continue;
+        DueBodyBlast& blast = dueBodyBlasts[found->second];
         int y = k / E.cols, x = k - y * E.cols;
-        double dx = x + 0.5 - fuseX, dy = y + 0.5 - fuseY;
+        double dx = x + 0.5 - blast.fuseX;
+        double dy = y + 0.5 - blast.fuseY;
         double distance = dx * dx + dy * dy;
-        if (distance < bestDistance
-            || (distance == bestDistance
-                && (layerIndex < bestLayer
-                    || (layerIndex == bestLayer && k < bestCell)))) {
-          bestDistance = distance;
-          bestLayer = layerIndex;
-          bestCell = k;
-          blastX = x;
-          blastY = y;
-          explosiveMaterial = layer.grid[k];
+        if (distance < blast.bestDistance
+            || (distance == blast.bestDistance
+                && (layerIndex < blast.bestLayer
+                    || (layerIndex == blast.bestLayer
+                        && k < blast.bestCell)))) {
+          blast.bestDistance = distance;
+          blast.bestLayer = layerIndex;
+          blast.bestCell = k;
+          blast.x = x;
+          blast.y = y;
+          blast.material = layer.grid[k];
         }
       }
     };
-    considerFuseCells(*E.L, E.L->bodyCells, b->id,
+    considerFuseCells(*E.L, E.L->bodyCells, ownDueById,
                       E.L == &E.bg ? 1 : 0);
-    if (b->jointRole == 1 && b->jointPeer)
-      considerFuseCells(E.bg, E.bg.passiveBodyCells,
-                        b->jointPeer->id, 1);
-    dueBodyBlasts.push_back({
-      b, blastX, blastY, fuseCells, explosiveMaterial,
-    });
+    if (!peerDueById.empty())
+      considerFuseCells(E.bg, E.bg.passiveBodyCells, peerDueById, 1);
   }
   int dueFuseCells = 0;
   for (const DueBodyBlast& blast : dueBodyBlasts)

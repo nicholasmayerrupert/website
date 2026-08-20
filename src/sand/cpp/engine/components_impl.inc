@@ -1626,6 +1626,26 @@ bool ComponentSystem::splitRigidAfterStableErase(
   std::vector<int> changedSlots = touchedSlots;
   const int gridLen = E.cols * E.rows;
   lay.reserveSeenGenerations(touchedSlots.size());
+  // Fragments reuse pre-existing untouched tombstones in index order. Slots
+  // touched by this repair stay reserved until the next topology edit.
+  std::vector<int> freeSlots;
+  for (int i = 0; i < (int)lay.components.size(); i++)
+    if (lay.components[i].cells.empty() && !splitTouched[i])
+      freeSlots.push_back(i);
+  size_t freeAt = 0;
+  auto freeSlot = [&]() {
+    while (freeAt < freeSlots.size()) {
+      int i = freeSlots[freeAt++];
+      if (i < (int)lay.components.size()
+          && lay.components[i].cells.empty() && !splitTouched[i])
+        return i;
+    }
+    lay.components.push_back({});
+    lay.groundBaseFlags.push_back(1);
+    lay.crossBondedComp.push_back(0);
+    splitTouched.push_back(0);
+    return (int)lay.components.size() - 1;
+  };
   for (int slot : touchedSlots) {
     Comp source = std::move(lay.components[slot]);
     const bool baseGrounded = groundingPreserved
@@ -1663,32 +1683,6 @@ bool ComponentSystem::splitRigidAfterStableErase(
       }
       return fragment;
     };
-    // Fragments reuse the lowest unused slot. The ordered free list is
-    // collected once; later tombstones insert back in index order.
-    std::vector<int> freeSlots;
-    for (int i = 0; i < (int)lay.components.size(); i++)
-      if (lay.components[i].cells.empty() && !splitTouched[i])
-        freeSlots.push_back(i);
-    size_t freeAt = 0;
-    auto freeSlot = [&]() {
-      while (freeAt < freeSlots.size()) {
-        int i = freeSlots[freeAt++];
-        if (i < (int)lay.components.size()
-            && lay.components[i].cells.empty() && !splitTouched[i])
-          return i;
-      }
-      lay.components.push_back({});
-      lay.groundBaseFlags.push_back(1);
-      lay.crossBondedComp.push_back(0);
-      splitTouched.push_back(0);
-      return (int)lay.components.size() - 1;
-    };
-    auto recycleSlot = [&](int slot) {
-      auto insertAt = std::lower_bound(
-        freeSlots.begin() + freeAt, freeSlots.end(), slot);
-      freeSlots.insert(insertAt, slot);
-    };
-
     bool first = true;
     for (int seed : source.cells) {
       if (seed < 0 || seed >= gridLen || lay.seenStamp[seed] != survivorGen) continue;
@@ -1725,7 +1719,6 @@ bool ComponentSystem::splitRigidAfterStableErase(
       lay.groundBaseFlags[slot] = 1;
       lay.crossBondedComp[slot] = 0;
       lay.componentTombstones++;
-      recycleSlot(slot);
     }
   }
 
@@ -2534,6 +2527,9 @@ void ComponentSystem::registerBakedCells(
   std::vector<int> stack;
   stack.reserve(cells.size());
   std::vector<int> changedSlots;
+  // Filled slots stay occupied for this call, so the lowest tombstone moves
+  // monotonically forward as each disconnected material partition is added.
+  size_t nextFreeSlot = 0;
   for (int seed : cells) {
     if (!regCells.has(seed)) continue;
     regCells.remove(seed);
@@ -2583,11 +2579,11 @@ void ComponentSystem::registerBakedCells(
       lay.components.push_back(std::move(component));
       continue;
     }
-    int slot = -1;
-    for (int i = 0; i < (int)lay.components.size(); i++)
-      if (lay.components[i].cells.empty()) { slot = i; break; }
-    if (slot < 0) {
-      slot = (int)lay.components.size();
+    while (nextFreeSlot < lay.components.size()
+           && !lay.components[nextFreeSlot].cells.empty())
+      nextFreeSlot++;
+    int slot = (int)nextFreeSlot;
+    if (nextFreeSlot == lay.components.size()) {
       lay.components.push_back({});
       lay.groundBaseFlags.push_back(0);
       lay.crossBondedComp.push_back(0);
@@ -2599,6 +2595,7 @@ void ComponentSystem::registerBakedCells(
     lay.crossBondedComp[slot] = 0;
     for (int k : lay.components[slot].cells) lay.cellComp[k] = slot;
     changedSlots.push_back(slot);
+    nextFreeSlot++;
   }
   if (stableSlots) patchStableComponentTopology(lay, changedSlots);
 }

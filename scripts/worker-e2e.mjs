@@ -150,15 +150,18 @@ try {
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
     .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
-  const replayTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.getByRole('button', { name: 'Run replay', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('[aria-label="Deterministic replay capsule"]')?.textContent
     .includes('Replay verified:'), null, { timeout: 120000 });
   check('L capsule deterministically rebuilds the captured authority state', true);
+  const replayedTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.getByRole('button', { name: 'Resume & close', exact: true }).click();
   await page.waitForFunction((tick) => window.__sandPerf().worldTick > tick,
-    replayTick, { timeout: 30000 });
+    replayedTick, { timeout: 30000 }).catch(async (error) => {
+    console.log('  replay resume debug', await page.evaluate(() => window.__sandPerf()));
+    throw error;
+  });
   check('replayed authority resumes after the panel closes', true);
 
   await page.evaluate(() => window.__sandTest.retryAuthority());
@@ -245,7 +248,42 @@ try {
   check('authority retry preserves the selected creative material',
     await page.evaluate((before) => window.__sandTest.materialCountBoth(1) > before,
       configuredPaint.before));
-  await page.evaluate(() => window.__sandTest.setCreativeMaterial(3, 0)); // CUBE
+  const palette = page.locator('sand-game').locator('.sg-palette');
+  await palette.locator('.sg-expand').click();
+  await palette.getByRole('option', { name: 'sand', exact: true }).click();
+  await palette.getByRole('option', { name: 'cube', exact: true }).click();
+  const restoredPaint = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    const rect = root.querySelector('#sand-main').getBoundingClientRect();
+    const test = window.__sandTest;
+    const selectedOption = root.querySelector('.sg-opt.active');
+    selectedOption.focus({ preventScroll: true });
+    const event = new KeyboardEvent('keydown', {
+      key: 'q', bubbles: true, composed: true, cancelable: true,
+    });
+    selectedOption.dispatchEvent(event);
+    return {
+      x: rect.left + Math.floor(rect.width * 0.65),
+      y: rect.top + Math.floor(rect.height * 0.14),
+      before: test.materialCountBoth(1),
+      prevented: event.defaultPrevented,
+      currentLabel: root.querySelector('.sg-current .sg-name-track')?.textContent,
+      activeLabel: root.querySelector('.sg-opt.active .sg-name')?.textContent,
+    };
+  });
+  await page.mouse.move(restoredPaint.x, restoredPaint.y);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(250);
+  await page.mouse.up({ button: 'left' });
+  await page.waitForFunction((before) => window.__sandTest.materialCountBoth(1) > before,
+    restoredPaint.before, { timeout: 10000 }).catch(() => {});
+  const restoredSand = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
+  check('desktop Q restores the last creative selection after another tool is equipped',
+    restoredPaint.prevented && restoredPaint.currentLabel === 'sand' &&
+      restoredPaint.activeLabel === 'sand' && restoredSand > restoredPaint.before,
+    `${restoredPaint.currentLabel}/${restoredPaint.activeLabel}, ${restoredPaint.before} -> ${restoredSand}`);
+  await palette.getByRole('option', { name: 'cube', exact: true }).click();
+  await palette.locator('.sg-expand').click();
   await page.waitForTimeout(50);
   const desktopAudioUi = await page.locator('sand-game').evaluate((host) => ({
     buttons: host.shadowRoot.querySelectorAll('.sg-sound').length,

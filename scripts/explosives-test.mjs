@@ -9,7 +9,7 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { KIND, MATERIAL_BY_ID, MAT } from '../src/sand/materials.js';
 import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
-import { makeChecker } from './sand-test-util.mjs';
+import { gridHash, makeChecker } from './sand-test-util.mjs';
 
 const COLS = 140, ROWS = 110, SEED = 0xC0FFEE, BLAST_DEBRIS_CAP = 64;
 await initSandWasm();
@@ -309,6 +309,63 @@ function blastDamagesMaterial(name) {
   }
   check(`explosive TNT body detonated (TNT consumed, stone cratered)`, gone);
   e.destroy();
+}
+
+// --- simultaneous body fuses retain deterministic output and near-linear roster scaling ---
+{
+  const run = (targetBodies) => {
+    const cols = 256, rows = 192;
+    const e = createEngineWasm({
+      cols, rows, worldSeed: SEED,
+      sinksOn: false, infinite: false, gravityScale: 0.05,
+    });
+    let spawned = 0;
+    for (let y = 4; y < rows - 4 && spawned < targetBodies; y += 5) {
+      for (let x = 4; x < cols - 4 && spawned < targetBodies; x += 5) {
+        e.spawnBox(x, y, 1, 1, MAT.TNT);
+        e.placeMaterial(x + 1, y, 0, MAT.FIRE);
+        spawned++;
+      }
+    }
+    let due = null;
+    for (let tick = 0; tick < 35 && !due; tick++) {
+      const beforeTnt = count(e.getGrid(), MAT.TNT);
+      e.stepWorld();
+      const afterTnt = count(e.getGrid(), MAT.TNT);
+      if (beforeTnt - afterTnt >= 1000) {
+        due = {
+          tick, beforeTnt, afterTnt,
+          hash: gridHash(e.getGrid()),
+          reactMs: e.getStepPerf().reactMs,
+        };
+      }
+    }
+    e.destroy();
+    return { spawned, due };
+  };
+  const smallRuns = [], largeRuns = [];
+  for (let repeat = 0; repeat < 3; repeat++) {
+    smallRuns.push(run(800));
+    largeRuns.push(run(1800));
+  }
+  const valid = (runs, targetBodies) => runs.every(({ spawned, due }) =>
+    spawned === targetBodies && due
+      && due.beforeTnt === targetBodies * 4
+      && due.beforeTnt - due.afterTnt === 1200);
+  check('simultaneous body-fuse fronts consume the same 1200-cell budget',
+    valid(smallRuns, 800) && valid(largeRuns, 1800));
+  const stable = (runs) => runs.every(({ due }) => due
+    && due.tick === runs[0].due?.tick
+    && due.beforeTnt === runs[0].due?.beforeTnt
+    && due.afterTnt === runs[0].due?.afterTnt
+    && due.hash === runs[0].due?.hash);
+  check('simultaneous body-fuse output is deterministic',
+    stable(smallRuns) && stable(largeRuns));
+  const fastest = (runs) => Math.min(...runs.map(({ due }) => due?.reactMs ?? Infinity));
+  const smallMs = fastest(smallRuns), largeMs = fastest(largeRuns);
+  check(`body-fuse lookup stays near-linear as the due roster grows `
+      + `(${largeMs.toFixed(1)} ms vs ${smallMs.toFixed(1)} ms)`,
+    largeMs <= smallMs * 1.8 + 2);
 }
 
 // --- blast ignition survives replacement of a severed mixed-material body ---

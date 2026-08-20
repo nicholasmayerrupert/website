@@ -714,6 +714,13 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       wrap.hidden = !!hidden;
       wrap.setAttribute('aria-hidden', String(!!hidden));
     },
+    selectMaterial(value) {
+      const entry = entries.find((candidate) =>
+        candidate.kind === CK_MATERIAL && candidate.value === (value | 0));
+      if (!entry || !canSelectMaterial()) return false;
+      pick(entry);
+      return true;
+    },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() {
       cancelAnimationFrame(nameMotionFrame);

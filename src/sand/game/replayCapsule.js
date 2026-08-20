@@ -14,7 +14,8 @@ export const REPLAY_EVENT_TYPES = new Set([
   'test-natural-spawn', 'test-step-actors',
 ]);
 
-const MAX_REPLAY_TURNS = 2_000_000;
+export const MAX_REPLAY_TURNS = 2_000_000;
+export const MAX_REPLAY_EVENTS = MAX_REPLAY_TURNS * 4;
 const MAX_REPLAY_TEXT_BYTES = 64 * 1024 * 1024;
 const MAX_REPLAY_EXPANDED_BYTES = 64 * 1024 * 1024;
 
@@ -252,7 +253,7 @@ export function validateReplayCapsule(value) {
   const gates = value.gates;
   if (!finiteInteger(turns, 0, MAX_REPLAY_TURNS))
     throw new Error('Replay turn count is invalid or too large.');
-  if (!Array.isArray(events) || events.length > MAX_REPLAY_TURNS * 4)
+  if (!Array.isArray(events) || events.length > MAX_REPLAY_EVENTS)
     throw new Error('Replay event list is invalid or too large.');
   if (!Array.isArray(gates) || gates.length > MAX_REPLAY_TURNS)
     throw new Error('Replay transport gate list is invalid or too large.');

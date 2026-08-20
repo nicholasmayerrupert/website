@@ -37,6 +37,7 @@ console.log('worker liveness classification');
 
 for (const [stage, expected] of [
   [STAGE.STREAM, 'blocked-streaming'],
+  [STAGE.APPLY_TOOLS, 'blocked-apply-tools'],
   [STAGE.STEP_ACTORS, 'blocked-step-actors'],
   [STAGE.STEP_WORLD, 'blocked-step-world'],
   [STAGE.TRANSPORT, 'blocked-transport'],

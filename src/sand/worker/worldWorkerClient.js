@@ -6,12 +6,24 @@ import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 import { prepareMirrorShift } from './mirrorShift.js';
 import { createWorkerLivenessMonitor } from './workerLiveness.js';
+import { createReplayCaptureJournal } from './replayCaptureJournal.js';
 
 const REPLAYABLE_CONFIG_KEYS = [
   'tool', 'drawMode', 'creativeKind', 'creativeValue',
   'creatureNaturalSpawning', 'paused', 'artificialDelayMs',
 ];
 const LIVENESS_PROBE_MS = 1000;
+const CAPTURE_PERF_KEYS = [
+  'worldTps', 'stepMs', 'actorMs', 'groundingMs', 'crossLayerGroundingMs',
+  'componentIndexMs', 'assemblyUnionMs', 'carryMs', 'bodyMs', 'sandMs',
+  'liquidMs', 'gasMs', 'reactMs', 'tailMs', 'layersMs', 'crossMs',
+  'lightMs', 'fillMs', 'uploadMs', 'liquidRelaxMs', 'liquidSurfaceMs',
+  'shiftSave', 'shiftBuffers', 'shiftTranslate', 'shiftRegister', 'shiftFill',
+  'forcePrepareMs', 'forceWakeMs',
+  'dirtyChunks', 'dirtyRows', 'dirtyCells', 'componentCount',
+  'componentCellCount', 'crossBondCount', 'wasmHeapBytes',
+  'controlsReceived', 'edgesProcessed', 'toolWrites',
+];
 
 /** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
 export function createWorldWorkerClient(ctx) {
@@ -53,6 +65,7 @@ export function createWorldWorkerClient(ctx) {
   let appliedEpoch = 0;
   let replayRequestId = 0;
   const replayRequests = new Map();
+  const replayJournal = createReplayCaptureJournal();
   const liveness = createWorkerLivenessMonitor();
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
@@ -89,6 +102,33 @@ export function createWorldWorkerClient(ctx) {
     }
     if (!data) return;
     liveness.noteMessage(receivedAt);
+    if (data.type === 'replay-journal-reset') {
+      replayJournal.reset(data.init);
+      state = { ...state, replayTurns: 0, replayJournalTruncated: false };
+      return;
+    }
+    if (data.type === 'replay-journal-event') {
+      replayJournal.noteEvent(data);
+      state = {
+        ...state,
+        replayTurns: replayJournal.turns,
+        replayJournalTruncated: replayJournal.truncated,
+        replayJournalDiscontinuous: replayJournal.discontinuous,
+      };
+      return;
+    }
+    if (data.type === 'replay-journal-turn') {
+      replayJournal.noteTurn(data);
+      if (Number.isSafeInteger(data.liveness))
+        liveness.noteSignal(data.liveness, receivedAt);
+      state = {
+        ...state,
+        replayTurns: replayJournal.turns,
+        replayJournalTruncated: replayJournal.truncated,
+        replayJournalDiscontinuous: replayJournal.discontinuous,
+      };
+      return;
+    }
     if (data.type === 'replay-capsule') {
       const request = replayRequests.get(data.requestId);
       if (request) {
@@ -105,6 +145,8 @@ export function createWorldWorkerClient(ctx) {
       const request = replayRequests.get(data.requestId);
       if (request) {
         replayRequests.delete(data.requestId);
+        if (request.kind === 'run') lastControl = '';
+        if (request.capsule) replayJournal.replace(request.capsule);
         request.resolve({
           matched: !!data.matched,
           expected: data.expected,
@@ -117,6 +159,7 @@ export function createWorldWorkerClient(ctx) {
       const request = replayRequests.get(data.requestId);
       if (request) {
         replayRequests.delete(data.requestId);
+        if (request.kind === 'run') lastControl = '';
         request.reject(new Error(data.message || 'Replay failed.'));
       }
       return;
@@ -216,6 +259,114 @@ export function createWorldWorkerClient(ctx) {
     if (predictor && predictorEngine === ctx.engine) predictor.rebase(dx, dy);
   };
 
+  const mirrorFinalState = () => {
+    const engine = ctx.engine;
+    let mirrorPerf = {};
+    try { mirrorPerf = engine?.getPerf?.() || {}; } catch { /* diagnostics stay best-effort */ }
+    const read = (operation, fallback = 0) => {
+      try { return operation(); } catch { return fallback; }
+    };
+    const cols = Math.max(1, (engine?.cols || ctx.cols || 1) | 0);
+    const rows = Math.max(1, (engine?.rows || ctx.rows || 1) | 0);
+    return {
+      tick: Math.max(0, read(() => engine.getTick(), state.worldTick) | 0),
+      actorTick: Math.max(0, state.actorTick | 0),
+      cols,
+      rows,
+      gridHash: read(() => engine.gridHash(), 0) >>> 0,
+      worldOffsetX: read(() => engine.getWorldOffsetX(), 0) | 0,
+      worldOffsetY: read(() => engine.getWorldOffsetY(), 0) | 0,
+      componentCount: state.componentCount || mirrorPerf.componentCount || 0,
+      componentCellCount: state.componentCellCount || mirrorPerf.componentCellCount || 0,
+      crossBondCount: state.crossBondCount || mirrorPerf.crossBondCount || 0,
+      playerCount: players.length,
+      itemCount: Math.floor(items.length / STRIDES.itemSnapshot),
+      creatureCount: state.creatureCount || 0,
+      projectileCount: Math.floor(projectiles.length / STRIDES.projectileSnapshot),
+    };
+  };
+
+  const captureDiagnostics = (authorityResponded, mirror) => {
+    const perf = {};
+    for (const key of CAPTURE_PERF_KEYS) {
+      const value = state[key];
+      if (typeof value === 'number' && Number.isFinite(value)) perf[key] = value;
+    }
+    const live = { ...liveness.snapshot() };
+    const queuedPacket = pending ? {
+      type: pending.type,
+      epoch: pending.epoch | 0,
+      sequence: pending.sequence | 0,
+      worldTick: pending.worldTick | 0,
+      bytes: pending.data?.byteLength || 0,
+    } : null;
+    return {
+      source: authorityResponded ? 'authority-export' : 'main-thread-fallback',
+      authorityResponded,
+      liveness: live,
+      authority: {
+        worldTick: state.worldTick | 0,
+        actorTick: state.actorTick | 0,
+        epoch: state.epoch | 0,
+        sequence: state.sequence | 0,
+        replayProgress: replayJournal.progress,
+      },
+      transport: {
+        appliedEpoch,
+        awaitingResizeId,
+        queuedPacket,
+        packetType: state.packetType || '',
+        packetBytes: state.packetBytes || 0,
+        mirrorApplyMs: state.mirrorApplyMs || 0,
+        mirrorPacketErrors: state.mirrorPacketErrors || 0,
+        lastMirrorPacketError: state.lastMirrorPacketError || '',
+      },
+      mirror: { ...mirror },
+      perf,
+    };
+  };
+
+  const addCaptureDiagnostics = (capsule, authorityResponded) => {
+    const mirror = mirrorFinalState();
+    return {
+      ...capsule,
+      final: {
+        ...capsule.final,
+        diagnostics: {
+          ...captureDiagnostics(authorityResponded, mirror),
+          journal: {
+            turns: capsule.turns,
+            truncated: replayJournal.truncated,
+            discontinuous: replayJournal.discontinuous,
+            progress: replayJournal.progress,
+          },
+        },
+      },
+    };
+  };
+
+  const fallbackReplay = (view) => {
+    const mirror = mirrorFinalState();
+    return replayJournal.snapshot(view, mirror, captureDiagnostics(false, mirror));
+  };
+
+  const requestReplayExport = (view) => {
+    if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+    for (const [id, request] of replayRequests) {
+      if (request.kind !== 'export') continue;
+      replayRequests.delete(id);
+      request.reject(new Error('Replay export was superseded by a newer capture.'));
+    }
+    const requestId = ++replayRequestId;
+    return new Promise((resolve, reject) => {
+      replayRequests.set(requestId, { resolve, reject, kind: 'export' });
+      if (!post({ type: 'replay-export', requestId, view })) {
+        replayRequests.delete(requestId);
+        reject(new Error('Simulation worker is unavailable.'));
+      }
+    });
+  };
+
   const api = {
     init({
       survival = false,
@@ -234,10 +385,12 @@ export function createWorldWorkerClient(ctx) {
         planetId, gravityScale, missionId, loadout,
         ...runtimeConfig,
       };
-      post({
+      const message = {
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
         ...initOptions, drawMode: ctx.drawModeOn,
-      });
+      };
+      replayJournal.reset(message);
+      post(message);
       probeLiveness();
     },
     updateControl() {
@@ -314,16 +467,15 @@ export function createWorldWorkerClient(ctx) {
     testStepActors(steps = 1) {
       post({ type: 'test-step-actors', steps: steps | 0 });
     },
+    captureReplay(view) {
+      const fallback = fallbackReplay(view);
+      const verified = requestReplayExport(view)
+        .then((capsule) => addCaptureDiagnostics(capsule, true));
+      return { fallback, verified };
+    },
     exportReplay(view) {
-      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
-      const requestId = ++replayRequestId;
-      return new Promise((resolve, reject) => {
-        replayRequests.set(requestId, { resolve, reject });
-        if (!post({ type: 'replay-export', requestId, view })) {
-          replayRequests.delete(requestId);
-          reject(new Error('Simulation worker is unavailable.'));
-        }
-      });
+      return requestReplayExport(view)
+        .then((capsule) => addCaptureDiagnostics(capsule, true));
     },
     runReplay(capsule, onProgress) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
@@ -353,7 +505,9 @@ export function createWorldWorkerClient(ctx) {
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
       const requestId = ++replayRequestId;
       return new Promise((resolve, reject) => {
-        replayRequests.set(requestId, { resolve, reject, onProgress });
+        replayRequests.set(requestId, {
+          resolve, reject, onProgress, capsule, kind: 'run',
+        });
         if (!post({ type: 'replay-run', requestId, capsule })) {
           replayRequests.delete(requestId);
           reject(new Error('Simulation worker is unavailable.'));
@@ -788,10 +942,14 @@ export function createWorldWorkerClient(ctx) {
       liveness: liveness.snapshot(),
     };
     bindWorker();
-    if (initOptions) post({
-      type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-      ...initOptions, drawMode: ctx.drawModeOn,
-    });
+    if (initOptions) {
+      const message = {
+        type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
+        ...initOptions, drawMode: ctx.drawModeOn,
+      };
+      replayJournal.reset(message);
+      post(message);
+    }
     probeLiveness();
   };
   bindWorker();

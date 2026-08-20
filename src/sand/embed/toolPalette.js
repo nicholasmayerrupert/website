@@ -663,8 +663,8 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       lbl.textContent = e.label;
       opt.append(renderSwatch(e), lbl);
       opt.addEventListener('click', () => {
-        // A desktop selection ends palette text entry and owns keyboard focus.
-        if (!atBottom) opt.focus({ preventScroll: true });
+        // A desktop selection ends palette text entry before shortcuts resume.
+        if (!atBottom) search.blur();
         pick(e);
       });
       optionByKey.set(e.key, opt);

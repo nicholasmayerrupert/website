@@ -54,6 +54,23 @@ try {
       return (perf.workerStatus === 'live' || perf.workerStatus === 'live-no-diffs')
         && perf.workerProgressAgeMs < 2000;
     }));
+  await page.evaluate(() => {
+    document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim')
+      .focus({ preventScroll: true });
+  });
+  await page.keyboard.press('q');
+  const freshCreativeQ = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    const selected = root.querySelector('.sg-current .sg-name-track')?.textContent;
+    root.querySelector('.sg-expand').click();
+    const cube = [...root.querySelectorAll('.sg-opt')]
+      .find((node) => node.querySelector('.sg-name')?.textContent === 'cube');
+    cube.click();
+    root.querySelector('.sg-expand').click();
+    return selected;
+  });
+  check('fresh creative Q equips Sand before another material has been selected',
+    freshCreativeQ === 'sand', freshCreativeQ);
   const mirrorFailure = await page.evaluate(() => {
     const perf = window.__sandPerf();
     window.__sandTest.failNextMirrorApply();
@@ -269,22 +286,20 @@ try {
     searchTyping.focused && typedQuery.query === 'q' &&
       typedQuery.selected === searchTyping.selected);
   await palette.locator('.sg-search').fill('');
-  const pointerPickFocused = await page.evaluate(() => {
+  const pointerPickEndedSearch = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     const option = (name) => [...root.querySelectorAll('.sg-opt')]
       .find((node) => node.querySelector('.sg-name')?.textContent === name);
-    // HTMLElement.click() leaves the search focused unless the palette moves
-    // focus explicitly, matching pointer selection on browsers with that policy.
+    const search = root.querySelector('.sg-search');
     option('sand').click();
-    const cube = option('cube');
-    cube.click();
-    return root.activeElement === cube;
+    option('cube').click();
+    return root.activeElement !== search;
   });
   const restoredPaint = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     const rect = root.querySelector('#sand-main').getBoundingClientRect();
     const test = window.__sandTest;
-    const activeElement = root.activeElement;
+    const activeElement = root.activeElement || document.activeElement || document.body;
     const nativeMatchMedia = window.matchMedia.bind(window);
     window.matchMedia = (query) => query === '(pointer: coarse)'
       ? { matches: true, media: query }
@@ -319,7 +334,7 @@ try {
     restoredPaint.before, { timeout: 10000 }).catch(() => {});
   const restoredSand = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
   check('desktop Q restores the last creative selection after another tool is equipped',
-    pointerPickFocused && restoredPaint.movementPrevented && restoredPaint.prevented &&
+    pointerPickEndedSearch && restoredPaint.movementPrevented && restoredPaint.prevented &&
       restoredPaint.currentLabel === 'sand' &&
       restoredPaint.activeLabel === 'sand' && restoredSand > restoredPaint.before,
     `${restoredPaint.currentLabel}/${restoredPaint.activeLabel}, ${restoredPaint.before} -> ${restoredSand}`);

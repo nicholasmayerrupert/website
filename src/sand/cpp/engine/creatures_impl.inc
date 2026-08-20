@@ -22,7 +22,7 @@ bool CreatureSystem::boxHitsSolid(double wx, double wy, int w, int h) const {
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     if (y >= E.rows) return true;
     if (x < 0 || x >= E.cols || y < 0) continue;
-    if (E.isBlockingForPlayer(E.fg.grid[E.I(x, y)])) return true;
+    if (E.isBlockingForActor(E.fg.grid[E.I(x, y)])) return true;
   }
   return false;
 }
@@ -34,7 +34,7 @@ double CreatureSystem::blockingCoverage(double wx, double wy, int w, int h) cons
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     total++;
     if (y >= E.rows) blocked++;
-    else if (x >= 0 && x < E.cols && y >= 0 && E.isBlockingForPlayer(E.fg.grid[E.I(x, y)])) blocked++;
+    else if (x >= 0 && x < E.cols && y >= 0 && E.isBlockingForActor(E.fg.grid[E.I(x, y)])) blocked++;
   }
   return total ? (double)blocked / total : 0;
 }
@@ -92,7 +92,7 @@ bool CreatureSystem::boxFitsHabitat(uint8_t speciesId, double wx, double wy) con
   int footY = (int)std::floor(wy - E.fg.worldOffsetY + s.h + 0.05);
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + s.w - 1e-6);
   bool floor = false;
-  for (int x = x0; x <= x1; x++) if (x >= 0 && x < E.cols && footY >= 0 && footY < E.rows && E.isBlockingForPlayer(E.fg.grid[E.I(x, footY)])) { floor = true; break; }
+  for (int x = x0; x <= x1; x++) if (x >= 0 && x < E.cols && footY >= 0 && footY < E.rows && E.isBlockingForActor(E.fg.grid[E.I(x, footY)])) { floor = true; break; }
   if (!floor) return false;
   if (s.spawn.habitat == CH_CAVE && E.fg.infinite) {
     int centerX = (int)std::floor(wx + s.w * 0.5);
@@ -724,6 +724,29 @@ void CreatureSystem::applySpatialForce(Creature& c) {
                   std::min(MAX_FORCE_SPEED, c.vy + forceY));
 }
 
+static double accelerateToward(double current, double target, double acceleration) {
+  return current + std::max(-acceleration,
+                            std::min(acceleration, target - current));
+}
+
+template <typename Blocked>
+static bool moveCreatureAxis(Creature& c, double& position, double delta,
+                             bool xAxis, Blocked&& blocked) {
+  double moved = 0;
+  double magnitude = std::fabs(delta);
+  double direction = delta >= 0 ? 1.0 : -1.0;
+  while (moved < magnitude - 1e-6) {
+    double step = std::min(0.25, magnitude - moved);
+    double nextX = c.wx, nextY = c.wy;
+    if (xAxis) nextX = position + direction * step;
+    else nextY = position + direction * step;
+    if (blocked(nextX, nextY)) return false;
+    position += direction * step;
+    moved += step;
+  }
+  return true;
+}
+
 void CreatureSystem::steerAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
   double tx = 0, ty = 0; Creature* prey = nullptr; Player* player = nullptr;
@@ -738,28 +761,22 @@ void CreatureSystem::steerAquatic(Creature& c) {
     desiredX = std::cos(phase) * s.swimSpeed * 0.72;
     desiredY = std::sin(phase * 0.63 + c.id) * s.swimSpeed * 0.42;
   }
-  c.vx += std::max(-s.accel, std::min(s.accel, desiredX - c.vx));
-  c.vy += std::max(-s.accel, std::min(s.accel, desiredY - c.vy));
+  c.vx = accelerateToward(c.vx, desiredX, s.accel);
+  c.vy = accelerateToward(c.vy, desiredY, s.accel);
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
 }
 
 void CreatureSystem::moveAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
   applySpatialForce(c);
-  auto tryAxis = [&](double& pos, double delta, bool xAxis) {
-    double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
-    while (moved < mag - 1e-6) {
-      double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
-      if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
-      // Aquatic locomotion treats the water boundary as collision: a fish never
-      // voluntarily leaves its supported material, even for a target.
-      if (boxHitsSolid(nx, ny, s.w, s.h) || fluidCoverage(nx, ny, s.w, s.h) < s.fluidThreshold) return false;
-      pos += dir * step; moved += step;
-    }
-    return true;
+  auto blocked = [&](double nextX, double nextY) {
+    // Aquatic locomotion treats the water boundary as collision: a fish never
+    // voluntarily leaves its supported material, even for a target.
+    return boxHitsSolid(nextX, nextY, s.w, s.h)
+      || fluidCoverage(nextX, nextY, s.w, s.h) < s.fluidThreshold;
   };
-  if (!tryAxis(c.wx, c.vx, true)) c.vx *= -0.45;
-  if (!tryAxis(c.wy, c.vy, false)) c.vy *= -0.45;
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx *= -0.45;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy *= -0.45;
 }
 
 void CreatureSystem::moveBeachedAquatic(Creature& c) {
@@ -776,7 +793,7 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
   refreshWander(c);
   double desiredX = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 0.24 : -0.24)
                                      : c.wanderDir * 0.12;
-  c.vx += std::max(-0.025, std::min(0.025, desiredX - c.vx));
+  c.vx = accelerateToward(c.vx, desiredX, 0.025);
   c.vy = std::min(2.4, c.vy + E.scaledGravity(0.075));
   c.vx *= c.grounded ? 0.90 : 0.995;
   int flopPeriod = 32 + (c.id % 17);
@@ -787,18 +804,11 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
     c.vy = -0.58 - whash1(E.fg.worldSeed ^ 0xF10F22u, c.id + E.actorTick) * 0.28;
   }
   applySpatialForce(c);
-  auto moveAxis = [&](double& pos, double delta, bool xAxis) {
-    double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
-    while (moved < mag - 1e-6) {
-      double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
-      if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
-      if (boxHitsSolid(nx, ny, s.w, s.h)) return false;
-      pos += dir * step; moved += step;
-    }
-    return true;
+  auto blocked = [&](double nextX, double nextY) {
+    return boxHitsSolid(nextX, nextY, s.w, s.h);
   };
-  if (!moveAxis(c.wx, c.vx, true)) c.vx *= -0.25;
-  if (!moveAxis(c.wy, c.vy, false)) c.vy = 0;
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx *= -0.25;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy = 0;
   c.grounded = boxHitsSolid(c.wx, c.wy + 0.12, s.w, s.h);
 }
 
@@ -819,8 +829,8 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     double dx = c.hasHabitatGoal ? c.habitatX - (c.wx + s.w * 0.5) : c.wanderDir;
     double dy = c.hasHabitatGoal ? c.habitatY - (c.wy + s.h * 0.5) : -0.85;
     double d = std::sqrt(dx * dx + dy * dy); if (d < 1e-6) d = 1;
-    c.vx += std::max(-s.accel, std::min(s.accel, dx / d * s.swimSpeed - c.vx));
-    c.vy += std::max(-s.accel, std::min(s.accel, dy / d * s.swimSpeed - c.vy));
+    c.vx = accelerateToward(c.vx, dx / d * s.swimSpeed, s.accel);
+    c.vy = accelerateToward(c.vy, dy / d * s.swimSpeed, s.accel);
   } else {
     c.hasHabitatGoal = false;
     c.habitatScanCooldown = 0;
@@ -849,24 +859,17 @@ void CreatureSystem::moveAmphibious(Creature& c) {
                        : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
                        : c.wanderDir * s.walkSpeed * 0.62;
     }
-    c.vx += std::max(-s.accel, std::min(s.accel, wish - c.vx));
+    c.vx = accelerateToward(c.vx, wish, s.accel);
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += E.scaledGravity(s.gravity); if (c.vy > 2.4) c.vy = 2.4;
   }
   applySpatialForce(c);
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
-  auto moveAxis = [&](double& pos, double delta, bool xAxis) {
-    double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
-    while (moved < mag - 1e-6) {
-      double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
-      if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
-      if (boxHitsSolid(nx, ny, s.w, s.h)) return false;
-      pos += dir * step; moved += step;
-    }
-    return true;
+  auto blocked = [&](double nextX, double nextY) {
+    return boxHitsSolid(nextX, nextY, s.w, s.h);
   };
   double startX = c.wx, startY = c.wy;
-  if (!moveAxis(c.wx, c.vx, true)) {
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) {
     // Wide walkers meet a rising bank with their front edge before their feet
     // are dry. Step over a one-cell lip; for a taller bank, kick upward while
     // still swimming so the next tick approaches above the blocking cell.
@@ -875,7 +878,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     if (c.hasHabitatGoal || wet < s.fluidThreshold) for (double lift = 0.25; lift <= 1.25; lift += 0.25) {
       c.wx = startX; c.wy = startY - lift;
       if (boxHitsSolid(c.wx, c.wy, s.w, s.h)) break;
-      if (moveAxis(c.wx, c.vx, true)) { climbed = true; break; }
+      if (moveCreatureAxis(c, c.wx, c.vx, true, blocked)) { climbed = true; break; }
     }
     if (!climbed) {
       c.wx = blockedX; c.wy = startY;
@@ -889,7 +892,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       c.vx = 0;
     }
   }
-  if (!moveAxis(c.wy, c.vy, false)) c.vy = 0;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy = 0;
   c.grounded = boxHitsSolid(c.wx, c.wy + 0.12, s.w, s.h);
 }
 
@@ -920,24 +923,18 @@ void CreatureSystem::moveFlying(Creature& c) {
   else if (altitude > 52) desiredY = 1;
   double d = std::sqrt(desiredX * desiredX + desiredY * desiredY); if (d < 1e-6) d = 1;
   desiredX = desiredX / d * s.swimSpeed; desiredY = desiredY / d * s.swimSpeed;
-  c.vx += std::max(-s.accel, std::min(s.accel, desiredX - c.vx));
-  c.vy += std::max(-s.accel, std::min(s.accel, desiredY - c.vy));
+  c.vx = accelerateToward(c.vx, desiredX, s.accel);
+  c.vy = accelerateToward(c.vy, desiredY, s.accel);
   applySpatialForce(c);
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
-  auto moveAxis = [&](double& pos, double delta, bool xAxis) {
-    double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
-    while (moved < mag - 1e-6) {
-      double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
-      if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
-      // Water is an entry barrier for a flying bird, but not an exit barrier.
-      // If water engulfs one, let it climb through the fluid until clear.
-      if (boxHitsSolid(nx, ny, s.w, s.h) || (!submerged && boxTouchesLiquid(nx, ny, s.w, s.h))) return false;
-      pos += dir * step; moved += step;
-    }
-    return true;
+  auto blocked = [&](double nextX, double nextY) {
+    // Water is an entry barrier for a flying bird, but not an exit barrier.
+    // If water engulfs one, let it climb through the fluid until clear.
+    return boxHitsSolid(nextX, nextY, s.w, s.h)
+      || (!submerged && boxTouchesLiquid(nextX, nextY, s.w, s.h));
   };
-  if (!moveAxis(c.wx, c.vx, true)) c.vx *= -0.55;
-  if (!moveAxis(c.wy, c.vy, false)) c.vy *= -0.55;
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx *= -0.55;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy *= -0.55;
 }
 
 static constexpr int DYNAMITE_CHARGE_TICKS = 30;
@@ -969,11 +966,12 @@ static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
          clip(-dy, y0 - by0) && clip(dy, by1 - y0);
 }
 
-void CreatureSystem::updateDynamiteerAttack(Creature& c) {
+void CreatureSystem::updateChargedProjectileAttack(
+    Creature& c, CreatureAttackHandler attack, int chargeTicks, int firingTicks) {
   const CreatureSpecies& s = species(c);
   if (c.attackState == CAS_FIRING) {
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)DYNAMITE_THROW_TICKS);
-    if (++c.attackTicks >= DYNAMITE_THROW_TICKS) {
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)firingTicks);
+    if (++c.attackTicks >= firingTicks) {
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
     }
     return;
@@ -982,81 +980,29 @@ void CreatureSystem::updateDynamiteerAttack(Creature& c) {
   double tx = 0, ty = 0;
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (c.attackState == CAS_CHARGING) {
-    // Keep tracking throughout the short wind-up; if the target vanishes, throw
-    // at its last observed position instead of cancelling an already-lit bundle.
+    // Keep tracking throughout the wind-up. If the target vanishes, fire at its
+    // last observed position instead of cancelling the committed attack.
     if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
-    if (c.attackAimX != 0 || c.attackAimY != 0)
+    if (attack != CAH_DYNAMITEER || c.attackAimX != 0 || c.attackAimY != 0)
       c.facing = c.attackAimX >= c.wx + s.w * 0.5 ? 1 : -1;
     c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)DYNAMITE_CHARGE_TICKS);
-    if (c.attackTicks >= DYNAMITE_CHARGE_TICKS) {
-      E.projectiles.spawnDynamite(c, c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY);
-      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
-      c.attackCooldown = s.attackCooldown;
-    }
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
-  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
-}
-
-void CreatureSystem::updateCausticMortarmanAttack(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  if (c.attackState == CAS_FIRING) {
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)MORTARMAN_FIRE_TICKS);
-    if (++c.attackTicks >= MORTARMAN_FIRE_TICKS) {
-      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
-    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)MORTARMAN_CHARGE_TICKS);
-    if (c.attackTicks >= MORTARMAN_CHARGE_TICKS) {
-      E.projectiles.spawnAcidShell(c, c.attackAimX - E.fg.worldOffsetX,
-                                   c.attackAimY - E.fg.worldOffsetY);
-      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
-      c.attackCooldown = s.attackCooldown;
-    }
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
-  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
-}
-
-void CreatureSystem::updateClusterWaspAttack(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  if (c.attackState == CAS_FIRING) {
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)CLUSTER_WASP_FIRE_TICKS);
-    if (++c.attackTicks >= CLUSTER_WASP_FIRE_TICKS) {
-      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
-    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)CLUSTER_WASP_CHARGE_TICKS);
-    if (c.attackTicks >= CLUSTER_WASP_CHARGE_TICKS) {
-      E.projectiles.spawnClusterBomb(c, c.attackAimX - E.fg.worldOffsetX,
-                                     c.attackAimY - E.fg.worldOffsetY);
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
+    if (c.attackTicks >= chargeTicks) {
+      double targetX = c.attackAimX - E.fg.worldOffsetX;
+      double targetY = c.attackAimY - E.fg.worldOffsetY;
+      switch (attack) {
+        case CAH_DYNAMITEER:
+          E.projectiles.spawnDynamite(c, targetX, targetY);
+          break;
+        case CAH_CAUSTIC_MORTARMAN:
+          E.projectiles.spawnAcidShell(c, targetX, targetY);
+          break;
+        case CAH_CLUSTER_WASP:
+          E.projectiles.spawnClusterBomb(c, targetX, targetY);
+          break;
+        default:
+          __builtin_trap();
+      }
       c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
       c.attackCooldown = s.attackCooldown;
     }
@@ -1370,10 +1316,19 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 void CreatureSystem::attackTarget(Creature& c) {
   const CreatureSpecies& s = species(c);
   switch (creatureBehavior(s).attack) {
-    case CAH_DYNAMITEER: updateDynamiteerAttack(c); return;
+    case CAH_DYNAMITEER:
+      updateChargedProjectileAttack(
+        c, CAH_DYNAMITEER, DYNAMITE_CHARGE_TICKS, DYNAMITE_THROW_TICKS);
+      return;
     case CAH_BORE_SENTINEL: updateBoreSentinelAttack(c); return;
-    case CAH_CAUSTIC_MORTARMAN: updateCausticMortarmanAttack(c); return;
-    case CAH_CLUSTER_WASP: updateClusterWaspAttack(c); return;
+    case CAH_CAUSTIC_MORTARMAN:
+      updateChargedProjectileAttack(
+        c, CAH_CAUSTIC_MORTARMAN, MORTARMAN_CHARGE_TICKS, MORTARMAN_FIRE_TICKS);
+      return;
+    case CAH_CLUSTER_WASP:
+      updateChargedProjectileAttack(
+        c, CAH_CLUSTER_WASP, CLUSTER_WASP_CHARGE_TICKS, CLUSTER_WASP_FIRE_TICKS);
+      return;
     case CAH_MINIGUNNER: updateMinigunnerAttack(c); return;
     case CAH_BOSS: updateBossAttack(c); return;
     case CAH_GENERIC: break;

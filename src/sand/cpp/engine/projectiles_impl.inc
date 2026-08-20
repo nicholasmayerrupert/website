@@ -448,7 +448,31 @@ void ProjectileSystem::updateProjectiles() {
   auto blocksPoint = [&](double px, double py) {
     int x = (int)std::floor(px), y = (int)std::floor(py);
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
-    return E.isBlockingForPlayer(E.fg.grid[E.I(x, y)]);
+    return E.isBlockingForActor(E.fg.grid[E.I(x, y)]);
+  };
+  auto sweepBouncingPoint = [&](Projectile& projectile, double bounce,
+                                double friction) {
+    double distance = std::hypot(projectile.vx, projectile.vy);
+    int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+    double stepX = projectile.vx / steps, stepY = projectile.vy / steps;
+    bool blockX = false, blockY = false;
+    for (int step = 0; step < steps; step++) {
+      if (!blockX) {
+        double nextX = projectile.px + stepX;
+        if (blocksPoint(nextX, projectile.py)) {
+          projectile.vx = -projectile.vx * bounce;
+          blockX = true;
+        } else projectile.px = nextX;
+      }
+      if (!blockY) {
+        double nextY = projectile.py + stepY;
+        if (blocksPoint(projectile.px, nextY)) {
+          projectile.vy = -projectile.vy * bounce;
+          projectile.vx *= friction;
+          blockY = true;
+        } else projectile.py = nextY;
+      }
+    }
   };
   auto materialStopsPoint = [&](double px, double py) {
     int x = (int)std::floor(px), y = (int)std::floor(py);
@@ -597,25 +621,7 @@ void ProjectileSystem::updateProjectiles() {
     if (p.kind == PK_DYNAMITE) {
       bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
       if (!outside) {
-        double distance = std::hypot(p.vx, p.vy);
-        int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
-        double sx = p.vx / steps, sy = p.vy / steps;
-        bool blockX = false, blockY = false;
-        for (int step = 0; step < steps; step++) {
-          if (!blockX) {
-            double nx = p.px + sx;
-            if (blocksPoint(nx, p.py)) { p.vx = -p.vx * DYNAMITE_BOUNCE; blockX = true; }
-            else p.px = nx;
-          }
-          if (!blockY) {
-            double ny = p.py + sy;
-            if (blocksPoint(p.px, ny)) {
-              p.vy = -p.vy * DYNAMITE_BOUNCE;
-              p.vx *= DYNAMITE_FRICTION;
-              blockY = true;
-            } else p.py = ny;
-          }
-        }
+        sweepBouncingPoint(p, DYNAMITE_BOUNCE, DYNAMITE_FRICTION);
         int cx = (int)std::floor(p.px), cy = (int)std::floor(p.py);
         if (cx >= 0 && cx < E.cols && cy >= 0 && cy < E.rows && E.isLiquidMaterial(E.fg.grid[E.I(cx, cy)])) {
           p.vx *= 0.91; p.vy *= 0.88;
@@ -723,27 +729,7 @@ void ProjectileSystem::updateProjectiles() {
     if (p.kind == PK_CLUSTER_BOMB) {
       bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
       if (!outside) {
-        double distance = std::hypot(p.vx, p.vy);
-        int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
-        double sx = p.vx / steps, sy = p.vy / steps;
-        bool blockX = false, blockY = false;
-        for (int step = 0; step < steps; step++) {
-          if (!blockX) {
-            double nx = p.px + sx;
-            if (blocksPoint(nx, p.py)) {
-              p.vx = -p.vx * CLUSTER_BOUNCE_LOCAL;
-              blockX = true;
-            } else p.px = nx;
-          }
-          if (!blockY) {
-            double ny = p.py + sy;
-            if (blocksPoint(p.px, ny)) {
-              p.vy = -p.vy * CLUSTER_BOUNCE_LOCAL;
-              p.vx *= CLUSTER_FRICTION_LOCAL;
-              blockY = true;
-            } else p.py = ny;
-          }
-        }
+        sweepBouncingPoint(p, CLUSTER_BOUNCE_LOCAL, CLUSTER_FRICTION_LOCAL);
         p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + E.scaledGravity(CLUSTER_GRAVITY_LOCAL));
         p.rotation += p.vx * .28;
       }
@@ -805,7 +791,7 @@ void ProjectileSystem::updateProjectiles() {
             hitsCreature(p.px, p.py, 0.8, p.owner) ||
             hitsPlayer(p.px, p.py, 0.8, p.owner)) hit = true;
       } else {
-        if (E.isBlockingForPlayer(material)) { hit = true; break; }
+        if (E.isBlockingForActor(material)) { hit = true; break; }
         int damage = 8 + (int)std::lround(22 * p.charge);
         if (E.creatures.damageAtPoint(x, y, 1, damage)) hit = true;
       }

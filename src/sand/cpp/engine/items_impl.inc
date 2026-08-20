@@ -8,7 +8,7 @@
 bool ItemSystem::itemGridSolid(int x, int y) {
   if (y >= E.rows) return true;
   if (y < 0 || x < 0 || x >= E.cols) return false;
-  return E.psys.isSolidForPlayer(E.L->grid[E.I(x, y)]);
+  return E.isBlockingForActor(E.L->grid[E.I(x, y)]);
 }
 bool ItemSystem::itemCellLiquidAt(int x, int y) {
   if (y < 0 || y >= E.rows || x < 0 || x >= E.cols) return false;

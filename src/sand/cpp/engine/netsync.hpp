@@ -30,10 +30,13 @@ class NetSync {
   void rleEncode(const uint8_t* g);
   int rleDecode(const uint8_t* buf, int len, int p, uint8_t* g);
   int rleValidate(const uint8_t* buf, int len, int p) const;
+  bool decodeWorldGrids(const uint8_t* buf, int len);
   // Layer is Engine-nested (incomplete here), so the per-layer halves take a
   // background flag and resolve E.fg/E.bg in the impl.
   void writeDiffLayer(bool background);
   int readDiffLayer(const uint8_t* buf, int len, int p, bool background,
                     int lightEditX0 = 1, int lightEditX1 = 0);
   int validateDiffLayer(const uint8_t* buf, int len, int p) const;
+  bool applyDiffGrids(const uint8_t* buf, int len,
+                      int lightEditX0, int lightEditX1);
 };

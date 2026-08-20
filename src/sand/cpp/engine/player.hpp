@@ -11,7 +11,6 @@ class PlayerSystem {
   int nextPlayerId = 1;
   std::vector<float> snapshot; // packed [PS_STRIDE] floats per player (ABI reads it)
 
-  bool isSolidForPlayer(uint8_t m);
   bool playerCellSolid(int x, int y);
   bool playerBoxHits(double px, double py, int w, int h);
   bool rowSolid(double px, int w, int row);

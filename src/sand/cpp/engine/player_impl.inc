@@ -3,18 +3,13 @@
 // movement, collision, and player-mediated tool use. No RNG is used, so
 // a fixed input stream + seed replays identically across machines.
 
-// A cell is solid to the player if it is neither empty, liquid, nor gas — i.e.
-// settled powder (sand) and all rigid materials block movement; water/steam/
-// fire/oil/acid/lava do not. Out of bounds: below the buffer is floor (can't
-// fall out the bottom); above and to the sides is open air.
-bool PlayerSystem::isSolidForPlayer(uint8_t m) {
-  return E.isBlockingForPlayer(m);
-}
+// Out of bounds: below the buffer is floor (can't fall out the bottom); above
+// and to the sides is open air.
 bool PlayerSystem::playerCellSolid(int x, int y) {
   if (y >= E.rows) return true;        // floor under the world
   if (y < 0) return false;           // open sky
   if (x < 0 || x >= E.cols) return false;
-  return isSolidForPlayer(E.L->grid[E.I(x, y)]);
+  return E.isBlockingForActor(E.L->grid[E.I(x, y)]);
 }
 // Does the AABB at (px,py) with size (w,h) overlap any solid cell?
 bool PlayerSystem::playerBoxHits(double px, double py, int w, int h) {
@@ -142,12 +137,12 @@ bool PlayerSystem::safeSpawnAt(double px, double py, const Player* ignore) {
       if (E.isPlayerContactHazard(E.fg.grid[E.I(x, y)])) return false;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     uint8_t m = E.fg.grid[E.I(x, y)];
-    if (E.isBlockingForPlayer(m)) return false;
+    if (E.isBlockingForActor(m)) return false;
   }
   int support = 0;
   for (int x = x0; x <= x1; x++) {
     uint8_t m = E.fg.grid[E.I(x, y1 + 1)];
-    if (E.isBlockingForPlayer(m) && !E.isPlayerContactHazard(m)) support++;
+    if (E.isBlockingForActor(m) && !E.isPlayerContactHazard(m)) support++;
   }
   return support >= imax(2, PLAYER_W / 2);
 }
@@ -203,7 +198,7 @@ bool PlayerSystem::buildSafeSpawnPad(double worldX, double worldY, double* out, 
       for (; pillarBottom < E.rows - 1; pillarBottom++) {
         uint8_t ml = E.fg.grid[E.I(pillarLeft, pillarBottom + 1)];
         uint8_t mr = E.fg.grid[E.I(pillarRight, pillarBottom + 1)];
-        if (E.isBlockingForPlayer(ml) || E.isBlockingForPlayer(mr)) break;
+        if (E.isBlockingForActor(ml) || E.isBlockingForActor(mr)) break;
       }
 
       std::vector<int> erase;
@@ -374,7 +369,7 @@ void PlayerSystem::updatePlayerVitals(Player& p) {
   uint8_t selectedHazard = CHP_NONE;
   bool contactHazard = false;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
-    uint8_t m = E.fg.grid[E.I(x, y)]; cells++; blocked += E.isBlockingForPlayer(m) ? 1 : 0;
+    uint8_t m = E.fg.grid[E.I(x, y)]; cells++; blocked += E.isBlockingForActor(m) ? 1 : 0;
     uint8_t profile = MAT_CONTACT_HAZARD_PROFILE[m];
     if (CONTACT_HAZARD_PLAYER_DAMAGE[profile] == 0) continue;
     contactHazard = true;

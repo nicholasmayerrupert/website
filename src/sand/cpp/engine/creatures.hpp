@@ -167,10 +167,7 @@ class CreatureSystem {
   void moveAmphibious(Creature& c);
   void moveFlying(Creature& c);
   void attackTarget(Creature& c);
-  void updateDynamiteerAttack(Creature& c);
   void updateBoreSentinelAttack(Creature& c);
-  void updateCausticMortarmanAttack(Creature& c);
-  void updateClusterWaspAttack(Creature& c);
   void updateMinigunnerAttack(Creature& c);
   void updateBossAttack(Creature& c);
   void fireBore(Creature& c);
@@ -190,4 +187,6 @@ class CreatureSystem {
   bool worldRuleAllows(
     const CreatureWorldRule& rule, const WorldContext& context) const;
   int worldSpawnWeight(uint8_t speciesId, const WorldContext& context) const;
+  void updateChargedProjectileAttack(Creature& c, CreatureAttackHandler attack,
+                                     int chargeTicks, int firingTicks);
 };

@@ -47,7 +47,6 @@ class ToolSystem {
   void strokeScan(int x0, int y0, int x1, int y1, int spacing, Stamp stamp, WantMore wantMore);
 
   void initSurvivalFootprints();
-  int survivalFootprintCount() const;
   const SurvivalFootprint& getSurvivalFootprint(int id) const;
   const SurvivalFootprint& getSurvivalFootprint(const Player& p) const;
   int clampSurvivalFootprintId(int id) const;
@@ -55,9 +54,7 @@ class ToolSystem {
   void setSelectedFootprint(Player& p, int id);
   void setSelectedFootprint(int id, int footprintId);
   int selectedFootprintId(int id) const;
-  int survivalFootprintCellCount(const Player& p) const;
   void survivalFootprintBounds(const SurvivalFootprint& fp, int cx, int cy, int& x0, int& y0, int& x1, int& y1) const;
-  bool footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint& fp);
   int paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite);
   int placeMaterialAt(int cx, int cy, int radius, uint8_t mat);
   void registerComponentCells(uint8_t mat, std::unordered_set<int>& cells,
@@ -94,7 +91,6 @@ class ToolSystem {
   bool placeSeedAt(int x0, int y0);
   bool placeSeedAtTyped(int x0, int y0, uint8_t pt);
   bool placeMyceliumSporeAt(int x0, int y0);
-  int effectiveTool();
   bool isPaintTool(int t);
   void setTool(int tool);
   void setCreativeMaterial(int kind, int value);

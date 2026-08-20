@@ -1,11 +1,23 @@
 // Spatial force emitters and neutronium attraction.
 
+static constexpr double LOOSE_CELL_STEP_FORCE = 0.12;
+
 int ForceSystem::layerIndex(const Layer* layer) const {
   return layer == &E.bg ? 1 : 0;
 }
 
 uint8_t ForceSystem::layerBit(const Layer* layer) const {
   return layer == &E.bg ? FORCE_LAYER_BACKGROUND : FORCE_LAYER_FOREGROUND;
+}
+
+void ForceSystem::enqueueEmitter(Layer* layer, ForceEmitter emitter) {
+  emitter.layerTargets = layerBit(layer);
+  int index = layerIndex(layer);
+  queued[index].push_back(emitter);
+  looseCoverageValid[index] = false;
+  looseForceAge[index] = 0;
+  looseTangentialBalanced[index] = false;
+  looseCoverageTick[index] = -1;
 }
 
 int ForceSystem::bodyNeutroniumCellCount(const Body* body) const {
@@ -65,14 +77,8 @@ void ForceSystem::queueRadial(
   emitter.kind = FORCE_RADIAL;
   emitter.targets = targets;
   emitter.repelTargets = repelTargets;
-  emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
-  int index = layerIndex(layer);
-  queued[index].push_back(emitter);
-  looseCoverageValid[index] = false;
-  looseForceAge[index] = 0;
-  looseTangentialBalanced[index] = false;
-  looseCoverageTick[index] = -1;
+  enqueueEmitter(layer, emitter);
 }
 
 void ForceSystem::queueDirectional(
@@ -92,14 +98,8 @@ void ForceSystem::queueDirectional(
   emitter.kind = FORCE_DIRECTIONAL;
   emitter.targets = targets;
   emitter.repelTargets = repelTargets;
-  emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
-  int index = layerIndex(layer);
-  queued[index].push_back(emitter);
-  looseCoverageValid[index] = false;
-  looseForceAge[index] = 0;
-  looseTangentialBalanced[index] = false;
-  looseCoverageTick[index] = -1;
+  enqueueEmitter(layer, emitter);
 }
 
 void ForceSystem::addEmitter(
@@ -711,6 +711,33 @@ void ForceSystem::buildBins(LayerState& state) {
   }
 }
 
+int ForceSystem::compareNeutroniumBodyRank(
+    int firstCells, int firstLayer, int firstBodyId,
+    int secondCells, int secondLayer, int secondBodyId) {
+  if (firstCells != secondCells) return firstCells > secondCells ? -1 : 1;
+  if (firstLayer != secondLayer) return firstLayer < secondLayer ? -1 : 1;
+  if (firstBodyId != secondBodyId) return firstBodyId < secondBodyId ? -1 : 1;
+  return 0;
+}
+
+bool ForceSystem::neutroniumSeedBetter(int first, int second) const {
+  if (second < 0) return true;
+  const NeutroniumSeed& firstSeed = neutroniumSeeds[first];
+  const NeutroniumSeed& secondSeed = neutroniumSeeds[second];
+  const ForceEmitter& a =
+    states[firstSeed.sourceLayer].emitters[firstSeed.emitter];
+  const ForceEmitter& b =
+    states[secondSeed.sourceLayer].emitters[secondSeed.emitter];
+  bool aStatic = a.sourceBodyId < 0;
+  bool bStatic = b.sourceBodyId < 0;
+  if (aStatic != bStatic) return aStatic;
+  if (aStatic) return first < second;
+  int rank = compareNeutroniumBodyRank(
+    a.neutroniumCells, a.sourceBodyLayer, a.sourceBodyId,
+    b.neutroniumCells, b.sourceBodyLayer, b.sourceBodyId);
+  return rank < 0 || (rank == 0 && first < second);
+}
+
 bool ForceSystem::neutroniumSourceDominates(
     int seedIndex, int targetNeutroniumCells,
     int targetBodyLayer, int targetBodyId) const {
@@ -724,11 +751,9 @@ bool ForceSystem::neutroniumSourceDominates(
   if (emitter.sourceBodyLayer == targetBodyLayer
       && emitter.sourceBodyId == targetBodyId)
     return false;
-  if (emitter.neutroniumCells != targetNeutroniumCells)
-    return emitter.neutroniumCells > targetNeutroniumCells;
-  if (emitter.sourceBodyLayer != targetBodyLayer)
-    return emitter.sourceBodyLayer < targetBodyLayer;
-  return emitter.sourceBodyId < targetBodyId;
+  return compareNeutroniumBodyRank(
+    emitter.neutroniumCells, emitter.sourceBodyLayer, emitter.sourceBodyId,
+    targetNeutroniumCells, targetBodyLayer, targetBodyId) < 0;
 }
 
 int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
@@ -762,26 +787,6 @@ int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
   NeutroniumKdNode& node = neutroniumKdNodes[nodeIndex];
   node.left = left;
   node.right = right;
-  auto sourceBetter = [&](int first, int second) {
-    if (second < 0) return true;
-    const NeutroniumSeed& firstSeed = neutroniumSeeds[first];
-    const NeutroniumSeed& secondSeed = neutroniumSeeds[second];
-    const ForceEmitter& a =
-      states[firstSeed.sourceLayer].emitters[firstSeed.emitter];
-    const ForceEmitter& b =
-      states[secondSeed.sourceLayer].emitters[secondSeed.emitter];
-    bool aStatic = a.sourceBodyId < 0;
-    bool bStatic = b.sourceBodyId < 0;
-    if (aStatic != bStatic) return aStatic;
-    if (aStatic) return first < second;
-    if (a.neutroniumCells != b.neutroniumCells)
-      return a.neutroniumCells > b.neutroniumCells;
-    if (a.sourceBodyLayer != b.sourceBodyLayer)
-      return a.sourceBodyLayer < b.sourceBodyLayer;
-    if (a.sourceBodyId != b.sourceBodyId)
-      return a.sourceBodyId < b.sourceBodyId;
-    return first < second;
-  };
   auto includeChild = [&](int childIndex) {
     if (childIndex < 0) return;
     const NeutroniumKdNode& child = neutroniumKdNodes[childIndex];
@@ -793,7 +798,8 @@ int ForceSystem::buildNeutroniumKdNode(int begin, int end, int depth) {
     node.gridMinY = imin(node.gridMinY, child.gridMinY);
     node.gridMaxX = imax(node.gridMaxX, child.gridMaxX);
     node.gridMaxY = imax(node.gridMaxY, child.gridMaxY);
-    if (sourceBetter(child.bestDominanceSeed, node.bestDominanceSeed))
+    if (neutroniumSeedBetter(
+          child.bestDominanceSeed, node.bestDominanceSeed))
       node.bestDominanceSeed = child.bestDominanceSeed;
   };
   includeChild(left);
@@ -1277,16 +1283,9 @@ bool ForceSystem::sampleNearestNeutronium(
     if (!emitter.nearestNeutronium || !(emitter.targets & target)
         || !(emitter.layerTargets & layerBit(layer)))
       return false;
-    if (targetNeutroniumCells > 0 && emitter.sourceBodyId >= 0) {
-      if (emitter.sourceBodyLayer == targetBodyLayer
-          && emitter.sourceBodyId == sourceBodyId)
-        return false;
-      if (emitter.neutroniumCells != targetNeutroniumCells)
-        return emitter.neutroniumCells > targetNeutroniumCells;
-      if (emitter.sourceBodyLayer != targetBodyLayer)
-        return emitter.sourceBodyLayer < targetBodyLayer;
-      return emitter.sourceBodyId < sourceBodyId;
-    }
+    if (targetNeutroniumCells > 0)
+      return neutroniumSourceDominates(
+        seedIndex, targetNeutroniumCells, targetBodyLayer, sourceBodyId);
     return !(seed.sourceLayer == targetLayer && sourceBodyId >= 0
              && emitter.sourceBodyId == sourceBodyId);
   };
@@ -1527,26 +1526,30 @@ bool ForceSystem::elongatedNeutroniumFaceAt(
                     : height >= width * 3.0f;
 }
 
+bool ForceSystem::sampleLooseForceSquared(
+    int x, int y, uint8_t target, double& forceX, double& forceY,
+    double& forceSquared) {
+  if (!sampleLoose(E.L, x, y, target, forceX, forceY)) return false;
+  forceSquared = forceX * forceX + forceY * forceY;
+  return true;
+}
+
 bool ForceSystem::overridesGravity(
     int x, int y, uint8_t material) {
-  uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
-                 : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
-  double forceX, forceY;
-  if (!sampleLoose(E.L, x, y, target, forceX, forceY))
-    return false;
-  constexpr double CELL_STEP_FORCE = 0.12;
-  return forceX * forceX + forceY * forceY
-      >= CELL_STEP_FORCE * CELL_STEP_FORCE;
+  uint8_t target = looseTargetForMaterial(material);
+  if (!target) target = FORCE_POWDER;
+  double forceX, forceY, forceSquared;
+  if (!sampleLooseForceSquared(
+        x, y, target, forceX, forceY, forceSquared)) return false;
+  return forceSquared >= LOOSE_CELL_STEP_FORCE * LOOSE_CELL_STEP_FORCE;
 }
 
 int ForceSystem::liquidForceSinkMoves(
     int x, int y, std::array<std::pair<int, int>, 3>& moves) {
-  double forceX, forceY;
-  if (!sampleLoose(E.L, x, y, FORCE_LIQUID, forceX, forceY)) return 0;
-  constexpr double CELL_STEP_FORCE = 0.12;
-  if (forceX * forceX + forceY * forceY
-      < CELL_STEP_FORCE * CELL_STEP_FORCE)
-    return 0;
+  double forceX, forceY, forceSquared;
+  if (!sampleLooseForceSquared(
+        x, y, FORCE_LIQUID, forceX, forceY, forceSquared)) return 0;
+  if (forceSquared < LOOSE_CELL_STEP_FORCE * LOOSE_CELL_STEP_FORCE) return 0;
   int stepX = forceX > 1e-9 ? 1 : (forceX < -1e-9 ? -1 : 0);
   int stepY = forceY > 1e-9 ? 1 : (forceY < -1e-9 ? -1 : 0);
   if (!stepX && !stepY) return 0;
@@ -1593,19 +1596,18 @@ void ForceSystem::applyBodyForces() {
 
 bool ForceSystem::tryMoveLoose(
     int x, int y, int k, uint8_t material) {
-  uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
-                 : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
+  uint8_t target = looseTargetForMaterial(material);
+  if (!target) target = FORCE_POWDER;
   double forceX, forceY;
   if (!sampleLoose(E.L, x, y, target, forceX, forceY)) return false;
   double magnitude = std::hypot(forceX, forceY);
-  constexpr double CELL_STEP_FORCE = 0.12;
   int forceLayer = layerIndex(E.L);
   // Nearest-cell Voronoi boundaries can sustain microscopic swaps. Once a
   // static field has processed an unchanged material population long enough,
   // strong-field non-gas cells park so the layer can become inactive.
   static constexpr int FORCE_EQUILIBRIUM_TICKS = 768;
   if (target != FORCE_GAS && !dynamicField[forceLayer]
-      && magnitude >= CELL_STEP_FORCE
+      && magnitude >= LOOSE_CELL_STEP_FORCE
       && looseForceAge[forceLayer] >= FORCE_EQUILIBRIUM_TICKS) {
     E.L->next[k] = material;
     E.carryPersistentStateToNext(k, k, material, PCSO_FORCE_PARK);
@@ -1668,7 +1670,7 @@ bool ForceSystem::tryMoveLoose(
                         ^ ((uint32_t)E.tick * 0x9e3779b9u);
   bool elongatedFace = elongatedNeutroniumFaceAt(k, stepX, stepY);
   bool fanPressuredLiquid = target == FORCE_LIQUID
-    && magnitude >= CELL_STEP_FORCE && pressureBehind
+    && magnitude >= LOOSE_CELL_STEP_FORCE && pressureBehind
     && whash2(lateralPhase, E.L->worldOffsetX + x,
               E.L->worldOffsetY + y) < (elongatedFace ? 0.25 : 0.125);
   // Pressurized liquid occasionally takes another inward route before the
@@ -1807,7 +1809,7 @@ bool ForceSystem::tryMoveLoose(
     return true;
   }
 
-  double chance = std::fmin(1.0, magnitude / CELL_STEP_FORCE);
+  double chance = std::fmin(1.0, magnitude / LOOSE_CELL_STEP_FORCE);
   uint32_t phase = E.L->worldSeed ^ 0x4E455554u
                  ^ ((uint32_t)E.tick * 0x9e3779b9u);
   if (whash2(phase, E.L->worldOffsetX + x,

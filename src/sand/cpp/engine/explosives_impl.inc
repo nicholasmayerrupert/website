@@ -156,7 +156,7 @@ ExplosivesSystem::BlastDebrisEjection ExplosivesSystem::inferBlastDebrisEjection
       if (dd == 0 || dd > PROBE_RADIUS * PROBE_RADIUS) continue;
       int x = cx + ox, y = cy + oy;
       if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) continue;
-      if (E.psys.isSolidForPlayer(E.L->grid[E.I(x, y)])) continue;
+      if (E.isBlockingForActor(E.L->grid[E.I(x, y)])) continue;
       double distance = std::sqrt((double)dd);
       double weight = 1.0 / distance;
       sumX += ox / distance * weight;

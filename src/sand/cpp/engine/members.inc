@@ -339,7 +339,9 @@
     return MAT_REACTION_AGE_ENABLED[m] != 0;
   }
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
-  inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
+  // Actor-style collision treats settled powder and rigid cells as solid while
+  // empty cells, gases, and liquids remain passable.
+  inline bool isBlockingForActor(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
   // EVERY site that clears a component cell from the grid (erase, mine, acid)
   // must feed it to the unified component split path, or the component keeps an

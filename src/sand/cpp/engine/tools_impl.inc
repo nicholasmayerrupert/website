@@ -105,7 +105,6 @@ void ToolSystem::initSurvivalFootprints() {
   };
   for (int size = 1; size <= SURVIVAL_FOOTPRINT_MAX_SIZE; size++) makeSquare(size - 1, size);
 }
-int ToolSystem::survivalFootprintCount() const { return (int)survivalFootprints.size(); }
 int ToolSystem::clampSurvivalFootprintId(int id) const {
   if (survivalFootprints.empty()) return 0;
   if (id < 0) return 0;
@@ -135,20 +134,11 @@ void ToolSystem::setSelectedFootprint(Player& p, int id) {
 }
 void ToolSystem::setSelectedFootprint(int id, int footprintId) { Player* p = E.psys.findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
 int ToolSystem::selectedFootprintId(int id) const { const Player* p = nullptr; for (const auto& pp : E.psys.players) if (pp.id == id) { p = &pp; break; } return p ? clampSurvivalFootprintId(p->selectedFootprint) : 0; }
-int ToolSystem::survivalFootprintCellCount(const Player& p) const { return (int)getSurvivalFootprint(p).cells.size(); }
 void ToolSystem::survivalFootprintBounds(const SurvivalFootprint& fp, int cx, int cy, int& x0, int& y0, int& x1, int& y1) const {
   x0 = cx - fp.anchorX;
   y0 = cy - fp.anchorY;
   x1 = x0 + fp.width - 1;
   y1 = y0 + fp.height - 1;
-}
-bool ToolSystem::footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint& fp) {
-  for (const SurvivalFootprintCell& o : fp.cells) {
-    int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
-    if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
-    if (E.L->grid[yy * E.cols + xx] != EMPTY) return true;
-  }
-  return false;
 }
 // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
 int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
@@ -672,7 +662,6 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
 // Tool and pointer state machine. The engine maps normalized pointer input to
 // aim cells and owns brush, draft, seed, cube, and throttle policy. A true return
 // value means the draft preview changed.
-int ToolSystem::effectiveTool() { return activeTool; }
 bool ToolSystem::isPaintTool(int t) { return t == T_SAND || t == T_WATER || t == T_OIL || t == T_FIRE || t == T_ACID || t == T_LAVA; }
 // The creative pointer flow routes by `creativeMode`. setTool maps the compact
 // Tool enum used by survival and embedders onto the creative brush policy.

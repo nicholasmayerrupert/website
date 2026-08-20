@@ -147,6 +147,10 @@ class ComponentSystem {
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 
  private:
+  void appendComponentAdjacencyEdge(
+    const Layer& lay, int k, int x, int neighbour, int neighbourX,
+    int component, std::vector<uint64_t>& edges,
+    int componentLimit = -1) const;
   bool isGroundingRigidCell(const Layer& lay, int k) const;
   bool detachedMyceliumRequiresScan(Layer& lay, const std::unordered_set<int>& detached);
   void refreshMyceliumFlags(Layer& lay, bool rescan);

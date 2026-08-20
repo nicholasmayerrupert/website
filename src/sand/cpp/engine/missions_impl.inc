@@ -45,14 +45,14 @@ bool MissionSystem::safeMissionSpawnAt(uint8_t species, int localX,
       if (dangerous(E.fg.grid[E.I(x, y)])) return false;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
     uint8_t material = E.fg.grid[E.I(x, y)];
-    if (E.isBlockingForPlayer(material) || E.isLiquidMaterial(material))
+    if (E.isBlockingForActor(material) || E.isLiquidMaterial(material))
       return false;
   }
   int support = 0;
   for (int x = x0; x <= x1; x++) {
     int k = E.I(x, y1 + 1);
     uint8_t material = E.fg.grid[k];
-    if (E.isBlockingForPlayer(material) && !dangerous(material) &&
+    if (E.isBlockingForActor(material) && !dangerous(material) &&
         E.fg.bodyOwner[k] < 0 && E.fg.groundedCell[k])
       support++;
   }

@@ -26,6 +26,25 @@ bool ComponentSystem::isKestrelFrameAnchor(const Layer& lay, int x, int y) const
   return worldX >= -2 && worldX <= 2 && worldY >= -2 && worldY <= 2;
 }
 
+void ComponentSystem::appendComponentAdjacencyEdge(
+    const Layer& lay, int k, int x, int neighbour, int neighbourX,
+    int component, std::vector<uint64_t>& edges,
+    int componentLimit) const {
+  int other = lay.cellComp[neighbour];
+  if (other < 0 || other == component
+      || (componentLimit >= 0 && other >= componentLimit)) return;
+  // Infinite-world sentinel columns may support ordinary terrain but must never
+  // anchor icebergs touching the loaded-window edge.
+  if (lay.infinite
+      && (x == 0 || x == E.cols - 1
+          || neighbourX == 0 || neighbourX == E.cols - 1)
+      && (E.isIceMaterial(lay.grid[k])
+          || E.isIceMaterial(lay.grid[neighbour]))) return;
+  uint32_t lo = (uint32_t)(component < other ? component : other);
+  uint32_t hi = (uint32_t)(component < other ? other : component);
+  edges.push_back(((uint64_t)lo << 32) | hi);
+}
+
 // Rebuild E.L->cellComp[] (cell -> component index) and the cgComps index.
 // Shared by the full reflood (computeGrounded) and the incremental refresh
 // (incrementalGroundingRefresh). Resets each Comp's grounded flag to false (the
@@ -65,13 +84,8 @@ void ComponentSystem::indexComponents() {
           for (int ni = 0; ni < 4; ni++) {
             if (nx[ni] < 0 || nx[ni] >= cols || ny[ni] < 0 || ny[ni] >= rows) continue;
             int nk = ny[ni] * cols + nx[ni];
-            int b = cc[nk]; if (b < 0 || b == a) continue;
-            // Infinite-world sentinel columns may support ordinary terrain but
-            // must never anchor icebergs touching the loaded-window edge.
-            if (lay->infinite && (x == 0 || x == cols - 1 || nx[ni] == 0 || nx[ni] == cols - 1)
-                && (E.isIceMaterial(lay->grid[rb + x]) || E.isIceMaterial(lay->grid[nk]))) continue;
-            uint32_t lo = (uint32_t)(a < b ? a : b), hi = (uint32_t)(a < b ? b : a);
-            out.push_back(((uint64_t)lo << 32) | hi);
+            appendComponentAdjacencyEdge(
+              *lay, rb + x, x, nk, nx[ni], a, out);
           }
         }
       }
@@ -126,15 +140,8 @@ bool ComponentSystem::patchComponentIndexAdditions() {
       int nx = x + ox, ny = y + oy;
       if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
       int nk = ny * E.cols + nx;
-      int b = cc[nk];
-      if (b < 0 || b == a) continue;
-      if (lay->infinite && (x == 0 || x == E.cols - 1
-                            || nx == 0 || nx == E.cols - 1)
-          && (E.isIceMaterial(lay->grid[k])
-              || E.isIceMaterial(lay->grid[nk]))) continue;
-      uint32_t lo = (uint32_t)(a < b ? a : b);
-      uint32_t hi = (uint32_t)(a < b ? b : a);
-      cgPatchEdges.push_back(((uint64_t)lo << 32) | hi);
+      appendComponentAdjacencyEdge(
+        *lay, k, x, nk, nx, a, cgPatchEdges);
     }
   }
   if (!cgPatchEdges.empty()) {
@@ -1548,14 +1555,10 @@ void ComponentSystem::patchStableComponentTopology(
         if (!ox && !oy) continue;
         int nx = x + ox, ny = y + oy;
         if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-        int nk = ny * E.cols + nx, other = cc[nk];
-        if (other < 0 || other == slot || other >= (int)lay.components.size()) continue;
-        if (lay.infinite && (x == 0 || x == E.cols - 1
-                            || nx == 0 || nx == E.cols - 1)
-            && (E.isIceMaterial(lay.grid[k]) || E.isIceMaterial(lay.grid[nk]))) continue;
-        uint32_t lo = (uint32_t)imin(slot, other);
-        uint32_t hi = (uint32_t)imax(slot, other);
-        cgPatchEdges.push_back(((uint64_t)lo << 32) | hi);
+        int nk = ny * E.cols + nx;
+        appendComponentAdjacencyEdge(
+          lay, k, x, nk, nx, slot, cgPatchEdges,
+          (int)lay.components.size());
       }
     }
   }

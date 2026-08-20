@@ -42,13 +42,17 @@ int NetSync::rleValidate(const uint8_t* buf, int len, int p) const {
   }
   return p;
 }
-bool NetSync::applyWorld(const uint8_t* buf, int len) {
+bool NetSync::decodeWorldGrids(const uint8_t* buf, int len) {
   if (!buf || len <= 0) return false;
   int fgEnd = rleValidate(buf, len, 0);
   int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
   if (bgEnd != len) return false;
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
+  return true;
+}
+bool NetSync::applyWorld(const uint8_t* buf, int len) {
+  if (!decodeWorldGrids(buf, len)) return false;
   E.fg.clearMotionState();
   E.bg.clearMotionState();
   // A full snapshot replaces grid[] without replacing the alternate buffers.
@@ -72,12 +76,7 @@ bool NetSync::applyWorld(const uint8_t* buf, int len) {
 // component topology after every packet is wasted main-thread work. Keep only
 // the render/lighting dirty state required by WebGL and actor collision reads.
 bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
-  if (!buf || len <= 0) return false;
-  int fgEnd = rleValidate(buf, len, 0);
-  int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
-  if (bgEnd != len) return false;
-  int p = rleDecode(buf, len, 0, E.fg.grid);
-  rleDecode(buf, len, p, E.bg.grid);
+  if (!decodeWorldGrids(buf, len)) return false;
   // Preserve absolute-world skylight reach across worker streaming snapshots.
   // A deep buffer's top edge is underground and cannot rediscover that an
   // off-screen vertical shaft reaches the surface. computeDirectSky remaps the
@@ -187,12 +186,17 @@ int NetSync::validateDiffLayer(const uint8_t* buf, int len, int p) const {
   }
   return p;
 }
-bool NetSync::applyDiff(const uint8_t* buf, int len) {
+bool NetSync::applyDiffGrids(const uint8_t* buf, int len,
+                             int lightEditX0, int lightEditX1) {
   int fgEnd = validateDiffLayer(buf, len, 0);
   int bgEnd = fgEnd >= 0 ? validateDiffLayer(buf, len, fgEnd) : -1;
   if (bgEnd != len) return false;
-  int p = readDiffLayer(buf, len, 0, false);
-  readDiffLayer(buf, len, p, true);
+  int p = readDiffLayer(buf, len, 0, false, lightEditX0, lightEditX1);
+  readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
+  return true;
+}
+bool NetSync::applyDiff(const uint8_t* buf, int len) {
+  if (!applyDiffGrids(buf, len, 1, 0)) return false;
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   { Engine::ActiveLayerScope active(E, &E.fg); E.comps.registerSeededComponents(0, E.cols); }
   { Engine::ActiveLayerScope active(E, &E.bg); E.comps.registerSeededComponents(0, E.cols); }
@@ -200,11 +204,7 @@ bool NetSync::applyDiff(const uint8_t* buf, int len) {
 }
 
 bool NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
-  int fgEnd = validateDiffLayer(buf, len, 0);
-  int bgEnd = fgEnd >= 0 ? validateDiffLayer(buf, len, fgEnd) : -1;
-  if (bgEnd != len) return false;
-  int p = readDiffLayer(buf, len, 0, false, lightEditX0, lightEditX1);
-  readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
+  if (!applyDiffGrids(buf, len, lightEditX0, lightEditX1)) return false;
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.bgEnabled = true;
   return true;

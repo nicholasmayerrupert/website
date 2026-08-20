@@ -167,6 +167,7 @@ class ForceSystem {
 
   int layerIndex(const Layer* layer) const;
   uint8_t layerBit(const Layer* layer) const;
+  void enqueueEmitter(Layer* layer, ForceEmitter emitter);
   int bodyNeutroniumCellCount(const Body* body) const;
   void prepareLayer(Layer* layer);
   void addEmitter(LayerState& state, const ForceEmitter& emitter);
@@ -175,6 +176,10 @@ class ForceSystem {
   void buildBins(LayerState& state);
   void buildNeutroniumIndex();
   int buildNeutroniumKdNode(int begin, int end, int depth);
+  static int compareNeutroniumBodyRank(
+      int firstCells, int firstLayer, int firstBodyId,
+      int secondCells, int secondLayer, int secondBodyId);
+  bool neutroniumSeedBetter(int first, int second) const;
   bool neutroniumSourceDominates(int seedIndex, int targetNeutroniumCells,
                                  int targetBodyLayer,
                                  int targetBodyId) const;
@@ -212,6 +217,9 @@ class ForceSystem {
                    int targetBodyLayer = -1) const;
   bool sampleLoose(Layer* layer, int x, int y, uint8_t target,
                    double& forceX, double& forceY);
+  bool sampleLooseForceSquared(int x, int y, uint8_t target,
+                               double& forceX, double& forceY,
+                               double& forceSquared);
   bool sampleBody(Layer* layer, Body* body,
                   double& forceX, double& forceY) const;
   bool bodyTouchesBins(const Body* body,

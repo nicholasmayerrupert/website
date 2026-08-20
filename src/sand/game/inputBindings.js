@@ -42,8 +42,6 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     return b.width > 0 && b.height > 0 && b.right > 0 && b.bottom > 0 &&
       b.left < window.innerWidth && b.top < window.innerHeight;
   };
-  const hasDesktopPointer = () => !window.matchMedia
-    || !window.matchMedia('(pointer: coarse)').matches;
   const focusSurvivalSurfaceAtStartup = () => {
     if (!ctx.survival || !surfaceIsVisible()) return;
     const root = ctx.container.getRootNode?.();
@@ -191,7 +189,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     // surface focus.
     const visibleCreativeShortcut = !ctx.playMode && surfaceIsVisible() &&
       (key === 'w' || key === 'a' || key === 's' || key === 'd'
-        || (key === 'q' && hasDesktopPointer()));
+        || key === 'q');
     const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
     if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey) return;
     if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
@@ -214,7 +212,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
       if (key === 'q') { onToggleFootprintMenu?.(); e.preventDefault(); return; }
     }
-    if (!ctx.survival && key === 'q' && hasDesktopPointer()) {
+    if (!ctx.survival && key === 'q') {
       onEquipLastCreativeMaterial?.();
       e.preventDefault();
       return;

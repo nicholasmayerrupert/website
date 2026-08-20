@@ -250,22 +250,62 @@ try {
       configuredPaint.before));
   const palette = page.locator('sand-game').locator('.sg-palette');
   await palette.locator('.sg-expand').click();
-  await palette.getByRole('option', { name: 'sand', exact: true }).click();
-  await palette.getByRole('option', { name: 'cube', exact: true }).click();
+  const searchTyping = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    return {
+      focused: root.activeElement === root.querySelector('.sg-search'),
+      selected: root.querySelector('.sg-current .sg-name-track')?.textContent,
+    };
+  });
+  await page.keyboard.type('q');
+  const typedQuery = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    return {
+      query: root.querySelector('.sg-search')?.value,
+      selected: root.querySelector('.sg-current .sg-name-track')?.textContent,
+    };
+  });
+  check('Q remains text while the material search owns the keyboard',
+    searchTyping.focused && typedQuery.query === 'q' &&
+      typedQuery.selected === searchTyping.selected);
+  await palette.locator('.sg-search').fill('');
+  const pointerPickFocused = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    const option = (name) => [...root.querySelectorAll('.sg-opt')]
+      .find((node) => node.querySelector('.sg-name')?.textContent === name);
+    // HTMLElement.click() leaves the search focused unless the palette moves
+    // focus explicitly, matching pointer selection on browsers with that policy.
+    option('sand').click();
+    const cube = option('cube');
+    cube.click();
+    return root.activeElement === cube;
+  });
   const restoredPaint = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     const rect = root.querySelector('#sand-main').getBoundingClientRect();
     const test = window.__sandTest;
-    const selectedOption = root.querySelector('.sg-opt.active');
-    selectedOption.focus({ preventScroll: true });
+    const activeElement = root.activeElement;
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => query === '(pointer: coarse)'
+      ? { matches: true, media: query }
+      : nativeMatchMedia(query);
+    const movement = new KeyboardEvent('keydown', {
+      key: 'w', bubbles: true, composed: true, cancelable: true,
+    });
+    activeElement.dispatchEvent(movement);
+    activeElement.dispatchEvent(new KeyboardEvent('keyup', {
+      key: 'w', bubbles: true, composed: true,
+    }));
     const event = new KeyboardEvent('keydown', {
       key: 'q', bubbles: true, composed: true, cancelable: true,
     });
-    selectedOption.dispatchEvent(event);
+    activeElement.dispatchEvent(event);
+    window.matchMedia = nativeMatchMedia;
     return {
       x: rect.left + Math.floor(rect.width * 0.65),
       y: rect.top + Math.floor(rect.height * 0.14),
       before: test.materialCountBoth(1),
+      movementPrevented: movement.defaultPrevented,
       prevented: event.defaultPrevented,
       currentLabel: root.querySelector('.sg-current .sg-name-track')?.textContent,
       activeLabel: root.querySelector('.sg-opt.active .sg-name')?.textContent,
@@ -279,7 +319,8 @@ try {
     restoredPaint.before, { timeout: 10000 }).catch(() => {});
   const restoredSand = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
   check('desktop Q restores the last creative selection after another tool is equipped',
-    restoredPaint.prevented && restoredPaint.currentLabel === 'sand' &&
+    pointerPickFocused && restoredPaint.movementPrevented && restoredPaint.prevented &&
+      restoredPaint.currentLabel === 'sand' &&
       restoredPaint.activeLabel === 'sand' && restoredSand > restoredPaint.before,
     `${restoredPaint.currentLabel}/${restoredPaint.activeLabel}, ${restoredPaint.before} -> ${restoredSand}`);
   await palette.getByRole('option', { name: 'cube', exact: true }).click();

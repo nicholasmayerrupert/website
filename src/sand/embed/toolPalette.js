@@ -662,7 +662,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       lbl.className = 'sg-name';
       lbl.textContent = e.label;
       opt.append(renderSwatch(e), lbl);
-      opt.addEventListener('click', () => pick(e));
+      opt.addEventListener('click', () => {
+        // A desktop selection ends palette text entry and owns keyboard focus.
+        if (!atBottom) opt.focus({ preventScroll: true });
+        pick(e);
+      });
       optionByKey.set(e.key, opt);
       list.appendChild(opt);
     });

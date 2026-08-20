@@ -420,6 +420,82 @@ for (const [label, mat, limit] of [
   engine.destroy();
 }
 
+// Liquid↔liquid force sinking. Water already at the source must still let a
+// later oil pour fall inward as the outer shell.
+{
+  const { engine, sourceX, sourceY } = createOpenSuspendedSource();
+  for (let y = sourceY - 16; y <= sourceY + 16; y++) {
+    for (let x = sourceX - 16; x <= sourceX + 16; x++) {
+      const radius = Math.hypot(x + 0.5 - sourceX, y + 0.5 - sourceY);
+      if (radius >= 8 && radius <= 14
+          && engine.getGrid()[y * COLS + x] === MAT.EMPTY)
+        engine.paintDisc(x, y, 0, MAT.WATER, true);
+    }
+  }
+  for (let step = 0; step < 80; step++) engine.stepWorld();
+  for (let y = sourceY - 34; y <= sourceY - 22; y++) {
+    for (let x = sourceX - 10; x <= sourceX + 10; x++) {
+      if (engine.getGrid()[y * COLS + x] === MAT.EMPTY)
+        engine.paintDisc(x, y, 0, MAT.OIL, true);
+    }
+  }
+  const oilBefore = materialStats(engine, MAT.OIL, sourceX, sourceY);
+  const waterBefore = countMaterial(engine, MAT.WATER);
+  const oilCountBefore = oilBefore.count;
+  const idleAt = runUntilIdle(engine, 1200);
+  const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
+  const oil = materialStats(engine, MAT.OIL, sourceX, sourceY);
+  check(`oil poured after water sinks toward neutronium (${oilBefore.meanRadius.toFixed(2)} -> ${oil.meanRadius.toFixed(2)})`,
+    oil.count > 0 && oil.meanRadius < oilBefore.meanRadius - 4);
+  const oilQuads = quadrantCounts(engine, MAT.OIL, sourceX, sourceY);
+  check('oil wraps around the water toward neutronium',
+    (oilQuads[2] + oilQuads[3]) > 8);
+  check(`water stays inside the oil shell (${water.meanRadius.toFixed(2)} < ${oil.meanRadius.toFixed(2)})`,
+    water.meanRadius < oil.meanRadius);
+  check('water/oil force sinking conserves both liquids',
+    water.count === waterBefore && oil.count === oilCountBefore);
+  check(`a static water-then-oil scene settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 1200 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// Radial liquid density sorting is independent of the initial shell order.
+for (const [label, innerMaterial, outerMaterial] of [
+  ['water starts inside oil', MAT.WATER, MAT.OIL],
+  ['water starts outside oil', MAT.OIL, MAT.WATER],
+]) {
+  const { engine, sourceX, sourceY } = createOpenSuspendedSource();
+  const candidates = [];
+  const grid = engine.getGrid();
+  for (let y = sourceY - 24; y <= sourceY - 7; y++) {
+    for (let x = sourceX - 22; x <= sourceX + 22; x++) {
+      const radius = Math.hypot(x + 0.5 - sourceX, y + 0.5 - sourceY);
+      if (radius >= 8 && radius <= 23 && grid[y * COLS + x] === MAT.EMPTY)
+        candidates.push({ x, y, radius });
+    }
+  }
+  candidates.sort((a, b) => a.radius - b.radius);
+  const volume = Math.floor(candidates.length / 2);
+  for (const { x, y } of candidates.slice(0, volume))
+    engine.paintDisc(x, y, 0, innerMaterial, true);
+  for (const { x, y } of candidates.slice(-volume))
+    engine.paintDisc(x, y, 0, outerMaterial, true);
+
+  const waterBefore = countMaterial(engine, MAT.WATER);
+  const oilBefore = countMaterial(engine, MAT.OIL);
+  const idleAt = runUntilIdle(engine, 1200);
+  const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
+  const oil = materialStats(engine, MAT.OIL, sourceX, sourceY);
+  check(`${label}: water sorts inside oil (${water.meanRadius.toFixed(2)} < ${oil.meanRadius.toFixed(2)})`,
+    water.meanRadius < oil.meanRadius);
+  check(`${label}: water and oil are conserved`,
+    water.count === waterBefore && oil.count === oilBefore
+      && waterBefore > 0 && oilBefore > 0);
+  check(`${label}: the static liquid scene settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 1200 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
 // Radial density sorting is independent of the initial shell order. Denser
 // lava moves inside lighter sand, including when the sand starts nearer.
 for (const [label, innerMaterial, outerMaterial] of [

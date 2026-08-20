@@ -489,24 +489,20 @@
   void separateLiquidsByDensityPass() {
     if (activeLiquidCells.empty()) return;
 
-    // The selected row pairs are disjoint. Vertical exchanges run first, then
-    // one alternating diagonal orientation may use cells that did not exchange.
-    // Stamping both ends keeps every liquid cell to at most one density exchange
-    // per tick while avoiding scan-direction conflicts.
+    // Gravity-owned pairs are disjoint: vertical exchanges run first, then one
+    // alternating diagonal. Force-owned liquids use the same stamp so each cell
+    // still exchanges at most once, but the downhill neighbour follows the
+    // local force instead of +Y.
     int rowParity = tick & 1;
     int diagonal = ((tick >> 1) & 1) ? 1 : -1;
-    auto tryExchange = [&](int upperK, int lowerK, int x, int y) {
-      if (L->vacatedStamp[upperK] == tick || L->vacatedStamp[lowerK] == tick)
+    auto tryExchange = [&](int fartherK, int closerK) {
+      if (L->vacatedStamp[fartherK] == tick || L->vacatedStamp[closerK] == tick)
         return;
-      if (L->assemblyWakeStamp[upperK] == tick
-          || L->assemblyWakeStamp[lowerK] == tick)
+      if (L->assemblyWakeStamp[fartherK] == tick
+          || L->assemblyWakeStamp[closerK] == tick)
         return;
-      uint8_t upper = L->grid[upperK];
-      if (!isLiquidMaterial(upper)) return;
-      if constexpr (spatialForces) {
-        if (forces.overridesGravity(x, y, upper)) return;
-      }
-      trySwapSettledLiquidsByDensity(upperK, lowerK);
+      if (!isLiquidMaterial(L->grid[fartherK])) return;
+      trySwapSettledLiquidsByDensity(fartherK, closerK);
     };
 
     for (int pass = 0; pass < 2; pass++) {
@@ -518,9 +514,27 @@
           int end = ltr ? maxX + 1 : minX - 1;
           int stepX = ltr ? 1 : -1;
           for (int x = start; x != end; x += stepX) {
+            int k = I(x, y);
+            if (!isLiquidMaterial(L->grid[k])) continue;
+            if constexpr (spatialForces) {
+              std::array<std::pair<int, int>, 3> forceMoves;
+              int forceMoveCount = forces.liquidForceSinkMoves(x, y, forceMoves);
+              if (forceMoveCount > 0) {
+                if (pass != 0) continue;
+                for (int i = 0; i < forceMoveCount; i++) {
+                  int nx = x + forceMoves[i].first;
+                  int ny = y + forceMoves[i].second;
+                  if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1)
+                    continue;
+                  tryExchange(k, I(nx, ny));
+                  if (L->vacatedStamp[k] == tick) break;
+                }
+                continue;
+              }
+            }
             int lowerX = pass == 0 ? x : x + diagonal;
             if (lowerX <= 0 || lowerX >= cols - 1) continue;
-            tryExchange(I(x, y), I(lowerX, y + 1), x, y);
+            tryExchange(k, I(lowerX, y + 1));
           }
         });
       }

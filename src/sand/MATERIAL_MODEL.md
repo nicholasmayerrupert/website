@@ -224,10 +224,11 @@ with `mat-generator` and `mat-flags`; interactions add `mat-behavior`; plants ad
   ordinary downward loose-material settling.
   Pressure-blocked powders and liquids spread along force tangents to wrap around
   the source. Powder tangents retain ordinary density displacement, allowing sand
-  to move laterally through lighter liquids. Pressurized liquids occasionally take
-  a lateral-inward free-volume route before their direct radial step, broadening
-  the outer shell without changing density displacement. Force-balanced loose
-  cells become inactive around a static source.
+  to move laterally through lighter liquids. Liquids use the same adjacent density
+  swap along the force, so denser fluid sinks toward the source through lighter
+  fluid. Pressurized liquids occasionally take a lateral-inward free-volume route
+  before their direct radial step, broadening the outer shell. Force-balanced
+  loose cells become inactive around a static source.
 
 ## Which field should code use?
 

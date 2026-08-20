@@ -64,6 +64,8 @@ class ForceSystem {
                    double& forceX, double& forceY) const;
   bool overridesGravity(int x, int y, uint8_t material);
   bool tryMoveLoose(int x, int y, int k, uint8_t material);
+  int liquidForceSinkMoves(int x, int y,
+                           std::array<std::pair<int, int>, 3>& moves);
   int debugMetric(int metric) const;
 
  private:

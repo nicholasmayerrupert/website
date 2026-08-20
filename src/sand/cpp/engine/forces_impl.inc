@@ -1539,6 +1539,40 @@ bool ForceSystem::overridesGravity(
       >= CELL_STEP_FORCE * CELL_STEP_FORCE;
 }
 
+int ForceSystem::liquidForceSinkMoves(
+    int x, int y, std::array<std::pair<int, int>, 3>& moves) {
+  double forceX, forceY;
+  if (!sampleLoose(E.L, x, y, FORCE_LIQUID, forceX, forceY)) return 0;
+  constexpr double CELL_STEP_FORCE = 0.12;
+  if (forceX * forceX + forceY * forceY
+      < CELL_STEP_FORCE * CELL_STEP_FORCE)
+    return 0;
+  int stepX = forceX > 1e-9 ? 1 : (forceX < -1e-9 ? -1 : 0);
+  int stepY = forceY > 1e-9 ? 1 : (forceY < -1e-9 ? -1 : 0);
+  if (!stepX && !stepY) return 0;
+  // Gravity density uses straight-down plus both down-diagonals. Axis-aligned
+  // force movement only keeps the straight step, so the density pass adds the
+  // two downhill diagonals here; diagonal forces already have three lattice
+  // neighbours from looseMoveCandidates.
+  if (!stepX || !stepY) {
+    int diag = ((x + y + E.tick) & 1) ? 1 : -1;
+    if (stepY) {
+      moves[0] = {0, stepY};
+      moves[1] = {diag, stepY};
+      moves[2] = {-diag, stepY};
+    } else {
+      moves[0] = {stepX, 0};
+      moves[1] = {stepX, diag};
+      moves[2] = {stepX, -diag};
+    }
+    return 3;
+  }
+  uint32_t directionSeed = E.L->worldSeed ^ 0x444952u;
+  double directionPhase = whash2(directionSeed, E.L->worldOffsetX + x,
+                                 E.L->worldOffsetY + y);
+  return looseMoveCandidates(forceX, forceY, directionPhase, moves);
+}
+
 void ForceSystem::applyBodyForces() {
   int targetLayer = layerIndex(E.L);
   for (Body* body : E.L->bodies) {
@@ -1592,13 +1626,23 @@ bool ForceSystem::tryMoveLoose(
         && nextMaterial == E.L->grid[toK]
         && E.L->vacatedStamp[toK] != E.tick
         && E.canDisplaceMaterial(material, nextMaterial);
+      // One adjacent density swap toward the source. Ordinary gravity movement
+      // still treats other liquids as blocking; this is the force-directed
+      // counterpart of the post-settle liquid density pass.
+      uint8_t occupant = nextMaterial == EMPTY ? E.L->grid[toK] : nextMaterial;
+      bool canDisplaceLighterLiquid = E.L->assemblyWakeStamp[toK] != E.tick
+        && E.L->vacatedStamp[toK] != E.tick
+        && (nextMaterial == EMPTY || nextMaterial == E.L->grid[toK])
+        && E.isLiquidMaterial(occupant)
+        && E.canDisplaceByLooseDensity(material, occupant);
       // Radial moves reject same-material vacancies because they are not new
       // volume. Pressure chains may follow one after a frontier cell moves.
       return (followPressureVacancy
               || E.L->vacatedStamp[toK] != E.tick
               || E.L->grid[toK] != material)
           && (E.liquidCanClaim(toK, material)
-              || canDisplaceParkedPowder);
+              || canDisplaceParkedPowder
+              || canDisplaceLighterLiquid);
     }
     if (E.isGasMaterial(material)) {
       uint8_t occupant = E.L->grid[toK];
@@ -1669,11 +1713,18 @@ bool ForceSystem::tryMoveLoose(
       break;
     }
   }
+  bool blockedByOtherLiquid = false;
   if (moveCount > 0) {
     int nx = x + moves[0].first, ny = y + moves[0].second;
     if (nx > 0 && nx < E.cols - 1 && ny > 0 && ny < E.rows) {
       int toK = ny * E.cols + nx;
       if (destination < 0 && canEnter(toK)) destination = toK;
+      if (destination < 0 && target == FORCE_LIQUID) {
+        uint8_t occupant = E.L->grid[toK];
+        blockedByOtherLiquid = E.isLiquidMaterial(occupant)
+          && occupant != material
+          && !E.canDisplaceByLooseDensity(material, occupant);
+      }
     }
   }
   if (destination < 0 && moveCount > 0) {
@@ -1682,8 +1733,9 @@ bool ForceSystem::tryMoveLoose(
       && minimum < 1e20 && magnitude > minimum + 0.015;
     bool compressedPowderFace = target == FORCE_POWDER
       && elongatedFace && pressureBehind;
-    if ((!looseTangentialBalanced[forceLayer] || compressedPowderFace)
-        && (pressureBehind || forcePressureGradient)) {
+    if ((!looseTangentialBalanced[forceLayer] || compressedPowderFace
+         || blockedByOtherLiquid)
+        && (pressureBehind || forcePressureGradient || blockedByOtherLiquid)) {
       std::array<std::pair<int, int>, 2> tangents = {{
         {stepY, -stepX}, {-stepY, stepX}
       }};
@@ -1713,6 +1765,34 @@ bool ForceSystem::tryMoveLoose(
         destination = toK;
         break;
       }
+    }
+  }
+  if (destination < 0 && blockedByOtherLiquid) {
+    // Slide along a denser liquid shell. Axis-aligned force tangents otherwise
+    // only try downhill diagonals, which sit inside the blocking blob.
+    std::array<std::pair<int, int>, 2> laterals = {{
+      {stepY, -stepX}, {-stepY, stepX}
+    }};
+    if (((E.L->worldOffsetX + x) + (E.L->worldOffsetY + y)
+         + E.tick) & 1)
+      std::swap(laterals[0], laterals[1]);
+    for (const auto& lateral : laterals) {
+      int nx = x + lateral.first, ny = y + lateral.second;
+      int innerX = nx + stepX, innerY = ny + stepY;
+      if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows
+          || innerX <= 0 || innerX >= E.cols - 1
+          || innerY <= 0 || innerY >= E.rows)
+        continue;
+      int toK = ny * E.cols + nx;
+      int innerK = innerY * E.cols + innerX;
+      uint8_t support = E.L->grid[innerK];
+      if (!E.isLiquidMaterial(support)
+          || E.canDisplaceByLooseDensity(material, support)
+          || E.L->vacatedStamp[innerK] == E.tick
+          || !canEnter(toK, true))
+        continue;
+      destination = toK;
+      break;
     }
   }
   for (int i = 1; destination < 0 && i < moveCount; i++) {

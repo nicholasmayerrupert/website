@@ -1313,8 +1313,9 @@
     if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
     if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
     // A defensive liquid→liquid path remains local and conservative. Ordinary
-    // liquid movement excludes liquid targets; density separation owns these
-    // exchanges through the post-settle adjacent-pair pass.
+    // gravity movement excludes liquid targets; the post-settle adjacent-pair
+    // pass owns those exchanges, and force-directed settling may also swap one
+    // denser liquid into a lighter neighbour toward the source.
     if (isLiquidMaterial(m) && isLiquidMaterial(displaced)) {
       if (L->next[fromK] == EMPTY) {
         writeNextIndex(fromK, displaced);

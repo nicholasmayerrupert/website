@@ -38,8 +38,8 @@
     if (!gravityCellStepAt(x)) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
-    // Liquid↔liquid density is handled by settleLiquid (deep sink through lighter
-    // fluid + multi-source BFS relocate). This pass is powder↔powder / powder↔liquid.
+    // Liquid↔liquid density is handled by the post-settle adjacent-swap pass.
+    // This pass is powder↔powder / powder↔liquid.
     auto trySink = [&](int ik) {
       if (!canDisplaceByLooseDensity(m, L->grid[ik]) || L->next[ik] != EMPTY) return false;
       if (isLiquidMaterial(m) && isLiquidMaterial(L->grid[ik])) return false;
@@ -115,26 +115,24 @@
   void settleLiquid(int x, int y, int k, uint8_t m,
                     bool handleSpatialForce = true) {
     if (L->next[k] != EMPTY) return;
-    // Already moved this tick (e.g. denser liquid sank in settleLooseDensityInterface
-    // and enqueued a lighter liquid instead of swapping into the source). Without this
-    // guard the same grid cell is settled again and duplicates into a free next[].
+    // A cell vacated by an earlier movement cannot settle again from stale grid[].
     if (L->vacatedStamp[k] == tick) return;
     if (handleSpatialForce
         && L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
     int belowK = k + cols;
-    // Packed early-out must use effective occupancy (next / vacated), not raw grid[].
-    // Otherwise a denser cell above one that just sank still sees "solid pack of m"
-    // in grid and goes inert, killing same-tick cascade through a lighter pool.
-    // Also: do NOT early-out when a strictly lighter liquid is above (submerged denser
-    // free surface) — that cell still needs lateral equalize into the lighter body or
-    // a brine mound under water freezes into a permanent pyramid.
+    // Packed early-out uses effective occupancy (next / vacated), not raw grid[].
+    // A strictly lighter liquid above keeps a submerged density interface awake.
     if (y + 1 < rows && x > 0 && x < cols - 1 && liquidOccupantAt(k - 1) == m && liquidOccupantAt(k + 1) == m
         && !(y > 1 && isLiquidMaterial(L->grid[k - cols]) && canDisplaceByLooseDensity(m, L->grid[k - cols]))) {
       uint8_t below = liquidOccupantAt(belowK), bl = liquidOccupantAt(belowK - 1), br = liquidOccupantAt(belowK + 1);
-      if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
+      if ((below == m && bl == m && br == m)
+          || (supportsLiquid(below, m)
+              && (bl == m || supportsLiquid(bl, m))
+              && (br == m || supportsLiquid(br, m)))) {
         L->next[k] = m;
         carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
-        return; // settled flat surface -> go inert (no re-mark just for open sky above)
+        if (touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+        return;
       }
     }
     if (!gravityCellStepAt(x) && y + 1 < rows) {
@@ -155,17 +153,12 @@
         return;
       }
     }
-    // FALL / SINK: less-dense liquid is free volume for a *single-cell* sink
-    // (local density exchange). Multi-cell freefall is EMPTY-only.
-    //
-    // Treating a deep oil column as air and landing many cells down made the
-    // denser's vacated source sit far above the displaced oil. resolve then
-    // BFS'd oil to free-surface empties (or restored into that high fallback)
-    // — the whole pool "sucked up" into the falling fluid like a geyser.
+    // FALL: ordinary liquid movement uses EMPTY or gas only. Density separation
+    // exchanges adjacent liquid cells later in the tick.
     if (y + 1 < rows && liquidColumnPassable(belowK, m)) {
       uint8_t belowOcc = liquidOccupantAt(belowK);
       if (belowOcc != EMPTY) {
-        // Lighter liquid or gas: one-cell claim only (swap / density-chain).
+        // Gas is exchanged locally into the liquid's source cell.
         moveLiquidInto(k, x, y + 1, m);
         return;
       }
@@ -217,9 +210,7 @@
       }
     }
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
-    // LATERAL density push into lighter POWDER only. Lighter liquid is free volume
-    // for fall / free-surface leveling (levelLiquidSurfaces, drop>=2) — not for
-    // same-level flow (that PE-neutral swaps forever).
+    // LATERAL density push into lighter POWDER only.
     for (int i = 0; i < 2; i++) {
       int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
       int sk = k + dx;
@@ -236,8 +227,6 @@
         for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sideK = k + dx; if (x + dx <= 0 || x + dx >= cols - 1) continue; if (canEnterIndex(sideK, m) && supportsLiquid(L->grid[sideK + cols], m)) { moveMaterialInto(k, sideK, m); return; } }
       }
       // Resting on support: same-level empty is only an escape when pressured.
-      // Free-surface leveling of denser mounds under lighter fluid is done by
-      // levelLiquidSurfaces (lighter liquid = air, drop>=2) — same as air pyramids.
       if (L->next[k] == EMPTY) {
         L->next[k] = m;
         carryPersistentStateToNext(k, k, m, PCSO_STATIONARY);
@@ -300,204 +289,6 @@
     settleLiquid(x, y, k, material, false);
   }
 
-  // After liquid settle: place every lighter liquid that denser fluid displaced this
-  // tick. One multi-source BFS per material group per wave (not per cell).
-  //
-  // Placement priority (anti-geyser):
-  //   1. Own fallback (denser's vacated source) — the natural 1-cell density swap.
-  //      Without this, BFS raced every displaced oil cell to free-surface EMPTY and
-  //      the pool "sucked" up into the falling water.
-  //   2. Nearest EMPTY via BFS (only for liquids that lost their fallback; gas is
-  //      pathable but not claimed — bubble swaps go through moveMaterialInto).
-  //   3. Strictly less-dense liquid (chain continues).
-  //   4. Spare free slots released by peers that landed elsewhere.
-  //
-  // Volume conservation: each pending liquid owns a real free fallback. Fallbacks
-  // of unplaced liquids stay reserved so BFS cannot steal them. On chain, the
-  // lighter liquid inherits that fallback — never the overwritten target cell.
-  void resolveLiquidDisplacements() {
-    if (liquidDispPending.empty()) return;
-    int gridLen = cols * rows;
-    int offs[4] = { -1, 1, cols, -cols };
-    std::vector<LiquidDisp> pending = std::move(liquidDispPending);
-    liquidDispPending.clear();
-    std::vector<LiquidDisp> nextPending;
-    std::vector<int> queue, targets, levelChain, levelEmpty, spareFree;
-    std::vector<char> usedFallback; // parallel to a material group during resolve
-    // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
-    // reserved-stamp buffer (separate gen from seenStamp).
-    L->reserveSeenGenerations(
-      (size_t)(MATERIAL_COUNT + 4) * MATERIAL_COUNT + 2);
-    int32_t reservedGen = L->nextSeenGeneration();
-
-    auto plannedAt = [&](int k) -> uint8_t {
-      if (L->assemblyWakeStamp[k] == tick) return STONE;
-      int y = k / cols, x = k - y * cols;
-      // Active rows were blanked then rewritten — next[] is authoritative there
-      // for materials that already settled. Gas rises AFTER this resolve pass;
-      // powder may still sit only in grid if no sink claimed it. Treat both as
-      // present so BFS does not place liquid on unmoved smoke/snow.
-      if (activeSpanContains(L, y, x)) {
-        uint8_t n = L->next[k];
-        if (n != EMPTY) return n;
-        if (L->vacatedStamp[k] == tick) return EMPTY;
-        uint8_t g = L->grid[k];
-        if (isGasMaterial(g) || isLooseSolidMaterial(g)) return g;
-        return EMPTY;
-      }
-      return L->grid[k];
-    };
-    auto reserveFallback = [&](int fb) {
-      if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY)
-        L->rigidSpillReserved[fb] = reservedGen;
-    };
-    auto plannedStateAt = [&](int cell) {
-      int y = cell / cols, x = cell - y * cols;
-      if (activeSpanContains(L, y, x) && L->next[cell] != EMPTY)
-        return capturePersistentNextState(L, cell);
-      return capturePersistentCurrentState(L, cell);
-    };
-    auto placeAt = [&](int cell, const LiquidDisp& displacement) {
-      uint8_t mat = displacement.material;
-      writeNextIndex(cell, mat);
-      restorePersistentNextState(
-        L, cell, mat, displacement.state, PCSO_SWAP);
-      markCellIndex(displacement.from);
-      markCellIndex(cell);
-    };
-
-    for (int wave = 0; !pending.empty() && wave < MATERIAL_COUNT + 4; wave++) {
-      std::sort(pending.begin(), pending.end(), [](const LiquidDisp& a, const LiquidDisp& b) {
-        if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
-        if (a.material != b.material) return a.material < b.material;
-        return a.from < b.from;
-      });
-      nextPending.clear();
-      // Reserve every fallback so BFS (for residual unplaced) cannot steal them.
-      for (const auto& d : pending) reserveFallback(d.fallback);
-
-      for (size_t gi = 0; gi < pending.size();) {
-        uint8_t mat = pending[gi].material;
-        size_t gj = gi + 1;
-        while (gj < pending.size() && pending[gj].material == mat) gj++;
-        int need = (int)(gj - gi);
-        usedFallback.assign(need, 0);
-        spareFree.clear();
-
-        // Pass 1: natural density swap into own vacated denser source.
-        int remaining = need;
-        for (int i = 0; i < need; i++) {
-          int fb = pending[gi + i].fallback;
-          if (fb <= 0 || fb >= gridLen) continue;
-          if (plannedAt(fb) != EMPTY) continue;
-          // Claim exclusively (may already be reservedGen from reserveFallback).
-          L->rigidSpillReserved[fb] = reservedGen;
-          placeAt(fb, pending[gi + i]);
-          usedFallback[i] = 1;
-          remaining--;
-        }
-        if (remaining == 0) { gi = gj; continue; }
-
-        // Pass 2: BFS only for liquids that could not take their fallback.
-        queue.clear(); targets.clear();
-        int32_t seenGen = L->nextSeenGeneration();
-        auto canVisit = [&](int k) {
-          if (k <= 0 || k >= gridLen || L->seenStamp[k] == seenGen) return false;
-          int y = k / cols, x = k - y * cols;
-          if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
-          uint8_t p = plannedAt(k);
-          return p == EMPTY || isGasMaterial(p) || isLiquidMaterial(p);
-        };
-        auto enqueue = [&](int k) {
-          if (!canVisit(k)) return;
-          L->seenStamp[k] = seenGen;
-          queue.push_back(k);
-        };
-        for (int i = 0; i < need; i++) {
-          if (usedFallback[i]) continue;
-          for (int off : offs) enqueue(pending[gi + i].from + off);
-        }
-
-        int visitBudget = imin(gridLen, imax(LIQUID_DISP_VISIT_BASE, remaining * LIQUID_DISP_VISIT_PER));
-        int visits = 0;
-        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < remaining && visits < visitBudget;) {
-          size_t levelEnd = queue.size();
-          levelChain.clear(); levelEmpty.clear();
-          for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
-            int k = queue[qi];
-            if (L->rigidSpillReserved[k] == reservedGen) {
-              // Reserved free slot (someone's fallback): expand through, do not claim.
-              for (int off : offs) enqueue(k + off);
-              continue;
-            }
-            uint8_t p = plannedAt(k);
-            // Claim true EMPTY only. Gas is free volume for pathing (canVisit) but
-            // not a placement target — overwriting smoke/steam here destroyed it
-            // without a bubble swap (moveMaterialInto is the only gas-safe claim).
-            if (p == EMPTY) levelEmpty.push_back(k);
-            else if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
-            for (int off : offs) enqueue(k + off);
-          }
-          // Prefer EMPTY over chain at the same distance.
-          for (int k : levelEmpty) {
-            if ((int)targets.size() >= remaining) break;
-            if (L->rigidSpillReserved[k] == reservedGen) continue;
-            L->rigidSpillReserved[k] = reservedGen;
-            targets.push_back(k);
-          }
-          for (int k : levelChain) {
-            if ((int)targets.size() >= remaining) break;
-            if (L->rigidSpillReserved[k] == reservedGen) continue;
-            L->rigidSpillReserved[k] = reservedGen;
-            targets.push_back(k);
-          }
-        }
-
-        int ti = 0;
-        for (int i = 0; i < need; i++) {
-          if (usedFallback[i]) continue;
-          int fb = pending[gi + i].fallback;
-          if (ti < (int)targets.size()) {
-            int target = targets[ti++];
-            uint8_t prev = plannedAt(target);
-            if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) {
-              nextPending.push_back({prev, target, fb, plannedStateAt(target)});
-              reserveFallback(fb);
-            } else if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
-              // BFS found other free volume; release own fallback for peers.
-              L->rigidSpillReserved[fb] = reservedGen;
-              spareFree.push_back(fb);
-            }
-            placeAt(target, pending[gi + i]);
-            if (fb > 0 && fb < gridLen) markCellIndex(fb);
-            usedFallback[i] = 1;
-            continue;
-          }
-          // Pass 3: restore into own fallback, then spare free slots.
-          if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
-            L->rigidSpillReserved[fb] = reservedGen;
-            placeAt(fb, pending[gi + i]);
-            usedFallback[i] = 1;
-            continue;
-          }
-          while (!spareFree.empty()) {
-            int s = spareFree.back();
-            spareFree.pop_back();
-            if (s > 0 && s < gridLen && plannedAt(s) == EMPTY) {
-              L->rigidSpillReserved[s] = reservedGen;
-              placeAt(s, pending[gi + i]);
-              usedFallback[i] = 1;
-              break;
-            }
-          }
-        }
-        gi = gj;
-      }
-      pending.swap(nextPending);
-    }
-    liquidDispPending.clear();
-  }
-
   void swapSettledCells(int a, int b) {
     const uint8_t materialA = L->grid[a];
     const uint8_t materialB = L->grid[b];
@@ -515,6 +306,29 @@
     L->next[b] = materialA;
     restorePersistentNextState(L, a, materialB, stateB, PCSO_SWAP);
     restorePersistentNextState(L, b, materialA, stateA, PCSO_SWAP);
+  }
+
+  bool trySwapSettledLiquidsByDensity(int heavyK, int lightK) {
+    if (L->vacatedStamp[heavyK] == tick || L->vacatedStamp[lightK] == tick)
+      return false;
+    if (L->assemblyWakeStamp[heavyK] == tick
+        || L->assemblyWakeStamp[lightK] == tick)
+      return false;
+    uint8_t heavy = L->grid[heavyK], light = L->grid[lightK];
+    if (!isLiquidMaterial(heavy) || !isLiquidMaterial(light)
+        || DENSITY[heavy] <= DENSITY[light])
+      return false;
+    markCellIndex(heavyK);
+    markCellIndex(lightK);
+    // Density contrast sets the exchange rate; the heavier liquid's mobility
+    // applies the same viscosity gate used by its ordinary movement.
+    double contrast = (DENSITY[heavy] - DENSITY[light])
+      / (DENSITY[heavy] + DENSITY[light]);
+    if (rand() >= contrast * MOBILITY[heavy]) return false;
+    swapSettledCells(heavyK, lightK);
+    L->vacatedStamp[heavyK] = tick;
+    L->vacatedStamp[lightK] = tick;
+    return true;
   }
 
   template <bool spatialForces>
@@ -584,12 +398,10 @@
     if (L->forceActive) relaxLiquidGapsPass<true>();
     else relaxLiquidGapsPass<false>();
   }
-  // Free-surface leveling — air and denser-under-lighter share one rule:
-  // free volume for denser m = EMPTY / lighter powder / strictly lighter liquid
-  // (lighter liquid = air). One sideways step only if the free surface drops by
-  // >=2px (same anti-shimmer as air pyramids). Flat free surfaces (drop 0/1)
-  // stay put and go inert. General same-level flow still does NOT treat lighter
-  // liquid as air (canEnterIndex) — only this free-surface solver does.
+  // Free-surface leveling moves through EMPTY or a lighter loose material. A
+  // submerged density surface uses the same local, rate-limited adjacent swap as
+  // the density pass. One sideways step occurs only when the surface drops by a
+  // meaningful amount, so flat free surfaces stay inert.
   template <bool spatialForces>
   void levelLiquidSurfacesPass() {
     if (!gravityCellStep) return;
@@ -601,9 +413,6 @@
           || (isLooseSolidMaterial(c) && canDisplaceByLooseDensity(m, c))
           || (isLiquidMaterial(c) && canDisplaceByLooseDensity(m, c));
     };
-    // needDrop: air/powder free volume uses 2 (classic). Stepping into lighter
-    // liquid uses 3 so mild residual free-surface scallops go inert instead of
-    // PE-swapping forever; tall denser mounds still see large drops and flatten.
     auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn, int needDrop) {
       int lvl = y;
       for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
@@ -636,9 +445,8 @@
           if constexpr (spatialForces) {
             if (forces.overridesGravity(x, y, m)) continue;
           }
-          if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
           uint8_t above = L->grid[k - cols];
-          // Free surface: air/powder, or lighter liquid above (submerged denser).
+          // Free surface: air or a lighter loose material above.
           if (above != EMPTY && !surfacePassable(above, m)) continue;
           if (L->grid[k + cols] == EMPTY) continue;
           if (L->vacatedStamp[k] == tick || L->vacatedStamp[k + cols] == tick ||
@@ -648,8 +456,8 @@
           auto sideDrop = [&](int sideK, int sgn) {
             if (!surfacePassable(L->grid[sideK], m) || L->vacatedStamp[sideK] == tick || L->assemblyWakeStamp[sideK] == tick) return 0;
             uint8_t side = L->grid[sideK];
-            int need = (isLiquidMaterial(side) && canDisplaceByLooseDensity(m, side)) ? 3 : 2;
-            return lowerSurfaceDrop(x, y, m, sgn, need);
+            int needDrop = isLiquidMaterial(side) ? 3 : 2;
+            return lowerSurfaceDrop(x, y, m, sgn, needDrop);
           };
           int leftDrop = sideDrop(leftK, -1);
           int rightDrop = sideDrop(rightK, 1);
@@ -660,9 +468,11 @@
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
           if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick || L->assemblyWakeStamp[toK] == tick) continue;
-          // drop>=2 already: PE-down free-surface reshape (same as air into empty).
-          // Swap is volume-safe; lighter liquid takes the denser free-surface cell and
-          // is pushed up by later density sink / free-surface water fill.
+          if (isLiquidMaterial(L->grid[toK])) {
+            trySwapSettledLiquidsByDensity(k, toK);
+            continue;
+          }
+          if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
           swapSettledCells(k, toK);
           L->vacatedStamp[k] = tick;
           L->vacatedStamp[toK] = tick;
@@ -674,6 +484,51 @@
   void levelLiquidSurfaces() {
     if (L->forceActive) levelLiquidSurfacesPass<true>();
     else levelLiquidSurfacesPass<false>();
+  }
+  template <bool spatialForces>
+  void separateLiquidsByDensityPass() {
+    if (activeLiquidCells.empty()) return;
+
+    // The selected row pairs are disjoint. Vertical exchanges run first, then
+    // one alternating diagonal orientation may use cells that did not exchange.
+    // Stamping both ends keeps every liquid cell to at most one density exchange
+    // per tick while avoiding scan-direction conflicts.
+    int rowParity = tick & 1;
+    int diagonal = ((tick >> 1) & 1) ? 1 : -1;
+    auto tryExchange = [&](int upperK, int lowerK, int x, int y) {
+      if (L->vacatedStamp[upperK] == tick || L->vacatedStamp[lowerK] == tick)
+        return;
+      if (L->assemblyWakeStamp[upperK] == tick
+          || L->assemblyWakeStamp[lowerK] == tick)
+        return;
+      uint8_t upper = L->grid[upperK];
+      if (!isLiquidMaterial(upper)) return;
+      if constexpr (spatialForces) {
+        if (forces.overridesGravity(x, y, upper)) return;
+      }
+      trySwapSettledLiquidsByDensity(upperK, lowerK);
+    };
+
+    for (int pass = 0; pass < 2; pass++) {
+      for (int y = 1; y < rows - 1; y++) {
+        if ((y & 1) != rowParity || L->activeRowSpans[y].empty()) continue;
+        bool ltr = ((y + tick + pass) & 1) == 0;
+        forEachActiveSpan(y, 1, cols - 2, ltr, [&](int minX, int maxX) {
+          int start = ltr ? minX : maxX;
+          int end = ltr ? maxX + 1 : minX - 1;
+          int stepX = ltr ? 1 : -1;
+          for (int x = start; x != end; x += stepX) {
+            int lowerX = pass == 0 ? x : x + diagonal;
+            if (lowerX <= 0 || lowerX >= cols - 1) continue;
+            tryExchange(I(x, y), I(lowerX, y + 1), x, y);
+          }
+        });
+      }
+    }
+  }
+  void separateLiquidsByDensity() {
+    if (L->forceActive) separateLiquidsByDensityPass<true>();
+    else separateLiquidsByDensityPass<false>();
   }
   template <bool spatialForces>
   void separateLooseByDensityPass() {
@@ -695,7 +550,7 @@
               && forces.overridesGravity(x, y, upper))
             continue;
         }
-        // Liquid↔liquid: settleLiquid + density-chain BFS only (no checkerboard swaps).
+        // Liquid↔liquid exchange is owned by separateLiquidsByDensity().
         if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
         if (canDisplaceByLooseDensity(upper, lower)) {
           swapSettledCells(k, belowK);

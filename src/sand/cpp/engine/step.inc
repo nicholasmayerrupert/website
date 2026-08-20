@@ -144,7 +144,6 @@
     }
     std::reverse(activeGasCells.begin(), activeGasCells.end());
 
-    liquidDispPending.clear();
     double tS = emscripten_get_now();
     for (int k : activeDensityCells) { int y = k / cols; settleLooseDensityInterface(k - y * cols, y, k); }
     for (int k : activeSandCells) { int y = k / cols; if (isLooseSolidMaterial(L->grid[k])) settleSand(k - y * cols, y, k); }
@@ -170,9 +169,6 @@
         else settleLiquid(x, y, k, m);
       }
     }
-    // Density-chain relocate liquids displaced by denser liquids this settle (before
-    // gas claims free cells and before the double-buffer swap commits next[]).
-    resolveLiquidDisplacements();
     perfLiquidMs += emscripten_get_now() - tL;
 
     double tG = emscripten_get_now();
@@ -186,6 +182,7 @@
         || (tick & 1) == 0)
       relaxLiquidGaps();
     perfLiquidRelaxMs += emscripten_get_now() - tRelax;
+    if (gravityCellStep) separateLiquidsByDensity();
     if (gravityCellStep && tick % 3 == 0) separateLooseByDensity();
     double tSurface = emscripten_get_now();
     levelLiquidSurfaces();

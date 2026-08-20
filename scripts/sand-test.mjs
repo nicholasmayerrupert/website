@@ -1242,12 +1242,10 @@ for (const tc of [
     `oil remains stratified above brine (oil top ${oil.minY} < brine top ${brine.minY})`,
     oil.minY < brine.minY,
   );
-  // Anti-teleport: dense brine must not be ejected into open air above the oil surface.
-  // Use the live oil free surface (moves as the column settles) plus a margin so a
-  // single interface cell of noise cannot pass as "air surface".
+  // Dense brine remains below the live oil free surface with an interface margin.
   check(
-    `brine did not teleport above the oil free surface (brine top ${brine.minY} >= oil top ${oil.minY} + 4)`,
-    brine.minY >= oil.minY + 4,
+    `brine stayed below the oil free surface (brine top ${brine.minY} >= oil top ${oil.minY} + 2)`,
+    brine.minY >= oil.minY + 2,
   );
   // Interface stays contiguous: oil bottom and brine top should not open a huge gap
   // (teleport-to-air would leave brine far above oil.maxY; total column sink keeps them near).

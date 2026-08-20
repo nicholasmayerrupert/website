@@ -62,10 +62,10 @@ across environments.
 | `carryMs` | Component/body double-buffer carry | `step.inc` |
 | `bodyMs` | Free rigid-body simulation and ice accretion | `rigid_impl.inc`, `reactions_impl.inc` |
 | `sandMs` | Density interface and powder movement | `core.inc` |
-| `liquidMs` | Liquid movement and density displacement | `core.inc` |
+| `liquidMs` | Ordinary liquid movement | `core.inc` |
 | `gasMs` | Gas movement | `core.inc` |
 | `reactMs` | Growth, reactions, and explosives | subsystem implementations |
-| `tailMs` | Buffer swap and liquid relaxation | `step.inc` |
+| `tailMs` | Buffer swap, local density exchange, and liquid relaxation | `step.inc`, `core.inc` |
 | `liquidRelaxMs` | Gap relaxation after the buffer swap (nested in `tailMs`) | `core.inc` |
 | `liquidSurfaceMs` | Free-surface leveling after the buffer swap (nested in `tailMs`) | `core.inc` |
 | `layersMs` | Both `stepLayer()` calls | `step.inc` |

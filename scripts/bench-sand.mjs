@@ -368,7 +368,7 @@ const PHASE_HINTS = {
   carryMs: 'step.inc component/body carry-forward',
   bodyMs: 'rigid.inc moveBodies',
   sandMs: 'core.inc settleSand + density interface',
-  liquidMs: 'core.inc settleLiquid + density-chain relocate',
+  liquidMs: 'core.inc ordinary liquid movement',
   gasMs: 'core.inc riseFire / riseSteam',
   reactMs: 'reactions.inc / explosives / growth',
   tailMs: 'step.inc swap + liquid relax/level/sinks',

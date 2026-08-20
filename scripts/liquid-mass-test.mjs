@@ -1,7 +1,6 @@
-// Liquid mass conservation under density-chain displacement.
-// Focuses on resolveLiquidDisplacements: every displaced liquid must land in
-// EMPTY/gas, chain into a lighter liquid with a real free fallback, or restore
-// into an original vacated source — never disappear.
+// Liquid mass conservation under local density exchange.
+// Every liquid/liquid interaction is an adjacent swap, so sealed chambers,
+// falling inlets, and mixed interfaces must retain each material exactly.
 //
 // Run: node scripts/liquid-mass-test.mjs
 
@@ -15,7 +14,7 @@ const mk = () => createEngineWasm({
   cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false,
 });
 
-const { check, done } = makeChecker('liquid mass conservation (density chain)');
+const { check, done } = makeChecker('liquid mass conservation (local density exchange)');
 
 const k = (x, y) => y * COLS + x;
 const count = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
@@ -227,7 +226,7 @@ function floorMat(e, mat) {
   }
 }
 
-// --- 9. Free-fall / sink through another fluid (density chain + multi-cell). ---
+// --- 9. Free-fall / sink through another fluid (local exchange + multi-cell). ---
 {
   console.log('\n9. fall/sink through another fluid (no count increase)');
   // denser into lighter
@@ -268,8 +267,8 @@ function floorMat(e, mat) {
   }
 }
 
-// --- 10. Anti-geyser: water dropped into a deep oil pool must not suck oil up
-//     to the free surface (BFS-to-EMPTY used to teleport displaced oil upward). ---
+// --- 10. Anti-geyser: water dropped into a deep oil pool produces only a local
+//     interface ripple while adjacent exchanges carry it into the oil. ---
 {
   console.log('\n10. water into oil: oil does not geyser to the surface');
   const e = mk();
@@ -285,7 +284,7 @@ function floorMat(e, mat) {
   let maxOilAboveSurface = 0;
   let minOilTop = oilTop;
   let t = 0;
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 180; i++) {
     t += 16;
     e.step(t);
     const g = e.getGrid();
@@ -309,13 +308,13 @@ function floorMat(e, mat) {
     `anti-geyser: oil above free surface stayed small (max ${maxOilAboveSurface}, highest y ${minOilTop})`,
     maxOilAboveSurface <= 20,
   );
-  // Water should have entered the oil body (1-cell-per-tick sink is slow; require
-  // a clear majority still not stranded in the air column above the pool).
+  // Density-contrast exchange is deliberately gradual, but the water must enter
+  // the oil instead of remaining stranded above the interface.
   {
     const g = e.getGrid();
     let waterInOil = 0, waterAbove = 0;
     for (let y = 0; y <= oilBot; y++) {
-      for (let x = L; x <= R; x++) {
+      for (let x = 1; x < COLS - 1; x++) {
         if (g[k(x, y)] !== MAT.WATER) continue;
         if (y >= oilTop) waterInOil++;
         else waterAbove++;
@@ -329,11 +328,113 @@ function floorMat(e, mat) {
   e.destroy();
 }
 
-// --- 11. Light powder on denser liquid must not be eaten. Liquid→powder swaps
-//     used to re-claim powder parked in next[] and drop it on vacatedStamp
-//     (snow on water slowly vanished; sand denser than water was fine). ---
+// --- 11. Equal-mass stationary and moving brine inlets. A moving inlet may
+//     leave a small wake, but it must not carry a tall oil crest with it. ---
 {
-  console.log('\n11. light powder floats on denser liquid (no mass loss)');
+  console.log('\n11. moving brine inlet does not carry an oil crest');
+  const sourceCols = 120, sourceRows = 100;
+  const oilLeft = 15, oilRight = 104, oilTop = 45, oilBottom = 94;
+  const sourceY = 18, injectionCount = 120;
+
+  function runInlet(mode) {
+    const e = createEngineWasm({
+      cols: sourceCols,
+      rows: sourceRows,
+      worldSeed: SEED,
+      sinksOn: false,
+      infinite: false,
+    });
+    const sourceK = (x, y) => y * sourceCols + x;
+    for (let y = oilBottom + 1; y < sourceRows; y++) {
+      for (let x = 5; x < sourceCols - 5; x++) {
+        e.paintDisc(x, y, 0, MAT.STONE, true);
+      }
+    }
+    e.syncComponents();
+    for (let y = oilTop; y <= oilBottom; y++) {
+      for (let x = oilLeft; x <= oilRight; x++) {
+        e.paintDisc(x, y, 0, MAT.OIL, true);
+      }
+    }
+
+    const initialOil = count(e.getGrid(), MAT.OIL);
+    let accepted = 0, time = 0, maxOilAbove = 0, maxOilRise = 0;
+    const sampleCrest = () => {
+      const g = e.getGrid();
+      let above = 0, highestY = sourceRows;
+      for (let y = 0; y < oilTop; y++) {
+        for (let x = oilLeft; x <= oilRight; x++) {
+          if (g[sourceK(x, y)] !== MAT.OIL) continue;
+          above++;
+          if (y < highestY) highestY = y;
+        }
+      }
+      maxOilAbove = Math.max(maxOilAbove, above);
+      if (highestY < sourceRows) {
+        maxOilRise = Math.max(maxOilRise, oilTop - highestY);
+      }
+    };
+
+    for (let i = 0; i < injectionCount; i++) {
+      const phase = i <= 60 ? i : 120 - i;
+      const sourceX = mode === 'stationary'
+        ? 60
+        : mode === 'right' ? 30 + phase : 90 - phase;
+      if (e.getGrid()[sourceK(sourceX, sourceY)] === MAT.EMPTY) {
+        e.paintDisc(sourceX, sourceY, 0, MAT.BRINE, true);
+        accepted++;
+      }
+      time += 16;
+      e.step(time);
+      sampleCrest();
+    }
+    for (let i = 0; i < 120; i++) {
+      time += 16;
+      e.step(time);
+      sampleCrest();
+    }
+
+    const result = {
+      accepted,
+      brine: count(e.getGrid(), MAT.BRINE),
+      oil: count(e.getGrid(), MAT.OIL),
+      initialOil,
+      maxOilAbove,
+      maxOilRise,
+    };
+    e.destroy();
+    return result;
+  }
+
+  const stationary = runInlet('stationary');
+  const right = runInlet('right');
+  const left = runInlet('left');
+  const runs = [stationary, right, left];
+  check(
+    `inlets accepted and retained equal brine mass (${runs.map((r) => `${r.accepted}/${r.brine}`).join(', ')})`,
+    runs.every((r) => r.accepted === injectionCount && r.brine === injectionCount),
+  );
+  check(
+    `inlets conserved oil (${runs.map((r) => `${r.initialOil}->${r.oil}`).join(', ')})`,
+    runs.every((r) => r.oil === r.initialOil),
+  );
+  const movingMaxAbove = Math.max(right.maxOilAbove, left.maxOilAbove);
+  const movingMaxRise = Math.max(right.maxOilRise, left.maxOilRise);
+  check(
+    `moving crest stayed comparable to stationary (oil above ${stationary.maxOilAbove} stationary, ${right.maxOilAbove}/${left.maxOilAbove} moving)`,
+    movingMaxAbove <= stationary.maxOilAbove + 20
+      && movingMaxRise <= stationary.maxOilRise + 3,
+  );
+  check(
+    `moving inlet is direction-symmetric (rise ${right.maxOilRise}/${left.maxOilRise}, oil above ${right.maxOilAbove}/${left.maxOilAbove})`,
+    Math.abs(right.maxOilRise - left.maxOilRise) <= 1
+      && Math.abs(right.maxOilAbove - left.maxOilAbove) <= 20,
+  );
+}
+
+// --- 12. Light powder on denser liquid remains conserved through local swaps. ---
+{
+  console.log('\n12. light powder floats on denser liquid (no mass loss)');
   {
     const e = mk();
     floorMat(e, MAT.STONE);

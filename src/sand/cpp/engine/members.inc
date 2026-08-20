@@ -164,10 +164,10 @@
   double perfCarryMs = 0;
   double perfBodyMs = 0;                 // free rigid bodies (moveBodies)
   double perfSandMs = 0;                 // density interface + settleSand
-  double perfLiquidMs = 0;               // liquids + density-chain relocate
+  double perfLiquidMs = 0;               // ordinary liquid movement
   double perfGasMs = 0;                  // fire/steam rise
   double perfReactMs = 0;
-  double perfTailMs = 0;                 // swap + liquid relax/level/sinks
+  double perfTailMs = 0;                 // swap + liquid density/relax/level/sinks
   double perfLiquidRelaxMs = 0;          // post-swap liquid gap relaxation
   double perfLiquidSurfaceMs = 0;        // post-swap free-surface leveling
   double perfLayersMs = 0;               // wall time of both stepLayer() calls
@@ -195,18 +195,6 @@
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
   std::vector<int> reactionSnowMelt;               // reusable per-call scratch for applyReactions (snow melted by fire -> water)
-  // Liquid↔liquid density-chain displacement: denser liquid treats lighter liquid as
-  // free volume for movement; the displaced lighter liquid is relocated after the
-  // settle pass by a multi-source BFS (resolveLiquidDisplacements in core.inc).
-  // from = cell the lighter liquid occupied; fallback = a real free cell (denser's
-  // vacated source), propagated through chains — never the overwritten target.
-  struct LiquidDisp {
-    uint8_t material;
-    int from;
-    int fallback;
-    PersistentCellSnapshot state;
-  };
-  std::vector<LiquidDisp> liquidDispPending;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
@@ -1216,25 +1204,19 @@
         || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
   inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGasMaterial(d)) return true; return canDisplaceByLooseDensity(m, d); }
-  // Free volume for liquid movement: EMPTY, gas, or a strictly less-dense liquid.
-  // Denser liquids path through lighter ones as if they were air; the lighter
-  // liquid is relocated by resolveLiquidDisplacements (not a local swap).
+  // Free volume for ordinary liquid movement is EMPTY or gas. Liquid↔liquid
+  // separation is a separate adjacent-swap pass.
   //
   // Gas is free volume only once per tick — the gas still sitting in grid[k]
   // with next empty. Gas already written into next[k] this tick is a rising
   // bubble parked for the rest of the settle pass. Claiming that again would
   // cascade-swap it to the free surface in one step (looks like teleporting).
-  inline bool liquidTreatsAsEmpty(uint8_t m, uint8_t d) {
-    return d == EMPTY || isGasMaterial(d) || (isLiquidMaterial(d) && canDisplaceByLooseDensity(m, d));
-  }
   // True when liquid may claim the gas at k this tick (grid-native, not yet moved).
   inline bool liquidGasClaimableAt(int k) {
     return L->next[k] == EMPTY && L->vacatedStamp[k] != tick && isGasMaterial(L->grid[k]);
   }
   // Effective occupant of k this tick for liquid claims. Prefers next[] (already
-  // settled writers) so denser fluid can still sink through lighter fluid that
-  // wrote itself into next bottom-up — without this, next!=EMPTY blocked all
-  // multi-cell sinks and left only 1-cell settleLooseDensityInterface swaps.
+  // settled writers) so movement decisions see the current effective contents.
   // Parked rising gas in next[] is reported as itself but is NOT free volume
   // (see liquidColumnPassable / liquidCanClaim) so the bubble rises 1 cell/tick.
   inline uint8_t liquidOccupantAt(int k) {
@@ -1243,21 +1225,19 @@
     if (L->vacatedStamp[k] == tick) return EMPTY;
     return L->grid[k];
   }
-  // Fall-through: EMPTY / claimable gas / lighter liquid count as air.
-  // Gas already parked in next[] blocks further fall this tick.
+  // Fall-through: EMPTY or a claimable gas count as air. Gas already parked in
+  // next[] blocks further fall this tick.
   inline bool liquidColumnPassable(int k, uint8_t m) {
+    (void)m;
     if (L->assemblyWakeStamp[k] == tick) return false;
     uint8_t n = L->next[k];
-    if (n != EMPTY) {
-      if (isGasMaterial(n)) return false; // rising bubble — one step/tick
-      return isLiquidMaterial(n) && canDisplaceByLooseDensity(m, n);
-    }
+    if (n != EMPTY) return false;
     if (L->vacatedStamp[k] == tick) return true;
     uint8_t g = L->grid[k];
-    return g == EMPTY || isGasMaterial(g) || (isLiquidMaterial(g) && canDisplaceByLooseDensity(m, g));
+    return g == EMPTY || isGasMaterial(g);
   }
-  // Land/claim for fall / down-diagonal / vertical sink: EMPTY, claimable gas,
-  // or strictly lighter loose (liquid or powder).
+  // Land/claim for fall / down-diagonal movement: EMPTY, claimable gas, or a
+  // strictly lighter powder. Another liquid is never ordinary free volume.
   // Gas/powder already written into next[] this tick are parked displacees —
   // do not re-claim them (cascade would drop mass on vacatedStamp / overwrite).
   inline bool liquidCanClaim(int k, uint8_t m) {
@@ -1265,16 +1245,15 @@
     uint8_t n = L->next[k];
     if (n != EMPTY) {
       if (isGasMaterial(n) || isLooseSolidMaterial(n)) return false; // parked bubble/grain
-      return canDisplaceMaterial(m, n);
+      return false;
     }
     if (L->vacatedStamp[k] == tick) return true;
     uint8_t g = L->grid[k];
-    return g == EMPTY || isGasMaterial(g) || canDisplaceMaterial(m, g);
+    return g == EMPTY || isGasMaterial(g)
+      || (isLooseSolidMaterial(g) && canDisplaceByLooseDensity(m, g));
   }
-  // Same-level flow / enter: EMPTY or claimable gas only. Lighter liquid is NOT
-  // air for lateral flow — treating it as enterable makes a flat water|oil
-  // contact swap forever (BFS relocates oil into the vacated hole = PE-neutral
-  // churn) and multi-fluid pools never go inert. Parked next[] gas is blocked.
+  // Same-level flow / enter: EMPTY or claimable gas only. Liquid↔liquid motion
+  // stays in the adjacent density pass, and parked next[] gas is blocked.
   inline bool liquidCanFlowInto(int k, uint8_t m) {
     (void)m;
     if (L->assemblyWakeStamp[k] == tick) return false;
@@ -1289,7 +1268,10 @@
     return L->next[k] == EMPTY && (L->grid[k] == EMPTY || canDisplaceMaterial(m, L->grid[k]));
   }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
-  inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }
+  inline bool supportsLiquid(uint8_t s, uint8_t m) {
+    return s != EMPTY && s != m
+      && (isLiquidMaterial(s) || !canDisplaceMaterial(m, s));
+  }
   // True if something stacks pressure on this liquid cell: more of the same
   // material above, OR a strictly lighter liquid (e.g. water over brine). Without
   // the latter, submerged denser fluid never equalizes sideways and freezes into
@@ -1302,8 +1284,8 @@
     return isLiquidMaterial(a) && DENSITY[a] < DENSITY[m];
   }
   void moveMaterialInto(int fromK, int toK, uint8_t m) {
-    // For liquids, displace the effective occupant (next if set, else grid) so a
-    // denser cell can overwrite a lighter liquid that already settled into next[].
+    // For liquids, capture the effective occupant (next if set, else grid) so
+    // every displacement preserves the target's persistent state.
     bool displacedFromNext = isLiquidMaterial(m) && L->next[toK] != EMPTY;
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     PersistentCellSnapshot displacedState;
@@ -1330,10 +1312,15 @@
     if (fromK != toK) markMoveSpan(fromK, toK);
     if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
     if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
-    // Liquid→liquid: denser claims the cell; lighter is relocated by multi-source BFS
-    // after the settle pass (density chain). Do not swap into the source.
+    // A defensive liquid→liquid path remains local and conservative. Ordinary
+    // liquid movement excludes liquid targets; density separation owns these
+    // exchanges through the post-settle adjacent-pair pass.
     if (isLiquidMaterial(m) && isLiquidMaterial(displaced)) {
-      liquidDispPending.push_back({displaced, toK, fromK, displacedState});
+      if (L->next[fromK] == EMPTY) {
+        writeNextIndex(fromK, displaced);
+        restorePersistentNextState(
+          L, fromK, displaced, displacedState, PCSO_SWAP);
+      }
       return;
     }
     // Gas / lighter powder: swap into the mover's vacated source (one cell).

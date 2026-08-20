@@ -53,10 +53,6 @@ static const int   MAX_WATER_FLOW = 10;
 // a meaningfully lower connected surface, then move one cell sideways. Two passes
 // let resting water flow visibly without long-distance correction jumps.
 static const int   LIQUID_SURFACE_LOOKAHEAD = 64, LIQUID_SURFACE_FLOW_PASSES = 2;
-// Liquid↔liquid density-chain relocation (resolveLiquidDisplacements): multi-source
-// BFS visit budget = min(gridLen, max(BASE, need * PER)). Keeps enclosed-pool
-// floods from freezing a tick the way a per-cell BFS would.
-static const int   LIQUID_DISP_VISIT_BASE = 4096, LIQUID_DISP_VISIT_PER = 128;
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;

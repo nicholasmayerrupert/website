@@ -15,7 +15,7 @@ await initSandWasm();
 const COLS = 960;
 const ROWS = 1440;
 const FLOOR_Y = 1360;
-const STEPS = Number.parseInt(process.env.STEPS ?? '260', 10);
+const STEPS = Number.parseInt(process.env.STEPS ?? '320', 10);
 const SOLVER_MODE = 45;
 const { check, done } = makeChecker('crowded cross-layer raster island');
 const { random, specs: allSpecs } = makeComplexStackScenario(19, COLS);

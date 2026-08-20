@@ -298,8 +298,9 @@ const createOpenSuspendedSource = () => {
       if (grid[y * COLS + x] === MAT.WATER) waterInsideOil++;
     }
   }
-  check(`neutronium keeps water/oil exchange rate-limited (${waterInsideOil}/${waterBefore})`,
-    waterInsideOil > 0 && waterInsideOil < waterBefore * 0.6);
+  check(`neutronium applies the faster water/oil exchange rate (${waterInsideOil}/${waterBefore})`,
+    waterInsideOil >= waterBefore * 0.35
+      && waterInsideOil < waterBefore * 0.65);
   check('rate-limited neutronium liquid exchange conserves both materials',
     countMaterial(engine, MAT.WATER) === waterBefore
       && countMaterial(engine, MAT.OIL) === oilBefore);

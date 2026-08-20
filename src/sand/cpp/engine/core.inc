@@ -15,6 +15,7 @@
   static const int LIQUID_FALL_PER_DENSITY = 3;
   static const int LIQUID_FALL_CAP = 5;
   static const int POWDER_FALL_CAP = 3;
+  static constexpr double LIQUID_DENSITY_EXCHANGE_RATE = 1.67;
   int looseFallCap(uint8_t m) {
     if (isLooseSolidMaterial(m)) return POWDER_FALL_CAP;
     uint8_t fixedCap = LIQUID_FIXED_FALL_CAP[MAT_LIQUID_PROFILE[m]];
@@ -324,7 +325,9 @@
     // applies the same viscosity gate used by its ordinary movement.
     double contrast = (DENSITY[heavy] - DENSITY[light])
       / (DENSITY[heavy] + DENSITY[light]);
-    if (rand() >= contrast * MOBILITY[heavy]) return false;
+    double chance = std::fmin(
+      1.0, contrast * MOBILITY[heavy] * LIQUID_DENSITY_EXCHANGE_RATE);
+    if (rand() >= chance) return false;
     swapSettledCells(heavyK, lightK);
     L->vacatedStamp[heavyK] = tick;
     L->vacatedStamp[lightK] = tick;

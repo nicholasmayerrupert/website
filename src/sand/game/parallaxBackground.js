@@ -1,5 +1,11 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
 import {
+  DEFAULT_WEATHER_ID,
+  applyWeatherToPalette,
+  getWeatherProfile,
+  resolveWeatherId,
+} from './weather.js';
+import {
   PLANET, PLANET_PRESENTATION, PLANET_PRESENTATION_BY_ID,
 } from '../wasmBridge/abi.generated.js';
 
@@ -311,6 +317,51 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       drawCloud(ctx, x, y, size, color, rand01(seed + 12), scale);
     }
   }
+}
+
+function weatherVisualFrame(value) {
+  if (Number.isFinite(value)) return Math.floor(value);
+  const source = String(value);
+  let result = 0;
+  for (let i = 0; i < source.length; i++) {
+    result = Math.imul(result ^ source.charCodeAt(i), 0x45d9f3b);
+  }
+  return result >>> 0;
+}
+
+function positiveModulo(value, modulus) {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+function drawWeatherPrecipitation(ctx, w, horizon, visualKey, profile) {
+  const precipitation = profile.precipitation;
+  if (precipitation?.kind !== 'rain' || horizon <= 0) return;
+  const frame = weatherVisualFrame(visualKey);
+  const spacing = Math.max(2, precipitation.spacing);
+  const count = Math.max(12, Math.ceil(w / spacing));
+  const spanX = Math.max(1, Math.ceil(w) + 16);
+  const spanY = Math.max(1, Math.ceil(horizon) + 12);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, horizon);
+  ctx.clip();
+  ctx.fillStyle = precipitation.color;
+  ctx.globalAlpha = precipitation.opacity;
+  for (let i = 0; i < count; i++) {
+    const seed = i * 1597 + 0x2d53;
+    const speed = 3 + (hash(seed + 17) % 3);
+    const wind = Math.floor(frame * (0.45 + rand01(seed + 23) * 0.25));
+    const x = positiveModulo(
+      Math.floor(rand01(seed) * spanX) + wind, spanX,
+    ) - 8;
+    const y = positiveModulo(
+      Math.floor(rand01(seed + 7) * spanY) + frame * speed, spanY,
+    ) - 6;
+    ctx.fillRect(x, y, 1, 3);
+    ctx.fillRect(x + 1, y + 3, 1, 2);
+  }
+  ctx.restore();
 }
 
 function ridgeY(worldX, base, amp, seed) {
@@ -705,12 +756,24 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
   // `camX` is the viewport center in absolute world coordinates. Draw into a
   // scale-adjusted logical box so backdrop size and parallax track game zoom while
   // the horizon remains at a fixed screen fraction.
-  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0 } = {}) => {
+  const draw = ({
+    camX = 0,
+    camY = 0,
+    scale = 1,
+    dayNight = sampleDayNight(0),
+    dayVisualKey = 0,
+    weatherId = DEFAULT_WEATHER_ID,
+    weatherVisualKey = 0,
+  } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
-    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}`;
+    const resolvedWeatherId = resolveWeatherId(weatherId);
+    const key = [
+      canvas.width, canvas.height, qx, qy, s.toFixed(3), dayVisualKey,
+      resolvedWeatherId, weatherVisualKey,
+    ].join(':');
     if (key === lastKey) return;
     lastKey = key;
 
@@ -768,7 +831,11 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       return;
     }
-    const palette = paletteForPhase(dayNight.phase);
+    const weather = getWeatherProfile(resolvedWeatherId);
+    const basePalette = paletteForPhase(dayNight.phase);
+    const palette = applyWeatherToPalette(
+      basePalette, resolvedWeatherId,
+    );
     const altitude = skyAltitudeLayout(qy, h, horizon);
     const sky = ctx.createLinearGradient(
       0, altitude.gradientTop,
@@ -793,17 +860,24 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(ctx, w, skyHeight, h, dayNight);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase, s);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase, s);
-    const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, s);
-    drawSnowCaps(ctx, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
-    const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3, s);
+    drawCloudLayer(
+      ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark,
+      weather.cloudCounts[0], 170, dayNight.phase, s,
+    );
+    drawCloudLayer(
+      ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight,
+      weather.cloudCounts[1], 210, dayNight.phase, s,
+    );
+    drawWeatherPrecipitation(ctx, w, skyHeight, weatherVisualKey, weather);
+    const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, basePalette.ridgeFar, 3.2, basePalette.skyLow, 2, s);
+    drawSnowCaps(ctx, farRidge, horizon + 17, 20, basePalette.ridgeFar, dayNight.daylight);
+    const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, basePalette.ridgeMid, 7.9, basePalette.skyLow, 3, s);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
-    const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4, s);
-    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
+    const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, basePalette.ridgeNear, 12.4, basePalette.skyLow, 4, s);
+    drawForest(ctx, w, h, nearRidge, basePalette.ridgeNear, basePalette.skyLow, 12.4);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
-    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2, s);
+    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, basePalette.ridgeDeep, 18.5, basePalette.skyLow, 2, s);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

@@ -3,6 +3,7 @@ import {
   decodeWorkerLiveness,
   WORKER_LIVENESS_STAGE,
 } from '../src/sand/worker/workerLiveness.js';
+import { WEATHER } from '../src/sand/wasmBridge/abi.generated.js';
 
 const worker = new Worker(new URL('./world-worker-node-harness.mjs', import.meta.url), {
   type: 'module',
@@ -57,7 +58,8 @@ try {
     type: 'init', cols: 256, rows: 192, worldSeed: 0x51f7,
     survival: false, creativeKind: 0, creativeValue: 0, tool: 0,
     drawMode: true, creatureNaturalSpawning: false,
-    planetId: 0, gravityScale: 1, missionId: 0, loadout: [],
+    planetId: 0, weatherId: WEATHER.RAIN,
+    gravityScale: 1, missionId: 0, loadout: [],
   });
   const full = await waitFor((message) => message.type === 'full', 15000);
   const journalReset = await waitFor(
@@ -65,7 +67,8 @@ try {
   );
   check('worker publishes its normalized replay initialization independently',
     journalReset.init.worldSeed === 0x51f7
-      && journalReset.init.cols === 256 && journalReset.init.rows === 192);
+      && journalReset.init.cols === 256 && journalReset.init.rows === 192
+      && journalReset.init.weatherId === WEATHER.RAIN);
   worker.postMessage({ type: 'ack', epoch: full.epoch, sequence: full.sequence });
 
   const centeredControl = {
@@ -157,7 +160,8 @@ try {
   );
   check('independent journal uses the canonical authority event tick',
     exportedTrigger?.tick === trigger.tick
-      && exported.capsule.turns >= triggerJournal.turns);
+      && exported.capsule.turns >= triggerJournal.turns
+      && exported.capsule.init.weatherId === WEATHER.RAIN);
 
   const replaySignalStart = phaseSignals.length;
   worker.postMessage({

@@ -532,6 +532,7 @@ class SandGameElement extends HTMLElement {
     // 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     const planet = this.getAttribute('planet') || 'earth';
+    const weather = this.getAttribute('weather') || undefined;
     const mission = this.getAttribute('mission') || null;
     const seedAttribute = this.getAttribute('world-seed');
     const seedValue = seedAttribute === null ? NaN : Number(seedAttribute);
@@ -559,6 +560,7 @@ class SandGameElement extends HTMLElement {
           initialTool,
           mode,
           planet,
+          weather,
           mission,
           worldSeed,
           loadout,

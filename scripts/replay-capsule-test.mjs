@@ -12,6 +12,7 @@ import {
 import {
   ABI_FINGERPRINT,
   ABI_VERSION,
+  WEATHER,
 } from '../src/sand/wasmBridge/abi.generated.js';
 
 const init = normalizeReplayInit({
@@ -24,6 +25,7 @@ const init = normalizeReplayInit({
   tool: 2,
   creatureNaturalSpawning: false,
   planetId: 0,
+  weatherId: WEATHER.RAIN,
   gravityScale: 1,
   missionId: 0,
   loadout: [],
@@ -33,6 +35,12 @@ const init = normalizeReplayInit({
 });
 assert.ok(!('paused' in init));
 assert.ok(!('artificialDelayMs' in init));
+assert.equal(init.weatherId, WEATHER.RAIN);
+assert.equal(normalizeReplayInit({}).weatherId, WEATHER.CLEAR);
+assert.equal(normalizeReplayInit({
+  planetId: 2,
+  weatherId: WEATHER.RAIN,
+}).weatherId, WEATHER.CLEAR);
 
 const events = [
   {
@@ -237,6 +245,13 @@ const overlappingGates = {
 assert.throws(
   () => validateReplayCapsule(overlappingGates),
   /invalid transport gate range/,
+);
+assert.throws(
+  () => validateReplayCapsule({
+    ...capsule,
+    init: { ...init, planetId: 2, weatherId: WEATHER.RAIN },
+  }),
+  /weather is invalid for its planet/,
 );
 await assert.rejects(() => decodeReplayCapsule('SAND-REPLAY-1:{}'), /SAND-REPLAY-3/);
 

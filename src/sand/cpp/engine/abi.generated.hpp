@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 32;
+static const int ABI_VERSION = 33;
 
-static const uint64_t ABI_FINGERPRINT = 0xb4993485dfaaULL;
+static const uint64_t ABI_FINGERPRINT = 0xf1a05a2ba1ceULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -727,6 +727,20 @@ static constexpr bool isPlayerInputValue(int value) {
     case PI_RUN:
     case PI_JETPACK:
     case PI_SHIELD:
+      return true;
+    default: return false;
+  }
+}
+
+enum WeatherKind : uint8_t {
+  WK_CLEAR = 0,
+  WK_RAIN = 1,
+};
+
+static constexpr bool isWeatherKindValue(int value) {
+  switch (value) {
+    case WK_CLEAR:
+    case WK_RAIN:
       return true;
     default: return false;
   }

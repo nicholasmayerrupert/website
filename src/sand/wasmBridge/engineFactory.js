@@ -13,7 +13,7 @@ import {
   AMBIENCE_GROUP_COUNT, AMBIENCE_SAMPLE_STRIDE,
 } from '../materials.generated.js';
 import {
-  ABI_VERSION, ABI_FINGERPRINT, OFF, STRIDES, INPUT,
+  ABI_VERSION, ABI_FINGERPRINT, OFF, STRIDES, INPUT, WEATHER,
   PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
   PLANET_PRESENTATION, PLANET_PRESENTATION_PROFILE_COUNT,
   PLANET_PRESENTATION_BY_ID,
@@ -38,7 +38,7 @@ import {
 } from './recordCodec.js';
 
 export {
-  MAT, PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
+  MAT, WEATHER, PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
   PLANET_PRESENTATION, PLANET_PRESENTATION_PROFILE_COUNT,
   PLANET_PRESENTATION_BY_ID,
   BIOME, SURFACE_BIOME_COUNT, SURFACE_BIOME_ALL_MASK,
@@ -88,6 +88,8 @@ export function initSandWasm() {
         getPlanet: c('engine_get_planet', 'number', ['number']),
         getGravityScale: c('engine_get_gravity_scale', 'number', ['number']),
         setGravityScale: c('engine_set_gravity_scale', null, ['number', 'number']),
+        getWeather: c('engine_get_weather', 'number', ['number']),
+        setWeather: c('engine_set_weather', null, ['number', 'number']),
         shiftWorld: c('engine_shift_world', null, ['number', 'number']),
         shiftWorldXY: c('engine_shift_world_xy', null, ['number', 'number', 'number']),
         maybeShiftWorld: c('engine_maybe_shift_world', 'number', ['number', 'number', 'number', 'number']),
@@ -438,6 +440,12 @@ const renderStrides = Object.freeze({
       if (!Number.isFinite(scale) || scale < 0.05 || scale > 1)
         throw new RangeError(`invalid sand engine gravity scale ${scale}`);
       M.setGravityScale(ptr, scale);
+    },
+    getWeather() { return M.getWeather(ptr); },
+    setWeather(kind) {
+      if (!Number.isInteger(kind) || !Object.values(WEATHER).includes(kind))
+        throw new RangeError(`invalid sand engine weather ${kind}`);
+      M.setWeather(ptr, kind);
     },
     step() { return M.step(ptr) === 1; },
     stepActors() { return M.stepActors(ptr) === 1; },

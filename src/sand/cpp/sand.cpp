@@ -7,6 +7,7 @@
 #include "engine/layer.hpp"
 #include "engine/forces.hpp"
 #include "engine/terrain.hpp"
+#include "engine/weather.hpp"
 #include "engine/world_context.hpp"
 #include "engine/renderer.hpp"
 #include "engine/creatures.hpp"
@@ -30,6 +31,7 @@
 struct Engine {
 #include "engine/members.inc"
 #include "engine/forces.inc"
+#include "engine/weather.inc"
 #include "engine/audio.inc"
 #include "engine/core.inc"
 #include "engine/step.inc"
@@ -74,6 +76,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/missions_impl.inc"
 #include "engine/tools_impl.inc"
 #include "engine/cell_mutations_impl.inc"
+#include "engine/weather_impl.inc"
 #include "engine/reaction_transaction_impl.inc"
 #include "engine/reactions_impl.inc"
 #include "engine/explosives_impl.inc"

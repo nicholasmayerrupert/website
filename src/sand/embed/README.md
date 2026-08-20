@@ -73,14 +73,16 @@ that shadow root for benchmark tooling.
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 | `auto-start` | presence | absent | Coarse-pointer creative mode starts with drawing active instead of showing its internal `START` button. |
 | `planet` | `earth`, `moon`, `mars`, `ship` | `earth` | Selects immutable world identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.33`, `0.76`, or shipboard `1.0`. |
+| `weather` | `clear`, `rain` | `clear` | Selects the immutable weather profile. Rain greys the sky, adds clouds and precipitation, lowers skylight slightly, and lets the offline authority introduce water. |
 | `mission` | `greenfall-recovery`, `silent-quarry`, `red-furnace` | absent | Starts the matching authoritative survival operation and enables the mission tracker and markers. |
 | `world-seed` | unsigned 32-bit decimal | random per mount | Selects the deterministic world for this mount. Values are normalized with unsigned 32-bit semantics. |
 | `loadout` | JSON array of inventory stacks | `[]` | Adds material or recovered-weapon stacks before the mission starts. Malformed JSON becomes an empty loadout. |
 
 Changing `initial-tool` after mount forwards the legacy tool selection to the
-runtime. `mode`, `planet`, `mission`, `world-seed`, and `loadout` are
+runtime. `mode`, `planet`, `weather`, `mission`, `world-seed`, and `loadout` are
 construction-time attributes; recreate the element to change them. The planet
-is immutable for the engine lifetime. The component has no gravity attribute:
+and weather are immutable for the engine lifetime. Rain currently supports
+Earth; other planet/rain combinations normalize to clear. The component has no gravity attribute:
 Earth, Moon, and Mars use `1.0`, `0.33`, and `0.76` gravity respectively.
 
 Loadout entries use the generated ABI inventory-stack fields. The authority
@@ -117,6 +119,9 @@ Mission, planet, phase, objective-type, and objective-state values come from
   WebSocket transport.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
   terrain streaming, spawn placement, inventory state, and mission progression.
+- Weather defaults to explicit `clear`. The selected weather is applied to the
+  presentation and the offline authority; multiplayer transport does not yet
+  negotiate weather between a server and its clients.
 - Planet gravity applies to players and other gravity-driven actors, rigid bodies,
   fluids, and loose solids. The deterministic fall order is Earth, Mars, Moon.
 - A mission embed shows its tracker and objective markers and hides the

@@ -18,6 +18,7 @@ import { createReplayPanel } from './replayPanel.js';
 import { CREATIVE_KIND, CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
 import { MAT } from '../materials.js';
 import { resolvePlanetId } from './planetSelection.js';
+import { DEFAULT_WEATHER_ID, resolveWeatherIdForPlanet } from './weather.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -29,6 +30,7 @@ export function createSandGame(container, opts = {}) {
     // place/erase anywhere with no reach limit, no character.
     mode = 'survival',
     planet = 'earth',
+    weather = DEFAULT_WEATHER_ID,
     gravityScale,
     mission = null,
     worldSeed,
@@ -50,6 +52,7 @@ export function createSandGame(container, opts = {}) {
   } = opts;
   const survival = mode === 'survival';
   const planetId = resolvePlanetId(planet);
+  const weatherId = resolveWeatherIdForPlanet(weather, planetId);
   const resolvedGravityScale = Number.isFinite(gravityScale)
     ? gravityScale
     : undefined;
@@ -84,7 +87,7 @@ export function createSandGame(container, opts = {}) {
   /** @type {import('./runtimeContext.js').SandRuntimeContext} */
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
-    planetId, gravityScale: resolvedGravityScale, missionId,
+    planetId, weatherId, gravityScale: resolvedGravityScale, missionId,
     missionLoadout,
     // One seed per mount so resizing regenerates the *same* infinite world.
     worldSeed: Number.isFinite(worldSeed)
@@ -120,6 +123,7 @@ export function createSandGame(container, opts = {}) {
     // engine build. Engine recreation reapplies its current quantized skylight.
     dayNight: null,
     dayVisualKey: 0,
+    weatherVisualKey: 0,
     dayPhaseOverride: null,
     appliedSkyLight: -1,
 
@@ -184,6 +188,7 @@ export function createSandGame(container, opts = {}) {
       tool: TOOL_IDS[ctx.currentToolName] ?? 0,
       creatureNaturalSpawning: ctx.debugHitboxes,
       planetId: ctx.planetId,
+      weatherId: ctx.weatherId,
       gravityScale: ctx.gravityScale,
       missionId: ctx.missionId,
       loadout: ctx.missionLoadout,

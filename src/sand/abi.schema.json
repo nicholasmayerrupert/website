@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 32,
+  "abiVersion": 33,
   "objectWires": {
     "player": {
       "$comment": "Player object projection shared by the WASM snapshot adapter, authority protocol, prediction, and presentation. `source` declares aliases from the engine object shape; mine fields exist only on the wire object.",
@@ -456,6 +456,14 @@
       "jsName": "INPUT",
       "jsPrefix": "PI",
       "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64, "PI_JETPACK": 128, "PI_SHIELD": 256 }
+    },
+    "WeatherKind": {
+      "$comment": "Authoritative environmental weather event selected for the simulation and presentation.",
+      "cName": "WeatherKind",
+      "cType": "uint8_t",
+      "jsName": "WEATHER",
+      "jsPrefix": "WK",
+      "values": { "WK_CLEAR": 0, "WK_RAIN": 1 }
     },
     "InventoryItemKind": {
       "$comment": "Inventory/world-drop stack identity. Empty stacks are represented by count=0.",

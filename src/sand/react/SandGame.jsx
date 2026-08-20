@@ -13,6 +13,7 @@ export function SandGame({
   onInteraction,
   onReady,
   planet,
+  weather,
   mission,
   worldSeed,
   loadout,
@@ -88,6 +89,7 @@ export function SandGame({
       mode={mode}
       auto-start={autoStart ? '' : undefined}
       planet={planet}
+      weather={weather}
       mission={mission}
       world-seed={Number.isFinite(worldSeed) ? String(worldSeed >>> 0) : undefined}
       loadout={encodedLoadout}

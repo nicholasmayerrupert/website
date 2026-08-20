@@ -7,6 +7,10 @@ import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCo
 import { prepareMirrorShift } from './mirrorShift.js';
 import { createWorkerLivenessMonitor } from './workerLiveness.js';
 import { createReplayCaptureJournal } from './replayCaptureJournal.js';
+import {
+  DEFAULT_WEATHER_ID,
+  resolveWeatherIdForPlanet,
+} from '../game/weather.js';
 
 const REPLAYABLE_CONFIG_KEYS = [
   'tool', 'drawMode', 'creativeKind', 'creativeValue',
@@ -375,6 +379,7 @@ export function createWorldWorkerClient(ctx) {
       tool = 0,
       creatureNaturalSpawning = false,
       planetId = ctx.planetId,
+      weatherId = ctx.weatherId,
       gravityScale = ctx.gravityScale,
       missionId = ctx.missionId,
       loadout = ctx.missionLoadout,
@@ -382,7 +387,7 @@ export function createWorldWorkerClient(ctx) {
       if (closed) return;
       initOptions = {
         survival, creativeKind, creativeValue, tool, creatureNaturalSpawning,
-        planetId, gravityScale, missionId, loadout,
+        planetId, weatherId, gravityScale, missionId, loadout,
         ...runtimeConfig,
       };
       const message = {
@@ -481,6 +486,16 @@ export function createWorldWorkerClient(ctx) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
       if (!!capsule?.init?.survival !== ctx.survival)
         return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
+      const replayPlanetId = capsule?.init?.planetId | 0;
+      if (replayPlanetId !== ctx.planetId)
+        return Promise.reject(new Error('Open this replay on the matching planet.'));
+      const replayWeatherId = resolveWeatherIdForPlanet(
+        capsule?.init?.weatherId ?? DEFAULT_WEATHER_ID,
+        replayPlanetId,
+      );
+      if (capsule?.init?.weatherId !== undefined
+          && capsule.init.weatherId !== replayWeatherId)
+        return Promise.reject(new Error('Replay weather is invalid for its planet.'));
       const cols = capsule?.final?.cols | 0;
       const rows = capsule?.final?.rows | 0;
       if (!cols || !rows)
@@ -501,6 +516,8 @@ export function createWorldWorkerClient(ctx) {
       projectiles = new Float32Array(0);
       ctx.worldSeed = capsule.init.worldSeed >>> 0;
       if (Number.isFinite(capsule.init.planetId)) ctx.planetId = capsule.init.planetId | 0;
+      ctx.weatherId = replayWeatherId;
+      ctx.weatherVisualKey = 0;
       if (Number.isFinite(capsule.init.gravityScale)) ctx.gravityScale = capsule.init.gravityScale;
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
       const requestId = ++replayRequestId;

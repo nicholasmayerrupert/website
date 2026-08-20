@@ -15,6 +15,9 @@ import {
   normalizeDayPhase,
   sampleDayNight,
 } from './dayNightCycle.js';
+import { getWeatherProfile, weatherSkyLight } from './weather.js';
+
+const WEATHER_VISUAL_STEP_MS = 50;
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createGameLoop(ctx, {
@@ -32,8 +35,12 @@ export function createGameLoop(ctx, {
   // backgrounded tab resume at the current point instead of replaying frames.
   const dayCycleStart = performance.now();
   let dayVisualBucket = 0;
+  let weatherVisualBucket = 0;
   ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
   ctx.dayVisualKey = 0;
+  ctx.weatherVisualKey = 0;
+  const animatesRain = () =>
+    getWeatherProfile(ctx.weatherId).precipitation?.kind === 'rain';
 
   const applyDayPhase = (phase, visualKey) => {
     ctx.dayNight = sampleDayNight(phase);
@@ -42,8 +49,9 @@ export function createGameLoop(ctx, {
       // Always resend the sampled value. This keeps rapid manual changes and
       // Auto resumption from trusting a stale JS cache; the C++ presenter still
       // compares against its last value and skips redundant lighting solves.
-      ctx.engine.setSkyLight(ctx.dayNight.skyLight);
-      ctx.appliedSkyLight = ctx.dayNight.skyLight;
+      const skyLight = weatherSkyLight(ctx.dayNight.skyLight, ctx.weatherId);
+      ctx.engine.setSkyLight(skyLight);
+      ctx.appliedSkyLight = skyLight;
     }
     return true;
   };
@@ -55,6 +63,15 @@ export function createGameLoop(ctx, {
     if (bucket === dayVisualBucket) return false;
     dayVisualBucket = bucket;
     return applyDayPhase(dayPhaseAt(elapsed), bucket);
+  };
+
+  const updateWeatherVisual = (now) => {
+    if (!animatesRain() || ctx.testPaused || ctx.reduced) return false;
+    const bucket = Math.floor(Math.max(0, now) / WEATHER_VISUAL_STEP_MS);
+    if (bucket === weatherVisualBucket) return false;
+    weatherVisualBucket = bucket;
+    ctx.weatherVisualKey = bucket;
+    return true;
   };
 
   const setDayPhase = (phase) => {
@@ -286,6 +303,7 @@ export function createGameLoop(ctx, {
     currentRafMs = rafDelta > 0 && rafDelta < 100 ? rafDelta : 0;
     lastRafNow = now;
     const dayChanged = updateDayNight(now);
+    const weatherChanged = updateWeatherVisual(now);
 
     // Keep the engine's pointer fresh as the page scrolls under a static cursor
     // (re-derives inside/aim from the new canvas bounds).
@@ -377,7 +395,7 @@ export function createGameLoop(ctx, {
     const localAuthorityReady = !!ctx.worldWorker?.state?.ready;
     const presentationReady = !ctx.worldWorker || localAuthorityReady || ctx.netClientReady();
     if (presentationReady &&
-        (dayChanged || stepped || camMoved || ctx.previewDirty || (!ctx.testPaused && ctx.netClientReady()) || localAuthorityReady)) {
+        (dayChanged || weatherChanged || stepped || camMoved || ctx.previewDirty || (!ctx.testPaused && ctx.netClientReady()) || localAuthorityReady)) {
       render(false);
       samplePerf();
     }

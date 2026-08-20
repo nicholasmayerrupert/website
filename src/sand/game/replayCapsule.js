@@ -1,5 +1,10 @@
 import { ABI_FINGERPRINT, ABI_VERSION } from '../wasmBridge/abi.generated.js';
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
+import {
+  DEFAULT_WEATHER_ID,
+  isWeatherId,
+  resolveWeatherIdForPlanet,
+} from './weather.js';
 
 export const REPLAY_FORMAT = 'sand-input-replay';
 export const REPLAY_VERSION = 3;
@@ -79,6 +84,7 @@ export function normalizeReplayInit(data) {
       return normalized;
     })
     .filter((stack) => stack.count > 0) : [];
+  const planetId = data.planetId | 0;
   const init = {
     cols: data.cols | 0,
     rows: data.rows | 0,
@@ -88,7 +94,11 @@ export function normalizeReplayInit(data) {
     creativeValue: data.creativeValue | 0,
     tool: data.tool | 0,
     creatureNaturalSpawning: !!data.creatureNaturalSpawning,
-    planetId: data.planetId | 0,
+    planetId,
+    weatherId: resolveWeatherIdForPlanet(
+      data.weatherId ?? DEFAULT_WEATHER_ID,
+      planetId,
+    ),
     gravityScale: Number(data.gravityScale),
     missionId: data.missionId | 0,
     loadout,
@@ -247,6 +257,11 @@ export function validateReplayCapsule(value) {
     throw new Error('Replay dimensions are invalid.');
   if (!finiteInteger(init.worldSeed, 0, 0xffffffff))
     throw new Error('Replay world seed is invalid.');
+  if (init.weatherId !== undefined
+      && (!isWeatherId(init.weatherId)
+        || resolveWeatherIdForPlanet(init.weatherId, init.planetId | 0)
+          !== init.weatherId))
+    throw new Error('Replay weather is invalid for its planet.');
 
   const turns = value.turns;
   const events = value.events;

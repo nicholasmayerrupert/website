@@ -280,6 +280,7 @@
       comps.prepareAssemblyScratch((size_t)cols * rows);
     }
     useLayer(&fg);
+    weather.initialize(seed);
     renderer.init(seed); // render-only RNG + shade/noise tables (separate stream)
     tools.initSurvivalFootprints();
   }

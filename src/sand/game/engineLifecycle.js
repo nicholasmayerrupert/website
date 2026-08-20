@@ -6,10 +6,15 @@
 // createSandGame.js; this module only reads/writes ctx and drives the engine.
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
-import { SIZING, TOOL_IDS } from './runtimeConfig';
-import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
-import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
+import { SIZING, TOOL_IDS } from './runtimeConfig.js';
+import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy.js';
+import {
+  chooseStableCssSize,
+  computeViewportSizing,
+  shouldResizeBuffer,
+} from './viewportSizing.js';
 import { NIGHT_SKY_LIGHT } from './dayNightCycle.js';
+import { weatherSkyLight } from './weather.js';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createEngineLifecycle(ctx, { onLayoutChange }) {
@@ -33,6 +38,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       scale: ctx.bgZoomScale(),
       dayNight: ctx.dayNight,
       dayVisualKey: ctx.dayVisualKey,
+      weatherId: ctx.weatherId,
+      weatherVisualKey: ctx.weatherVisualKey,
     };
   };
 
@@ -58,8 +65,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       const maxTextureSize = Number.isFinite(reportedTextureSize) && reportedTextureSize > 0
         ? reportedTextureSize
         : ctx.maxTextureSize;
-      const skyLight = ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT;
+      const skyLight = weatherSkyLight(
+        ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT,
+        ctx.weatherId,
+      );
       e.glResize(canvas.width, canvas.height);
+      e.setWeather(ctx.weatherId);
       e.setSkyLight(skyLight);
       e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool
       e.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
@@ -208,6 +219,15 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     if (ctx.engine && ctx.cols === netCols && ctx.rows === netRows) {
       if (ctx.localPlayerId) ctx.engine.removePlayer(ctx.localPlayerId);
       ctx.localPlayerId = 0;
+      const skyLight = weatherSkyLight(
+        ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT,
+        ctx.weatherId,
+      );
+      ctx.engine.setWeather(ctx.weatherId);
+      ctx.engine.setSkyLight(skyLight);
+      ctx.appliedSkyLight = skyLight;
+      ctx.forceFullRender = true;
+      parallax.draw(parallaxCamera());
       return ctx.engine;
     }
     const previousViewCols = ctx.viewCols;

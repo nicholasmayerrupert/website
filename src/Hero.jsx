@@ -13,6 +13,7 @@ const NAME_IDLE_MS = 10_000;
 
 const Hero = ({ onDrawModeChange }) => {
   const nameTimerRef = useRef(0);
+  const fallbackTimerRef = useRef(0);
   const [drawModeActive, setDrawModeActive] = useState(false);
   const [nameHidden, setNameHidden] = useState(false);
   const deferSand = useMediaQuery(DEFER_SAND_QUERY);
@@ -22,6 +23,7 @@ const Hero = ({ onDrawModeChange }) => {
   });
   const [startRequested, setStartRequested] = useState(false);
   const [sandReady, setSandReady] = useState(false);
+  const [fallbackMounted, setFallbackMounted] = useState(true);
 
   useEffect(() => {
     if (!deferSand) {
@@ -69,7 +71,19 @@ const Hero = ({ onDrawModeChange }) => {
     }, NAME_IDLE_MS);
   }, [deferSand]);
 
-  useEffect(() => () => clearTimeout(nameTimerRef.current), []);
+  const handleSandReady = useCallback(() => {
+    setSandReady(true);
+    clearTimeout(fallbackTimerRef.current);
+    fallbackTimerRef.current = window.setTimeout(() => {
+      fallbackTimerRef.current = 0;
+      setFallbackMounted(false);
+    }, 500);
+  }, []);
+
+  useEffect(() => () => {
+    clearTimeout(nameTimerRef.current);
+    clearTimeout(fallbackTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!deferSand) return;
@@ -83,8 +97,9 @@ const Hero = ({ onDrawModeChange }) => {
 
   return (
     <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
-      {deferSand && (
+      {deferSand && fallbackMounted && (
         <SandBackground
+          weather="rain"
           className={`absolute inset-0 overflow-hidden transition-opacity duration-500 ${
             sandReady ? 'opacity-0' : 'opacity-100'
           }`}
@@ -95,10 +110,11 @@ const Hero = ({ onDrawModeChange }) => {
         <div className="absolute inset-0 z-10">
           <SandGame
             mode="creative"
+            weather="rain"
             autoStart={startRequested}
             onDrawModeChange={handleDrawModeChange}
             onInteraction={noteGameInteraction}
-            onReady={() => setSandReady(true)}
+            onReady={handleSandReady}
             perfHud={PERF_ROUTE}
             debugHitboxes={PERF_ROUTE}
           />

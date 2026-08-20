@@ -9,6 +9,7 @@
  * @property {boolean} survival
  * @property {boolean} debugHitboxes
  * @property {number} planetId
+ * @property {number} weatherId
  * @property {number|undefined} gravityScale
  * @property {number} missionId
  * @property {Array<*>} missionLoadout
@@ -36,6 +37,7 @@
  * @property {number} perfRenderMs
  * @property {*|null} dayNight
  * @property {number} dayVisualKey
+ * @property {number} weatherVisualKey
  * @property {number|null} dayPhaseOverride
  * @property {number} appliedSkyLight
  * @property {string} currentToolName

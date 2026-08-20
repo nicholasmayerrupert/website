@@ -740,6 +740,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       survival = !!data.survival;
       paused = !!data.paused;
       artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
+      engine.setWeather(data.weatherId | 0);
       engine.setPlayMode(survival);
       engine.setSurvivalInventory(survival);
       engine.setDrawMode(!!data.drawMode);

@@ -211,6 +211,9 @@
   bool stepWorld() {
     if (storageRole == ESR_PRESENTATION) return false;
     double t0 = emscripten_get_now();
+    // Weather is an authority-turn source of world activity. It runs before the
+    // quiet-world gate so precipitation can wake an otherwise settled layer.
+    weather.update();
     perfForceWakeMs = 0;
     double tForce = emscripten_get_now();
     forces.prepareWorldTick();

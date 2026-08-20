@@ -46,6 +46,8 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
 EMSCRIPTEN_KEEPALIVE int engine_get_planet(Engine* e) { return (int)e->planetId; }
 EMSCRIPTEN_KEEPALIVE double engine_get_gravity_scale(Engine* e) { return e->gravityScale; }
 EMSCRIPTEN_KEEPALIVE void engine_set_gravity_scale(Engine* e, double scale) { e->setGravityScale(scale); }
+EMSCRIPTEN_KEEPALIVE int engine_get_weather(Engine* e) { return (int)e->weather.getKind(); }
+EMSCRIPTEN_KEEPALIVE void engine_set_weather(Engine* e, int kind) { e->weather.setKind(kind); }
 EMSCRIPTEN_KEEPALIVE void engine_shift_world(Engine* e, int dx) { e->shiftWorld(dx, 0); }
 EMSCRIPTEN_KEEPALIVE void engine_shift_world_xy(Engine* e, int dx, int dy) { e->shiftWorld(dx, dy); }
 EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world(Engine* e, int cameraCellX, int visibleCols, int marginCols) { return e->maybeShiftWorld(cameraCellX, visibleCols, marginCols); }

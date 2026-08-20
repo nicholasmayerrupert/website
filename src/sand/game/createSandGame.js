@@ -16,6 +16,7 @@ import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
 import { createReplayPanel } from './replayPanel.js';
 import { CREATIVE_KIND, CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
+import { MAT } from '../materials.js';
 import { resolvePlanetId } from './planetSelection.js';
 
 export function createSandGame(container, opts = {}) {
@@ -131,7 +132,7 @@ export function createSandGame(container, opts = {}) {
     worldWorker: null,
     creativeKind: 0,
     creativeValue: 0,
-    lastCreativeMaterial: null,
+    lastCreativeMaterial: survival ? null : MAT.SAND,
     creatureSimulationRequested: false,
     inputSeq: 0,
 

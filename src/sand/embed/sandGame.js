@@ -599,9 +599,9 @@ class SandGameElement extends HTMLElement {
             this._hud?.setOpen(false);
             this._sizeMenu?.toggleOpen();
           },
-          onEquipCreativeMaterial: (value) => {
+          onEquipCreativeMaterial: (kind, value) => {
             if (!this._palette) return false;
-            return this._palette.selectMaterial(value);
+            return this._palette.selectCreative(kind, value);
           },
           onInteraction: (detail) => {
             this.dispatchEvent(new CustomEvent('sand:interaction', {

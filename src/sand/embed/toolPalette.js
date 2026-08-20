@@ -551,6 +551,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     } else {
       query = '';
       search.value = '';
+      search.blur();
       dropdown.inert = true;
       closing = dropdown.isConnected;
       // Keep the stable option nodes alive through the close animation. Only
@@ -627,6 +628,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
 
   function pick(entry) {
     if (!canSelectMaterial()) return;
+    search.blur();
     const previous = selected;
     selected = entry;
     currentSwatch.className = `sg-swatch${selected.animated ? ' animated' : ''}`;
@@ -662,11 +664,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       lbl.className = 'sg-name';
       lbl.textContent = e.label;
       opt.append(renderSwatch(e), lbl);
-      opt.addEventListener('click', () => {
-        // A desktop selection ends palette text entry before shortcuts resume.
-        if (!atBottom) search.blur();
-        pick(e);
-      });
+      opt.addEventListener('click', () => pick(e));
       optionByKey.set(e.key, opt);
       list.appendChild(opt);
     });
@@ -718,12 +716,15 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       wrap.hidden = !!hidden;
       wrap.setAttribute('aria-hidden', String(!!hidden));
     },
-    selectMaterial(value) {
+    selectCreative(kind, value) {
       const entry = entries.find((candidate) =>
-        candidate.kind === CK_MATERIAL && candidate.value === (value | 0));
+        candidate.kind === (kind | 0) && candidate.value === (value | 0));
       if (!entry || !canSelectMaterial()) return false;
       pick(entry);
       return true;
+    },
+    selectMaterial(value) {
+      return this.selectCreative(CK_MATERIAL, value);
     },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() {

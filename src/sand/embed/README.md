@@ -129,7 +129,7 @@ Mission, planet, phase, objective-type, and objective-state values come from
 - Survival combines explosive combat with inventory-backed mining and building.
   The hotbar can hold bare-hand slots, mining tools, collected blocks, or dropped
   weapons; `E` opens the inventory/crafting modal and `Q` selects the square tool
-  footprint.
+  footprint. Creative `Q` restores the previously selected palette entry.
 - Hands, mining tools, and blocks show their footprint at the pointer. Weapons
   hide both that square and the legacy diamond preview while remaining aimed by
   the pointer.

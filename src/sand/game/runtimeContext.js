@@ -45,7 +45,8 @@
  * @property {*|null} worldWorker
  * @property {number} creativeKind
  * @property {number} creativeValue
- * @property {number|null} lastCreativeMaterial
+ * @property {number} lastCreativeKind
+ * @property {number} lastCreativeValue
  * @property {boolean} creatureSimulationRequested
  * @property {number} inputSeq
  * @property {number} clientX

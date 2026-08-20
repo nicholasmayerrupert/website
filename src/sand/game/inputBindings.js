@@ -164,7 +164,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   // button keeps focus after a click, so treating every <input> as editable
   // would silently disable camera panning.
   const isEditableTarget = (t) => {
-    if (!t) return false;
+    if (!t || t.nodeType !== 1) return false;
+    if (typeof t.closest === 'function' && t.closest('[inert]')) return false;
     if (t.isContentEditable) return true;
     const tag = t.tagName;
     if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
@@ -173,7 +174,10 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   };
   const isEditableEvent = (e) => {
     if (isEditableTarget(e.target)) return true;
-    return !!e.composedPath?.().some(isEditableTarget);
+    if (e.composedPath?.().some(isEditableTarget)) return true;
+    // Safari can omit shadow descendants from composedPath for window listeners.
+    const root = ctx.container.getRootNode?.();
+    return isEditableTarget(root?.activeElement);
   };
 
   // Movement/combat keys (WASD/arrows + space/shift/F) are forwarded to the engine,
@@ -182,14 +186,15 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   const onKeyDown = (e) => {
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
-    const key = e.key.toLowerCase();
+    const key = String(e.key || '').toLowerCase();
+    const isQ = key === 'q' || e.code === 'KeyQ';
     // Creative camera movement, selection restore, and replay capture should
     // survive focus moving to palette buttons and should not require a priming
     // click. Survival and the remaining shortcuts stay scoped to explicit
     // surface focus.
     const visibleCreativeShortcut = !ctx.playMode && surfaceIsVisible() &&
       (key === 'w' || key === 'a' || key === 's' || key === 'd'
-        || key === 'q');
+        || isQ);
     const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
     if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey) return;
     if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
@@ -210,9 +215,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
         return;
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
-      if (key === 'q') { onToggleFootprintMenu?.(); e.preventDefault(); return; }
+      if (isQ) { onToggleFootprintMenu?.(); e.preventDefault(); return; }
     }
-    if (!ctx.survival && key === 'q') {
+    if (!ctx.survival && isQ) {
       onEquipLastCreativeMaterial?.();
       e.preventDefault();
       return;
@@ -227,7 +232,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (key !== 'shift') e.preventDefault(); // arrows/space/wasd would scroll the page
   };
   const onKeyUp = (e) => {
-    const code = KEY_CODES[e.key.toLowerCase()];
+    const code = KEY_CODES[String(e.key || '').toLowerCase()];
     if (code !== undefined) ctx.engine?.inputKey(code, 0);
   };
   const clearLatchedInput = () => {

@@ -132,7 +132,8 @@ export function createSandGame(container, opts = {}) {
     worldWorker: null,
     creativeKind: 0,
     creativeValue: 0,
-    lastCreativeMaterial: survival ? null : MAT.SAND,
+    lastCreativeKind: CREATIVE_KIND.MATERIAL,
+    lastCreativeValue: survival ? 0 : MAT.SAND,
     creatureSimulationRequested: false,
     inputSeq: 0,
 
@@ -203,17 +204,26 @@ export function createSandGame(container, opts = {}) {
       creativeValue: ctx.creativeValue,
     });
   };
+  const isBootstrapCreativeSelection = (kind, value) =>
+    kind === CREATIVE_KIND.MATERIAL && value === 0;
   const setCreativeSelection = (kind, value) => {
-    ctx.creativeKind = kind | 0;
-    ctx.creativeValue = value | 0;
-    if (ctx.creativeKind === CREATIVE_KIND.MATERIAL)
-      ctx.lastCreativeMaterial = ctx.creativeValue;
+    kind |= 0;
+    value |= 0;
+    if (kind !== ctx.creativeKind || value !== ctx.creativeValue) {
+      if (!isBootstrapCreativeSelection(ctx.creativeKind, ctx.creativeValue)) {
+        ctx.lastCreativeKind = ctx.creativeKind;
+        ctx.lastCreativeValue = ctx.creativeValue;
+      }
+    }
+    ctx.creativeKind = kind;
+    ctx.creativeValue = value;
     applyCreativeSelection();
   };
-  const equipLastCreativeMaterial = () => {
-    if (ctx.lastCreativeMaterial === null) return;
-    if (onEquipCreativeMaterial?.(ctx.lastCreativeMaterial)) return;
-    setCreativeSelection(CREATIVE_KIND.MATERIAL, ctx.lastCreativeMaterial);
+  const equipLastCreativeSelection = () => {
+    if (ctx.lastCreativeKind === ctx.creativeKind
+        && ctx.lastCreativeValue === ctx.creativeValue) return;
+    if (onEquipCreativeMaterial?.(ctx.lastCreativeKind, ctx.lastCreativeValue)) return;
+    setCreativeSelection(ctx.lastCreativeKind, ctx.lastCreativeValue);
   };
 
   const authorityFailure = document.createElement('div');
@@ -315,7 +325,7 @@ export function createSandGame(container, opts = {}) {
     onInteraction,
     onToggleInventory,
     onToggleFootprintMenu,
-    onEquipLastCreativeMaterial: equipLastCreativeMaterial,
+    onEquipLastCreativeMaterial: equipLastCreativeSelection,
     onReplay: replayPanel.open,
   });
   const loop = createGameLoop(ctx, {

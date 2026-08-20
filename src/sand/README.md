@@ -642,7 +642,7 @@ their tall 4x8 actor shape.
 | `F` | Hold a 120-degree directional ward | — |
 | `1`–`9`, wheel | Select hotbar | — |
 | `E` | Inventory/crafting | — |
-| `Q` | Placement/mining footprint | — |
+| `Q` | Placement/mining footprint | Previous palette selection |
 | Pointer | Aim and use selected hand, tool, block, or weapon | Paint, draft, erase, or spawn |
 | `+`, `-`, `0` | Zoom in/out/reset | Zoom in/out/reset |
 

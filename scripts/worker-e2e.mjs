@@ -312,7 +312,7 @@ try {
       key: 'w', bubbles: true, composed: true,
     }));
     const event = new KeyboardEvent('keydown', {
-      key: 'q', bubbles: true, composed: true, cancelable: true,
+      key: 'q', code: 'KeyQ', bubbles: true, composed: true, cancelable: true,
     });
     activeElement.dispatchEvent(event);
     window.matchMedia = nativeMatchMedia;
@@ -338,6 +338,26 @@ try {
       restoredPaint.currentLabel === 'sand' &&
       restoredPaint.activeLabel === 'sand' && restoredSand > restoredPaint.before,
     `${restoredPaint.currentLabel}/${restoredPaint.activeLabel}, ${restoredPaint.before} -> ${restoredSand}`);
+  const swappedMaterial = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    const option = (name) => [...root.querySelectorAll('.sg-opt')]
+      .find((node) => node.querySelector('.sg-name')?.textContent === name);
+    option('sand').click();
+    option('water').click();
+    const event = new KeyboardEvent('keydown', {
+      key: 'q', code: 'KeyQ', bubbles: true, composed: true, cancelable: true,
+    });
+    (root.activeElement || document.activeElement || document.body).dispatchEvent(event);
+    return {
+      currentLabel: root.querySelector('.sg-current .sg-name-track')?.textContent,
+      activeLabel: root.querySelector('.sg-opt.active .sg-name')?.textContent,
+      prevented: event.defaultPrevented,
+    };
+  });
+  check('desktop Q restores the previous material after another material is equipped',
+    swappedMaterial.prevented && swappedMaterial.currentLabel === 'sand' &&
+      swappedMaterial.activeLabel === 'sand',
+    `${swappedMaterial.currentLabel}/${swappedMaterial.activeLabel}`);
   await palette.getByRole('option', { name: 'cube', exact: true }).click();
   await palette.locator('.sg-expand').click();
   await page.waitForTimeout(50);

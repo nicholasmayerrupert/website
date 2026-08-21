@@ -345,7 +345,7 @@ function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
 }
 
-function drawWeatherPrecipitation(ctx, w, h, visualKey, profile, mix, cloudSpans) {
+function drawWeatherPrecipitation(ctx, w, h, visualKey, profile, mix, cloudSpans, surfacePts) {
   const precipitation = profile.precipitation;
   if (precipitation?.kind !== 'rain') return;
   const intensity = Math.max(0, Math.min(1, mix));
@@ -375,7 +375,19 @@ function drawWeatherPrecipitation(ctx, w, h, visualKey, profile, mix, cloudSpans
   const fallSpan = h;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, w, h);
+  if (surfacePts && surfacePts.length > 1) {
+    // Keep only the air above the simulated surface: drops disappear behind
+    // the world's own back layer rather than showing through cave openings.
+    ctx.moveTo(surfacePts[0].x, surfacePts[0].y);
+    for (let i = 1; i < surfacePts.length; i++) {
+      ctx.lineTo(surfacePts[i].x, surfacePts[i].y);
+    }
+    const last = surfacePts[surfacePts.length - 1];
+    ctx.lineTo(last.x, -4);
+    ctx.lineTo(surfacePts[0].x, -4);
+  } else {
+    ctx.rect(0, 0, w, h);
+  }
   ctx.clip();
   ctx.fillStyle = precipitation.color;
   ctx.globalAlpha = precipitation.opacity * (0.35 + 0.65 * intensity);
@@ -798,6 +810,9 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     scale = 1,
     dayNight = sampleDayNight(0),
     dayVisualKey = 0,
+    // Simulated-surface sampler (absolute world X -> absolute Y). When absent,
+    // rain fills the whole backdrop and only scenery occludes it.
+    surfaceYAt = null,
     weatherId = DEFAULT_WEATHER_ID,
     weatherVisualKey = 0,
     // Callers that don't track the auto-cycle mix get the profile's own look.
@@ -920,11 +935,6 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight,
       cloudCount(1), 210, dayNight.phase, s, cloudSpans,
     );
-    // Precipitation paints after the clouds and before every scenery layer,
-    // so ridges, lodges, forest, and the world terrain all occlude it.
-    drawWeatherPrecipitation(
-      ctx, w, h, weatherVisualKey, weather, mix, cloudSpans,
-    );
     const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, basePalette.ridgeFar, 3.2, basePalette.skyLow, 2, s);
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, basePalette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, basePalette.ridgeMid, 7.9, basePalette.skyLow, 3, s);
@@ -934,6 +944,18 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, basePalette.ridgeDeep, 18.5, basePalette.skyLow, 2, s);
+    // Precipitation paints in front of every backdrop layer but clips to the
+    // air above the simulated surface, so the world's own layers occlude it.
+    const surfacePts = surfaceYAt ? [] : null;
+    if (surfacePts) {
+      const leftWorldX = Math.round(qx - w * 0.5);
+      for (let x = -8; x <= w + 8; x += 8) {
+        surfacePts.push({ x, y: surfaceYAt(leftWorldX + x) - qy });
+      }
+    }
+    drawWeatherPrecipitation(
+      ctx, w, h, weatherVisualKey, weather, mix, cloudSpans, surfacePts,
+    );
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

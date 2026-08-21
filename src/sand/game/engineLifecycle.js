@@ -36,6 +36,9 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       // race sideways even though the camera center had not moved.
       camX: ctx.engine.getWorldOffsetX() + cam.x + ctx.viewCols * 0.5,
       camY: ctx.engine.getWorldOffsetY() + cam.y,
+      // Rain clips against the true surface profile so it never shows through
+      // double-empty cells below ground.
+      surfaceYAt: (worldX) => ctx.engine.worldSurfaceAbsAt(worldX),
       scale: ctx.bgZoomScale(),
       dayNight: ctx.dayNight,
       dayVisualKey: ctx.dayVisualKey,

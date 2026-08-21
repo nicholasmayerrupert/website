@@ -4038,10 +4038,15 @@ bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
   return moving;
 }
 // A sleeping body keeps support while the solved load-bearing anchors or its
-// current underside still touch a medium, terrain, another body, or the world
-// floor. The anchors preserve valid diagonal and frictional support on irregular
-// shapes without treating an unrelated nearby wall as ground.
+// current underside still touch a medium, terrain, a sleeping body, or the
+// world floor. The anchors preserve valid diagonal and frictional support on
+// irregular shapes without treating an unrelated nearby wall as ground.
 bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
+  auto stableBodyOwner = [](Layer& layer, int owner) {
+    for (Body* support : layer.bodies)
+      if (support->id == owner) return !support->awake;
+    return false;
+  };
   if (b->rasterAssignmentLocked
       && b->rasterLockCell >= 0
       && b->rasterLockCell < E.cols * E.rows) {
@@ -4049,6 +4054,7 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
     int owner = E.L->bodyOwner[k];
     bool retained = b->rasterLockOwner >= 0
       ? owner == b->rasterLockOwner
+        && stableBodyOwner(*E.L, owner)
       : owner < 0
         && !canBodyOccupy(E.L->grid[k], k, b->density);
     if (retained) return true;
@@ -4070,7 +4076,8 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
         if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
         int k = y * E.cols + x;
         int owner = layer.bodyOwner[k];
-        if (support.owner >= 0 && owner == support.owner) return true;
+        if (support.owner >= 0 && owner == support.owner
+            && stableBodyOwner(layer, owner)) return true;
         if (support.owner < 0 && owner < 0
             && !canBodyOccupy(layer.grid[k], k, b->density)) return true;
       }
@@ -4087,7 +4094,8 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
     int below = k + E.cols;
     if (occStamp.has(below)) continue;
     if (E.L->bodyOwner[below] >= 0) {
-      if (E.L->bodyOwner[below] != b->id) return true;
+      int owner = E.L->bodyOwner[below];
+      if (owner != b->id && stableBodyOwner(*E.L, owner)) return true;
       continue;
     }
     if (!canBodyOccupy(E.L->grid[below], below, b->density)) return true;

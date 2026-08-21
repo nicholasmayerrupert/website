@@ -648,6 +648,18 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
     e->markCellIndex(y * e->cols + x);
   return 1;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_set_body_sleeping(Engine* e, int i) {
+  if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
+  Engine::ActiveLayerScope active(*e, &e->fg, &e->fg);
+  Body* b = e->fg.bodies[i];
+  b->awake = false;
+  b->vx = b->vy = b->omega = 0;
+  b->stillTicks = R_SLEEP_TICKS;
+  b->sleepSupports.clear();
+  e->fg.sleepingBodySupportDirty = true;
+  if (b->jointRole == 1) e->rigid.syncJointFollower(b);
+  return 1;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_freeze_body_cell(
     Engine* e, int sourceLayer, int bodyIndex, int targetLayer, int x, int y) {
   Layer& source = sourceLayer ? e->bg : e->fg;

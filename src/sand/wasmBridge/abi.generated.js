@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 33;
 
-export const ABI_FINGERPRINT = 0xf1a05a2ba1ce;
+export const ABI_FINGERPRINT = 0x77a54c87c830;
 
 export const ACTOR_WIRE_FINGERPRINT = 0x43aea36d1f1d;
 

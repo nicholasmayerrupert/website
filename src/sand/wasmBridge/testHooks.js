@@ -103,6 +103,7 @@ function table() {
       ['number', 'number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
+    setBodySleeping: c('engine_test_set_body_sleeping', 'number', ['number', 'number']),
     freezeBodyCell: c('engine_test_freeze_body_cell', 'number',
       ['number', 'number', 'number', 'number', 'number', 'number']),
     setLiquidVelocity: c('engine_test_set_liquid_velocity', 'number',
@@ -282,6 +283,7 @@ export function attachTestHooks(engine) {
     return values;
   };
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
+  engine._setBodySleeping = (i) => t.setBodySleeping(ptr, i | 0) > 0;
   engine._freezeBodyCell = (sourceLayer, bodyIndex, targetLayer, x, y) =>
     t.freezeBodyCell(ptr, sourceLayer ? 1 : 0, bodyIndex | 0,
       targetLayer ? 1 : 0, x | 0, y | 0) > 0;

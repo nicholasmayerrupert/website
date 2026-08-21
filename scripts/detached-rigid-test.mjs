@@ -422,6 +422,28 @@ naturallyLoose.destroy();
   shallow.destroy();
 }
 
+// An awake free body is not durable support for a sleeping body. Its first
+// gravity increment is cancelled so ordinary impact wake-up cannot mask the
+// support revalidation being exercised here.
+{
+  const slowSupport = createEngineWasm({
+    cols: 90, rows: 110, worldSeed: 71, sinksOn: false, infinite: false,
+  });
+  slowSupport.spawnBox(45, 45, 8, 4, MAT.RIGID);
+  slowSupport.spawnBody([[45, 50]]);
+  slowSupport._setBodyMotion(1, 0, -1);
+  slowSupport.stepWorld();
+  slowSupport._setBodyMotion(1, 0, -0.06);
+  slowSupport._setBodySleeping(0);
+  const payloadStart = slowSupport._bodyState(0);
+  slowSupport.stepWorld();
+  const payloadEnd = slowSupport._bodyState(0);
+  check('slow airborne debris cannot keep another body asleep',
+    slowSupport._bodyAwake(0) === 1
+      && payloadEnd.py > payloadStart.py);
+  slowSupport.destroy();
+}
+
 // A sleeping body on a static platform must enter free fall in the same solver
 // tick when a support cut converts that platform into a body. Their relative
 // separation stays fixed through the initial free-fall transition.

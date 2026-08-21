@@ -72,6 +72,7 @@ let closing = false;
 let initGeneration = 0;
 let pendingRuntimeConfig = null;
 let pendingResize = null;
+let pendingWeatherId = null;
 let livenessStage = WORKER_LIVENESS_STAGE.INITIALIZING;
 let livenessTurn = 0;
 let replayCapture = null;
@@ -741,6 +742,10 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       paused = !!data.paused;
       artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
       engine.setWeather(data.weatherId | 0);
+      if (usePending && pendingWeatherId !== null) {
+        engine.setWeather(pendingWeatherId);
+        pendingWeatherId = null;
+      }
       engine.setPlayMode(survival);
       engine.setSurvivalInventory(survival);
       engine.setDrawMode(!!data.drawMode);
@@ -874,6 +879,8 @@ function applyRuntimeMessage(data) {
     edges.push(data);
   } else if (data.type === 'config') {
     applyRuntimeConfig(data);
+  } else if (data.type === 'weather') {
+    engine.setWeather(data.weatherId | 0);
   } else if (data.type === 'test-paint-disc') {
     const p = toLocal(data.worldX, data.worldY);
     const radius = Math.max(1, data.radius | 0);
@@ -944,6 +951,7 @@ async function runReplayCapsule(requestId, value) {
   replayJournalGateFlags = 0;
   pendingRuntimeConfig = null;
   pendingResize = null;
+  pendingWeatherId = null;
   const initialized = await initializeAuthority(
     { type: 'init', ...capsule.init },
     { scheduleRuns: false, usePending: false },
@@ -1071,6 +1079,10 @@ self.onmessage = async ({ data }) => {
   if (REPLAY_EVENT_TYPES.has(data.type)) recordReplayMessage(data);
   if (data.type === 'config' && !engine) {
     pendingRuntimeConfig = { ...pendingRuntimeConfig, ...data };
+    return;
+  }
+  if (data.type === 'weather' && !engine) {
+    pendingWeatherId = data.weatherId | 0;
     return;
   }
   if (data.type === 'resize' && !engine) {

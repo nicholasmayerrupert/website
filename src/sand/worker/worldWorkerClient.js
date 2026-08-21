@@ -541,6 +541,10 @@ export function createWorldWorkerClient(ctx) {
       if (initOptions) Object.assign(initOptions, runtimeConfig);
       post({ type: 'config', ...config });
     },
+    // Discrete auto-weather flip. Recorded by the replay journal like config.
+    sendWeather(weatherId) {
+      post({ type: 'weather', weatherId: weatherId | 0 });
+    },
     resize(cols, rows, worldCenter) {
       if (closed) return;
       pending = null;

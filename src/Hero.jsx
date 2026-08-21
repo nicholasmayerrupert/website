@@ -99,7 +99,6 @@ const Hero = ({ onDrawModeChange }) => {
     <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       {deferSand && fallbackMounted && (
         <SandBackground
-          weather="rain"
           className={`absolute inset-0 overflow-hidden transition-opacity duration-500 ${
             sandReady ? 'opacity-0' : 'opacity-100'
           }`}
@@ -110,7 +109,6 @@ const Hero = ({ onDrawModeChange }) => {
         <div className="absolute inset-0 z-10">
           <SandGame
             mode="creative"
-            weather="rain"
             autoStart={startRequested}
             onDrawModeChange={handleDrawModeChange}
             onInteraction={noteGameInteraction}

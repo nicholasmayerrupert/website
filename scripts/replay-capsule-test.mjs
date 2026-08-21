@@ -94,6 +94,7 @@ const events = [
     }),
   },
   { tick: 24, message: normalizeReplayMessage({ type: 'config', tool: 3, drawMode: false }) },
+  { tick: 24, message: normalizeReplayMessage({ type: 'weather', weatherId: WEATHER.RAIN }) },
   {
     tick: 25,
     message: normalizeReplayMessage({
@@ -175,6 +176,17 @@ assert.deepEqual(survivalControl, {
   viewCols: 100, viewRows: 80, suspendStreaming: false,
 });
 assert.equal(normalizeReplayMessage({ type: 'config', paused: true, artificialDelayMs: 50 }), null);
+assert.deepEqual(
+  normalizeReplayMessage({ type: 'weather', weatherId: WEATHER.RAIN }),
+  { type: 'weather', weatherId: WEATHER.RAIN },
+);
+assert.throws(
+  () => validateReplayCapsule({
+    ...capsule,
+    events: [{ tick: 1, message: { type: 'weather', weatherId: 99 } }],
+  }),
+  /invalid authority event/,
+);
 assert.deepEqual(
   normalizeReplayMessage({ type: 'resize', cols: 100, rows: 80, resizeId: 44 }),
   { type: 'resize', cols: 100, rows: 80 },

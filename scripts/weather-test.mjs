@@ -17,7 +17,10 @@ import {
   getWeatherProfile,
   resolveWeatherId,
   resolveWeatherIdForPlanet,
+  resolveWeatherMode,
+  sampleAutoWeather,
   weatherSkyLight,
+  WEATHER_CYCLE_MS,
 } from '../src/sand/game/weather.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 
@@ -64,6 +67,27 @@ check('rain slightly reduces day and night skylight on four-point steps',
     && rainyNoon % 4 === 0 && rainyMidnight % 4 === 0
     && weatherSkyLight(noon, WEATHER.CLEAR) === noon);
 
+check('the auto cycle starts clear, reaches full rain, and returns to clear',
+  sampleAutoWeather(0).id === WEATHER.CLEAR && sampleAutoWeather(0).mix === 0
+    && sampleAutoWeather(WEATHER_CYCLE_MS * 0.55).id === WEATHER.RAIN
+    && sampleAutoWeather(WEATHER_CYCLE_MS * 0.55).mix === 1
+    && sampleAutoWeather(WEATHER_CYCLE_MS).mix === 0
+    && sampleAutoWeather(WEATHER_CYCLE_MS * 0.55).id
+      === sampleAutoWeather(WEATHER_CYCLE_MS * 0.55 + 1234).id);
+check('the auto cycle interpolates palette and skylight continuously',
+  applyWeatherToPalette(noonPalette, WEATHER.RAIN, 0) === noonPalette
+    && applyWeatherToPalette(noonPalette, WEATHER.RAIN, 0.5).skyTop
+      !== applyWeatherToPalette(noonPalette, WEATHER.RAIN, 0.25).skyTop
+    && weatherSkyLight(noon, WEATHER.RAIN, 0) === noon
+    && weatherSkyLight(noon, WEATHER.RAIN, 0.5) > rainyNoon
+    && weatherSkyLight(noon, WEATHER.RAIN, 0.5) % 4 === 0);
+check('weather mode resolution treats unset and auto as cycling',
+  resolveWeatherMode(undefined) === 'auto'
+    && resolveWeatherMode('auto') === 'auto'
+    && resolveWeatherMode('') === 'auto'
+    && resolveWeatherMode('rain') === 'pin'
+    && resolveWeatherMode(WEATHER.CLEAR) === 'pin');
+
 const presentationCalls = [];
 const fakePresentationEngine = {
   getCam: () => ({ x: 4, y: 5 }),
@@ -86,6 +110,7 @@ const fakePresentationContext = {
   dayVisualKey: 0,
   weatherId: WEATHER.RAIN,
   weatherVisualKey: 0,
+  weatherMix: 1,
   viewCols: 32,
   bgZoomScale: () => 1,
   appliedSkyLight: noon,

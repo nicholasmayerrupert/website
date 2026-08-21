@@ -14,13 +14,20 @@ workers, WebSocket transport, and the ship/debrief presentation.
 The runtime ships as a framework-free `<sand-game>` Web Component. React only
 mounts that element on this site.
 
-Weather is an explicit construction-time mount choice: `weather="rain"` enables
-the rain profile and omitting the attribute defaults to `clear`. Rain keeps its
-presentation changes within the sky, adds precipitation, reduces effective
-skylight slightly, and lets the offline authority introduce water. Additional
-weather profiles share the same numeric weather-ID path.
+Weather defaults to pinned `clear`. `weather="auto"` runs a deterministic
+wall-clock cycle that fades the presentation between clear and rain (sky tint,
+cloud count, precipitation, and skylight interpolate on a continuous mix) and
+flips the offline authority's discrete weather via a journaled `weather`
+message so replays stay exact. The embed palette's Rain button pins rain or
+clear at runtime through the same journaled path, suspending the cycle until
+it is resumed. `weather="rain"` pins the rain profile. Rain
+keeps its presentation changes within the sky, adds precipitation that falls
+from the visible cloud bases, reduces effective skylight, and lets the offline
+authority introduce water. Additional weather profiles share the same numeric
+weather-ID path.
 Rain is currently an Earth profile; selecting it with another planet normalizes
-the weather to `clear` so visuals, lighting, and authority state stay aligned.
+the weather to `clear` so visuals, lighting, and authority state stay aligned,
+and auto cycling stays pinned clear there too.
 
 ## Runtime topology
 
@@ -46,7 +53,8 @@ reconcile local-player prediction. Authored campaign deployments use the offline
 authority worker and do not show the multiplayer connect panel.
 Weather is currently configured only for the local presentation and offline
 authority. The multiplayer protocol does not yet negotiate weather, so remote
-sessions must not rely on the mount attribute as shared server state.
+sessions must not rely on weather as shared server state; connected clients
+keep their mount-time weather and do not run the auto cycle against the server.
 
 ## IRIS campaign
 

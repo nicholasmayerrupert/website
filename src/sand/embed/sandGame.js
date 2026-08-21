@@ -11,7 +11,7 @@ import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 import { createMissionHud, presentMissionSnapshot } from './missionHud';
 import { createTalkHud } from './talkHud';
-import { MISSION_PHASE } from '../wasmBridge/abi.generated.js';
+import { MISSION_PHASE, WEATHER } from '../wasmBridge/abi.generated.js';
 
 const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none;
@@ -688,6 +688,10 @@ class SandGameElement extends HTMLElement {
               else game.setDayPhase(phase);
             },
             getTimeState: () => game.getDayNight(),
+            onSetRain: (on) => {
+              game.setWeatherOverride(on ? WEATHER.RAIN : WEATHER.CLEAR);
+            },
+            getRainState: () => game.getWeatherState()?.rain ?? false,
           });
           // Touch has no +/- keys, so give mobile an on-screen zoom control beside
           // the palette (desktop zooms via the keyboard).

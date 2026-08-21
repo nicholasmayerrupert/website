@@ -5,7 +5,7 @@
 // createSandGame.js.
 
 import { TOOL_IDS } from './runtimeConfig.js';
-import { ITEM_KIND, writeGlPlayerExtSnapshot } from '../wasmBridge/abi.generated.js';
+import { ITEM_KIND, WEATHER, writeGlPlayerExtSnapshot } from '../wasmBridge/abi.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
   DAY_CYCLE_MS,
@@ -15,7 +15,7 @@ import {
   normalizeDayPhase,
   sampleDayNight,
 } from './dayNightCycle.js';
-import { getWeatherProfile, weatherSkyLight } from './weather.js';
+import { sampleAutoWeather, weatherSkyLight } from './weather.js';
 
 const WEATHER_VISUAL_STEP_MS = 50;
 
@@ -34,13 +34,15 @@ export function createGameLoop(ctx, {
   // Presentation-only wall clock. Deriving phase from elapsed time lets a
   // backgrounded tab resume at the current point instead of replaying frames.
   const dayCycleStart = performance.now();
+  const weatherCycleStart = dayCycleStart;
+  ctx.weatherCycleStart = weatherCycleStart;
   let dayVisualBucket = 0;
   let weatherVisualBucket = 0;
+  let weatherMixBucket = Math.round((ctx.weatherMix ?? 0) * 16);
   ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
   ctx.dayVisualKey = 0;
   ctx.weatherVisualKey = 0;
-  const animatesRain = () =>
-    getWeatherProfile(ctx.weatherId).precipitation?.kind === 'rain';
+  const animatesRain = () => (ctx.weatherMix ?? 0) > 0.02;
 
   const applyDayPhase = (phase, visualKey) => {
     ctx.dayNight = sampleDayNight(phase);
@@ -49,7 +51,9 @@ export function createGameLoop(ctx, {
       // Always resend the sampled value. This keeps rapid manual changes and
       // Auto resumption from trusting a stale JS cache; the C++ presenter still
       // compares against its last value and skips redundant lighting solves.
-      const skyLight = weatherSkyLight(ctx.dayNight.skyLight, ctx.weatherId);
+      const skyLight = weatherSkyLight(
+        ctx.dayNight.skyLight, WEATHER.RAIN, ctx.weatherMix ?? 0,
+      );
       ctx.engine.setSkyLight(skyLight);
       ctx.appliedSkyLight = skyLight;
     }
@@ -66,11 +70,72 @@ export function createGameLoop(ctx, {
   };
 
   const updateWeatherVisual = (now) => {
-    if (!animatesRain() || ctx.testPaused || ctx.reduced) return false;
+    if (ctx.testPaused || ctx.reduced) return false;
+    let changed = false;
+    // Multiplayer servers own their weather; a connected client keeps its
+    // mount-time weather instead of running this local schedule.
+    if (ctx.weatherMode === 'auto' && !ctx.netClientReady()) {
+      // The cycle is a pure function of elapsed wall clock (like day/night).
+      // The discrete kind flip is mirrored to the authority via a journaled
+      // weather message; everything visual interpolates on the mix.
+      const sample = sampleAutoWeather(now - weatherCycleStart);
+      const bucket = Math.round(sample.mix * 16);
+      if (bucket !== weatherMixBucket) {
+        weatherMixBucket = bucket;
+        ctx.weatherMix = bucket / 16;
+        changed = true;
+        if (ctx.engine) {
+          const skyLight = weatherSkyLight(
+            ctx.dayNight.skyLight, WEATHER.RAIN, ctx.weatherMix,
+          );
+          ctx.engine.setSkyLight(skyLight);
+          ctx.appliedSkyLight = skyLight;
+        }
+      }
+      if (sample.id !== ctx.weatherId) {
+        ctx.weatherId = sample.id;
+        changed = true;
+        ctx.worldWorker?.sendWeather?.(sample.id);
+        ctx.engine?.setWeather(sample.id);
+      }
+    }
+    if (!animatesRain()) return changed;
     const bucket = Math.floor(Math.max(0, now) / WEATHER_VISUAL_STEP_MS);
-    if (bucket === weatherVisualBucket) return false;
+    if (bucket === weatherVisualBucket) return changed;
     weatherVisualBucket = bucket;
     ctx.weatherVisualKey = bucket;
+    return true;
+  };
+
+  const setWeatherOverride = (id) => {
+    // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
+    if (id === null || id === undefined) {
+      ctx.weatherMode = 'auto';
+      const sample = sampleAutoWeather(performance.now() - weatherCycleStart);
+      weatherMixBucket = Math.round(sample.mix * 16);
+      ctx.weatherMix = weatherMixBucket / 16;
+      if (sample.id !== ctx.weatherId) {
+        ctx.weatherId = sample.id;
+        if (!ctx.netClientReady()) ctx.worldWorker?.sendWeather?.(sample.id);
+      }
+    } else {
+      const next = id === WEATHER.RAIN ? WEATHER.RAIN : WEATHER.CLEAR;
+      ctx.weatherMode = 'pin';
+      weatherMixBucket = next === WEATHER.RAIN ? 16 : 0;
+      ctx.weatherMix = weatherMixBucket / 16;
+      if (ctx.weatherId !== next && !ctx.netClientReady()) {
+        ctx.worldWorker?.sendWeather?.(next);
+      }
+      ctx.weatherId = next;
+    }
+    if (ctx.engine) {
+      ctx.engine.setWeather(ctx.weatherId);
+      const skyLight = weatherSkyLight(
+        ctx.dayNight.skyLight, WEATHER.RAIN, ctx.weatherMix,
+      );
+      ctx.engine.setSkyLight(skyLight);
+      ctx.appliedSkyLight = skyLight;
+    }
     return true;
   };
 
@@ -446,6 +511,13 @@ export function createGameLoop(ctx, {
     setDayPhase,
     clearDayPhase,
     getDayNight: () => ({ ...ctx.dayNight, cycleMs: DAY_CYCLE_MS, overridden: ctx.dayPhaseOverride !== null }),
+    setWeatherOverride,
+    getWeatherState: () => ({
+      id: ctx.weatherId,
+      mode: ctx.weatherMode,
+      overridden: ctx.weatherMode === 'pin',
+      rain: ctx.weatherId === WEATHER.RAIN,
+    }),
     setViewportPaused,
     start,
     stop,

@@ -10,6 +10,9 @@
  * @property {boolean} debugHitboxes
  * @property {number} planetId
  * @property {number} weatherId
+ * @property {'auto'|'pin'} weatherMode
+ * @property {number} weatherMix
+ * @property {number} weatherCycleStart
  * @property {number|undefined} gravityScale
  * @property {number} missionId
  * @property {Array<*>} missionLoadout

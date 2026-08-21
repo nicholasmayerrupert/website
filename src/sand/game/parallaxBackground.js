@@ -6,7 +6,7 @@ import {
   resolveWeatherId,
 } from './weather.js';
 import {
-  PLANET, PLANET_PRESENTATION, PLANET_PRESENTATION_BY_ID,
+  PLANET, PLANET_PRESENTATION, PLANET_PRESENTATION_BY_ID, WEATHER,
 } from '../wasmBridge/abi.generated.js';
 
 const PIXEL_SCALE = 4;
@@ -261,7 +261,11 @@ function drawCelestialBodies(ctx, w, horizon, viewportHeight, dayNight) {
 
 function drawCloud(ctx, x, y, size, color, variant, scale) {
   // Keep the block geometry on its logical grid while the complete cloud moves
-  // in backing-store-pixel steps.
+  // in backing-store-pixel steps. Returns the cloud's footprint so precipitation
+  // can fall from the cloud base instead of the top of the sky.
+  const baseAlpha = ctx.globalAlpha;
+  const originX = x;
+  const originY = y;
   ctx.save();
   ctx.translate(snapScreenPixel(x, scale), snapScreenPixel(y, scale));
   x = 0;
@@ -289,23 +293,27 @@ function drawCloud(ctx, x, y, size, color, variant, scale) {
   fillRect(ctx, x + size, y, size * 2, 1, highlight);
   fillRect(ctx, x + size * 3, y - size, size * 3, 1, highlight);
   fillRect(ctx, x + size * 6, y, size * 2, 1, highlight);
-  ctx.globalAlpha = 0.34;
+  ctx.globalAlpha = 0.34 * baseAlpha;
   fillRect(ctx, x + size * 2, y + size * 3, size * 5, 1, shadow);
-  ctx.globalAlpha = 1;
   ctx.restore();
+  return wide
+    ? { x0: originX + size, x1: originX + size * 11, yBase: originY + size * 3 }
+    : { x0: originX - size * 2, x1: originX + size * 8, yBase: originY + size * 3 };
 }
 
 export function cloudCycleOffset(phase, period) {
   return normalizeDayPhase(phase) * period * CLOUD_CYCLE_TILES;
 }
 
-function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, phase, scale) {
+function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, phase, scale, spans = null) {
   const drift = cloudCycleOffset(phase, period);
   const offX = camX * depth - w * 0.5 - drift;
   const offY = snapScreenPixel(backgroundDriftY(camY) * (1 + depth), scale);
   const start = Math.floor((offX - 40) / period) * period;
+  const whole = Math.floor(count);
+  const fraction = count - whole;
   for (let tile = start; tile < offX + w + period; tile += period) {
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < whole + (fraction > 0.01 ? 1 : 0); i++) {
       // The cloud field repeats after exactly four tiles, matching its travel
       // over a day so midnight joins dawn without a visible position jump.
       const tileIndex = Math.round(tile / period);
@@ -314,7 +322,11 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
-      drawCloud(ctx, x, y, size, color, rand01(seed + 12), scale);
+      // A fractional count fades the newest cloud in place instead of popping.
+      ctx.globalAlpha = i < whole ? 1 : fraction;
+      const span = drawCloud(ctx, x, y, size, color, rand01(seed + 12), scale);
+      ctx.globalAlpha = 1;
+      if (spans && (i < whole || fraction > 0.01)) spans.push(span);
     }
   }
 }
@@ -333,30 +345,50 @@ function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
 }
 
-function drawWeatherPrecipitation(ctx, w, horizon, visualKey, profile) {
+function drawWeatherPrecipitation(ctx, w, horizon, groundY, visualKey, profile, mix, cloudSpans) {
   const precipitation = profile.precipitation;
   if (precipitation?.kind !== 'rain' || horizon <= 0) return;
+  const intensity = Math.max(0, Math.min(1, mix));
+  if (intensity <= 0.02) return;
   const frame = weatherVisualFrame(visualKey);
   const spacing = Math.max(2, precipitation.spacing);
-  const count = Math.max(12, Math.ceil(w / spacing));
-  const spanX = Math.max(1, Math.ceil(w) + 16);
-  const spanY = Math.max(1, Math.ceil(horizon) + 12);
+  const fullCount = Math.max(12, Math.ceil(w / spacing));
+  const count = Math.max(1, Math.round(fullCount * intensity));
+  // Showers hang under the visible cloud bases and end at the parallaxing far
+  // ridge line, so the cloud-to-ground band keeps its height at any altitude.
+  // With no visible cloud footprint there is no rain on screen at all — never
+  // a full-canvas field that would render above the clouds.
+  const columns = [];
+  let columnsWidth = 0;
+  for (const span of cloudSpans ?? []) {
+    const width = span.x1 - span.x0;
+    if (width < 4 || groundY - span.yBase < 8) continue;
+    columns.push({ ...span, width });
+    columnsWidth += width;
+  }
+  if (columnsWidth <= 0) return;
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, w, horizon);
+  ctx.rect(0, 0, w, groundY);
   ctx.clip();
   ctx.fillStyle = precipitation.color;
-  ctx.globalAlpha = precipitation.opacity;
+  ctx.globalAlpha = precipitation.opacity * (0.35 + 0.65 * intensity);
   for (let i = 0; i < count; i++) {
     const seed = i * 1597 + 0x2d53;
     const speed = 3 + (hash(seed + 17) % 3);
     const wind = Math.floor(frame * (0.45 + rand01(seed + 23) * 0.25));
-    const x = positiveModulo(
-      Math.floor(rand01(seed) * spanX) + wind, spanX,
-    ) - 8;
-    const y = positiveModulo(
-      Math.floor(rand01(seed + 7) * spanY) + frame * speed, spanY,
+    let pick = rand01(seed) * columnsWidth;
+    let column = columns[columns.length - 1];
+    for (const candidate of columns) {
+      if (pick < candidate.width) { column = candidate; break; }
+      pick -= candidate.width;
+    }
+    const drift = (wind % (column.width + 8)) - 4;
+    const x = column.x0 + rand01(seed + 31) * column.width + drift;
+    const columnHeight = groundY - column.yBase;
+    const y = column.yBase + positiveModulo(
+      Math.floor(rand01(seed + 7) * columnHeight) + frame * speed, columnHeight,
     ) - 6;
     ctx.fillRect(x, y, 1, 3);
     ctx.fillRect(x + 1, y + 3, 1, 2);
@@ -764,15 +796,21 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     dayVisualKey = 0,
     weatherId = DEFAULT_WEATHER_ID,
     weatherVisualKey = 0,
+    // Callers that don't track the auto-cycle mix get the profile's own look.
+    weatherMix,
   } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
     const resolvedWeatherId = resolveWeatherId(weatherId);
+    const weatherMixBucket = Math.round(
+      Math.max(0, Math.min(1, weatherMix
+        ?? (resolvedWeatherId === WEATHER.RAIN ? 1 : 0))) * 16,
+    );
     const key = [
       canvas.width, canvas.height, qx, qy, s.toFixed(3), dayVisualKey,
-      resolvedWeatherId, weatherVisualKey,
+      resolvedWeatherId, weatherVisualKey, weatherMixBucket,
     ].join(':');
     if (key === lastKey) return;
     lastKey = key;
@@ -831,10 +869,13 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       return;
     }
-    const weather = getWeatherProfile(resolvedWeatherId);
+    // The rain profile owns every weather-driven visual; the continuous mix
+    // scales its tints, cloud counts, and precipitation so transitions fade.
+    const weather = getWeatherProfile(WEATHER.RAIN);
+    const mix = weatherMixBucket / 16;
     const basePalette = paletteForPhase(dayNight.phase);
     const palette = applyWeatherToPalette(
-      basePalette, resolvedWeatherId,
+      basePalette, WEATHER.RAIN, mix,
     );
     const altitude = skyAltitudeLayout(qy, h, horizon);
     const sky = ctx.createLinearGradient(
@@ -860,15 +901,21 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(ctx, w, skyHeight, h, dayNight);
+    const clearCounts = getWeatherProfile(WEATHER.CLEAR).cloudCounts;
+    const cloudCount = (layer) => mix <= 0
+      ? clearCounts[layer]
+      : clearCounts[layer]
+        + (weather.cloudCounts[layer] - clearCounts[layer]) * mix;
+    // The front (light) layer's footprints anchor the precipitation columns.
+    const cloudSpans = mix > 0.02 ? [] : null;
     drawCloudLayer(
       ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark,
-      weather.cloudCounts[0], 170, dayNight.phase, s,
+      cloudCount(0), 170, dayNight.phase, s,
     );
     drawCloudLayer(
       ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight,
-      weather.cloudCounts[1], 210, dayNight.phase, s,
+      cloudCount(1), 210, dayNight.phase, s, cloudSpans,
     );
-    drawWeatherPrecipitation(ctx, w, skyHeight, weatherVisualKey, weather);
     const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, basePalette.ridgeFar, 3.2, basePalette.skyLow, 2, s);
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, basePalette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, basePalette.ridgeMid, 7.9, basePalette.skyLow, 3, s);
@@ -878,6 +925,19 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, basePalette.ridgeDeep, 18.5, basePalette.skyLow, 2, s);
+    // Rain renders in front of the whole backdrop and ends just past the far
+    // ridge profile (base + amplitude). That line shifts with vertical camera
+    // parallax at nearly the same rate as the cloud band (1.18 vs 1.14), so the
+    // cloud-to-ground rain band keeps its height at any altitude and stays
+    // below the clouds when the player flies above them.
+    const weatherGroundY = Math.max(
+      skyHeight,
+      horizon + 34 - backgroundDriftY(qy) * (1 + FAR_RIDGE_DEPTH),
+    );
+    drawWeatherPrecipitation(
+      ctx, w, skyHeight, weatherGroundY, weatherVisualKey, weather, mix,
+      cloudSpans,
+    );
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

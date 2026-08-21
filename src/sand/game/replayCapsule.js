@@ -14,7 +14,7 @@ const LEGACY_REPLAY_VERSION = 2;
 const LEGACY_REPLAY_PREFIX = 'SAND-REPLAY-2:';
 
 export const REPLAY_EVENT_TYPES = new Set([
-  'control', 'input', 'intent', 'edge', 'config', 'resize',
+  'control', 'input', 'intent', 'edge', 'config', 'resize', 'weather',
   'test-paint-disc', 'test-seed-reaction', 'test-creature-runtime',
   'test-natural-spawn', 'test-step-actors',
 ]);
@@ -36,6 +36,8 @@ const OP = Object.freeze({
   TEST_CREATURE_RUNTIME: 8,
   TEST_NATURAL_SPAWN: 9,
   TEST_STEP_ACTORS: 10,
+  // Appended so previously packed capsules keep decoding.
+  WEATHER: 11,
 });
 
 const INTENT = Object.freeze({
@@ -191,6 +193,8 @@ export function normalizeReplayMessage(data, survival = false) {
       }
       return resize;
     }
+    case 'weather':
+      return { type: 'weather', weatherId: data.weatherId | 0 };
     case 'test-paint-disc':
       return {
         type: data.type, material: data.material | 0, radius: data.radius | 0,
@@ -237,6 +241,7 @@ function validateReplayMessage(message, survival, version) {
       && normalized.cols <= ENGINE_MAX_DIMENSION && normalized.rows <= ENGINE_MAX_DIMENSION
       && normalized.cols * normalized.rows <= ENGINE_MAX_CELLS;
   }
+  if (message.type === 'weather') return isWeatherId(normalized.weatherId);
   return true;
 }
 
@@ -425,6 +430,7 @@ function packReplayEvents(capsule) {
         );
         break;
       case 'config': row.push(OP.CONFIG, ...packConfig(message)); break;
+      case 'weather': row.push(OP.WEATHER, message.weatherId); break;
       case 'resize':
         row.push(
           OP.RESIZE, message.cols, message.rows,
@@ -482,6 +488,7 @@ function unpackReplayEvents(rows) {
         };
         break;
       case OP.CONFIG: message = unpackConfig(row); break;
+      case OP.WEATHER: message = { type: 'weather', weatherId: row[2] }; break;
       case OP.RESIZE:
         if (row.length !== 6) throw new Error('Replay resize payload is invalid.');
         message = { type: 'resize', cols: row[2], rows: row[3] };

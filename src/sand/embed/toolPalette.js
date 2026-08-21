@@ -216,10 +216,10 @@ const STYLE = `
 .sg-time.dusk .sg-time-icon { background: linear-gradient(#cf795d 48%, #472c4c 52%); box-shadow: 0 0 7px rgba(207,121,93,.45); }
 .sg-time.night .sg-time-icon { background: #f4fbff; box-shadow: 0 0 7px rgba(223,244,255,.55); }
 .sg-time-value { min-width: 0; flex: 1 1 auto; white-space: nowrap; color: #f3f4f6; font-variant-numeric: tabular-nums; }
-.sg-time-auto { flex: none; border: 0; border-radius: 4px; padding: 2px 5px; font: inherit; color: #d1d5db;
+.sg-time-auto, .sg-time-rain { flex: none; border: 0; border-radius: 4px; padding: 2px 5px; font: inherit; color: #d1d5db;
   background: rgba(255,255,255,.08); cursor: pointer; touch-action: manipulation; }
-.sg-time-auto:hover { background: rgba(255,255,255,.18); color: #fff; }
-.sg-time-auto.active { background: rgba(255,255,255,.78); color: #111827; }
+.sg-time-auto:hover, .sg-time-rain:hover { background: rgba(255,255,255,.18); color: #fff; }
+.sg-time-auto.active, .sg-time-rain.active { background: rgba(255,255,255,.78); color: #111827; }
 .sg-time-range { width: 100%; height: 14px; margin: 0; padding: 0; appearance: none; -webkit-appearance: none;
   background: transparent; cursor: pointer; touch-action: pan-x; }
 .sg-time-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px;
@@ -326,7 +326,7 @@ const formatTime = (phase) => {
   return `${hour12}:${minute} ${hour24 < 12 ? 'AM' : 'PM'}`;
 };
 
-export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, getTimeState, showDrawToggle = true, requireDrawMode = showDrawToggle } = {}) {
+export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, getTimeState, onSetRain, getRainState, showDrawToggle = true, requireDrawMode = showDrawToggle } = {}) {
   injectStyleOnce(root, 'data-sand-palette', STYLE);
 
   const entries = buildEntries();
@@ -342,6 +342,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let nameMotionFrame = 0;
   let dropdownRemoveTimer = 0;
   let timeAuto = true;
+  let rainOn = false;
   let timePhase = DEFAULT_DAY_PHASE;
   let timeApplyFrame = 0;
   let lastAppliedTimePhase = NaN;
@@ -492,6 +493,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   timeAutoButton.type = 'button';
   timeAutoButton.className = 'sg-time-auto active';
   timeAutoButton.textContent = 'Auto';
+  const timeRainButton = document.createElement('button');
+  timeRainButton.type = 'button';
+  timeRainButton.className = 'sg-time-rain';
+  timeRainButton.textContent = 'Rain';
   const timeRange = document.createElement('input');
   timeRange.type = 'range';
   timeRange.className = 'sg-time-range';
@@ -499,7 +504,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   timeRange.max = '0.999';
   timeRange.step = '0.001';
   timeRange.setAttribute('aria-label', 'Time of day');
-  timeHead.append(timeIcon, timeValue, timeAutoButton);
+  timeHead.append(timeIcon, timeValue, timeRainButton, timeAutoButton);
   timeControl.append(timeHead, timeRange);
 
   const flushTimePhase = () => {
@@ -527,6 +532,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     timeAuto = true;
     lastAppliedTimePhase = NaN;
     onSetTime?.(null);
+    syncTimeState();
+  });
+  timeRainButton.addEventListener('click', () => {
+    onSetRain?.(!rainOn);
     syncTimeState();
   });
   col.appendChild(timeControl);
@@ -601,6 +610,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     timeRange.setAttribute('aria-valuetext', label);
     timeAutoButton.className = `sg-time-auto${timeAuto ? ' active' : ''}`;
     timeAutoButton.title = timeAuto ? 'Following the automatic ten-minute cycle' : 'Resume the automatic ten-minute cycle';
+    timeRainButton.className = `sg-time-rain${rainOn ? ' active' : ''}`;
+    timeRainButton.title = rainOn
+      ? 'Rain is on — click to turn it off'
+      : 'Turn on rain';
   }
 
   function syncTimeState() {
@@ -609,6 +622,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     if (!state || !Number.isFinite(state.phase)) return;
     timeAuto = !state.overridden;
     timePhase = normalizeTimePhase(state.phase);
+    rainOn = !!getRainState?.();
     renderTimeState();
   }
 

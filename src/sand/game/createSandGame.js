@@ -15,10 +15,17 @@ import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
 import { createReplayPanel } from './replayPanel.js';
-import { CREATIVE_KIND, CREATURE, MISSION } from '../wasmBridge/abi.generated.js';
+import {
+  CREATIVE_KIND, CREATURE, MISSION, WEATHER,
+} from '../wasmBridge/abi.generated.js';
 import { MAT } from '../materials.js';
 import { resolvePlanetId } from './planetSelection.js';
-import { DEFAULT_WEATHER_ID, resolveWeatherIdForPlanet } from './weather.js';
+import {
+  DEFAULT_WEATHER_ID,
+  resolveWeatherIdForPlanet,
+  resolveWeatherMode,
+  sampleAutoWeather,
+} from './weather.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -30,6 +37,8 @@ export function createSandGame(container, opts = {}) {
     // place/erase anywhere with no reach limit, no character.
     mode = 'survival',
     planet = 'earth',
+    // Pinned clear by default; 'auto' opts into the clear/rain cycle and
+    // 'rain' pins rain. The palette's Rain button overrides at runtime.
     weather = DEFAULT_WEATHER_ID,
     gravityScale,
     mission = null,
@@ -52,7 +61,16 @@ export function createSandGame(container, opts = {}) {
   } = opts;
   const survival = mode === 'survival';
   const planetId = resolvePlanetId(planet);
-  const weatherId = resolveWeatherIdForPlanet(weather, planetId);
+  const weatherMode = resolveWeatherMode(weather);
+  // Auto cycling needs a planet whose weather can include rain; elsewhere the
+  // session stays pinned clear. The mix is 1 only for a pinned rain profile.
+  const autoWeather = weatherMode === 'auto'
+    && resolveWeatherIdForPlanet(WEATHER.RAIN, planetId) === WEATHER.RAIN;
+  const pinnedWeatherId = weatherMode === 'pin'
+    ? resolveWeatherIdForPlanet(weather, planetId)
+    : DEFAULT_WEATHER_ID;
+  const weatherId = autoWeather ? sampleAutoWeather(0).id : pinnedWeatherId;
+  const weatherMix = autoWeather ? 0 : (weatherId === WEATHER.RAIN ? 1 : 0);
   const resolvedGravityScale = Number.isFinite(gravityScale)
     ? gravityScale
     : undefined;
@@ -87,7 +105,8 @@ export function createSandGame(container, opts = {}) {
   /** @type {import('./runtimeContext.js').SandRuntimeContext} */
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
-    planetId, weatherId, gravityScale: resolvedGravityScale, missionId,
+    planetId, weatherId, weatherMode: autoWeather ? 'auto' : 'pin', weatherMix,
+    gravityScale: resolvedGravityScale, missionId,
     missionLoadout,
     // One seed per mount so resizing regenerates the *same* infinite world.
     worldSeed: Number.isFinite(worldSeed)
@@ -126,6 +145,9 @@ export function createSandGame(container, opts = {}) {
     weatherVisualKey: 0,
     dayPhaseOverride: null,
     appliedSkyLight: -1,
+    // Auto weather cycle state (gameLoop). weatherMix in [0,1] continuously
+    // scales every rain visual; weatherId is the discrete authority kind.
+    weatherCycleStart: 0,
 
     // mode + player. Tool name is kept only so it can be re-sent to a
     // recreated engine; all tool policy lives in C++.
@@ -549,6 +571,9 @@ export function createSandGame(container, opts = {}) {
     setDayPhase(phase) { loop.setDayPhase(phase); loop.render(false); },
     clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
+    // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
+    setWeatherOverride(id) { loop.setWeatherOverride(id); loop.render(false); },
+    getWeatherState() { return loop.getWeatherState(); },
     setViewportActive(active) {
       ctx.viewportActive = !!active;
       ctx.net?.setPaused(!ctx.viewportActive);

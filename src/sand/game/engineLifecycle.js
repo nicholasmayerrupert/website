@@ -15,6 +15,7 @@ import {
 } from './viewportSizing.js';
 import { NIGHT_SKY_LIGHT } from './dayNightCycle.js';
 import { weatherSkyLight } from './weather.js';
+import { WEATHER } from '../wasmBridge/abi.generated.js';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createEngineLifecycle(ctx, { onLayoutChange }) {
@@ -40,6 +41,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       dayVisualKey: ctx.dayVisualKey,
       weatherId: ctx.weatherId,
       weatherVisualKey: ctx.weatherVisualKey,
+      weatherMix: ctx.weatherMix ?? 0,
     };
   };
 
@@ -67,7 +69,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
         : ctx.maxTextureSize;
       const skyLight = weatherSkyLight(
         ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT,
-        ctx.weatherId,
+        WEATHER.RAIN,
+        ctx.weatherMix ?? 0,
       );
       e.glResize(canvas.width, canvas.height);
       e.setWeather(ctx.weatherId);
@@ -221,7 +224,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       ctx.localPlayerId = 0;
       const skyLight = weatherSkyLight(
         ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT,
-        ctx.weatherId,
+        WEATHER.RAIN,
+        ctx.weatherMix ?? 0,
       );
       ctx.engine.setWeather(ctx.weatherId);
       ctx.engine.setSkyLight(skyLight);

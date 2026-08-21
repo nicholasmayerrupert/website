@@ -46,6 +46,11 @@ class Renderer {
   std::vector<RenderLightSource> dynamicLights;
   // Packed [x:k] entries avoid dividing k by cols for every flood-fill pop.
   std::vector<uint64_t> lightQueue;   // render-only flood-fill scratch
+  // Value-bucketed flood frontier (Dial's algorithm). Processing values in
+  // descending order finalizes each cell on its first visit, so propagation
+  // never re-relaxes an already-lit neighbour. Buckets keep capacity across
+  // solves; only the projection flood still uses the flat lightQueue.
+  std::vector<uint64_t> lightBuckets[256];
   // Snapshot storage used by exact lighting patches. A patch solves with a
   // propagation margin, keeps its exact inner rect, then restores the margin.
   std::vector<uint8_t> lightPatchScratch;

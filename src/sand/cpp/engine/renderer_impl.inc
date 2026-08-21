@@ -153,37 +153,46 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
   else {
     for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->light.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, LIGHT_AMBIENT); }
   }
-  lightQueue.clear();
-  lightQueue.reserve((size_t)n / 4);
 
   computeDirectSky(lay, rx0, ry0, rx1, ry1);
 
   const uint8_t* g = lay->grid;
-  // Seed sky and emissive cells by rows, then concatenate in the original
-  // row-major order before the ordered flood.
-  for (int y = ry0; y <= ry1; y++) {
-    int rb = y * E.cols;
-    for (int x = rx0; x <= rx1; x++) {
-      int k = rb + x;
-      if (lay->skyLight[k] > LIGHT_AMBIENT) {
-        uint8_t v = lay->skyLight[k];
-        if (v > lay->light[k]) {
-          lay->light[k] = v;
-          lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+  // One fused source pass. At each cell: fold material emission into skyLight
+  // (solve scratch — computeDirectSky just rewrote it), then seed from that
+  // row-major visit. Left/up neighbours are already folded; right/down are
+  // still pre-fold sky, which UNDERSTATES their source, so a skip decided
+  // against them remains valid (a false boundary only adds one harmless push).
+  //
+  // Seeding rule: a cell whose four in-region neighbours all carry an equal or
+  // stronger source can never improve anything — every path out of it steps
+  // through a neighbour whose own seed is at least as strong, so that
+  // neighbour's flood already covers it. Interior cells of open sky and
+  // emissive pools are skipped entirely; they still receive their own value.
+  {
+    const int rowTop = (ry0 + 1) * E.cols, rowBottom = ry1 * E.cols;
+    int wx = lay->worldOffsetX + rx0;
+    int wy = lay->worldOffsetY + ry0;
+    for (int y = ry0; y <= ry1; y++, wy++) {
+      int rb = y * E.cols;
+      for (int x = rx0; x <= rx1; x++, wx++) {
+        int k = rb + x;
+        uint8_t e = emissionForCell(g[k], wx, wy);
+        if (e) {
+          uint8_t s = lay->skyLight[k];
+          if (e > s) lay->skyLight[k] = e;
         }
+        uint8_t v = lay->skyLight[k];
+        if (v <= LIGHT_AMBIENT) continue;
+        if (v > lay->light[k]) lay->light[k] = v;
+        bool boundary =
+          (x > rx0 && lay->skyLight[k - 1] < v)
+          || (x < rx1 && lay->skyLight[k + 1] < v)
+          || (k >= rowTop && lay->skyLight[k - E.cols] < v)
+          || (k < rowBottom && lay->skyLight[k + E.cols] < v);
+        if (!boundary) continue;
+        lightBuckets[v].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
       }
-    }
-  }
-  // Then let sky and emissive sources spill into liquids/solids with material loss.
-  for (int y = ry0; y <= ry1; y++) {
-    int rb = y * E.cols, wy = lay->worldOffsetY + y;
-    for (int x = rx0; x <= rx1; x++) {
-      int k = rb + x;
-      uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
-      if (e && e > lay->light[k]) {
-        lay->light[k] = e;
-        lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
-      }
+      wx = lay->worldOffsetX + rx0;
     }
   }
   // Players/projectiles occupy the foreground actor plane. Seed their light
@@ -197,27 +206,38 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
       int k = source.y * E.cols + source.x;
       if (source.intensity <= lay->light[k]) continue;
       lay->light[k] = source.intensity;
-      lightQueue.push_back(((uint64_t)(uint32_t)source.x << 32) | (uint32_t)k);
+      lightBuckets[source.intensity].push_back(((uint64_t)(uint32_t)source.x << 32) | (uint32_t)k);
     }
   }
 
   // Flood clamped to the region: the ring underestimates (its far sources are
   // cut off), which cannot change any value inside the exact window (their
   // real contribution there is <= ambient by the distance argument above).
-  for (size_t qi = 0; qi < lightQueue.size(); qi++) {
-    uint64_t q = lightQueue[qi];
-    int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
-    int cur = lay->light[k];
-    auto pushNeighbour = [&](int nk, int nx) {
-      int nl = cur - lightLossFor(g[nk]);
-      if (nl <= (int)lay->light[nk]) return;
-      lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
-      lightQueue.push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
-    };
-    if (x > rx0) pushNeighbour(k - 1, x - 1);
-    if (x < rx1) pushNeighbour(k + 1, x + 1);
-    if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
-    if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+  //
+  // The frontier is bucketed by light value and processed in descending order
+  // (Dial's algorithm). Every loss is >= 1, so pushes always land in a strictly
+  // lower bucket: when a cell pops, its value is final, neighbours are never
+  // re-relaxed, and stale duplicate entries reject on one comparison.
+  for (int v = 255; v > LIGHT_AMBIENT; v--) {
+    std::vector<uint64_t>& bucket = lightBuckets[v];
+    if (bucket.empty()) continue;
+    for (size_t qi = 0; qi < bucket.size(); qi++) {
+      uint64_t q = bucket[qi];
+      int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
+      int cur = v;
+      if ((int)lay->light[k] > cur) continue; // stale duplicate entry
+      auto pushNeighbour = [&](int nk, int nx) {
+        int nl = cur - lightLossFor(g[nk]);
+        if (nl <= (int)lay->light[nk]) return;
+        lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
+        lightBuckets[nl].push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
+      };
+      if (x > rx0) pushNeighbour(k - 1, x - 1);
+      if (x < rx1) pushNeighbour(k + 1, x + 1);
+      if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
+      if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+    }
+    bucket.clear();
   }
 }
 
@@ -413,12 +433,19 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
     int rowBase = y * E.cols;
     int wy = woY + y;
     const uint8_t* noiseRow = &renderNoise[(wy & 63) << 6];
-    int wx = woX + x0;
-    for (int x = x0; x <= x1; x++, wx++) {
+    int x = x0;
+    while (x <= x1) {
       int k = rowBase + x;
       uint8_t m = g[k];
-      // EMPTY is the dominant cell in open sky / caves — skip noise/light work.
-      if (m == EMPTY) { p[k] = 0; continue; }
+      // EMPTY is the dominant cell in open sky / caves. Batch consecutive
+      // empties into one zero fill instead of a branch+store per cell.
+      if (m == EMPTY) {
+        int runStart = x;
+        do { x++; } while (x <= x1 && g[rowBase + x] == EMPTY);
+        std::fill(p + runStart + rowBase, p + x + rowBase, 0u);
+        continue;
+      }
+      int wx = woX + x;
       uint8_t animKind = MAT_RENDER_ANIM[m];
       hasAnimated = hasAnimated || animKind != RA_NONE;
       uint8_t shade = noiseRow[wx & 63];
@@ -479,6 +506,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
       c = (c & 0x00ffffffu) | alphaMask;
       p[k] = c;
+      x++;
     }
   }
   return hasAnimated;

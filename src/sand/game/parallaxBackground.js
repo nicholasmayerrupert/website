@@ -345,32 +345,37 @@ function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
 }
 
-function drawWeatherPrecipitation(ctx, w, horizon, groundY, visualKey, profile, mix, cloudSpans) {
+function drawWeatherPrecipitation(ctx, w, h, visualKey, profile, mix, cloudSpans) {
   const precipitation = profile.precipitation;
-  if (precipitation?.kind !== 'rain' || horizon <= 0) return;
+  if (precipitation?.kind !== 'rain') return;
   const intensity = Math.max(0, Math.min(1, mix));
   if (intensity <= 0.02) return;
   const frame = weatherVisualFrame(visualKey);
   const spacing = Math.max(2, precipitation.spacing);
   const fullCount = Math.max(12, Math.ceil(w / spacing));
   const count = Math.max(1, Math.round(fullCount * intensity));
-  // Showers hang under the visible cloud bases and end at the parallaxing far
-  // ridge line, so the cloud-to-ground band keeps its height at any altitude.
-  // With no visible cloud footprint there is no rain on screen at all — never
-  // a full-canvas field that would render above the clouds.
+  // Showers hang under the visible cloud bases and keep falling through the
+  // rest of the backdrop; the scenery layers and world terrain painted after
+  // this occlude the stream, so drops never appear in front of hills or
+  // structures. With no visible cloud footprint there is no rain at all.
   const columns = [];
   let columnsWidth = 0;
   for (const span of cloudSpans ?? []) {
     const width = span.x1 - span.x0;
-    if (width < 4 || groundY - span.yBase < 8) continue;
+    if (width < 4 || h - span.yBase < 12) continue;
     columns.push({ ...span, width });
     columnsWidth += width;
   }
   if (columnsWidth <= 0) return;
 
+  // Each drop cycles over one full viewport of travel anchored to its cloud
+  // base. Nothing here depends on camera altitude, so vertical pans translate
+  // the field rigidly instead of compressing it or reshuffling drop phases
+  // into apparent extra speed and density.
+  const fallSpan = h;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, w, groundY);
+  ctx.rect(0, 0, w, h);
   ctx.clip();
   ctx.fillStyle = precipitation.color;
   ctx.globalAlpha = precipitation.opacity * (0.35 + 0.65 * intensity);
@@ -386,10 +391,9 @@ function drawWeatherPrecipitation(ctx, w, horizon, groundY, visualKey, profile, 
     }
     const drift = (wind % (column.width + 8)) - 4;
     const x = column.x0 + rand01(seed + 31) * column.width + drift;
-    const columnHeight = groundY - column.yBase;
-    const y = column.yBase + positiveModulo(
-      Math.floor(rand01(seed + 7) * columnHeight) + frame * speed, columnHeight,
-    ) - 6;
+    const y = column.yBase - 6 + positiveModulo(
+      Math.floor(rand01(seed + 7) * fallSpan) + frame * speed, fallSpan,
+    );
     ctx.fillRect(x, y, 1, 3);
     ctx.fillRect(x + 1, y + 3, 1, 2);
   }
@@ -916,6 +920,11 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight,
       cloudCount(1), 210, dayNight.phase, s, cloudSpans,
     );
+    // Precipitation paints after the clouds and before every scenery layer,
+    // so ridges, lodges, forest, and the world terrain all occlude it.
+    drawWeatherPrecipitation(
+      ctx, w, h, weatherVisualKey, weather, mix, cloudSpans,
+    );
     const farRidge = drawRidge(ctx, w, h, qx, qy, FAR_RIDGE_DEPTH, horizon + 17, 20, basePalette.ridgeFar, 3.2, basePalette.skyLow, 2, s);
     drawSnowCaps(ctx, farRidge, horizon + 17, 20, basePalette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, basePalette.ridgeMid, 7.9, basePalette.skyLow, 3, s);
@@ -925,19 +934,6 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, basePalette.ridgeDeep, 18.5, basePalette.skyLow, 2, s);
-    // Rain renders in front of the whole backdrop and ends just past the far
-    // ridge profile (base + amplitude). That line shifts with vertical camera
-    // parallax at nearly the same rate as the cloud band (1.18 vs 1.14), so the
-    // cloud-to-ground rain band keeps its height at any altitude and stays
-    // below the clouds when the player flies above them.
-    const weatherGroundY = Math.max(
-      skyHeight,
-      horizon + 34 - backgroundDriftY(qy) * (1 + FAR_RIDGE_DEPTH),
-    );
-    drawWeatherPrecipitation(
-      ctx, w, skyHeight, weatherGroundY, weatherVisualKey, weather, mix,
-      cloudSpans,
-    );
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

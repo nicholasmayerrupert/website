@@ -4,6 +4,18 @@ The repository uses Emscripten 6.0.0 from the official `emsdk` for both C++
 engines. The pinned version is stored in `emscripten-version.txt`, and both
 build commands reject a different active version.
 
+The build resolves `emcc` from `$EMSDK/upstream/emscripten`, then `PATH`, then
+a checkout at `~/emsdk`, and uses the first candidate reporting the pinned
+version. Activation is per shell session; a mismatched or broken `emcc` on
+`PATH` does not block the build.
+
+On this machine the pinned emsdk is already installed at `~/emsdk`, so
+activating it is enough:
+
+```sh
+source ~/emsdk/emsdk_env.sh
+```
+
 The generated JavaScript and WebAssembly artifacts are committed. Ordinary
 development, site builds, and deployments do not require Emscripten.
 

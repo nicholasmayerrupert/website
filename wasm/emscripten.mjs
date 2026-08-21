@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import {
-  existsSync, readFileSync, statSync, writeFileSync,
+  existsSync, readFileSync, readdirSync, statSync, writeFileSync,
 } from 'node:fs';
-import { delimiter, dirname, extname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, delimiter, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -16,30 +17,56 @@ const envValue = (environment, name) => {
   return key ? environment[key] : '';
 };
 
-export function commandPath(name, environment = process.env) {
-  if (name.includes('/') || name.includes('\\'))
-    return existsSync(name) ? resolve(name) : null;
-
+const resolveInDirectory = (directory, name, environment) => {
   const extensions = process.platform === 'win32'
     ? [...new Set([
       ...(envValue(environment, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD').split(';'),
       '.PY',
     ])]
     : [''];
-  for (const entry of envValue(environment, 'PATH').split(delimiter)) {
-    const directory = entry.replace(/^"|"$/g, '');
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const candidate = join(directory, `${name}${extension}`);
-      try {
-        if (statSync(candidate).isFile()) return candidate;
-      } catch {
-        // Continue through PATH.
-      }
+  for (const extension of extensions) {
+    const candidate = join(directory, `${name}${extension}`);
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Continue through the directory's extensions.
     }
   }
   return null;
+};
+
+export function commandPath(name, environment = process.env) {
+  if (name.includes('/') || name.includes('\\'))
+    return existsSync(name) ? resolve(name) : null;
+
+  for (const entry of envValue(environment, 'PATH').split(delimiter)) {
+    const directory = entry.replace(/^"|"$/g, '');
+    if (!directory) continue;
+    const found = resolveInDirectory(directory, name, environment);
+    if (found) return found;
+  }
+  return null;
 }
+
+// emcc resolution order: $EMSDK/upstream/emscripten, then PATH entries in
+// order, then a checkout at ~/emsdk. Earlier candidates win only when they
+// report the pinned version.
+const emccCandidatePaths = (environment) => {
+  const candidates = [];
+  const add = (path) => {
+    if (path && !candidates.includes(path)) candidates.push(path);
+  };
+  const emsdkRoot = envValue(environment, 'EMSDK');
+  if (emsdkRoot)
+    add(resolveInDirectory(join(emsdkRoot, 'upstream', 'emscripten'), 'emcc', environment));
+  for (const entry of envValue(environment, 'PATH').split(delimiter)) {
+    const directory = entry.replace(/^"|"$/g, '');
+    if (directory)
+      add(resolveInDirectory(directory, 'emcc', environment));
+  }
+  add(resolveInDirectory(join(homedir(), 'emsdk', 'upstream', 'emscripten'), 'emcc', environment));
+  return candidates;
+};
 
 const invocation = (command, args, environment) => {
   const executable = commandPath(command, environment);
@@ -88,21 +115,88 @@ export function run(command, args, {
   return capture ? result.stdout.trim() : '';
 }
 
+const probeEmcc = (emccPath, environment) => {
+  let prepared;
+  try {
+    prepared = invocation(emccPath, ['--version'], environment);
+  } catch (error) {
+    return { emccPath, error: error.message };
+  }
+
+  const result = spawnSync(prepared.executable, prepared.args, {
+    encoding: 'utf8',
+    env: environment,
+  });
+  if (result.error)
+    return { emccPath, error: result.error.message };
+  if (result.status !== 0) {
+    const detail = (result.stderr || `exit code ${result.status}`).trim().split(/\r?\n/)[0];
+    return { emccPath, error: detail };
+  }
+  const versionLine = (result.stdout || '').split(/\r?\n/)[0].trim();
+  return {
+    emccPath,
+    versionLine,
+    version: versionLine.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? '',
+  };
+};
+
+// An unactivated emsdk checkout ships a working emcc, but its launcher runs
+// `python3` from PATH. Prepend the SDK's bundled Python so the checkout works
+// without `emsdk_env.sh`.
+const emsdkEnvironmentFor = (emccPath, environment) => {
+  const cutoff = emccPath.lastIndexOf(join('upstream', 'emscripten'));
+  if (cutoff < 0) return environment;
+  const pythonRoot = join(emccPath.slice(0, cutoff), 'python');
+  let versions;
+  try {
+    versions = readdirSync(pythonRoot);
+  } catch {
+    return environment;
+  }
+  const pythonName = process.platform === 'win32' ? 'python.exe' : 'python3';
+  for (const version of versions) {
+    for (const bin of [join(pythonRoot, version, 'bin'), join(pythonRoot, version)]) {
+      if (!existsSync(join(bin, pythonName))) continue;
+      return {
+        ...environment,
+        PATH: `${bin}${delimiter}${envValue(environment, 'PATH')}`,
+      };
+    }
+  }
+  return environment;
+};
+
 export function requireEmscripten() {
-  const emcc = commandPath('emcc');
-  const emxx = commandPath('em++');
-  if (!emcc || !emxx) {
-    console.error(`Emscripten ${emscriptenVersion} is not active. Follow wasm/README.md.`);
+  const candidates = emccCandidatePaths(process.env);
+  if (!candidates.length) {
+    console.error(`Emscripten ${emscriptenVersion} was not found. Install the pinned emsdk (see wasm/README.md), then set EMSDK to its path or activate it in this shell (source <emsdk>/emsdk_env.sh).`);
     process.exit(1);
   }
 
-  const versionLine = run(emcc, ['--version'], { capture: true }).split(/\r?\n/)[0];
-  const actualVersion = versionLine.match(/\b\d+\.\d+\.\d+\b/)?.[0];
-  if (actualVersion !== emscriptenVersion) {
-    console.error(`Expected Emscripten ${emscriptenVersion}, found ${actualVersion || versionLine}. Follow wasm/README.md.`);
-    process.exit(1);
+  const probes = [];
+  for (const emccPath of candidates) {
+    const environment = emsdkEnvironmentFor(emccPath, process.env);
+    const probe = probeEmcc(emccPath, environment);
+    if (probe.version !== emscriptenVersion) {
+      probes.push(probe);
+      continue;
+    }
+    const suffix = basename(emccPath).slice('emcc'.length);
+    const emxx = join(dirname(emccPath), `em++${suffix}`);
+    return {
+      emcc: emccPath,
+      emxx,
+      versionLine: probe.versionLine,
+      environment,
+    };
   }
-  return { emcc, emxx, versionLine };
+
+  console.error(`No Emscripten ${emscriptenVersion} found on this machine. Probed, in order:`);
+  for (const probe of probes)
+    console.error(`  ${probe.emccPath}: ${probe.error ? `unusable (${probe.error})` : probe.versionLine}`);
+  console.error('Set EMSDK to a pinned emsdk checkout or activate it in this shell (source <emsdk>/emsdk_env.sh). See wasm/README.md.');
+  process.exit(1);
 }
 
 export function normalizeTextFile(path) {

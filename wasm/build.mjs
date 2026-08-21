@@ -48,7 +48,7 @@ const compilerArgs = [
   'src/sand/cpp/sand.cpp',
   '-o', output,
 ];
-run(toolchain.emxx, compilerArgs);
+run(toolchain.emxx, compilerArgs, { environment: toolchain.environment });
 normalizeTextFile(output);
 
 const wasmOutput = output.replace(/\.js$/, '.wasm');
@@ -58,7 +58,7 @@ run(process.execPath, [
   'scripts/write-wasm-build-info.mjs', output, ...(dev ? ['--dev'] : []),
 ], {
   environment: {
-    ...process.env,
+    ...toolchain.environment,
     SAND_EMCC_PATH: toolchain.emcc,
     SAND_EMCC_VERSION: toolchain.versionLine,
   },

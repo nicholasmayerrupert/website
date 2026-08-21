@@ -1,10 +1,40 @@
 import assert from 'node:assert/strict';
 import { createLifeSearchEngine } from '../src/life/searchEngineWasm.js';
-import { MAX_LIFE_SEARCH_WORKERS, normalizeLifeSearchWorkers } from '../src/life/searchLimits.js';
+import {
+  MAX_LIFE_SEARCH_WORKERS,
+  getLifeSearchWorkerLimit,
+  normalizeLifeSearchSettings,
+  normalizeLifeSearchWorkers,
+  tuneLifeSearchBatch,
+} from '../src/life/searchLimits.js';
 
 assert.equal(normalizeLifeSearchWorkers(0), 1, 'worker pool has a minimum');
 assert.equal(normalizeLifeSearchWorkers(3.6), 4, 'worker pool rounds numeric input');
 assert.equal(normalizeLifeSearchWorkers(1000000), MAX_LIFE_SEARCH_WORKERS, 'worker pool has a hard maximum');
+assert.equal(getLifeSearchWorkerLimit(6), 4, 'worker pool leaves capacity for the page');
+assert.equal(getLifeSearchWorkerLimit(2), 1, 'small systems retain one worker');
+assert.equal(getLifeSearchWorkerLimit(64), MAX_LIFE_SEARCH_WORKERS, 'large systems use the hard maximum');
+assert.equal(normalizeLifeSearchWorkers(1000, getLifeSearchWorkerLimit(6)), 4, 'worker input uses the hardware ceiling');
+assert.deepEqual(
+  normalizeLifeSearchSettings({
+    size: Infinity,
+    density: 0,
+    horizon: Infinity,
+    batchSize: -5,
+    leaderboardSize: 0,
+  }),
+  { size: 64, density: 0.01, horizon: 0x7fffffff, batchSize: 1, leaderboardSize: 1 },
+  'search settings clamp finite ranges',
+);
+assert.deepEqual(
+  normalizeLifeSearchSettings({}),
+  { size: 16, density: 37.5, horizon: 0, batchSize: 32, leaderboardSize: 10 },
+  'search settings apply defaults',
+);
+assert.equal(tuneLifeSearchBatch(32, 32, 1), 80, 'batch tuning grows toward its time budget');
+assert.equal(tuneLifeSearchBatch(32, 32, 64), 24, 'batch tuning shrinks gradually');
+assert.equal(tuneLifeSearchBatch(10000, 10000, 1), 10000, 'batch tuning honors its maximum');
+assert.equal(tuneLifeSearchBatch(32, 0, 0), 32, 'batch tuning ignores empty timing samples');
 
 function referenceStep(cells, size) {
   const out = new Uint8Array(cells.length);
@@ -30,8 +60,35 @@ function equalBoard(actual, expected, label) {
   assert.deepEqual(Array.from(actual), Array.from(expected), label);
 }
 
+function referenceOrbit(seed, size, horizon) {
+  let current = seed.slice();
+  const seen = new Map();
+  let generation = 0;
+  while (true) {
+    if (!current.some(Boolean)) {
+      return { lifetime: generation, reason: 1, transient: 0, period: 0 };
+    }
+    const key = Array.from(current).join('');
+    const firstSeen = seen.get(key);
+    if (firstSeen !== undefined) {
+      return {
+        lifetime: generation,
+        reason: 2,
+        transient: firstSeen,
+        period: generation - firstSeen,
+      };
+    }
+    if (horizon > 0 && generation >= horizon) {
+      return { lifetime: horizon, reason: 3, transient: 0, period: 0 };
+    }
+    seen.set(key, generation);
+    current = referenceStep(current, size);
+    generation++;
+  }
+}
+
 // Bit-parallel WASM evolution must match the browser's scalar Conway rule.
-for (const size of [8, 17, 32, 64]) {
+for (const size of [8, 16, 17, 32, 64]) {
   const engine = await createLifeSearchEngine(size);
   let state = 0x12345678 ^ size;
   for (let sample = 0; sample < 12; sample++) {
@@ -44,6 +101,43 @@ for (const size of [8, 17, 32, 64]) {
   }
   engine.destroy();
 }
+
+// Orbit shortcuts and bounded fallback must agree with exact state history.
+const differentialEngine = await createLifeSearchEngine(5);
+let differentialState = 0x8badf00d;
+for (let sample = 0; sample < 20; sample++) {
+  const cells = new Uint8Array(25);
+  for (let i = 0; i < cells.length; i++) {
+    differentialState = (Math.imul(differentialState, 1664525) + 1013904223) >>> 0;
+    cells[i] = differentialState >>> 30 ? 1 : 0;
+  }
+  for (const horizon of [0, 1, 2, 3, 7, 25, 100]) {
+    assert.deepEqual(
+      differentialEngine.measureOrbit(cells, horizon),
+      referenceOrbit(cells, 5, horizon),
+      `orbit 5 sample ${sample} horizon ${horizon}`,
+    );
+  }
+}
+differentialEngine.destroy();
+
+const differential16Engine = await createLifeSearchEngine(16);
+let differential16State = 0x51ced00d;
+for (let sample = 0; sample < 6; sample++) {
+  const cells = new Uint8Array(16 * 16);
+  for (let i = 0; i < cells.length; i++) {
+    differential16State = (Math.imul(differential16State, 1664525) + 1013904223) >>> 0;
+    cells[i] = differential16State >>> 30 ? 1 : 0;
+  }
+  for (const horizon of [1, 2, 3, 7, 25]) {
+    assert.deepEqual(
+      differential16Engine.measureOrbit(cells, horizon),
+      referenceOrbit(cells, 16, horizon),
+      `orbit 16 sample ${sample} horizon ${horizon}`,
+    );
+  }
+}
+differential16Engine.destroy();
 
 // Lifetime is the number of unique non-empty states before empty/repeat/horizon.
 const lifetimeEngine = await createLifeSearchEngine(8);
@@ -86,7 +180,14 @@ for (let y = 0; y < pulsarRows.length; y++) {
   }
 }
 assert.deepEqual(pulsarEngine.measureOrbit(pulsar, 0), { lifetime: 3, reason: 2, transient: 0, period: 3 });
+assert.deepEqual(pulsarEngine.measureOrbit(pulsar, 2), { lifetime: 2, reason: 3, transient: 0, period: 0 });
+assert.deepEqual(pulsarEngine.measureOrbit(pulsar, 3), { lifetime: 3, reason: 2, transient: 0, period: 3 });
 pulsarEngine.destroy();
+
+const clampedEngine = await createLifeSearchEngine(1000);
+assert.equal(clampedEngine.size, 64, 'wrapper and native engine agree on clamped size');
+assert.equal(clampedEngine.step(new Uint8Array(64 * 64)).length, 64 * 64, 'clamped engine uses safe buffers');
+clampedEngine.destroy();
 
 const soupConfig = { density: 37.5, horizon: 200, seed: 123456789n, leaderboardSize: 5 };
 lifetimeEngine.startSoup(soupConfig);
@@ -108,5 +209,60 @@ assert.deepEqual(
 );
 assert.ok(secondRun.loops.every((result) => result.period > 2), 'loop leaderboard excludes periods 1 and 2');
 lifetimeEngine.destroy();
+
+const goldenEngine = await createLifeSearchEngine(16);
+goldenEngine.startSoup({ density: 37.5, horizon: 0, seed: 0x5eedn, leaderboardSize: 10 });
+goldenEngine.pumpSoup(1000);
+const golden = goldenEngine.soupSnapshot();
+const best = golden.results[0];
+let checksum = 2166136261;
+for (const cell of best.cells) checksum = Math.imul(checksum ^ cell, 16777619) >>> 0;
+assert.deepEqual(
+  { lifetime: best.lifetime, transient: best.transient, period: best.period, reason: best.reason },
+  { lifetime: 698, transient: 696, period: 2, reason: 2 },
+  'golden soup result metrics',
+);
+assert.equal(checksum.toString(16).padStart(8, '0'), '7ff074fb', 'golden soup result cells');
+assert.equal(golden.loops[0].period, 64, 'golden loop period');
+assert.deepEqual(
+  golden.results.map(({ lifetime, transient, period, serial }) =>
+    [lifetime, transient, period, serial]),
+  [
+    [698, 696, 2, 91],
+    [647, 0, 0, 180],
+    [569, 567, 2, 671],
+    [568, 566, 2, 667],
+    [559, 557, 2, 375],
+    [551, 550, 1, 401],
+    [549, 548, 1, 82],
+    [535, 533, 2, 963],
+    [525, 523, 2, 452],
+    [514, 512, 2, 522],
+  ],
+  'golden lifetime leaderboard order',
+);
+assert.deepEqual(
+  golden.loops.map(({ lifetime, transient, period, serial }) =>
+    [lifetime, transient, period, serial]),
+  [
+    [330, 266, 64, 562],
+    [301, 237, 64, 929],
+    [250, 186, 64, 861],
+    [242, 178, 64, 636],
+    [231, 167, 64, 40],
+    [212, 148, 64, 946],
+    [201, 137, 64, 428],
+    [154, 90, 64, 72],
+    [152, 88, 64, 867],
+    [142, 78, 64, 379],
+  ],
+  'golden loop leaderboard order',
+);
+assert.deepEqual(
+  goldenEngine.measureOrbit(golden.loops[0].cells, 0),
+  { lifetime: 64, reason: 2, transient: 0, period: 64 },
+  'loop results load at their cycle entry',
+);
+goldenEngine.destroy();
 
 console.log('life soup search: forward equivalence, lifetime, and determinism passed');

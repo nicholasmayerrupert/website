@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -14,9 +15,9 @@
 namespace {
 
 struct Board {
-  std::vector<uint64_t> rows;
+  explicit Board(int wordCount = 0) : words(wordCount, 0) {}
 
-  bool operator==(const Board& other) const { return rows == other.rows; }
+  std::vector<uint64_t> words;
 };
 
 uint64_t mix64(uint64_t x) {
@@ -43,44 +44,59 @@ class Random64 {
 class LifeStepper {
  public:
   explicit LifeStepper(int size)
-      : size_(size), mask_(size == 64 ? ~0ULL : ((1ULL << size) - 1ULL)) {}
+      : size_(size),
+        mask_(size == 64 ? ~0ULL : ((1ULL << size) - 1ULL)),
+        wordCount_(size == 16 ? 4 : size) {}
 
-  Board step(const Board& current) const {
-    Board next{std::vector<uint64_t>(size_, 0)};
-    for (int y = 0; y < size_; ++y) {
-      const uint64_t up = current.rows[(y + size_ - 1) % size_];
-      const uint64_t mid = current.rows[y];
-      const uint64_t down = current.rows[(y + 1) % size_];
-      uint64_t ones = 0;
-      uint64_t twos = 0;
-      uint64_t fours = 0;
-      uint64_t eights = 0;
-      addBits(rotateLeft(up), ones, twos, fours, eights);
-      addBits(up, ones, twos, fours, eights);
-      addBits(rotateRight(up), ones, twos, fours, eights);
-      addBits(rotateLeft(mid), ones, twos, fours, eights);
-      addBits(rotateRight(mid), ones, twos, fours, eights);
-      addBits(rotateLeft(down), ones, twos, fours, eights);
-      addBits(down, ones, twos, fours, eights);
-      addBits(rotateRight(down), ones, twos, fours, eights);
-      const uint64_t lower = ~(fours | eights) & mask_;
-      const uint64_t exactlyTwo = ~ones & twos & lower;
-      const uint64_t exactlyThree = ones & twos & lower;
-      next.rows[y] = (exactlyThree | (mid & exactlyTwo)) & mask_;
+  Board makeBoard() const { return Board(wordCount_); }
+
+  void copy(const Board& source, Board& target) const {
+    std::copy(source.words.begin(), source.words.end(), target.words.begin());
+  }
+
+  bool equal(const Board& left, const Board& right) const {
+    return left.words == right.words;
+  }
+
+  void step(const Board& current, Board& next) const {
+    if (size_ == 16) {
+      stepPacked16(current, next);
+      return;
     }
-    return next;
+    for (int y = 0; y < size_; ++y) {
+      const uint64_t up = current.words[(y + size_ - 1) % size_];
+      const uint64_t mid = current.words[y];
+      const uint64_t down = current.words[(y + 1) % size_];
+      next.words[y] = evolve(up, mid, down, mask_);
+    }
   }
 
   bool empty(const Board& board) const {
-    for (uint64_t row : board.rows) {
-      if (row) return false;
+    for (uint64_t word : board.words) {
+      if (word) return false;
     }
     return true;
+  }
+
+  void setCell(Board& board, int x, int y) const {
+    if (size_ == 16) {
+      board.words[y >> 2] |= 1ULL << ((y & 3) * 16 + x);
+    } else {
+      board.words[y] |= 1ULL << x;
+    }
+  }
+
+  bool cell(const Board& board, int x, int y) const {
+    if (size_ == 16) {
+      return (board.words[y >> 2] >> ((y & 3) * 16 + x)) & 1ULL;
+    }
+    return (board.words[y] >> x) & 1ULL;
   }
 
  private:
   int size_;
   uint64_t mask_;
+  int wordCount_;
 
   uint64_t rotateLeft(uint64_t row) const {
     return ((row << 1) & mask_) | (row >> (size_ - 1));
@@ -90,22 +106,78 @@ class LifeStepper {
     return (row >> 1) | ((row & 1ULL) << (size_ - 1));
   }
 
-  static void addBits(uint64_t value, uint64_t& ones, uint64_t& twos,
-                      uint64_t& fours, uint64_t& eights) {
-    uint64_t carry = ones & value;
-    ones ^= value;
-    value = carry;
-    carry = twos & value;
-    twos ^= value;
-    value = carry;
-    carry = fours & value;
-    fours ^= value;
-    eights ^= carry;
+  struct BitSum {
+    uint64_t ones;
+    uint64_t twos;
+  };
+
+  static BitSum addThree(uint64_t a, uint64_t b, uint64_t c) {
+    const uint64_t aXorB = a ^ b;
+    return {aXorB ^ c, (a & b) | (aXorB & c)};
+  }
+
+  static uint64_t applyRule(uint64_t upLeft, uint64_t up,
+                            uint64_t upRight, uint64_t midLeft,
+                            uint64_t mid, uint64_t midRight,
+                            uint64_t downLeft, uint64_t down,
+                            uint64_t downRight) {
+    const BitSum top = addThree(upLeft, up, upRight);
+    const BitSum bottom = addThree(downLeft, down, downRight);
+    const uint64_t middleOnes = midLeft ^ midRight;
+    const uint64_t middleTwos = midLeft & midRight;
+    const BitSum low = addThree(top.ones, middleOnes, bottom.ones);
+
+    // A count of two or three has exactly one contribution to the high bit.
+    const uint64_t highParity =
+        top.twos ^ middleTwos ^ bottom.twos ^ low.twos;
+    const uint64_t firstPair = top.twos & middleTwos;
+    const uint64_t secondPair = bottom.twos & low.twos;
+    const uint64_t crossPair = (top.twos | middleTwos) &
+                               (bottom.twos | low.twos);
+    const uint64_t multipleHighBits = firstPair | secondPair | crossPair;
+    const uint64_t exactlyTwoOrThree = highParity & ~multipleHighBits;
+    return exactlyTwoOrThree & (low.ones | mid);
+  }
+
+  uint64_t evolve(uint64_t up, uint64_t mid, uint64_t down,
+                  uint64_t mask) const {
+    return applyRule(rotateLeft(up), up, rotateRight(up), rotateLeft(mid),
+                     mid, rotateRight(mid), rotateLeft(down), down,
+                     rotateRight(down)) & mask;
+  }
+
+  static uint64_t rotatePackedLeft(uint64_t rows) {
+    constexpr uint64_t lowBits = 0x0001000100010001ULL;
+    constexpr uint64_t withoutLowBits = 0xfffefffefffefffeULL;
+    return ((rows << 1) & withoutLowBits) | ((rows >> 15) & lowBits);
+  }
+
+  static uint64_t rotatePackedRight(uint64_t rows) {
+    constexpr uint64_t lowBits = 0x0001000100010001ULL;
+    constexpr uint64_t withoutHighBits = 0x7fff7fff7fff7fffULL;
+    return ((rows >> 1) & withoutHighBits) | ((rows & lowBits) << 15);
+  }
+
+  static uint64_t evolvePacked(uint64_t up, uint64_t mid, uint64_t down) {
+    return applyRule(rotatePackedLeft(up), up, rotatePackedRight(up),
+                     rotatePackedLeft(mid), mid, rotatePackedRight(mid),
+                     rotatePackedLeft(down), down, rotatePackedRight(down));
+  }
+
+  static void stepPacked16(const Board& current, Board& next) {
+    for (int group = 0; group < 4; ++group) {
+      const uint64_t mid = current.words[group];
+      const uint64_t previous = current.words[(group + 3) & 3];
+      const uint64_t following = current.words[(group + 1) & 3];
+      const uint64_t up = (mid << 16) | (previous >> 48);
+      const uint64_t down = (mid >> 16) | (following << 48);
+      next.words[group] = evolvePacked(up, mid, down);
+    }
   }
 };
 
 struct SoupResult {
-  Board seed;
+  Board board;
   uint64_t lifetime = 0;
   uint64_t transient = 0;
   uint64_t period = 0;
@@ -120,39 +192,123 @@ struct OrbitResult {
   int reason = 0;
 };
 
-OrbitResult measureOrbit(const LifeStepper& stepper, const Board& seed,
-                         uint64_t horizon) {
+struct OrbitWorkspace {
+  explicit OrbitWorkspace(const LifeStepper& stepper)
+      : checkpoint(stepper.makeBoard()),
+        previous(stepper.makeBoard()),
+        current(stepper.makeBoard()),
+        next(stepper.makeBoard()) {}
+
+  Board checkpoint;
+  Board previous;
+  Board current;
+  Board next;
+};
+
+OrbitResult measureOrbitFloyd(const LifeStepper& stepper, const Board& seed,
+                              uint64_t horizon, OrbitWorkspace& workspace) {
   if (stepper.empty(seed)) return {0, 0, 0, 1};
 
-  Board tortoise = stepper.step(seed);
-  Board hare = stepper.step(stepper.step(seed));
+  stepper.step(seed, workspace.current);
+  stepper.step(workspace.current, workspace.previous);
   uint64_t generation = 1;
-  while (tortoise != hare && (horizon == 0 || generation < horizon)) {
-    if (stepper.empty(tortoise)) return {generation, 0, 0, 1};
-    tortoise = stepper.step(tortoise);
-    hare = stepper.step(stepper.step(hare));
+  while (!stepper.equal(workspace.current, workspace.previous) &&
+         generation < horizon) {
+    if (stepper.empty(workspace.current)) return {generation, 0, 0, 1};
+    stepper.step(workspace.current, workspace.next);
+    std::swap(workspace.current.words, workspace.next.words);
+    stepper.step(workspace.previous, workspace.next);
+    stepper.step(workspace.next, workspace.checkpoint);
+    std::swap(workspace.previous.words, workspace.checkpoint.words);
     ++generation;
   }
-  if (stepper.empty(tortoise)) return {generation, 0, 0, 1};
-  if (tortoise != hare) return {horizon, 0, 0, 3};
+  if (stepper.empty(workspace.current)) return {generation, 0, 0, 1};
+  if (!stepper.equal(workspace.current, workspace.previous)) {
+    return {horizon, 0, 0, 3};
+  }
 
   uint64_t transient = 0;
-  tortoise = seed;
-  while (tortoise != hare) {
-    tortoise = stepper.step(tortoise);
-    hare = stepper.step(hare);
+  stepper.copy(seed, workspace.current);
+  while (!stepper.equal(workspace.current, workspace.previous)) {
+    stepper.step(workspace.current, workspace.next);
+    std::swap(workspace.current.words, workspace.next.words);
+    stepper.step(workspace.previous, workspace.checkpoint);
+    std::swap(workspace.previous.words, workspace.checkpoint.words);
     ++transient;
   }
 
   uint64_t period = 1;
-  hare = stepper.step(tortoise);
-  while (tortoise != hare) {
-    hare = stepper.step(hare);
+  stepper.step(workspace.current, workspace.previous);
+  while (!stepper.equal(workspace.current, workspace.previous)) {
+    stepper.step(workspace.previous, workspace.next);
+    std::swap(workspace.previous.words, workspace.next.words);
     ++period;
   }
   const uint64_t lifetime = transient + period;
-  if (horizon != 0 && lifetime > horizon) return {horizon, 0, 0, 3};
+  if (lifetime > horizon) return {horizon, 0, 0, 3};
   return {lifetime, transient, period, 2};
+}
+
+OrbitResult measureOrbit(const LifeStepper& stepper, const Board& seed,
+                         uint64_t horizon, OrbitWorkspace& workspace) {
+  if (stepper.empty(seed)) return {0, 0, 0, 1};
+
+  // Direct checks resolve extinction and short cycles during the forward walk;
+  // Brent checkpoints retain constant-memory detection for longer cycles. For
+  // longer repeats, workspace.current holds the cycle entry on return.
+  stepper.copy(seed, workspace.current);
+  stepper.copy(seed, workspace.checkpoint);
+  uint64_t generation = 0;
+  uint64_t power = 1;
+  uint64_t brentPeriod = 0;
+
+  while (true) {
+    stepper.step(workspace.current, workspace.next);
+    ++generation;
+    ++brentPeriod;
+
+    if (stepper.empty(workspace.next)) return {generation, 0, 0, 1};
+    if (stepper.equal(workspace.next, workspace.current)) {
+      return {generation, generation - 1, 1, 2};
+    }
+    if (generation > 1 && stepper.equal(workspace.next, workspace.previous)) {
+      return {generation, generation - 2, 2, 2};
+    }
+
+    if (stepper.equal(workspace.next, workspace.checkpoint)) {
+      stepper.copy(seed, workspace.current);
+      stepper.copy(seed, workspace.previous);
+      for (uint64_t i = 0; i < brentPeriod; ++i) {
+        stepper.step(workspace.previous, workspace.next);
+        std::swap(workspace.previous.words, workspace.next.words);
+      }
+
+      uint64_t transient = 0;
+      while (!stepper.equal(workspace.current, workspace.previous)) {
+        stepper.step(workspace.current, workspace.next);
+        std::swap(workspace.current.words, workspace.next.words);
+        stepper.step(workspace.previous, workspace.checkpoint);
+        std::swap(workspace.previous.words, workspace.checkpoint.words);
+        ++transient;
+      }
+      return {transient + brentPeriod, transient, brentPeriod, 2};
+    }
+
+    if (horizon != 0 && generation >= horizon) {
+      return measureOrbitFloyd(stepper, seed, horizon, workspace);
+    }
+
+    if (power == brentPeriod) {
+      stepper.copy(workspace.next, workspace.checkpoint);
+      power = power <= std::numeric_limits<uint64_t>::max() / 2
+          ? power * 2
+          : std::numeric_limits<uint64_t>::max();
+      brentPeriod = 0;
+    }
+
+    std::swap(workspace.previous.words, workspace.current.words);
+    std::swap(workspace.current.words, workspace.next.words);
+  }
 }
 
 class SearchEngine {
@@ -160,6 +316,7 @@ class SearchEngine {
   explicit SearchEngine(int size)
       : size(std::clamp(size, 3, 64)),
         stepper(this->size),
+        orbitWorkspace(stepper),
         scratch(this->size * this->size, 0) {}
 
   void startSoup(int densityBasisPoints, int horizon, uint64_t seed,
@@ -170,6 +327,8 @@ class SearchEngine {
     soupRng = std::make_unique<Random64>(seed);
     soupResults.clear();
     soupLoopResults.clear();
+    soupResults.reserve(soupLeaderboardSize + 1);
+    soupLoopResults.reserve(soupLeaderboardSize + 1);
     soupsSearched = 0;
     soupRunning = true;
   }
@@ -177,7 +336,10 @@ class SearchEngine {
   int pumpSoup(int batchSize) {
     if (!soupRunning || !soupRng) return 0;
     const int count = std::clamp(batchSize, 1, 10000);
-    for (int i = 0; i < count; ++i) evaluateSoup(randomSoup());
+    for (int i = 0; i < count; ++i) {
+      randomSoup();
+      evaluateSoup(soupSeed);
+    }
     return count;
   }
 
@@ -185,13 +347,13 @@ class SearchEngine {
 
   const uint8_t* soupResultCells(int index) {
     if (index < 0 || index >= static_cast<int>(soupResults.size())) return nullptr;
-    fillScratch(soupResults[index].seed);
+    fillScratch(soupResults[index].board);
     return scratch.data();
   }
 
   const uint8_t* soupLoopResultCells(int index) {
     if (index < 0 || index >= static_cast<int>(soupLoopResults.size())) return nullptr;
-    fillScratch(soupLoopResults[index].seed);
+    fillScratch(soupLoopResults[index].board);
     return scratch.data();
   }
 
@@ -207,58 +369,84 @@ class SearchEngine {
   std::vector<SoupResult> soupLoopResults;
 
  private:
+  Board soupSeed = stepper.makeBoard();
+  OrbitWorkspace orbitWorkspace;
   std::vector<uint8_t> scratch;
 
   void fillScratch(const Board& board) {
     for (int y = 0; y < size; ++y) {
       for (int x = 0; x < size; ++x) {
-        scratch[y * size + x] =
-            static_cast<uint8_t>((board.rows[y] >> x) & 1ULL);
+        scratch[y * size + x] = static_cast<uint8_t>(stepper.cell(board, x, y));
       }
     }
   }
 
-  Board randomSoup() {
-    Board board{std::vector<uint64_t>(size, 0)};
+  void randomSoup() {
+    std::fill(soupSeed.words.begin(), soupSeed.words.end(), 0);
     for (int y = 0; y < size; ++y) {
       for (int x = 0; x < size; ++x) {
         if (static_cast<int>(soupRng->next() % 10000ULL) < soupDensity) {
-          board.rows[y] |= 1ULL << x;
+          stepper.setCell(soupSeed, x, y);
         }
       }
     }
-    return board;
   }
 
-  void evaluateSoup(Board seed) {
-    const OrbitResult orbit = measureOrbit(stepper, seed, soupHorizon);
-    const uint64_t serial = soupsSearched++;
-    soupResults.push_back(
-        {seed, orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial});
-    std::stable_sort(
-        soupResults.begin(), soupResults.end(),
-        [](const SoupResult& left, const SoupResult& right) {
-          if (left.lifetime != right.lifetime) return left.lifetime > right.lifetime;
-          return left.serial < right.serial;
-        });
+  static bool betterLifetime(const SoupResult& left, const SoupResult& right) {
+    if (left.lifetime != right.lifetime) return left.lifetime > right.lifetime;
+    return left.serial < right.serial;
+  }
+
+  static bool betterLoop(const SoupResult& left, const SoupResult& right) {
+    if (left.period != right.period) return left.period > right.period;
+    if (left.lifetime != right.lifetime) return left.lifetime > right.lifetime;
+    return left.serial < right.serial;
+  }
+
+  void insertLifetimeResult(const Board& seed, const OrbitResult& orbit,
+                            uint64_t serial) {
+    if (static_cast<int>(soupResults.size()) >= soupLeaderboardSize &&
+        orbit.lifetime <= soupResults.back().lifetime) {
+      return;
+    }
+    SoupResult result{
+        seed, orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial};
+    const auto position = std::lower_bound(
+        soupResults.begin(), soupResults.end(), result, betterLifetime);
+    soupResults.insert(position, std::move(result));
     if (static_cast<int>(soupResults.size()) > soupLeaderboardSize) {
-      soupResults.resize(soupLeaderboardSize);
-    }
-
-    if (orbit.reason != 2 || orbit.period <= 2) return;
-    soupLoopResults.push_back(
-        {std::move(seed), orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial});
-    std::stable_sort(
-        soupLoopResults.begin(), soupLoopResults.end(),
-        [](const SoupResult& left, const SoupResult& right) {
-          if (left.period != right.period) return left.period > right.period;
-          if (left.lifetime != right.lifetime) return left.lifetime > right.lifetime;
-          return left.serial < right.serial;
-        });
-    if (static_cast<int>(soupLoopResults.size()) > soupLeaderboardSize) {
-      soupLoopResults.resize(soupLeaderboardSize);
+      soupResults.pop_back();
     }
   }
+
+  void insertLoopResult(const Board& seed, const OrbitResult& orbit,
+                        uint64_t serial) {
+    if (orbit.reason != 2 || orbit.period <= 2) return;
+    if (static_cast<int>(soupLoopResults.size()) >= soupLeaderboardSize) {
+      const SoupResult& last = soupLoopResults.back();
+      if (orbit.period < last.period ||
+          (orbit.period == last.period && orbit.lifetime <= last.lifetime)) {
+        return;
+      }
+    }
+    SoupResult result{
+        seed, orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial};
+    const auto position = std::lower_bound(
+        soupLoopResults.begin(), soupLoopResults.end(), result, betterLoop);
+    soupLoopResults.insert(position, std::move(result));
+    if (static_cast<int>(soupLoopResults.size()) > soupLeaderboardSize) {
+      soupLoopResults.pop_back();
+    }
+  }
+
+  void evaluateSoup(const Board& seed) {
+    const OrbitResult orbit =
+        measureOrbit(stepper, seed, soupHorizon, orbitWorkspace);
+    const uint64_t serial = soupsSearched++;
+    insertLifetimeResult(seed, orbit, serial);
+    insertLoopResult(orbitWorkspace.current, orbit, serial);
+  }
+
 };
 
 SearchEngine* asEngine(uintptr_t handle) {
@@ -270,10 +458,11 @@ uint64_t joinSeed(uint32_t low, uint32_t high) {
 }
 
 Board boardFromCells(int size, const uint8_t* cells) {
-  Board board{std::vector<uint64_t>(size, 0)};
+  LifeStepper stepper(size);
+  Board board = stepper.makeBoard();
   for (int y = 0; y < size; ++y) {
     for (int x = 0; x < size; ++x) {
-      if (cells[y * size + x]) board.rows[y] |= 1ULL << x;
+      if (cells[y * size + x]) stepper.setCell(board, x, y);
     }
   }
   return board;
@@ -397,36 +586,29 @@ LIFE_EXPORT const uint8_t* life_soup_loop_result_cells(uintptr_t handle, int ind
 
 LIFE_EXPORT void life_step(int size, const uint8_t* input, uint8_t* output) {
   size = std::clamp(size, 3, 64);
-  Board next = LifeStepper(size).step(boardFromCells(size, input));
+  LifeStepper stepper(size);
+  Board next = stepper.makeBoard();
+  stepper.step(boardFromCells(size, input), next);
   for (int y = 0; y < size; ++y) {
     for (int x = 0; x < size; ++x) {
-      output[y * size + x] =
-          static_cast<uint8_t>((next.rows[y] >> x) & 1ULL);
+      output[y * size + x] = static_cast<uint8_t>(stepper.cell(next, x, y));
     }
   }
 }
 
-LIFE_EXPORT int life_measure_lifetime(int size, const uint8_t* input,
-                                      int horizon) {
+LIFE_EXPORT void life_measure_orbit(int size, const uint8_t* input, int horizon,
+                                    double* output) {
+  if (!output) return;
   size = std::clamp(size, 3, 64);
   LifeStepper stepper(size);
+  OrbitWorkspace workspace(stepper);
   const OrbitResult orbit =
-      measureOrbit(stepper, boardFromCells(size, input), horizon > 0 ? horizon : 0);
-  return (static_cast<int>(orbit.lifetime) << 2) | orbit.reason;
-}
-
-LIFE_EXPORT double life_measure_period(int size, const uint8_t* input,
-                                       int horizon) {
-  size = std::clamp(size, 3, 64);
-  return static_cast<double>(measureOrbit(
-      LifeStepper(size), boardFromCells(size, input), horizon > 0 ? horizon : 0).period);
-}
-
-LIFE_EXPORT double life_measure_transient(int size, const uint8_t* input,
-                                          int horizon) {
-  size = std::clamp(size, 3, 64);
-  return static_cast<double>(measureOrbit(
-      LifeStepper(size), boardFromCells(size, input), horizon > 0 ? horizon : 0).transient);
+      measureOrbit(stepper, boardFromCells(size, input),
+                   horizon > 0 ? horizon : 0, workspace);
+  output[0] = static_cast<double>(orbit.lifetime);
+  output[1] = static_cast<double>(orbit.transient);
+  output[2] = static_cast<double>(orbit.period);
+  output[3] = static_cast<double>(orbit.reason);
 }
 
 }  // extern "C"

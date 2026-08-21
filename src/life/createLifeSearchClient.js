@@ -1,5 +1,9 @@
 import LifeSearchWorker from './lifeSearchWorkerConstructor.js';
-import { normalizeLifeSearchWorkers } from './searchLimits.js';
+import {
+  getLifeSearchWorkerLimit,
+  normalizeLifeSearchSettings,
+  normalizeLifeSearchWorkers,
+} from './searchLimits.js';
 
 export function createLifeSearchClient(onMessage) {
   let workers = [];
@@ -11,19 +15,23 @@ export function createLifeSearchClient(onMessage) {
   let lastProgressAt = 0;
 
   const stopPool = (notify) => {
+    const finalProgress = notify && workers.length && progress.some(Boolean)
+      ? { ...aggregateProgress(), workers: 0, running: false }
+      : null;
     runToken++;
     for (const worker of workers) worker.terminate();
     workers = [];
     progress = [];
     clearTimeout(progressTimer);
     progressTimer = null;
+    if (finalProgress) onMessage(finalProgress);
     if (notify) onMessage({ type: 'stopped' });
   };
 
   const taggedResults = (key) => progress.flatMap((snapshot, workerIndex) =>
     (snapshot?.[key] || []).map((result) => ({ ...result, workerIndex })));
 
-  const aggregateProgress = () => {
+  function aggregateProgress() {
     const results = taggedResults('results')
       .sort((left, right) =>
         right.lifetime - left.lifetime ||
@@ -46,7 +54,7 @@ export function createLifeSearchClient(onMessage) {
       elapsedMs: performance.now() - startedAt,
       running: true,
     };
-  };
+  }
 
   const scheduleProgress = () => {
     if (progressTimer !== null) return;
@@ -68,14 +76,24 @@ export function createLifeSearchClient(onMessage) {
     startSoup(settings) {
       stopPool(false);
       const token = runToken;
-      const workerCount = normalizeLifeSearchWorkers(settings.workers);
-      leaderboardSize = Math.max(1, Math.min(100, Math.round(settings.leaderboardSize) || 10));
+      const workerCount = normalizeLifeSearchWorkers(
+        settings.workers,
+        getLifeSearchWorkerLimit(),
+      );
+      const normalizedSettings = normalizeLifeSearchSettings(settings);
+      leaderboardSize = normalizedSettings.leaderboardSize;
       progress = Array.from({ length: workerCount }, () => null);
       startedAt = performance.now();
       lastProgressAt = 0;
 
       for (let index = 0; index < workerCount; index++) {
-        const worker = new LifeSearchWorker();
+        let worker;
+        try {
+          worker = new LifeSearchWorker();
+        } catch (error) {
+          failRun(error?.message || 'Unable to create Life search worker');
+          return;
+        }
         worker.onmessage = ({ data }) => {
           if (token !== runToken) return;
           if (data.type === 'started') return;
@@ -92,13 +110,18 @@ export function createLifeSearchClient(onMessage) {
           failRun(event.message || 'Life search worker failed');
         };
         workers.push(worker);
-        worker.postMessage({
-          type: 'start-soup',
-          ...settings,
-          seed: index === 0 ? settings.seed : `${settings.seed}:${index}`,
-          progressIntervalMs: Math.max(100, workerCount * 50),
-          progressPhase: index / workerCount,
-        });
+        try {
+          worker.postMessage({
+            type: 'start-soup',
+            ...normalizedSettings,
+            seed: index === 0 ? settings.seed : `${settings.seed}:${index}`,
+            progressIntervalMs: Math.max(100, workerCount * 50),
+            progressPhase: index / workerCount,
+          });
+        } catch (error) {
+          failRun(error?.message || 'Unable to start Life search worker');
+          return;
+        }
       }
       onMessage({ type: 'started', mode: 'soup' });
     },

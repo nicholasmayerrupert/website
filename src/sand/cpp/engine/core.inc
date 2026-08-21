@@ -40,7 +40,7 @@
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
     // Liquid↔liquid density is handled by the post-settle adjacent-swap pass.
-    // This pass is powder↔powder / powder↔liquid.
+    // This pass is powder↔liquid; powder↔powder contacts remain supportive.
     auto trySink = [&](int ik) {
       if (!canDisplaceByLooseDensity(m, L->grid[ik]) || L->next[ik] != EMPTY) return false;
       if (isLiquidMaterial(m) && isLiquidMaterial(L->grid[ik])) return false;

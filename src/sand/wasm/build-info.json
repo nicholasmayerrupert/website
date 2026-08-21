@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-20T20:24:40.222Z",
+  "generatedAt": "2026-08-21T17:31:12.082Z",
   "output": {
     "path": "src/sand/wasm/sandEngine.js",
     "bytes": 69845,
@@ -8,18 +8,18 @@
   },
   "wasm": {
     "path": "src/sand/wasm/sandEngine.wasm",
-    "bytes": 1524336,
-    "sha256": "6320da853a3336e5fa561ee4354ff897f52477fd6e019a03b7b35b6d21c82391",
-    "fnv1a": "0x21765fe0"
+    "bytes": 1525678,
+    "sha256": "72f04e60d790a6ffca9d1b3a67f21af01729c6500877d916740e271cf87e2dc1",
+    "fnv1a": "0x19cff623"
   },
   "source": {
-    "commit": "2d1eee4",
-    "dirty": true,
-    "sha256": "af11fb3ad18267517cb3dfe58139580bbe6ed69aeb5190b43f02b46784b7ceab"
+    "commit": "c050c16",
+    "dirty": false,
+    "sha256": "b3b472a7b504e36bc88203c2a2510eca2d1879978e9302fd30bbdd1f92c3a592"
   },
   "variant": "production",
   "toolchain": {
     "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.0 (afa15e0c56d1292e073c2c91bafc1d5e0cdf0dd3)",
-    "emccPath": "/home/nick/Nick/emsdk/upstream/emscripten/emcc"
+    "emccPath": "/Users/nicholasmayer-rupert/emsdk/upstream/emscripten/emcc"
   }
 }

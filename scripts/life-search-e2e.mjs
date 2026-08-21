@@ -5,7 +5,6 @@ import { getAvailablePort } from './test-port.mjs';
 
 const port = await getAvailablePort();
 const requestedWorkers = Math.max(1, Number(process.env.LIFE_TEST_WORKERS || 999) | 0);
-const expectedWorkers = Math.min(16, requestedWorkers);
 const holdMs = Math.max(0, Number(process.env.LIFE_TEST_HOLD_MS || 0) | 0);
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
   cwd: new URL('..', import.meta.url),
@@ -54,18 +53,50 @@ try {
   await page.getByLabel('Game of Life board size').fill('8');
 
   await page.getByRole('tab', { name: 'Soup' }).click();
-  assert.equal(await page.getByLabel('Workers').getAttribute('max'), '16', 'worker input exposes the safety cap');
+  const workerLimit = Number(await page.getByLabel('Workers').getAttribute('max'));
+  assert.ok(workerLimit >= 1 && workerLimit <= 16, 'worker input exposes the hardware-aware safety cap');
+  const expectedWorkers = Math.min(workerLimit, requestedWorkers);
   await page.getByLabel('Workers').fill(String(requestedWorkers));
   await page.getByRole('button', { name: 'Start', exact: true }).click();
-  const soups = await waitForValue(page, 'Soups', (value) => value > 0);
+  let soups = await waitForValue(page, 'Soups', (value) => value > 0);
   assert.ok(soups > 0, 'soup worker reports completed soups');
   const workers = await page.getByText('Workers', { exact: true }).last().evaluate((element) =>
     Number(element.nextElementSibling?.textContent || 0));
   assert.equal(workers, expectedWorkers, 'soup progress clamps oversized worker requests');
   assert.equal(await page.getByText('Length', { exact: true }).count(), 1);
-  assert.equal(await page.getByText('Repeat period', { exact: true }).count(), 1);
-  if (holdMs) await page.waitForTimeout(holdMs);
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  assert.equal(await page.getByText('Exact toroidal period', { exact: true }).count(), 1);
+  soups = await waitForValue(page, 'Soups', (value) => value > soups);
+  if (holdMs) {
+    await page.waitForTimeout(holdMs);
+    const laterSoups = await numericSibling(page, 'Soups');
+    assert.ok(laterSoups > soups, 'soup count advances while the pool is running');
+    soups = laterSoups;
+  }
+  const reportedRate = await numericSibling(page, 'Rate');
+  assert.ok(reportedRate > 0, 'worker pool reports end-to-end throughput');
+  const previousRunSoups = soups;
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  soups = await waitForValue(page, 'Soups', (value) => value < previousRunSoups);
+  soups = await waitForValue(page, 'Soups', (value) => value > soups);
+  const stopElapsedMs = await page.getByRole('button', { name: 'Stop', exact: true })
+    .evaluate((button) => {
+      const startedAt = performance.now();
+      button.click();
+      return performance.now() - startedAt;
+    });
+  assert.ok(stopElapsedMs < 2000, `Stop remains responsive under load (${Math.round(stopElapsedMs)} ms)`);
+  const stoppedSoups = await numericSibling(page, 'Soups');
+  await page.waitForTimeout(150);
+  assert.equal(await numericSibling(page, 'Soups'), stoppedSoups, 'soup count stops with the pool');
+
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await waitForValue(page, 'Soups', (value) => value > 0);
+  await page.getByRole('button', { name: 'Close Game of Life controls' }).click();
+  await page.waitForTimeout(150);
+  await page.getByRole('button', { name: 'Open Game of Life controls' }).click();
+  const closedSoups = await numericSibling(page, 'Soups');
+  await page.waitForTimeout(150);
+  assert.equal(await numericSibling(page, 'Soups'), closedSoups, 'closing controls stops the pool');
 
   await page.getByRole('tab', { name: 'Simulate' }).click();
   assert.equal(await page.getByLabel('Editable toroidal view of the current Game of Life layer').count(), 1);
@@ -85,7 +116,7 @@ try {
     '3D canvas expands back to the full host width after closing controls'
   );
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`);
-  console.log(`life soup search e2e: ${soups} soups observed across ${workers} workers`);
+  console.log(`life soup search e2e: ${soups} soups across ${workers} workers (${reportedRate}/s)`);
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

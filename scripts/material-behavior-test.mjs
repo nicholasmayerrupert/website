@@ -209,6 +209,35 @@ for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   e.destroy();
 }
 
+// A packed powder bed supports another powder regardless of relative density.
+{
+  const e = mk();
+  e.setBgEnabled(false);
+  const x0 = 50, x1 = 109, floorY = ROWS - 1;
+  for (let y = 45; y <= floorY; y++) {
+    e.paintDisc(x0 - 1, y, 0, MAT.STONE, true);
+    e.paintDisc(x1 + 1, y, 0, MAT.STONE, true);
+  }
+  for (let x = x0 - 1; x <= x1 + 1; x++)
+    e.paintDisc(x, floorY, 0, MAT.STONE, true);
+  for (let y = floorY - 30; y < floorY; y++)
+    for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, MAT.SNOW, true);
+  for (let y = floorY - 40; y < floorY - 30; y++)
+    for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, MAT.STONE_DUST, true);
+  const dustBefore = count(e.getGrid(), MAT.STONE_DUST);
+  const snowBefore = count(e.getGrid(), MAT.SNOW);
+  for (let i = 0; i < 240; i++) e.step((i + 1) * 16);
+  const g = e.getGrid();
+  const dustBottom = maxRow(g, MAT.STONE_DUST);
+  const snowTop = minRow(g, MAT.SNOW);
+  check(`denser powder remains supported by a lighter powder bed (${dustBottom} < ${snowTop})`,
+    dustBottom < snowTop);
+  check('supported powder layers conserve their materials',
+    count(g, MAT.STONE_DUST) === dustBefore
+      && count(g, MAT.SNOW) === snowBefore);
+  e.destroy();
+}
+
 // Structural ore grounds when it rests on the floor.
 {
   const e = mk();

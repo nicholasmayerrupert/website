@@ -1137,17 +1137,21 @@
     markCellIndex(k);
   }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
-  inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }
+  inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) {
+    return isLooseDensityMaterial(m) && isLooseDensityMaterial(d)
+      && DENSITY[m] > DENSITY[d]
+      && (!isLooseSolidMaterial(m) || !isLooseSolidMaterial(d));
+  }
   // True iff this cell still has a pending density swap with a neighbour — used to
   // keep an UNLEVEL two-fluid interface awake until it settles flat.
-  //   - vertical (any loose material): a lighter material directly below, or a
+  //   - vertical (at least one liquid): a lighter material directly below, or a
   //     heavier one directly above (preserves powder-on-water sorting).
   //   - DIAGONAL, LIQUIDS ONLY: a denser liquid up-diagonal that `m` can rise into,
   //     or a lighter liquid down-diagonal that `m` can sink into. This is what lets a
   //     water mound under oil keep exchanging (water sinks / oil rises) until level.
-  // Restricted to liquids on the diagonals so powder sorting isn't double-counted and
-  // a SINGLE-fluid surface (no density difference anywhere) still returns false -> the
-  // surface goes inert, no shimmer/multiplayer churn.
+  // Restricted to liquids on the diagonals so powder settling isn't double-counted
+  // and a SINGLE-fluid surface (no density difference anywhere) still returns false
+  // -> the surface goes inert, no shimmer/multiplayer churn.
   inline bool touchesUnstableLooseDensityInterface(int k, uint8_t m) {
     if (!isLooseDensityMaterial(m)) return false;
     int y = k / cols, x = k - y * cols;

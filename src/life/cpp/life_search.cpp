@@ -345,6 +345,10 @@ class SearchEngine {
 
   void stop() { soupRunning = false; }
 
+  void resume() {
+    if (soupRng) soupRunning = true;
+  }
+
   const uint8_t* soupResultCells(int index) {
     if (index < 0 || index >= static_cast<int>(soupResults.size())) return nullptr;
     fillScratch(soupResults[index].board);
@@ -444,7 +448,7 @@ class SearchEngine {
         measureOrbit(stepper, seed, soupHorizon, orbitWorkspace);
     const uint64_t serial = soupsSearched++;
     insertLifetimeResult(seed, orbit, serial);
-    insertLoopResult(orbitWorkspace.current, orbit, serial);
+    insertLoopResult(seed, orbit, serial);
   }
 
 };
@@ -480,6 +484,10 @@ LIFE_EXPORT void life_destroy(uintptr_t handle) { delete asEngine(handle); }
 
 LIFE_EXPORT void life_stop(uintptr_t handle) {
   if (SearchEngine* engine = asEngine(handle)) engine->stop();
+}
+
+LIFE_EXPORT void life_resume(uintptr_t handle) {
+  if (SearchEngine* engine = asEngine(handle)) engine->resume();
 }
 
 LIFE_EXPORT void life_start_soup(uintptr_t handle, int densityBasisPoints,

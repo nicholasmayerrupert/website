@@ -208,6 +208,12 @@ assert.deepEqual(
   'deterministic loop leaderboard'
 );
 assert.ok(secondRun.loops.every((result) => result.period > 2), 'loop leaderboard excludes periods 1 and 2');
+lifetimeEngine.stop();
+const stoppedAt = lifetimeEngine.soupSnapshot().searched;
+assert.equal(lifetimeEngine.pumpSoup(5), 0, 'stopped search does not advance');
+lifetimeEngine.resume();
+assert.equal(lifetimeEngine.pumpSoup(5), 5, 'resumed search accepts more work');
+assert.equal(lifetimeEngine.soupSnapshot().searched, stoppedAt + 5, 'resumed search keeps its soup count');
 lifetimeEngine.destroy();
 
 const goldenEngine = await createLifeSearchEngine(16);
@@ -260,8 +266,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   goldenEngine.measureOrbit(golden.loops[0].cells, 0),
-  { lifetime: 64, reason: 2, transient: 0, period: 64 },
-  'loop results load at their cycle entry',
+  { lifetime: 330, reason: 2, transient: 266, period: 64 },
+  'loop results load from their original seed',
 );
 goldenEngine.destroy();
 

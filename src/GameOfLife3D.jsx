@@ -108,7 +108,7 @@ export default function GameOfLife3D({
   const [gridSize, setGridSize] = useState(16);
   const [layerView, setLayerView] = useState("toroidal");
   const [activeTab, setActiveTab] = useState("simulate");
-  const [searchMode, setSearchMode] = useState(null);
+  const [searchStatus, setSearchStatus] = useState("idle");
   const [searchError, setSearchError] = useState("");
   const [soupSettings, setSoupSettings] = useState({
     density: 37.5,
@@ -120,14 +120,14 @@ export default function GameOfLife3D({
   const [soupProgress, setSoupProgress] = useState({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
   const handleSearchMessage = (message) => {
     if (message.type === "started") {
-      setSearchMode(message.mode);
+      setSearchStatus("running");
       setSearchError("");
     } else if (message.type === "soup-progress") {
       setSoupProgress(message);
     } else if (message.type === "stopped") {
-      setSearchMode(null);
+      setSearchStatus("stopped");
     } else if (message.type === "error") {
-      setSearchMode(null);
+      setSearchStatus("idle");
       setSearchError(message.message || "Search failed");
     }
   };
@@ -139,7 +139,7 @@ export default function GameOfLife3D({
       searchClientRef.current = client;
       return client;
     } catch (error) {
-      setSearchMode(null);
+      setSearchStatus("idle");
       setSearchError(error?.message || "Unable to start the Life search worker");
       return null;
     }
@@ -166,8 +166,8 @@ export default function GameOfLife3D({
   }, []);
 
   useEffect(() => {
-    searchClientRef.current?.stop();
-    setSearchMode(null);
+    searchClientRef.current?.reset();
+    setSearchStatus("idle");
     setSearchError("");
     setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
   }, [gridSize]);
@@ -234,7 +234,8 @@ export default function GameOfLife3D({
   const stopSearch = () => searchClientRef.current?.stop();
 
   const resetSoupSearch = () => {
-    stopSearch();
+    searchClientRef.current?.reset();
+    setSearchStatus("idle");
     setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
     setSearchError("");
   };
@@ -243,6 +244,11 @@ export default function GameOfLife3D({
     setSearchError("");
     setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
     ensureSearchClient()?.startSoup({ size: gridSize, ...soupSettings });
+  };
+
+  const resumeSoupSearch = () => {
+    setSearchError("");
+    searchClientRef.current?.resume();
   };
 
   const loadSoupResult = (cells) => {
@@ -1194,8 +1200,8 @@ export default function GameOfLife3D({
                 <label className="text-white/65">Leaderboard<input type="number" min="1" max="100" value={soupSettings.leaderboardSize} onChange={(event) => updateSoupSetting("leaderboardSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-1">
-                <button type="button" onClick={startSoupSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchMode === "soup" ? "Restart" : "Start"}</button>
-                <button type="button" onClick={stopSearch} disabled={!searchMode} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white disabled:opacity-35">Stop</button>
+                <button type="button" onClick={searchStatus === "stopped" ? resumeSoupSearch : startSoupSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchStatus === "running" ? "Restart" : searchStatus === "stopped" ? "Resume" : "Start"}</button>
+                <button type="button" onClick={stopSearch} disabled={searchStatus !== "running"} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white disabled:opacity-35">Stop</button>
                 <button type="button" onClick={resetSoupSearch} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white">Reset</button>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-black/20 p-2 text-white/65">
@@ -1215,7 +1221,7 @@ export default function GameOfLife3D({
                 <p className="mb-1 mt-3 font-semibold uppercase tracking-wide text-white/55">Exact toroidal period</p>
                 <div className="space-y-1">
                   {(soupProgress.loops || []).map((result, index) => (
-                    <button key={`${result.workerIndex}-${result.serial}`} type="button" onClick={() => loadSoupResult(result.cells)} title="Load this loop at its cycle entry" className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
+                    <button key={`${result.workerIndex}-${result.serial}`} type="button" onClick={() => loadSoupResult(result.cells)} title="Load this loop from its original seed" className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
                       <span>#{index + 1}</span><strong>{result.period.toLocaleString()} period</strong><span className="text-white/45">{result.transient.toLocaleString()} gen lead-in</span>
                     </button>
                   ))}

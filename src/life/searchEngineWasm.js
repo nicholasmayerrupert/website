@@ -17,6 +17,7 @@ export async function createLifeSearchEngine(size) {
     create: fn(module, 'life_create', 'number', ['number']),
     destroy: fn(module, 'life_destroy', null, ['number']),
     stop: fn(module, 'life_stop', null, ['number']),
+    resume: fn(module, 'life_resume', null, ['number']),
     startSoup: fn(module, 'life_start_soup', null, ['number', 'number', 'number', 'number', 'number', 'number']),
     soupPump: fn(module, 'life_soup_pump', 'number', ['number', 'number']),
     soupsSearched: fn(module, 'life_soups_searched', 'number', ['number']),
@@ -112,6 +113,7 @@ export async function createLifeSearchEngine(size) {
     },
     measureOrbit,
     stop() { api.stop(handle); },
+    resume() { api.resume(handle); },
     destroy() { api.destroy(handle); },
   };
 }

@@ -58,6 +58,8 @@ try {
   const expectedWorkers = Math.min(workerLimit, requestedWorkers);
   await page.getByLabel('Workers').fill(String(requestedWorkers));
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
   let soups = await waitForValue(page, 'Soups', (value) => value > 0);
   assert.ok(soups > 0, 'soup worker reports completed soups');
   const workers = await page.getByText('Workers', { exact: true }).last().evaluate((element) =>
@@ -89,8 +91,8 @@ try {
   await page.waitForTimeout(150);
   assert.equal(await numericSibling(page, 'Soups'), stoppedSoups, 'soup count stops with the pool');
 
-  await page.getByRole('button', { name: 'Start', exact: true }).click();
-  await waitForValue(page, 'Soups', (value) => value > 0);
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await waitForValue(page, 'Soups', (value) => value > stoppedSoups);
   await page.getByRole('button', { name: 'Close Game of Life controls' }).click();
   await page.waitForTimeout(150);
   await page.getByRole('button', { name: 'Open Game of Life controls' }).click();

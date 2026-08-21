@@ -54,13 +54,64 @@ if (pumpChannel) {
   pumpChannel.port1.onmessage = ({ data: token }) => pump(token);
 }
 
+async function createSoupEngine(data, token) {
+  let replacement;
+  try {
+    replacement = await createLifeSearchEngine(data.size);
+  } catch (error) {
+    if (token !== runToken) return false;
+    throw error;
+  }
+  if (token !== runToken) {
+    replacement.destroy();
+    return false;
+  }
+  engine = replacement;
+  return true;
+}
+
+function beginSoup(data, token) {
+  nextBatchSize = Math.max(1, Math.min(
+    MAX_LIFE_SEARCH_BATCH,
+    Math.round(data.batchSize) || 32,
+  ));
+  engine.startSoup({
+    density: data.density,
+    horizon: data.horizon,
+    seed: hashSeed(data.seed),
+    leaderboardSize: data.leaderboardSize,
+  });
+  startedAt = performance.now();
+  const interval = Math.max(100, data.progressIntervalMs || 100);
+  const phase = Math.max(0, Math.min(1, data.progressPhase || 0));
+  lastProgressAt = startedAt - interval * phase;
+  self.postMessage({ type: 'started', mode: 'soup' });
+  if (pumpChannel) pumpChannel.port2.postMessage(token);
+  else setTimeout(() => pump(token), 0);
+}
+
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === 'stop') {
       runToken++;
+      postProgress(true);
       engine?.stop();
-      settings = null;
       self.postMessage({ type: 'stopped' });
+      return;
+    }
+    if (data.type === 'resume-soup') {
+      if (!settings) throw new Error('No paused Life search to resume');
+      const token = ++runToken;
+      if (!engine) {
+        if (await createSoupEngine(settings, token)) beginSoup(settings, token);
+        return;
+      }
+      engine.resume();
+      startedAt = performance.now();
+      lastProgressAt = startedAt - Math.max(100, settings.progressIntervalMs || 100);
+      self.postMessage({ type: 'started', mode: 'soup' });
+      if (pumpChannel) pumpChannel.port2.postMessage(token);
+      else setTimeout(() => pump(token), 0);
       return;
     }
     if (data.type === 'destroy') {
@@ -72,37 +123,10 @@ self.onmessage = async ({ data }) => {
     }
     if (data.type === 'start-soup') {
       const token = ++runToken;
-      let replacement;
-      try {
-        replacement = await createLifeSearchEngine(data.size);
-      } catch (error) {
-        if (token !== runToken) return;
-        throw error;
-      }
-      if (token !== runToken) {
-        replacement.destroy();
-        return;
-      }
       engine?.destroy();
-      engine = replacement;
+      engine = null;
       settings = data;
-      nextBatchSize = Math.max(1, Math.min(
-        MAX_LIFE_SEARCH_BATCH,
-        Math.round(data.batchSize) || 32,
-      ));
-      engine.startSoup({
-        density: data.density,
-        horizon: data.horizon,
-        seed: hashSeed(data.seed),
-        leaderboardSize: data.leaderboardSize,
-      });
-      startedAt = performance.now();
-      const interval = Math.max(100, data.progressIntervalMs || 100);
-      const phase = Math.max(0, Math.min(1, data.progressPhase || 0));
-      lastProgressAt = startedAt - interval * phase;
-      self.postMessage({ type: 'started', mode: 'soup' });
-      if (pumpChannel) pumpChannel.port2.postMessage(token);
-      else setTimeout(() => pump(token), 0);
+      if (await createSoupEngine(data, token)) beginSoup(data, token);
     }
   } catch (error) {
     settings = null;

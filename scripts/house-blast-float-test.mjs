@@ -2,7 +2,7 @@
 // inside its fall path. They must receive dynamic impulses rather than acting
 // as immovable peer-layer terrain.
 
-import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -116,6 +116,71 @@ check(`peer bodies were displaced by the impact (${peerDistance.toFixed(2)} cell
   peerDistance >= 1);
 
 engine.destroy();
+
+// A large cross-layer structure and a small background body form one dynamic
+// contact island. Exact raster assignment chooses their cell poses after the
+// shared velocity solve, without an additional peer-layer position bias.
+{
+  const cols = 100, rows = 200;
+  const peerEngine = createEngineWasm({
+    cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
+  });
+  peerEngine.setBgEnabled(true);
+  for (let y = 27; y <= 42; y++) for (let x = 34; x <= 65; x++)
+    peerEngine.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  for (let y = 27; y <= 32; y++) for (let x = 34; x <= 40; x++)
+    peerEngine.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  peerEngine.syncComponentsLayer(0);
+  peerEngine.syncComponentsLayer(1);
+  peerEngine.stepWorld();
+
+  let leaderIndex = -1;
+  for (let i = 0; i < peerEngine._bodyCountLayer(0); i++)
+    if (peerEngine._bodyJointRoleLayer(0, i) === 1) leaderIndex = i;
+  const leaderId = leaderIndex >= 0
+    ? peerEngine._bodyIdLayer(0, leaderIndex) : -1;
+  const findBody = (layer, id) => {
+    for (let i = 0; i < peerEngine._bodyCountLayer(layer); i++)
+      if (peerEngine._bodyIdLayer(layer, i) === id)
+        return { index: i, state: peerEngine._bodyStateLayer(layer, i) };
+    return null;
+  };
+  peerEngine.paintDiscLayer(1, 50, 41, 0, MAT.STONE, true);
+  peerEngine.paintDiscLayer(1, 51, 41, 0, MAT.STONE, true);
+  peerEngine.syncComponentsLayer(1);
+  peerEngine.stepWorld();
+  let fragmentId = -1;
+  for (let i = 0; i < peerEngine._bodyCountLayer(1); i++) {
+    const state = peerEngine._bodyStateLayer(1, i);
+    if (peerEngine._bodyJointRoleLayer(1, i) === 0 && state?.nPts === 2)
+      fragmentId = peerEngine._bodyIdLayer(1, i);
+  }
+  const startLeader = findBody(0, leaderId)?.state;
+  const startFragment = findBody(1, fragmentId)?.state;
+  let contacted = false;
+  for (let step = 0; step < 30; step++) {
+    peerEngine.stepWorld();
+    contacted = contacted || peerEngine._worldContacts().some(
+      (contact) => contact.aLayer === 0 && contact.aId === leaderId
+        && contact.bLayer === 1 && contact.bId === fragmentId,
+    );
+  }
+  const endLeader = findBody(0, leaderId);
+  const endFragment = findBody(1, fragmentId);
+  const leaderFall = startLeader && endLeader
+    ? endLeader.state.py - startLeader.py : 0;
+  const fragmentFall = startFragment && endFragment
+    ? endFragment.state.py - startFragment.py : 0;
+
+  check('large structure contacted the small background body', contacted);
+  check(`unanchored structure kept falling after peer contact (${leaderFall.toFixed(2)} cells)`,
+    leaderFall >= 20 && endLeader
+      && peerEngine._bodyTerrainBlockedLayer(0, endLeader.index) === 0);
+  check(`background fragment kept falling (${fragmentFall.toFixed(2)} cells)`,
+    fragmentFall >= 20);
+  peerEngine.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

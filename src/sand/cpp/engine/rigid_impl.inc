@@ -712,6 +712,10 @@ void RigidBodySystem::relaxWorldContacts() {
         Body* A = bodyAt(contact.aLayer, contact.aId);
         Body* B = bodyAt(contact.bLayer, contact.bId);
         if (!A || (contact.bLayer >= 0 && !B)) continue;
+        if (solverMode == 45 && contact.aLayer != contact.bLayer
+            && A->awake && B->awake
+            && (A->nPts >= 8 * B->nPts || B->nPts >= 8 * A->nPts))
+          continue;
         double rax, ray, rbx = 0, rby = 0;
         anchor(A, contact.lax, contact.lay, rax, ray);
         if (B) anchor(B, contact.lbx, contact.lby, rbx, rby);

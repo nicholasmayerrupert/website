@@ -1,11 +1,8 @@
-// Test/diagnostic hooks for the sand engine — imported ONLY by scripts/ (tests
-// and benches), never by the browser bundle. The C ABI names carry an
-// engine_test_ prefix so the test surface is distinguishable from the
-// production API.
-//
-//   import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-//   const e = attachTestHooks(createEngineWasm({...}));
-//   e._bodyState(0); e.setGroundingDebug(true, false); ...
+// Test/diagnostic hooks for the sand engine, used by scripts (tests
+// and benches); the development worker loads them on demand for the replay
+// microscope. The C ABI names carry an engine_test_ prefix so this surface
+// stays distinguishable from the production adapter.
+// Call attachTestHooks(engine) once; underscored methods are diagnostic-only.
 
 import { _wasmInternals } from './engineFactory.js';
 import { STRIDES } from './abi.generated.js';
@@ -201,6 +198,14 @@ export function attachTestHooks(engine) {
       depth: t.worldContactState(ptr, i, 6),
       normalImpulse: t.worldContactState(ptr, i, 7),
       tangentImpulse: t.worldContactState(ptr, i, 8),
+      lax: t.worldContactState(ptr, i, 9),
+      lay: t.worldContactState(ptr, i, 10),
+      lbx: t.worldContactState(ptr, i, 11),
+      lby: t.worldContactState(ptr, i, 12),
+      initialProjection: t.worldContactState(ptr, i, 13),
+      targetVn: t.worldContactState(ptr, i, 14),
+      staticFriction: t.worldContactState(ptr, i, 15),
+      dynamicFriction: t.worldContactState(ptr, i, 16),
     }));
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyAwakeLayer = (layer, i) =>

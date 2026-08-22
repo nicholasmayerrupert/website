@@ -7,6 +7,7 @@ import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCo
 import { prepareMirrorShift } from './mirrorShift.js';
 import { createWorkerLivenessMonitor } from './workerLiveness.js';
 import { createReplayCaptureJournal } from './replayCaptureJournal.js';
+import { REPLAY_EVENT_TYPES } from '../game/replayCapsule.js';
 import {
   DEFAULT_WEATHER_ID,
   resolveWeatherIdForPlanet,
@@ -69,6 +70,7 @@ export function createWorldWorkerClient(ctx) {
   let appliedEpoch = 0;
   let replayRequestId = 0;
   const replayRequests = new Map();
+  let replayMicroscopeOpen = false;
   const replayJournal = createReplayCaptureJournal();
   const liveness = createWorkerLivenessMonitor();
   let state = {
@@ -79,6 +81,7 @@ export function createWorldWorkerClient(ctx) {
 
   const post = (message) => {
     if (closed) return false;
+    if (replayMicroscopeOpen && REPLAY_EVENT_TYPES.has(message.type)) return true;
     worker.postMessage(message);
     return true;
   };
@@ -86,6 +89,13 @@ export function createWorldWorkerClient(ctx) {
   const rejectReplayRequests = (message) => {
     for (const request of replayRequests.values()) request.reject(new Error(message));
     replayRequests.clear();
+  };
+
+  const settleMicroscopeRequest = (requestId) => {
+    const request = replayRequests.get(requestId);
+    if (!request?.frame || !request.mirrorApplied) return;
+    replayRequests.delete(requestId);
+    request.resolve(request.frame);
   };
 
   const probeLiveness = () => {
@@ -156,6 +166,14 @@ export function createWorldWorkerClient(ctx) {
           expected: data.expected,
           actual: data.actual,
         });
+      }
+      return;
+    }
+    if (data.type === 'replay-microscope-frame') {
+      const request = replayRequests.get(data.requestId);
+      if (request?.kind === 'microscope') {
+        request.frame = data.diagnostics;
+        settleMicroscopeRequest(data.requestId);
       }
       return;
     }
@@ -385,6 +403,7 @@ export function createWorldWorkerClient(ctx) {
       loadout = ctx.missionLoadout,
     } = {}) {
       if (closed) return;
+      replayMicroscopeOpen = false;
       initOptions = {
         survival, creativeKind, creativeValue, tool, creatureNaturalSpawning,
         planetId, weatherId, gravityScale, missionId, loadout,
@@ -484,6 +503,7 @@ export function createWorldWorkerClient(ctx) {
     },
     runReplay(capsule, onProgress) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      replayMicroscopeOpen = false;
       if (!!capsule?.init?.survival !== ctx.survival)
         return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
       const replayPlanetId = capsule?.init?.planetId | 0;
@@ -526,6 +546,85 @@ export function createWorldWorkerClient(ctx) {
           resolve, reject, onProgress, capsule, kind: 'run',
         });
         if (!post({ type: 'replay-run', requestId, capsule })) {
+          replayRequests.delete(requestId);
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
+    openReplayMicroscope(capsule, onProgress, options = {}) {
+      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      if (!!capsule?.init?.survival !== ctx.survival)
+        return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
+      const replayPlanetId = capsule?.init?.planetId | 0;
+      if (replayPlanetId !== ctx.planetId)
+        return Promise.reject(new Error('Open this replay on the matching planet.'));
+      const replayWeatherId = resolveWeatherIdForPlanet(
+        capsule?.init?.weatherId ?? DEFAULT_WEATHER_ID,
+        replayPlanetId,
+      );
+      if (capsule?.init?.weatherId !== undefined
+          && capsule.init.weatherId !== replayWeatherId)
+        return Promise.reject(new Error('Replay weather is invalid for its planet.'));
+      const cols = capsule?.init?.cols | 0;
+      const rows = capsule?.init?.rows | 0;
+      if (!cols || !rows)
+        return Promise.reject(new Error('Replay dimensions are missing.'));
+      pending = null;
+      pendingDraft = null;
+      pendingCreatures = null;
+      pendingActors = null;
+      awaitingResizeId = 0;
+      appliedEpoch = 0;
+      lastControl = '';
+      predictor = null;
+      predictorEngine = null;
+      predictorPlayerId = 0;
+      authoritativePlayerId = 0;
+      players = [];
+      items = new Float32Array(0);
+      projectiles = new Float32Array(0);
+      ctx.worldSeed = capsule.init.worldSeed >>> 0;
+      ctx.planetId = replayPlanetId;
+      ctx.weatherId = replayWeatherId;
+      ctx.weatherVisualKey = 0;
+      if (Number.isFinite(capsule.init.gravityScale))
+        ctx.gravityScale = capsule.init.gravityScale;
+      ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      replayMicroscopeOpen = true;
+      const requestId = ++replayRequestId;
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, {
+          resolve, reject, onProgress, kind: 'microscope',
+          frame: null, mirrorApplied: false,
+        });
+        if (!post({
+          type: 'replay-microscope-seek', requestId,
+          capsule, turn: 0, options,
+        })) {
+          replayRequests.delete(requestId);
+          replayMicroscopeOpen = false;
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
+    seekReplayMicroscope(turn, onProgress, options = {}) {
+      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      if (!replayMicroscopeOpen)
+        return Promise.reject(new Error('Open a replay before seeking its timeline.'));
+      pending = null;
+      pendingDraft = null;
+      pendingCreatures = null;
+      pendingActors = null;
+      const requestId = ++replayRequestId;
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, {
+          resolve, reject, onProgress, kind: 'microscope',
+          frame: null, mirrorApplied: false,
+        });
+        if (!post({
+          type: 'replay-microscope-seek', requestId,
+          turn: turn | 0, options,
+        })) {
           replayRequests.delete(requestId);
           reject(new Error('Simulation worker is unavailable.'));
         }
@@ -590,6 +689,10 @@ export function createWorldWorkerClient(ctx) {
           const bytes = new Uint8Array(packet.data);
           packetBytes = bytes.length;
           let requestResync = false;
+          if (packet.type === 'full' && packet.reason === 'replay-microscope'
+              && (packet.cols !== ctx.engine.cols || packet.rows !== ctx.engine.rows)) {
+            ctx.fns.rebuildEngineForReplay?.(packet.cols, packet.rows);
+          }
           if (packet.type === 'full' || packet.type === 'shift') {
             mirrorFrame = {
               cam: ctx.engine.getCam(),
@@ -634,6 +737,13 @@ export function createWorldWorkerClient(ctx) {
               if (awaitingResizeId && packet.resizeId === awaitingResizeId) awaitingResizeId = 0;
               ctx.forceFullRender = true;
               changed = true;
+              if (packet.microscopeRequestId) {
+                const request = replayRequests.get(packet.microscopeRequestId);
+                if (request?.kind === 'microscope') {
+                  request.mirrorApplied = true;
+                  settleMicroscopeRequest(packet.microscopeRequestId);
+                }
+              }
             }
           }
         } else if (packet.type === 'shift') {
@@ -735,6 +845,13 @@ export function createWorldWorkerClient(ctx) {
             lastMirrorPacketError: error?.message || String(error),
             resizePending: !!awaitingResizeId,
           };
+          if (packet.microscopeRequestId) {
+            const request = replayRequests.get(packet.microscopeRequestId);
+            if (request?.kind === 'microscope') {
+              replayRequests.delete(packet.microscopeRequestId);
+              request.reject(error);
+            }
+          }
           console.error('sand world mirror packet failed', error);
         }
       }

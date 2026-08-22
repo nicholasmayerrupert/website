@@ -82,6 +82,7 @@ let replayJournalEvents = [];
 let replayJournalGateFlags = 0;
 let replayRunning = false;
 let replayTransportSuppressed = false;
+let replayMicroscopeSession = null;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
@@ -935,6 +936,7 @@ function exportReplay(requestId, view) {
 }
 
 async function runReplayCapsule(requestId, value) {
+  replayMicroscopeSession = null;
   let capsule;
   try {
     capsule = validateReplayCapsule(value);
@@ -1048,6 +1050,150 @@ async function runReplayCapsule(requestId, value) {
   replaySlice();
 }
 
+async function resetReplayMicroscope(capsule, options) {
+  clearTimeout(timer);
+  replayRunning = true;
+  replayTransportSuppressed = true;
+  replayCaptureStarting = false;
+  replayJournalEvents = [];
+  replayJournalGateFlags = 0;
+  pendingRuntimeConfig = null;
+  pendingResize = null;
+  pendingWeatherId = null;
+  const initialized = await initializeAuthority(
+    { type: 'init', ...capsule.init },
+    { scheduleRuns: false, usePending: false },
+  );
+  if (!initialized || closing)
+    throw new Error('The replay microscope could not initialize the authority.');
+  const { createReplayMicroscopeProbe } = await import('./replayMicroscopeWorker.js');
+  const probe = createReplayMicroscopeProbe(engine, options);
+  replayMicroscopeSession = {
+    capsule,
+    eventIndex: 0,
+    gateIndex: 0,
+    turn: 0,
+    probe,
+  };
+  probe.observe(0);
+  return replayMicroscopeSession;
+}
+
+function applyMicroscopeEvents(session, turn) {
+  const { capsule } = session;
+  while (session.eventIndex < capsule.events.length
+         && capsule.events[session.eventIndex].tick === turn) {
+    applyRuntimeMessage(capsule.events[session.eventIndex].message);
+    session.eventIndex++;
+  }
+}
+
+function applyMicroscopeGate(session) {
+  const { capsule, turn } = session;
+  while (session.gateIndex < capsule.gates.length
+         && capsule.gates[session.gateIndex].end <= turn) session.gateIndex++;
+  const gate = capsule.gates[session.gateIndex];
+  const flags = gate && gate.start <= turn && turn < gate.end ? gate.flags : 0;
+  awaitingAck = !!(flags & REPLAY_GATE_AWAITING_ACK);
+  fullResyncRequested = !!(flags & REPLAY_GATE_FULL_RESYNC);
+}
+
+async function seekReplayMicroscope(requestId, value, target, options = {}) {
+  if (!import.meta.env.DEV) {
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'The replay microscope is available only from the development build.',
+    });
+    return;
+  }
+  let capsule;
+  try {
+    capsule = value ? validateReplayCapsule(value) : replayMicroscopeSession?.capsule;
+    if (!capsule) throw new Error('Open a replay before seeking its timeline.');
+    target = Math.max(0, Math.min(capsule.turns, target | 0));
+  } catch (error) {
+    self.postMessage({ type: 'replay-error', requestId, message: error.message });
+    return;
+  }
+
+  try {
+    const mustReset = !replayMicroscopeSession || value
+      || target < replayMicroscopeSession.turn;
+    const session = mustReset
+      ? await resetReplayMicroscope(capsule, options)
+      : replayMicroscopeSession;
+    replayRunning = true;
+    replayTransportSuppressed = true;
+
+    const fail = (error) => {
+      replayRunning = false;
+      replayTransportSuppressed = false;
+      paused = true;
+      self.postMessage({
+        type: 'replay-error', requestId,
+        message: error?.message || String(error),
+      });
+    };
+    const finish = () => {
+      try {
+        applyMicroscopeEvents(session, session.turn);
+        paused = true;
+        replayRunning = false;
+        replayTransportSuppressed = false;
+        const diagnostics = session.probe.snapshot(session.turn, options);
+        diagnostics.replayState = replayFinalState();
+        postFull('replay-microscope', {
+          microscopeRequestId: requestId,
+          replayView: {
+            cameraWorldX: diagnostics.camera.worldX,
+            cameraWorldY: diagnostics.camera.worldY,
+          },
+        });
+        postActors(true);
+        self.postMessage({
+          type: 'replay-microscope-frame', requestId,
+          diagnostics,
+        });
+      } catch (error) {
+        fail(error);
+      }
+    };
+    const advanceSlice = () => {
+      if (closing || !replayRunning) return;
+      try {
+        const end = Math.min(target, session.turn + 120);
+        while (session.turn < end) {
+          applyMicroscopeEvents(session, session.turn);
+          applyMicroscopeGate(session);
+          executeTurn(performance.now(), false);
+          session.turn++;
+          session.probe.observe(session.turn);
+        }
+        if (session.turn >= target) {
+          finish();
+          return;
+        }
+        self.postMessage({
+          type: 'replay-progress', requestId,
+          turn: session.turn, turns: capsule.turns,
+        });
+        setTimeout(advanceSlice, 0);
+      } catch (error) {
+        fail(error);
+      }
+    };
+    advanceSlice();
+  } catch (error) {
+    replayRunning = false;
+    replayTransportSuppressed = false;
+    paused = true;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: error?.message || String(error),
+    });
+  }
+}
+
 self.onmessage = async ({ data }) => {
   if (!data) return;
   if (data.type === 'destroy') {
@@ -1070,8 +1216,22 @@ self.onmessage = async ({ data }) => {
     await runReplayCapsule(data.requestId, data.capsule);
     return;
   }
+  if (data.type === 'replay-microscope-seek') {
+    if (replayRunning) {
+      self.postMessage({
+        type: 'replay-error', requestId: data.requestId,
+        message: 'A replay seek is already running.',
+      });
+      return;
+    }
+    await seekReplayMicroscope(
+      data.requestId, data.capsule, data.turn, data.options,
+    );
+    return;
+  }
   if (replayRunning) return;
   if (data.type === 'init') {
+    replayMicroscopeSession = null;
     beginReplayCapture(data);
     await initializeAuthority(data);
     return;

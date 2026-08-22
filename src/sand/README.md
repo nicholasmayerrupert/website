@@ -254,6 +254,41 @@ The copy/paste codec stores delta-tick event tuples, changed control/input field
 and sparse transport-gate ranges, then uses gzip when the compressed text is
 smaller. Version 2 plain-JSON capsules remain importable.
 
+### Replay microscope
+
+`npm run replay:microscope -- <capsule-file>` opens a development authority in
+headless Chromium and writes arbitrary timeline frames plus structured engine
+diagnostics. The command starts and stops its own Vite server unless `--url` is
+provided. Output defaults to a temporary directory and contains per-frame PNG
+and JSON files, `report.json`, and an HTML filmstrip.
+
+```sh
+npm run replay:microscope -- issue.sand-replay \
+  --at 0,3000,6138 --filmstrip 5100:5350:10 \
+  --body 0:936 --focus body --cell 120,-40 \
+  --around-anomalies 6
+```
+
+On a fresh machine, run `npm install` and `npx playwright install chromium`
+once. The CLI and its Vite process lifecycle support Windows, macOS, and Linux.
+
+Useful options include `--overlays`, `--scan-body-limit`, `--viewport`,
+`--json-only`, and repeatable `--cell`/`--at` arguments. Run the command with
+`--help` for the complete list. The scanner marks stalled unanchored bodies,
+deep contacts, sleep/wake transitions, and terrain-contact transitions while
+the authority advances. Forward seeks continue from the current state;
+backward seeks rebuild the authority and deterministically replay to the target.
+
+During a development session, `window.__sandReplayMicroscope` exposes the same
+persistent timeline directly. Its main methods are `open`, `seek`, `step`,
+`inspectBody`, `inspectCell`, `findBodies`, `selectBody`, `setOverlays`,
+`screenBounds`, `nearbyEvents`, `timeline`, and `summary`. This is the preferred
+surface for an automated browser agent that needs to move through a replay one
+frame at a time and request close-up screenshots without copying the capsule
+into its prompt. With a selected body, the default `selection` overlay limits
+labels, velocity arrows, status, and contacts to that body while leaving nearby
+body bounds faintly visible for context.
+
 ## Source map
 
 - `cpp/sand.cpp`: unity translation unit and `Engine` composition.

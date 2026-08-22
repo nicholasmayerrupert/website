@@ -7,6 +7,7 @@
 import { ITEM_FIELDS } from '../net/protocol.js';
 import { TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
+import { createReplayMicroscopeDev } from './replayMicroscopeDev.js';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function installDevHooks(ctx, {
@@ -24,6 +25,7 @@ export function installDevHooks(ctx, {
   netStatus,
 }) {
   const engine = () => ctx.engine;
+  const replayMicroscope = createReplayMicroscopeDev(ctx, render);
 
   window.__sandPerf = () => {
     const { avg, p95, samples } = perfFrameSummary();
@@ -228,6 +230,7 @@ export function installDevHooks(ctx, {
       };
     },
   };
+  window.__sandReplayMicroscope = replayMicroscope;
 
   // Multiplayer hooks for the two-context Playwright test.
   window.__sandNet = {
@@ -261,5 +264,7 @@ export function installDevHooks(ctx, {
     delete window.__sandPerf;
     delete window.__sandTest;
     delete window.__sandNet;
+    replayMicroscope.destroy();
+    delete window.__sandReplayMicroscope;
   };
 }

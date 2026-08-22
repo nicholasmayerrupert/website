@@ -273,6 +273,14 @@ double RigidBodySystem::worldContactState(int index, int field) const {
     case 6: return contact.depth;
     case 7: return contact.accJn;
     case 8: return contact.accJt;
+    case 9: return contact.lax;
+    case 10: return contact.lay;
+    case 11: return contact.lbx;
+    case 12: return contact.lby;
+    case 13: return contact.initialProjection;
+    case 14: return contact.targetVn;
+    case 15: return contact.staticFriction;
+    case 16: return contact.dynamicFriction;
     default: return NAN;
   }
 }

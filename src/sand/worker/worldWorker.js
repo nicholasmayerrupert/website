@@ -83,6 +83,7 @@ let replayJournalGateFlags = 0;
 let replayRunning = false;
 let replayTransportSuppressed = false;
 let replayMicroscopeSession = null;
+let replayPlaybackStart = null;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
@@ -475,11 +476,11 @@ function toLocal(worldX, worldY) {
   };
 }
 
-function streamForControl() {
+function streamForControl(blockedByTransport = awaitingAck) {
   // A partial shift contains only dirtiness accumulated after the last packet.
   // Keep its coordinate frame behind the unacknowledged diff that owns earlier
   // edits, otherwise the presentation's latest-packet queue could drop them.
-  if (!control || control.suspendStreaming || awaitingAck) return false;
+  if (!control || control.suspendStreaming || blockedByTransport) return false;
   // A viewport must fit inside the loaded window before edge streaming has a
   // meaningful answer. This also makes the worker robust to a resize/control
   // message reordering: an oversized view otherwise satisfies an edge test on
@@ -604,7 +605,12 @@ function schedule(delay = null) {
   timer = setTimeout(run, wait);
 }
 
-function executeTurn(started, scheduleNext = true, streamBreadcrumbPublished = false) {
+function executeTurn(
+  started,
+  scheduleNext = true,
+  streamBreadcrumbPublished = false,
+  replayGateFlags = null,
+) {
   const publishBreadcrumbs = !replayRunning;
   livenessTurn++;
   // The live capture journal already carries this packed stream marker. Reuse
@@ -615,7 +621,10 @@ function executeTurn(started, scheduleNext = true, streamBreadcrumbPublished = f
   );
   const fromWorldOffsetX = engine.getWorldOffsetX();
   const fromWorldOffsetY = engine.getWorldOffsetY();
-  const shifted = streamForControl();
+  const replayAwaitingAck = replayGateFlags === null
+    ? awaitingAck
+    : !!(replayGateFlags & REPLAY_GATE_AWAITING_ACK);
+  const shifted = streamForControl(replayAwaitingAck);
   if (shifted) {
     // The shift has already translated every authority-owned actor into the new
     // buffer frame. Start its epoch before any of those coordinates are posted.
@@ -663,14 +672,20 @@ function executeTurn(started, scheduleNext = true, streamBreadcrumbPublished = f
   lastStepMs = performance.now() - stepStart;
   rateSteps++;
   // Establish the new mirror coordinate frame before publishing any payload
-  // whose local coordinates were translated by the stream. A requested full
-  // snapshot is reserved for recovery; ordinary shifts carry only dirty bands.
-  const postedFull = fullResyncRequested;
+  // whose local coordinates were translated by the stream. Live shifts carry
+  // dirty bands; visible replay shifts use self-contained snapshots because
+  // their recorded timing is independent of the current browser's ACK timing.
+  const postedFull = fullResyncRequested || (
+    replayGateFlags !== null
+      && !!(replayGateFlags & REPLAY_GATE_FULL_RESYNC)
+  );
   if (postedFull) {
     fullResyncRequested = false;
     postFull('resync');
   } else if (shifted) {
-    postShift(fromWorldOffsetX, fromWorldOffsetY);
+    if (replayGateFlags !== null && !replayTransportSuppressed)
+      postFull('replay-stream');
+    else postShift(fromWorldOffsetX, fromWorldOffsetY);
   }
   postSounds();
   if (started - lastStatsPost >= 250) {
@@ -952,7 +967,7 @@ function exportReplay(requestId, view) {
   self.postMessage({ type: 'replay-capsule', requestId, capsule });
 }
 
-async function runReplayCapsule(requestId, value) {
+async function runReplayCapsule(requestId, value, { playback = false } = {}) {
   replayMicroscopeSession = null;
   let capsule;
   try {
@@ -964,7 +979,8 @@ async function runReplayCapsule(requestId, value) {
 
   clearTimeout(timer);
   replayRunning = true;
-  replayTransportSuppressed = true;
+  replayTransportSuppressed = !playback;
+  replayPlaybackStart = null;
   replayCaptureStarting = false;
   replayJournalEvents = [];
   replayJournalGateFlags = 0;
@@ -996,6 +1012,7 @@ async function runReplayCapsule(requestId, value) {
     }
   };
   const fail = (error) => {
+    replayPlaybackStart = null;
     replayRunning = false;
     replayTransportSuppressed = false;
     paused = true;
@@ -1007,6 +1024,7 @@ async function runReplayCapsule(requestId, value) {
   };
   const finish = () => {
     try {
+      replayPlaybackStart = null;
       applyEventsAtTurn(turnIndex);
       if (eventIndex !== capsule.events.length)
         throw new Error('Replay ended before all authority events were applied.');
@@ -1035,6 +1053,72 @@ async function runReplayCapsule(requestId, value) {
       fail(error);
     }
   };
+  const replayView = () => {
+    if (control && Number.isFinite(control.camWorldX)
+        && Number.isFinite(control.camWorldY)) {
+      return {
+        cameraWorldX: control.camWorldX,
+        cameraWorldY: control.camWorldY,
+        viewCols: control.viewCols,
+        viewRows: control.viewRows,
+        zoom: capsule.view?.zoom,
+      };
+    }
+    return capsule.view || {};
+  };
+  const publishPlaybackProgress = () => {
+    self.postMessage({
+      type: 'replay-progress', requestId,
+      turn: turnIndex, turns: capsule.turns,
+      view: replayView(),
+    });
+  };
+  const replayTurn = () => {
+    if (closing || !replayRunning) return;
+    try {
+      if (turnIndex >= capsule.turns) {
+        finish();
+        return;
+      }
+      applyEventsAtTurn(turnIndex);
+      while (gateIndex < capsule.gates.length
+             && capsule.gates[gateIndex].end <= turnIndex) gateIndex++;
+      const gate = capsule.gates[gateIndex];
+      const flags = gate && gate.start <= turnIndex && turnIndex < gate.end
+        ? gate.flags : 0;
+      executeTurn(performance.now(), false, false, flags);
+      turnIndex++;
+      publishPlaybackProgress();
+      if (turnIndex >= capsule.turns) {
+        finish();
+        return;
+      }
+      timer = setTimeout(replayTurn, turnDeadline.nextDelay(performance.now()));
+    } catch (error) {
+      fail(error);
+    }
+  };
+  if (playback) {
+    // Publish turn zero before starting the real-time clock. The browser ACK of
+    // the initialization snapshot starts playback, so the first visible diff
+    // cannot overtake the world it is based on.
+    applyEventsAtTurn(0);
+    publishPlaybackProgress();
+    let started = false;
+    const start = () => {
+      if (started || closing || !replayRunning) return;
+      started = true;
+      replayPlaybackStart = null;
+      clearTimeout(timer);
+      turnDeadline.reset(performance.now());
+      timer = setTimeout(replayTurn, turnDeadline.nextDelay(performance.now()));
+    };
+    replayPlaybackStart = start;
+    // A renderer normally ACKs on its next RAF. Keep a bounded fallback for a
+    // hidden/throttled document so playback cannot remain armed forever.
+    timer = setTimeout(start, 500);
+    return;
+  }
   const replaySlice = () => {
     if (closing || !replayRunning) return;
     try {
@@ -1046,9 +1130,7 @@ async function runReplayCapsule(requestId, value) {
         const gate = capsule.gates[gateIndex];
         const flags = gate && gate.start <= turnIndex && turnIndex < gate.end
           ? gate.flags : 0;
-        awaitingAck = !!(flags & REPLAY_GATE_AWAITING_ACK);
-        fullResyncRequested = !!(flags & REPLAY_GATE_FULL_RESYNC);
-        executeTurn(performance.now(), false);
+        executeTurn(performance.now(), false, false, flags);
         turnIndex++;
       }
       if (turnIndex >= capsule.turns) {
@@ -1230,7 +1312,9 @@ self.onmessage = async ({ data }) => {
       });
       return;
     }
-    await runReplayCapsule(data.requestId, data.capsule);
+    await runReplayCapsule(data.requestId, data.capsule, {
+      playback: !!data.playback,
+    });
     return;
   }
   if (data.type === 'replay-microscope-seek') {
@@ -1246,7 +1330,13 @@ self.onmessage = async ({ data }) => {
     );
     return;
   }
-  if (replayRunning) return;
+  if (replayRunning) {
+    if (data.type === 'ack' || data.type === 'resync') {
+      applyRuntimeMessage(data);
+      if (!awaitingAck && replayPlaybackStart) replayPlaybackStart();
+    }
+    return;
+  }
   if (data.type === 'init') {
     replayMicroscopeSession = null;
     beginReplayCapture(data);

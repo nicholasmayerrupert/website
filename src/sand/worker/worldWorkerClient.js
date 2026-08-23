@@ -41,6 +41,7 @@ export function createWorldWorkerClient(ctx) {
   let pendingCreatures = null;
   let pendingActors = null;
   let pendingSounds = [];
+  let pendingReplayView = null;
   let lastControl = '';
   let resizeTimer = 0;
   let resizeId = 0;
@@ -89,6 +90,8 @@ export function createWorldWorkerClient(ctx) {
   const rejectReplayRequests = (message) => {
     for (const request of replayRequests.values()) request.reject(new Error(message));
     replayRequests.clear();
+    pendingReplayView = null;
+    state = { ...state, replayPlaying: false };
   };
 
   const settleMicroscopeRequest = (requestId) => {
@@ -162,6 +165,12 @@ export function createWorldWorkerClient(ctx) {
       return;
     }
     if (data.type === 'replay-progress') {
+      if (data.view && typeof data.view === 'object') pendingReplayView = data.view;
+      state = {
+        ...state,
+        replayTurn: Math.max(0, data.turn | 0),
+        replayTurns: Math.max(0, data.turns | 0),
+      };
       replayRequests.get(data.requestId)?.onProgress?.(data.turn, data.turns);
       return;
     }
@@ -171,6 +180,7 @@ export function createWorldWorkerClient(ctx) {
         replayRequests.delete(data.requestId);
         if (request.kind === 'run') lastControl = '';
         if (request.capsule) replayJournal.replace(request.capsule);
+        state = { ...state, replayPlaying: false };
         request.resolve({
           matched: !!data.matched,
           expected: data.expected,
@@ -192,6 +202,7 @@ export function createWorldWorkerClient(ctx) {
       if (request) {
         replayRequests.delete(data.requestId);
         if (request.kind === 'run') lastControl = '';
+        state = { ...state, replayPlaying: false };
         request.reject(new Error(data.message || 'Replay failed.'));
       }
       return;
@@ -516,7 +527,7 @@ export function createWorldWorkerClient(ctx) {
       return requestReplayExport(view)
         .then((capsule) => addCaptureDiagnostics(capsule, true));
     },
-    runReplay(capsule, onProgress) {
+    runReplay(capsule, onProgress, options = {}) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
       replayMicroscopeOpen = false;
       if (!!capsule?.init?.survival !== ctx.survival)
@@ -531,14 +542,17 @@ export function createWorldWorkerClient(ctx) {
       if (capsule?.init?.weatherId !== undefined
           && capsule.init.weatherId !== replayWeatherId)
         return Promise.reject(new Error('Replay weather is invalid for its planet.'));
-      const cols = capsule?.final?.cols | 0;
-      const rows = capsule?.final?.rows | 0;
+      const playback = !!options.playback;
+      const dims = playback ? capsule?.init : capsule?.final;
+      const cols = dims?.cols | 0;
+      const rows = dims?.rows | 0;
       if (!cols || !rows)
         return Promise.reject(new Error('Replay dimensions are missing.'));
       pending = null;
       pendingDraft = null;
       pendingCreatures = null;
       pendingActors = null;
+      pendingReplayView = null;
       awaitingResizeId = 0;
       appliedEpoch = 0;
       lastControl = '';
@@ -555,13 +569,20 @@ export function createWorldWorkerClient(ctx) {
       ctx.weatherVisualKey = 0;
       if (Number.isFinite(capsule.init.gravityScale)) ctx.gravityScale = capsule.init.gravityScale;
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      state = {
+        ...state,
+        replayPlaying: playback,
+        replayTurn: 0,
+        replayTurns: Math.max(0, capsule.turns | 0),
+      };
       const requestId = ++replayRequestId;
       return new Promise((resolve, reject) => {
         replayRequests.set(requestId, {
           resolve, reject, onProgress, capsule, kind: 'run',
         });
-        if (!post({ type: 'replay-run', requestId, capsule })) {
+        if (!post({ type: 'replay-run', requestId, capsule, playback })) {
           replayRequests.delete(requestId);
+          state = { ...state, replayPlaying: false };
           reject(new Error('Simulation worker is unavailable.'));
         }
       });
@@ -704,7 +725,8 @@ export function createWorldWorkerClient(ctx) {
           const bytes = new Uint8Array(packet.data);
           packetBytes = bytes.length;
           let requestResync = false;
-          if (packet.type === 'full' && packet.reason === 'replay-microscope'
+          if (packet.type === 'full'
+              && (packet.reason === 'replay-microscope' || state.replayPlaying)
               && (packet.cols !== ctx.engine.cols || packet.rows !== ctx.engine.rows)) {
             ctx.fns.rebuildEngineForReplay?.(packet.cols, packet.rows);
           }
@@ -952,6 +974,17 @@ export function createWorldWorkerClient(ctx) {
         }
         state = { ...state, actorTick: packet.actorTick | 0 };
         changed = true;
+      }
+      if (pendingReplayView && ctx.engine) {
+        const view = pendingReplayView;
+        pendingReplayView = null;
+        if (Number.isFinite(view.cameraWorldX) && Number.isFinite(view.cameraWorldY)) {
+          ctx.engine.cameraSet(
+            view.cameraWorldX - ctx.engine.getWorldOffsetX(),
+            view.cameraWorldY - ctx.engine.getWorldOffsetY(),
+          );
+          changed = true;
+        }
       }
       return changed;
     },

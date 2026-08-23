@@ -114,10 +114,13 @@ export function createReplayPanel(ctx) {
     }
     return `${capsule.turns.toLocaleString()} accepted authority turns and ${capsule.events.length.toLocaleString()} events are copyable now.${progress} Waiting for the authority's final-state export…`;
   };
+  const setVisible = (visible) => {
+    overlay.hidden = !visible;
+    overlay.style.display = visible ? 'grid' : 'none';
+  };
   const open = async () => {
     if (!overlay.hidden || busy) return;
-    overlay.hidden = false;
-    overlay.style.display = 'grid';
+    setVisible(true);
     status.style.color = '#cbd2d9';
     status.textContent = 'Freezing this tick and collecting the authority log…';
     textarea.value = '';
@@ -170,8 +173,7 @@ export function createReplayPanel(ctx) {
   const hide = (resume) => {
     openGeneration++;
     setBusy(false);
-    overlay.hidden = true;
-    overlay.style.display = 'none';
+    setVisible(false);
     if (resume) ctx.worldWorker?.config({ paused: false });
     ctx.container.focus({ preventScroll: true });
   };
@@ -194,17 +196,24 @@ export function createReplayPanel(ctx) {
     setBusy(true);
     status.style.color = '#cbd2d9';
     status.textContent = 'Decoding replay capsule…';
+    let panelHiddenForPlayback = false;
     try {
       const capsule = await decodeReplayCapsule(textarea.value);
       status.textContent = `Replaying ${capsule.turns.toLocaleString()} authority turns…`;
+      setVisible(false);
+      panelHiddenForPlayback = true;
+      ctx.container.focus({ preventScroll: true });
       const result = await ctx.worldWorker.runReplay(capsule, (turn, turns) => {
         status.textContent = `Replaying turn ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
-      });
+      }, { playback: true });
+      setVisible(true);
+      panelHiddenForPlayback = false;
       status.style.color = result.matched ? '#b9e6b1' : '#ffca78';
       status.textContent = result.matched
         ? 'Replay verified: tick, streamed offset, actors, topology totals, and both-layer grid checksum match. The simulation is paused for inspection.'
         : `Replay finished but verification differed (expected grid ${result.expected.gridHash}, got ${result.actual.gridHash}).`;
     } catch (error) {
+      if (panelHiddenForPlayback) setVisible(true);
       showError(error);
     } finally {
       setBusy(false);

@@ -255,6 +255,8 @@ const container = new FakeElement('div');
 const staleAuthority = deferred();
 const authorityA = deferred();
 const authorityB = deferred();
+const playback = deferred();
+let playbackRequest = null;
 const captures = [
   { fallback, verified: staleAuthority.promise },
   { fallback, verified: authorityA.promise },
@@ -274,6 +276,10 @@ const ctx = {
   worldWorker: {
     captureReplay: () => captures.shift(),
     config: () => {},
+    runReplay: (capsule, onProgress, options) => {
+      playbackRequest = { capsule, onProgress, options };
+      return playback.promise;
+    },
   },
 };
 const panel = createReplayPanel(ctx);
@@ -319,6 +325,15 @@ authorityA.resolve(verified);
 await eventually(() => button('Run replay').disabled === false);
 assert.notEqual(textarea.value, fallbackText);
 assert.match(status.textContent, /authority's final state/);
+
+button('Run replay').dispatchEvent({ type: 'click' });
+await eventually(() => overlay.hidden === true && playbackRequest !== null);
+assert.equal(playbackRequest.options.playback, true);
+assert.equal(playbackRequest.capsule.final.gridHash, verified.final.gridHash);
+playbackRequest.onProgress(1, verified.turns);
+playback.resolve({ matched: true, expected: verified.final, actual: verified.final });
+await eventually(() => overlay.hidden === false);
+assert.match(status.textContent, /Replay verified:/);
 
 button('Resume & close').dispatchEvent({ type: 'click' });
 await panel.open();

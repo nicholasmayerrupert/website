@@ -167,7 +167,16 @@ try {
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
     .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
+  const replayTargetTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Deterministic replay capsule"]')?.hidden,
+  null, { timeout: 30000 });
+  await page.waitForFunction((target) => {
+    const perf = window.__sandPerf();
+    return perf.mirrorWorldTick > 0 && perf.mirrorWorldTick < target;
+  }, replayTargetTick, { timeout: 30000 });
+  check('Run replay closes the panel and presents intermediate authority turns', true);
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('[aria-label="Deterministic replay capsule"]')?.textContent
     .includes('Replay verified:'), null, { timeout: 120000 });

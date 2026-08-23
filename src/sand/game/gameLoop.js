@@ -331,16 +331,17 @@ export function createGameLoop(ctx, {
   const doActorStep = () => {
     const engine = ctx.engine;
     if (!engine) return false;
-    if (!ctx.playMode) engine.cameraPanTick();
+    const replayPlaying = !!ctx.worldWorker?.state?.replayPlaying;
+    if (!ctx.playMode && !replayPlaying) engine.cameraPanTick();
     if (ctx.net.connected) ctx.net.update();
     if (ctx.netClientReady() && ctx.worldWorker) ctx.stopLocalAuthority();
     if (ctx.survival && !ctx.net.connected && !ctx.worldWorker) {
       ctx.cols = 0; ctx.rows = 0; fit(); ctx.startLocalAuthority();
     }
-    if (!ctx.netClientReady() && ctx.worldWorker && ctx.playMode) {
+    if (!replayPlaying && !ctx.netClientReady() && ctx.worldWorker && ctx.playMode) {
       ctx.worldWorker.sendInput(currentLocalInput(), ++ctx.inputSeq);
     }
-    if (ctx.playMode) followCamera();
+    if (ctx.playMode && !replayPlaying) followCamera();
     return ctx.playMode || !!ctx.net.connected;
   };
 
@@ -395,7 +396,7 @@ export function createGameLoop(ctx, {
       timing = actorClock.advance(now, () => ctx.engine?.cameraPanTick());
     } else {
       timing = actorClock.advance(now, () => { if (doActorStep(now)) actorChanged = true; });
-      ctx.worldWorker?.updateControl();
+      if (!ctx.worldWorker?.state?.replayPlaying) ctx.worldWorker?.updateControl();
     }
     ctx.timingStats = {
       actorSteps: timing.steps,

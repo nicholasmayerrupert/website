@@ -3,6 +3,10 @@
 // without advancing the world simulation.
 
 export class Predictor {
+  // About three seconds of 60 Hz actor inputs. A stalled authority must not
+  // grow an unbounded replay queue.
+  static MAX_PENDING = 180;
+
   constructor(engine, playerId) {
     this.engine = engine;
     this.id = playerId;
@@ -20,6 +24,8 @@ export class Predictor {
     this.engine.setPlayerInput(this.id, { ...input, seq });
     this.engine.stepPlayerOnly(this.id);
     this.pending.push({ seq, input });
+    if (this.pending.length > Predictor.MAX_PENDING)
+      this.pending.splice(0, this.pending.length - Predictor.MAX_PENDING);
     this.currentInput = input;
     this.currentInputSeq = seq;
   }

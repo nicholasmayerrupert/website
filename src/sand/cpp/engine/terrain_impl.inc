@@ -530,7 +530,7 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
       double solidify = std::fmax(0.0, std::fmin(1.0,
         (double)(worldY - BACKGROUND_FADE_TOP)
         / (double)(BACKGROUND_SOLID_Y - BACKGROUND_FADE_TOP)));
-      result = !notch && nx * nx + ny * ny < 0.78 + rough - solidify * 0.72;
+      result = !notch && nx * nx + ny * ny < (0.78 + rough) * (1.0 - solidify);
     }
   } else if (!E.L->isBackground && worldY < DEEP_BLEND_BOTTOM) {
     result = genIsBackboneCave(worldX, worldY);

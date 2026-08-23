@@ -131,6 +131,16 @@ export function createWorldWorkerClient(ctx) {
       };
       return;
     }
+    if (data.type === 'replay-journal-abort-turn') {
+      replayJournal.abortTurn();
+      state = {
+        ...state,
+        replayTurns: replayJournal.turns,
+        replayJournalTruncated: replayJournal.truncated,
+        replayJournalDiscontinuous: replayJournal.discontinuous,
+      };
+      return;
+    }
     if (data.type === 'replay-journal-turn') {
       replayJournal.noteTurn(data);
       if (Number.isSafeInteger(data.liveness))
@@ -231,7 +241,7 @@ export function createWorldWorkerClient(ctx) {
       pendingActors = {
         ...data,
         inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
-        cursor: data.inventory !== undefined ? data.cursor : prior?.cursor,
+        cursor: data.cursor !== undefined ? data.cursor : prior?.cursor,
         itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
         items: data.items !== undefined ? data.items : prior?.items,
         projectileData: data.projectileData !== undefined
@@ -241,7 +251,12 @@ export function createWorldWorkerClient(ctx) {
         mission: data.mission !== undefined ? data.mission : prior?.mission,
       };
     } else if (data.type === 'sounds') {
-      if (!data.epoch || data.epoch >= appliedEpoch) pendingSounds.push(new Float32Array(data.data));
+      if (!data.epoch || data.epoch >= appliedEpoch) {
+        if (typeof document === 'undefined' || !document.hidden) {
+          pendingSounds.push(new Float32Array(data.data));
+          if (pendingSounds.length > 32) pendingSounds.splice(0, pendingSounds.length - 32);
+        }
+      }
     } else if (data.type === 'stats') {
       liveness.noteAuthorityTick(data.worldTick, receivedAt);
       state = {

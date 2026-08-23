@@ -4430,7 +4430,7 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
 }
 bool RigidBodySystem::rasterStableForBake(Body* b) {
   ensureBodyRaster(b);
-  uint8_t sampleTag = (uint8_t)E.tick;
+  int sampleTag = E.tick;
   if (b->bakeRasterSampleTag == sampleTag)
     return b->bakeRasterStableTicks >= R_BAKE_RASTER_TICKS;
   uint32_t signature = 2166136261u;

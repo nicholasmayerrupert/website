@@ -129,7 +129,7 @@ void ProjectileSystem::spawnArrow(Player& p, double charge) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double sx = p.px + p.w * .5, sy = p.py + p.h * .42;
   double dx = p.aimX - sx, dy = p.aimY - sy, d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = p.facing; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = p.facing; dy = 0; d = 1; }
   double speed = 2.5 + 4.5 * charge;
   Projectile arrow; arrow.id = nextId++; arrow.owner = p.id; arrow.kind = PK_ARROW;
   arrow.px = sx; arrow.py = sy; arrow.vx = dx / d * speed; arrow.vy = dy / d * speed;
@@ -142,7 +142,7 @@ void ProjectileSystem::spawnBlastRound(Player& p) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double cx = p.px + p.w * .5, cy = p.py + p.h * .42;
   double dx = p.aimX - cx, dy = p.aimY - cy, d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = p.facing; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = p.facing; dy = 0; d = 1; }
   dx /= d; dy /= d;
   Projectile round; round.id = nextId++; round.owner = p.id; round.kind = PK_BLAST_ROUND;
   // Begin at the actor-space muzzle origin so the swept path also tests the
@@ -220,7 +220,7 @@ void ProjectileSystem::spawnAcidShell(Player& shooter) {
 void ProjectileSystem::spawnClusterBombAt(int owner, double sx, double sy, double targetX, double targetY) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double dx = targetX - sx, dy = targetY - sy, d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = 1; dy = 0; d = 1; }
   Projectile carrier; carrier.id = nextId++; carrier.owner = owner; carrier.kind = PK_CLUSTER_BOMB;
   carrier.px = sx; carrier.py = sy;
   carrier.vx = dx / d * 2.35;
@@ -250,7 +250,7 @@ void ProjectileSystem::spawnMinigunRoundAt(int owner, double guardX, double guar
                                            double dirX, double dirY) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double d = std::hypot(dirX, dirY);
-  if (d < 1e-6) { dirX = 1; dirY = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dirX = 1; dirY = 0; d = 1; }
   dirX /= d; dirY /= d;
   // A long authored barrel may cross nearby cover. Preserve the visible muzzle
   // origin when clear. When it crosses an obstruction, launch from the final
@@ -309,8 +309,20 @@ void ProjectileSystem::spawnMinigunRoundAt(int owner, double guardX, double guar
   round.id = nextId++; round.owner = owner; round.kind = PK_MINIGUN_ROUND;
   round.px = guarded ? clearX : muzzleX;
   round.py = guarded ? clearY : muzzleY;
-  round.vx = guarded ? blockedX - clearX : std::cos(angle) * MINIGUN_ROUND_SPEED_LOCAL;
-  round.vy = guarded ? blockedY - clearY : std::sin(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+  if (guarded) {
+    double span = std::hypot(blockedX - clearX, blockedY - clearY);
+    if (!std::isfinite(span) || span < 1e-6) {
+      round.vx = std::cos(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+      round.vy = std::sin(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+    } else {
+      double scale = MINIGUN_ROUND_SPEED_LOCAL / span;
+      round.vx = (blockedX - clearX) * scale;
+      round.vy = (blockedY - clearY) * scale;
+    }
+  } else {
+    round.vx = std::cos(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+    round.vy = std::sin(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+  }
   round.life = MINIGUN_ROUND_LIFE_LOCAL;
   round.charge = 1.0;
   round.rotation = angle;
@@ -330,7 +342,7 @@ void ProjectileSystem::spawnMinigunRound(const Creature& shooter,
   double gunY = localY + s.h * .48;
   double dx = targetX - gunX, dy = targetY - gunY;
   double d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
   dx /= d; dy /= d;
   double muzzleX = gunX + dx * 4.73;
   double muzzleY = gunY + dy * 4.73;
@@ -342,7 +354,7 @@ void ProjectileSystem::spawnMinigunRound(Player& shooter) {
   double shoulderY = shooter.py + shooter.h * .42;
   double dx = shooter.aimX - shoulderX, dy = shooter.aimY - shoulderY;
   double d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
   dx /= d; dy /= d;
   double nx = -dy, ny = dx;
   // hand = shoulder + 1.55 forward; muzzle art = hand + 3.94 forward
@@ -355,7 +367,7 @@ void ProjectileSystem::spawnMinigunRound(Player& shooter) {
 
 void ProjectileSystem::spawnBoreBeam(int owner, double ox, double oy, double dx, double dy) {
   double d = std::hypot(dx, dy);
-  if (d < 1e-6) return;
+  if (!std::isfinite(d) || d < 1e-6) return;
   // This is a render-only latch. At the actor cap, preserve every live gameplay
   // projectile and skip the cosmetic flash instead of evicting the oldest one.
   if ((int)projectiles.size() >= PROJECTILE_MAX) return;
@@ -372,7 +384,7 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
   double oy = player.py + player.h * .42;
   double dx = player.aimX - ox, dy = player.aimY - oy;
   double d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = player.facing; dy = 0; d = 1; }
+  if (!std::isfinite(d) || d < 1e-6) { dx = player.facing; dy = 0; d = 1; }
   dx /= d; dy /= d;
   double distance = RESCUE_BEAM_RANGE_LOCAL;
   for (double t = .5; t <= RESCUE_BEAM_RANGE_LOCAL; t += .5) {

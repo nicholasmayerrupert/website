@@ -352,7 +352,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   wrap.className = 'sg-palette side';
   // Stop all pointer events, including captured pointermove, from reaching the
   // game input latch. Search-field keyboard events remain local naturally.
-  swallowEvents(wrap, ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu']);
+  swallowEvents(wrap);
 
   const col = document.createElement('div');
   col.className = 'sg-col';

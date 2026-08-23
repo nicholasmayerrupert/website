@@ -95,11 +95,23 @@ check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1
       && foreground.join(',') === '1,2,3,4'
       && background.join(',') === '5,6,7,8'
       && offset === null);
-  check('diagonal shift is rejected before either mirror layer moves',
-    !prepareMirrorShift(mirror, { ...shift, shiftDy: 1 }, diff)
-      && foreground.join(',') === '1,2,3,4'
-      && background.join(',') === '5,6,7,8'
-      && offset === null);
+  {
+    const diagonalForeground = Uint8Array.of(1, 2, 3, 4);
+    const diagonalBackground = Uint8Array.of(5, 6, 7, 8);
+    let diagonalOffset = null;
+    const diagonalMirror = {
+      cols: 2,
+      rows: 2,
+      getGrid: () => diagonalForeground,
+      getGridBg: () => diagonalBackground,
+      setMirrorWorldOffset(x, y) { diagonalOffset = [x, y]; },
+    };
+    check('diagonal shift moves both mirror layers on both axes',
+      prepareMirrorShift(diagonalMirror, { ...shift, shiftDy: 1 }, diff)
+        && diagonalForeground.join(',') === '4,0,0,0'
+        && diagonalBackground.join(',') === '8,0,0,0'
+        && diagonalOffset?.join(',') === '12,-4');
+  }
   const oversizedDiff = Uint8Array.of(
     9, 0,
     ...Array.from({ length: 9 }, () => [

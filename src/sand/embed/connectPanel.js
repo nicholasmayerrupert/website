@@ -92,7 +92,8 @@ export function createConnectPanel(root, { join, disconnect, getStatus, focusSur
     const host = (hostIn.value || 'localhost').trim();
     const port = (portIn.value || '5191').trim();
     const room = (roomIn.value || 'main').trim();
-    const url = `ws://${host}:${port}`;
+    const secure = typeof location !== 'undefined' && location.protocol === 'https:';
+    const url = `${secure ? 'wss' : 'ws'}://${host}:${port}`;
     connecting = true; lastError = '';
     refresh();
     let joined = false;

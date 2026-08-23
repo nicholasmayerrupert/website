@@ -1606,17 +1606,21 @@
                      && b->maxDepth <= R_REST_DEPTH;
       if (actorContact[bi]) sleepQuiet = false;
       if (fluidOnlyContact && !fluidRestContact) sleepQuiet = false;
-      if (sleepQuiet) {
-        b->stillTicks++;
-      } else if (fluidOnlyContact) {
-        b->stillTicks = fluidRestContact
-          ? imax(0, b->stillTicks - 1)
-          : 0;
-      } else {
-        bool settling = b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN
-                     && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG
-                     && b->maxDepth <= R_REST_DEPTH;
-        b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
+      // Sleep age is a per-tick counter. Structure islands run every substep,
+      // so incrementing here would put them to sleep cadence times too fast.
+      if (sub + 1 == substeps) {
+        if (sleepQuiet) {
+          b->stillTicks++;
+        } else if (fluidOnlyContact) {
+          b->stillTicks = fluidRestContact
+            ? imax(0, b->stillTicks - 1)
+            : 0;
+        } else {
+          bool settling = b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN
+                       && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG
+                       && b->maxDepth <= R_REST_DEPTH;
+          b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
+        }
       }
     }
     // Project residual overlap at the final integrated pose for sustained-force

@@ -144,6 +144,7 @@ function createMobileJoystick(root, game) {
   };
 
   const onDown = (e) => {
+    if (pointerId !== null) return;
     pointerId = e.pointerId;
     wrap.classList.add('active');
     wrap.setPointerCapture?.(e.pointerId);
@@ -489,12 +490,18 @@ function setPageScrollLocked(lock) {
   const html = document.documentElement;
   const body = document.body;
   if (!html || !body) return;
+  const held = Math.max(0, Number(body.dataset.sandScrollLocks || 0) | 0);
   if (lock) {
-    if (!body.dataset.sandPrevOverflow) body.dataset.sandPrevOverflow = body.style.overflow || ' ';
-    if (!html.dataset.sandPrevOverflow) html.dataset.sandPrevOverflow = html.style.overflow || ' ';
-    body.style.overflow = 'hidden';
-    html.style.overflow = 'hidden';
-  } else {
+    if (held === 0) {
+      if (!body.dataset.sandPrevOverflow) body.dataset.sandPrevOverflow = body.style.overflow || ' ';
+      if (!html.dataset.sandPrevOverflow) html.dataset.sandPrevOverflow = html.style.overflow || ' ';
+      body.style.overflow = 'hidden';
+      html.style.overflow = 'hidden';
+    }
+    body.dataset.sandScrollLocks = String(held + 1);
+    return;
+  }
+  if (held <= 1) {
     if (body.dataset.sandPrevOverflow !== undefined) {
       body.style.overflow = body.dataset.sandPrevOverflow === ' ' ? '' : body.dataset.sandPrevOverflow;
       delete body.dataset.sandPrevOverflow;
@@ -503,7 +510,10 @@ function setPageScrollLocked(lock) {
       html.style.overflow = html.dataset.sandPrevOverflow === ' ' ? '' : html.dataset.sandPrevOverflow;
       delete html.dataset.sandPrevOverflow;
     }
+    delete body.dataset.sandScrollLocks;
+    return;
   }
+  body.dataset.sandScrollLocks = String(held - 1);
 }
 
 class SandGameElement extends HTMLElement {
@@ -524,6 +534,7 @@ class SandGameElement extends HTMLElement {
     if (!sim) {
       sim = document.createElement('div');
       sim.className = 'sg-sim';
+      sim.tabIndex = 0;
       root.appendChild(sim);
     }
 

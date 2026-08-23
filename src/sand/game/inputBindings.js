@@ -188,6 +188,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = String(e.key || '').toLowerCase();
     const isQ = key === 'q' || e.code === 'KeyQ';
+    // OS key-repeat must not flip latched menus. Movement and zoom still use
+    // the extra keydowns as no-ops or as step repeats.
+    if (e.repeat && (key === 'e' || isQ || key === 'l')) return;
     // Creative camera movement, selection restore, and replay capture should
     // survive focus moving to palette buttons and should not require a priming
     // click. Survival and the remaining shortcuts stay scoped to explicit

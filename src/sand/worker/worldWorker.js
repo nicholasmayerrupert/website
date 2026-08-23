@@ -161,6 +161,7 @@ function recordReplayTurn() {
     }
   }
   replayCapture.turns++;
+  replayCaptureStarting = false;
 }
 
 function publishReplayTurn() {
@@ -709,13 +710,29 @@ function run() {
     return;
   }
   let streamBreadcrumbPublished = false;
-  if (replayCapture) {
-    recordReplayTurn();
-    // Flush accepted events before streaming, tool application, actors, or the
-    // world step can enter a long synchronous path.
-    streamBreadcrumbPublished = publishReplayTurn();
+  try {
+    if (replayCapture) {
+      recordReplayTurn();
+      // Flush accepted events before streaming, tool application, actors, or the
+      // world step can enter a long synchronous path.
+      streamBreadcrumbPublished = publishReplayTurn();
+    }
+    executeTurn(started, true, streamBreadcrumbPublished);
+  } catch (error) {
+    if (replayCapture) {
+      replayCapture.turns = Math.max(0, replayCapture.turns - 1);
+      replayCapture.events = replayCapture.events.filter((event) => event.tick <= replayCapture.turns);
+      replayCapture.gates = replayCapture.gates.filter((gate) => gate.start < replayCapture.turns + 1);
+      for (const gate of replayCapture.gates) {
+        if (gate.end > replayCapture.turns + 1) gate.end = replayCapture.turns + 1;
+      }
+      self.postMessage({ type: 'replay-journal-abort-turn' });
+    }
+    self.postMessage({
+      type: 'error', phase: 'turn',
+      message: error?.message || String(error),
+    });
   }
-  executeTurn(started, true, streamBreadcrumbPublished);
 }
 
 async function initializeAuthority(data, { scheduleRuns = true, usePending = true } = {}) {

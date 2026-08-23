@@ -72,7 +72,8 @@ export class Host {
         (m.moveX !== undefined && (!Number.isFinite(m.moveX) || !Number.isFinite(m.moveY) || Math.hypot(m.moveX, m.moveY) > 1.000001))) { this.droppedInputs++; return false; }
     // Per-client rate limit (token bucket): a flood is dropped, not simulated.
     const t = this.now();
-    c.tokens = Math.min(this.inputBurst, c.tokens + ((t - c.lastInput) / 1000) * this.maxInputRate);
+    const elapsed = Math.max(0, t - c.lastInput);
+    c.tokens = Math.min(this.inputBurst, c.tokens + (elapsed / 1000) * this.maxInputRate);
     c.lastInput = t;
     if (c.tokens < 1) { this.droppedInputs++; return false; }
     c.tokens -= 1;
@@ -81,8 +82,10 @@ export class Host {
     if (!c.tracker.accept(m.seq)) return false;
     // Aim is world-space so an authority-window shift cannot redirect a held
     // tool while its full snapshot is in flight. Physics still consumes local cells.
-    const aimX = Math.max(-1, Math.min(this.engine.cols, (m.aimX - this.engine.getWorldOffsetX()) | 0));
-    const aimY = Math.max(-1, Math.min(this.engine.rows, (m.aimY - this.engine.getWorldOffsetY()) | 0));
+    const localAimX = m.aimX - this.engine.getWorldOffsetX();
+    const localAimY = m.aimY - this.engine.getWorldOffsetY();
+    const aimX = Math.max(-1, Math.min(this.engine.cols, Math.trunc(localAimX)));
+    const aimY = Math.max(-1, Math.min(this.engine.rows, Math.trunc(localAimY)));
     this.engine.setPlayerInput(c.playerId, {
       bits: m.bits & INPUT_BITS_MAX, aimX, aimY, tool: m.tool, seq: m.seq,
       moveX: m.moveX, moveY: m.moveY,

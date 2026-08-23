@@ -126,6 +126,20 @@ export function createReplayCaptureJournal() {
     return true;
   };
 
+  const abortTurn = () => {
+    if (!init || turns < 1) return false;
+    const aborted = turns;
+    turns -= 1;
+    events = events.filter((event) => event.tick < aborted);
+    for (let i = gates.length - 1; i >= 0; i--) {
+      const gate = gates[i];
+      if (gate.start >= aborted) gates.splice(i, 1);
+      else if (gate.end > aborted) gate.end = aborted;
+    }
+    if (progress) progress = { ...progress, turns };
+    return true;
+  };
+
   const replace = (capsule) => {
     reset(capsule.init);
     turns = capsule.turns | 0;
@@ -177,6 +191,7 @@ export function createReplayCaptureJournal() {
     reset,
     noteEvent,
     noteTurn,
+    abortTurn,
     replace,
     snapshot,
     get ready() { return !!init; },

@@ -28,6 +28,8 @@ export function SandGame({
 }) {
   const ref = useRef(null);
   const readyElementRef = useRef(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const setHostRef = useCallback((node) => {
     ref.current = node;
     if (typeof hostRef === 'function') hostRef(node);
@@ -42,7 +44,7 @@ export function SandGame({
     const onGameReady = () => {
       if (readyElementRef.current === el) return;
       readyElementRef.current = el;
-      onReady?.();
+      onReadyRef.current?.();
     };
     const onMissionState = (e) => onMissionUpdate?.(e.detail);
     const onMissionDone = (e) => onMissionComplete?.(e.detail);
@@ -76,7 +78,6 @@ export function SandGame({
     onMissionFailed,
     onMissionUpdate,
     onTalkAction,
-    onReady,
   ]);
 
   // `perf-hud` is a presence attribute read once when the element mounts, so it

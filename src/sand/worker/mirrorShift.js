@@ -36,7 +36,6 @@ export function prepareMirrorShift(engine, packet, bytes) {
   const dy = packet?.shiftDy;
   if (!engine || engine.cols !== cols || engine.rows !== rows
       || !Number.isInteger(dx) || !Number.isInteger(dy) || (!dx && !dy)
-      || (!!dx === !!dy)
       || Math.abs(dx) >= cols || Math.abs(dy) >= rows
       || !Number.isInteger(packet.worldOffsetX) || !Number.isInteger(packet.worldOffsetY)
       || !(bytes instanceof Uint8Array) || bytes.length > maxWorldDiffBytes(cols * rows)

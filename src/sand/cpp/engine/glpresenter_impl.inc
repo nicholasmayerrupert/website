@@ -194,7 +194,6 @@ void GLPresenter::glCollectDynamicLights() {
   std::vector<RenderLightSource> next;
   next.reserve(GL_DYNAMIC_LIGHT_CAP);
   auto add = [&](double x, double y, int intensity) {
-    if ((int)next.size() >= GL_DYNAMIC_LIGHT_CAP) return;
     int ix = (int)std::floor(x), iy = (int)std::floor(y);
     if (ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows) return;
     next.push_back({ix, iy, (uint8_t)imax(0, imin(255, intensity))});
@@ -273,6 +272,15 @@ void GLPresenter::glCollectDynamicLights() {
       addProjectile(p.kind, p.px, p.py, p.vx, p.vy, p.charge, p.fuse);
   }
 
+  if ((int)next.size() > GL_DYNAMIC_LIGHT_CAP) {
+    auto brighter = [](const RenderLightSource& a, const RenderLightSource& b) {
+      if (a.intensity != b.intensity) return a.intensity > b.intensity;
+      if (a.y != b.y) return a.y < b.y;
+      return a.x < b.x;
+    };
+    std::partial_sort(next.begin(), next.begin() + GL_DYNAMIC_LIGHT_CAP, next.end(), brighter);
+    next.resize(GL_DYNAMIC_LIGHT_CAP);
+  }
   bool changed = next.size() != E.renderer.dynamicLights.size();
   if (!changed) {
     for (size_t i = 0; i < next.size(); i++) {
@@ -2313,6 +2321,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   // Hide the 1px gutter when cells are tiny — a solid grid would wash out the scene.
   int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
   glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg
+  if (glc->uTint >= 0) glUniform1f(glc->uTint, 1.0f);
   glDrawCreatures();
   glDrawPlayers();
   glDrawProjectiles();

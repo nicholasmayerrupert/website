@@ -989,7 +989,7 @@ export function SandCampaign() {
     deploy(
       retryRun.missionId,
       retryRun.worldSeed,
-      loadoutForCampaignMission(saveRef.current, retryRun.missionId),
+      retryRun.loadout,
     );
   }, [debrief, deploy]);
 

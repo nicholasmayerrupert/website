@@ -44,6 +44,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   let lastViewKey = '';
   let worldReady = false;          // has the initial world snapshot been applied?
   let paused = false, needsResync = false, resyncPending = false;
+  let lastResyncAt = 0;
+  const RESYNC_BACKOFF_MS = 400;
   let pendingJoin = null;
   let dbgSent = 0;                 // diagnostics
   const inQueue = [];              // inbound decoded messages, drained each step
@@ -63,6 +65,12 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
 
   const requestResync = () => {
     if (!connected || !room || !clientId || resyncPending) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastResyncAt < RESYNC_BACKOFF_MS) {
+      needsResync = true;
+      return;
+    }
+    lastResyncAt = now;
     resyncPending = true;
     send(makeResync(room, clientId));
   };
@@ -310,7 +318,12 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       case MSG.ITEMS: ingestItems(m); break;
       case MSG.CREATURES: ingestCreatures(m); break;
       case MSG.PROJECTILES: ingestProjectiles(m); break;
-      case MSG.SOUNDS: soundBatches.push(Float32Array.from(m.data)); break;
+      case MSG.SOUNDS:
+        if (typeof document === 'undefined' || !document.hidden) {
+          soundBatches.push(Float32Array.from(m.data));
+          if (soundBatches.length > 32) soundBatches.splice(0, soundBatches.length - 32);
+        }
+        break;
       case MSG.INVENTORY: ingestInventory(m); break;
       case MSG.CURSOR: ingestCursor(m); break;
       default: break;
@@ -389,6 +402,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   // Called once per fixed step from the game loop.
   function update() {
     if (!connected) return;
+    if (needsResync && !resyncPending) requestResync();
     // The client doesn't step, so reset its dirty marks here; the diffs applied
     // below then mark exactly the cells that changed for an incremental repaint.
     engineNow().resetDirty();

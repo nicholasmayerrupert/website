@@ -33,6 +33,7 @@ Quick orientation:
 | `src/sand/game/replayCapsule.js` | Copy/paste replay codec (`encodeReplayCapsule`/`decodeReplayCapsule`). Capsule text starts with the literal marker `SAND-REPLAY-3:` — either plain JSON or `SAND-REPLAY-3:gzip:<base64>` (whichever encodes smaller); v2 plain-JSON capsules remain importable. Copy/paste UI is `game/replayPanel.js`. |
 | `src/sand/embed/` | The `<sand-game>` Web Component (`sandGame.js`) + vanilla palette (`toolPalette.js`). `npm run build:embed` → one self-contained `dist-embed/sand-game.js`. |
 | `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
+| `scripts/replay-microscope.mjs` | Replays a saved `SAND-REPLAY-3` capsule in the live engine (spawns Vite + Playwright): `node scripts/replay-microscope.mjs <capsule-file> --at 120,900` captures per-turn screenshots/JSON + anomaly report into `--out`; also `--filmstrip`, `--body`, `--cell`, `--json-only`. |
 
 The world is a **procedural, infinite, two-axis streaming** landscape generated in
 `cpp/engine/worldgen.inc`. As the camera nears a buffer edge the loaded window

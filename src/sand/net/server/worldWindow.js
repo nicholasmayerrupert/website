@@ -11,6 +11,16 @@ const SHRINK_HYSTERESIS = 0.12;
 const alignUp = (n) => Math.ceil((n - 1e-6) / CHUNK) * CHUNK;
 const alignDown = (n) => Math.floor(n / CHUNK) * CHUNK;
 
+function clampWindowSize(cols, rows) {
+  let nextCols = Math.min(ENGINE_MAX_DIMENSION, Math.max(CHUNK, alignUp(cols)));
+  let nextRows = Math.min(ENGINE_MAX_DIMENSION, Math.max(CHUNK, alignUp(rows)));
+  while (nextCols * nextRows > ENGINE_MAX_CELLS) {
+    if (nextCols >= nextRows) nextCols = Math.max(CHUNK, nextCols - CHUNK);
+    else nextRows = Math.max(CHUNK, nextRows - CHUNK);
+  }
+  return { cols: nextCols, rows: nextRows };
+}
+
 export function syncWorldWindow(engine, peers) {
   const players = new Map(engine.getPlayers().map((p) => [p.id, p]));
   const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
@@ -39,9 +49,8 @@ export function syncWorldWindow(engine, peers) {
       centerY - engine.getWorldOffsetY() - rows * 0.5,
     );
   };
-  const wantedCols = alignUp(right - left), wantedRows = alignUp(bottom - top);
-  if (wantedCols > ENGINE_MAX_DIMENSION || wantedRows > ENGINE_MAX_DIMENSION
-      || wantedCols * wantedRows > ENGINE_MAX_CELLS) return false;
+  const wanted = clampWindowSize(right - left, bottom - top);
+  const wantedCols = wanted.cols, wantedRows = wanted.rows;
   const grow = wantedCols > engine.cols || wantedRows > engine.rows;
   const shrink = engine.cols - wantedCols > Math.max(CHUNK, engine.cols * SHRINK_HYSTERESIS) ||
     engine.rows - wantedRows > Math.max(CHUNK, engine.rows * SHRINK_HYSTERESIS);
@@ -50,7 +59,6 @@ export function syncWorldWindow(engine, peers) {
     if (engine.resizeLoadedWindow(wantedCols, wantedRows)) { positionCamera(); return true; }
   }
 
-  if (right - left > engine.cols || bottom - top > engine.rows) return false;
   const targetX = alignDown((left + right - engine.cols) * 0.5);
   const targetY = alignDown((top + bottom - engine.rows) * 0.5);
   let dx = targetX - engine.getWorldOffsetX(), dy = targetY - engine.getWorldOffsetY();

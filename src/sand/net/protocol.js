@@ -291,7 +291,7 @@ function validateInventory(m) {
   if (!Array.isArray(m.data) || m.data.length !== INV_SLOTS * INV_FIELDS
       || !validatePackedObjectRecords(m.data, 'inventoryStack', (field, value) => {
         if (field === 'material') return isValidMaterialId(value);
-        if (field === 'itemKind') return value <= ITEM_KIND_MAX;
+        if (field === 'itemKind') return value >= 0 && value <= ITEM_KIND_MAX;
         return true;
       })) return null;
   if (!isInt(m.selected) || m.selected < 0 || m.selected >= INV_SLOTS) return null;
@@ -305,7 +305,7 @@ function validateCursor(m) {
   const c = m.cur;
   if (!validateObjectRecords([c], 'inventoryStack', (field, value) => {
     if (field === 'material') return isValidMaterialId(value);
-    if (field === 'itemKind') return value <= ITEM_KIND_MAX;
+    if (field === 'itemKind') return value >= 0 && value <= ITEM_KIND_MAX;
     return true;
   })) return null;
   return m;
@@ -327,8 +327,8 @@ function validateSnapshot(m) {
   if (!isNonNegInt(m.tick)) return null;
   if (m.hash != null && !isNonNegInt(m.hash)) return null;
   if (!validateObjectRecords(m.players, 'player', (field, value) => {
-    if (field === 'tool') return value <= TOOL_MAX;
-    if (field === 'heldItemKind') return value <= ITEM_KIND_MAX;
+    if (field === 'tool') return value >= 0 && value <= TOOL_MAX;
+    if (field === 'heldItemKind') return value >= 0 && value <= ITEM_KIND_MAX;
     return true;
   })) return null;
   return m;

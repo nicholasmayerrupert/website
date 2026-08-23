@@ -355,7 +355,7 @@ struct Body {
   // newly turbulent or landing island stays on normal microsteps briefly.
   double recentImpactSpeed = 0;
   uint8_t denseMicrostepTicks = 0;
-  uint8_t bakeRasterSampleTag = UINT8_MAX;
+  int bakeRasterSampleTag = INT_MIN;
   uint32_t bakeRasterSignature = 0;
   double maxDepth = 0; int idx = 0;
 };

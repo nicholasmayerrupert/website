@@ -291,6 +291,10 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   bool primaryRising = primary && !(prev & PI_PRIMARY);
   bool secondaryRising = secondary && !(prev & PI_SECONDARY);
   p.prevInput = p.input;
+  if (!std::isfinite(p.aimX) || !std::isfinite(p.aimY)) {
+    E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p);
+    return;
+  }
   int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
   double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
   auto inReachOf = [&](int tx, int ty) {

@@ -254,15 +254,29 @@ The copy/paste codec stores delta-tick event tuples, changed control/input field
 and sparse transport-gate ranges, then uses gzip when the compressed text is
 smaller. Version 2 plain-JSON capsules remain importable.
 
+### Replay inspect
+
+`npm run replay:inspect -- <capsule-file>` decodes a capsule without starting the
+engine or a browser. It prints named init (planet, weather, tool, materials),
+event counts, a sparse timeline, activity bounds, the final checksum, ABI match
+against this checkout, and a suggested microscope command. Use `--json` for the
+same summary as JSON. Stdin is `-`. Inspect still prints when the ABI fingerprint
+does not match; only a live replay requires a matching engine.
+
+Save a pasted capsule to a file first. Chat wrapping and truncation break gzip.
+
 ### Replay microscope
 
 `npm run replay:microscope -- <capsule-file>` opens a development authority in
 headless Chromium and writes arbitrary timeline frames plus structured engine
 diagnostics. The command starts and stops its own Vite server unless `--url` is
 provided. Output defaults to a temporary directory and contains per-frame PNG
-and JSON files, `report.json`, and an HTML filmstrip.
+and JSON files, `report.json`, `inspect.txt`/`inspect.json`, and an HTML filmstrip.
+If `--at`/`--filmstrip` are omitted it captures inspect-suggested turns (start,
+activity, end) instead of only the last turn.
 
 ```sh
+npm run replay:inspect -- issue.sand-replay
 npm run replay:microscope -- issue.sand-replay \
   --at 0,3000,6138 --filmstrip 5100:5350:10 \
   --body 0:936 --focus body --cell 120,-40 \
@@ -323,8 +337,7 @@ body bounds faintly visible for context.
 - `wasmBridge/testHooks.js`: test-only ABI adapters.
 - `game/createSandGame.js`: browser runtime and presentation loop.
 - `worker/`: offline authority worker and main-thread replica client.
-- `game/replayCapsule.js`, `game/replayPanel.js`: versioned replay text codec
-  and the `L` copy/paste UI.
+- `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, and the `L` copy/paste UI.
 - `net/`: multiplayer protocol, prediction, replication, and server authority.
 - `embed/`: the Web Component and framework-free UI.
 - `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.

@@ -31,13 +31,16 @@ Quick orientation:
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
 | `src/sand/game/createSandGame.js` | Browser runtime: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events, owns workers/audio/replay/net glue. The loop body lives in split modules (`gameLoop.js`, `engineLifecycle.js`, `inputBindings.js`); rendering goes through `engine.glRenderFrame()` in the frame pass, while world streaming is decided by the engine and driven by the authority worker via `engine.maybeShiftWorld*()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
 | `src/sand/game/replayCapsule.js` | Copy/paste replay codec (`encodeReplayCapsule`/`decodeReplayCapsule`). Capsule text starts with the literal marker `SAND-REPLAY-3:` — either plain JSON or `SAND-REPLAY-3:gzip:<base64>` (whichever encodes smaller); v2 plain-JSON capsules remain importable. Copy/paste UI is `game/replayPanel.js`. |
+| `scripts/replay-inspect.mjs` | Cheap no-browser capsule summary: `npm run replay:inspect -- <file-or-->`. Names init/tools/materials, prints a sparse timeline, ABI match, and a suggested microscope command. ABI mismatches still print. |
 | `src/sand/embed/` | The `<sand-game>` Web Component (`sandGame.js`) + vanilla palette (`toolPalette.js`). `npm run build:embed` → one self-contained `dist-embed/sand-game.js`. |
 | `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
-| `scripts/replay-microscope.mjs` | Replays a saved `SAND-REPLAY-3` capsule in the live engine (spawns Vite + Playwright): `node scripts/replay-microscope.mjs <capsule-file> --at 120,900` captures per-turn screenshots/JSON + anomaly report into `--out`; also `--filmstrip`, `--body`, `--cell`, `--json-only`. |
+| `scripts/replay-microscope.mjs` | Live engine replay (Vite + Playwright). After inspect. Default captures inspect-suggested turns, not only the last turn. `node scripts/replay-microscope.mjs <file> --at 120,900` also `--filmstrip`, `--body`, `--cell`, `--json-only`. |
 
 The world is a **procedural, infinite, two-axis streaming** landscape generated in
 `cpp/engine/worldgen.inc`. As the camera nears a buffer edge the loaded window
 slides and a fresh band is generated or restored from the chunk store.
+
+Replay capsules are input recipes, not world snapshots. Save paste to a file (`chat gzip wrapping/truncation breaks them`). `npm run replay:inspect -- <file>` first; `npm run replay:microscope -- <file>` for live frames (matching ABI only).
 
 ## The sand engine (read before touching it)
 

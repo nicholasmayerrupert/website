@@ -265,6 +265,14 @@ assert.throws(
   }),
   /weather is invalid for its planet/,
 );
+assert.throws(
+  () => validateReplayCapsule({ ...capsule, abiFingerprint: 1 }),
+  /incompatible sand engine build/,
+);
+assert.equal(
+  validateReplayCapsule({ ...capsule, abiFingerprint: 1 }, { requireCompatibleAbi: false }).abiFingerprint,
+  1,
+);
 await assert.rejects(() => decodeReplayCapsule('SAND-REPLAY-1:{}'), /SAND-REPLAY-3/);
 
 console.log(`replay capsule v3 compact round trip: ok (${busyText.length} bytes / busy minute)`);

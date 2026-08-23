@@ -84,6 +84,7 @@ export const UNIT_SUITES = [
   ['pure-perf', 'pure-perf-checksum-test.mjs', exclusive(480_000)],
   ['timing', 'timing-test.mjs'],
   ['replay-capsule', 'replay-capsule-test.mjs'],
+  ['replay-inspect', 'replay-inspect-test.mjs'],
   ['replay-capture', 'replay-capture-journal-test.mjs'],
   ['replay-microscope-platform', 'replay-microscope-platform-test.mjs'],
   ['worker-order', 'world-worker-order-test.mjs'],

@@ -245,13 +245,20 @@ function validateReplayMessage(message, survival, version) {
   return true;
 }
 
-export function validateReplayCapsule(value) {
+export function replayAbiMatches(capsule) {
+  return !!capsule
+    && capsule.abiVersion === ABI_VERSION
+    && capsule.abiFingerprint === ABI_FINGERPRINT;
+}
+
+export function validateReplayCapsule(value, options = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Replay capsule must be an object.');
   if (value.format !== REPLAY_FORMAT
       || (value.version !== REPLAY_VERSION && value.version !== LEGACY_REPLAY_VERSION))
     throw new Error('This is not a supported sand replay capsule.');
-  if (value.abiVersion !== ABI_VERSION || value.abiFingerprint !== ABI_FINGERPRINT)
+  const requireCompatibleAbi = options.requireCompatibleAbi !== false;
+  if (requireCompatibleAbi && !replayAbiMatches(value))
     throw new Error('This replay was recorded by an incompatible sand engine build.');
 
   const init = value.init;
@@ -262,7 +269,8 @@ export function validateReplayCapsule(value) {
     throw new Error('Replay dimensions are invalid.');
   if (!finiteInteger(init.worldSeed, 0, 0xffffffff))
     throw new Error('Replay world seed is invalid.');
-  if (init.weatherId !== undefined
+  if (requireCompatibleAbi
+      && init.weatherId !== undefined
       && (!isWeatherId(init.weatherId)
         || resolveWeatherIdForPlanet(init.weatherId, init.planetId | 0)
           !== init.weatherId))
@@ -652,14 +660,14 @@ export async function encodeReplayCapsule(capsule) {
   return text;
 }
 
-export async function decodeReplayCapsule(text) {
+export async function decodeReplayCapsule(text, options = {}) {
   const compact = String(text || '').trim();
   if (replayTextBytes(compact) > MAX_REPLAY_TEXT_BYTES)
     throw new Error('Replay capsule is too large.');
   if (compact.startsWith(LEGACY_REPLAY_PREFIX)) {
     const payload = compact.slice(LEGACY_REPLAY_PREFIX.length);
     if (!payload) throw new Error('Replay text is incomplete.');
-    return validateReplayCapsule(unpackLegacyReplayCapsule(JSON.parse(payload)));
+    return validateReplayCapsule(unpackLegacyReplayCapsule(JSON.parse(payload)), options);
   }
   if (!compact.startsWith(REPLAY_PREFIX))
     throw new Error('Replay text must start with SAND-REPLAY-3:.');
@@ -686,5 +694,5 @@ export async function decodeReplayCapsule(text) {
     throw new Error('Replay text uses an unknown encoding.');
   }
   if (!json) throw new Error('Replay text is incomplete.');
-  return validateReplayCapsule(unpackReplayCapsule(JSON.parse(json)));
+  return validateReplayCapsule(unpackReplayCapsule(JSON.parse(json)), options);
 }

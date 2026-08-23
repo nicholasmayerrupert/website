@@ -9,6 +9,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { decodeReplayCapsule } from '../src/sand/game/replayCapsule.js';
+import {
+  formatReplayInspectText,
+  summarizeReplayCapsule,
+} from '../src/sand/game/replayInspect.js';
 import { npmInvocation, stopDetachedProcess } from './local-vite-process.mjs';
 import { getAvailablePort } from './test-port.mjs';
 
@@ -41,6 +45,9 @@ for (let i = 0; i < argv.length; i++) {
 
 const help = () => {
   console.log(`Usage: node scripts/replay-microscope.mjs <capsule-file|-> [options]
+
+Start with \`npm run replay:inspect -- <file>\` for a no-browser summary.
+If --at/--filmstrip are omitted, captures inspect-suggested turns (not only the last turn).
 
 Timeline:
   --at 120,480,900             capture arbitrary turns (repeatable)
@@ -98,9 +105,21 @@ const escapeHtml = (value) => String(value)
 const text = capsulePath === '-'
   ? readFileSync(0, 'utf8').trim()
   : readFileSync(resolve(capsulePath), 'utf8').trim();
-const capsule = await decodeReplayCapsule(text);
+let capsule;
+try {
+  capsule = await decodeReplayCapsule(text);
+} catch (error) {
+  try {
+    const loose = await decodeReplayCapsule(text, { requireCompatibleAbi: false });
+    const failed = summarizeReplayCapsule(loose, { source: capsulePath });
+    console.error(formatReplayInspectText(failed));
+    console.error('Microscope cannot replay this capsule: ABI does not match this checkout.');
+  } catch {}
+  throw error;
+}
+const inspect = summarizeReplayCapsule(capsule, { source: capsulePath });
 const body = parseBody(one('body'));
-const cells = many('cell').map(parseCell);
+let cells = many('cell').map(parseCell);
 const focus = one('focus', body ? 'body' : 'recorded');
 if (!['recorded', 'body'].includes(focus))
   throw new Error('--focus must be recorded or body.');
@@ -113,6 +132,9 @@ const outputDir = one('out')
   ? resolve(one('out'))
   : mkdtempSync(join(tmpdir(), 'sand-replay-microscope-'));
 mkdirSync(outputDir, { recursive: true });
+writeFileSync(join(outputDir, 'inspect.json'), `${JSON.stringify(inspect, null, 2)}\n`);
+writeFileSync(join(outputDir, 'inspect.txt'), formatReplayInspectText(inspect));
+process.stdout.write(formatReplayInspectText(inspect));
 
 const requestedTurns = new Set();
 for (const value of many('at'))
@@ -126,7 +148,11 @@ for (const value of many('filmstrip')) {
   for (let turn = start; turn <= end; turn += step) addTurn(requestedTurns, turn, capsule.turns);
   addTurn(requestedTurns, end, capsule.turns);
 }
+if (requestedTurns.size === 0) {
+  for (const turn of inspect.suggested.at) addTurn(requestedTurns, turn, capsule.turns);
+}
 if (requestedTurns.size === 0) requestedTurns.add(capsule.turns);
+if (cells.length === 0) cells = inspect.suggested.cells.slice();
 
 const planetNames = ['earth', 'moon', 'mars'];
 const weatherNames = ['clear', 'rain'];

@@ -29,8 +29,9 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
   root.setAttribute('aria-label', 'Replay timeline');
   root.style.cssText = [
     'position:absolute', 'left:10px', 'right:10px', 'bottom:10px', 'z-index:101',
-    'display:none', 'grid-template-columns:auto auto minmax(80px,1fr) auto',
-    'align-items:center', 'gap:9px', 'padding:10px 11px',
+    'display:none', 'grid-template-columns:minmax(0,1fr) auto auto',
+    'grid-template-rows:auto auto', 'align-items:center', 'column-gap:9px',
+    'row-gap:8px', 'padding:10px 11px',
     'background:rgba(8,11,14,.82)', 'border:1px solid rgba(255,255,255,.2)',
     'border-radius:6px', 'box-shadow:0 4px 20px rgba(0,0,0,.45)',
     'backdrop-filter:blur(5px)', 'color:#f3f4f6',
@@ -38,9 +39,16 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     'pointer-events:auto', 'touch-action:manipulation',
   ].join(';');
 
+  const controls = document.createElement('div');
+  controls.style.cssText = [
+    'grid-column:1/-1', 'display:grid',
+    'grid-template-columns:auto auto minmax(0,1fr) auto',
+    'align-items:center', 'gap:9px', 'min-width:0',
+  ].join(';');
+
   const play = document.createElement('button');
   play.type = 'button';
-  play.style.cssText = `${controlStyle};min-width:42px;padding-inline:9px`;
+  play.style.cssText = `${controlStyle};width:42px;min-width:42px;padding-inline:0;text-align:center`;
   play.setAttribute('aria-label', 'Pause replay');
 
   const current = document.createElement('span');
@@ -48,8 +56,8 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
 
   const track = document.createElement('div');
   track.style.cssText = [
-    'position:relative', 'height:22px', 'display:flex', 'align-items:center',
-    'cursor:pointer', 'isolation:isolate',
+    'position:relative', 'height:22px', 'min-width:0', 'display:flex',
+    'align-items:center', 'cursor:pointer', 'isolation:isolate',
   ].join(';');
   const rail = document.createElement('div');
   rail.style.cssText = [
@@ -93,20 +101,23 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
   const resume = document.createElement('button');
   resume.type = 'button';
   resume.textContent = 'Resume here';
-  resume.style.cssText = `${controlStyle};grid-column:4;grid-row:2;background:rgba(145,103,28,.94);border-color:#d9b95e;white-space:nowrap`;
+  resume.style.cssText = `${controlStyle};grid-column:3;grid-row:2;background:rgba(145,103,28,.94);border-color:#d9b95e;white-space:nowrap`;
 
   const status = document.createElement('div');
+  status.setAttribute('aria-live', 'polite');
   status.style.cssText = [
-    'grid-column:1/3', 'grid-row:2', 'min-height:13px', 'color:#cbd2d9',
+    'grid-column:1', 'grid-row:2', 'min-width:0', 'min-height:13px', 'color:#cbd2d9',
     'font-size:10px', 'text-align:left', 'pointer-events:none',
+    'overflow:hidden', 'text-overflow:ellipsis', 'white-space:nowrap',
   ].join(';');
   const ticks = document.createElement('span');
   ticks.setAttribute('aria-label', 'Replay tick');
   ticks.style.cssText = [
-    'grid-column:3', 'grid-row:2', 'color:#fff', 'font-size:10px',
+    'grid-column:2', 'grid-row:2', 'color:#fff', 'font-size:10px',
     'font-variant-numeric:tabular-nums', 'text-align:right', 'white-space:nowrap',
   ].join(';');
-  root.append(play, current, track, total, resume, status, ticks);
+  controls.append(play, current, track, total);
+  root.append(controls, status, ticks, resume);
   ctx.container.appendChild(root);
 
   let raf = 0;
@@ -177,6 +188,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
           : 'Replay fully processed; highlighted ranges are cached.';
       else
         status.textContent = `Processed through ${formatTime(bufferedTurn)}; highlighted ranges are cached.`;
+      status.title = status.textContent;
     }
     raf = requestAnimationFrame(draw);
   };
@@ -238,16 +250,17 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     resume.disabled = true;
     ctx.worldWorker?.pauseBufferedReplay(true);
     const turn = Math.max(0, ctx.worldWorker?.state?.replayTurn | 0);
-    status.textContent = `Preparing turn ${turn.toLocaleString()} for live play…`;
+    status.textContent = status.title = `Preparing turn ${turn.toLocaleString()} for live play…`;
     try {
       await ctx.worldWorker.resumeBufferedReplay(turn, (at, target) => {
-        status.textContent = `Rebuilding authority ${at.toLocaleString()} / ${target.toLocaleString()}…`;
+        status.textContent = status.title =
+          `Rebuilding authority ${at.toLocaleString()} / ${target.toLocaleString()}…`;
       });
       hide();
       ctx.container.focus({ preventScroll: true });
       onResumed?.(turn);
     } catch (error) {
-      status.textContent = error?.message || String(error);
+      status.textContent = status.title = error?.message || String(error);
       status.style.color = '#ff9a8f';
       resuming = false;
       resume.disabled = false;

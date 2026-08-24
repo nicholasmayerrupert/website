@@ -256,7 +256,19 @@ try {
     const root = document.querySelector('sand-game').shadowRoot;
     return root.querySelector('[aria-label="Replay timeline"]')?.hidden
       && window.__sandPerf().worldTick > turn;
-  }, uncachedResumeWorldTick, { timeout: 30000 });
+  }, uncachedResumeWorldTick, { timeout: 30000 }).catch(async (error) => {
+    console.log('  uncached resume debug', await page.evaluate(() => {
+      const root = document.querySelector('sand-game').shadowRoot;
+      const timeline = root.querySelector('[aria-label="Replay timeline"]');
+      return {
+        perf: window.__sandPerf(),
+        hidden: timeline?.hidden,
+        display: timeline?.style?.display,
+        text: timeline?.textContent,
+      };
+    }));
+    throw error;
+  });
   await page.locator('sand-game').evaluate((host) =>
     host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
   await page.keyboard.press('l');
@@ -275,6 +287,33 @@ try {
       .includes('Replay fully processed;');
   }, null, { timeout: 120000 });
   check('the replay authority buffers and verifies the complete timeline', true);
+  const timelineLayout = await page.evaluate(() => {
+    const timeline = document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Replay timeline"]');
+    const play = timeline.querySelector('[aria-label="Pause replay"], [aria-label="Play replay"]');
+    const range = timeline.querySelector('input[aria-label="Replay position"]');
+    const status = timeline.querySelector('[aria-live="polite"]');
+    const measure = (text) => {
+      status.textContent = text;
+      const playRect = play.getBoundingClientRect();
+      const rangeRect = range.getBoundingClientRect();
+      return {
+        playX: playRect.left, playWidth: playRect.width,
+        rangeX: rangeRect.left, rangeWidth: rangeRect.width,
+      };
+    };
+    const original = status.textContent;
+    const short = measure('Processing 0:01 / 0:05...');
+    const long = measure('Replay fully processed; highlighted ranges are cached.');
+    status.textContent = original;
+    return { short, long };
+  });
+  check('status text does not move the play button or resize the scrub bar',
+    Math.abs(timelineLayout.short.playX - timelineLayout.long.playX) < 0.5
+    && Math.abs(timelineLayout.short.playWidth - timelineLayout.long.playWidth) < 0.5
+    && Math.abs(timelineLayout.short.rangeX - timelineLayout.long.rangeX) < 0.5
+    && Math.abs(timelineLayout.short.rangeWidth - timelineLayout.long.rangeWidth) < 0.5,
+    JSON.stringify(timelineLayout));
   const pauseReplay = page.getByRole('button', { name: 'Pause replay', exact: true });
   if (await pauseReplay.count()) await pauseReplay.click();
   const replayEnd = await page.evaluate(() => {

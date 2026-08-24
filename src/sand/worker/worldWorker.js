@@ -97,6 +97,7 @@ const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
 const REPLAY_BUILD_SLICE_TURNS = 30;
+const REPLAY_RESUME_SLICE_MS = 100;
 const MAX_REPLAY_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
 const MAX_REPLAY_DECODED_SEGMENTS = 3;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
@@ -1617,8 +1618,10 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
   } catch (error) {
     failReplayBuffer(session, error);
   } finally {
-    replayBufferCapturing = false;
-    if (replayBufferSession === session) session.buildBusy = false;
+    if (replayBufferSession === session) {
+      replayBufferCapturing = false;
+      session.buildBusy = false;
+    }
   }
 }
 
@@ -1811,6 +1814,8 @@ function finishReplayResume(session, requestId, target) {
   paused = true;
   awaitingAck = false;
   fullResyncRequested = false;
+  epoch++;
+  sequence = 0;
   postFull('replay-resume', {
     replayView: branch.view,
     replayResumeRequestId: requestId,
@@ -1836,7 +1841,8 @@ async function resumeReplayBuffer(requestId, value) {
   stopReplayBufferTimers(active);
   active.buildGeneration++;
   active.playing = false;
-  replayBufferCapturing = false;
+  replayBufferSession = null;
+  replayBufferCapturing = true;
   replayTransportSuppressed = true;
   replayRunning = true;
 
@@ -1851,6 +1857,9 @@ async function resumeReplayBuffer(requestId, value) {
       { scheduleRuns: false, usePending: false },
     );
     if (!initialized || closing) {
+      replayBufferCapturing = false;
+      replayTransportSuppressed = false;
+      replayRunning = false;
       self.postMessage({
         type: 'replay-error', requestId,
         message: 'The replay branch could not initialize the authority.',
@@ -1859,15 +1868,26 @@ async function resumeReplayBuffer(requestId, value) {
     }
     session = { capsule, eventIndex: 0, gateIndex: 0, turn: 0 };
   }
+  const abortResume = (error) => {
+    replayBufferCapturing = false;
+    replayTransportSuppressed = false;
+    replayRunning = false;
+    paused = true;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: error?.message || String(error),
+    });
+  };
   const advance = () => {
     if (closing) return;
     try {
-      const end = Math.min(target, session.turn + 120);
-      while (session.turn < end) {
+      const sliceDeadline = performance.now() + REPLAY_RESUME_SLICE_MS;
+      while (session.turn < target) {
         applyReplayCursorEvents(session, session.turn);
         const flags = applyReplayCursorGate(session);
         executeTurn(performance.now(), false, false, flags);
         session.turn++;
+        if (performance.now() >= sliceDeadline) break;
       }
       if (session.turn >= target) {
         finishReplayResume(session, requestId, target);
@@ -1879,13 +1899,7 @@ async function resumeReplayBuffer(requestId, value) {
       });
       setTimeout(advance, 0);
     } catch (error) {
-      replayRunning = false;
-      replayTransportSuppressed = false;
-      paused = true;
-      self.postMessage({
-        type: 'replay-error', requestId,
-        message: error?.message || String(error),
-      });
+      abortResume(error);
     }
   };
   advance();

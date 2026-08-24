@@ -257,8 +257,10 @@ visual cache is bounded to 128 MiB and evicts least-recently-used segments.
 Seeking an uncached turn remains allowed: the unpaced authority continues toward
 a forward target or deterministically restarts from turn zero for an older
 target, publishing intermediate frames while it catches up.
-`Resume here` rebuilds the complete authority at the selected turn, truncates
-the replay recipe there, clears held input, and continues live as a new branch.
+`Resume here` rebuilds the complete authority at the selected turn as fast as
+the worker can step, without pacing or presenting intermediate frames, then
+truncates the replay recipe there, clears held input, and continues live as a
+new branch.
 Completed buffering verifies the final tick, streamed offset, actor/topology
 totals, and both-layer grid checksum.
 Capsules are ABI-versioned and intentionally reject incompatible engine builds;

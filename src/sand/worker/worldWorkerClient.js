@@ -311,7 +311,8 @@ export function createWorldWorkerClient(ctx) {
       if (data.replayView && typeof data.replayView === 'object')
         pendingReplayView = data.replayView;
       liveness.notePacket(data.worldTick, receivedAt);
-      if (!bufferedReplayFrame && (data.epoch | 0) < appliedEpoch) {
+      const resumeSnapshot = Number.isInteger(data.replayResumeRequestId);
+      if (!bufferedReplayFrame && !resumeSnapshot && (data.epoch | 0) < appliedEpoch) {
         acknowledge(data);
         return;
       }
@@ -330,7 +331,7 @@ export function createWorldWorkerClient(ctx) {
         return;
       }
       const packetPriority = { diff: 0, shift: 1, full: 2 };
-      if (bufferedReplayFrame || !pending || data.epoch > pending.epoch ||
+      if (resumeSnapshot || bufferedReplayFrame || !pending || data.epoch > pending.epoch ||
           (data.epoch === pending.epoch &&
            (packetPriority[data.type] > packetPriority[pending.type] ||
             (packetPriority[data.type] === packetPriority[pending.type] &&
@@ -786,6 +787,10 @@ export function createWorldWorkerClient(ctx) {
       if (!replayBufferOpen)
         return Promise.reject(new Error('Open a buffered replay before resuming.'));
       const requestId = ++replayRequestId;
+      pending = pendingDraft = pendingCreatures = pendingActors = null;
+      pendingReplayView = null;
+      pendingReplayFrameTurn = null;
+      appliedEpoch = 0;
       state = { ...state, replayPaused: true, replayBuffering: true };
       return new Promise((resolve, reject) => {
         replayRequests.set(requestId, {

@@ -196,6 +196,11 @@ export function createWorldWorkerClient(ctx) {
       return;
     }
     if (data.type === 'replay-buffer-status') {
+      const cachedRanges = Array.isArray(data.cachedRanges)
+        ? data.cachedRanges
+          .filter((range) => Array.isArray(range) && range.length === 2)
+          .map((range) => [Math.max(0, range[0] | 0), Math.max(0, range[1] | 0)])
+        : [];
       state = {
         ...state,
         replayPlaying: true,
@@ -203,6 +208,10 @@ export function createWorldWorkerClient(ctx) {
         replayTurn: Math.max(0, data.turn | 0),
         replayTurns: Math.max(0, data.turns | 0),
         replayBufferedTurn: Math.max(0, data.bufferedTurn | 0),
+        replayBuildTurn: Math.max(0, data.buildTurn | 0),
+        replaySeekTarget: Number.isInteger(data.seekTarget)
+          ? Math.max(0, data.seekTarget | 0) : null,
+        replayCachedRanges: cachedRanges,
         replayPaused: !data.playing,
         replayBuffering: !!data.buffering,
         replayBufferComplete: !!data.complete,
@@ -731,6 +740,9 @@ export function createWorldWorkerClient(ctx) {
         replayTurn: 0,
         replayTurns: Math.max(0, capsule.turns | 0),
         replayBufferedTurn: 0,
+        replayBuildTurn: 0,
+        replaySeekTarget: null,
+        replayCachedRanges: [[0, 0]],
         replayPaused: false,
         replayBuffering: true,
         replayBufferComplete: false,
@@ -755,10 +767,18 @@ export function createWorldWorkerClient(ctx) {
     },
     seekBufferedReplay(turn, { playAfter = false } = {}) {
       if (!replayBufferOpen) return false;
-      state = { ...state, replayPaused: !playAfter, replayBuffering: false };
+      const target = Math.max(0, turn | 0);
+      const cached = (state.replayCachedRanges || [])
+        .some(([start, end]) => target >= start && target <= end);
+      state = {
+        ...state,
+        replayPaused: !playAfter,
+        replayBuffering: !cached,
+        replaySeekTarget: target,
+      };
       return post({
         type: 'replay-buffer-seek',
-        turn: Math.max(0, turn | 0),
+        turn: target,
         playAfter: !!playAfter,
       });
     },

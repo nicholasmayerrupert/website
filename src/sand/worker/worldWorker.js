@@ -27,6 +27,11 @@ import {
   WORKER_LIVENESS_STAGE,
 } from './workerLiveness.js';
 import { reconstructReplayWorld, replayFrameBytes } from './replayVisualBuffer.js';
+import {
+  decodeReplaySegment,
+  encodeReplaySegment,
+  ReplaySegmentCache,
+} from './replaySegmentCache.js';
 
 const STREAM_MARGIN = 40;
 const LIVE_SIM_COLS = 512;
@@ -92,7 +97,8 @@ const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
 const REPLAY_BUILD_SLICE_TURNS = 30;
-const MAX_REPLAY_VISUAL_BUFFER_BYTES = 256 * 1024 * 1024;
+const MAX_REPLAY_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
+const MAX_REPLAY_DECODED_SEGMENTS = 3;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
 
 const copyViewBuffer = (view) => view?.byteLength
@@ -341,15 +347,36 @@ function replayActorSnapshot() {
   };
 }
 
-function captureReplayVisualFrame(session, turn, forceFull = false) {
-  const full = forceFull || turn % REPLAY_VISUAL_KEYFRAME_TURNS === 0;
+function captureReplayVisualFrame(session, turn, {
+  forceFull = false,
+  shifted = false,
+  fromWorldOffsetX = engine.getWorldOffsetX(),
+  fromWorldOffsetY = engine.getWorldOffsetY(),
+} = {}) {
+  const segmentStart = Math.floor(turn / REPLAY_VISUAL_KEYFRAME_TURNS)
+    * REPLAY_VISUAL_KEYFRAME_TURNS;
+  const startsSegment = !session.activeSegment || session.activeSegment.start !== segmentStart;
+  const dimensionChanged = !!session.activeSegment
+    && (session.activeSegment.cols !== engine.cols || session.activeSegment.rows !== engine.rows);
+  const full = forceFull || startsSegment || dimensionChanged;
+  if (startsSegment) {
+    if (session.activeSegment?.frames.length)
+      throw new Error('Replay visual segment was not finalized before its successor.');
+    session.activeSegment = {
+      start: segmentStart, frames: [], rawBytes: 0,
+      cols: engine.cols, rows: engine.rows,
+    };
+  }
+  session.activeSegment.cols = engine.cols;
+  session.activeSegment.rows = engine.rows;
+  const type = full ? 'full' : (shifted ? 'shift' : 'diff');
   const bytes = full ? engine.serializeWorld() : engine.serializeDiff();
   engine.consumeReplicaDirty();
   const editX0 = Number.isFinite(lightEditX0) ? Math.floor(lightEditX0) : 1;
   const editX1 = Number.isFinite(lightEditX1) ? Math.ceil(lightEditX1) : 0;
   const view = replayView(session);
   const world = {
-    type: full ? 'full' : 'diff',
+    type,
     epoch,
     sequence: turn + 1,
     reason: full ? 'replay-buffer-keyframe' : undefined,
@@ -365,6 +392,13 @@ function captureReplayVisualFrame(session, turn, forceFull = false) {
   if (full) {
     world.cols = engine.cols;
     world.rows = engine.rows;
+  } else if (shifted) {
+    world.cols = engine.cols;
+    world.rows = engine.rows;
+    world.fromWorldOffsetX = fromWorldOffsetX;
+    world.fromWorldOffsetY = fromWorldOffsetY;
+    world.shiftDx = world.worldOffsetX - fromWorldOffsetX;
+    world.shiftDy = world.worldOffsetY - fromWorldOffsetY;
   }
   const creatures = engine.getCreatureSnapshotData();
   const draft = engine.getStoneDraftCells();
@@ -392,17 +426,13 @@ function captureReplayVisualFrame(session, turn, forceFull = false) {
       ? { type: 'sounds', epoch, data: copyViewBuffer(sounds) }
       : null,
   };
-  const nextBytes = session.bufferBytes + replayFrameBytes(frame);
+  session.activeSegment.frames.push(frame);
+  session.activeSegment.rawBytes += replayFrameBytes(frame) + 1024;
+  session.turn = turn;
+  session.furthestTurn = Math.max(session.furthestTurn, turn);
   lightEditX0 = Infinity;
   lightEditX1 = -Infinity;
   lastToolWriteX = null;
-  if (nextBytes > MAX_REPLAY_VISUAL_BUFFER_BYTES) {
-    session.limitReached = true;
-    return false;
-  }
-  session.frames.push(frame);
-  session.bufferBytes = nextBytes;
-  session.bufferedTurn = turn;
   return true;
 }
 
@@ -415,27 +445,121 @@ function cloneReplayPacket(packet) {
   return clone;
 }
 
+function replayActiveRange(session) {
+  const frames = session.activeSegment?.frames;
+  return frames?.length ? [[frames[0].turn, frames.at(-1).turn]] : [];
+}
+
+function replayCachedRanges(session) {
+  return session.cache.ranges(replayActiveRange(session));
+}
+
+function replayCacheBytes(session) {
+  let total = session.cache.bytes + (session.activeSegment?.rawBytes || 0);
+  for (const decoded of session.decodedSegments.values()) total += decoded.bytes;
+  return total;
+}
+
+function trimDecodedReplaySegments(session, protectedStart = null) {
+  while (session.decodedSegments.size > MAX_REPLAY_DECODED_SEGMENTS) {
+    const candidates = [...session.decodedSegments.entries()]
+      .filter(([start]) => start !== protectedStart)
+      .sort((a, b) => a[1].lastAccess - b[1].lastAccess || a[0] - b[0]);
+    if (!candidates.length) break;
+    session.decodedSegments.delete(candidates[0][0]);
+  }
+}
+
+async function finalizeReplaySegment(session) {
+  const active = session.activeSegment;
+  if (!active?.frames.length) return null;
+  if (!active.encodingPromise) {
+    active.encodingPromise = (async () => {
+      const segment = await encodeReplaySegment(active.frames);
+      if (closing || replayBufferSession !== session || session.activeSegment !== active)
+        return null;
+      const protectedStarts = [];
+      const playheadSegment = session.cache.getByTurn(session.playhead);
+      if (playheadSegment) protectedStarts.push(playheadSegment.start);
+      const requestedSegment = session.pendingSeek === null
+        ? null : session.cache.getByTurn(session.pendingSeek);
+      if (requestedSegment) protectedStarts.push(requestedSegment.start);
+      const evicted = session.cache.add(segment, protectedStarts);
+      for (const start of evicted) session.decodedSegments.delete(start);
+      session.activeSegment = null;
+      session.bufferBytes = replayCacheBytes(session);
+      return segment;
+    })();
+  }
+  return active.encodingPromise;
+}
+
+function activeReplayFrames(session, turn) {
+  const active = session.activeSegment;
+  if (!active?.frames.length) return null;
+  const end = active.frames.at(-1).turn;
+  return turn >= active.start && turn <= end ? active.frames : null;
+}
+
+async function replayFramesForTurn(session, turn) {
+  const active = activeReplayFrames(session, turn);
+  if (active) return { frames: active, start: session.activeSegment.start };
+  const segment = session.cache.getByTurn(turn);
+  if (!segment) return null;
+  const existing = session.decodedSegments.get(segment.start);
+  if (existing) {
+    existing.lastAccess = ++session.decodeClock;
+    return { frames: existing.frames, start: segment.start };
+  }
+  let pending = session.decodePromises.get(segment.start);
+  if (!pending) {
+    pending = decodeReplaySegment(segment).finally(() => {
+      session.decodePromises.delete(segment.start);
+    });
+    session.decodePromises.set(segment.start, pending);
+  }
+  const frames = await pending;
+  if (replayBufferSession !== session || !session.cache.getByTurn(turn)) return null;
+  session.decodedSegments.set(segment.start, {
+    frames,
+    bytes: segment.rawByteLength,
+    lastAccess: ++session.decodeClock,
+  });
+  trimDecodedReplaySegments(session, segment.start);
+  return { frames, start: segment.start };
+}
+
 function postReplayBufferStatus(session, fields = {}) {
   self.postMessage({
     type: 'replay-buffer-status',
     turn: session.playhead,
     turns: session.capsule.turns,
-    bufferedTurn: session.bufferedTurn,
+    bufferedTurn: session.furthestTurn,
+    buildTurn: session.turn,
+    seekTarget: session.pendingSeek,
+    cachedRanges: replayCachedRanges(session),
     playing: session.playing,
     buffering: session.buffering,
     complete: session.complete,
-    limitReached: session.limitReached,
+    limitReached: false,
     matched: session.matched,
-    bufferBytes: session.bufferBytes,
+    bufferBytes: replayCacheBytes(session),
     ...fields,
   });
 }
 
-function postReplayVisualFrame(session, target, seek = false) {
-  const frame = session.frames[target];
+async function postReplayVisualFrame(
+  session, target, seek = false, requestGeneration = session.seekGeneration,
+) {
+  const located = await replayFramesForTurn(session, target);
+  if (!located || closing || replayBufferSession !== session
+      || requestGeneration !== session.seekGeneration || session.awaitingFrame !== null)
+    return false;
+  const frameIndex = target - located.start;
+  const frame = located.frames[frameIndex];
   if (!frame) return false;
   const world = seek || target !== session.presentedTurn + 1
-    ? reconstructReplayWorld(session.frames, target)
+    ? reconstructReplayWorld(located.frames, frameIndex)
     : frame.world;
   const worldPacket = cloneReplayPacket({
     ...world, replayView: frame.view, replayFrameTurn: target,
@@ -456,12 +580,12 @@ function postReplayVisualFrame(session, target, seek = false) {
     self.postMessage(sounds, [sounds.data]);
   }
   session.awaitingFrame = target;
-  session.buffering = false;
+  session.buffering = session.pendingSeek !== null && target !== session.pendingSeek;
   self.postMessage({
     type: 'replay-buffer-frame-ready',
     turn: target,
     turns: session.capsule.turns,
-    bufferedTurn: session.bufferedTurn,
+    bufferedTurn: session.furthestTurn,
   });
   return true;
 }
@@ -1344,9 +1468,11 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
     postReplayBufferStatus(session);
     return;
   }
-  if (target > session.bufferedTurn) {
+  if (!activeReplayFrames(session, target) && !session.cache.getByTurn(target)) {
+    session.pendingSeek = target;
     session.buffering = true;
     postReplayBufferStatus(session);
+    ensureReplayBuildForTarget(session, target);
     return;
   }
   session.buffering = false;
@@ -1358,51 +1484,141 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
     session.playTimer = 0;
     if (replayBufferSession !== session || !session.playing
         || session.awaitingFrame !== null) return;
-    postReplayVisualFrame(session, target, false);
+    void postReplayVisualFrame(session, target, false).catch((error) => {
+      failReplayBuffer(session, error);
+    });
   }, wait);
 }
 
-function buildReplayBufferSlice(session) {
-  if (closing || replayBufferSession !== session || session.complete
-      || session.limitReached) return;
+function failReplayBuffer(session, error) {
+  if (replayBufferSession !== session) return;
+  replayBufferCapturing = false;
+  session.playing = false;
+  session.buffering = false;
+  session.buildBusy = false;
+  self.postMessage({
+    type: 'replay-error', requestId: session.requestId,
+    message: error?.message || String(error),
+  });
+}
+
+async function restartReplayBuild(session) {
+  if (closing || replayBufferSession !== session || session.restartPromise)
+    return session.restartPromise;
+  const generation = ++session.buildGeneration;
+  clearTimeout(session.buildTimer);
+  session.buildTimer = 0;
+  session.restartPromise = (async () => {
+    if (session.activeSegment?.frames.length) await finalizeReplaySegment(session);
+    if (closing || replayBufferSession !== session || generation !== session.buildGeneration)
+      return false;
+    const initialized = await initializeAuthority(
+      { type: 'init', ...session.capsule.init },
+      { scheduleRuns: false, usePending: false },
+    );
+    if (!initialized || closing || replayBufferSession !== session
+        || generation !== session.buildGeneration)
+      return false;
+    session.eventIndex = 0;
+    session.gateIndex = 0;
+    session.turn = 0;
+    session.activeSegment = null;
+    applyReplayCursorEvents(session, 0);
+    awaitingAck = false;
+    captureReplayVisualFrame(session, 0, { forceFull: true });
+    session.buffering = session.pendingSeek !== null;
+    postReplayBufferStatus(session);
+    session.buildTimer = setTimeout(() => {
+      void buildReplayBufferSlice(session, generation);
+    }, 0);
+    return true;
+  })().catch((error) => {
+    failReplayBuffer(session, error);
+    return false;
+  }).finally(() => {
+    if (replayBufferSession === session) session.restartPromise = null;
+  });
+  return session.restartPromise;
+}
+
+function ensureReplayBuildForTarget(session, target) {
+  if (closing || replayBufferSession !== session) return;
+  if (target < session.turn || session.turn >= session.capsule.turns) {
+    void restartReplayBuild(session);
+    return;
+  }
+  if (!session.buildBusy && !session.buildTimer && session.turn < session.capsule.turns) {
+    const generation = session.buildGeneration;
+    session.buildTimer = setTimeout(() => {
+      void buildReplayBufferSlice(session, generation);
+    }, 0);
+  }
+}
+
+async function buildReplayBufferSlice(session, generation = session.buildGeneration) {
+  if (closing || replayBufferSession !== session || generation !== session.buildGeneration
+      || session.buildBusy || session.restartPromise) return;
+  session.buildTimer = 0;
+  session.buildBusy = true;
   replayBufferCapturing = true;
   try {
     const end = Math.min(session.capsule.turns, session.turn + REPLAY_BUILD_SLICE_TURNS);
     while (session.turn < end) {
+      const nextTurn = session.turn + 1;
+      if (session.activeSegment?.frames.length
+          && Math.floor(nextTurn / REPLAY_VISUAL_KEYFRAME_TURNS)
+            * REPLAY_VISUAL_KEYFRAME_TURNS !== session.activeSegment.start) {
+        await finalizeReplaySegment(session);
+        if (closing || replayBufferSession !== session
+            || generation !== session.buildGeneration) return;
+      }
       applyReplayCursorEvents(session, session.turn);
       const priorEpoch = epoch;
+      const fromWorldOffsetX = engine.getWorldOffsetX();
+      const fromWorldOffsetY = engine.getWorldOffsetY();
       const flags = applyReplayCursorGate(session);
       const result = executeTurn(performance.now(), false, false, flags);
       session.turn++;
       applyReplayCursorEvents(session, session.turn);
-      const forceFull = result.shifted || result.postedFull || epoch !== priorEpoch;
-      if (!captureReplayVisualFrame(session, session.turn, forceFull)) break;
+      captureReplayVisualFrame(session, session.turn, {
+        forceFull: result.postedFull || (!result.shifted && epoch !== priorEpoch),
+        shifted: result.shifted,
+        fromWorldOffsetX,
+        fromWorldOffsetY,
+      });
     }
-    replayBufferCapturing = false;
     if (session.turn >= session.capsule.turns) {
+      await finalizeReplaySegment(session);
+      if (closing || replayBufferSession !== session
+          || generation !== session.buildGeneration) return;
       session.complete = true;
       session.matched = replayStateMatches(session.capsule.final, replayFinalState());
     }
     postReplayBufferStatus(session);
-    if (session.pendingSeek !== null && session.pendingSeek <= session.bufferedTurn
-        && session.awaitingFrame === null) {
+    if (session.pendingSeek !== null && session.awaitingFrame === null) {
       const target = session.pendingSeek;
-      session.pendingSeek = null;
-      postReplayVisualFrame(session, target, true);
+      const targetAvailable = !!activeReplayFrames(session, target)
+        || !!session.cache.getByTurn(target);
+      const progress = targetAvailable ? target : Math.min(target, session.turn);
+      if (progress >= 0 && (activeReplayFrames(session, progress)
+          || session.cache.getByTurn(progress))) {
+        void postReplayVisualFrame(
+          session, progress, true, session.seekGeneration,
+        ).catch((error) => failReplayBuffer(session, error));
+      }
     } else if (session.playing && session.awaitingFrame === null) {
       scheduleReplayBufferPlayback(session);
     }
-    if (!session.complete && !session.limitReached) {
-      session.buildTimer = setTimeout(() => buildReplayBufferSlice(session), 0);
+    if (session.turn < session.capsule.turns) {
+      session.buildTimer = setTimeout(() => {
+        void buildReplayBufferSlice(session, generation);
+      }, 0);
     }
   } catch (error) {
+    failReplayBuffer(session, error);
+  } finally {
     replayBufferCapturing = false;
-    session.playing = false;
-    session.complete = true;
-    self.postMessage({
-      type: 'replay-error', requestId: session.requestId,
-      message: error?.message || String(error),
-    });
+    if (replayBufferSession === session) session.buildBusy = false;
   }
 }
 
@@ -1442,44 +1658,47 @@ async function startReplayBuffer(requestId, value) {
   const session = {
     requestId,
     capsule,
-    frames: [],
+    cache: new ReplaySegmentCache({ maxBytes: MAX_REPLAY_SEGMENT_CACHE_BYTES }),
+    activeSegment: null,
+    decodedSegments: new Map(),
+    decodePromises: new Map(),
+    decodeClock: 0,
     eventIndex: 0,
     gateIndex: 0,
     turn: 0,
+    furthestTurn: 0,
     playhead: 0,
     presentedTurn: -1,
-    bufferedTurn: 0,
     pendingSeek: null,
     awaitingFrame: null,
     playing: true,
     buffering: false,
     complete: false,
-    limitReached: false,
     matched: null,
     bufferBytes: 0,
     buildTimer: 0,
+    buildBusy: false,
+    buildGeneration: 1,
+    restartPromise: null,
+    seekGeneration: 0,
     playTimer: 0,
     nextPlayAt: NaN,
   };
   replayBufferSession = session;
   applyReplayCursorEvents(session, 0);
   awaitingAck = false;
-  if (!captureReplayVisualFrame(session, 0, true)) {
-    replayRunning = false;
-    replayTransportSuppressed = false;
-    self.postMessage({
-      type: 'replay-error', requestId,
-      message: 'The initial replay frame exceeded the visual buffer limit.',
-    });
-    return;
-  }
+  captureReplayVisualFrame(session, 0, { forceFull: true });
   self.postMessage({
     type: 'replay-buffer-started', requestId,
     turns: capsule.turns,
   });
-  postReplayVisualFrame(session, 0, true);
+  void postReplayVisualFrame(session, 0, true).catch((error) => {
+    failReplayBuffer(session, error);
+  });
   postReplayBufferStatus(session);
-  session.buildTimer = setTimeout(() => buildReplayBufferSlice(session), 0);
+  session.buildTimer = setTimeout(() => {
+    void buildReplayBufferSlice(session, session.buildGeneration);
+  }, 0);
 }
 
 function controlReplayBuffer(data) {
@@ -1498,17 +1717,20 @@ function controlReplayBuffer(data) {
     const target = Math.max(0, Math.min(session.capsule.turns, data.turn | 0));
     session.playing = !!data.playAfter;
     session.nextPlayAt = NaN;
+    session.pendingSeek = target;
+    session.seekGeneration++;
     clearTimeout(session.playTimer);
     session.playTimer = 0;
     if (session.awaitingFrame !== null) {
-      session.pendingSeek = target;
       session.buffering = true;
-    } else if (target <= session.bufferedTurn) {
-      session.pendingSeek = null;
-      postReplayVisualFrame(session, target, true);
+    } else if (activeReplayFrames(session, target) || session.cache.getByTurn(target)) {
+      session.buffering = false;
+      void postReplayVisualFrame(
+        session, target, true, session.seekGeneration,
+      ).catch((error) => failReplayBuffer(session, error));
     } else {
-      session.pendingSeek = target;
       session.buffering = true;
+      ensureReplayBuildForTarget(session, target);
     }
     postReplayBufferStatus(session);
     return;
@@ -1520,9 +1742,17 @@ function controlReplayBuffer(data) {
     session.awaitingFrame = null;
     if (session.pendingSeek !== null) {
       const target = session.pendingSeek;
-      if (target <= session.bufferedTurn) {
+      if (session.playhead === target) {
         session.pendingSeek = null;
-        postReplayVisualFrame(session, target, true);
+        session.buffering = false;
+        if (session.playing) scheduleReplayBufferPlayback(session, true);
+      } else if (activeReplayFrames(session, target) || session.cache.getByTurn(target)) {
+        void postReplayVisualFrame(
+          session, target, true, session.seekGeneration,
+        ).catch((error) => failReplayBuffer(session, error));
+      } else {
+        session.buffering = true;
+        ensureReplayBuildForTarget(session, target);
       }
     } else if (session.playing) {
       scheduleReplayBufferPlayback(session, !Number.isFinite(session.nextPlayAt));
@@ -1567,8 +1797,7 @@ function finishReplayResume(session, requestId, target) {
   edges = [];
   if (control) control = { ...control, buttons: 0, inside: false };
   engine.pointerButtons(0);
-  const frame = replayBufferSession?.frames[target];
-  const branch = replayBranchCapsule(session.capsule, target, frame?.view);
+  const branch = replayBranchCapsule(session.capsule, target, replayView(session));
   replayCapture = branch;
   replayCaptureStarting = false;
   replayInputSignature = '';
@@ -1605,10 +1834,15 @@ async function resumeReplayBuffer(requestId, value) {
   const target = Math.max(0, Math.min(active.capsule.turns, value | 0));
   const capsule = active.capsule;
   stopReplayBufferTimers(active);
+  active.buildGeneration++;
   active.playing = false;
   replayBufferCapturing = false;
   replayTransportSuppressed = true;
   replayRunning = true;
+
+  if (active.restartPromise) await active.restartPromise;
+  if (active.activeSegment?.encodingPromise)
+    await active.activeSegment.encodingPromise;
 
   let session = active;
   if (active.turn !== target) {

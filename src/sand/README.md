@@ -247,11 +247,16 @@ the real generated seed, initialization options (including weather),
 authority-turn input/config/resize events, the total turn count, and sparse ranges for streaming transport
 gates. Continuous tools use deterministic turn time. Replaying reconstructs a
 fresh authority in an unpaced worker and caches two-second visual keyframes plus
-per-turn presentation deltas. The bottom timeline plays at 60 turns per second,
-shows the contiguous buffered range and exact tick, toggles play/pause with
-`Space`, steps one tick with `,` / `.`, and reconstructs arbitrary buffered
-frames from their nearest visual keyframe while the slider is dragged. The
-visual cache is bounded to 256 MiB.
+per-turn presentation deltas in independently compressed segments. World shifts
+inside a segment store the shifted overlap plus its dirty bands instead of a new
+full frame. The bottom timeline plays at 60 turns per second, highlights every
+cached range (including disjoint ranges), shows the exact tick, toggles
+play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs cached
+frames from their segment keyframe while the slider is dragged. The rolling
+visual cache is bounded to 128 MiB and evicts least-recently-used segments.
+Seeking an uncached turn remains allowed: the unpaced authority continues toward
+a forward target or deterministically restarts from turn zero for an older
+target, publishing intermediate frames while it catches up.
 `Resume here` rebuilds the complete authority at the selected turn, truncates
 the replay recipe there, clears held input, and continues live as a new branch.
 Completed buffering verifies the final tick, streamed offset, actor/topology

@@ -3,6 +3,11 @@ import {
   reconstructReplayWorld,
   replayFrameBytes,
 } from '../src/sand/worker/replayVisualBuffer.js';
+import {
+  decodeReplaySegment,
+  encodeReplaySegment,
+  ReplaySegmentCache,
+} from '../src/sand/worker/replaySegmentCache.js';
 
 const pushU16 = (out, value) => out.push(value & 0xff, (value >>> 8) & 0xff);
 const encodeLayer = (grid, out) => {
@@ -95,5 +100,76 @@ assert.equal(replayFrameBytes({
   creatures: { data: new ArrayBuffer(16) },
 }), 40);
 assert.throws(() => reconstructReplayWorld([], 0), /outside the buffered range/);
+
+const shiftedFrames = [
+  {
+    turn: 0,
+    view: { cameraWorldX: 1, cameraWorldY: 1 },
+    world: {
+      type: 'full', cols: 4, rows: 2, worldOffsetX: 0, worldOffsetY: 0,
+      worldTick: 0,
+      data: full([1, 2, 3, 4, 5, 6, 7, 8], [8, 7, 6, 5, 4, 3, 2, 1]),
+    },
+    creatures: { type: 'creatures', data: new Uint8Array([1, 2]).buffer },
+  },
+  {
+    turn: 1,
+    view: { cameraWorldX: 2, cameraWorldY: 1 },
+    world: {
+      type: 'shift', cols: 4, rows: 2,
+      fromWorldOffsetX: 0, fromWorldOffsetY: 0,
+      shiftDx: 1, shiftDy: 0,
+      worldOffsetX: 1, worldOffsetY: 0, worldTick: 1,
+      data: diff(
+        [{ x0: 3, y0: 0, x1: 4, y1: 2, cells: [9, 10] }],
+        [{ x0: 3, y0: 0, x1: 4, y1: 2, cells: [11, 12] }],
+      ),
+    },
+    actors: {
+      type: 'actors', itemData: new Uint8Array([3]).buffer,
+      projectileData: new Uint8Array([4, 5]).buffer,
+    },
+  },
+];
+const shifted = reconstructReplayWorld(shiftedFrames, 1);
+assert.deepEqual(decode(shifted.data, 8), [
+  [2, 3, 4, 9, 6, 7, 8, 10],
+  [7, 6, 5, 11, 3, 2, 1, 12],
+]);
+
+const segment = await encodeReplaySegment(shiftedFrames);
+assert.equal(segment.start, 0);
+assert.equal(segment.end, 1);
+assert.ok(segment.byteLength > 0);
+const decodedFrames = await decodeReplaySegment(segment);
+assert.deepEqual(
+  decode(reconstructReplayWorld(decodedFrames, 1).data, 8),
+  decode(shifted.data, 8),
+);
+assert.deepEqual([...new Uint8Array(decodedFrames[0].creatures.data)], [1, 2]);
+assert.deepEqual([...new Uint8Array(decodedFrames[1].actors.itemData)], [3]);
+assert.deepEqual([...new Uint8Array(decodedFrames[1].actors.projectileData)], [4, 5]);
+
+const cacheSegment = (start) => ({
+  start, end: start, byteLength: 10, rawByteLength: 10,
+  payload: new ArrayBuffer(0), compressed: false,
+});
+const forwardCache = new ReplaySegmentCache({ maxBytes: 50 });
+for (let turn = 0; turn < 5; turn++) forwardCache.add(cacheSegment(turn));
+assert.deepEqual(forwardCache.ranges(), [[0, 4]]);
+forwardCache.add(cacheSegment(5));
+assert.deepEqual(forwardCache.ranges(), [[1, 5]]);
+
+const islandCache = new ReplaySegmentCache({ maxBytes: 50 });
+for (let turn = 3; turn < 8; turn++) islandCache.add(cacheSegment(turn));
+islandCache.add(cacheSegment(0));
+assert.deepEqual(islandCache.ranges(), [[0, 0], [4, 7]]);
+islandCache.add(cacheSegment(1));
+assert.deepEqual(islandCache.ranges(), [[0, 1], [5, 7]]);
+const complete = { ...cacheSegment(8), end: 9 };
+const partial = cacheSegment(8);
+islandCache.add(complete);
+islandCache.add(partial);
+assert.equal(islandCache.getByTurn(9), complete);
 
 console.log('replay visual buffer checks passed');

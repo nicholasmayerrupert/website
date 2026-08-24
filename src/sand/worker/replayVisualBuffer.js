@@ -62,6 +62,23 @@ function applyDiffLayer(bytes, offset, grid, cols, rows) {
   return offset;
 }
 
+function shiftLayer(grid, cols, rows, dx, dy) {
+  if (!dx && !dy) return grid;
+  if (Math.abs(dx) >= cols || Math.abs(dy) >= rows)
+    throw new Error('Replay visual shift is outside the loaded world.');
+  const shifted = new Uint8Array(grid.length);
+  const x0 = Math.max(0, -dx);
+  const x1 = Math.min(cols, cols - dx);
+  const y0 = Math.max(0, -dy);
+  const y1 = Math.min(rows, rows - dy);
+  const width = x1 - x0;
+  for (let y = y0; y < y1; y++) {
+    const source = (y + dy) * cols + x0 + dx;
+    shifted.set(grid.subarray(source, source + width), y * cols + x0);
+  }
+  return shifted;
+}
+
 export function reconstructReplayWorld(frames, targetIndex) {
   if (!Array.isArray(frames) || targetIndex < 0 || targetIndex >= frames.length)
     throw new RangeError('Replay visual target is outside the buffered range.');
@@ -77,8 +94,8 @@ export function reconstructReplayWorld(frames, targetIndex) {
   if (cols < 1 || rows < 1 || !Number.isSafeInteger(cells))
     throw new Error('Replay visual keyframe dimensions are invalid.');
   const source = new Uint8Array(keyframe.data);
-  const foreground = decodeLayer(source, 0, cells);
-  const background = decodeLayer(source, foreground.offset, cells);
+  let foreground = decodeLayer(source, 0, cells);
+  let background = decodeLayer(source, foreground.offset, cells);
   if (background.offset !== source.length)
     throw new Error('Replay visual keyframe has trailing bytes.');
 
@@ -86,9 +103,19 @@ export function reconstructReplayWorld(frames, targetIndex) {
     const packet = frames[index]?.world;
     if (!packet) continue;
     if (packet.type === 'full')
-      return reconstructReplayWorld(frames, index === targetIndex ? index : targetIndex);
-    if (packet.type !== 'diff' || packet.cols !== undefined || packet.rows !== undefined)
+      return reconstructReplayWorld(frames.slice(index), targetIndex - index);
+    if (packet.type !== 'diff' && packet.type !== 'shift')
       throw new Error('Replay visual buffer contains an unsupported world packet.');
+    if (packet.type === 'shift') {
+      if (packet.cols !== cols || packet.rows !== rows)
+        throw new Error('Replay visual shift changed the loaded dimensions.');
+      foreground.grid = shiftLayer(
+        foreground.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0,
+      );
+      background.grid = shiftLayer(
+        background.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0,
+      );
+    }
     const bytes = new Uint8Array(packet.data);
     let offset = applyDiffLayer(bytes, 0, foreground.grid, cols, rows);
     offset = applyDiffLayer(bytes, offset, background.grid, cols, rows);

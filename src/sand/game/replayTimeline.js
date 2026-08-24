@@ -56,11 +56,19 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     'position:absolute', 'left:0', 'right:0', 'top:9px', 'height:4px',
     'background:rgba(255,255,255,.16)', 'border-radius:999px', 'overflow:hidden',
   ].join(';');
-  const buffered = document.createElement('div');
-  buffered.style.cssText = 'position:absolute;inset:0 auto 0 0;width:0;background:rgba(255,255,255,.38)';
+  const cached = document.createElement('div');
+  cached.setAttribute('aria-label', 'Cached replay ranges');
+  cached.style.cssText = 'position:absolute;inset:0;pointer-events:none';
   const watched = document.createElement('div');
-  watched.style.cssText = 'position:absolute;inset:0 auto 0 0;width:0;background:#e5b94d';
-  rail.append(buffered, watched);
+  watched.style.cssText = 'position:absolute;left:0;bottom:0;height:1px;width:0;background:#e5b94d;pointer-events:none';
+  rail.append(cached, watched);
+  const catchup = document.createElement('div');
+  catchup.style.cssText = [
+    'position:absolute', 'left:0', 'top:7px', 'width:4px', 'height:8px',
+    'border-radius:2px', 'background:#fff', 'transform:translateX(-2px)',
+    'box-shadow:0 0 5px rgba(255,255,255,.8)', 'pointer-events:none',
+    'display:none', 'z-index:2',
+  ].join(';');
   const thumb = document.createElement('div');
   thumb.style.cssText = [
     'position:absolute', 'left:0', 'top:5px', 'width:12px', 'height:12px',
@@ -78,7 +86,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     'position:absolute', 'inset:0', 'width:100%', 'height:100%', 'margin:0',
     'opacity:.001', 'cursor:pointer', 'z-index:3',
   ].join(';');
-  track.append(rail, thumb, range);
+  track.append(rail, catchup, thumb, range);
 
   const total = document.createElement('span');
   total.style.cssText = 'min-width:38px;color:#cbd2d9;font-variant-numeric:tabular-nums';
@@ -108,22 +116,49 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
   let previewTurn = 0;
   let keyboardTurn = null;
   let resuming = false;
+  let cachedSignature = '';
+
+  const drawCachedRanges = (ranges, turns) => {
+    const signature = `${turns}:${ranges.map((range) => range.join('-')).join(',')}`;
+    if (signature === cachedSignature) return;
+    cachedSignature = signature;
+    cached.replaceChildren(...ranges.map(([rawStart, rawEnd]) => {
+      const start = Math.max(0, Math.min(turns, rawStart | 0));
+      const end = Math.max(start, Math.min(turns, rawEnd | 0));
+      const span = document.createElement('div');
+      span.style.cssText = [
+        'position:absolute', 'top:0', 'bottom:0',
+        `left:${start / turns * 100}%`,
+        `width:${Math.max(1 / turns * 100, (end - start + 1) / turns * 100)}%`,
+        'background:rgba(255,255,255,.42)',
+      ].join(';');
+      return span;
+    }));
+  };
 
   const draw = () => {
     if (root.hidden) return;
     const state = ctx.worldWorker?.state || {};
     const turns = Math.max(1, state.replayTurns | 0);
-    const turn = dragging ? previewTurn : Math.max(0, state.replayTurn | 0);
+    const presentedTurn = Math.max(0, state.replayTurn | 0);
+    const seekTarget = Number.isInteger(state.replaySeekTarget)
+      ? Math.max(0, Math.min(turns, state.replaySeekTarget | 0)) : null;
+    const turn = dragging ? previewTurn : (seekTarget ?? presentedTurn);
     const bufferedTurn = Math.max(0, Math.min(turns, state.replayBufferedTurn | 0));
     const position = Math.max(0, Math.min(1, turn / turns));
     range.max = String(turns);
     if (!dragging) range.value = String(turn);
-    watched.style.width = `${position * 100}%`;
-    buffered.style.width = `${bufferedTurn / turns * 100}%`;
+    watched.style.width = `${Math.max(0, Math.min(1, presentedTurn / turns)) * 100}%`;
+    drawCachedRanges(state.replayCachedRanges || [], turns);
     thumb.style.left = `${position * 100}%`;
+    const catchingUp = seekTarget !== null && presentedTurn !== seekTarget;
+    catchup.style.display = catchingUp ? 'block' : 'none';
+    catchup.style.left = `${Math.max(0, Math.min(1, presentedTurn / turns)) * 100}%`;
     current.textContent = formatTime(turn);
     total.textContent = formatTime(turns);
-    ticks.textContent = `Tick ${turn.toLocaleString()} / ${turns.toLocaleString()}`;
+    ticks.textContent = catchingUp
+      ? `Tick ${presentedTurn.toLocaleString()} -> ${seekTarget.toLocaleString()} / ${turns.toLocaleString()}`
+      : `Tick ${turn.toLocaleString()} / ${turns.toLocaleString()}`;
     if (keyboardTurn === state.replayTurn) keyboardTurn = null;
     const paused = !!state.replayPaused;
     play.textContent = paused ? '▶' : 'Ⅱ';
@@ -132,16 +167,16 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     if (!resuming) {
       if (state.replayBufferError)
         status.textContent = state.replayBufferError;
-      else if (state.replayBufferLimitReached)
-        status.textContent = 'The in-memory replay buffer is full; buffered turns remain seekable.';
+      else if (state.replayBuffering && seekTarget !== null)
+        status.textContent = `Catching up ${presentedTurn.toLocaleString()} / ${seekTarget.toLocaleString()} as fast as possible...`;
       else if (state.replayBuffering)
-        status.textContent = `Buffering ${formatTime(bufferedTurn)} / ${formatTime(turns)}…`;
+        status.textContent = `Processing ${formatTime(bufferedTurn)} / ${formatTime(turns)}...`;
       else if (state.replayBufferComplete)
         status.textContent = state.replayMatched === false
-          ? 'Buffered replay completed with a verification difference.'
-          : 'Replay fully buffered.';
+          ? 'Replay processing completed with a verification difference.'
+          : 'Replay fully processed; highlighted ranges are cached.';
       else
-        status.textContent = `Buffered through ${formatTime(bufferedTurn)}.`;
+        status.textContent = `Processed through ${formatTime(bufferedTurn)}; highlighted ranges are cached.`;
     }
     raf = requestAnimationFrame(draw);
   };

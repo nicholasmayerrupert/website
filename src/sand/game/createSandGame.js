@@ -354,6 +354,8 @@ export function createSandGame(container, opts = {}) {
     onToggleFootprintMenu,
     onEquipLastCreativeMaterial: equipLastCreativeSelection,
     onReplay: replayPanel.open,
+    onReplayPlayback: replayPanel.togglePlayback,
+    onReplayStep: replayPanel.stepPlayback,
   });
   const loop = createGameLoop(ctx, {
     fit: lifecycle.fit,

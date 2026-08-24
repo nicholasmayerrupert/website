@@ -246,7 +246,15 @@ authority and opens the deterministic replay panel. Its copy/paste capsule keeps
 the real generated seed, initialization options (including weather),
 authority-turn input/config/resize events, the total turn count, and sparse ranges for streaming transport
 gates. Continuous tools use deterministic turn time. Replaying reconstructs a
-fresh authority and verifies the final tick, streamed offset, actor/topology
+fresh authority in an unpaced worker and caches two-second visual keyframes plus
+per-turn presentation deltas. The bottom timeline plays at 60 turns per second,
+shows the contiguous buffered range and exact tick, toggles play/pause with
+`Space`, steps one tick with `,` / `.`, and reconstructs arbitrary buffered
+frames from their nearest visual keyframe while the slider is dragged. The
+visual cache is bounded to 256 MiB.
+`Resume here` rebuilds the complete authority at the selected turn, truncates
+the replay recipe there, clears held input, and continues live as a new branch.
+Completed buffering verifies the final tick, streamed offset, actor/topology
 totals, and both-layer grid checksum.
 Capsules are ABI-versioned and intentionally reject incompatible engine builds;
 multiplayer sessions cannot be captured because their authority is remote.

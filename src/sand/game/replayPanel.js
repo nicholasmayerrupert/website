@@ -1,4 +1,5 @@
 import { decodeReplayCapsule, encodeReplayCapsule } from './replayCapsule.js';
+import { createReplayTimeline } from './replayTimeline.js';
 
 export async function materializeReplayFallback(capture, encode = encodeReplayCapsule) {
   if (!capture?.fallback)
@@ -79,6 +80,13 @@ export function createReplayPanel(ctx) {
   overlay.appendChild(panel);
   ctx.container.appendChild(overlay);
 
+  const timeline = createReplayTimeline(ctx, {
+    onResumed(turn) {
+      status.style.color = '#b9e6b1';
+      status.textContent = `Live simulation resumed from replay turn ${turn.toLocaleString()}.`;
+    },
+  });
+
   let openGeneration = 0;
   let busy = false;
   const currentView = () => {
@@ -119,6 +127,7 @@ export function createReplayPanel(ctx) {
     overlay.style.display = visible ? 'grid' : 'none';
   };
   const open = async () => {
+    if (timeline.visible) return;
     if (!overlay.hidden || busy) return;
     setVisible(true);
     status.style.color = '#cbd2d9';
@@ -199,19 +208,15 @@ export function createReplayPanel(ctx) {
     let panelHiddenForPlayback = false;
     try {
       const capsule = await decodeReplayCapsule(textarea.value);
-      status.textContent = `Replaying ${capsule.turns.toLocaleString()} authority turns…`;
+      status.textContent = `Preparing ${capsule.turns.toLocaleString()} replay turns…`;
       setVisible(false);
       panelHiddenForPlayback = true;
       ctx.container.focus({ preventScroll: true });
-      const result = await ctx.worldWorker.runReplay(capsule, (turn, turns) => {
-        status.textContent = `Replaying turn ${turn.toLocaleString()} / ${turns.toLocaleString()}…`;
-      }, { playback: true });
-      setVisible(true);
+      await ctx.worldWorker.startBufferedReplay(capsule);
+      timeline.show();
       panelHiddenForPlayback = false;
-      status.style.color = result.matched ? '#b9e6b1' : '#ffca78';
-      status.textContent = result.matched
-        ? 'Replay verified: tick, streamed offset, actors, topology totals, and both-layer grid checksum match. The simulation is paused for inspection.'
-        : `Replay finished but verification differed (expected grid ${result.expected.gridHash}, got ${result.actual.gridHash}).`;
+      status.style.color = '#b9e6b1';
+      status.textContent = 'Buffered replay opened.';
     } catch (error) {
       if (panelHiddenForPlayback) setVisible(true);
       showError(error);
@@ -233,8 +238,11 @@ export function createReplayPanel(ctx) {
 
   return {
     open,
+    togglePlayback: () => timeline.togglePlayback(),
+    stepPlayback: (delta) => timeline.stepPlayback(delta),
     destroy() {
       openGeneration++;
+      timeline.destroy();
       overlay.remove();
     },
   };

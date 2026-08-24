@@ -143,6 +143,25 @@ try {
   // L freezes the authority on an exact tick and emits a portable input replay.
   // Running that capsule rebuilds the authority from its recorded seed and
   // verifies the reproduced grid/topology totals before normal stepping resumes.
+  const replayShiftOffset = await page.evaluate(() => {
+    const test = window.__sandTest;
+    const info = test.info();
+    const cam = test.getCam();
+    const offset = test.worldOffset();
+    test.setCam(info.cols - info.viewCols - 2, cam.y);
+    return offset.x;
+  });
+  await page.waitForFunction((offsetX) => window.__sandTest.worldOffset().x !== offsetX,
+    replayShiftOffset, { timeout: 10000 });
+  const replayReturnOffset = await page.evaluate(() => {
+    const test = window.__sandTest;
+    const cam = test.getCam();
+    const offset = test.worldOffset();
+    test.setCam(2, cam.y);
+    return offset.x;
+  });
+  await page.waitForFunction((offsetX) => window.__sandTest.worldOffset().x !== offsetX,
+    replayReturnOffset, { timeout: 10000 });
   await page.evaluate(() => {
     const sim = document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim');
     sim.focus({ preventScroll: true });
@@ -167,28 +186,85 @@ try {
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
     .querySelector('textarea[aria-label="Replay capsule text"]')?.value
     .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
-  const replayTargetTick = await page.evaluate(() => window.__sandPerf().worldTick);
   await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+  await page.waitForFunction(() => {
+    const timeline = document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Replay timeline"]');
+    return timeline && !timeline.hidden;
+  }, null, { timeout: 30000 });
+  check('Run replay opens the buffered bottom timeline', true);
+  await page.waitForFunction(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    return root.querySelector('[aria-label="Replay timeline"]')?.textContent
+      .includes('Replay fully buffered.');
+  }, null, { timeout: 120000 });
+  check('the replay authority buffers and verifies the complete timeline', true);
+  const pauseReplay = page.getByRole('button', { name: 'Pause replay', exact: true });
+  if (await pauseReplay.count()) await pauseReplay.click();
+  const replayEnd = await page.evaluate(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    const range = root.querySelector('input[aria-label="Replay position"]');
+    const target = Number(range.max);
+    range.value = String(target);
+    range.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    range.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return target;
+  });
+  await page.waitForFunction((turn) => window.__sandPerf().mirrorWorldTick === turn,
+    replayEnd, { timeout: 30000 });
+  const replayEndHash = await page.evaluate(() => window.__sandTest.gridHash());
+  const seekTurn = await page.evaluate(() => {
+    const range = document.querySelector('sand-game').shadowRoot
+      .querySelector('input[aria-label="Replay position"]');
+    range.value = '0';
+    range.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    return 0;
+  });
+  await page.waitForFunction((turn) => window.__sandPerf().mirrorWorldTick === turn,
+    seekTurn, { timeout: 30000 });
+  check('dragging the buffered timeline updates the presented frame before release', true);
+  const replayStartHash = await page.evaluate(() => window.__sandTest.gridHash());
+  check('a backward replay seek restores its historical world grid',
+    replayStartHash !== replayEndHash, `${replayEndHash} -> ${replayStartHash}`);
+  await page.evaluate(() => {
+    const range = document.querySelector('sand-game').shadowRoot
+      .querySelector('input[aria-label="Replay position"]');
+    range.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+  });
+  await page.waitForFunction((turn) => {
+    const range = document.querySelector('sand-game').shadowRoot
+      .querySelector('input[aria-label="Replay position"]');
+    return Number(range?.value) === turn;
+  }, seekTurn, { timeout: 30000 });
+  check('the buffered timeline commits an arbitrary historical turn', true);
+  await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await page.keyboard.press('Period');
+  await page.waitForFunction(() => window.__sandPerf().mirrorWorldTick === 1);
   await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
-    .querySelector('[aria-label="Deterministic replay capsule"]')?.hidden,
+    .querySelector('[aria-label="Replay tick"]')?.textContent.startsWith('Tick 1 / '));
+  check('Period advances the paused replay by exactly one tick', true);
+  await page.keyboard.press('Comma');
+  await page.waitForFunction(() => window.__sandPerf().mirrorWorldTick === 0);
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Replay tick"]')?.textContent.startsWith('Tick 0 / '));
+  check('Comma moves the paused replay back by exactly one tick', true);
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: 'Pause replay', exact: true }).waitFor();
+  check('Space starts buffered replay playback', true);
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: 'Play replay', exact: true }).waitFor();
+  check('Space pauses buffered replay playback', true);
+  await page.getByRole('button', { name: 'Resume here', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Replay timeline"]')?.hidden,
   null, { timeout: 30000 });
-  await page.waitForFunction((target) => {
-    const perf = window.__sandPerf();
-    return perf.mirrorWorldTick > 0 && perf.mirrorWorldTick < target;
-  }, replayTargetTick, { timeout: 30000 });
-  check('Run replay closes the panel and presents intermediate authority turns', true);
-  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
-    .querySelector('[aria-label="Deterministic replay capsule"]')?.textContent
-    .includes('Replay verified:'), null, { timeout: 120000 });
-  check('L capsule deterministically rebuilds the captured authority state', true);
-  const replayedTick = await page.evaluate(() => window.__sandPerf().worldTick);
-  await page.getByRole('button', { name: 'Resume & close', exact: true }).click();
   await page.waitForFunction((tick) => window.__sandPerf().worldTick > tick,
-    replayedTick, { timeout: 30000 }).catch(async (error) => {
+    seekTurn, { timeout: 30000 }).catch(async (error) => {
     console.log('  replay resume debug', await page.evaluate(() => window.__sandPerf()));
     throw error;
   });
-  check('replayed authority resumes after the panel closes', true);
+  check('an arbitrary replay turn branches back into live simulation', true);
 
   await page.evaluate(() => window.__sandTest.retryAuthority());
   await page.waitForFunction(() => {

@@ -26,6 +26,7 @@ import {
   encodeWorkerLiveness,
   WORKER_LIVENESS_STAGE,
 } from './workerLiveness.js';
+import { reconstructReplayWorld, replayFrameBytes } from './replayVisualBuffer.js';
 
 const STREAM_MARGIN = 40;
 const LIVE_SIM_COLS = 512;
@@ -84,9 +85,27 @@ let replayRunning = false;
 let replayTransportSuppressed = false;
 let replayMicroscopeSession = null;
 let replayPlaybackStart = null;
+let replayBufferSession = null;
+let replayBufferCapturing = false;
+let replayResumeRequestId = 0;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
+const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
+const REPLAY_BUILD_SLICE_TURNS = 30;
+const MAX_REPLAY_VISUAL_BUFFER_BYTES = 256 * 1024 * 1024;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
+
+const copyViewBuffer = (view) => view?.byteLength
+  ? view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)
+  : new ArrayBuffer(0);
+
+function stopReplayBufferTimers(session = replayBufferSession) {
+  if (!session) return;
+  clearTimeout(session.buildTimer);
+  clearTimeout(session.playTimer);
+  session.buildTimer = 0;
+  session.playTimer = 0;
+}
 
 function beginReplayCapture(data) {
   replayCaptureStarting = true;
@@ -227,6 +246,7 @@ function shutdown() {
   closing = true;
   initGeneration++;
   clearTimeout(timer);
+  stopReplayBufferTimers();
   const doomed = engine;
   engine = null;
   try { doomed?.destroy(); } catch { /* the worker is closing regardless */ }
@@ -285,6 +305,165 @@ function perf() {
     itemCount: engine?.itemCount?.() || 0,
     controlsReceived, edgesProcessed, toolWrites,
   };
+}
+
+function replayView(session) {
+  if (control && Number.isFinite(control.camWorldX)
+      && Number.isFinite(control.camWorldY)) {
+    return {
+      cameraWorldX: control.camWorldX,
+      cameraWorldY: control.camWorldY,
+      viewCols: control.viewCols,
+      viewRows: control.viewRows,
+      zoom: session.capsule.view?.zoom,
+    };
+  }
+  return session.capsule.view || {};
+}
+
+function replayActorSnapshot() {
+  if (!survival || !localPlayerId) return null;
+  const players = engine.getPlayers();
+  const player = players.find((candidate) => candidate.id === localPlayerId) || null;
+  return {
+    type: 'actors', epoch, actorTick: engine.getActorTick(), localPlayerId,
+    players: copyReplayValue(players),
+    worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
+    mineProgress: engine.getPlayerMineProgress(localPlayerId),
+    mineTarget: copyReplayValue(engine.getPlayerMineTarget(localPlayerId)),
+    actionCount: engine.getPlayerActionCount(),
+    inventory: copyReplayValue(engine.getInventory(localPlayerId)),
+    cursor: copyReplayValue(engine.getCursor(localPlayerId)),
+    itemData: copyViewBuffer(engine.getItemSnapshotData()),
+    projectileData: copyViewBuffer(engine.getProjectileSnapshotData()),
+    mission: missionId ? copyReplayValue(engine.getMission()) : null,
+    ackSeq: player?.inputSeq ?? 0,
+  };
+}
+
+function captureReplayVisualFrame(session, turn, forceFull = false) {
+  const full = forceFull || turn % REPLAY_VISUAL_KEYFRAME_TURNS === 0;
+  const bytes = full ? engine.serializeWorld() : engine.serializeDiff();
+  engine.consumeReplicaDirty();
+  const editX0 = Number.isFinite(lightEditX0) ? Math.floor(lightEditX0) : 1;
+  const editX1 = Number.isFinite(lightEditX1) ? Math.ceil(lightEditX1) : 0;
+  const view = replayView(session);
+  const world = {
+    type: full ? 'full' : 'diff',
+    epoch,
+    sequence: turn + 1,
+    reason: full ? 'replay-buffer-keyframe' : undefined,
+    resizeId,
+    worldOffsetX: engine.getWorldOffsetX(),
+    worldOffsetY: engine.getWorldOffsetY(),
+    worldTick: engine.getTick(),
+    replayView: view,
+    lightEditX0: editX0,
+    lightEditX1: editX1,
+    data: copyViewBuffer(bytes),
+  };
+  if (full) {
+    world.cols = engine.cols;
+    world.rows = engine.rows;
+  }
+  const creatures = engine.getCreatureSnapshotData();
+  const draft = engine.getStoneDraftCells();
+  const inventory = draft.length && survival && localPlayerId
+    ? engine.getInventory(localPlayerId)
+    : null;
+  const material = inventory?.slots?.[inventory.selected]?.material ?? creativeValue;
+  const sounds = engine.drainSoundEvents();
+  const frame = {
+    turn,
+    view: copyReplayValue(view),
+    world,
+    actors: replayActorSnapshot(),
+    creatures: {
+      type: 'creatures', epoch,
+      worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
+      data: copyViewBuffer(creatures),
+    },
+    draft: {
+      type: 'draft', epoch, revision: turn + 1, material,
+      worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
+      data: copyViewBuffer(Int32Array.from(draft)),
+    },
+    sounds: sounds.length
+      ? { type: 'sounds', epoch, data: copyViewBuffer(sounds) }
+      : null,
+  };
+  const nextBytes = session.bufferBytes + replayFrameBytes(frame);
+  lightEditX0 = Infinity;
+  lightEditX1 = -Infinity;
+  lastToolWriteX = null;
+  if (nextBytes > MAX_REPLAY_VISUAL_BUFFER_BYTES) {
+    session.limitReached = true;
+    return false;
+  }
+  session.frames.push(frame);
+  session.bufferBytes = nextBytes;
+  session.bufferedTurn = turn;
+  return true;
+}
+
+function cloneReplayPacket(packet) {
+  if (!packet) return null;
+  const clone = { ...packet };
+  for (const key of ['data', 'itemData', 'projectileData']) {
+    if (packet[key] instanceof ArrayBuffer) clone[key] = packet[key].slice(0);
+  }
+  return clone;
+}
+
+function postReplayBufferStatus(session, fields = {}) {
+  self.postMessage({
+    type: 'replay-buffer-status',
+    turn: session.playhead,
+    turns: session.capsule.turns,
+    bufferedTurn: session.bufferedTurn,
+    playing: session.playing,
+    buffering: session.buffering,
+    complete: session.complete,
+    limitReached: session.limitReached,
+    matched: session.matched,
+    bufferBytes: session.bufferBytes,
+    ...fields,
+  });
+}
+
+function postReplayVisualFrame(session, target, seek = false) {
+  const frame = session.frames[target];
+  if (!frame) return false;
+  const world = seek || target !== session.presentedTurn + 1
+    ? reconstructReplayWorld(session.frames, target)
+    : frame.world;
+  const worldPacket = cloneReplayPacket({
+    ...world, replayView: frame.view, replayFrameTurn: target,
+  });
+  const transfers = [worldPacket.data];
+  self.postMessage(worldPacket, transfers);
+  for (const packet of [frame.creatures, frame.draft, frame.actors]) {
+    if (!packet) continue;
+    const next = cloneReplayPacket({ ...packet, replayFrameTurn: target });
+    const packetTransfers = [];
+    for (const key of ['data', 'itemData', 'projectileData']) {
+      if (next[key] instanceof ArrayBuffer) packetTransfers.push(next[key]);
+    }
+    self.postMessage(next, packetTransfers);
+  }
+  if (!seek && frame.sounds) {
+    const sounds = cloneReplayPacket(frame.sounds);
+    self.postMessage(sounds, [sounds.data]);
+  }
+  session.awaitingFrame = target;
+  session.buffering = false;
+  self.postMessage({
+    type: 'replay-buffer-frame-ready',
+    turn: target,
+    turns: session.capsule.turns,
+    bufferedTurn: session.bufferedTurn,
+  });
+  return true;
 }
 
 function postDraft() {
@@ -679,27 +858,31 @@ function executeTurn(
     replayGateFlags !== null
       && !!(replayGateFlags & REPLAY_GATE_FULL_RESYNC)
   );
-  if (postedFull) {
-    fullResyncRequested = false;
-    postFull('resync');
-  } else if (shifted) {
-    if (replayGateFlags !== null && !replayTransportSuppressed)
-      postFull('replay-stream');
-    else postShift(fromWorldOffsetX, fromWorldOffsetY);
+  if (replayBufferCapturing) {
+    if (postedFull) fullResyncRequested = false;
+  } else {
+    if (postedFull) {
+      fullResyncRequested = false;
+      postFull('resync');
+    } else if (shifted) {
+      if (replayGateFlags !== null && !replayTransportSuppressed)
+        postFull('replay-stream');
+      else postShift(fromWorldOffsetX, fromWorldOffsetY);
+    }
+    postSounds();
+    if (started - lastStatsPost >= 250) {
+      lastStatsPost = started;
+      if (!replayTransportSuppressed)
+        self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
+    }
+    postDraft();
+    postCreatures();
+    // Inventory/cursor are change-triggered rather than periodic. Force them into
+    // the first packet of a new epoch so coalescing cannot strand an update that
+    // was posted immediately before the shift.
+    postActors(shifted);
+    if (!shifted && !postedFull) postDiffIfReady();
   }
-  postSounds();
-  if (started - lastStatsPost >= 250) {
-    lastStatsPost = started;
-    if (!replayTransportSuppressed)
-      self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
-  }
-  postDraft();
-  postCreatures();
-  // Inventory/cursor are change-triggered rather than periodic. Force them into
-  // the first packet of a new epoch so coalescing cannot strand an update that
-  // was posted immediately before the shift.
-  postActors(shifted);
-  if (!shifted && !postedFull) postDiffIfReady();
   // Mark the scheduling handoff before calling into the timer API so the last
   // delivered breadcrumb distinguishes it from unfinished transport work.
   setLivenessStage(WORKER_LIVENESS_STAGE.SCHEDULED, publishBreadcrumbs);
@@ -709,6 +892,7 @@ function executeTurn(
       schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
     else schedule();
   }
+  return { shifted, postedFull };
 }
 
 function run() {
@@ -1149,6 +1333,330 @@ async function runReplayCapsule(requestId, value, { playback = false } = {}) {
   replaySlice();
 }
 
+function scheduleReplayBufferPlayback(session, resetDeadline = false) {
+  clearTimeout(session.playTimer);
+  session.playTimer = 0;
+  if (closing || replayBufferSession !== session || !session.playing
+      || session.awaitingFrame !== null) return;
+  const target = session.playhead + 1;
+  if (target > session.capsule.turns) {
+    session.playing = false;
+    postReplayBufferStatus(session);
+    return;
+  }
+  if (target > session.bufferedTurn) {
+    session.buffering = true;
+    postReplayBufferStatus(session);
+    return;
+  }
+  session.buffering = false;
+  if (resetDeadline || !Number.isFinite(session.nextPlayAt))
+    session.nextPlayAt = performance.now() + SIM_STEP_MS;
+  const wait = Math.max(0, session.nextPlayAt - performance.now());
+  session.nextPlayAt += SIM_STEP_MS;
+  session.playTimer = setTimeout(() => {
+    session.playTimer = 0;
+    if (replayBufferSession !== session || !session.playing
+        || session.awaitingFrame !== null) return;
+    postReplayVisualFrame(session, target, false);
+  }, wait);
+}
+
+function buildReplayBufferSlice(session) {
+  if (closing || replayBufferSession !== session || session.complete
+      || session.limitReached) return;
+  replayBufferCapturing = true;
+  try {
+    const end = Math.min(session.capsule.turns, session.turn + REPLAY_BUILD_SLICE_TURNS);
+    while (session.turn < end) {
+      applyReplayCursorEvents(session, session.turn);
+      const priorEpoch = epoch;
+      const flags = applyReplayCursorGate(session);
+      const result = executeTurn(performance.now(), false, false, flags);
+      session.turn++;
+      applyReplayCursorEvents(session, session.turn);
+      const forceFull = result.shifted || result.postedFull || epoch !== priorEpoch;
+      if (!captureReplayVisualFrame(session, session.turn, forceFull)) break;
+    }
+    replayBufferCapturing = false;
+    if (session.turn >= session.capsule.turns) {
+      session.complete = true;
+      session.matched = replayStateMatches(session.capsule.final, replayFinalState());
+    }
+    postReplayBufferStatus(session);
+    if (session.pendingSeek !== null && session.pendingSeek <= session.bufferedTurn
+        && session.awaitingFrame === null) {
+      const target = session.pendingSeek;
+      session.pendingSeek = null;
+      postReplayVisualFrame(session, target, true);
+    } else if (session.playing && session.awaitingFrame === null) {
+      scheduleReplayBufferPlayback(session);
+    }
+    if (!session.complete && !session.limitReached) {
+      session.buildTimer = setTimeout(() => buildReplayBufferSlice(session), 0);
+    }
+  } catch (error) {
+    replayBufferCapturing = false;
+    session.playing = false;
+    session.complete = true;
+    self.postMessage({
+      type: 'replay-error', requestId: session.requestId,
+      message: error?.message || String(error),
+    });
+  }
+}
+
+async function startReplayBuffer(requestId, value) {
+  let capsule;
+  try {
+    capsule = validateReplayCapsule(value);
+  } catch (error) {
+    self.postMessage({ type: 'replay-error', requestId, message: error.message });
+    return;
+  }
+  stopReplayBufferTimers();
+  replayBufferSession = null;
+  replayMicroscopeSession = null;
+  clearTimeout(timer);
+  replayRunning = true;
+  replayTransportSuppressed = true;
+  replayCaptureStarting = false;
+  replayJournalEvents = [];
+  replayJournalGateFlags = 0;
+  pendingRuntimeConfig = null;
+  pendingResize = null;
+  pendingWeatherId = null;
+  const initialized = await initializeAuthority(
+    { type: 'init', ...capsule.init },
+    { scheduleRuns: false, usePending: false },
+  );
+  if (!initialized || closing) {
+    replayRunning = false;
+    replayTransportSuppressed = false;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'The buffered replay could not initialize the authority.',
+    });
+    return;
+  }
+  const session = {
+    requestId,
+    capsule,
+    frames: [],
+    eventIndex: 0,
+    gateIndex: 0,
+    turn: 0,
+    playhead: 0,
+    presentedTurn: -1,
+    bufferedTurn: 0,
+    pendingSeek: null,
+    awaitingFrame: null,
+    playing: true,
+    buffering: false,
+    complete: false,
+    limitReached: false,
+    matched: null,
+    bufferBytes: 0,
+    buildTimer: 0,
+    playTimer: 0,
+    nextPlayAt: NaN,
+  };
+  replayBufferSession = session;
+  applyReplayCursorEvents(session, 0);
+  awaitingAck = false;
+  if (!captureReplayVisualFrame(session, 0, true)) {
+    replayRunning = false;
+    replayTransportSuppressed = false;
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'The initial replay frame exceeded the visual buffer limit.',
+    });
+    return;
+  }
+  self.postMessage({
+    type: 'replay-buffer-started', requestId,
+    turns: capsule.turns,
+  });
+  postReplayVisualFrame(session, 0, true);
+  postReplayBufferStatus(session);
+  session.buildTimer = setTimeout(() => buildReplayBufferSlice(session), 0);
+}
+
+function controlReplayBuffer(data) {
+  const session = replayBufferSession;
+  if (!session) return;
+  if (data.type === 'replay-buffer-pause') {
+    session.playing = !data.paused;
+    session.buffering = false;
+    session.nextPlayAt = NaN;
+    if (!session.playing) clearTimeout(session.playTimer);
+    else scheduleReplayBufferPlayback(session, true);
+    postReplayBufferStatus(session);
+    return;
+  }
+  if (data.type === 'replay-buffer-seek') {
+    const target = Math.max(0, Math.min(session.capsule.turns, data.turn | 0));
+    session.playing = !!data.playAfter;
+    session.nextPlayAt = NaN;
+    clearTimeout(session.playTimer);
+    session.playTimer = 0;
+    if (session.awaitingFrame !== null) {
+      session.pendingSeek = target;
+      session.buffering = true;
+    } else if (target <= session.bufferedTurn) {
+      session.pendingSeek = null;
+      postReplayVisualFrame(session, target, true);
+    } else {
+      session.pendingSeek = target;
+      session.buffering = true;
+    }
+    postReplayBufferStatus(session);
+    return;
+  }
+  if (data.type === 'replay-buffer-frame-applied') {
+    if (session.awaitingFrame !== (data.turn | 0)) return;
+    session.presentedTurn = session.awaitingFrame;
+    session.playhead = session.awaitingFrame;
+    session.awaitingFrame = null;
+    if (session.pendingSeek !== null) {
+      const target = session.pendingSeek;
+      if (target <= session.bufferedTurn) {
+        session.pendingSeek = null;
+        postReplayVisualFrame(session, target, true);
+      }
+    } else if (session.playing) {
+      scheduleReplayBufferPlayback(session, !Number.isFinite(session.nextPlayAt));
+    }
+    postReplayBufferStatus(session);
+  }
+}
+
+function replayBranchCapsule(capsule, turn, view) {
+  return {
+    format: capsule.format,
+    version: capsule.version,
+    abiVersion: capsule.abiVersion,
+    abiFingerprint: capsule.abiFingerprint,
+    init: copyReplayValue(capsule.init),
+    turns: turn,
+    events: capsule.events
+      .filter((event) => event.tick <= turn)
+      .map((event) => copyReplayValue(event)),
+    gates: capsule.gates
+      .filter((gate) => gate.start < turn)
+      .map((gate) => ({
+        start: gate.start,
+        end: Math.min(turn, gate.end),
+        flags: gate.flags,
+      })),
+    view: copyReplayValue(view || capsule.view || {}),
+  };
+}
+
+function finishReplayResume(session, requestId, target) {
+  applyReplayCursorEvents(session, target);
+  if (survival && localPlayerId && latestInput) {
+    latestInput = { ...latestInput, bits: 0, moveX: 0, moveY: 0 };
+    engine.setPlayerInput(localPlayerId, {
+      ...latestInput,
+      aimX: Math.floor(latestInput.worldAimX - engine.getWorldOffsetX()),
+      aimY: Math.floor(latestInput.worldAimY - engine.getWorldOffsetY()),
+    });
+  }
+  workerButtons = 0;
+  edges = [];
+  if (control) control = { ...control, buttons: 0, inside: false };
+  engine.pointerButtons(0);
+  const frame = replayBufferSession?.frames[target];
+  const branch = replayBranchCapsule(session.capsule, target, frame?.view);
+  replayCapture = branch;
+  replayCaptureStarting = false;
+  replayInputSignature = '';
+  replayJournalEvents = [];
+  replayJournalGateFlags = 0;
+  replayRunning = false;
+  replayTransportSuppressed = false;
+  replayBufferCapturing = false;
+  replayBufferSession = null;
+  replayResumeRequestId = requestId;
+  paused = true;
+  awaitingAck = false;
+  fullResyncRequested = false;
+  postFull('replay-resume', {
+    replayView: branch.view,
+    replayResumeRequestId: requestId,
+  });
+  postCreatures();
+  postDraft();
+  postActors(true);
+  self.postMessage({ type: 'replay-branch', capsule: branch });
+  self.postMessage({ type: 'replay-buffer-resume-ready', requestId, turn: target });
+}
+
+async function resumeReplayBuffer(requestId, value) {
+  const active = replayBufferSession;
+  if (!active) {
+    self.postMessage({
+      type: 'replay-error', requestId,
+      message: 'Open a buffered replay before resuming from its timeline.',
+    });
+    return;
+  }
+  const target = Math.max(0, Math.min(active.capsule.turns, value | 0));
+  const capsule = active.capsule;
+  stopReplayBufferTimers(active);
+  active.playing = false;
+  replayBufferCapturing = false;
+  replayTransportSuppressed = true;
+  replayRunning = true;
+
+  let session = active;
+  if (active.turn !== target) {
+    const initialized = await initializeAuthority(
+      { type: 'init', ...capsule.init },
+      { scheduleRuns: false, usePending: false },
+    );
+    if (!initialized || closing) {
+      self.postMessage({
+        type: 'replay-error', requestId,
+        message: 'The replay branch could not initialize the authority.',
+      });
+      return;
+    }
+    session = { capsule, eventIndex: 0, gateIndex: 0, turn: 0 };
+  }
+  const advance = () => {
+    if (closing) return;
+    try {
+      const end = Math.min(target, session.turn + 120);
+      while (session.turn < end) {
+        applyReplayCursorEvents(session, session.turn);
+        const flags = applyReplayCursorGate(session);
+        executeTurn(performance.now(), false, false, flags);
+        session.turn++;
+      }
+      if (session.turn >= target) {
+        finishReplayResume(session, requestId, target);
+        return;
+      }
+      self.postMessage({
+        type: 'replay-buffer-resume-progress', requestId,
+        turn: session.turn, turns: target,
+      });
+      setTimeout(advance, 0);
+    } catch (error) {
+      replayRunning = false;
+      replayTransportSuppressed = false;
+      paused = true;
+      self.postMessage({
+        type: 'replay-error', requestId,
+        message: error?.message || String(error),
+      });
+    }
+  };
+  advance();
+}
+
 async function resetReplayMicroscope(capsule, options) {
   clearTimeout(timer);
   replayRunning = true;
@@ -1178,7 +1686,7 @@ async function resetReplayMicroscope(capsule, options) {
   return replayMicroscopeSession;
 }
 
-function applyMicroscopeEvents(session, turn) {
+function applyReplayCursorEvents(session, turn) {
   const { capsule } = session;
   while (session.eventIndex < capsule.events.length
          && capsule.events[session.eventIndex].tick === turn) {
@@ -1187,7 +1695,7 @@ function applyMicroscopeEvents(session, turn) {
   }
 }
 
-function applyMicroscopeGate(session) {
+function applyReplayCursorGate(session) {
   const { capsule, turn } = session;
   while (session.gateIndex < capsule.gates.length
          && capsule.gates[session.gateIndex].end <= turn) session.gateIndex++;
@@ -1195,6 +1703,7 @@ function applyMicroscopeGate(session) {
   const flags = gate && gate.start <= turn && turn < gate.end ? gate.flags : 0;
   awaitingAck = !!(flags & REPLAY_GATE_AWAITING_ACK);
   fullResyncRequested = !!(flags & REPLAY_GATE_FULL_RESYNC);
+  return flags;
 }
 
 async function seekReplayMicroscope(requestId, value, target, options = {}) {
@@ -1235,7 +1744,7 @@ async function seekReplayMicroscope(requestId, value, target, options = {}) {
     };
     const finish = () => {
       try {
-        applyMicroscopeEvents(session, session.turn);
+        applyReplayCursorEvents(session, session.turn);
         paused = true;
         replayRunning = false;
         replayTransportSuppressed = false;
@@ -1262,8 +1771,8 @@ async function seekReplayMicroscope(requestId, value, target, options = {}) {
       try {
         const end = Math.min(target, session.turn + 120);
         while (session.turn < end) {
-          applyMicroscopeEvents(session, session.turn);
-          applyMicroscopeGate(session);
+          applyReplayCursorEvents(session, session.turn);
+          applyReplayCursorGate(session);
           executeTurn(performance.now(), false);
           session.turn++;
           session.probe.observe(session.turn);
@@ -1304,6 +1813,35 @@ self.onmessage = async ({ data }) => {
     exportReplay(data.requestId, data.view);
     return;
   }
+  if (data.type === 'replay-buffer-start') {
+    if (replayRunning) {
+      self.postMessage({
+        type: 'replay-error', requestId: data.requestId,
+        message: 'A replay is already running.',
+      });
+      return;
+    }
+    await startReplayBuffer(data.requestId, data.capsule);
+    return;
+  }
+  if (data.type === 'replay-buffer-pause'
+      || data.type === 'replay-buffer-seek'
+      || data.type === 'replay-buffer-frame-applied') {
+    controlReplayBuffer(data);
+    return;
+  }
+  if (data.type === 'replay-buffer-resume') {
+    await resumeReplayBuffer(data.requestId, data.turn);
+    return;
+  }
+  if (data.type === 'replay-buffer-resume-applied') {
+    if ((data.requestId | 0) !== replayResumeRequestId) return;
+    replayResumeRequestId = 0;
+    paused = false;
+    turnDeadline.reset(performance.now());
+    schedule();
+    return;
+  }
   if (data.type === 'replay-run') {
     if (replayRunning) {
       self.postMessage({
@@ -1331,6 +1869,7 @@ self.onmessage = async ({ data }) => {
     return;
   }
   if (replayRunning) {
+    if (replayBufferSession) return;
     if (data.type === 'ack' || data.type === 'resync') {
       applyRuntimeMessage(data);
       if (!awaitingAck && replayPlaybackStart) replayPlaybackStart();
@@ -1338,6 +1877,8 @@ self.onmessage = async ({ data }) => {
     return;
   }
   if (data.type === 'init') {
+    stopReplayBufferTimers();
+    replayBufferSession = null;
     replayMicroscopeSession = null;
     beginReplayCapture(data);
     await initializeAuthority(data);

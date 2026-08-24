@@ -72,6 +72,8 @@ export function createWorldWorkerClient(ctx) {
   let replayRequestId = 0;
   const replayRequests = new Map();
   let replayMicroscopeOpen = false;
+  let replayBufferOpen = false;
+  let pendingReplayFrameTurn = null;
   const replayJournal = createReplayCaptureJournal();
   const liveness = createWorkerLivenessMonitor();
   let state = {
@@ -82,16 +84,21 @@ export function createWorldWorkerClient(ctx) {
 
   const post = (message) => {
     if (closed) return false;
-    if (replayMicroscopeOpen && REPLAY_EVENT_TYPES.has(message.type)) return true;
+    if ((replayMicroscopeOpen || replayBufferOpen)
+        && REPLAY_EVENT_TYPES.has(message.type)) return true;
     worker.postMessage(message);
     return true;
   };
+  const isBufferedReplayFrame = (packet) => replayBufferOpen
+    && Number.isInteger(packet?.replayFrameTurn);
 
   const rejectReplayRequests = (message) => {
     for (const request of replayRequests.values()) request.reject(new Error(message));
     replayRequests.clear();
     pendingReplayView = null;
-    state = { ...state, replayPlaying: false };
+    pendingReplayFrameTurn = null;
+    replayBufferOpen = false;
+    state = { ...state, replayPlaying: false, replayMode: '', replayBuffering: false };
   };
 
   const settleMicroscopeRequest = (requestId) => {
@@ -99,6 +106,22 @@ export function createWorldWorkerClient(ctx) {
     if (!request?.frame || !request.mirrorApplied) return;
     replayRequests.delete(requestId);
     request.resolve(request.frame);
+  };
+
+  const settleReplayResumeRequest = (requestId) => {
+    const request = replayRequests.get(requestId);
+    if (!request?.ready || !request.mirrorApplied) return;
+    replayRequests.delete(requestId);
+    replayBufferOpen = false;
+    state = {
+      ...state,
+      replayPlaying: false,
+      replayMode: '',
+      replayBuffering: false,
+      replayPaused: false,
+    };
+    post({ type: 'replay-buffer-resume-applied', requestId });
+    request.resolve({ turn: request.turn });
   };
 
   const probeLiveness = () => {
@@ -164,6 +187,59 @@ export function createWorldWorkerClient(ctx) {
       }
       return;
     }
+    if (data.type === 'replay-buffer-started') {
+      const request = replayRequests.get(data.requestId);
+      if (request?.kind === 'buffer-start') {
+        replayRequests.delete(data.requestId);
+        request.resolve({ turns: Math.max(0, data.turns | 0) });
+      }
+      return;
+    }
+    if (data.type === 'replay-buffer-status') {
+      state = {
+        ...state,
+        replayPlaying: true,
+        replayMode: 'buffered',
+        replayTurn: Math.max(0, data.turn | 0),
+        replayTurns: Math.max(0, data.turns | 0),
+        replayBufferedTurn: Math.max(0, data.bufferedTurn | 0),
+        replayPaused: !data.playing,
+        replayBuffering: !!data.buffering,
+        replayBufferComplete: !!data.complete,
+        replayBufferLimitReached: !!data.limitReached,
+        replayMatched: data.matched,
+        replayBufferBytes: Math.max(0, Number(data.bufferBytes) || 0),
+        replayBufferError: '',
+      };
+      return;
+    }
+    if (data.type === 'replay-buffer-frame-ready') {
+      pendingReplayFrameTurn = Math.max(0, data.turn | 0);
+      pendingReplayView = data.view || pendingReplayView;
+      return;
+    }
+    if (data.type === 'replay-buffer-resume-progress') {
+      replayRequests.get(data.requestId)?.onProgress?.(data.turn, data.turns);
+      state = {
+        ...state,
+        replayResumeTurn: Math.max(0, data.turn | 0),
+        replayResumeTurns: Math.max(0, data.turns | 0),
+      };
+      return;
+    }
+    if (data.type === 'replay-buffer-resume-ready') {
+      const request = replayRequests.get(data.requestId);
+      if (request?.kind === 'buffer-resume') {
+        request.ready = true;
+        request.turn = Math.max(0, data.turn | 0);
+        settleReplayResumeRequest(data.requestId);
+      }
+      return;
+    }
+    if (data.type === 'replay-branch') {
+      replayJournal.replace(data.capsule);
+      return;
+    }
     if (data.type === 'replay-progress') {
       if (data.view && typeof data.view === 'object') pendingReplayView = data.view;
       state = {
@@ -202,14 +278,31 @@ export function createWorldWorkerClient(ctx) {
       if (request) {
         replayRequests.delete(data.requestId);
         if (request.kind === 'run') lastControl = '';
-        state = { ...state, replayPlaying: false };
+        if (request.kind === 'buffer-start' || request.kind === 'buffer-resume')
+          replayBufferOpen = false;
+        state = {
+          ...state,
+          replayPlaying: false,
+          replayMode: '',
+          replayBuffering: false,
+        };
         request.reject(new Error(data.message || 'Replay failed.'));
+      } else if (replayBufferOpen) {
+        state = {
+          ...state,
+          replayPaused: true,
+          replayBuffering: false,
+          replayBufferError: data.message || 'Replay buffering failed.',
+        };
       }
       return;
     }
     if (data.type === 'full' || data.type === 'shift' || data.type === 'diff') {
+      const bufferedReplayFrame = isBufferedReplayFrame(data);
+      if (data.replayView && typeof data.replayView === 'object')
+        pendingReplayView = data.replayView;
       liveness.notePacket(data.worldTick, receivedAt);
-      if ((data.epoch | 0) < appliedEpoch) {
+      if (!bufferedReplayFrame && (data.epoch | 0) < appliedEpoch) {
         acknowledge(data);
         return;
       }
@@ -228,7 +321,7 @@ export function createWorldWorkerClient(ctx) {
         return;
       }
       const packetPriority = { diff: 0, shift: 1, full: 2 };
-      if (!pending || data.epoch > pending.epoch ||
+      if (bufferedReplayFrame || !pending || data.epoch > pending.epoch ||
           (data.epoch === pending.epoch &&
            (packetPriority[data.type] > packetPriority[pending.type] ||
             (packetPriority[data.type] === packetPriority[pending.type] &&
@@ -240,15 +333,20 @@ export function createWorldWorkerClient(ctx) {
         resizePending: !!awaitingResizeId,
       };
     } else if (data.type === 'draft') {
-      if (!data.epoch || data.epoch >= appliedEpoch) pendingDraft = data;
+      if (isBufferedReplayFrame(data) || !data.epoch || data.epoch >= appliedEpoch)
+        pendingDraft = data;
     } else if (data.type === 'creatures') {
-      if (!data.epoch || data.epoch >= appliedEpoch) pendingCreatures = data;
+      if (isBufferedReplayFrame(data) || !data.epoch || data.epoch >= appliedEpoch)
+        pendingCreatures = data;
     } else if (data.type === 'actors') {
-      if (data.epoch && data.epoch < appliedEpoch) return;
-      if (pendingActors?.epoch && data.epoch < pendingActors.epoch) return;
+      const bufferedReplayFrame = isBufferedReplayFrame(data);
+      if (!bufferedReplayFrame && data.epoch && data.epoch < appliedEpoch) return;
+      if (!bufferedReplayFrame && pendingActors?.epoch
+          && data.epoch < pendingActors.epoch) return;
       // Actor poses are latest-wins, but sparse packet fields must survive if a
       // newer pose arrives before the next browser frame.
-      const prior = pendingActors?.epoch === data.epoch ? pendingActors : null;
+      const prior = !bufferedReplayFrame && pendingActors?.epoch === data.epoch
+        ? pendingActors : null;
       pendingActors = {
         ...data,
         inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
@@ -529,6 +627,7 @@ export function createWorldWorkerClient(ctx) {
     },
     runReplay(capsule, onProgress, options = {}) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      replayBufferOpen = false;
       replayMicroscopeOpen = false;
       if (!!capsule?.init?.survival !== ctx.survival)
         return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
@@ -587,8 +686,104 @@ export function createWorldWorkerClient(ctx) {
         }
       });
     },
+    startBufferedReplay(capsule) {
+      if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      replayMicroscopeOpen = false;
+      if (!!capsule?.init?.survival !== ctx.survival)
+        return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
+      const replayPlanetId = capsule?.init?.planetId | 0;
+      if (replayPlanetId !== ctx.planetId)
+        return Promise.reject(new Error('Open this replay on the matching planet.'));
+      const replayWeatherId = resolveWeatherIdForPlanet(
+        capsule?.init?.weatherId ?? DEFAULT_WEATHER_ID,
+        replayPlanetId,
+      );
+      if (capsule?.init?.weatherId !== undefined
+          && capsule.init.weatherId !== replayWeatherId)
+        return Promise.reject(new Error('Replay weather is invalid for its planet.'));
+      const cols = capsule?.init?.cols | 0;
+      const rows = capsule?.init?.rows | 0;
+      if (!cols || !rows)
+        return Promise.reject(new Error('Replay dimensions are missing.'));
+      pending = pendingDraft = pendingCreatures = pendingActors = null;
+      pendingReplayView = null;
+      pendingReplayFrameTurn = null;
+      awaitingResizeId = 0;
+      appliedEpoch = 0;
+      lastControl = '';
+      predictor = predictorEngine = null;
+      predictorPlayerId = authoritativePlayerId = 0;
+      players = [];
+      items = new Float32Array(0);
+      projectiles = new Float32Array(0);
+      ctx.worldSeed = capsule.init.worldSeed >>> 0;
+      ctx.planetId = replayPlanetId;
+      ctx.weatherId = replayWeatherId;
+      ctx.weatherVisualKey = 0;
+      if (Number.isFinite(capsule.init.gravityScale))
+        ctx.gravityScale = capsule.init.gravityScale;
+      ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      replayBufferOpen = true;
+      state = {
+        ...state,
+        replayPlaying: true,
+        replayMode: 'buffered',
+        replayTurn: 0,
+        replayTurns: Math.max(0, capsule.turns | 0),
+        replayBufferedTurn: 0,
+        replayPaused: false,
+        replayBuffering: true,
+        replayBufferComplete: false,
+        replayBufferLimitReached: false,
+        replayBufferError: '',
+      };
+      const requestId = ++replayRequestId;
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, { resolve, reject, kind: 'buffer-start' });
+        if (!post({ type: 'replay-buffer-start', requestId, capsule })) {
+          replayRequests.delete(requestId);
+          replayBufferOpen = false;
+          state = { ...state, replayPlaying: false, replayMode: '' };
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
+    pauseBufferedReplay(paused) {
+      if (!replayBufferOpen) return false;
+      state = { ...state, replayPaused: !!paused };
+      return post({ type: 'replay-buffer-pause', paused: !!paused });
+    },
+    seekBufferedReplay(turn, { playAfter = false } = {}) {
+      if (!replayBufferOpen) return false;
+      state = { ...state, replayPaused: !playAfter, replayBuffering: false };
+      return post({
+        type: 'replay-buffer-seek',
+        turn: Math.max(0, turn | 0),
+        playAfter: !!playAfter,
+      });
+    },
+    resumeBufferedReplay(turn, onProgress) {
+      if (!replayBufferOpen)
+        return Promise.reject(new Error('Open a buffered replay before resuming.'));
+      const requestId = ++replayRequestId;
+      state = { ...state, replayPaused: true, replayBuffering: true };
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, {
+          resolve, reject, onProgress, kind: 'buffer-resume',
+          ready: false, mirrorApplied: false, turn: Math.max(0, turn | 0),
+        });
+        if (!post({
+          type: 'replay-buffer-resume', requestId,
+          turn: Math.max(0, turn | 0),
+        })) {
+          replayRequests.delete(requestId);
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
     openReplayMicroscope(capsule, onProgress, options = {}) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      replayBufferOpen = false;
       if (!!capsule?.init?.survival !== ctx.survival)
         return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
       const replayPlanetId = capsule?.init?.planetId | 0;
@@ -779,6 +974,13 @@ export function createWorldWorkerClient(ctx) {
                 if (request?.kind === 'microscope') {
                   request.mirrorApplied = true;
                   settleMicroscopeRequest(packet.microscopeRequestId);
+                }
+              }
+              if (packet.replayResumeRequestId) {
+                const request = replayRequests.get(packet.replayResumeRequestId);
+                if (request?.kind === 'buffer-resume') {
+                  request.mirrorApplied = true;
+                  settleReplayResumeRequest(packet.replayResumeRequestId);
                 }
               }
             }
@@ -986,6 +1188,12 @@ export function createWorldWorkerClient(ctx) {
           changed = true;
         }
       }
+      if (pendingReplayFrameTurn !== null && ctx.engine) {
+        const turn = pendingReplayFrameTurn;
+        pendingReplayFrameTurn = null;
+        state = { ...state, replayTurn: turn };
+        post({ type: 'replay-buffer-frame-applied', turn });
+      }
       return changed;
     },
     destroy() {
@@ -1110,7 +1318,10 @@ export function createWorldWorkerClient(ctx) {
       try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
     }
     pending = pendingDraft = pendingCreatures = pendingActors = null;
+    pendingReplayFrameTurn = null;
     pendingSounds = [];
+    replayBufferOpen = false;
+    replayMicroscopeOpen = false;
     predictor = predictorEngine = null;
     predictorPlayerId = authoritativePlayerId = 0;
     appliedEpoch = 0;

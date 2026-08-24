@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onReplay }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onReplay, onReplayPlayback, onReplayStep }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button/key state is edge-owned: down latches, up/cancel/blur clears.
@@ -179,6 +179,10 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     const root = ctx.container.getRootNode?.();
     return isEditableTarget(root?.activeElement);
   };
+  const keepsNativeSpace = (e) => e.composedPath?.().some((node) =>
+    node?.nodeType === 1 && (node.tagName === 'BUTTON' || node.tagName === 'A'
+      || node.tagName === 'SELECT'
+      || (node.tagName === 'INPUT' && node.type !== 'range')));
 
   // Movement/combat keys (WASD/arrows + space/shift/F) are forwarded to the engine,
   // which owns the pan/player-input policy. The editable-target guard +
@@ -199,8 +203,23 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
       (key === 'w' || key === 'a' || key === 's' || key === 'd'
         || isQ);
     const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
-    if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey) return;
+    const bufferedReplayKey = surfaceIsVisible()
+      && ctx.worldWorker?.state?.replayMode === 'buffered';
+    const visibleReplayPlaybackKey = key === ' ' && bufferedReplayKey;
+    const visibleReplayStepKey = (key === ',' || key === '.') && bufferedReplayKey;
+    if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey
+        && !visibleReplayPlaybackKey && !visibleReplayStepKey) return;
     if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
+    if (visibleReplayPlaybackKey) {
+      if (!keepsNativeSpace(e) && !e.repeat) onReplayPlayback?.();
+      if (!keepsNativeSpace(e)) e.preventDefault();
+      return;
+    }
+    if (visibleReplayStepKey) {
+      onReplayStep?.(key === ',' ? -1 : 1);
+      e.preventDefault();
+      return;
+    }
     // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
     // any loaded-window resize (local worker or multiplayer server). Handled
     // before movement/hotbar keys ('0' is unused there).

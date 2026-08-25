@@ -1217,7 +1217,12 @@ export function createWorldWorkerClient(ctx) {
         const turn = pendingReplayFrameTurn;
         pendingReplayFrameTurn = null;
         state = { ...state, replayTurn: turn };
-        post({ type: 'replay-buffer-frame-applied', turn });
+        // The RAF still has camera, HUD, audio, and rendering work after this
+        // mirror apply. Release replay building once that presentation task has
+        // completed so background simulation cannot contend with the frame.
+        queueMicrotask(() => {
+          post({ type: 'replay-buffer-frame-applied', turn });
+        });
       }
       return changed;
     },

@@ -120,8 +120,10 @@ lives in `rigid_impl.inc`.
   reconciliation runs once more so neither constraint class can invalidate the
   other. A pair that cannot be separated locally retains one or both bodies at
   their last jointly clear poses. An active body restored to an exact clear pose
-  keeps its angular and tangential velocity; only linear velocity directed back
-  through the rejected correction is removed. Bodies already in the world rest
+  keeps its angular and tangential velocity. Dynamic contact islands remove
+  only linear velocity relative to the island that points back through the
+  rejected correction; terrain-contact and kinematic islands use the static
+  world as that reference. Bodies already in the world rest
   band park there, as does the final whole-stamp fallback for a body with no
   representable proposed cells. One-cell lattice aliasing is tolerated while
   bodies remain dynamic, but overlapping bodies cannot bake into static terrain.

@@ -965,11 +965,13 @@ void RigidBodySystem::relaxWorldContacts() {
 }
 
 bool RigidBodySystem::preserveRasterRecoveryMotion(
-    Body* body, const MovePose& rejectedPose) {
+    Body* body, const MovePose& rejectedPose,
+    double referenceVx, double referenceVy) {
   if (!rigidWorldBridgeMode(solverMode)) return false;
   double pointSpeed = std::hypot(body->vx, body->vy)
     + std::fabs(body->omega) * body->maxR;
   if (pointSpeed <= R_WORLD_SLEEP_VELOCITY
+      && std::hypot(referenceVx, referenceVy) <= R_WORLD_SLEEP_VELOCITY
       && !body->spatialForceApplied)
     return false;
 
@@ -982,7 +984,8 @@ bool RigidBodySystem::preserveRasterRecoveryMotion(
   if (translation > 1e-9) {
     double nx = dx / translation;
     double ny = dy / translation;
-    double inwardSpeed = body->vx * nx + body->vy * ny;
+    double inwardSpeed = (body->vx - referenceVx) * nx
+      + (body->vy - referenceVy) * ny;
     if (inwardSpeed < 0) {
       body->vx -= inwardSpeed * nx;
       body->vy -= inwardSpeed * ny;
@@ -1223,6 +1226,31 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     rigidRejectedCells = 0;
     rigidRasterProjectionFailures = 0;
     return;
+  }
+
+  std::vector<uint8_t> worldRasterTerrainViolating(
+    worldRasterNodes.size(), 0);
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+    WorldRasterNode& node = worldRasterNodes[index];
+    for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+      Layer& layer = layerIndex ? E.bg : E.fg;
+      Body* member = layerIndex ? node.background : node.foreground;
+      if (!member) continue;
+      ensureBodyRaster(member);
+      for (const BodyRasterCell& cell : member->rasterFootprint) {
+        if (layer.infinite && (cell.x == 0 || cell.x == E.cols - 1))
+          continue;
+        int k = cell.y * E.cols + cell.x;
+        if (layer.bodyOwner[k] >= 0) continue;
+        uint8_t material = layer.grid[k];
+        if (material != EMPTY && !E.isGasMaterial(material)
+            && !E.isBuoyantMedium(material)) {
+          worldRasterTerrainViolating[index] = 1;
+          break;
+        }
+      }
+      if (worldRasterTerrainViolating[index]) break;
+    }
   }
 
   worldRasterCurrentPoses.clear();
@@ -1678,6 +1706,29 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     return;
   }
 
+  std::vector<double> recoveryMass(worldRasterNodes.size(), 0);
+  std::vector<double> recoveryMomentumX(worldRasterNodes.size(), 0);
+  std::vector<double> recoveryMomentumY(worldRasterNodes.size(), 0);
+  std::vector<int> recoveryBodyCount(worldRasterNodes.size(), 0);
+  std::vector<uint8_t> recoveryStatic(worldRasterNodes.size(), 0);
+  for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
+    if (!worldRasterRollback[index]) continue;
+    int root = ufFind(contactParent, index);
+    Body* body = worldRasterNodes[index].body;
+    double mass = body->invMass > 0 ? 1.0 / body->invMass : 0;
+    recoveryMass[root] += mass;
+    recoveryMomentumX[root] += mass * body->vx;
+    recoveryMomentumY[root] += mass * body->vy;
+    recoveryBodyCount[root]++;
+    recoveryStatic[root] = recoveryStatic[root]
+      || body->kinematic || worldRasterTerrainViolating[index];
+  }
+  for (const WorldContact& contact : worldContacts) {
+    if (contact.bLayer >= 0) continue;
+    int index = contactNode(contact.aLayer, contact.aId);
+    if (index >= 0 && worldRasterRollback[index])
+      recoveryStatic[ufFind(contactParent, index)] = 1;
+  }
   int movedBodies = 0;
   for (int index = 0; index < (int)worldRasterNodes.size(); index++) {
     if (!worldRasterRollback[index]) continue;
@@ -1695,7 +1746,15 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       rigidRasterMaxCorrection = std::fmax(
         rigidRasterMaxCorrection, translation);
     }
-    if (!preserveRasterRecoveryMotion(body, current)) {
+    int root = ufFind(contactParent, index);
+    bool movingIsland = !recoveryStatic[root]
+      && recoveryBodyCount[root] > 1 && recoveryMass[root] > 0;
+    double referenceVx = movingIsland
+      ? recoveryMomentumX[root] / recoveryMass[root] : 0;
+    double referenceVy = movingIsland
+      ? recoveryMomentumY[root] / recoveryMass[root] : 0;
+    if (!preserveRasterRecoveryMotion(
+          body, current, referenceVx, referenceVy)) {
       // A body inside the world sleep band, or a solver without a cross-layer
       // contact coordinator, parks with the completed assignment.
       body->vx = body->vy = body->omega = 0;

@@ -172,4 +172,40 @@ islandCache.add(complete);
 islandCache.add(partial);
 assert.equal(islandCache.getByTurn(9), complete);
 
+const boundedCache = new ReplaySegmentCache({ maxBytes: 50 });
+boundedCache.add({ ...cacheSegment(0), end: 119, byteLength: 30 });
+boundedCache.add(
+  { ...cacheSegment(120), end: 239, byteLength: 30 },
+  { protectedStarts: [0], retainTurn: 0 },
+);
+assert.equal(boundedCache.bytes, 30);
+assert.deepEqual(boundedCache.ranges(), [[0, 119]]);
+boundedCache.add(
+  { ...cacheSegment(120), end: 239, byteLength: 30 },
+  { protectedStarts: [0], retainTurn: 120 },
+);
+assert.equal(boundedCache.bytes, 30);
+assert.deepEqual(boundedCache.ranges(), [[120, 239]]);
+
+const playheadCache = new ReplaySegmentCache({ maxBytes: 90 });
+for (let start = 0; start < 600; start += 120) {
+  playheadCache.add(
+    { ...cacheSegment(start), end: start + 119, byteLength: 30 },
+    { protectedStarts: [0], retainTurn: 0 },
+  );
+}
+assert.deepEqual(playheadCache.ranges(), [[0, 359]]);
+playheadCache.add(
+  { ...cacheSegment(360), end: 479, byteLength: 30 },
+  { protectedStarts: [240], retainTurn: 240 },
+);
+assert.deepEqual(playheadCache.ranges(), [[120, 479]]);
+assert.equal(playheadCache.getByTurn(119), null);
+assert.equal(playheadCache.getByTurn(120)?.start, 120);
+
+const overlapCache = new ReplaySegmentCache({ maxBytes: 100 });
+overlapCache.add({ ...cacheSegment(0), end: 119 });
+overlapCache.add({ ...cacheSegment(60), end: 89 });
+assert.equal(overlapCache.getByTurn(100)?.start, 0);
+
 console.log('replay visual buffer checks passed');

@@ -246,14 +246,18 @@ authority and opens the deterministic replay panel. Its copy/paste capsule keeps
 the real generated seed, initialization options (including weather),
 authority-turn input/config/resize events, the total turn count, and sparse ranges for streaming transport
 gates. Continuous tools use deterministic turn time. Replaying reconstructs a
-fresh authority in an unpaced worker and caches two-second visual keyframes plus
-per-turn presentation deltas in independently compressed segments. World shifts
-inside a segment store the shifted overlap plus its dirty bands instead of a new
-full frame. The bottom timeline plays at 60 turns per second, highlights every
-cached range (including disjoint ranges), shows the exact tick, toggles
+fresh authority in an unpaced worker and caches visual keyframes plus per-turn
+presentation deltas in independently compressed segments. Segments span at most
+two seconds and close sooner when their uncompressed payload becomes large.
+World shifts inside a segment store the shifted overlap plus its dirty bands
+instead of a new full frame. The bottom timeline plays at 60 turns per second,
+highlights every cached range (including disjoint ranges), shows the exact tick, toggles
 play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs cached
-frames from their segment keyframe while the slider is dragged. The rolling
-visual cache is bounded to 128 MiB and evicts least-recently-used segments.
+frames from their segment keyframe while the slider is dragged. The worker keeps
+thirty seconds of visual read-ahead beyond the requested or presented turn. The
+encoded visual cache is bounded to 128 MiB and evicts segments farthest from that
+turn while prioritizing its active ranges. Decoded segments use a 24 MiB
+working-set target while retaining the segment in use.
 Seeking an uncached turn remains allowed: the unpaced authority continues toward
 a forward target or deterministically restarts from turn zero for an older
 target, publishing intermediate frames while it catches up.

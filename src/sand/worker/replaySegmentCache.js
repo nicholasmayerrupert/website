@@ -149,9 +149,47 @@ export class ReplaySegmentCache {
     this.bytes = 0;
     this.clock = 0;
     this.segments = new Map();
+    this.starts = [];
+    this.maxEnds = [];
   }
 
-  add(segment, protectedStarts = []) {
+  #startIndex(start) {
+    let low = 0;
+    let high = this.starts.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (this.starts[middle] < start) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  #delete(start) {
+    const segment = this.segments.get(start);
+    if (!segment) return null;
+    this.segments.delete(start);
+    this.bytes -= segment.byteLength;
+    const index = this.#startIndex(start);
+    if (this.starts[index] === start) {
+      this.starts.splice(index, 1);
+      this.#refreshMaxEnds(index);
+    }
+    return segment;
+  }
+
+  #refreshMaxEnds(from) {
+    let maximum = from > 0 ? this.maxEnds[from - 1] : -Infinity;
+    for (let index = from; index < this.starts.length; index++) {
+      maximum = Math.max(maximum, this.segments.get(this.starts[index]).end);
+      this.maxEnds[index] = maximum;
+    }
+    this.maxEnds.length = this.starts.length;
+  }
+
+  add(segment, options = {}) {
+    const protectedStarts = Array.isArray(options)
+      ? options : (options.protectedStarts || []);
+    const retainTurn = Array.isArray(options) ? null : options.retainTurn;
     const existing = this.segments.get(segment.start);
     if (existing && existing.end >= segment.end) {
       existing.lastAccess = ++this.clock;
@@ -159,30 +197,45 @@ export class ReplaySegmentCache {
     }
     const evicted = [];
     if (existing) {
-      this.bytes -= existing.byteLength;
+      this.#delete(existing.start);
       evicted.push(existing.start);
     }
     segment.lastAccess = ++this.clock;
     this.segments.set(segment.start, segment);
+    const startIndex = this.#startIndex(segment.start);
+    this.starts.splice(startIndex, 0, segment.start);
+    this.#refreshMaxEnds(startIndex);
     this.bytes += segment.byteLength;
     const protectedSet = new Set(protectedStarts);
-    protectedSet.add(segment.start);
-    while (this.bytes > this.maxBytes && this.segments.size > protectedSet.size) {
-      const candidates = [...this.segments.values()]
-        .filter((candidate) => !protectedSet.has(candidate.start))
-        .sort((a, b) => a.lastAccess - b.lastAccess || a.start - b.start);
-      const victim = candidates[0];
-      if (!victim) break;
-      this.segments.delete(victim.start);
-      this.bytes -= victim.byteLength;
+    if (Number.isFinite(retainTurn)
+        && retainTurn >= segment.start && retainTurn <= segment.end)
+      protectedSet.add(segment.start);
+    const distance = (candidate) => {
+      if (!Number.isFinite(retainTurn)) return 0;
+      if (retainTurn < candidate.start) return candidate.start - retainTurn;
+      if (retainTurn > candidate.end) return retainTurn - candidate.end;
+      return 0;
+    };
+    const evictionOrder = (a, b) => distance(b) - distance(a)
+      || a.lastAccess - b.lastAccess || a.start - b.start;
+    const all = [...this.segments.values()];
+    const candidates = [
+      ...all.filter((candidate) => !protectedSet.has(candidate.start)).sort(evictionOrder),
+      ...all.filter((candidate) => protectedSet.has(candidate.start)).sort(evictionOrder),
+    ];
+    for (const victim of candidates) {
+      if (this.bytes <= this.maxBytes) break;
+      this.#delete(victim.start);
       evicted.push(victim.start);
     }
     return evicted;
   }
 
   getByTurn(turn) {
-    for (const segment of this.segments.values()) {
-      if (turn < segment.start || turn > segment.end) continue;
+    let index = this.#startIndex(turn + 1) - 1;
+    while (index >= 0 && this.maxEnds[index] >= turn) {
+      const segment = this.segments.get(this.starts[index--]);
+      if (turn > segment.end) continue;
       segment.lastAccess = ++this.clock;
       return segment;
     }
@@ -192,12 +245,23 @@ export class ReplaySegmentCache {
   hasTurn(turn) { return !!this.getByTurn(turn); }
 
   ranges(extraRanges = []) {
-    const ranges = [
-      ...[...this.segments.values()].map((segment) => [segment.start, segment.end]),
-      ...extraRanges,
-    ]
+    const cached = this.starts.map((start) => {
+      const segment = this.segments.get(start);
+      return [segment.start, segment.end];
+    });
+    const extra = extraRanges
       .filter(([start, end]) => Number.isInteger(start) && Number.isInteger(end) && end >= start)
       .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const ranges = [];
+    let cachedIndex = 0;
+    let extraIndex = 0;
+    while (cachedIndex < cached.length || extraIndex < extra.length) {
+      if (extraIndex >= extra.length
+          || (cachedIndex < cached.length
+            && cached[cachedIndex][0] <= extra[extraIndex][0]))
+        ranges.push(cached[cachedIndex++]);
+      else ranges.push(extra[extraIndex++]);
+    }
     const merged = [];
     for (const [start, end] of ranges) {
       const previous = merged.at(-1);

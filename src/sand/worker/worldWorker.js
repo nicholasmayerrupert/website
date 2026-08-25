@@ -96,8 +96,11 @@ let replayResumeRequestId = 0;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
+const REPLAY_VISUAL_READ_AHEAD_TURNS = 30 * 60;
 const REPLAY_RESUME_SLICE_MS = 100;
 const MAX_REPLAY_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
+const MAX_REPLAY_ACTIVE_SEGMENT_BYTES = 8 * 1024 * 1024;
+const MAX_REPLAY_DECODED_CACHE_BYTES = 24 * 1024 * 1024;
 const MAX_REPLAY_DECODED_SEGMENTS = 3;
 const turnDeadline = createTurnDeadline({ now: performance.now() });
 
@@ -353,17 +356,13 @@ function captureReplayVisualFrame(session, turn, {
   fromWorldOffsetX = engine.getWorldOffsetX(),
   fromWorldOffsetY = engine.getWorldOffsetY(),
 } = {}) {
-  const segmentStart = Math.floor(turn / REPLAY_VISUAL_KEYFRAME_TURNS)
-    * REPLAY_VISUAL_KEYFRAME_TURNS;
-  const startsSegment = !session.activeSegment || session.activeSegment.start !== segmentStart;
+  const startsSegment = !session.activeSegment;
   const dimensionChanged = !!session.activeSegment
     && (session.activeSegment.cols !== engine.cols || session.activeSegment.rows !== engine.rows);
   const full = forceFull || startsSegment || dimensionChanged;
   if (startsSegment) {
-    if (session.activeSegment?.frames.length)
-      throw new Error('Replay visual segment was not finalized before its successor.');
     session.activeSegment = {
-      start: segmentStart, frames: [], rawBytes: 0,
+      start: turn, frames: [], rawBytes: 0,
       cols: engine.cols, rows: engine.rows,
     };
   }
@@ -460,8 +459,16 @@ function replayCacheBytes(session) {
   return total;
 }
 
+function replayDecodedBytes(session) {
+  let total = 0;
+  for (const decoded of session.decodedSegments.values()) total += decoded.bytes;
+  return total;
+}
+
 function trimDecodedReplaySegments(session, protectedStart = null) {
-  while (session.decodedSegments.size > MAX_REPLAY_DECODED_SEGMENTS) {
+  while (session.decodedSegments.size > 1
+      && (session.decodedSegments.size > MAX_REPLAY_DECODED_SEGMENTS
+        || replayDecodedBytes(session) > MAX_REPLAY_DECODED_CACHE_BYTES)) {
     const candidates = [...session.decodedSegments.entries()]
       .filter(([start]) => start !== protectedStart)
       .sort((a, b) => a[1].lastAccess - b[1].lastAccess || a[0] - b[0]);
@@ -478,13 +485,18 @@ async function finalizeReplaySegment(session) {
       const segment = await encodeReplaySegment(active.frames);
       if (closing || replayBufferSession !== session || session.activeSegment !== active)
         return null;
+      if (segment.byteLength > session.cache.maxBytes)
+        throw new Error('A replay visual segment exceeded the cache budget.');
       const protectedStarts = [];
       const playheadSegment = session.cache.getByTurn(session.playhead);
       if (playheadSegment) protectedStarts.push(playheadSegment.start);
       const requestedSegment = session.pendingSeek === null
         ? null : session.cache.getByTurn(session.pendingSeek);
       if (requestedSegment) protectedStarts.push(requestedSegment.start);
-      const evicted = session.cache.add(segment, protectedStarts);
+      const evicted = session.cache.add(segment, {
+        protectedStarts,
+        retainTurn: session.pendingSeek ?? session.playhead,
+      });
       for (const start of evicted) session.decodedSegments.delete(start);
       session.activeSegment = null;
       session.bufferBytes = replayCacheBytes(session);
@@ -1479,6 +1491,18 @@ function resumeReplayBufferPresentation(session) {
     scheduleReplayBufferPlayback(session);
 }
 
+function replayBuildCeiling(session) {
+  const anchor = session.pendingSeek ?? session.playhead;
+  return Math.min(
+    session.capsule.turns,
+    Math.max(0, anchor) + REPLAY_VISUAL_READ_AHEAD_TURNS,
+  );
+}
+
+function replayNeedsBuild(session) {
+  return session.turn < replayBuildCeiling(session);
+}
+
 function scheduleReplayBufferPlayback(session, resetDeadline = false) {
   clearTimeout(session.playTimer);
   session.playTimer = 0;
@@ -1567,11 +1591,11 @@ async function restartReplayBuild(session) {
 
 function ensureReplayBuildForTarget(session, target) {
   if (closing || replayBufferSession !== session) return;
-  if (target < session.turn || session.turn >= session.capsule.turns) {
+  if (target <= session.turn || session.turn >= session.capsule.turns) {
     void restartReplayBuild(session);
     return;
   }
-  if (!session.buildBusy && !session.buildTimer && session.turn < session.capsule.turns) {
+  if (!session.buildBusy && !session.buildTimer && replayNeedsBuild(session)) {
     const generation = session.buildGeneration;
     session.buildTimer = setTimeout(() => {
       void buildReplayBufferSlice(session, generation);
@@ -1587,8 +1611,9 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
   session.buildBusy = true;
   replayBufferCapturing = true;
   try {
-    // Replay building has no turn-count limit. It consumes the worker time left
-    // before visual delivery and yields while a browser frame is pending.
+    // Replay building fills a bounded window beyond the requested or presented
+    // turn. It consumes the worker time left before visual delivery and yields
+    // while a browser frame is pending.
     const started = performance.now();
     const presentationScheduled = Number.isFinite(session.presentationDueAt);
     const deadline = Math.min(
@@ -1597,7 +1622,7 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
         ? session.presentationDueAt : Infinity,
     );
     let advanced = false;
-    while (session.turn < session.capsule.turns
+    while (replayNeedsBuild(session)
            && session.awaitingFrame === null) {
       const now = performance.now();
       if (now >= deadline
@@ -1605,10 +1630,9 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
             && now + session.buildTurnMs >= deadline))
         break;
       const turnStarted = now;
-      const nextTurn = session.turn + 1;
       if (session.activeSegment?.frames.length
-          && Math.floor(nextTurn / REPLAY_VISUAL_KEYFRAME_TURNS)
-            * REPLAY_VISUAL_KEYFRAME_TURNS !== session.activeSegment.start) {
+          && (session.activeSegment.frames.length >= REPLAY_VISUAL_KEYFRAME_TURNS
+            || session.activeSegment.rawBytes >= MAX_REPLAY_ACTIVE_SEGMENT_BYTES)) {
         await finalizeReplaySegment(session);
         if (closing || replayBufferSession !== session
             || generation !== session.buildGeneration) return;
@@ -1624,8 +1648,18 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
       const result = executeTurn(performance.now(), false, false, flags);
       session.turn++;
       applyReplayCursorEvents(session, session.turn);
+      const startsNewVisualState = result.postedFull
+        || (!result.shifted && epoch !== priorEpoch)
+        || (session.activeSegment
+          && (session.activeSegment.cols !== engine.cols
+            || session.activeSegment.rows !== engine.rows));
+      if (startsNewVisualState && session.activeSegment?.frames.length) {
+        await finalizeReplaySegment(session);
+        if (closing || replayBufferSession !== session
+            || generation !== session.buildGeneration) return;
+      }
       captureReplayVisualFrame(session, session.turn, {
-        forceFull: result.postedFull || (!result.shifted && epoch !== priorEpoch),
+        forceFull: startsNewVisualState,
         shifted: result.shifted,
         fromWorldOffsetX,
         fromWorldOffsetY,
@@ -1661,7 +1695,7 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
         && !session.playTimer) {
       scheduleReplayBufferPlayback(session);
     }
-    if (session.turn < session.capsule.turns
+    if (replayNeedsBuild(session)
         && session.awaitingFrame === null && session.presentationPending === 0) {
       const now = performance.now();
       const delay = Number.isFinite(session.presentationDueAt)
@@ -1805,7 +1839,7 @@ function controlReplayBuffer(data) {
     session.playhead = session.awaitingFrame;
     session.awaitingFrame = null;
     if (!session.buildBusy && !session.buildTimer
-        && session.turn < session.capsule.turns) {
+        && replayNeedsBuild(session)) {
       const generation = session.buildGeneration;
       session.buildTimer = setTimeout(() => {
         void buildReplayBufferSlice(session, generation);

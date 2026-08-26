@@ -1,10 +1,10 @@
 // DEV-only window hooks for the headless benchmarks and Playwright tests:
-// __sandPerf (perf snapshot), __sandTest (deterministic pan/flicker + gameplay
-// hooks), __sandNet (two-context multiplayer hooks). Installed only under
+// __sandPerf (perf snapshot) and __sandTest (deterministic pan/flicker + gameplay
+// hooks). Installed only under
 // import.meta.env.DEV; every dependency is passed in explicitly so the hooks
 // can't silently reach into shell closures.
 
-import { ITEM_FIELDS } from '../net/protocol.js';
+import { STRIDES } from '../wasmBridge/abi.generated.js';
 import { TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createReplayMicroscopeDev } from './replayMicroscopeDev.js';
@@ -12,7 +12,6 @@ import { createReplayMicroscopeDev } from './replayMicroscopeDev.js';
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function installDevHooks(ctx, {
   render,
-  doFixedStep,
   localPlayer,
   playersForRender,
   currentLocalInput,
@@ -20,9 +19,6 @@ export function installDevHooks(ctx, {
   setDayPhase,
   clearDayPhase,
   getDayNight,
-  netJoin,
-  netDisconnect,
-  netStatus,
 }) {
   const engine = () => ctx.engine;
   const replayMicroscope = createReplayMicroscopeDev(ctx, render);
@@ -156,7 +152,7 @@ export function installDevHooks(ctx, {
       const current = engine();
       return () => current?.sharedGlContextCount() ?? 0;
     },
-    // world-replication hooks (mp-e2e): edit the host world + measure a region.
+    // Presentation-replication hooks: inspect the mirror grid.
     gridHash() { return engine() ? engine().gridHash() : 0; },
     erase(x, y, r) { engine()?.eraseDisc(x, y, r); },
     solidCount(x0, y0, x1, y1) {
@@ -223,9 +219,12 @@ export function installDevHooks(ctx, {
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },
     seedWorkerReaction(material, cap = 600, phase = 0) { ctx.worldWorker?.testSeedReaction(material, cap, phase); },
     addInventory(material, count) { ctx.worldWorker?.intent('add', { material: material | 0, count: count | 0 }); return true; },
-    getInventory() { return ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || { slots: [], selected: 0 }; },
-    selectSlot(i) { if (ctx.netClientReady()) ctx.net.sendSelect(i | 0); else ctx.worldWorker?.intent('select', { slot: i | 0 }); },
+    getInventory() { return ctx.worldWorker?.getInventory() || { slots: [], selected: 0 }; },
+    selectSlot(i) { ctx.worldWorker?.intent('select', { slot: i | 0 }); },
     actionCount() { return ctx.worldWorker?.getActionCount() || 0; },
+    itemCount() {
+      return (ctx.worldWorker?.getItemsForRender() || []).length / STRIDES.itemSnapshot;
+    },
     // device-px center of the local player (for aiming real mouse events)
     playerScreen() {
       const p = localPlayer();
@@ -241,38 +240,9 @@ export function installDevHooks(ctx, {
   };
   window.__sandReplayMicroscope = replayMicroscope;
 
-  // Multiplayer hooks for the two-context Playwright test.
-  window.__sandNet = {
-    join: (url, room) => netJoin(url, room),
-    disconnect: () => netDisconnect(),
-    status: () => netStatus(),
-    players: () => playersForRender(),
-    playerCount: () => playersForRender().length,
-    ownPlayer: () => (ctx.netClientReady() ? ctx.net.getOwnPlayer() : localPlayer()),
-    // Presentation item-actor count. Offline includes cosmetic debris; the
-    // multiplayer transport intentionally contains collectible drops only.
-    items: () => (ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || []).length / ITEM_FIELDS,
-    ownInventory: () => (ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || null),
-    ownCursor: () => (ctx.netClientReady() ? ctx.net.getOwnCursor() : ctx.worldWorker?.getCursor() || null),
-    mineProgress: () => (ctx.netClientReady() ? ctx.net.getMineProgress() : ctx.worldWorker?.getMineProgress() || 0),
-    mineTarget: () => (ctx.netClientReady() ? ctx.net.getMineTarget() : ctx.worldWorker?.getMineTarget() || null),
-    // survival intents routed to the server (used by the mp e2e test).
-    select: (slot) => ctx.net.sendSelect(slot),
-    pick: (slot, half) => ctx.net.sendPick(slot, half),
-    throwCursor: (whole) => ctx.net.sendThrow(whole),
-    debug: () => ctx.net.debug,
-    // Drive N fixed sim steps synchronously (RAF-throttling-immune) so the
-    // two-context multiplayer test is deterministic.
-    tickSteps: (n = 1, present = true) => {
-      for (let i = 0; i < n; i++) doFixedStep(performance.now());
-      if (present) render(false);
-    },
-  };
-
   return function uninstallDevHooks() {
     delete window.__sandPerf;
     delete window.__sandTest;
-    delete window.__sandNet;
     replayMicroscope.destroy();
     delete window.__sandReplayMicroscope;
   };

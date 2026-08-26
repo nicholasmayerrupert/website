@@ -281,7 +281,7 @@ struct Layer {
 
   // The material grid and motion state are one ping-pong unit. Keeping their
   // phase change and reset operations here prevents a newly-added side buffer
-  // from being omitted at a swap, network replacement, or streamed restore.
+  // from being omitted at a swap, replica replacement, or streamed restore.
   void swapSimulationBuffers() {
     std::swap(grid, next);
 #define SAND_SWAP_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.swapBuffers();

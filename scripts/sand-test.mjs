@@ -547,7 +547,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 // Flat / contained liquid SETTLES to inert instead of shimmering forever, and
 // re-wakes + flows when the basin is breached. Without the settle fix, step()
 // would stay active every frame (the open surface re-marks itself dirty), so this
-// both proves the fix and guards the multiplayer-churn regression it prevents.
+// both verifies the policy and guards against unnecessary diff churn.
 {
   console.log('liquid settles flat (no shimmer) + re-wakes on breach');
   const e = mk();

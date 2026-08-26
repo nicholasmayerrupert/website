@@ -34,8 +34,8 @@ import {
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
 import { maxWorldDiffBytes, maxWorldRleBytes } from '../worldPacketValidation.js';
 import {
-  unpackRecordAt, unpackRecords, unpackSnapshotObjectAt,
-} from './recordCodec.js';
+  unpackSnapshotRecordAt, unpackSnapshotRecords,
+} from './snapshotCodec.js';
 
 export {
   MAT, WEATHER, PLANET, PLANET_COUNT, PLANET_ALL_MASK, PLANET_NAMES, PLANET_BY_NAME,
@@ -52,6 +52,12 @@ export {
 export { INPUT };
 
 const STREAM_CHUNK_SIZE = 32;
+
+function unpackInventoryStackAt(packed, index) {
+  const stack = unpackSnapshotRecordAt(packed, 'inventorySlot', index);
+  if (stack) delete stack.selected;
+  return stack;
+}
 
 function assertEngineDimensions(cols, rows) {
   const cells = cols * rows;
@@ -224,9 +230,7 @@ export function initSandWasm() {
         respawnPlayer: c('engine_respawn_player', 'number', ['number', 'number']),
         serializeWorld: c('engine_serialize_world', 'number', ['number']),
         serializeDiff: c('engine_serialize_diff', 'number', ['number']),
-        netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
-        applyWorld: c('engine_apply_world', 'number', ['number', 'number', 'number']),
-        applyDiff: c('engine_apply_diff', 'number', ['number', 'number', 'number']),
+        replicaBlobPtr: c('engine_replica_blob_ptr', 'number', ['number']),
         applyWorldMirror: c('engine_apply_world_mirror', 'number', ['number', 'number', 'number']),
         applyDiffMirror: c('engine_apply_diff_mirror', 'number', ['number', 'number', 'number', 'number', 'number']),
         setMirrorWorldOffset: c('engine_set_mirror_world_offset', null, ['number', 'number', 'number']),
@@ -424,7 +428,7 @@ const renderStrides = Object.freeze({
   // must fully consume one draft before requesting the other.
   const draftCells = (count) => (count ? new Int32Array(mod.HEAP32.buffer, M.draftPtr(ptr), count) : emptyRects);
 
-  const readPlayer = (packed, offset, out) => unpackRecordAt(
+  const readPlayer = (packed, offset, out) => unpackSnapshotRecordAt(
     packed, 'playerSnapshot', offset / STRIDES.playerSnapshot, out,
   );
 
@@ -541,9 +545,9 @@ const renderStrides = Object.freeze({
       glDevH = devH | 0;
     },
     glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
-    // Players to overlay. Host/local draws the engine's own players (own = the
-    // local id, blue). A client passes host-authoritative records packed with the
-    // generated glPlayerExt layout.
+    // Players to overlay. An authority draws its own players (own = the local
+    // id, blue). Presentation passes authority records packed with the generated
+    // glPlayerExt layout.
     glSetPlayers(useExternal, packed, ownId) {
       if (useExternal) {
         const len = packed ? packed.length : 0;
@@ -570,9 +574,9 @@ const renderStrides = Object.freeze({
         target?.y | 0,
       );
     },
-    // Dropped items to overlay. Host/local draws the engine's own items. A client
-    // passes records packed with the generated itemSnapshot layout; null/empty
-    // makes the engine draw its own (single-player).
+    // Dropped items to overlay. The authority draws its own items; presentation
+    // passes records packed with the generated itemSnapshot layout. Null selects
+    // engine-owned items and an empty array draws none.
     glSetItems(packed) {
       if (packed === null || packed === undefined) { M.glSetItems(ptr, 0, 0, 0); return; }
       const len = packed.length;
@@ -582,8 +586,8 @@ const renderStrides = Object.freeze({
       mod.HEAPF32.set(packed, buf >> 2);
       M.glSetItems(ptr, 1, buf, (len / renderStrides.item) | 0);
     },
-    // Authoritative creature overlay. null selects engine-owned single-player
-    // creatures; a Float32Array selects a server snapshot (including empty).
+    // Authority creature overlay. Null selects engine-owned creatures; a
+    // Float32Array selects a presentation snapshot, including an empty one.
     glSetCreatures(packed) {
       if (packed === null || packed === undefined) { M.glSetCreatures(ptr, 0, 0, 0); return; }
       const len = packed.length;
@@ -1042,7 +1046,7 @@ const renderStrides = Object.freeze({
     getCursor(id) {
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
       const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), STRIDES.inventorySlot);
-      return unpackSnapshotObjectAt(f, 'inventoryStack', 0);
+      return unpackInventoryStackAt(f, 0);
     },
     // Cheap change detector for the HUD: hash the packed snapshot (all fields
     // are int-valued) without building the 36 slot objects. Includes the
@@ -1066,7 +1070,7 @@ const renderStrides = Object.freeze({
       const O = OFF.inventorySlot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        slots[i] = unpackSnapshotObjectAt(f, 'inventoryStack', i);
+        slots[i] = unpackInventoryStackAt(f, i);
         if (f[o + O.selected] === 1) selected = i;
       }
       return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
@@ -1094,10 +1098,10 @@ const renderStrides = Object.freeze({
       if (!n) return [];
       const stride = STRIDES.itemSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.itemSnapshotPtr(ptr), n * stride);
-      return unpackRecords(f, 'itemSnapshot');
+      return unpackSnapshotRecords(f, 'itemSnapshot');
     },
-    // Local presentation uses one compact copy per actor tick. Unlike network
-    // item replication, this includes short-lived cosmetic debris.
+    // Local presentation uses one compact copy per actor tick, including
+    // short-lived cosmetic debris.
     getItemSnapshotData() {
       const n = M.itemSnapshot(ptr); if (!n) return new Float32Array();
       return Float32Array.from(new Float32Array(
@@ -1107,7 +1111,7 @@ const renderStrides = Object.freeze({
     getProjectiles() {
       const n = M.projectileSnapshot(ptr); if (!n) return [];
       const f = new Float32Array(mod.HEAPF32.buffer, M.projectileSnapshotPtr(ptr), n * STRIDES.projectileSnapshot);
-      return unpackRecords(f, 'projectileSnapshot');
+      return unpackSnapshotRecords(f, 'projectileSnapshot');
     },
     getProjectileSnapshotData() {
       const n = M.projectileSnapshot(ptr); if (!n) return new Float32Array();
@@ -1118,7 +1122,7 @@ const renderStrides = Object.freeze({
       if (!n) return [];
       const stride = STRIDES.creatureSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.creatureSnapshotPtr(ptr), n * stride);
-      return unpackRecords(f, 'creatureSnapshot');
+      return unpackSnapshotRecords(f, 'creatureSnapshot');
     },
     getCreatureSnapshotData() {
       const n = M.creatureSnapshot(ptr);
@@ -1161,27 +1165,10 @@ const renderStrides = Object.freeze({
         jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0);
     },
 
-    // World replication. serialize* returns a copy of the bytes (the
-    // blob is re-derived each call; copy so callers can hold it). apply* take a
-    // Uint8Array and write it into wasm memory. gridHash detects divergence.
-    serializeWorld() { const n = M.serializeWorld(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeWorld').slice(); },
-    serializeDiff() { const n = M.serializeDiff(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeDiff').slice(); },
-    applyWorld(bytes) {
-      if (!(bytes instanceof Uint8Array)
-          || bytes.length === 0
-          || bytes.length > maxWorldRleBytes(cellCount)) return false;
-      return withTemporaryBytes(bytes, 'world snapshot', (buf) => (
-        M.applyWorld(ptr, buf, bytes.length) === 1
-      ));
-    },
-    applyDiff(bytes) {
-      if (!(bytes instanceof Uint8Array)
-          || bytes.length === 0
-          || bytes.length > maxWorldDiffBytes(cellCount)) return false;
-      return withTemporaryBytes(bytes, 'world diff', (buf) => (
-        M.applyDiff(ptr, buf, bytes.length) === 1
-      ));
-    },
+    // Authority snapshots are copied out of the serialization scratch blob;
+    // presentation mirrors validate and apply those opaque bytes.
+    serializeWorld() { const n = M.serializeWorld(ptr); return wasmView(Uint8Array, M.replicaBlobPtr(ptr), n, 'serializeWorld').slice(); },
+    serializeDiff() { const n = M.serializeDiff(ptr); return wasmView(Uint8Array, M.replicaBlobPtr(ptr), n, 'serializeDiff').slice(); },
     applyWorldMirror(bytes, worldOffsetX, worldOffsetY) {
       if (!(bytes instanceof Uint8Array)
           || bytes.length === 0

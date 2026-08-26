@@ -2,7 +2,7 @@
 //
 // Keep this file as the narrow bridge contract: JS calls these functions to
 // create engines, step/render/stream worlds, forward browser input, read packed
-// snapshots, and apply multiplayer state. Gameplay policy belongs in the
+// snapshots, and apply presentation-replica state. Gameplay policy belongs in the
 // subsystem files below, not in the bridge.
 static inline bool abiMaterialValid(int material) {
   return isMaterialId(material);
@@ -1058,16 +1058,15 @@ EMSCRIPTEN_KEEPALIVE int engine_crafting_ingredient_snapshot(Engine* e) { return
 EMSCRIPTEN_KEEPALIVE int32_t* engine_crafting_ingredient_snapshot_ptr(Engine* e) { return e->crafting.ingredientSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_respawn_player(Engine* e, int playerId) { return e->psys.requestRespawn(playerId) ? 1 : 0; }
 
-// World replication: serialize/apply full snapshots and dirty diffs.
-EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->net.serializeWorld(); }
-EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->net.serializeDiff(); }
-EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->net.blob.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_apply_world(Engine* e, uint8_t* buf, int len) { return e->net.applyWorld(buf, len) ? 1 : 0; }
-EMSCRIPTEN_KEEPALIVE int engine_apply_diff(Engine* e, uint8_t* buf, int len) { return e->net.applyDiff(buf, len) ? 1 : 0; }
-EMSCRIPTEN_KEEPALIVE int engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { return e->net.applyWorldMirror(buf, len) ? 1 : 0; }
+// Authority-to-presentation replication: serialize full snapshots and dirty
+// diffs, then apply them to the read-only mirror engine.
+EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->replication.serializeWorld(); }
+EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->replication.serializeDiff(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_replica_blob_ptr(Engine* e) { return e->replication.blob.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { return e->replication.applyWorldMirror(buf, len) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len,
                                                    int lightEditX0, int lightEditX1) {
-  return e->net.applyDiffMirror(buf, len, lightEditX0, lightEditX1) ? 1 : 0;
+  return e->replication.applyDiffMirror(buf, len, lightEditX0, lightEditX1) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y) {
   e->fg.worldOffsetX = e->bg.worldOffsetX = x;
@@ -1087,7 +1086,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int cou
   }
   e->tools.draftMaterial = (uint8_t)material;
 }
-EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->net.gridHashFNV(); }
+EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->replication.gridHashFNV(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) {
   { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); e->clearAllDirty(); }
   { Engine::ActiveLayerScope active(*e, &e->bg, &e->fg); e->clearAllDirty(); }

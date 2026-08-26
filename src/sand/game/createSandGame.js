@@ -1,15 +1,14 @@
 // Framework-agnostic browser runtime for the C++/WASM sand engine. It owns one
-// shared `ctx`, composes lifecycle/input/loop/network/audio/worker modules, and
+// shared `ctx`, composes lifecycle/input/loop/audio/worker modules, and
 // returns the handle used by the Web Component. C++ owns simulation, rendering,
 // camera, pointer mapping, actors, tools, and terrain; JS owns DOM events,
-// lifecycle, audio presentation, workers, replay, and net glue.
+// lifecycle, audio presentation, workers, and replay.
 
 import { BUTTON_BITS, DEFAULT_TOOL, SIZING, TOOL_IDS } from './runtimeConfig';
 import { createParallaxBackground } from './parallaxBackground';
 import { createEngineLifecycle } from './engineLifecycle';
 import { createInputBindings } from './inputBindings';
 import { createGameLoop } from './gameLoop';
-import { createNetGlue } from './netGlue';
 import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
@@ -176,8 +175,7 @@ export function createSandGame(container, opts = {}) {
     gutterOn: true,
     snapOff: false,
 
-    // multiplayer (netGlue) + reduced motion
-    net: null,
+    // presentation preferences
     reduced: false,
     viewportActive: true,
     audioEnabled: true,
@@ -188,7 +186,6 @@ export function createSandGame(container, opts = {}) {
     stopLocalAuthority: null,
     setAuthorityError: null,
 
-    netClientReady: () => !!ctx.net && ctx.net.role === 'client' && ctx.net.connected && ctx.net.worldReady,
     zoomFactor: () => ctx.zoom,
     // In-game zoom relative to the default — drives the parallax backdrop
     // scale so it grows/pans in lockstep with the sim (1 = default).
@@ -296,17 +293,13 @@ export function createSandGame(container, opts = {}) {
   container.appendChild(mineProgress);
 
   const updateMineProgress = () => {
-    const playerId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.localPlayerId;
+    const playerId = ctx.localPlayerId;
     if (!survival || !ctx.engine || !playerId || !ctx.inside || !(ctx.mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
       mineProgress.style.display = 'none';
       return;
     }
-    const progress = ctx.netClientReady()
-      ? ctx.net.getMineProgress()
-      : ctx.worldWorker?.getMineProgress() || 0;
-    const target = ctx.netClientReady()
-      ? ctx.net.getMineTarget()
-      : ctx.worldWorker?.getMineTarget();
+    const progress = ctx.worldWorker?.getMineProgress() || 0;
+    const target = ctx.worldWorker?.getMineTarget();
     if (progress <= 0 || !target) {
       mineProgress.style.display = 'none';
       return;
@@ -358,7 +351,6 @@ export function createSandGame(container, opts = {}) {
     onReplayStep: replayPanel.stepPlayback,
   });
   const loop = createGameLoop(ctx, {
-    fit: lifecycle.fit,
     parallaxCamera: lifecycle.parallaxCamera,
     updatePointer: inputs.updatePointer,
     updateMineProgress,
@@ -368,17 +360,10 @@ export function createSandGame(container, opts = {}) {
   });
   ctx.fns.render = loop.render;
   ctx.fns.rebuildEngineForReplay = lifecycle.rebuildEngineForDims;
-  const netGlue = createNetGlue(ctx, {
-    fit: lifecycle.fit,
-    rebuildEngineForDims: lifecycle.rebuildEngineForDims,
-    currentLocalInput: loop.currentLocalInput,
-  });
-
   let uninstallDevHooks = null;
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     uninstallDevHooks = installDevHooks(ctx, {
       render: loop.render,
-      doFixedStep: loop.doFixedStep,
       localPlayer: loop.localPlayer,
       playersForRender: loop.playersForRender,
       currentLocalInput: loop.currentLocalInput,
@@ -386,9 +371,6 @@ export function createSandGame(container, opts = {}) {
       setDayPhase: loop.setDayPhase,
       clearDayPhase: loop.clearDayPhase,
       getDayNight: loop.getDayNight,
-      netJoin: netGlue.netJoin,
-      netDisconnect: netGlue.netDisconnect,
-      netStatus: netGlue.netStatus,
     });
   }
 
@@ -430,7 +412,6 @@ export function createSandGame(container, opts = {}) {
     lifecycle.unwatchDpr();
     lifecycle.unwatchContext();
     window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
-    ctx.net?.disconnect();
     ctx.stopLocalAuthority();
     // Engine rebuilds keep the canvas/context alive; this is the final runtime
     // teardown, so release the shared WebGL registry entry and canvas target.
@@ -475,24 +456,19 @@ export function createSandGame(container, opts = {}) {
     // their native buttons on hybrid devices.
     setTouchLayer(background) { ctx.touchButton = background ? 2 : 0; },
     getTouchLayer() { return ctx.touchButton === 2 ? 'background' : 'foreground'; },
-    // Survival inventory intents. When connected as a client they go to the
-    // authoritative server; offline they go to the local authority worker.
+    // Survival inventory intents go to the authority worker.
     isSurvival() { return survival; },
     selectSlot(i) {
-      if (ctx.netClientReady()) ctx.net.sendSelect(i | 0);
-      else ctx.worldWorker?.intent('select', { slot: i | 0 });
+      ctx.worldWorker?.intent('select', { slot: i | 0 });
     },
     setSelectedFootprint(i) {
-      if (ctx.netClientReady()) ctx.net.sendSize(i | 0);
-      else ctx.worldWorker?.intent('size', { footprint: i | 0 });
+      ctx.worldWorker?.intent('size', { footprint: i | 0 });
     },
     getSurvivalFootprints() { return ctx.engine?.getSurvivalFootprints?.() || []; },
     moveSlot(from, to) {
-      if (ctx.netClientReady()) ctx.net.sendMove(from | 0, to | 0);
-      else ctx.worldWorker?.intent('move', { from: from | 0, to: to | 0 });
+      ctx.worldWorker?.intent('move', { from: from | 0, to: to | 0 });
     },
     getInventory() {
-      if (ctx.netClientReady()) return ctx.net.getOwnInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
       return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
     },
     getMission() { return ctx.worldWorker?.getMission() || null; },
@@ -535,25 +511,20 @@ export function createSandGame(container, opts = {}) {
     openReplayPanel() { replayPanel.open(); },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
     cursorPick(slot, half) {
-      if (ctx.netClientReady()) ctx.net.sendPick(slot | 0, half);
-      else ctx.worldWorker?.intent('pick', { slot: slot | 0, half: !!half });
+      ctx.worldWorker?.intent('pick', { slot: slot | 0, half: !!half });
     },
     throwFromCursor(whole) {
-      if (ctx.netClientReady()) ctx.net.sendThrow(whole);
-      else ctx.worldWorker?.intent('throw', { whole: !!whole });
+      ctx.worldWorker?.intent('throw', { whole: !!whole });
     },
     getCursor() {
-      if (ctx.netClientReady()) return ctx.net.getOwnCursor();
       return ctx.worldWorker?.getCursor() || null;
     },
     getCraftingRecipes() { return ctx.engine?.getCraftingRecipes?.() || []; },
     craft(recipe, max = false) {
-      if (ctx.netClientReady()) ctx.net.sendCraft(recipe | 0, max);
-      else ctx.worldWorker?.intent('craft', { recipe: recipe | 0, max: !!max });
+      ctx.worldWorker?.intent('craft', { recipe: recipe | 0, max: !!max });
     },
     respawn() {
-      if (ctx.netClientReady()) ctx.net.sendRespawn();
-      else ctx.worldWorker?.intent('respawn');
+      ctx.worldWorker?.intent('respawn');
     },
     // Runtime zoom. Buttons/keys drive these; the loaded sim window grows/shrinks
     // with zoom (world content preserved via engine.resizeLoadedWindow).
@@ -578,7 +549,6 @@ export function createSandGame(container, opts = {}) {
     getWeatherState() { return loop.getWeatherState(); },
     setViewportActive(active) {
       ctx.viewportActive = !!active;
-      ctx.net?.setPaused(!ctx.viewportActive);
       loop.setViewportPaused(!ctx.viewportActive);
       audio.setEnabled(ctx.viewportActive && ctx.audioEnabled !== false);
     },
@@ -674,9 +644,6 @@ export function createSandGame(container, opts = {}) {
         cols: ctx.cols,
       };
     },
-    netJoin(url, room) { return netGlue.netJoin(url, room); },
-    netDisconnect() { netGlue.netDisconnect(); },
-    netStatus() { return netGlue.netStatus(); },
     destroy,
   };
 }

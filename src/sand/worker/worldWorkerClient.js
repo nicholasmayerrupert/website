@@ -1,9 +1,8 @@
 import WorldWorker from './worldWorkerConstructor.js';
-import { Predictor } from '../net/predict.js';
+import { Predictor } from './playerPrediction.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
-import { packRecords } from '../wasmBridge/recordCodec.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
-import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
+import { mapActorPacketToOffset, translatePackedPositions } from './replicaCoordinates.js';
 import { prepareMirrorShift } from './mirrorShift.js';
 import { createWorkerLivenessMonitor } from './workerLiveness.js';
 import { createReplayCaptureJournal } from './replayCaptureJournal.js';
@@ -362,11 +361,9 @@ export function createWorldWorkerClient(ctx) {
         inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
         cursor: data.cursor !== undefined ? data.cursor : prior?.cursor,
         itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
-        items: data.items !== undefined ? data.items : prior?.items,
         projectileData: data.projectileData !== undefined
           ? data.projectileData
           : prior?.projectileData,
-        projectiles: data.projectiles !== undefined ? data.projectiles : prior?.projectiles,
         mission: data.mission !== undefined ? data.mission : prior?.mission,
       };
     } else if (data.type === 'sounds') {
@@ -1172,15 +1169,11 @@ export function createWorldWorkerClient(ctx) {
           items = new Float32Array(packet.itemData);
           translatePackedPositions(items, STRIDES.itemSnapshot,
             OFF.itemSnapshot.x, OFF.itemSnapshot.y, itemDx, itemDy);
-        } else if (packet.items !== undefined) {
-          items = packRecords(packet.items, 'itemSnapshot', Float32Array);
         }
         if (packet.projectileData !== undefined) {
           projectiles = new Float32Array(packet.projectileData);
           translatePackedPositions(projectiles, STRIDES.projectileSnapshot,
             OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, itemDx, itemDy);
-        } else if (packet.projectiles !== undefined) {
-          projectiles = packRecords(packet.projectiles, 'projectileSnapshot', Float32Array);
         }
         mineProgress = packet.mineProgress || 0;
         mineTarget = packet.mineTarget || null;

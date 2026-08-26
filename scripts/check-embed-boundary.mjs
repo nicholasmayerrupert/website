@@ -1,7 +1,7 @@
 // Static boundary check for the drop-in <sand-game> bundle.
 //
 // The embed entry may depend on the framework-free sand runtime, generated
-// materials, net protocol/client helpers, and the wasm bridge. It must not pull
+// materials, worker helpers, and the wasm bridge. It must not pull
 // in the site's React app, Tailwind/CSS entrypoints, or bare npm packages.
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -16,7 +16,6 @@ const srcRoot = resolve(root, 'src');
 // pull in.
 const forbiddenPathPatterns = [
   /(^|\/)src\/sand\/react\//,
-  /(^|\/)src\/sand\/net\/server\//, // host/encode half is server+test-only
 ];
 const forbiddenBarePackages = [
   /^@vitejs\//,

@@ -453,7 +453,7 @@ struct Projectile {
 
 // Player state and deterministic platformer physics.
 // Input is a normalized bitmask (enum PlayerInput in abi.generated.hpp)
-// supplied by JS/network each step. Physics is fully deterministic (no RNG)
+// supplied by the authority worker each step. Physics is fully deterministic (no RNG)
 // and runs at a fixed timestep so a fixed input stream replays identically.
 // Player physics tunables (cells; velocities in cells per fixed step).
 static const int    PLAYER_W = 4, PLAYER_H = 8;
@@ -691,7 +691,7 @@ struct Player {
   bool analogInput = false;
   int prevInput = 0;       // last step's input bits (for single-shot edge detection)
   bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
-  uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
+  uint32_t inputSeq = 0;   // last applied authority input sequence
   int health = 100;
   int hurtCooldown = 0; // contact-damage immunity; also protects a fresh respawn
   int lastDamageTick = -1000000;

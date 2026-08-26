@@ -1,5 +1,5 @@
 // Player characters: deterministic AABB platformer physics over the cell grid.
-// JS/network supplies a normalized input bitmask + aim per step; the engine owns
+// The authority worker supplies a normalized input bitmask + aim per step; the engine owns
 // movement, collision, and player-mediated tool use. No RNG is used, so
 // a fixed input stream + seed replays identically across machines.
 
@@ -265,7 +265,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   double out[2];
   // Do not revive outside the loaded buffer. Keeping the dead player's local
   // pose at the absolute anchor makes the existing worker camera streaming and
-  // multiplayer shared-window sync load the right chunks without a destructive,
+  // authority-window synchronization loads the right chunks without a destructive,
   // synchronous global shift here.
   double localAnchorX = p.spawnWorldX - E.fg.worldOffsetX;
   double localAnchorY = p.spawnWorldY - E.fg.worldOffsetY;

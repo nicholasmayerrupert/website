@@ -116,22 +116,19 @@ Mission, planet, phase, objective-type, and objective-state values come from
 
 ## Runtime Behavior
 
-- JavaScript owns DOM lifecycle, canvas sizing, raw browser events, and optional
-  WebSocket transport.
+- JavaScript owns DOM lifecycle, canvas sizing, raw browser events, audio, and
+  authority-worker messaging.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
   terrain streaming, spawn placement, inventory state, and mission progression.
 - Weather defaults to pinned `clear`. `weather="auto"` runs a deterministic
   wall-clock cycle that fades the presentation between clear and rain and
   flips the offline authority's discrete weather via a journaled message; the
   palette's Rain button (and the `setWeatherOverride` runtime handle) pins
-  rain or clear and suspends the cycle until it is resumed. Multiplayer
-  transport does not yet negotiate weather between a server and its clients;
-  connected clients keep their mount-time weather.
+  rain or clear and suspends the cycle until it is resumed.
 - Planet gravity applies to players and other gravity-driven actors, rigid bodies,
   fluids, and loose solids. The deterministic fall order is Earth, Mars, Moon.
-- A mission embed shows its tracker and objective markers and hides the
-  multiplayer connect panel. Direct survival without `mission` retains that
-  panel.
+- A mission embed shows its tracker and objective markers. Direct survival
+  without `mission` runs the same worker-backed sandbox without mission UI.
 - Talkable human actors show a nearby world-space `TALK` button. Conversation
   actions cross the component boundary through `sand:talkaction`; aboard the
   Kestrel, Commander Vale's conversation is the only route to the mission
@@ -168,19 +165,6 @@ Mission, planet, phase, objective-type, and objective-state values come from
 | `Q` | Choose placement/mining footprint |
 | `+`, `-`, `0` | Zoom in / out / reset |
 | `L` | Pause and open the deterministic replay copy/paste panel (local sessions) |
-
-## Multiplayer
-
-Survival mode includes a collapsed connect panel. It expects the authoritative
-server from:
-
-```sh
-npm run sand:server
-```
-
-Browsers are pure clients in that mode. Server and client share one authority
-window. The server expands and streams that window around the connected player
-group; widely separated players increase its simulation cost.
 
 The survival HUD exposes the player’s 100 health, rechargeable jetpack fuel, and
 200-point directional ward. Hold `F` while aiming to raise the ward across the

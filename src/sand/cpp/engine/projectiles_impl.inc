@@ -298,7 +298,7 @@ void ProjectileSystem::spawnMinigunRoundAt(int owner, double guardX, double guar
     clearY = sampleY;
   }
   // A tiny deterministic cone keeps sustained fire lively while preserving
-  // replay/network determinism. Each shot still travels much faster than the
+  // replay/authority determinism. Each shot still travels much faster than the
   // blast gun and uses swept collision below.
   uint32_t seed = (uint32_t)nextId * 2654435761u ^ (uint32_t)(owner * 2246822519u);
   double spread = ((seed >> 8) & 0xffffu) / 65535.0 * .10 - .05;

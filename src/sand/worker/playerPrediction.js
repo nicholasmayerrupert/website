@@ -1,4 +1,4 @@
-// Local-player prediction and server reconciliation. Deterministic player physics
+// Local-player prediction and worker reconciliation. Deterministic player physics
 // allows unacknowledged inputs to be replayed after each authoritative correction
 // without advancing the world simulation.
 

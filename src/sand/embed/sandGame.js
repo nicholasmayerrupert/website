@@ -8,7 +8,6 @@ import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
 import { createSurvivalStatus } from './survivalStatus';
 import { createFootprintMenu } from './footprintMenu';
-import { createConnectPanel } from './connectPanel';
 import { createMissionHud, presentMissionSnapshot } from './missionHud';
 import { createTalkHud } from './talkHud';
 import { MISSION_PHASE, WEATHER } from '../wasmBridge/abi.generated.js';
@@ -17,7 +16,7 @@ const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent; }
-/* Keep text-entry controls (search, multiplayer IP, etc.) selectable/editable. */
+/* Keep text-entry controls selectable/editable. */
 input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }
 /* When mobile drawing is armed, make the simulation the gesture target and
@@ -650,16 +649,6 @@ class SandGameElement extends HTMLElement {
           if (mission) this._missionHud = createMissionHud(root, game);
           this._hud.update(game.getInventory());
           this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
-          // Multiplayer connect panel (collapsed): join an authoritative server
-          // by IP:port. Survival-only; single-player UI is unchanged at rest.
-          if (!mission) {
-            this._mp = createConnectPanel(root, {
-              join: (url, room) => game.netJoin(url, room),
-              disconnect: () => game.netDisconnect(),
-              getStatus: () => game.netStatus(),
-              focusSurface: () => sim.focus({ preventScroll: true }),
-            });
-          }
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
@@ -793,7 +782,6 @@ class SandGameElement extends HTMLElement {
     this._sizeMenu?.destroy();
     this._missionHud?.destroy();
     this._talkHud?.destroy();
-    this._mp?.destroy();
     this._zoom?.destroy();
     this._start?.destroy();
     this._perfHud?.destroy();
@@ -802,7 +790,7 @@ class SandGameElement extends HTMLElement {
     this._visibilityObserver?.disconnect();
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._missionHud = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
+    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._missionHud = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
     this._cancel = null;
     this._lastMissionTerminal = 0;

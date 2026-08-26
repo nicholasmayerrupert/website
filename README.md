@@ -28,7 +28,6 @@ npm run deploy     # build and deploy to Cloudflare
 - `src/sand/` — the sand game: a C++/WebAssembly simulation + renderer + camera,
   a thin JS shell, and the `<sand-game>` Web Component (`src/sand/embed/`). See
   its [README](src/sand/README.md) to work on it.
-- `scripts/` — headless test suites, benchmarks, and the authoritative
-  multiplayer server (`npm run sand:server`). `npm test` runs the headless
-  suites with two workers; `npm run test:all` also runs lint, builds, and browser
-  tests.
+- `scripts/` — headless test suites, benchmarks, replay tools, and build checks.
+  `npm test` runs the headless suites with two workers; `npm run test:all` also
+  runs lint, builds, and browser tests.

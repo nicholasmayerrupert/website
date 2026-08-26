@@ -449,11 +449,8 @@ if (/\bBIOME_ROCKY\b/.test(sourceWithoutComments(worldContextImplementation)))
   fail('surface structure eligibility must use generated biome policy');
 
 const audioHeader = readFileSync(resolve(engineDir, 'audio.hpp'), 'utf8');
-const protocolSource = readFileSync(
-  resolve(root, 'src/sand/net/protocol.js'), 'utf8');
-if (!audioHeader.includes('MAX_EVENTS = SOUND_EVENT_MAX_RECORDS')
-    || /MAX_SOUND_EVENTS|\b192\b/.test(sourceWithoutComments(protocolSource)))
-  fail('engine and protocol sound capacities must use the generated ABI record limit');
+if (!audioHeader.includes('MAX_EVENTS = SOUND_EVENT_MAX_RECORDS'))
+  fail('engine sound capacity must use the generated ABI record limit');
 
 const abiImplementation = sourceWithoutComments(
   readFileSync(resolve(engineDir, 'abi.inc'), 'utf8'));

@@ -169,7 +169,7 @@ const describeMessage = (message, survival) => {
   }
 };
 
-const collapseTimeline = (events, survival, lastTurn) => {
+const collapseTimeline = (events, survival) => {
   const rows = [];
   let run = null;
   const flush = () => {
@@ -325,7 +325,7 @@ export function summarizeReplayCapsule(capsule, options = {}) {
       } : null,
     },
     gates: (capsule.gates || []).length,
-    timeline: collapseTimeline(capsule.events || [], survival, lastTurn),
+    timeline: collapseTimeline(capsule.events || [], survival),
     final: capsule.final || null,
     suggested: {
       at: suggestedAt,

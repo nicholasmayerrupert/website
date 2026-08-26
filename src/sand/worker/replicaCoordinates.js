@@ -1,4 +1,4 @@
-// Actor snapshots use buffer-local coordinates. Convert them through absolute
+// Authority snapshots use buffer-local coordinates. Convert them through absolute
 // world space whenever the authority and presentation mirrors have different
 // loaded-window offsets.
 
@@ -35,8 +35,6 @@ export function mapActorPacketToOffset(packet, targetOffsetX, targetOffsetY) {
     worldOffsetX: targetOffsetX,
     worldOffsetY: targetOffsetY,
     players: Array.isArray(packet?.players) ? packet.players.map(mapActor) : packet?.players,
-    items: Array.isArray(packet?.items) ? packet.items.map(mapPosition) : packet?.items,
-    projectiles: Array.isArray(packet?.projectiles) ? packet.projectiles.map(mapPosition) : packet?.projectiles,
     mineTarget: packet?.mineTarget ? mapPosition(packet.mineTarget) : packet?.mineTarget,
   };
 }

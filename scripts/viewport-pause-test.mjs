@@ -27,8 +27,6 @@ const ctx = {
     applyPending() { return false; },
     updateControl() {},
   },
-  net: { connected: false },
-  netClientReady() { return false; },
   reduced: false,
   testPaused: false,
   dayPhaseOverride: null,
@@ -43,7 +41,6 @@ const ctx = {
 };
 
 const loop = createGameLoop(ctx, {
-  fit() {},
   parallaxCamera(value) { return value; },
   updatePointer() {},
   updateMineProgress() {},

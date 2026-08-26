@@ -160,28 +160,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('bg stone component did not flicker/erase', after === before && before > 0, `(${before} -> ${after})`);
 }
 
-// 6. Both layers replicate: full snapshot + diff round-trip between two engines.
-{
-  console.log('two-layer serialize / diff round-trip');
-  const a = mk(), b = mk();
-  // seed both layers of A with distinct content
-  stoneFloor(a, 0, 20, 60, 4);
-  a.paintDisc(20, 40, 3, MAT.WATER, true);
-  a.paintDiscLayer(1, 40, 30, 3, MAT.SAND, true);
-  a.paintDiscLayer(1, 40, 60, 4, MAT.STONE, true); a.syncComponentsLayer(1);
-  // full snapshot -> apply into B
-  b.applyWorld(a.serializeWorld());
-  check('full snapshot: hashes match', a.gridHash() === b.gridHash(), `(${a.gridHash()} vs ${b.gridHash()})`);
-  check('full snapshot: bg grids equal', a.getGridBg().every((v, i) => v === b.getGridBg()[i]));
-  // diff round-trip after edits to BOTH layers
-  a.resetDirty();
-  a.paintDisc(30, 70, 2, MAT.OIL, true);          // fg edit
-  a.paintDiscLayer(1, 15, 20, 2, MAT.WATER, true); // bg edit
-  b.applyDiff(a.serializeDiff());
-  check('diff: hashes match after fg+bg edits', a.gridHash() === b.gridHash(), `(${a.gridHash()} vs ${b.gridHash()})`);
-}
-
-// 6b. A presentation mirror receives only per-tick dirty chunks. Falling tree
+// 6. A presentation mirror receives only per-tick dirty chunks. Falling tree
 // tips must not be left behind when the authority's ping-pong grids converge.
 {
   console.log('presentation diff: falling worldgen trees clear vacated tips');

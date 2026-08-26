@@ -3,7 +3,7 @@
 
 #include "engine/common.hpp"
 #include "engine/camera.hpp"
-#include "engine/netsync.hpp"
+#include "engine/replication.hpp"
 #include "engine/layer.hpp"
 #include "engine/forces.hpp"
 #include "engine/terrain.hpp"
@@ -53,7 +53,7 @@ struct Engine {
 #include "engine/inventory.inc"
 #include "engine/crafting.inc"
 #include "engine/projectiles.inc"
-#include "engine/netsync.inc"
+#include "engine/replication.inc"
 };
 
 // Out-of-line definitions of the Engine static constants.
@@ -61,7 +61,7 @@ const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
 // Subsystem method bodies require the complete Engine definition.
-#include "engine/netsync_impl.inc"
+#include "engine/replication_impl.inc"
 #include "engine/forces_impl.inc"
 #include "engine/terrain_impl.inc"
 #include "engine/world_context_impl.inc"

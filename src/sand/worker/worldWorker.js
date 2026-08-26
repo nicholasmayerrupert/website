@@ -654,7 +654,7 @@ function postActors(force = false) {
   const actorTick = engine.getActorTick();
   // The browser mirror renders every authority item at actor cadence, including
   // cosmetic mining debris. A transferred packed snapshot avoids allocating an
-  // object per item; multiplayer keeps its lower-bandwidth collectible-only path.
+  // object per item, including short-lived cosmetic debris.
   const itemData = engine.getItemSnapshotData();
   const projectileData = engine.getProjectileSnapshotData();
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;

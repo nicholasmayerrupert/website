@@ -53,8 +53,7 @@ const materialsSchema = readSchemaJson(materialsSchemaPath);
 const biomesSchema = readSchemaJson(biomesSchemaPath);
 const reactionsSchema = readSchemaJson(reactionsSchemaPath);
 const {
-  abiVersion, objectWires: declaredObjectWires = {}, structs,
-  wireEnums = [], enums, constants,
+  abiVersion, structs, enums, constants,
   creatureBehaviorProfiles = {}, creatureRenderProfiles = {},
 } = schema;
 if (!Number.isInteger(abiVersion) || abiVersion < 1) throw new Error('abiVersion must be a positive integer');
@@ -247,6 +246,10 @@ const creatureKeys = new Set(creatureDescriptors.map(({ key }) => key));
 const creatureMaxDimension = constants.CREATURE_MAX_DIMENSION;
 if (!Number.isInteger(creatureMaxDimension) || creatureMaxDimension <= 0) {
   throw new Error('CREATURE_MAX_DIMENSION must be a positive integer');
+}
+for (const name of ['CREATURE_MAX_RECORDS', 'SOUND_EVENT_MAX_RECORDS']) {
+  if (!Number.isInteger(constants[name]) || constants[name] <= 0)
+    throw new Error(`${name} must be a positive integer`);
 }
 const creativeCreatureDescriptors = creatureDescriptors
   .filter((descriptor) => descriptor.creative !== undefined);
@@ -544,21 +547,6 @@ const structFieldDescriptors = new Map();
 const snapshotWritersByStruct = new Map();
 const snapshotWriterOwners = new Map();
 const normalizedStructs = {};
-const resolveRecordLimit = (label, definition) => {
-  const hasValue = definition.maxRecords !== undefined;
-  const hasConstant = definition.maxRecordsConstant !== undefined;
-  if (hasValue === hasConstant) {
-    throw new Error(`${label} needs exactly one of maxRecords or maxRecordsConstant`);
-  }
-  const value = hasConstant ? constants[definition.maxRecordsConstant] : definition.maxRecords;
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${label} record limit must resolve to a positive integer`);
-  }
-  if (hasConstant && !Object.hasOwn(constants, definition.maxRecordsConstant)) {
-    throw new Error(`${label} references unknown constant ${definition.maxRecordsConstant}`);
-  }
-  return value;
-};
 
 const validateSnapshotSource = (label, source, kind) => {
   if (!source || typeof source !== 'object' || Array.isArray(source)) {
@@ -602,7 +590,6 @@ const validateSnapshotSource = (label, source, kind) => {
   }
 };
 
-const objectWires = { ...declaredObjectWires };
 for (const [name, definition] of Object.entries(structs)) {
   if (!Array.isArray(definition.fields) || !definition.fields.length) {
     throw new Error(`${name} struct requires fields`);
@@ -618,9 +605,6 @@ for (const [name, definition] of Object.entries(structs)) {
   for (const field of descriptors) {
     if (field.kind !== undefined && !FIELD_KINDS.has(field.kind)) {
       throw new Error(`${name}.${field.name} has unknown field kind ${field.kind}`);
-    }
-    if (field.objectWire !== undefined && typeof field.objectWire !== 'boolean') {
-      throw new Error(`${name}.${field.name}.objectWire must be boolean`);
     }
     if (field.snapshotParameter !== undefined
         && typeof field.snapshotParameter !== 'boolean') {
@@ -698,116 +682,7 @@ for (const [name, definition] of Object.entries(structs)) {
   }
   structFieldDescriptors.set(name, descriptors);
   const normalized = { ...definition, fields: fieldNames };
-  if (definition.wireCodec) {
-    normalized.wireCodec = {
-      ...definition.wireCodec,
-      maxRecords: resolveRecordLimit(`${name}.wireCodec`, definition.wireCodec),
-    };
-    delete normalized.wireCodec.maxRecordsConstant;
-  }
   normalizedStructs[name] = normalized;
-
-  if (!definition.objectWire) continue;
-  const wireName = definition.objectWire.name;
-  if (typeof wireName !== 'string' || !identifier.test(wireName)
-      || objectWires[wireName]) {
-    throw new Error(`${name}.objectWire needs a unique identifier name`);
-  }
-  const fields = descriptors.filter((field) => field.objectWire !== false).map((field) => {
-    if (!FIELD_KINDS.has(field.kind)) {
-      throw new Error(`${name}.${field.name} needs kind for object-wire projection`);
-    }
-    const {
-      objectWire: _objectWire, snapshotMember: _snapshotMember,
-      snapshotParameter: _snapshotParameter,
-      ...wireField
-    } = field;
-    return wireField;
-  });
-  objectWires[wireName] = {
-    sourceStruct: name,
-    maxRecords: resolveRecordLimit(`${name}.objectWire`, definition.objectWire),
-    fields,
-  };
-}
-
-const wireStructs = Object.fromEntries(
-  Object.entries(normalizedStructs).filter(([, definition]) => definition.wireCodec),
-);
-for (const [name, definition] of Object.entries(objectWires)) {
-  if (!Number.isInteger(definition.maxRecords) || definition.maxRecords <= 0) {
-    throw new Error(`${name} object wire maxRecords must be a positive integer`);
-  }
-  if (!Array.isArray(definition.fields) || !definition.fields.length) {
-    throw new Error(`${name} object wire requires fields`);
-  }
-  const names = definition.fields.map((field) => field.name);
-  if (names.some((field) => typeof field !== 'string')
-      || new Set(names).size !== names.length) {
-    throw new Error(`${name} object wire field names must be unique strings`);
-  }
-  for (const field of definition.fields) {
-    if (!FIELD_KINDS.has(field.kind)) {
-      throw new Error(`${name}.${field.name} has unknown object wire kind ${field.kind}`);
-    }
-    const sources = field.source === undefined ? [field.name]
-      : (Array.isArray(field.source) ? field.source : [field.source]);
-    if (!sources.length || sources.some((source) => typeof source !== 'string')) {
-      throw new Error(`${name}.${field.name} object wire source must contain field names`);
-    }
-    if (field.min !== undefined && typeof field.min !== 'number') {
-      throw new Error(`${name}.${field.name} min must be numeric`);
-    }
-    if (field.max !== undefined && typeof field.max !== 'number') {
-      throw new Error(`${name}.${field.name} max must be numeric`);
-    }
-  }
-}
-for (const [name, definition] of Object.entries(wireStructs)) {
-  const { fields, wireCodec } = definition;
-  if (!Number.isInteger(wireCodec.maxRecords) || wireCodec.maxRecords <= 0) {
-    throw new Error(`${name}.wireCodec.maxRecords must be a positive integer`);
-  }
-  const integers = wireCodec.integers || [];
-  const unsigned = wireCodec.unsigned || [];
-  const booleans = wireCodec.booleans || [];
-  const descriptors = structFieldDescriptors.get(name);
-  const descriptorDefaults = Object.fromEntries(descriptors
-    .filter((field) => field.default !== undefined)
-    .map((field) => [field.name, field.default]));
-  wireCodec.defaults = { ...descriptorDefaults, ...(wireCodec.defaults || {}) };
-  for (const field of [...integers, ...unsigned, ...booleans,
-    ...Object.keys(wireCodec.defaults)]) {
-    if (!fields.includes(field)) throw new Error(`${name}.wireCodec references unknown field ${field}`);
-  }
-  const typed = [...integers, ...unsigned, ...booleans];
-  if (new Set(typed).size !== typed.length) {
-    throw new Error(`${name}.wireCodec integer/boolean fields overlap or repeat`);
-  }
-  for (const descriptor of descriptors) {
-    if (descriptor.kind === undefined) continue;
-    if (descriptor.kind === 'point') {
-      throw new Error(`${name}.${descriptor.name} point fields cannot use a packed codec`);
-    }
-    const listedKind = booleans.includes(descriptor.name) ? 'boolean'
-      : (unsigned.includes(descriptor.name) ? 'u32'
-        : (integers.includes(descriptor.name) ? 'i32' : 'number'));
-    if (typed.includes(descriptor.name) && listedKind !== descriptor.kind) {
-      throw new Error(`${name}.${descriptor.name} field kind conflicts with wireCodec`);
-    }
-  }
-  for (const [field, fallback] of Object.entries(wireCodec.defaults || {})) {
-    const descriptor = descriptors.find((candidate) => candidate.name === field);
-    if (typeof fallback !== 'number'
-        && !(typeof fallback === 'boolean' && descriptor?.kind === 'boolean')
-        && !(typeof fallback === 'string' && fields.includes(fallback))) {
-      throw new Error(`${name}.wireCodec default for ${field} has the wrong scalar kind`);
-    }
-  }
-}
-const missingWireEnums = wireEnums.filter((name) => !enums[name]);
-if (missingWireEnums.length) {
-  throw new Error(`wireEnums reference unknown enums: ${missingWireEnums.join(', ')}`);
 }
 const planetEnum = enums.PlanetId;
 const upperSnake = (value) => value
@@ -916,20 +791,6 @@ if (planetEnum?.descriptors) {
         throw new Error(`${label}.${field} must be a load-bearing structure material`);
   }
 }
-const actorWireContract = {
-  structs: contractOnly(wireStructs),
-  objects: contractOnly(objectWires),
-  enums: Object.fromEntries(wireEnums.map((name) => {
-    const definition = contractOnly(enums[name]);
-    // Descriptor metadata is local simulation/presentation policy. Only the
-    // generated stable enum values participate in the network wire contract.
-    delete definition.descriptors;
-    return [name, definition];
-  })),
-};
-const wireFingerprintInput = JSON.stringify(actorWireContract);
-const wireFingerprintHex = createHash('sha256')
-  .update(wireFingerprintInput).digest('hex').slice(0, 12);
 const reactionRuntimeContract = {
   version: reactionsSchema.version,
   rules: reactionsSchema.rules,
@@ -942,16 +803,6 @@ const fingerprintInput = JSON.stringify({
   exports: abiExports.map(({ name, cppReturn, cppArgs }) => ({ name, cppReturn, cppArgs })),
 });
 const fingerprintHex = createHash('sha256').update(fingerprintInput).digest('hex').slice(0, 12);
-const networkCatalogueInput = JSON.stringify({
-  actorWire: actorWireContract,
-  enums: contractOnly(enums),
-  constants: contractOnly(constants),
-  materials: contractOnly(materialsSchema),
-  biomes: contractOnly(biomesSchema),
-  reactions: contractOnly(reactionRuntimeContract),
-});
-const networkCatalogueFingerprintHex = createHash('sha256')
-  .update(networkCatalogueInput).digest('hex').slice(0, 12);
 const abiFingerprint = Number.parseInt(fingerprintHex, 16);
 
 const header = (comment) => `// GENERATED by scripts/generate-abi.mjs — DO NOT EDIT.\n// ${comment}\n`;
@@ -1258,8 +1109,6 @@ const jsIdent = (f) => f;
 let js = header('Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.');
 js += `export const ABI_VERSION = ${abiVersion};\n\n`;
 js += `export const ABI_FINGERPRINT = 0x${fingerprintHex};\n\n`;
-js += `export const ACTOR_WIRE_FINGERPRINT = 0x${wireFingerprintHex};\n\n`;
-js += `export const NETWORK_CATALOGUE_FINGERPRINT = 0x${networkCatalogueFingerprintHex};\n\n`;
 for (const [name] of Object.entries(normalizedStructs)) {
   const descriptors = structFieldDescriptors.get(name);
   for (const writer of (snapshotWritersByStruct.get(name) || [])
@@ -1298,7 +1147,6 @@ for (const [name] of Object.entries(normalizedStructs)) {
     js += '}\n\n';
   }
 }
-js += `export const OBJECT_WIRE_CODECS = Object.freeze(${JSON.stringify(contractOnly(objectWires))});\n\n`;
 js += 'export const STRIDES = Object.freeze({\n';
 js += Object.entries(normalizedStructs).map(([name, s]) => `  ${name}: ${s.fields.length},`).join('\n');
 js += '\n});\n\n';
@@ -1310,27 +1158,6 @@ for (const [name, definition] of Object.entries(normalizedStructs)) {
     boolean: 'b', i32: 'i', u32: 'u', number: 'n',
   })[field.kind]).join('');
   js += `  ${name}: Object.freeze({ fields: Object.freeze(${JSON.stringify(definition.fields)}), kinds: '${kinds}', storage: '${definition.snapshotStorage ?? 'float'}' }),\n`;
-}
-js += '});\n\n';
-js += '// Declarative codecs for packed actor records used by WASM, workers, and the network.\n';
-js += 'export const RECORD_CODECS = Object.freeze({\n';
-for (const [name, definition] of Object.entries(wireStructs)) {
-  const fields = definition.fields;
-  const integers = new Set(definition.wireCodec.integers || []);
-  const unsigned = new Set(definition.wireCodec.unsigned || []);
-  const booleans = new Set(definition.wireCodec.booleans || []);
-  const descriptors = new Map(structFieldDescriptors.get(name)
-    .map((field) => [field.name, field]));
-  const kinds = fields.map((field) => {
-    const declaredKind = descriptors.get(field).kind;
-    if (declaredKind) return {
-      boolean: 'b', i32: 'i', u32: 'u', number: 'n',
-    }[declaredKind];
-    return booleans.has(field) ? 'b'
-      : (unsigned.has(field) ? 'u' : (integers.has(field) ? 'i' : 'n'));
-  }).join('');
-  const defaults = JSON.stringify(definition.wireCodec.defaults || {});
-  js += `  ${name}: Object.freeze({ fields: Object.freeze(${JSON.stringify(fields)}), kinds: '${kinds}', defaults: Object.freeze(${defaults}), maxRecords: ${definition.wireCodec.maxRecords} }),\n`;
 }
 js += '});\n\n';
 js += '// Field offset maps: OFF.<struct>.<field> is the float/int index within one record.\n';
@@ -1440,10 +1267,6 @@ if (validateOnly && process.argv.includes('--print-creature-contract')) {
   })}`);
 }
 if (validateOnly && process.argv.includes('--print-fingerprints')) {
-  console.log(`FINGERPRINTS=${JSON.stringify({
-    abi: fingerprintHex,
-    actorWire: wireFingerprintHex,
-    networkCatalogue: networkCatalogueFingerprintHex,
-  })}`);
+  console.log(`FINGERPRINTS=${JSON.stringify({ abi: fingerprintHex })}`);
 }
 if (validateOnly) console.log('ABI schema is valid');

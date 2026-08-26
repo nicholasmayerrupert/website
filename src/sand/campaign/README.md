@@ -22,5 +22,5 @@ mission configuration and seed; terrain and actor state are not a resumable save
 Progress and recovered equipment commit only after an authoritative mission
 completion event.
 
-`/game?sandbox` keeps the previous direct survival entry for focused engine,
-browser, and multiplayer diagnostics.
+`/game?sandbox` keeps the direct survival entry for focused engine and browser
+diagnostics.

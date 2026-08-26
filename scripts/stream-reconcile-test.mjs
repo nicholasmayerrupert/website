@@ -1,6 +1,5 @@
-import { Predictor } from '../src/sand/net/predict.js';
-import { mapActorPacketToOffset, translatePackedPositions } from '../src/sand/net/localCoordinates.js';
-import { canSendBufferLocalFrame } from '../src/sand/net/server/frameGate.js';
+import { Predictor } from '../src/sand/worker/playerPrediction.js';
+import { mapActorPacketToOffset, translatePackedPositions } from '../src/sand/worker/replicaCoordinates.js';
 
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -62,38 +61,21 @@ console.log('worker actor-packet offset mapping');
   const source = {
     epoch: 4, worldOffsetX: 512, worldOffsetY: -64,
     players: [{ id: 1, x: 10, y: 20, aimX: 35, aimY: 40 }],
-    items: [{ id: 2, x: 50, y: 60 }],
-    projectiles: [{ id: 3, x: 70, y: 80 }],
     mineTarget: { x: 90, y: 100 },
   };
   const mapped = mapActorPacketToOffset(source, 640, -160);
   check('player body and aim map through absolute world coordinates',
     mapped.players[0].x === -118 && mapped.players[0].y === 116 &&
       mapped.players[0].aimX === -93 && mapped.players[0].aimY === 136);
-  check('items, projectiles, and locked mine target use the mirror frame',
-    mapped.items[0].x === -78 && mapped.items[0].y === 156 &&
-      mapped.projectiles[0].x === -58 && mapped.projectiles[0].y === 176 &&
-      mapped.mineTarget.x === -38 && mapped.mineTarget.y === 196);
+  check('locked mine target uses the mirror frame',
+    mapped.mineTarget.x === -38 && mapped.mineTarget.y === 196);
   check('mapping does not mutate the authority packet',
-    source.players[0].x === 10 && source.items[0].x === 50 && source.mineTarget.x === 90);
+    source.players[0].x === 10 && source.mineTarget.x === 90);
 
   const packed = new Float32Array([1, 10, 20, 9, 2, 30, 40, 8]);
   translatePackedPositions(packed, 4, 1, 2, -128, 96);
   check('packed render actors rebase in place',
     packed[1] === -118 && packed[2] === 116 && packed[5] === -98 && packed[6] === 136);
-}
-
-console.log('multiplayer deferred-world frame gate');
-{
-  const peer = { needsWorld: true, ws: { readyState: 1, bufferedAmount: 0 } };
-  check('shifted local actors wait behind a deferred WORLD',
-    !canSendBufferLocalFrame(peer, 1024));
-  peer.needsWorld = false;
-  check('actor stream resumes after the matching WORLD is installed',
-    canSendBufferLocalFrame(peer, 1024));
-  peer.ws.bufferedAmount = 1025;
-  check('actor stream still observes transport backpressure',
-    !canSendBufferLocalFrame(peer, 1024));
 }
 
 if (failures) {

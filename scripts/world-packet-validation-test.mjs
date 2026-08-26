@@ -2,17 +2,7 @@ import { MAT } from '../src/sand/materials.js';
 import {
   FIRST_UNDEFINED_MATERIAL_ID, MAT_DEFINED, TABLE_SIZE, isMaterialId,
 } from '../src/sand/materials.generated.js';
-import {
-  applyDiffMessage,
-  applyWorldMessage,
-  bytesToB64,
-  validateWorldMessage,
-} from '../src/sand/net/worldSync.js';
-import {
-  isValidWorldDiff,
-  isValidWorldRle,
-  worldRleHash,
-} from '../src/sand/worldPacketValidation.js';
+import { isValidWorldDiff, isValidWorldRle } from '../src/sand/worldPacketValidation.js';
 import { prepareMirrorShift } from '../src/sand/worker/mirrorShift.js';
 import { createEngineWasm, initSandWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -132,51 +122,6 @@ check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1
       && offset?.join(',') === '12,-4');
 }
 
-const message = {
-  cols: 2, rows: 2, data: bytesToB64(world), hash: worldRleHash(world, 4),
-};
-check('world envelope validates its decoded packet', validateWorldMessage(message) !== null);
-check('world envelope verifies its advertised hash before a rebuild',
-  validateWorldMessage(message, { verifyHash: true }) !== null
-    && validateWorldMessage({ ...message, hash: message.hash ^ 1 }, { verifyHash: true }) === null);
-check(HAS_UNDEFINED_MATERIAL_BYTE
-  ? 'world envelope rejects an undefined material'
-  : 'world envelope rejects malformed runs at full material capacity',
-  validateWorldMessage({ ...message, data: bytesToB64(invalidWorldMaterial) }) === null);
-
-let worldCalls = 0;
-const rejectingWorldEngine = {
-  cols: 2,
-  rows: 2,
-  applyWorld() { worldCalls++; return false; },
-  gridHash: () => message.hash,
-};
-check('native world rejection propagates to the caller',
-  !applyWorldMessage(rejectingWorldEngine, message) && worldCalls === 1);
-check('direct malformed world calls stop at the JS boundary',
-  !applyWorldMessage(rejectingWorldEngine, {
-    ...message, data: bytesToB64(invalidWorldMaterial),
-  }) && worldCalls === 1);
-check('explicitly prevalidated bytes still propagate native rejection',
-  !applyWorldMessage(rejectingWorldEngine, message, {
-    validatedBytes: invalidWorldMaterial,
-  }) && worldCalls === 2);
-
-let diffCalls = 0;
-const rejectingDiffEngine = {
-  cols: 2,
-  rows: 2,
-  applyDiff() { diffCalls++; return false; },
-  gridHash: () => message.hash,
-};
-check('native diff rejection propagates to the caller',
-  !applyDiffMessage(rejectingDiffEngine, { data: bytesToB64(diff), hash: message.hash })
-    && diffCalls === 1);
-check('native validation rejects a malformed decoded diff',
-  !applyDiffMessage(rejectingDiffEngine, {
-    data: bytesToB64(invalidDiffMaterial), hash: message.hash,
-  }) && diffCalls === 2);
-
 await initSandWasm();
 const native = createEngineWasm({
   cols: 32, rows: 32, worldSeed: 0x5041434b, sinksOn: false, infinite: false,
@@ -198,9 +143,12 @@ if (HAS_UNDEFINED_MATERIAL_BYTE)
 else
   nativeBadBackgroundWorld.fill(0, backgroundOffset, backgroundOffset + 4);
 check('native world rejection is transactional when only the background is invalid',
-  native.applyWorld(nativeBadBackgroundWorld) === false && native.gridHash() === nativeHash);
+  native.applyWorldMirror(
+    nativeBadBackgroundWorld, native.getWorldOffsetX(), native.getWorldOffsetY(),
+  ) === false && native.gridHash() === nativeHash);
 check('native diff rejection is transactional when only the background is invalid',
-  native.applyDiff(invalidBackgroundDiffMaterial) === false && native.gridHash() === nativeHash);
+  native.applyDiffMirror(invalidBackgroundDiffMaterial) === false
+    && native.gridHash() === nativeHash);
 native.destroy();
 
 const failures = done();

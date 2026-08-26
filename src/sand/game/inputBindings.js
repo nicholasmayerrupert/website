@@ -220,19 +220,18 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
       e.preventDefault();
       return;
     }
-    // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
-    // any loaded-window resize (local worker or multiplayer server). Handled
+    // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority worker
+    // owns any loaded-window resize. Handled
     // before movement/hotbar keys ('0' is unused there).
     if (key === '+' || key === '=') { zoomBy(1); e.preventDefault(); return; }
     if (key === '-' || key === '_') { zoomBy(-1); e.preventDefault(); return; }
     if (key === '0') { resetZoom(); e.preventDefault(); return; }
     // Survival inventory hotkeys (engine owns the selection policy): digits 1-9
     // pick a hotbar slot; E toggles the grid. Handled before the movement-key map.
-    if (ctx.survival && ctx.engine && (ctx.localPlayerId || ctx.netClientReady())) {
+    if (ctx.survival && ctx.engine && ctx.localPlayerId) {
       if (key >= '1' && key <= '9') {
         const slot = +key - 1;
-        if (ctx.netClientReady()) ctx.net.sendSelect(slot);
-        else ctx.worldWorker?.intent('select', { slot });
+        ctx.worldWorker?.intent('select', { slot });
         e.preventDefault();
         return;
       }
@@ -281,13 +280,6 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
   const onWheel = (e) => {
     if (!ctx.survival || !ctx.engine || !ctx.inside || isEditableEvent(e)) return;
-    if (ctx.netClientReady()) {
-      const inv = ctx.net.getOwnInventory();
-      if (!inv) return;
-      ctx.net.sendSelect((inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9); // hotbar is slots 0-8
-      e.preventDefault();
-      return;
-    }
     const inv = ctx.worldWorker?.getInventory();
     if (!inv) return;
     ctx.worldWorker.intent('select', { slot: (inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9 });

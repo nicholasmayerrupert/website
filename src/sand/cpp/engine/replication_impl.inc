@@ -1,5 +1,5 @@
 // RLE-encode one grid into blob: repeated [u32 run][u8 value].
-void NetSync::rleEncode(const uint8_t* g) {
+void ReplicationSystem::rleEncode(const uint8_t* g) {
   size_t n = (size_t)E.cols * E.rows, i = 0;
   while (i < n) {
     uint8_t v = g[i];
@@ -10,7 +10,7 @@ void NetSync::rleEncode(const uint8_t* g) {
     i = j;
   }
 }
-int NetSync::serializeWorld() {
+int ReplicationSystem::serializeWorld() {
   blob.clear();
   rleEncode(E.fg.grid);
   rleEncode(E.bg.grid);
@@ -18,7 +18,7 @@ int NetSync::serializeWorld() {
 }
 // Decode one grid's worth of RLE (cols*rows cells) starting at buf[p]; returns
 // the new p (start of the next grid's stream).
-int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
+int ReplicationSystem::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
   size_t idx = 0, n = (size_t)E.cols * E.rows;
   while (p + 5 <= len && idx < n) {
     uint32_t run = (uint32_t)buf[p] | ((uint32_t)buf[p + 1] << 8) | ((uint32_t)buf[p + 2] << 16) | ((uint32_t)buf[p + 3] << 24);
@@ -27,7 +27,7 @@ int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
   }
   return p;
 }
-int NetSync::rleValidate(const uint8_t* buf, int len, int p) const {
+int ReplicationSystem::rleValidate(const uint8_t* buf, int len, int p) const {
   size_t idx = 0, n = (size_t)E.cols * E.rows;
   while (idx < n) {
     if (p < 0 || p + 5 > len) return -1;
@@ -42,7 +42,7 @@ int NetSync::rleValidate(const uint8_t* buf, int len, int p) const {
   }
   return p;
 }
-bool NetSync::decodeWorldGrids(const uint8_t* buf, int len) {
+bool ReplicationSystem::decodeWorldGrids(const uint8_t* buf, int len) {
   if (!buf || len <= 0) return false;
   int fgEnd = rleValidate(buf, len, 0);
   int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
@@ -51,31 +51,10 @@ bool NetSync::decodeWorldGrids(const uint8_t* buf, int len) {
   rleDecode(buf, len, p, E.bg.grid);
   return true;
 }
-bool NetSync::applyWorld(const uint8_t* buf, int len) {
-  if (!decodeWorldGrids(buf, len)) return false;
-  E.fg.clearMotionState();
-  E.bg.clearMotionState();
-  // A full snapshot replaces grid[] without replacing the alternate buffers.
-  // Force one ordinary carry before a prior cave-blast sparse proof can be reused.
-  E.fg.blastSparseCarryReady = false;
-  E.bg.blastSparseCarryReady = false;
-  E.fg.skyWorldReachY.clear(); E.fg.skyValid = false; E.fg.skyDirty = true;
-  E.bg.skyWorldReachY.clear(); E.bg.skyValid = false; E.bg.skyDirty = true;
-  {
-    Engine::ActiveLayerScope active(E, &E.fg);
-    E.comps.registerSeededComponents(0, E.cols); E.markAllDirty();
-  }
-  {
-    Engine::ActiveLayerScope active(E, &E.bg);
-    E.comps.registerSeededComponents(0, E.cols); E.markAllDirty();
-  }
-  return true;
-}
-
 // Presentation mirrors do not simulate their cellular world, so rebuilding all
 // component topology after every packet is wasted main-thread work. Keep only
 // the render/lighting dirty state required by WebGL and actor collision reads.
-bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
+bool ReplicationSystem::applyWorldMirror(const uint8_t* buf, int len) {
   if (!decodeWorldGrids(buf, len)) return false;
   // Preserve absolute-world skylight reach across worker streaming snapshots.
   // A deep buffer's top edge is underground and cannot rediscover that an
@@ -92,7 +71,7 @@ bool NetSync::applyWorldMirror(const uint8_t* buf, int len) {
 
 // Diff per layer: [u16 rectCount] then per rect [u16 x0,y0,x1,y1][raw cells,
 // row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
-void NetSync::writeDiffLayer(bool background) {
+void ReplicationSystem::writeDiffLayer(bool background) {
   Layer* lay = background ? &E.bg : &E.fg;
   Engine::ActiveLayerScope active(E, lay);
   E.buildDirtyRects();
@@ -119,13 +98,13 @@ void NetSync::writeDiffLayer(bool background) {
   };
   for (int r = 0; r < rc; r++) writeRect(r);
 }
-int NetSync::serializeDiff() {
+int ReplicationSystem::serializeDiff() {
   blob.clear();
   writeDiffLayer(false);
   writeDiffLayer(true);
   return (int)blob.size();
 }
-int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
+int ReplicationSystem::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
                            int lightEditX0, int lightEditX1) {
   Layer* lay = background ? &E.bg : &E.fg;
   if (p + 2 > len) return p;
@@ -168,7 +147,7 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
   }
   return p;
 }
-int NetSync::validateDiffLayer(const uint8_t* buf, int len, int p) const {
+int ReplicationSystem::validateDiffLayer(const uint8_t* buf, int len, int p) const {
   if (!buf || p < 0 || p + 2 > len) return -1;
   int rectCount = readLE16(buf, p);
   p += 2;
@@ -186,7 +165,7 @@ int NetSync::validateDiffLayer(const uint8_t* buf, int len, int p) const {
   }
   return p;
 }
-bool NetSync::applyDiffGrids(const uint8_t* buf, int len,
+bool ReplicationSystem::applyDiffGrids(const uint8_t* buf, int len,
                              int lightEditX0, int lightEditX1) {
   int fgEnd = validateDiffLayer(buf, len, 0);
   int bgEnd = fgEnd >= 0 ? validateDiffLayer(buf, len, fgEnd) : -1;
@@ -195,24 +174,16 @@ bool NetSync::applyDiffGrids(const uint8_t* buf, int len,
   readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
   return true;
 }
-bool NetSync::applyDiff(const uint8_t* buf, int len) {
-  if (!applyDiffGrids(buf, len, 1, 0)) return false;
-  E.fg.skyDirty = true; E.bg.skyDirty = true;
-  { Engine::ActiveLayerScope active(E, &E.fg); E.comps.registerSeededComponents(0, E.cols); }
-  { Engine::ActiveLayerScope active(E, &E.bg); E.comps.registerSeededComponents(0, E.cols); }
-  return true;
-}
-
-bool NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
+bool ReplicationSystem::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
   if (!applyDiffGrids(buf, len, lightEditX0, lightEditX1)) return false;
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.bgEnabled = true;
   return true;
 }
 
-// FNV-1a over BOTH grids (divergence / resync check). Host + client fold the
-// two layers in the same order, so the single u32 still detects any divergence.
-uint32_t NetSync::gridHashFNV() {
+// FNV-1a over BOTH grids (divergence / resync check). Authority and presentation
+// fold the layers in the same order, so one u32 detects any divergence.
+uint32_t ReplicationSystem::gridHashFNV() {
   uint32_t h = 0x811c9dc5u; size_t n = (size_t)E.cols * E.rows;
   for (size_t i = 0; i < n; i++) { h ^= E.fg.grid[i]; h *= 0x01000193u; }
   for (size_t i = 0; i < n; i++) { h ^= E.bg.grid[i]; h *= 0x01000193u; }

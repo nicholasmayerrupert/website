@@ -4,13 +4,13 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  ABI_FINGERPRINT, ACTOR_WIRE_FINGERPRINT, NETWORK_CATALOGUE_FINGERPRINT,
+  ABI_FINGERPRINT,
   CREATURE, CREATURE_CREATIVE_ENTRIES, CREATURE_MAX_DIMENSION,
-  CREATURE_MAX_RECORDS, CREATURE_SPECIES_DEFS, OFF, RECORD_CODECS,
-  SNAPSHOT_CODECS, SOUND_EVENT_MAX_RECORDS, STRIDES,
+  CREATURE_MAX_RECORDS, CREATURE_SPECIES_DEFS, OFF,
+  SNAPSHOT_CODECS, STRIDES,
   writeGlPlayerExtSnapshot,
 } from '../src/sand/wasmBridge/abi.generated.js';
-import { unpackSnapshotRecordAt } from '../src/sand/wasmBridge/recordCodec.js';
+import { unpackSnapshotRecordAt } from '../src/sand/wasmBridge/snapshotCodec.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const generator = resolve(root, 'scripts/generate-abi.mjs');
@@ -254,7 +254,7 @@ run('unspawnable ambient species is rejected', (schema) => {
 run('creature dimensions must be positive', (schema) => {
   schema.enums.CreatureSpecies.descriptors[0].stats.w = 0;
 }, 'stats.w must be an integer in 1..CREATURE_MAX_DIMENSION');
-run('creature dimensions share the network maximum', (schema) => {
+run('creature dimensions share the generated maximum', (schema) => {
   schema.enums.CreatureSpecies.descriptors[0].stats.h =
     schema.constants.CREATURE_MAX_DIMENSION + 1;
 }, 'stats.h must be an integer in 1..CREATURE_MAX_DIMENSION');
@@ -356,10 +356,10 @@ run('facility shells must remain load-bearing structures', (schema) => {
 }, 'facilityShell must be a load-bearing structure material');
 run('creature snapshot limit must stay positive', (schema) => {
   schema.constants.CREATURE_MAX_RECORDS = 0;
-}, 'creatureSnapshot.wireCodec record limit must resolve to a positive integer');
+}, 'CREATURE_MAX_RECORDS must be a positive integer');
 run('sound snapshot limit must stay positive', (schema) => {
   schema.constants.SOUND_EVENT_MAX_RECORDS = 0;
-}, 'soundEvent.wireCodec record limit must resolve to a positive integer');
+}, 'SOUND_EVENT_MAX_RECORDS must be a positive integer');
 
 runRaw('nested duplicate JSON keys are rejected',
   '{"outer":{"same":1,"same":2}}\n',
@@ -385,8 +385,8 @@ const reactionFixtureFingerprints = readFingerprints(
     reactions: (reactions) => { reactions.fixtures[0].schedule.every += 1; },
   },
 );
-const protocolEnumFingerprints = readFingerprints(
-  'protocol enum fingerprint mutation', {
+const enumFingerprints = readFingerprints(
+  'enum fingerprint mutation', {
     schema: (schema) => {
       const values = schema.enums.Tool.values;
       values.T_FIXTURE = Math.max(...Object.values(values)) + 1;
@@ -395,40 +395,22 @@ const protocolEnumFingerprints = readFingerprints(
 );
 check('generated fingerprint exports match the canonical source contracts',
   baselineFingerprints
-    && Number.parseInt(baselineFingerprints.abi, 16) === ABI_FINGERPRINT
-    && Number.parseInt(baselineFingerprints.actorWire, 16)
-      === ACTOR_WIRE_FINGERPRINT
-    && Number.parseInt(baselineFingerprints.networkCatalogue, 16)
-      === NETWORK_CATALOGUE_FINGERPRINT);
-check('material semantics invalidate runtime and network catalogues',
+    && Number.parseInt(baselineFingerprints.abi, 16) === ABI_FINGERPRINT);
+check('material semantics invalidate the runtime contract',
   materialFingerprints
-    && materialFingerprints.abi !== baselineFingerprints?.abi
-    && materialFingerprints.networkCatalogue
-      !== baselineFingerprints?.networkCatalogue
-    && materialFingerprints.actorWire === baselineFingerprints?.actorWire);
-check('biome semantics invalidate runtime and network catalogues',
+    && materialFingerprints.abi !== baselineFingerprints?.abi);
+check('biome semantics invalidate the runtime contract',
   biomeFingerprints
-    && biomeFingerprints.abi !== baselineFingerprints?.abi
-    && biomeFingerprints.networkCatalogue !== baselineFingerprints?.networkCatalogue
-    && biomeFingerprints.actorWire === baselineFingerprints?.actorWire);
-check('reaction semantics invalidate runtime and network catalogues',
+    && biomeFingerprints.abi !== baselineFingerprints?.abi);
+check('reaction semantics invalidate the runtime contract',
   reactionFingerprints
-    && reactionFingerprints.abi !== baselineFingerprints?.abi
-    && reactionFingerprints.networkCatalogue
-      !== baselineFingerprints?.networkCatalogue
-    && reactionFingerprints.actorWire === baselineFingerprints?.actorWire);
-check('test-only reaction fixtures do not invalidate runtime catalogues',
+    && reactionFingerprints.abi !== baselineFingerprints?.abi);
+check('test-only reaction fixtures do not invalidate the runtime contract',
   reactionFixtureFingerprints
-    && reactionFixtureFingerprints.abi === baselineFingerprints?.abi
-    && reactionFixtureFingerprints.networkCatalogue
-      === baselineFingerprints?.networkCatalogue
-    && reactionFixtureFingerprints.actorWire === baselineFingerprints?.actorWire);
-check('every generated protocol enum participates in peer compatibility',
-  protocolEnumFingerprints
-    && protocolEnumFingerprints.abi !== baselineFingerprints?.abi
-    && protocolEnumFingerprints.networkCatalogue
-      !== baselineFingerprints?.networkCatalogue
-    && protocolEnumFingerprints.actorWire === baselineFingerprints?.actorWire);
+    && reactionFixtureFingerprints.abi === baselineFingerprints?.abi);
+check('generated enums participate in the runtime contract',
+  enumFingerprints
+    && enumFingerprints.abi !== baselineFingerprints?.abi);
 
 const glRecord = { x: 1, y: 2, w: 3, h: 4, facing: -1 };
 const glPacked = new Float32Array(STRIDES.glPlayerExt);
@@ -510,8 +492,6 @@ const sourceCreativeSpecies = sourceSchema.enums.CreatureSpecies.descriptors
 check('creative spawn eggs derive availability, order, and icon from species rows',
   CREATURE_MAX_DIMENSION === sourceSchema.constants.CREATURE_MAX_DIMENSION
     && CREATURE_MAX_RECORDS === sourceSchema.constants.CREATURE_MAX_RECORDS
-    && RECORD_CODECS.creatureSnapshot.maxRecords === CREATURE_MAX_RECORDS
-    && RECORD_CODECS.soundEvent.maxRecords === SOUND_EVENT_MAX_RECORDS
     && CREATURE_CREATIVE_ENTRIES.length === sourceCreativeSpecies.length
     && CREATURE_CREATIVE_ENTRIES.every((entry, index) =>
       entry.id === sourceCreativeSpecies[index].id

@@ -10,8 +10,8 @@ home-page hero (creative) and at `/game` (survival). Most agent work happens
 there. The simulation, **WebGL2 rendering**, the **view camera**, **input
 policy**, tools, actors, authored missions, and world streaming run in **C++
 compiled to WebAssembly**. JavaScript owns browser lifecycle, canvas sizing, raw
-DOM events, audio presentation, workers, WebSocket transport, and the
-ship/debrief presentation. It ships as a framework-free `<sand-game>` Web
+DOM events, audio presentation, workers, and the ship/debrief presentation. It
+ships as a framework-free `<sand-game>` Web
 Component (`src/sand/embed/`); a tiny React shim mounts it on this site. The
 engine runs **two fully-simulated layers** — foreground + a darker background
 (`struct Layer` in `cpp/engine/layer.hpp`). Temporary layer selection uses
@@ -29,7 +29,7 @@ Quick orientation:
 | `src/sand/cpp/` | The C++ engine: twenty-one subsystem classes under `engine/`, composed by a coordinator Engine (`sand.cpp`, one unity TU). From the repository root, rebuild on any OS with `npm run build:sand` (emits the committed `src/sand/wasm/sandEngine.{js,wasm}`); `npm run build:sand -- --dev` adds the post-step invariant validator. See `wasm/README.md` for toolchain setup. |
 | `src/sand/wasmBridge/engineFactory.js` | Loads the wasm module; `createEngineWasm()` is the simulation/render/camera handle. Grid and render pixels are zero-copy views into wasm memory. |
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
-| `src/sand/game/createSandGame.js` | Browser runtime: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events, owns workers/audio/replay/net glue. The loop body lives in split modules (`gameLoop.js`, `engineLifecycle.js`, `inputBindings.js`); rendering goes through `engine.glRenderFrame()` in the frame pass, while world streaming is decided by the engine and driven by the authority worker via `engine.maybeShiftWorld*()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
+| `src/sand/game/createSandGame.js` | Browser runtime: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events, and owns worker/audio/replay glue. The loop body lives in split modules (`gameLoop.js`, `engineLifecycle.js`, `inputBindings.js`); rendering goes through `engine.glRenderFrame()` in the frame pass, while world streaming is decided by the engine and driven by the authority worker via `engine.maybeShiftWorld*()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
 | `src/sand/game/replayCapsule.js` | Copy/paste replay codec (`encodeReplayCapsule`/`decodeReplayCapsule`). Capsule text starts with the literal marker `SAND-REPLAY-3:` — either plain JSON or `SAND-REPLAY-3:gzip:<base64>` (whichever encodes smaller); v2 plain-JSON capsules remain importable. Copy/paste UI is `game/replayPanel.js`. |
 | `scripts/replay-inspect.mjs` | Cheap no-browser capsule summary: `npm run replay:inspect -- <file-or-->`. Names init/tools/materials, prints a sparse timeline, ABI match, and a suggested microscope command. ABI mismatches still print. |
 | `src/sand/embed/` | The `<sand-game>` Web Component (`sandGame.js`) + vanilla palette (`toolPalette.js`). `npm run build:embed` → one self-contained `dist-embed/sand-game.js`. |

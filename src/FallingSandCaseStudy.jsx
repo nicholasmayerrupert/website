@@ -35,14 +35,9 @@ const HISTORY = [
       'Pixel generation, WebGL2 presentation, the camera, pointer mapping, and input policy all moved into C++. That left JavaScript responsible for lifecycle and event forwarding. I then packaged the runtime as a framework-free sand-game Web Component and added a second fully simulated layer.',
   },
   {
-    title: 'The engine becomes the multiplayer authority',
-    copy:
-      'For multiplayer, I replaced the browser-hosted relay with a headless Node server running the same WebAssembly engine. Browsers became clients that submit validated intents and receive world, actor, item, and inventory state.',
-  },
-  {
     title: 'Engine ownership is divided into named subsystems',
     copy:
-      'As the engine grew, I extracted camera, networking, terrain, rendering, items, inventory, players, tools, reactions, explosives, growth, components, and rigid-body responsibilities from the coordinator. A development validator now checks component and body ownership after each step.',
+      'As the engine grew, I extracted camera, replication, terrain, rendering, items, inventory, players, tools, reactions, explosives, growth, components, and rigid-body responsibilities from the coordinator. A development validator now checks component and body ownership after each step.',
   },
   {
     title: 'Offline simulation moves off the main thread',
@@ -65,12 +60,12 @@ const RUNTIME_STAGES = [
   {
     number: '01',
     title: 'Browser shell',
-    copy: 'Sizes the canvas, forwards raw input, manages audio, and carries worker or WebSocket messages.',
+    copy: 'Sizes the canvas, forwards raw input, manages audio, and carries authority-worker messages.',
   },
   {
     number: '02',
     title: 'Authority engine',
-    copy: 'A worker offline or a Node host in multiplayer advances cells, actors, tools, inventory, and streaming.',
+    copy: 'A dedicated worker advances cells, actors, tools, inventory, missions, and streaming.',
   },
   {
     number: '03',
@@ -212,9 +207,9 @@ export default function FallingSandCaseStudy() {
           <p className="case-section__label">Current runtime</p>
           <h2 id="runtime-heading">Authority and presentation are separate</h2>
           <p>
-            Offline and multiplayer execution use the same engine rules. The
-            authority location changes, but JavaScript does not reimplement the
-            simulation.
+            A dedicated worker owns the simulation while a main-thread engine
+            presents its snapshots. JavaScript coordinates the boundary without
+            reimplementing the simulation.
           </p>
         </div>
 

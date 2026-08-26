@@ -4,7 +4,6 @@ import {
   createFixedRateClock,
   createTurnDeadline,
 } from '../src/sand/timing/fixedRateClock.js';
-import { Host } from '../src/sand/net/server/host.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('split actor/world timing');
@@ -100,21 +99,6 @@ const makeFloorEngine = () => {
   for (let frame = 1; frame <= 50; frame++) clock.advance(frame * 20, () => grouped.cameraPanTick());
   check(`creative camera displacement is clock-group invariant (${direct.getCam().x.toFixed(4)})`, direct.getCam().x === grouped.getCam().x);
   direct.destroy(); grouped.destroy();
-}
-
-// The authoritative host exposes the same split while retaining its combined
-// compatibility step and actor-tick snapshot semantics.
-{
-  const e = createEngineWasm({ cols: 80, rows: 60, worldSeed: 3, sinksOn: false });
-  const host = new Host({ engine: e });
-  for (let i = 0; i < 5; i++) host.stepActors();
-  check(`server actor clock advances alone (${host.actorTick})`, host.actorTick === 5 && host.worldTick === 0);
-  host.stepWorld();
-  check(`server world clock advances independently (${host.worldTick})`, host.actorTick === 5 && host.worldTick === e.getTick());
-  check('server snapshots are keyed to actor tick', host.snapshot().tick === host.actorTick);
-  host.step();
-  check('server compatibility step advances both phases', host.actorTick === 6 && host.tick === 6 && host.worldTick === e.getTick());
-  e.destroy();
 }
 
 const failures = done();

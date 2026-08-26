@@ -1,6 +1,6 @@
   // The foreground and background are independent simulations. Each Layer owns
   // its cells, components, bodies, chunk store, and dirty/render buffers; shared
-  // systems such as camera, networking, players, tools, and timing stay on Engine.
+  // systems such as camera, replication, players, tools, and timing stay on Engine.
   int cols, rows, chunkCols, chunkRows;
   EngineStorageRole storageRole;
   Layer fg, bg;       // the two simulations
@@ -1058,7 +1058,7 @@
   // below. Empty ABOVE (open sky over a flat surface) is NOT an escape: liquid
   // never flows up, so a surface cell blocked on its sides + below has settled and
   // should go inert instead of re-marking itself dirty every step forever (the
-  // shimmer + the per-step diff churn that broke open oceans in multiplayer). It
+  // shimmer and unnecessary per-step diff churn. It
   // re-wakes normally when a neighbour changes (dirty padding covers the gap).
   inline bool liquidCanEscape(int k) {
     int x = k % cols, y = k / cols;
@@ -1152,7 +1152,7 @@
   //     water mound under oil keep exchanging (water sinks / oil rises) until level.
   // Restricted to liquids on the diagonals so powder settling isn't double-counted
   // and a SINGLE-fluid surface (no density difference anywhere) still returns false
-  // -> the surface goes inert, no shimmer/multiplayer churn.
+  // -> the surface goes inert with no shimmer or diff churn.
   inline bool touchesUnstableLooseDensityInterface(int k, uint8_t m) {
     if (!isLooseDensityMaterial(m)) return false;
     int y = k / cols, x = k - y * cols;

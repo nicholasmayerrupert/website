@@ -6,7 +6,7 @@
 
 import { _wasmInternals } from './engineFactory.js';
 import { STRIDES } from './abi.generated.js';
-import { unpackSnapshotRecordAt } from './recordCodec.js';
+import { unpackSnapshotRecordAt } from './snapshotCodec.js';
 
 let T = null; // lazily cwrapped test-ABI table
 function table() {

@@ -67,13 +67,11 @@
  * @property {boolean} testPaused
  * @property {boolean} gutterOn
  * @property {boolean} snapOff
- * @property {*|null} net
  * @property {boolean} reduced
  * @property {boolean} viewportActive
  * @property {boolean} audioEnabled
  * @property {{actorSteps: number, actorDebtMs: number, actorDroppedMs: number,
  *   worldStepped: boolean}|null} timingStats
- * @property {() => boolean} netClientReady
  * @property {() => number} zoomFactor
  * @property {() => number} bgZoomScale
  * @property {{render?: (forceFull?: boolean) => void}} fns

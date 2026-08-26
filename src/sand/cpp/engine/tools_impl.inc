@@ -445,7 +445,7 @@ uint32_t ToolSystem::minePowerFor(uint8_t m, const Player& miner, bool scaledSpe
   uint32_t power = 16;
   if (scaledSpeed) {
     // Clamp to valid enum range (TOOL_CLASS_COUNT includes dig). Unknown classes
-    // fall back to hand so a stale net packet can't OOB the speed table.
+    // fall back to hand so stale selected-tool state cannot index past the speed table.
     uint8_t heldClass = miner.heldToolClass < TOOL_CLASS_COUNT ? miner.heldToolClass : TC_HAND;
     uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
     uint8_t mineClass = MAT_TOOLCLASS[m] < TOOL_CLASS_COUNT ? MAT_TOOLCLASS[m] : TC_NONE;

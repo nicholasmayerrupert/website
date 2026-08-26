@@ -4,17 +4,13 @@ import {
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import {
-  CREATURE, ITEM_KIND, PROJECTILE_KIND, RECORD_CODECS, SNAPSHOT_CODECS,
+  CREATURE, ITEM_KIND, PROJECTILE_KIND, SNAPSHOT_CODECS,
   STRIDES,
 } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
 const { check, done } = makeChecker('generated ABI snapshot writers');
-const completeRecord = (record, codecName) => record
-  && RECORD_CODECS[codecName].fields.every((field) =>
-    Object.hasOwn(record, field)
-      && (typeof record[field] === 'boolean' || Number.isFinite(record[field])));
 const completeSnapshot = (record, codecName) => record
   && SNAPSHOT_CODECS[codecName].fields.every((field) =>
     Object.hasOwn(record, field)
@@ -37,7 +33,7 @@ const completeSnapshot = (record, codecName) => record
   });
   const player = engine.getPlayers().find((value) => value.id === playerId);
   check('player writer preserves aliases and required semantic inputs',
-    completeRecord(player, 'playerSnapshot')
+    completeSnapshot(player, 'playerSnapshot')
       && player.x === 83.25 && player.y === 41.5
       && player.vx === 1.75 && player.vy === -0.5
       && player.tool === 7 && player.inputSeq === 0x12345
@@ -48,14 +44,14 @@ const completeSnapshot = (record, codecName) => record
   const itemId = engine.spawnItem(MAT.WOOD, 7, 48.25, 23.5, 0.75, -0.25);
   const item = engine.getItems().find((value) => value.id === itemId);
   check('item writer preserves member aliases and the complete packed record',
-    completeRecord(item, 'itemSnapshot')
+    completeSnapshot(item, 'itemSnapshot')
       && item.material === MAT.WOOD && item.count === 7
       && item.x === 48.25 && item.y === 23.5);
 
   const creatureId = engine.spawnScriptedCreature(CREATURE.FOX, 72.25, 45.5);
   const creature = engine.getCreatures().find((value) => value.id === creatureId);
   check('live creature writer preserves local coordinates and species parameters',
-    completeRecord(creature, 'creatureSnapshot')
+    completeSnapshot(creature, 'creatureSnapshot')
       && creature.species === CREATURE.FOX
       && creature.x === 72.25 && creature.y === 45.5
       && creature.w > 0 && creature.h > 0
@@ -68,7 +64,7 @@ const completeSnapshot = (record, codecName) => record
   const projectile = engine.getProjectiles().find((value) =>
     value.owner === playerId && value.kind === PROJECTILE_KIND.BLAST_ROUND);
   check('projectile writer preserves aliases and every packed scalar',
-    completeRecord(projectile, 'projectileSnapshot')
+    completeSnapshot(projectile, 'projectileSnapshot')
       && projectile.id > 0 && projectile.x > 0 && projectile.y > 0
       && Number.isFinite(projectile.rotation));
   check('raw actor snapshots retain their generated strides',
@@ -93,7 +89,7 @@ const completeSnapshot = (record, codecName) => record
   const warning = engine.getCreatures().find((creature) =>
     creature.spawnProgress > 0);
   check('telegraph writer emits its explicit sparse actor semantics',
-    requested && completeRecord(warning, 'creatureSnapshot')
+    requested && completeSnapshot(warning, 'creatureSnapshot')
       && warning.species === CREATURE.DYNAMITEER
       && warning.w > 0 && warning.h > 0 && warning.maxHealth > 0
       && warning.facing === 1 && warning.spawnProgress > 0

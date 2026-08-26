@@ -1,6 +1,6 @@
 #pragma once
-// Survival inventory policy. Stacks and cursor state live on Player so they can
-// replicate and reconcile with the player snapshot.
+// Survival inventory policy. Stacks and cursor state live on Player so the
+// authority snapshot stays consistent with player state.
 
 struct Engine;
 

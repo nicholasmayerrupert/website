@@ -537,7 +537,7 @@ try {
   // both the coagulated collectible and multiple independent cosmetic flecks.
   await page.evaluate(() => window.__sandTest.selectSlot(1));
   await page.waitForFunction(() => window.__sandTest.getInventory().selected === 1);
-  const itemActors0 = await page.evaluate(() => window.__sandNet.items());
+  const itemActors0 = await page.evaluate(() => window.__sandTest.itemCount());
   const minePoint = await page.evaluate(({ x, y }) => {
     const t = window.__sandTest;
     for (let r = 0; r <= 8; r++) {
@@ -554,7 +554,7 @@ try {
     throw new Error('no committed stone cell found for mining presentation probe');
   }, { x: stoneAim.cellX, y: stoneAim.cellY });
   const debrisPromise = page.waitForFunction(
-    (before) => window.__sandNet.items() > before + 1, itemActors0, { timeout: 3000 },
+    (before) => window.__sandTest.itemCount() > before + 1, itemActors0, { timeout: 3000 },
   ).then(() => true).catch(() => false);
   await page.mouse.move(minePoint.vx, minePoint.vy);
   await page.mouse.down({ button: 'left' });

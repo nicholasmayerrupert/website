@@ -248,42 +248,6 @@ for (const role of ['full', 'authority', 'presentation']) {
 }
 
 {
-  const source = make();
-  const target = make();
-  const x = 44;
-  const y = 36;
-  const cell = y * COLS + x;
-  source.paintDiscLayer(0, x, y, 0, MAT.SAND, true);
-  source.paintDiscLayer(1, x, y, 0, MAT.WATER, true);
-  target._setMotionSentinel(0, cell);
-  target._setMotionSentinel(1, cell);
-  const world = source.serializeWorld();
-  check('full network serialization restores the foreground active layer',
-    source._activeLayer() === 0);
-  check('full network snapshot applies', target.applyWorld(world));
-  check('full network replacement clears both motion-buffer phases',
-    target._motionCellZero(0, cell) && target._motionCellZero(1, cell));
-  check('full network replacement preserves registered cell buffers',
-    buffersValid(target) && target._activeLayer() === 0);
-
-  source.resetDirty();
-  source.paintDiscLayer(0, x, y, 0, MAT.OIL, true);
-  source.paintDiscLayer(1, x, y, 0, MAT.ACID, true);
-  target._setMotionSentinel(0, cell);
-  target._setMotionSentinel(1, cell);
-  const diff = source.serializeDiff();
-  check('diff serialization restores the foreground active layer',
-    source._activeLayer() === 0);
-  check('network diff applies', target.applyDiff(diff));
-  check('network diff clears current and alternate motion at replaced cells',
-    target._motionCellZero(0, cell) && target._motionCellZero(1, cell));
-  check('network diff preserves registered cell buffers and active layer',
-    buffersValid(target) && target._activeLayer() === 0);
-  source.destroy();
-  target.destroy();
-}
-
-{
   const authority = make('authority', true);
   const mirror = make('presentation', true);
   check('presentation full snapshot applies', mirror.applyWorldMirror(

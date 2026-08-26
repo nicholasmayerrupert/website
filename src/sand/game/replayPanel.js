@@ -136,8 +136,6 @@ export function createReplayPanel(ctx) {
     setBusy(true);
     const generation = ++openGeneration;
     try {
-      if (ctx.netClientReady())
-        throw new Error('Replay capture currently requires the local single-player authority.');
       if (!ctx.worldWorker) throw new Error('The local simulation is not ready yet.');
       const capture = ctx.worldWorker.captureReplay(currentView());
       // Install both continuations before compression yields. A worker failure

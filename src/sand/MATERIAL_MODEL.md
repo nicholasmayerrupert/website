@@ -12,7 +12,7 @@ inventory, drops, durability, density, color, and special reactions use exact ID
 when the distinction matters.
 
 Material IDs are stable API. Do not remove or renumber existing IDs; saves, tests,
-networking, rendering, and the WASM grid all key off the numeric ID.
+replication, rendering, and the WASM grid all key off the numeric ID.
 
 IDs occupy a byte-wide `0..255` address space and may be sparse. `TABLE_SIZE`
 sizes constant-time lookup tables; it is not the number of defined materials.

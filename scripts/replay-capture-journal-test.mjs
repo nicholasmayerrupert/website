@@ -272,7 +272,6 @@ const ctx = {
   viewCols: 128,
   viewRows: 96,
   zoom: 1,
-  netClientReady: () => false,
   worldWorker: {
     captureReplay: () => captures.shift(),
     config: () => {},

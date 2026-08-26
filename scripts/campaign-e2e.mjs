@@ -352,7 +352,6 @@ try {
         mission,
         missionHud: host.shadowRoot.querySelector('.sg-mission-hud')?.textContent || '',
         markerCount: host.shadowRoot.querySelectorAll('.sg-mission-marker').length,
-        multiplayerCount: host.shadowRoot.querySelectorAll('.mp-wrap').length,
         parallax: !!host.shadowRoot.querySelector('.sand-parallax-bg'),
         inventory: host._game.getInventory(),
       };
@@ -373,8 +372,7 @@ try {
     check('campaign loadout and rescue equipment reach the authority inventory',
       result.inventory.slots.some((slot) => slot.itemKind === 10 && slot.count > 0) &&
       result.inventory.slots.some((slot) => slot.itemKind === 0 && slot.count > 0));
-    check('campaign deployment uses a planetary backdrop without multiplayer controls',
-      result.parallax && result.multiplayerCount === 0);
+    check('campaign deployment uses its planetary backdrop', result.parallax);
     if (deployment.planet === 'earth') {
       check('leaving Kestrel triggers the beam cue',
         await page.evaluate(() => window.__beamSoundCalls) === 1);

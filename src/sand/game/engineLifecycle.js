@@ -1,6 +1,6 @@
 // Engine lifecycle for the sand runtime: viewport fitting, engine
-// construction/wiring (one build path shared by resize and the multiplayer
-// dims-rebuild), runtime zoom, and the devicePixelRatio watch.
+// construction/wiring, snapshot-driven dimension rebuilds, runtime zoom, and
+// the devicePixelRatio watch.
 //
 // All mutable runtime state lives on the shared `ctx` object owned by
 // createSandGame.js; this module only reads/writes ctx and drives the engine.
@@ -151,17 +151,6 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     let bufCols = sizing.bufCols;
     let worldRows = sizing.worldRows;
 
-    // As a connected multiplayer client the simulation buffer is the SERVER's
-    // (diffs are authored in its cols/rows); never rebuild it to window dims on
-    // resize — only resize the GL backing store + viewport (view-only zoom).
-    // Clamp the visible window so it never exceeds the host buffer.
-    if (ctx.netClientReady() && ctx.engine) {
-      bufCols = ctx.cols;
-      worldRows = ctx.rows;
-      ctx.viewCols = Math.min(ctx.viewCols, ctx.cols);
-      ctx.viewRows = Math.min(ctx.viewRows, ctx.rows);
-    }
-
     const applyViewOnly = () => {
       // View must fit the live buffer (camera clamp / stream assume this).
       ctx.viewCols = Math.min(ctx.viewCols, ctx.cols);
@@ -179,15 +168,15 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       ctx.previewDirty = false;
     };
 
-    // Live engine, same desired buffer (or current shared client dims): pure view update.
+    // Live engine, same desired buffer: pure view update.
     if (ctx.engine && ctx.cols === bufCols && ctx.rows === worldRows) {
       applyViewOnly();
       return;
     }
 
-    // Live local (non-client) engine: prefer world-preserving resize over destroy.
+    // Prefer world-preserving resize over destroy.
     // Hysteresis may keep the old buffer — then fall through to view-only.
-    if (ctx.engine && !ctx.netClientReady()) {
+    if (ctx.engine) {
       if (shouldResizeBuffer(ctx.cols, ctx.rows, bufCols, worldRows, ctx.viewCols, ctx.viewRows, SIZING)) {
         if (ctx.engine.resizeLoadedWindow(bufCols, worldRows)) {
           ctx.cols = bufCols;
@@ -201,13 +190,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       return;
     }
 
-    // First build (or multiplayer client path that still needs a fresh engine).
+    // First build.
     const engine = buildEngine({ cols: bufCols, rows: worldRows });
     const spawnCol = Math.floor(ctx.cols / 2);
     const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
-    // The browser engine is always a presentation replica. Offline players are
-    // spawned by the local authority worker; multiplayer players live on the
-    // headless server. The mirror only creates a prediction body after the
+    // The browser engine is always a presentation replica. Players are spawned
+    // by the authority worker; the mirror creates a prediction body after the
     // first authoritative player snapshot arrives.
     // Start centered horizontally, with roughly one third of the view underground.
     engine.cameraSet((ctx.cols - ctx.viewCols) / 2, spawnRow - Math.floor(ctx.viewRows * (2 / 3)));
@@ -216,13 +204,11 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     ctx.lastCamY = NaN;
   };
 
-  // Rebuild the local render engine to the authoritative server's buffer dims
-  // so world diffs apply 1:1 (a connected client renders the server's shared
-  // streamed window, never its own). Keeps the current view metrics; does
-  // NOT spawn a local player (the server owns it). Called by the net layer on
-  // the first WORLD message.
-  const rebuildEngineForDims = (netCols, netRows) => {
-    if (ctx.engine && ctx.cols === netCols && ctx.rows === netRows) {
+  // Rebuild the presentation engine for an authority snapshot whose dimensions
+  // differ from the current mirror. Keeps the current view metrics and removes
+  // any prediction body; the next actor snapshot recreates it.
+  const rebuildEngineForDims = (nextCols, nextRows) => {
+    if (ctx.engine && ctx.cols === nextCols && ctx.rows === nextRows) {
       if (ctx.localPlayerId) ctx.engine.removePlayer(ctx.localPlayerId);
       ctx.localPlayerId = 0;
       const skyLight = weatherSkyLight(
@@ -239,17 +225,17 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     }
     const previousViewCols = ctx.viewCols;
     const previousViewRows = ctx.viewRows;
-    ctx.viewCols = Math.min(ctx.requestedViewCols || ctx.viewCols || netCols, netCols);
-    ctx.viewRows = Math.min(ctx.requestedViewRows || ctx.viewRows || netRows, netRows);
+    ctx.viewCols = Math.min(ctx.requestedViewCols || ctx.viewCols || nextCols, nextCols);
+    ctx.viewRows = Math.min(ctx.requestedViewRows || ctx.viewRows || nextRows, nextRows);
     let engine;
     try {
-      engine = buildEngine({ cols: netCols, rows: netRows });
+      engine = buildEngine({ cols: nextCols, rows: nextRows });
     } catch (error) {
       ctx.viewCols = previousViewCols;
       ctx.viewRows = previousViewRows;
       throw error;
     }
-    ctx.localPlayerId = 0; // client: the server owns our player; render from snapshots
+    ctx.localPlayerId = 0;
     engine.cameraSet((ctx.cols - ctx.viewCols) / 2, Math.max(0, (ctx.rows - ctx.viewRows) / 2));
     return engine;
   };

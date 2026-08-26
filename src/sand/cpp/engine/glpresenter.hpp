@@ -70,7 +70,7 @@ class GLPresenter {
   // extend it along either or both movement axes.
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1;
   // Exact x-ranges where a presentation diff changed a structural cell or a
-  // worker-tagged user edit. NetSync records them before replacing mirror rows.
+  // worker-tagged user edit. Replication records them before replacing mirror rows.
   std::vector<std::pair<int, int>> glTerrainLightIntervals;
   void glNoteTerrainLightChange(int x0, int x1) {
     if (x0 <= x1) glTerrainLightIntervals.push_back({x0, x1});

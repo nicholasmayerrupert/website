@@ -53,7 +53,7 @@ const SHIFT_COLS = 128;        // matches game streaming
 const WARMUP_STEPS = 120;
 const SHIFTS_EACH_WAY = 16;    // distinct shift bursts to sample
 const STEPS_PER_SHIFT = 8;     // sim steps between shifts (settling)
-const SCENARIOS = ['pan-stream', 'liquid-active', 'components-active', 'survival-actions', 'net-apply'];
+const SCENARIOS = ['pan-stream', 'liquid-active', 'components-active', 'survival-actions'];
 const CHECKSUM_SCOPE = 'foreground+background';
 
 // --- stats helpers ---
@@ -192,7 +192,7 @@ const summarizeSamples = (samples) => ({
 });
 
 function setupScenario(e, name) {
-  const ctx = { name, client: null, playerId: 0, seq: 0 };
+  const ctx = { name, playerId: 0, seq: 0 };
   if (name === 'pan-stream') return ctx;
   if (name === 'liquid-active') {
     for (let i = 0; i < 90; i++) e.paintDisc(90 + (i % 45) * 6, 25 + ((i * 5) % 45), 5, 2, false); // water
@@ -219,12 +219,6 @@ function setupScenario(e, name) {
     e.setSelectedSlot(ctx.playerId, 3);
     return ctx;
   }
-  if (name === 'net-apply') {
-    ctx.client = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
-    ctx.client.applyWorld(e.serializeWorld());
-    ctx.client.resetDirty();
-    return ctx;
-  }
   throw new Error(`unknown scenario "${name}"`);
 }
 
@@ -238,15 +232,6 @@ function beforeStep(e, ctx) {
   ctx.seq++;
 }
 
-function afterStep(e, ctx) {
-  if (ctx.name !== 'net-apply' || !ctx.client) return;
-  ctx.client.applyDiff(e.serializeDiff());
-}
-
-function destroyScenario(ctx) {
-  if (ctx.client) ctx.client.destroy();
-}
-
 function runScenario(name) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
   for (let i = 0; i < 60; i++) e.paintDisc(50 + (i % 40) * 6, 40 + ((i * 7) % 30), 5, 1, false); // sand
@@ -257,7 +242,6 @@ function runScenario(name) {
   const stepOnce = () => {
     beforeStep(e, ctx);
     e.step();
-    afterStep(e, ctx);
     const perf = e.getPerf();
     const stepPerf = e.getStepPerf();
     samples.stepMs.push(perf.stepMs);
@@ -300,7 +284,6 @@ function runScenario(name) {
     samples,
     summaries: summarizeSamples(samples),
   };
-  destroyScenario(ctx);
   e.destroy();
   return out;
 }

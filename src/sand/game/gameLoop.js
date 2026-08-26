@@ -21,7 +21,6 @@ const WEATHER_VISUAL_STEP_MS = 50;
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createGameLoop(ctx, {
-  fit,
   parallaxCamera,
   updatePointer,
   updateMineProgress,
@@ -72,9 +71,7 @@ export function createGameLoop(ctx, {
   const updateWeatherVisual = (now) => {
     if (ctx.testPaused || ctx.reduced) return false;
     let changed = false;
-    // Multiplayer servers own their weather; a connected client keeps its
-    // mount-time weather instead of running this local schedule.
-    if (ctx.weatherMode === 'auto' && !ctx.netClientReady()) {
+    if (ctx.weatherMode === 'auto') {
       // The cycle is a pure function of elapsed wall clock (like day/night).
       // The discrete kind flip is mirrored to the authority via a journaled
       // weather message; everything visual interpolates on the mix.
@@ -116,14 +113,14 @@ export function createGameLoop(ctx, {
       ctx.weatherMix = weatherMixBucket / 16;
       if (sample.id !== ctx.weatherId) {
         ctx.weatherId = sample.id;
-        if (!ctx.netClientReady()) ctx.worldWorker?.sendWeather?.(sample.id);
+        ctx.worldWorker?.sendWeather?.(sample.id);
       }
     } else {
       const next = id === WEATHER.RAIN ? WEATHER.RAIN : WEATHER.CLEAR;
       ctx.weatherMode = 'pin';
       weatherMixBucket = next === WEATHER.RAIN ? 16 : 0;
       ctx.weatherMix = weatherMixBucket / 16;
-      if (ctx.weatherId !== next && !ctx.netClientReady()) {
+      if (ctx.weatherId !== next) {
         ctx.worldWorker?.sendWeather?.(next);
       }
       ctx.weatherId = next;
@@ -176,12 +173,10 @@ export function createGameLoop(ctx, {
   };
 
   // ---- local player + input helpers ----
-  const localPlayer = () => ctx.netClientReady()
-    ? ctx.net.getOwnPlayer()
-    : ctx.worldWorker?.getOwnPlayer() || null;
+  const localPlayer = () => ctx.worldWorker?.getOwnPlayer() || null;
   // Normalized local input each step — the engine builds the bitmask (held keys
   // + mouse-as-primary/secondary) and the aim cell from the forwarded pointer.
-  // The net layer sends this to the host.
+  // The authority worker consumes this normalized input.
   const currentLocalInput = () => {
     const a = ctx.engine ? ctx.engine.getAim() : { x: 0, y: 0 };
     const input = { bits: ctx.engine ? ctx.engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL_IDS[ctx.currentToolName] ?? 0 };
@@ -192,16 +187,13 @@ export function createGameLoop(ctx, {
     return input;
   };
   // Glide the camera toward the followed player's center (clamp + lerp in C++).
-  // On a client the followed player is our host-authoritative snapshot entity.
   // Runs every frame, so the local read reuses one scratch object.
   const followCamera = () => {
     const p = localPlayer();
     if (!p || !ctx.engine) return;
     ctx.engine.cameraFollowTo(p.x + p.w / 2, p.y + p.h / 2);
   };
-  const playersForRender = () => ctx.netClientReady()
-    ? ctx.net.getPlayersForRender()
-    : ctx.worldWorker?.getPlayersForRender() || [];
+  const playersForRender = () => ctx.worldWorker?.getPlayersForRender() || [];
 
   const audioListener = () => {
     const engine = ctx.engine;
@@ -226,7 +218,7 @@ export function createGameLoop(ctx, {
   // in C++/WebGL. JS only hands it the player set to draw. The sub-cell pan
   // offset is snapped to whole device px inside the engine (the documented
   // bright-block-flicker fix); the snap/gutter A/B flags live there too.
-  let packScratch = new Float32Array(0); // grow-only packing buffer (client player upload)
+  let packScratch = new Float32Array(0); // grow-only player upload buffer
   const unsetRenderSource = Symbol('unset-render-source');
   let lastWorkerItems = unsetRenderSource;
   let lastWorkerProjectiles = unsetRenderSource;
@@ -234,8 +226,7 @@ export function createGameLoop(ctx, {
     const engine = ctx.engine;
     if (!engine) return;
     const renderStart = performance.now();
-    // Players to overlay. A client renders host-authoritative snapshot players;
-    // host/local renders the engine's own players (own = the local id, blue).
+    // Players to overlay come from authority-worker snapshots (own = blue).
     // While the bench is paused we draw none (an empty external set) so the
     // flicker probe sees only the cell grid.
     if (ctx.testPaused) {
@@ -243,7 +234,7 @@ export function createGameLoop(ctx, {
     } else {
       const ps = playersForRender();
       const stride = engine.getRenderStrides().player;
-      const ownId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0;
+      const ownId = ctx.worldWorker?.ownPlayerId || 0;
       const liveAim = engine.getAim();
       const floats = ps.length * stride;
       if (packScratch.length < floats) packScratch = new Float32Array(floats);
@@ -266,39 +257,32 @@ export function createGameLoop(ctx, {
     // the resulting presentation facts to the mirror so its hover footprint
     // matches the size/tool that will actually act on the world.
     if (ctx.survival) {
-      const inventory = ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory();
+      const inventory = ctx.worldWorker?.getInventory();
       const ownPlayer = localPlayer();
       const selected = inventory?.slots?.[inventory.selected];
       const erasing = !selected || selected.itemKind === ITEM_KIND.MINING_TOOL || selected.count <= 0;
-      const mineTarget = ctx.netClientReady() ? ctx.net.getMineTarget() : ctx.worldWorker?.getMineTarget();
+      const mineTarget = ctx.worldWorker?.getMineTarget();
       const usable = !selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL;
       engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
     } else {
       engine.glSetSurvivalPreview(false, 0, false, null);
     }
-    // Dropped items: a client draws the server's authoritative items; host/local
-    // (and single-player) draws the engine's own (null = engine-owned).
+    // Dropped items and projectiles come from the authority worker.
     if (full || ctx.forceFullRender) {
       lastWorkerItems = unsetRenderSource;
       lastWorkerProjectiles = unsetRenderSource;
     }
-    if (ctx.netClientReady()) {
-      engine.glSetItems(ctx.net.getItemsForRender());
-      engine.glSetProjectiles(ctx.net.getProjectilesForRender());
-      lastWorkerItems = lastWorkerProjectiles = unsetRenderSource;
-    } else {
-      const nextItems = ctx.worldWorker?.getItemsForRender() || null;
-      const nextProjectiles = ctx.worldWorker?.getProjectilesForRender() || null;
-      if (nextItems !== lastWorkerItems) {
-        engine.glSetItems(nextItems);
-        lastWorkerItems = nextItems;
-      }
-      if (nextProjectiles !== lastWorkerProjectiles) {
-        engine.glSetProjectiles(nextProjectiles);
-        lastWorkerProjectiles = nextProjectiles;
-      }
+    const nextItems = ctx.worldWorker?.getItemsForRender() || null;
+    const nextProjectiles = ctx.worldWorker?.getProjectilesForRender() || null;
+    if (nextItems !== lastWorkerItems) {
+      engine.glSetItems(nextItems);
+      lastWorkerItems = nextItems;
     }
-    engine.glSetCreatures(ctx.netClientReady() ? ctx.net.getCreaturesForRender() : null);
+    if (nextProjectiles !== lastWorkerProjectiles) {
+      engine.glSetProjectiles(nextProjectiles);
+      lastWorkerProjectiles = nextProjectiles;
+    }
+    engine.glSetCreatures(null);
     engine.glRenderFrame(full || ctx.forceFullRender);
     ctx.forceFullRender = false;
     ctx.previewDirty = false;
@@ -333,21 +317,11 @@ export function createGameLoop(ctx, {
     if (!engine) return false;
     const replayPlaying = !!ctx.worldWorker?.state?.replayPlaying;
     if (!ctx.playMode && !replayPlaying) engine.cameraPanTick();
-    if (ctx.net.connected) ctx.net.update();
-    if (ctx.netClientReady() && ctx.worldWorker) ctx.stopLocalAuthority();
-    if (ctx.survival && !ctx.net.connected && !ctx.worldWorker) {
-      ctx.cols = 0; ctx.rows = 0; fit(); ctx.startLocalAuthority();
-    }
-    if (!replayPlaying && !ctx.netClientReady() && ctx.worldWorker && ctx.playMode) {
+    if (!replayPlaying && ctx.worldWorker && ctx.playMode) {
       ctx.worldWorker.sendInput(currentLocalInput(), ++ctx.inputSeq);
     }
     if (ctx.playMode && !replayPlaying) followCamera();
-    return ctx.playMode || !!ctx.net.connected;
-  };
-
-  // Compatibility hook for browser tests: pump one replica/input tick.
-  const doFixedStep = (now) => {
-    return doActorStep(now);
+    return ctx.playMode;
   };
 
   // ---- main loop ----
@@ -359,7 +333,7 @@ export function createGameLoop(ctx, {
   let viewportPaused = false;
   let lastAmbienceSample = -Infinity;
   let lastPlayerStateSignature = '';
-  const shouldPauseWorker = () => ctx.testPaused || (ctx.reduced && !ctx.netClientReady());
+  const shouldPauseWorker = () => ctx.testPaused || ctx.reduced;
   const loop = (now) => {
     if (!running || viewportPaused) return;
     raf = requestAnimationFrame(loop);
@@ -376,12 +350,11 @@ export function createGameLoop(ctx, {
     if (ctx.clientX >= 0 && ctx.clientY >= 0) updatePointer(ctx.clientX, ctx.clientY);
 
     let actorChanged = false;
-    let worldChanged = !ctx.netClientReady() && (ctx.worldWorker?.applyPending() || false);
+    let worldChanged = ctx.worldWorker?.applyPending() || false;
     // Advance correction easing once before any camera/audio/HUD/render reads.
     // renderState() is otherwise pure, so every consumer in this RAF sees one
     // consistent player pose even if the fixed clock runs multiple steps.
-    if (ctx.netClientReady()) ctx.net.advancePresentation?.();
-    else ctx.worldWorker?.advancePresentation?.();
+    ctx.worldWorker?.advancePresentation?.();
     let timing = { steps: 0, debtMs: 0, droppedDebtMs: 0 };
     const pauseWorker = shouldPauseWorker();
     if (ctx.worldWorker && pauseWorker !== workerPaused) {
@@ -390,7 +363,7 @@ export function createGameLoop(ctx, {
     }
     if (ctx.testPaused) {
       actorClock.reset(now);
-    } else if (ctx.reduced && !ctx.netClientReady()) {
+    } else if (ctx.reduced) {
       // Preserve the existing local-simulation pause, but keep user-driven free
       // camera motion on the fixed clock.
       timing = actorClock.advance(now, () => ctx.engine?.cameraPanTick());
@@ -412,9 +385,7 @@ export function createGameLoop(ctx, {
     const listener = audioListener();
     if (listener) {
       ctx.audio.updatePlayerEffects(ctx.survival ? localPlayer() : null);
-      const soundEvents = ctx.netClientReady()
-        ? ctx.net.consumeSoundEvents()
-        : ctx.worldWorker?.consumeSoundEvents();
+      const soundEvents = ctx.worldWorker?.consumeSoundEvents();
       if (soundEvents?.length) ctx.audio.playEvents(soundEvents, listener);
       if (ctx.audio.enabled && !ctx.audio.muted && now - lastAmbienceSample >= 125) {
         lastAmbienceSample = now;
@@ -422,12 +393,9 @@ export function createGameLoop(ctx, {
       }
     }
 
-    // Refresh the survival HUD from the active authority only when its inventory
-    // revision changes: the server in multiplayer, otherwise the local worker.
+    // Refresh the survival HUD only when the authority inventory revision changes.
     if (ctx.survival && onInventory) {
-      if (ctx.netClientReady()) {
-        if (ctx.net.consumeInventoryDirty()) { const inv = ctx.net.getOwnInventory(); if (inv) onInventory(inv); }
-      } else if (ctx.worldWorker?.consumeInventoryDirty()) {
+      if (ctx.worldWorker?.consumeInventoryDirty()) {
         const inv = ctx.worldWorker.getInventory();
         if (inv) onInventory(inv);
       }
@@ -451,17 +419,16 @@ export function createGameLoop(ctx, {
     // is unchanged), so this is safe to run at the display refresh rate.
     const cam = ctx.engine ? ctx.engine.getCam() : { x: ctx.lastCamX, y: ctx.lastCamY };
     const camMoved = cam.x !== ctx.lastCamX || cam.y !== ctx.lastCamY;
-    // A connected client animates remote players from snapshots even when its
-    // own grid is static, so keep presenting. previewDirty forces a present
-    // when a fresh draft overlay appears with no camera/step change.
+    // previewDirty forces a present when a fresh draft overlay appears with no
+    // camera/step change.
     // The local authority's first full snapshot is the first useful cell frame.
     // Until it exists, the parallax canvas is already visible; presenting the
     // empty mirror would perform a full lighting/upload pass that is immediately
     // discarded and can monopolize the page during cold-history restoration.
     const localAuthorityReady = !!ctx.worldWorker?.state?.ready;
-    const presentationReady = !ctx.worldWorker || localAuthorityReady || ctx.netClientReady();
+    const presentationReady = !ctx.worldWorker || localAuthorityReady;
     if (presentationReady &&
-        (dayChanged || weatherChanged || stepped || camMoved || ctx.previewDirty || (!ctx.testPaused && ctx.netClientReady()) || localAuthorityReady)) {
+        (dayChanged || weatherChanged || stepped || camMoved || ctx.previewDirty || localAuthorityReady)) {
       render(false);
       samplePerf();
     }
@@ -502,7 +469,6 @@ export function createGameLoop(ctx, {
 
   return {
     render,
-    doFixedStep,
     localPlayer,
     currentLocalInput,
     followCamera,

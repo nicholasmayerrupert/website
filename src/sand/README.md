@@ -9,7 +9,7 @@ survival sandbox.
 The simulation, WebGL2 renderer, camera, input policy, tools, actors, authored
 missions, and world streaming run in C++ compiled to WebAssembly. JavaScript
 owns browser lifecycle, canvas sizing, raw DOM events, audio presentation,
-workers, WebSocket transport, and the ship/debrief presentation.
+workers, and the ship/debrief presentation.
 
 The runtime ships as a framework-free `<sand-game>` Web Component. React only
 mounts that element on this site.
@@ -46,15 +46,6 @@ The presentation mirror does not reconstruct static components because it never 
 Local items and projectiles cross the worker boundary as packed transferable
 buffers, and unchanged render buffers are not recopied into WebAssembly between
 actor snapshots.
-
-Direct survival multiplayer replaces the authority worker with
-`scripts/sand-server.mjs`. Clients send intents, apply authoritative state, and
-reconcile local-player prediction. Authored campaign deployments use the offline
-authority worker and do not show the multiplayer connect panel.
-Weather is currently configured only for the local presentation and offline
-authority. The multiplayer protocol does not yet negotiate weather, so remote
-sessions must not rely on weather as shared server state; connected clients
-keep their mount-time weather and do not run the auto cycle against the server.
 
 ## IRIS campaign
 
@@ -267,8 +258,7 @@ truncates the replay recipe there, clears held input, and continues live as a
 new branch.
 Completed buffering verifies the final tick, streamed offset, actor/topology
 totals, and both-layer grid checksum.
-Capsules are ABI-versioned and intentionally reject incompatible engine builds;
-multiplayer sessions cannot be captured because their authority is remote.
+Capsules are ABI-versioned and intentionally reject incompatible engine builds.
 The copy/paste codec stores delta-tick event tuples, changed control/input fields,
 and sparse transport-gate ranges, then uses gzip when the compressed text is
 smaller. Version 2 plain-JSON capsules remain importable.
@@ -330,7 +320,7 @@ body bounds faintly visible for context.
 - `cpp/engine/`: composed subsystem classes (most use a header plus an
   implementation include):
   audio, camera, components, crafting, creatures, explosives, spatial forces, GL presentation,
-  growth, inventory, items, missions, net sync, player, projectiles, reactions,
+  growth, inventory, items, missions, replication, player, projectiles, reactions,
   renderer, rigid bodies, terrain, tools, and semantic world context.
 - `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
   feature hierarchy and absolute-coordinate semantic queries.
@@ -350,14 +340,14 @@ body bounds faintly visible for context.
 - `materials.schema.json`: material identity and generated behavior/render tables.
 - `biomes.schema.json`: stable biome IDs, selection policy, and generated biome
   behavior descriptors.
-- `abi.schema.json`: packed ABI layouts, stable planet descriptors, shared
-  enums, and actor/inventory wire codecs.
+- `abi.schema.json`: packed ABI layouts, stable planet descriptors, and shared
+  enums.
 - `wasmBridge/engineFactory.js`: production JS adapter for the WASM ABI.
 - `wasmBridge/testHooks.js`: test-only ABI adapters.
 - `game/createSandGame.js`: browser runtime and presentation loop.
-- `worker/`: offline authority worker and main-thread replica client.
+- `worker/`: authority worker, main-thread replica client, prediction, and
+  coordinate reconciliation.
 - `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, and the `L` copy/paste UI.
-- `net/`: multiplayer protocol, prediction, replication, and server authority.
 - `embed/`: the Web Component and framework-free UI.
 - `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.
 - `campaign/missions.js`: campaign metadata and bounded loadout construction.
@@ -408,22 +398,19 @@ Persistent per-cell ping-pong state is declared once in
 `SAND_PERSISTENT_CELL_CHANNELS` in `cpp/engine/layer.hpp`. Each row names the
 channel, value type and empty value, streamed store and encode/decode functions,
 material predicate, and whitelist of `PCSO_*` motion operations. Allocation,
-swapping, clearing, network replacement, streaming, resizing, validation, and
+swapping, clearing, replica replacement, streaming, resizing, validation, and
 release all expand the same list. A motion operation outside the whitelist
 resets the channel to its empty value instead of carrying stale state. The row
 owns storage and transport; the subsystem that computes or consumes the value
 still owns that behavior. The engine-contract suite seeds every registered
 channel and both phases, then verifies horizontal/vertical stream restore,
-resize preservation, network clearing, and motion-policy resets.
+resize preservation, replica clearing, and motion-policy resets.
 
-ABI layouts, callable exports, network actor records, inventory stacks, and
-player aliases live in `abi.schema.json`. The ABI generator validates every C++
-export against its single JavaScript `cwrap`. Its runtime fingerprint includes
-the ABI, material, and biome contracts; the JOIN handshake checks the broader
-network-catalogue fingerprint and explicit protocol version. The fingerprints
-are derived; the generator never changes `abiVersion`. Externally visible ABI
-changes require a manual ABI version bump, while wire-envelope changes require
-a protocol version bump.
+ABI layouts, callable exports, packed actor records, and inventory stacks live
+in `abi.schema.json`. The ABI generator validates every C++ export against its
+single JavaScript `cwrap`. Its derived runtime fingerprint includes the ABI,
+material, biome, and reaction contracts; the generator never changes
+`abiVersion`. Externally visible ABI changes require a manual ABI version bump.
 
 Raster generation and semantic world context share the explicit
 `WORLD_GENERATION_VERSION` in `cpp/engine/terrain.hpp`. Any intentional change
@@ -438,7 +425,7 @@ The extension path for each registry is explicit:
 | Basic material using existing policies | One stable-ID `materials[]` record in `materials.schema.json`, selecting its class, `kind`, and existing movement, habitat, ambience, render, hazard, and trait profiles | `kind` derives placement; `materials.generated.{js,hpp}` supplies sparse validity and indexed behavior tables | `node scripts/run-tests.mjs --only mat-generator` and `node scripts/run-tests.mjs --only mat-flags` |
 | Declarative reaction | One rule in `reactions.schema.json` | The reaction generator compiles material/trait/class/profile unions into fixed masks; indexed source buckets apply self, directional, overlap, or rigid-contact triggers with age, impact, cadence, probability, up to four effects, and topology-aware component/body transactions. The first production age rule also compiles in its persistent cell channel; catalogues without age rules pay no channel cost | `node scripts/run-tests.mjs --only reaction-generator`, `node scripts/run-tests.mjs --only reactions`, and the relevant chemistry suite |
 | Specialized reaction pass | One `ReactionPassDescriptor` plus one uniformly shaped handler in `reactions.hpp` / `reactions_impl.inc` | The descriptor owns phase, priority, source selectors, cadence, layer policy, retry matching, and its callable; the handler is reserved for algorithms outside the generated trigger/effect vocabulary | `node scripts/run-tests.mjs --only acid-stuck`, `node scripts/run-tests.mjs --only structural-stress`, and a handler-specific suite |
-| Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, network replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
+| Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, replica replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
 | Plant species using existing policies | One `plantSpecies` record plus any seed/wood/leaf material identity records it references, all in `materials.schema.json`; select reusable growth and worldgen profiles | Generated material/species tables drive growth, worldgen, crafting, and palette metadata | `node scripts/run-tests.mjs --only mat-generator`, `node scripts/run-tests.mjs --only flora`, and `node scripts/run-tests.mjs --only biomes` |
 | Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its named palette/sprite asset in `glpresenter_impl.inc` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
 | Biome | Append one stable-ID surface or cave record in `biomes.schema.json`; climate is optional for profile-only biomes, surface rows declare structure eligibility, and offworld records inherit `offworldMaterialDefaults`; `cave_profile_handlers.def` composes selectors from `cave_handler_policies.def`; manually bump `abiVersion` because public biome enums import these IDs | Generated C++/JS descriptors own selection, terrain, flora, hazards, structure-material constraints, policy selectors, and ABI enum imports | `node scripts/run-tests.mjs --only biome-generator`, `node scripts/run-tests.mjs --only biomes`, and the relevant prefetch/seam suite; include `--only worldgen-version` when output changes |
@@ -446,7 +433,7 @@ The extension path for each registry is explicit:
 | Generated feature/site family | One `worldgen_features.def` row plus its localized plan/query/overlap/stamp callbacks; add stable semantic enums in `abi.schema.json` only for a public identity | The row generates the family enum, callback declarations, dispatch, reach, composition, and context registration | `node scripts/run-tests.mjs --only world-context`, `node scripts/run-tests.mjs --only structures`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generation stage | One dense-ID `worldgen_stages.def` row in execution order plus a stage callback in `world_context_impl.inc`, or the shared generated-feature callback; insertion/reordering is a worldgen-version change | The row owns profile applicability, order, feature-stage selection, overscan, and dispatch | `node scripts/run-tests.mjs --only worldgen-quality`, `node scripts/run-tests.mjs --only worldgen-version`, and the affected domain suite |
 | Facility or ruin archetype | One dense-ID `worldgen_structure_archetypes.def` row plus its local stamp lambda in `worldgen_offworld.inc` or `worldgen_surface_structures.inc`; facility rows declare above-deck reach and ruin profile chances are increasing cumulative cutoffs | The row generates identity, selection metadata, buffer capacities, reach, and stamp dispatch; other structure families use `worldgen_features.def` | `node scripts/run-tests.mjs --only structures` and `node scripts/run-tests.mjs --only worldgen-version` |
-| Replicated or ABI field | Add the field to every representation that carries it in `abi.schema.json`: packed snapshot struct, object wire, and `glPlayerExt` are independent; `inventoryStack` alone derives from `inventorySlot` | The generator emits offsets, writers, codecs, and projectors for each declared representation; the owning subsystem supplies the value and presentation consumers read it | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only abi-snapshot-writers`, `node scripts/run-tests.mjs --only net-protocol`, and the relevant round-trip suite |
+| Snapshot or ABI field | Add the field to every packed representation that carries it in `abi.schema.json`; authority snapshots and `glPlayerExt` are independent | The generator emits offsets, writers, and snapshot codecs for each declared representation; the owning subsystem supplies the value and presentation consumers read it | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only abi-snapshot-writers`, and the relevant worker or presentation suite |
 
 After an authoritative edit, refresh and validate generated sources before the
 engine build:
@@ -499,7 +486,7 @@ changes generated cells or semantic biome output.
 
 `materials.schema.json` is the source of truth for IDs, class, movement kind,
 density, durability, flags, color, transparency, emission, and render animation.
-Existing numeric IDs are persistent save/network data and must not be renumbered.
+Existing numeric IDs are persistent world and replay data and must not be renumbered.
 
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
 materials share one component registry. Free bodies stamp their real material
@@ -643,8 +630,7 @@ accumulate catch-up debt.
 The offline worker transfers dropped items, cosmetic debris, and projectiles to
 the renderer as packed buffers at actor cadence. Nearby identical collectible materials
 coagulate into normal inventory-sized stacks, while independent debris flecks
-remain short-lived and visual-only. Multiplayer replicates only collectible
-items.
+remain short-lived and visual-only.
 
 Campaign deployments and `/game?sandbox` use the same explosive survival rules.
 Players spawn with a lower-cadence automatic blast gun whose swept,
@@ -748,7 +734,7 @@ rates. Glass transmits skylight and local light with mild attenuation.
 Jetpack exhaust, raised wards, and explosive or energy projectiles contribute a
 capped set of render-only light sources to the same terrain-aware flood as fire
 and lava. Their cell-quantized motion uses the existing throttled light solve, so
-they illuminate walls and both layers without entering saves, networking, or the
+they illuminate walls and both layers without entering authority state or the
 simulation checksum.
 
 Bare hands, mining tools, and placeable blocks show the selected square footprint
@@ -756,7 +742,7 @@ at the pointer. Equipping a weapon hides both the footprint and the legacy
 diamond tool preview so the weapon aim remains visually unambiguous.
 
 The render-only day/night cycle drives the sky and base skylight but not
-simulation or network state. Creative mode can scrub and hold the cycle. The
+authority simulation state. Creative mode can scrub and hold the cycle. The
 construction-time weather profile composes its sky treatment and skylight scale
 over that sample; rain advances on a separate 50 ms visual bucket, frozen by
 reduced-motion and test-pause policy. Its water is generated by the deterministic
@@ -777,36 +763,6 @@ Transporter transitions and successful rescue-beam tags share a distinct energy
 cue.
 Audio asset provenance is in
 `audio/assets/README.md`.
-
-## Multiplayer
-
-Run the authoritative server with:
-
-```sh
-npm run sand:server
-```
-
-Then connect a survival client to `ws://localhost:5191`. Relevant modules:
-
-- `net/protocol.js`: validated wire messages and builders.
-- `net/server/host.js`: transport-independent player/input authority.
-- `net/server/stateSync.js`: actor, inventory, and item replication.
-- `net/server/worldEncode.js` and `net/worldSync.js`: full/diff world transfer.
-- `net/server/worldWindow.js`: shared streamed authority window.
-- `net/gameNet.js`: browser transport and replica application.
-- `net/predict.js`: local-player prediction and reconciliation.
-
-The server keeps one chunk-aligned window around the connected player group.
-Widely separated players expand it, subject to protocol dimension and
-eight-million-cell limits. A window move sends an offset-aware full snapshot;
-ordinary ticks send diffs and hashes. Clients request resynchronization after a
-hash mismatch.
-
-The host binds identity to the socket, validates every intent after decoding,
-rate-limits input, clamps aim, and never accepts client world edits.
-
-`scripts/dev-multiplayer-server.mjs` is a relay used only by relay tests and
-experiments; it is not the authoritative game server.
 
 ## Tests and benchmarks
 

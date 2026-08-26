@@ -375,7 +375,8 @@ async function runCase(testCase, caseIndex) {
     for (let x = 0; x < COLS; x++) sourceSurfaces[x] = source.worldSurfaceAt(sourceOffsetX + x);
     const snapshot = source.serializeWorld();
     engine._resetTopology();
-    engine.applyWorld(snapshot);
+    engine.applyWorldMirror(snapshot, sourceOffsetX, source.getWorldOffsetY());
+    engine.syncComponents();
   }
   const center = Math.round(COLS / 2 + testCase.centerOffset);
   const left = Math.round(center - testCase.width / 2);

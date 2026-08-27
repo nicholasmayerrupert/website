@@ -164,7 +164,8 @@ Mission, planet, phase, objective-type, and objective-state values come from
 | `E` | Open inventory and crafting |
 | `Q` | Choose placement/mining footprint |
 | `+`, `-`, `0` | Zoom in / out / reset |
-| `L` | Pause and open the deterministic replay copy/paste panel (local sessions) |
+| `L` | Pause and open the authority-log copy/paste panel (local sessions) |
+| `R` | Capture this session and open buffered replay immediately |
 
 The survival HUD exposes the player’s 100 health, rechargeable jetpack fuel, and
 200-point directional ward. Hold `F` while aiming to raise the ward across the

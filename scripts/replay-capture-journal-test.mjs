@@ -204,6 +204,11 @@ class FakeElement {
     this.children.push(child);
     return child;
   }
+  replaceChildren(...children) {
+    for (const child of this.children) child.parentElement = null;
+    this.children = [];
+    this.append(...children);
+  }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name); }
   addEventListener(type, listener) {
@@ -251,16 +256,19 @@ globalThis.document = {
   createElement: (tagName) => new FakeElement(tagName),
   execCommand: () => true,
 };
+globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 const container = new FakeElement('div');
 const staleAuthority = deferred();
 const authorityA = deferred();
 const authorityB = deferred();
-const playback = deferred();
+const authorityC = deferred();
 let playbackRequest = null;
 const captures = [
   { fallback, verified: staleAuthority.promise },
   { fallback, verified: authorityA.promise },
   { fallback, verified: authorityB.promise },
+  { fallback, verified: authorityC.promise },
 ];
 const ctx = {
   container,
@@ -275,9 +283,8 @@ const ctx = {
   worldWorker: {
     captureReplay: () => captures.shift(),
     config: () => {},
-    runReplay: (capsule, onProgress, options) => {
-      playbackRequest = { capsule, onProgress, options };
-      return playback.promise;
+    startBufferedReplay: async (capsule) => {
+      playbackRequest = { capsule };
     },
   },
 };
@@ -325,15 +332,6 @@ await eventually(() => button('Run replay').disabled === false);
 assert.notEqual(textarea.value, fallbackText);
 assert.match(status.textContent, /authority's final state/);
 
-button('Run replay').dispatchEvent({ type: 'click' });
-await eventually(() => overlay.hidden === true && playbackRequest !== null);
-assert.equal(playbackRequest.options.playback, true);
-assert.equal(playbackRequest.capsule.final.gridHash, verified.final.gridHash);
-playbackRequest.onProgress(1, verified.turns);
-playback.resolve({ matched: true, expected: verified.final, actual: verified.final });
-await eventually(() => overlay.hidden === false);
-assert.match(status.textContent, /Replay verified:/);
-
 button('Resume & close').dispatchEvent({ type: 'click' });
 await panel.open();
 textarea.value = 'user-edited capture';
@@ -342,5 +340,15 @@ await eventually(() => button('Run replay').disabled === false);
 assert.equal(textarea.value, 'user-edited capture');
 assert.match(status.textContent, /not replaced/);
 panel.destroy();
+
+const replayContainer = new FakeElement('div');
+const replayPanel = createReplayPanel({ ...ctx, container: replayContainer });
+const replayOverlay = replayContainer.children[0];
+authorityC.resolve(verified);
+await replayPanel.startReplay();
+await eventually(() => playbackRequest?.capsule?.final?.gridHash === verified.final.gridHash);
+assert.equal(replayOverlay.hidden, true);
+assert.match(replayOverlay.children[0].children[1].textContent, /Buffered replay opened/);
+replayPanel.destroy();
 
 console.log('replay capture journal preserves an immediately copyable exact prefix');

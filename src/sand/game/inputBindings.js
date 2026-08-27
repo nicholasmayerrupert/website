@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onReplay, onReplayPlayback, onReplayStep }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onLogs, onReplay, onReplayPlayback, onReplayStep }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button/key state is edge-owned: down latches, up/cancel/blur clears.
@@ -194,22 +194,23 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     const isQ = key === 'q' || e.code === 'KeyQ';
     // OS key-repeat must not flip latched menus. Movement and zoom still use
     // the extra keydowns as no-ops or as step repeats.
-    if (e.repeat && (key === 'e' || isQ || key === 'l')) return;
-    // Creative camera movement, selection restore, and replay capture should
+    if (e.repeat && (key === 'e' || isQ || key === 'l' || key === 'r')) return;
+    // Creative camera movement, selection restore, logs, and replay should
     // survive focus moving to palette buttons and should not require a priming
     // click. Survival and the remaining shortcuts stay scoped to explicit
     // surface focus.
     const visibleCreativeShortcut = !ctx.playMode && surfaceIsVisible() &&
       (key === 'w' || key === 'a' || key === 's' || key === 'd'
         || isQ);
-    const visibleReplayKey = key === 'l' && surfaceIsVisible() && !ctx.playMode;
+    const visibleReplayKey = (key === 'l' || key === 'r') && surfaceIsVisible() && !ctx.playMode;
     const bufferedReplayKey = surfaceIsVisible()
       && ctx.worldWorker?.state?.replayMode === 'buffered';
     const visibleReplayPlaybackKey = key === ' ' && bufferedReplayKey;
     const visibleReplayStepKey = (key === ',' || key === '.') && bufferedReplayKey;
     if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey
         && !visibleReplayPlaybackKey && !visibleReplayStepKey) return;
-    if (key === 'l') { onReplay?.(); e.preventDefault(); return; }
+    if (key === 'l') { onLogs?.(); e.preventDefault(); return; }
+    if (key === 'r') { onReplay?.(); e.preventDefault(); return; }
     if (visibleReplayPlaybackKey) {
       if (!keepsNativeSpace(e) && !e.repeat) onReplayPlayback?.();
       if (!keepsNativeSpace(e)) e.preventDefault();

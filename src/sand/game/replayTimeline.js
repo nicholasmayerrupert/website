@@ -185,7 +185,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
       else if (state.replayBuffering)
         status.textContent = `Processing ${formatTime(bufferedTurn)} / ${formatTime(turns)}...`;
       else if (state.replayBufferLimitReached)
-        status.textContent = 'Browser replay storage is full; uncached gaps require deterministic reconstruction.';
+        status.textContent = 'Browser replay storage is full; some earlier turns are no longer cached.';
       else if (state.replayBufferComplete)
         status.textContent = state.replayMatched === false
           ? 'Replay processing completed with a verification difference.'

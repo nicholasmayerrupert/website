@@ -245,17 +245,14 @@ instead of a new full frame. The bottom timeline plays at 60 turns per second,
 highlights every cached range (including disjoint ranges), shows the exact tick,
 toggles play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs
 cached frames from their segment keyframe while the slider is dragged. The worker
-keeps thirty seconds of visual read-ahead beyond the presented turn. Every encoded
-segment is retained in a session-scoped IndexedDB store; the 128 MiB encoded RAM
+simulates the capsule left to right as fast as it can, independent of the
+playhead, and stores every encoded segment in a session-scoped IndexedDB store.
+Playback reads those cached frames at 60 turns per second. The 128 MiB encoded RAM
 tier demotes least-recently-used segments to that store instead of discarding
 their timeline ranges. Decoded segments use a 24 MiB working-set target while
 retaining the segment in use. Generated turns load from either tier without
-re-simulating.
-Seeking a turn that has not been generated runs the unpaced authority only to
-that target in 100 ms worker slices and presents the target frame rather than
-pacing catch-up through browser frame acknowledgements. An older uncached target
-requires a deterministic restart from turn zero only when persistent browser
-storage is unavailable or has rejected additional segments.
+re-simulating. Seeking never rewinds the authority; an uncached future turn waits
+for the left-to-right builder, and an already-generated turn loads from cache.
 `Resume here` rebuilds the complete authority at the selected turn as fast as
 the worker can step, without pacing or presenting intermediate frames, then
 truncates the replay recipe there, clears held input, and continues live as a
@@ -351,7 +348,7 @@ body bounds faintly visible for context.
 - `game/createSandGame.js`: browser runtime and presentation loop.
 - `worker/`: authority worker, main-thread replica client, prediction, and
   coordinate reconciliation.
-- `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, and the `L` copy/paste UI.
+- `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, the `L` logs copy/paste UI, and `R` to start buffered replay immediately.
 - `embed/`: the Web Component and framework-free UI.
 - `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.
 - `campaign/missions.js`: campaign metadata and bounded loadout construction.

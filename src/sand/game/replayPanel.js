@@ -28,7 +28,7 @@ export function createReplayPanel(ctx) {
   overlay.hidden = true;
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', 'Deterministic replay capsule');
+  overlay.setAttribute('aria-label', 'Authority logs');
   overlay.style.cssText = [
     'position:absolute', 'inset:12px', 'z-index:100', 'display:none',
     'place-items:center', 'background:rgba(7,9,12,.82)', 'padding:12px',
@@ -45,7 +45,7 @@ export function createReplayPanel(ctx) {
   ].join(';');
 
   const title = document.createElement('div');
-  title.textContent = 'DETERMINISTIC REPLAY';
+  title.textContent = 'LOGS';
   title.style.cssText = 'color:#f0d465;font:900 13px/1 system-ui,sans-serif;letter-spacing:.16em';
   const status = document.createElement('div');
   status.textContent = 'Collecting the authority log…';
@@ -184,6 +184,64 @@ export function createReplayPanel(ctx) {
     if (resume) ctx.worldWorker?.config({ paused: false });
     ctx.container.focus({ preventScroll: true });
   };
+  const runCapsule = async (capsule) => {
+    status.textContent = `Preparing ${capsule.turns.toLocaleString()} replay turns…`;
+    setVisible(false);
+    ctx.container.focus({ preventScroll: true });
+    await ctx.worldWorker.startBufferedReplay(capsule);
+    timeline.show();
+    status.style.color = '#b9e6b1';
+    status.textContent = 'Buffered replay opened.';
+  };
+  const playFromText = async () => {
+    if (busy) return;
+    openGeneration++;
+    setBusy(true);
+    status.style.color = '#cbd2d9';
+    status.textContent = 'Decoding replay capsule…';
+    let panelHiddenForPlayback = false;
+    try {
+      const capsule = await decodeReplayCapsule(textarea.value);
+      panelHiddenForPlayback = true;
+      await runCapsule(capsule);
+    } catch (error) {
+      if (panelHiddenForPlayback) setVisible(true);
+      showError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const startReplay = async () => {
+    if (timeline.visible) return;
+    if (!overlay.hidden) {
+      if (textarea.value.trim()) await playFromText();
+      return;
+    }
+    if (busy) return;
+    const generation = ++openGeneration;
+    setBusy(true);
+    status.style.color = '#cbd2d9';
+    status.textContent = 'Capturing this session for replay…';
+    try {
+      if (!ctx.worldWorker) throw new Error('The local simulation is not ready yet.');
+      const capture = ctx.worldWorker.captureReplay(currentView());
+      let capsule;
+      try {
+        capsule = await capture.verified;
+      } catch {
+        capsule = (await materializeReplayFallback(capture)).capsule;
+      }
+      if (generation !== openGeneration) return;
+      await runCapsule(capsule);
+    } catch (error) {
+      if (generation === openGeneration) {
+        setVisible(true);
+        showError(error);
+      }
+    } finally {
+      if (generation === openGeneration) setBusy(false);
+    }
+  };
 
   copy.addEventListener('click', async () => {
     try {
@@ -197,45 +255,28 @@ export function createReplayPanel(ctx) {
       status.textContent = 'Replay capsule selected and copied.';
     }
   });
-  replay.addEventListener('click', async () => {
-    if (busy) return;
-    openGeneration++;
-    setBusy(true);
-    status.style.color = '#cbd2d9';
-    status.textContent = 'Decoding replay capsule…';
-    let panelHiddenForPlayback = false;
-    try {
-      const capsule = await decodeReplayCapsule(textarea.value);
-      status.textContent = `Preparing ${capsule.turns.toLocaleString()} replay turns…`;
-      setVisible(false);
-      panelHiddenForPlayback = true;
-      ctx.container.focus({ preventScroll: true });
-      await ctx.worldWorker.startBufferedReplay(capsule);
-      timeline.show();
-      panelHiddenForPlayback = false;
-      status.style.color = '#b9e6b1';
-      status.textContent = 'Buffered replay opened.';
-    } catch (error) {
-      if (panelHiddenForPlayback) setVisible(true);
-      showError(error);
-    } finally {
-      setBusy(false);
-    }
-  });
+  replay.addEventListener('click', () => { void playFromText(); });
   inspect.addEventListener('click', () => hide(false));
   close.addEventListener('click', () => hide(true));
   overlay.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' || (
-      event.key.toLowerCase() === 'l' && !event.ctrlKey && !event.metaKey && !event.altKey
-    )) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (event.key === 'Escape' || key === 'l') {
       event.preventDefault();
       event.stopPropagation();
       hide(true);
+      return;
+    }
+    if (key === 'r' && event.target !== textarea) {
+      event.preventDefault();
+      event.stopPropagation();
+      void startReplay();
     }
   });
 
   return {
     open,
+    startReplay,
     togglePlayback: () => timeline.togglePlayback(),
     stepPlayback: (delta) => timeline.stepPlayback(delta),
     destroy() {

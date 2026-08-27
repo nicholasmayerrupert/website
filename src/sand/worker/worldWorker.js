@@ -97,9 +97,8 @@ let replayResumeRequestId = 0;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
-const REPLAY_VISUAL_READ_AHEAD_TURNS = 30 * 60;
 const REPLAY_RESUME_SLICE_MS = 100;
-const REPLAY_SEEK_SLICE_MS = 100;
+const REPLAY_BUILD_SLICE_MS = 100;
 const MAX_REPLAY_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
 const MAX_REPLAY_ACTIVE_SEGMENT_BYTES = 8 * 1024 * 1024;
 const MAX_REPLAY_DECODED_CACHE_BYTES = 24 * 1024 * 1024;
@@ -1481,22 +1480,21 @@ async function runReplayCapsule(requestId, value, { playback = false } = {}) {
 function resumeReplayBufferPresentation(session) {
   if (replayBufferSession !== session || session.presentationPending > 0
       || session.awaitingFrame !== null) return;
-  if (session.pendingSeek !== null)
-    ensureReplayBuildForTarget(session, session.pendingSeek);
-  else if (session.playing && !session.playTimer)
+  if (session.pendingSeek !== null) {
+    const target = session.pendingSeek;
+    if (activeReplayFrames(session, target) || session.cache.getByTurn(target)) {
+      void postReplayVisualFrame(
+        session, target, true, session.seekGeneration,
+      ).catch((error) => failReplayBuffer(session, error));
+    }
+  } else if (session.playing && !session.playTimer) {
     scheduleReplayBufferPlayback(session);
-}
-
-function replayBuildCeiling(session) {
-  if (session.pendingSeek !== null) return session.pendingSeek;
-  return Math.min(
-    session.capsule.turns,
-    Math.max(0, session.playhead) + REPLAY_VISUAL_READ_AHEAD_TURNS,
-  );
+  }
+  ensureReplayBuild(session);
 }
 
 function replayNeedsBuild(session) {
-  return session.turn < replayBuildCeiling(session);
+  return session.turn < session.capsule.turns;
 }
 
 function scheduleReplayBufferPlayback(session, resetDeadline = false) {
@@ -1517,7 +1515,7 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
     session.pendingSeek = target;
     session.buffering = true;
     postReplayBufferStatus(session);
-    ensureReplayBuildForTarget(session, target);
+    ensureReplayBuild(session);
     return;
   }
   session.buffering = false;
@@ -1526,6 +1524,7 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
   session.nextPlayAt += SIM_STEP_MS;
   session.playTimer = setTimeout(() => {
     session.playTimer = 0;
+    session.presentationDueAt = NaN;
     if (replayBufferSession !== session || !session.playing
         || session.awaitingFrame !== null) return;
     void postReplayVisualFrame(session, target, false).catch((error) => {
@@ -1546,84 +1545,41 @@ function failReplayBuffer(session, error) {
   });
 }
 
-async function restartReplayBuild(session) {
-  if (closing || replayBufferSession !== session || session.restartPromise)
-    return session.restartPromise;
-  const generation = ++session.buildGeneration;
-  clearTimeout(session.buildTimer);
-  session.buildTimer = 0;
-  session.restartPromise = (async () => {
-    if (session.activeSegment?.frames.length) await finalizeReplaySegment(session);
-    if (closing || replayBufferSession !== session || generation !== session.buildGeneration)
-      return false;
-    const initialized = await initializeAuthority(
-      { type: 'init', ...session.capsule.init },
-      { scheduleRuns: false, usePending: false },
-    );
-    if (!initialized || closing || replayBufferSession !== session
-        || generation !== session.buildGeneration)
-      return false;
-    session.eventIndex = 0;
-    session.gateIndex = 0;
-    session.turn = 0;
-    session.activeSegment = null;
-    applyReplayCursorEvents(session, 0);
-    awaitingAck = false;
-    captureReplayVisualFrame(session, 0, { forceFull: true });
-    session.buffering = session.pendingSeek !== null;
-    postReplayBufferStatus(session);
-    session.buildTimer = setTimeout(() => {
-      void buildReplayBufferSlice(session, generation);
-    }, 0);
-    return true;
-  })().catch((error) => {
-    failReplayBuffer(session, error);
-    return false;
-  }).finally(() => {
-    if (replayBufferSession === session) session.restartPromise = null;
-  });
-  return session.restartPromise;
-}
-
-function ensureReplayBuildForTarget(session, target) {
+function ensureReplayBuild(session) {
   if (closing || replayBufferSession !== session) return;
-  if (target <= session.turn || session.turn >= session.capsule.turns) {
-    void restartReplayBuild(session);
-    return;
-  }
-  if (!session.buildBusy && !session.buildTimer && replayNeedsBuild(session)) {
-    const generation = session.buildGeneration;
-    session.buildTimer = setTimeout(() => {
-      void buildReplayBufferSlice(session, generation);
-    }, 0);
-  }
+  if (session.buildBusy || session.buildTimer || !replayNeedsBuild(session)) return;
+  const generation = session.buildGeneration;
+  session.buildTimer = setTimeout(() => {
+    void buildReplayBufferSlice(session, generation);
+  }, 0);
 }
 
 async function buildReplayBufferSlice(session, generation = session.buildGeneration) {
   session.buildTimer = 0;
   if (closing || replayBufferSession !== session || generation !== session.buildGeneration
-      || session.buildBusy || session.restartPromise
-      || session.presentationPending > 0) return;
+      || session.buildBusy) return;
+  if (session.presentationPending > 0) {
+    session.buildTimer = setTimeout(() => {
+      void buildReplayBufferSlice(session, generation);
+    }, 0);
+    return;
+  }
   session.buildBusy = true;
   replayBufferCapturing = true;
   try {
-    // Replay building runs to the requested turn or fills read-ahead from the
-    // playhead. It yields while a browser frame is pending.
+    // Unpaced left-to-right capture through the capsule end. Yield only for a
+    // still-future 60 Hz present so playback stays on time.
     const started = performance.now();
-    const presentationScheduled = Number.isFinite(session.presentationDueAt);
-    const deadline = session.pendingSeek !== null
-      ? started + REPLAY_SEEK_SLICE_MS
-      : Math.min(
-        started + SIM_STEP_MS,
-        presentationScheduled ? session.presentationDueAt : Infinity,
-      );
+    const presentAt = session.presentationDueAt;
+    const presentDeadline = Number.isFinite(presentAt) && presentAt > started
+      ? presentAt : Infinity;
+    const deadline = Math.min(started + REPLAY_BUILD_SLICE_MS, presentDeadline);
     let advanced = false;
-    while (replayNeedsBuild(session)
-           && session.awaitingFrame === null) {
+    while (replayNeedsBuild(session)) {
       const now = performance.now();
-      if (now >= deadline
-          || ((presentationScheduled || advanced)
-            && now + session.buildTurnMs >= deadline))
+      if (now >= deadline) break;
+      if ((presentDeadline !== Infinity || advanced)
+          && now + session.buildTurnMs >= deadline)
         break;
       const turnStarted = now;
       if (session.activeSegment?.frames.length
@@ -1632,7 +1588,7 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
         await finalizeReplaySegment(session);
         if (closing || replayBufferSession !== session
             || generation !== session.buildGeneration) return;
-        if (session.awaitingFrame !== null || session.presentationPending > 0
+        if (session.presentationPending > 0
             || performance.now() + session.buildTurnMs >= deadline)
           break;
       }
@@ -1687,10 +1643,10 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
         && !session.playTimer) {
       scheduleReplayBufferPlayback(session);
     }
-    if (replayNeedsBuild(session)
-        && session.awaitingFrame === null && session.presentationPending === 0) {
+    if (replayNeedsBuild(session)) {
       const now = performance.now();
       const delay = Number.isFinite(session.presentationDueAt)
+        && session.presentationDueAt > now
         && now + session.buildTurnMs >= session.presentationDueAt
         ? Math.max(0, session.presentationDueAt - now) : 0;
       session.buildTimer = setTimeout(() => {
@@ -1772,7 +1728,6 @@ async function startReplayBuffer(requestId, value) {
     buildTimer: 0,
     buildBusy: false,
     buildGeneration: 1,
-    restartPromise: null,
     seekGeneration: 0,
     playTimer: 0,
     nextPlayAt: NaN,
@@ -1806,6 +1761,7 @@ function controlReplayBuffer(data) {
     session.presentationDueAt = NaN;
     if (!session.playing) clearTimeout(session.playTimer);
     else scheduleReplayBufferPlayback(session, true);
+    ensureReplayBuild(session);
     postReplayBufferStatus(session);
     return;
   }
@@ -1827,8 +1783,8 @@ function controlReplayBuffer(data) {
       ).catch((error) => failReplayBuffer(session, error));
     } else {
       session.buffering = true;
-      ensureReplayBuildForTarget(session, target);
     }
+    ensureReplayBuild(session);
     postReplayBufferStatus(session);
     return;
   }
@@ -1850,18 +1806,11 @@ function controlReplayBuffer(data) {
         ).catch((error) => failReplayBuffer(session, error));
       } else {
         session.buffering = true;
-        ensureReplayBuildForTarget(session, target);
       }
     } else if (session.playing) {
       scheduleReplayBufferPlayback(session, !Number.isFinite(session.nextPlayAt));
     }
-    if (!session.buildBusy && !session.buildTimer
-        && replayNeedsBuild(session)) {
-      const generation = session.buildGeneration;
-      session.buildTimer = setTimeout(() => {
-        void buildReplayBufferSlice(session, generation);
-      }, 0);
-    }
+    ensureReplayBuild(session);
     postReplayBufferStatus(session);
   }
 }
@@ -1948,7 +1897,6 @@ async function resumeReplayBuffer(requestId, value) {
   replayTransportSuppressed = true;
   replayRunning = true;
 
-  if (active.restartPromise) await active.restartPromise;
   if (active.activeSegment?.encodingPromise)
     await active.activeSegment.encodingPromise;
   void active.cache.clear();

@@ -309,7 +309,13 @@ function createDesktopSoundButton(root, game, showCreativeHints) {
     const hints = document.createElement('div');
     hints.className = 'sg-control-hints';
     hints.setAttribute('aria-label', 'Creative controls');
-    for (const [key, action] of [['WASD', 'MOVE'], ['LMB', 'PLACE FOREGROUND'], ['RMB', 'PLACE BACKGROUND']]) {
+    for (const [key, action] of [
+      ['WASD', 'MOVE'],
+      ['LMB', 'PLACE FOREGROUND'],
+      ['RMB', 'PLACE BACKGROUND'],
+      ['L', 'LOGS'],
+      ['R', 'REPLAY'],
+    ]) {
       const hint = document.createElement('span');
       hint.className = 'sg-control-hint';
       const keycap = document.createElement('kbd');

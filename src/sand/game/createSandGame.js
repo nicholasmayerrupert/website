@@ -346,7 +346,8 @@ export function createSandGame(container, opts = {}) {
     onToggleInventory,
     onToggleFootprintMenu,
     onEquipLastCreativeMaterial: equipLastCreativeSelection,
-    onReplay: replayPanel.open,
+    onLogs: replayPanel.open,
+    onReplay: replayPanel.startReplay,
     onReplayPlayback: replayPanel.togglePlayback,
     onReplayStep: replayPanel.stepPlayback,
   });

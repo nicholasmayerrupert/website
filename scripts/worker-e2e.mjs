@@ -174,7 +174,7 @@ try {
   await page.keyboard.press('l');
   await page.waitForFunction((tick) => {
     const root = document.querySelector('sand-game').shadowRoot;
-    return root.querySelector('[aria-label="Deterministic replay capsule"]')?.hidden
+    return root.querySelector('[aria-label="Authority logs"]')?.hidden
       && window.__sandPerf().worldTick > tick;
   }, firstReplayTick, { timeout: 30000 });
   check('L closes the focused replay panel and resumes the authority', true);
@@ -210,7 +210,11 @@ try {
   const uncachedSeekTurn = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     const tick = root.querySelector('[aria-label="Replay tick"]');
+    const perf = window.__sandPerf();
     root.__sandCatchupTicks = [];
+    root.__sandCatchupNeedsBuild = (perf.replayBuildTurn | 0) < Number(
+      root.querySelector('input[aria-label="Replay position"]')?.max,
+    );
     root.__sandCatchupObserver = new MutationObserver(() => {
       const match = tick?.textContent.match(/^Tick ([\d,]+)/);
       if (match) root.__sandCatchupTicks.push(Number(match[1].replaceAll(',', '')));
@@ -227,9 +231,13 @@ try {
   });
   check('the uncached replay target extends beyond the original processed run',
     uncachedSeekTurn === extendedReplayTurns);
-  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
-    .querySelector('[aria-label="Replay tick"]')?.textContent.includes('->'),
-  null, { timeout: 30000 });
+  const seekNeedsBuild = await page.evaluate(() =>
+    !!document.querySelector('sand-game').shadowRoot.__sandCatchupNeedsBuild);
+  if (seekNeedsBuild) {
+    await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Replay tick"]')?.textContent.includes('->'),
+    null, { timeout: 30000 });
+  }
   await page.waitForFunction((turn) => {
     const perf = window.__sandPerf();
     return perf.replayTurn === turn && !perf.replayBuffering;
@@ -245,11 +253,15 @@ try {
   const catchupTicks = await page.evaluate(() => {
     const root = document.querySelector('sand-game').shadowRoot;
     root.__sandCatchupObserver?.disconnect();
-    return root.__sandCatchupTicks || [];
+    return {
+      ticks: root.__sandCatchupTicks || [],
+      neededBuild: !!root.__sandCatchupNeedsBuild,
+    };
   });
   check('an uncached seek publishes live intermediate catch-up frames',
-    catchupTicks.some((turn) => turn > 0 && turn < uncachedSeekTurn),
-    catchupTicks.slice(0, 8).join(','));
+    !catchupTicks.neededBuild
+      || catchupTicks.ticks.some((turn) => turn > 0 && turn < uncachedSeekTurn),
+    catchupTicks.ticks.slice(0, 8).join(','));
   const uncachedResumeWorldTick = await page.evaluate(() => window.__sandPerf().mirrorWorldTick);
   await page.getByRole('button', { name: 'Resume here', exact: true }).click();
   await page.waitForFunction((turn) => {
@@ -568,7 +580,7 @@ try {
   }));
   check('desktop exposes block controls beside one enabled sound control',
     desktopAudioUi.buttons === 1 && desktopAudioUi.enabled &&
-      desktopAudioUi.hints.join('|') === 'WASDMOVE|LMBPLACE FOREGROUND|RMBPLACE BACKGROUND', desktopAudioUi.hints.join(', '));
+      desktopAudioUi.hints.join('|') === 'WASDMOVE|LMBPLACE FOREGROUND|RMBPLACE BACKGROUND|LLOGS|RREPLAY', desktopAudioUi.hints.join(', '));
   const countRaf = (ms) => page.evaluate((duration) => new Promise((resolve) => {
     let n = 0;
     const started = performance.now();

@@ -155,57 +155,74 @@ const cacheSegment = (start) => ({
   payload: new ArrayBuffer(0), compressed: false,
 });
 const forwardCache = new ReplaySegmentCache({ maxBytes: 50 });
-for (let turn = 0; turn < 5; turn++) forwardCache.add(cacheSegment(turn));
+for (let turn = 0; turn < 5; turn++) await forwardCache.add(cacheSegment(turn));
 assert.deepEqual(forwardCache.ranges(), [[0, 4]]);
-forwardCache.add(cacheSegment(5));
+await forwardCache.add(cacheSegment(5));
 assert.deepEqual(forwardCache.ranges(), [[1, 5]]);
 
 const islandCache = new ReplaySegmentCache({ maxBytes: 50 });
-for (let turn = 3; turn < 8; turn++) islandCache.add(cacheSegment(turn));
-islandCache.add(cacheSegment(0));
+for (let turn = 3; turn < 8; turn++) await islandCache.add(cacheSegment(turn));
+await islandCache.add(cacheSegment(0));
 assert.deepEqual(islandCache.ranges(), [[0, 0], [4, 7]]);
-islandCache.add(cacheSegment(1));
+await islandCache.add(cacheSegment(1));
 assert.deepEqual(islandCache.ranges(), [[0, 1], [5, 7]]);
 const complete = { ...cacheSegment(8), end: 9 };
 const partial = cacheSegment(8);
-islandCache.add(complete);
-islandCache.add(partial);
+await islandCache.add(complete);
+await islandCache.add(partial);
 assert.equal(islandCache.getByTurn(9), complete);
 
-const boundedCache = new ReplaySegmentCache({ maxBytes: 50 });
-boundedCache.add({ ...cacheSegment(0), end: 119, byteLength: 30 });
-boundedCache.add(
-  { ...cacheSegment(120), end: 239, byteLength: 30 },
-  { protectedStarts: [0], retainTurn: 0 },
-);
-assert.equal(boundedCache.bytes, 30);
-assert.deepEqual(boundedCache.ranges(), [[0, 119]]);
-boundedCache.add(
-  { ...cacheSegment(120), end: 239, byteLength: 30 },
-  { protectedStarts: [0], retainTurn: 120 },
-);
-assert.equal(boundedCache.bytes, 30);
-assert.deepEqual(boundedCache.ranges(), [[120, 239]]);
-
-const playheadCache = new ReplaySegmentCache({ maxBytes: 90 });
-for (let start = 0; start < 600; start += 120) {
-  playheadCache.add(
+const recentCache = new ReplaySegmentCache({ maxBytes: 90 });
+for (let start = 0; start < 600; start += 120)
+  await recentCache.add(
     { ...cacheSegment(start), end: start + 119, byteLength: 30 },
-    { protectedStarts: [0], retainTurn: 0 },
   );
+assert.deepEqual(recentCache.ranges(), [[240, 599]]);
+assert.equal(recentCache.getByTurn(119), null);
+assert.equal(recentCache.getByTurn(240)?.start, 240);
+
+class MemorySegmentStore {
+  constructor() {
+    this.segments = new Map();
+  }
+
+  async put(value) {
+    this.segments.set(value.start, {
+      ...value,
+      payload: value.payload.slice(0),
+    });
+  }
+
+  async get(start) {
+    const value = this.segments.get(start);
+    return value ? { ...value, payload: value.payload.slice(0) } : null;
+  }
+
+  async clear() {
+    this.segments.clear();
+  }
 }
-assert.deepEqual(playheadCache.ranges(), [[0, 359]]);
-playheadCache.add(
-  { ...cacheSegment(360), end: 479, byteLength: 30 },
-  { protectedStarts: [240], retainTurn: 240 },
-);
-assert.deepEqual(playheadCache.ranges(), [[120, 479]]);
-assert.equal(playheadCache.getByTurn(119), null);
-assert.equal(playheadCache.getByTurn(120)?.start, 120);
+
+const backingStore = new MemorySegmentStore();
+const persistentCache = new ReplaySegmentCache({ maxBytes: 30, backingStore });
+for (let turn = 0; turn < 6; turn++)
+  await persistentCache.add(cacheSegment(turn));
+assert.equal(persistentCache.bytes, 30);
+assert.equal(persistentCache.storedBytes, 60);
+assert.deepEqual(persistentCache.ranges(), [[0, 5]]);
+assert.equal(persistentCache.getByTurn(0)?.payload, null);
+const loaded = await persistentCache.loadByTurn(0);
+assert.equal(loaded.start, 0);
+assert.ok(loaded.payload instanceof ArrayBuffer);
+assert.equal(persistentCache.bytes, 30);
+assert.equal(persistentCache.getByTurn(0)?.payload, null);
+await persistentCache.clear();
+assert.deepEqual(persistentCache.ranges(), []);
+assert.equal(backingStore.segments.size, 0);
 
 const overlapCache = new ReplaySegmentCache({ maxBytes: 100 });
-overlapCache.add({ ...cacheSegment(0), end: 119 });
-overlapCache.add({ ...cacheSegment(60), end: 89 });
+await overlapCache.add({ ...cacheSegment(0), end: 119 });
+await overlapCache.add({ ...cacheSegment(60), end: 89 });
 assert.equal(overlapCache.getByTurn(100)?.start, 0);
 
 console.log('replay visual buffer checks passed');

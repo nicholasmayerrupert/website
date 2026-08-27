@@ -91,6 +91,8 @@ export function installDevHooks(ctx, {
       replaySeekTarget: workerState?.replaySeekTarget ?? null,
       replayCachedRanges: workerState?.replayCachedRanges || [],
       replayBufferBytes: workerState?.replayBufferBytes || 0,
+      replayStoredBytes: workerState?.replayStoredBytes || 0,
+      replayPersistentCache: !!workerState?.replayPersistentCache,
       replayBuffering: !!workerState?.replayBuffering,
       replayBufferComplete: !!workerState?.replayBufferComplete,
       replayBufferError: workerState?.replayBufferError || '',

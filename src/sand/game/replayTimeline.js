@@ -156,6 +156,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
       ? Math.max(0, Math.min(turns, state.replaySeekTarget | 0)) : null;
     const turn = dragging ? previewTurn : (seekTarget ?? presentedTurn);
     const bufferedTurn = Math.max(0, Math.min(turns, state.replayBufferedTurn | 0));
+    const buildTurn = Math.max(0, Math.min(turns, state.replayBuildTurn | 0));
     const position = Math.max(0, Math.min(1, turn / turns));
     range.max = String(turns);
     if (!dragging) range.value = String(turn);
@@ -163,12 +164,13 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     drawCachedRanges(state.replayCachedRanges || [], turns);
     thumb.style.left = `${position * 100}%`;
     const catchingUp = seekTarget !== null && presentedTurn !== seekTarget;
+    const catchupTurn = state.replayBuffering ? buildTurn : presentedTurn;
     catchup.style.display = catchingUp ? 'block' : 'none';
-    catchup.style.left = `${Math.max(0, Math.min(1, presentedTurn / turns)) * 100}%`;
+    catchup.style.left = `${Math.max(0, Math.min(1, catchupTurn / turns)) * 100}%`;
     current.textContent = formatTime(turn);
     total.textContent = formatTime(turns);
     ticks.textContent = catchingUp
-      ? `Tick ${presentedTurn.toLocaleString()} -> ${seekTarget.toLocaleString()} / ${turns.toLocaleString()}`
+      ? `Tick ${catchupTurn.toLocaleString()} -> ${seekTarget.toLocaleString()} / ${turns.toLocaleString()}`
       : `Tick ${turn.toLocaleString()} / ${turns.toLocaleString()}`;
     if (keyboardTurn === state.replayTurn) keyboardTurn = null;
     const paused = !!state.replayPaused;
@@ -179,9 +181,11 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
       if (state.replayBufferError)
         status.textContent = state.replayBufferError;
       else if (state.replayBuffering && seekTarget !== null)
-        status.textContent = `Catching up ${presentedTurn.toLocaleString()} / ${seekTarget.toLocaleString()} as fast as possible...`;
+        status.textContent = `Catching up ${buildTurn.toLocaleString()} / ${seekTarget.toLocaleString()} as fast as possible...`;
       else if (state.replayBuffering)
         status.textContent = `Processing ${formatTime(bufferedTurn)} / ${formatTime(turns)}...`;
+      else if (state.replayBufferLimitReached)
+        status.textContent = 'Browser replay storage is full; uncached gaps require deterministic reconstruction.';
       else if (state.replayBufferComplete)
         status.textContent = state.replayMatched === false
           ? 'Replay processing completed with a verification difference.'

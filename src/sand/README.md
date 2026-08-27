@@ -242,16 +242,20 @@ presentation deltas in independently compressed segments. Segments span at most
 two seconds and close sooner when their uncompressed payload becomes large.
 World shifts inside a segment store the shifted overlap plus its dirty bands
 instead of a new full frame. The bottom timeline plays at 60 turns per second,
-highlights every cached range (including disjoint ranges), shows the exact tick, toggles
-play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs cached
-frames from their segment keyframe while the slider is dragged. The worker keeps
-thirty seconds of visual read-ahead beyond the requested or presented turn. The
-encoded visual cache is bounded to 128 MiB and evicts segments farthest from that
-turn while prioritizing its active ranges. Decoded segments use a 24 MiB
-working-set target while retaining the segment in use.
-Seeking an uncached turn remains allowed: the unpaced authority continues toward
-a forward target or deterministically restarts from turn zero for an older
-target, publishing intermediate frames while it catches up.
+highlights every cached range (including disjoint ranges), shows the exact tick,
+toggles play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs
+cached frames from their segment keyframe while the slider is dragged. The worker
+keeps thirty seconds of visual read-ahead beyond the presented turn. Every encoded
+segment is retained in a session-scoped IndexedDB store; the 128 MiB encoded RAM
+tier demotes least-recently-used segments to that store instead of discarding
+their timeline ranges. Decoded segments use a 24 MiB working-set target while
+retaining the segment in use. Generated turns load from either tier without
+re-simulating.
+Seeking a turn that has not been generated runs the unpaced authority only to
+that target in 100 ms worker slices and presents the target frame rather than
+pacing catch-up through browser frame acknowledgements. An older uncached target
+requires a deterministic restart from turn zero only when persistent browser
+storage is unavailable or has rejected additional segments.
 `Resume here` rebuilds the complete authority at the selected turn as fast as
 the worker can step, without pacing or presenting intermediate frames, then
 truncates the replay recipe there, clears held input, and continues live as a

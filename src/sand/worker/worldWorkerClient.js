@@ -217,6 +217,8 @@ export function createWorldWorkerClient(ctx) {
         replayBufferLimitReached: !!data.limitReached,
         replayMatched: data.matched,
         replayBufferBytes: Math.max(0, Number(data.bufferBytes) || 0),
+        replayStoredBytes: Math.max(0, Number(data.storedBytes) || 0),
+        replayPersistentCache: !!data.persistentCache,
         replayBufferError: '',
       };
       return;
@@ -745,6 +747,8 @@ export function createWorldWorkerClient(ctx) {
         replayBuffering: true,
         replayBufferComplete: false,
         replayBufferLimitReached: false,
+        replayStoredBytes: 0,
+        replayPersistentCache: false,
         replayBufferError: '',
       };
       const requestId = ++replayRequestId;

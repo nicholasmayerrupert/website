@@ -143,14 +143,159 @@ export async function decodeReplaySegment(segment) {
   return frames;
 }
 
+const REPLAY_SEGMENT_DATABASE = 'sand-replay-visual-cache-v1';
+const REPLAY_SEGMENT_STORE = 'segments';
+const REPLAY_SEGMENT_DATABASE_VERSION = 1;
+const REPLAY_SEGMENT_STALE_MS = 24 * 60 * 60 * 1000;
+let replaySegmentDatabasePromise = null;
+
+const transactionDone = (transaction) => new Promise((resolve, reject) => {
+  transaction.oncomplete = () => resolve();
+  transaction.onerror = () => reject(
+    transaction.error || new Error('Replay cache transaction failed.'),
+  );
+  transaction.onabort = () => reject(
+    transaction.error || new Error('Replay cache transaction was aborted.'),
+  );
+});
+
+function openReplaySegmentDatabase() {
+  if (replaySegmentDatabasePromise) return replaySegmentDatabasePromise;
+  const indexedDb = globalThis.indexedDB;
+  if (!indexedDb) return Promise.resolve(null);
+  const opening = new Promise((resolve, reject) => {
+    const request = indexedDb.open(
+      REPLAY_SEGMENT_DATABASE, REPLAY_SEGMENT_DATABASE_VERSION,
+    );
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      const store = database.createObjectStore(REPLAY_SEGMENT_STORE, {
+        keyPath: ['sessionId', 'start'],
+      });
+      store.createIndex('sessionId', 'sessionId', { unique: false });
+      store.createIndex('createdAt', 'createdAt', { unique: false });
+    };
+    request.onerror = () => reject(
+      request.error || new Error('Replay cache database could not be opened.'),
+    );
+    request.onsuccess = () => {
+      const database = request.result;
+      database.onversionchange = () => database.close();
+      resolve(database);
+    };
+  });
+  replaySegmentDatabasePromise = opening.catch((error) => {
+    replaySegmentDatabasePromise = null;
+    throw error;
+  });
+  return replaySegmentDatabasePromise;
+}
+
+async function deleteReplaySegmentRecords(database, indexName, range) {
+  const transaction = database.transaction(REPLAY_SEGMENT_STORE, 'readwrite');
+  const request = transaction.objectStore(REPLAY_SEGMENT_STORE)
+    .index(indexName).openCursor(range);
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    cursor.delete();
+    cursor.continue();
+  };
+  await transactionDone(transaction);
+}
+
+class IndexedDbReplaySegmentStore {
+  constructor(database, sessionId, createdAt) {
+    this.database = database;
+    this.sessionId = sessionId;
+    this.createdAt = createdAt;
+  }
+
+  async put(segment) {
+    const transaction = this.database.transaction(REPLAY_SEGMENT_STORE, 'readwrite');
+    transaction.objectStore(REPLAY_SEGMENT_STORE).put({
+      sessionId: this.sessionId,
+      createdAt: this.createdAt,
+      start: segment.start,
+      end: segment.end,
+      compressed: !!segment.compressed,
+      byteLength: segment.byteLength,
+      rawByteLength: segment.rawByteLength,
+      payload: segment.payload,
+    });
+    await transactionDone(transaction);
+  }
+
+  get(start) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.database.transaction(REPLAY_SEGMENT_STORE, 'readonly');
+      const request = transaction.objectStore(REPLAY_SEGMENT_STORE)
+        .get([this.sessionId, start]);
+      request.onerror = () => reject(
+        request.error || new Error('Replay cache segment could not be read.'),
+      );
+      request.onsuccess = () => {
+        const record = request.result;
+        resolve(record ? {
+          start: record.start,
+          end: record.end,
+          compressed: !!record.compressed,
+          byteLength: record.byteLength,
+          rawByteLength: record.rawByteLength,
+          payload: record.payload,
+        } : null);
+      };
+    });
+  }
+
+  clear() {
+    const keyRange = globalThis.IDBKeyRange;
+    if (!keyRange) return Promise.resolve();
+    return deleteReplaySegmentRecords(
+      this.database, 'sessionId', keyRange.only(this.sessionId),
+    );
+  }
+}
+
+function replaySegmentSessionId() {
+  if (typeof globalThis.crypto?.randomUUID === 'function')
+    return globalThis.crypto.randomUUID();
+  const words = new Uint32Array(4);
+  globalThis.crypto.getRandomValues(words);
+  return [...words].map((word) => word.toString(16).padStart(8, '0')).join('');
+}
+
+export async function createReplaySegmentBackingStore() {
+  try {
+    const database = await openReplaySegmentDatabase();
+    const keyRange = globalThis.IDBKeyRange;
+    if (!database || !keyRange) return null;
+    const createdAt = Date.now();
+    await deleteReplaySegmentRecords(
+      database, 'createdAt',
+      keyRange.upperBound(createdAt - REPLAY_SEGMENT_STALE_MS, true),
+    );
+    return new IndexedDbReplaySegmentStore(
+      database, replaySegmentSessionId(), createdAt,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export class ReplaySegmentCache {
-  constructor({ maxBytes }) {
+  constructor({ maxBytes, backingStore = null }) {
     this.maxBytes = Math.max(1, Number(maxBytes) || 1);
+    this.backingStore = backingStore;
+    this.spillWritable = !!backingStore;
+    this.limitReached = false;
     this.bytes = 0;
+    this.storedBytes = 0;
     this.clock = 0;
     this.segments = new Map();
     this.starts = [];
     this.maxEnds = [];
+    this.loads = new Map();
   }
 
   #startIndex(start) {
@@ -168,13 +313,22 @@ export class ReplaySegmentCache {
     const segment = this.segments.get(start);
     if (!segment) return null;
     this.segments.delete(start);
-    this.bytes -= segment.byteLength;
+    if (segment.payload) this.bytes -= segment.byteLength;
+    this.storedBytes -= segment.byteLength;
     const index = this.#startIndex(start);
     if (this.starts[index] === start) {
       this.starts.splice(index, 1);
       this.#refreshMaxEnds(index);
     }
     return segment;
+  }
+
+  #demote(start) {
+    const segment = this.segments.get(start);
+    if (!segment?.payload) return false;
+    segment.payload = null;
+    this.bytes -= segment.byteLength;
+    return true;
   }
 
   #refreshMaxEnds(from) {
@@ -186,49 +340,44 @@ export class ReplaySegmentCache {
     this.maxEnds.length = this.starts.length;
   }
 
-  add(segment, options = {}) {
-    const protectedStarts = Array.isArray(options)
-      ? options : (options.protectedStarts || []);
-    const retainTurn = Array.isArray(options) ? null : options.retainTurn;
+  async add(segment) {
     const existing = this.segments.get(segment.start);
     if (existing && existing.end >= segment.end) {
       existing.lastAccess = ++this.clock;
-      return [];
+      return;
     }
-    const evicted = [];
-    if (existing) {
-      this.#delete(existing.start);
-      evicted.push(existing.start);
+
+    let persisted = false;
+    if (this.backingStore && this.spillWritable) {
+      try {
+        await this.backingStore.put(segment);
+        persisted = true;
+      } catch {
+        this.spillWritable = false;
+      }
     }
+
+    if (existing) this.#delete(existing.start);
     segment.lastAccess = ++this.clock;
+    segment.persisted = persisted;
     this.segments.set(segment.start, segment);
     const startIndex = this.#startIndex(segment.start);
     this.starts.splice(startIndex, 0, segment.start);
     this.#refreshMaxEnds(startIndex);
     this.bytes += segment.byteLength;
-    const protectedSet = new Set(protectedStarts);
-    if (Number.isFinite(retainTurn)
-        && retainTurn >= segment.start && retainTurn <= segment.end)
-      protectedSet.add(segment.start);
-    const distance = (candidate) => {
-      if (!Number.isFinite(retainTurn)) return 0;
-      if (retainTurn < candidate.start) return candidate.start - retainTurn;
-      if (retainTurn > candidate.end) return retainTurn - candidate.end;
-      return 0;
-    };
-    const evictionOrder = (a, b) => distance(b) - distance(a)
-      || a.lastAccess - b.lastAccess || a.start - b.start;
-    const all = [...this.segments.values()];
-    const candidates = [
-      ...all.filter((candidate) => !protectedSet.has(candidate.start)).sort(evictionOrder),
-      ...all.filter((candidate) => protectedSet.has(candidate.start)).sort(evictionOrder),
-    ];
+    this.storedBytes += segment.byteLength;
+
+    const candidates = [...this.segments.values()]
+      .filter((candidate) => candidate.payload)
+      .sort((a, b) => a.lastAccess - b.lastAccess || a.start - b.start);
     for (const victim of candidates) {
       if (this.bytes <= this.maxBytes) break;
-      this.#delete(victim.start);
-      evicted.push(victim.start);
+      if (victim.persisted) this.#demote(victim.start);
+      else {
+        this.#delete(victim.start);
+        this.limitReached = true;
+      }
     }
-    return evicted;
   }
 
   getByTurn(turn) {
@@ -242,7 +391,38 @@ export class ReplaySegmentCache {
     return null;
   }
 
-  hasTurn(turn) { return !!this.getByTurn(turn); }
+  async loadByTurn(turn) {
+    const indexed = this.getByTurn(turn);
+    if (!indexed || indexed.payload) return indexed;
+    if (!indexed.persisted || !this.backingStore) return null;
+    let pending = this.loads.get(indexed.start);
+    if (!pending) {
+      pending = this.backingStore.get(indexed.start).finally(() => {
+        this.loads.delete(indexed.start);
+      });
+      this.loads.set(indexed.start, pending);
+    }
+    let loaded;
+    try {
+      loaded = await pending;
+    } catch {
+      this.#delete(indexed.start);
+      this.limitReached = true;
+      return null;
+    }
+    const current = this.segments.get(indexed.start);
+    if (!current || current !== indexed) return null;
+    if (!loaded || loaded.start !== current.start || loaded.end !== current.end
+        || loaded.byteLength !== current.byteLength
+        || !(loaded.payload instanceof ArrayBuffer)) {
+      this.#delete(current.start);
+      this.limitReached = true;
+      return null;
+    }
+    current.lastAccess = ++this.clock;
+    return { ...loaded, lastAccess: current.lastAccess, persisted: true };
+  }
+
 
   ranges(extraRanges = []) {
     const cached = this.starts.map((start) => {
@@ -269,5 +449,19 @@ export class ReplaySegmentCache {
       else merged.push([start, end]);
     }
     return merged;
+  }
+
+  async clear() {
+    this.bytes = 0;
+    this.storedBytes = 0;
+    this.segments.clear();
+    this.starts.length = 0;
+    this.maxEnds.length = 0;
+    this.loads.clear();
+    try {
+      await this.backingStore?.clear();
+    } catch {
+      // Stale session records are pruned when a later replay cache opens.
+    }
   }
 }

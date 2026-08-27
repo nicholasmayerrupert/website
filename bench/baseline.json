@@ -61,10 +61,10 @@
       }
     }
   },
-  "checksum": 2106773719,
+  "checksum": 3478785747,
   "checksumStable": true,
   "checksums": [
-    2106773719
+    3478785747
   ],
   "worldOffsetX": -384,
   "worldOffsetY": -96,
@@ -440,7 +440,7 @@
     {
       "index": 1,
       "scenario": "pan-stream",
-      "checksum": 2106773719,
+      "checksum": 3478785747,
       "worldOffsetX": -384,
       "worldOffsetY": -96,
       "step": {
@@ -815,7 +815,7 @@
     {
       "index": 2,
       "scenario": "pan-stream",
-      "checksum": 2106773719,
+      "checksum": 3478785747,
       "worldOffsetX": -384,
       "worldOffsetY": -96,
       "step": {
@@ -1190,7 +1190,7 @@
     {
       "index": 3,
       "scenario": "pan-stream",
-      "checksum": 2106773719,
+      "checksum": 3478785747,
       "worldOffsetX": -384,
       "worldOffsetY": -96,
       "step": {

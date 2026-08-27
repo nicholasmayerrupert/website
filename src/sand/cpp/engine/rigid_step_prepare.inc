@@ -119,6 +119,15 @@
     Body* body = solverBodies[bi];
     LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
     freeze.frozen = !bodyFullyInsideLoadedWindow(body);
+    if (freeze.frozen && body->acceptedRasterPoseValid) {
+      body->px = body->acceptedWorldPx - E.L->worldOffsetX;
+      body->py = body->acceptedWorldPy - E.L->worldOffsetY;
+      body->angle = body->acceptedAngle;
+      body->cs = std::cos(body->angle);
+      body->sn = std::sin(body->angle);
+      if (body->jointRole == 1) syncJointFollower(body);
+      freeze.frozen = !bodyFullyInsideLoadedWindow(body);
+    }
     freeze.awake = body->awake;
     freeze.hadContact = body->hadContact;
     freeze.rasterMayOverlapSolid = body->rasterMayOverlapSolid;
@@ -131,8 +140,34 @@
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
     fluidStartPose[bi] = {body->px, body->py, body->angle};
+    bool stopAtWindow = false;
+    if (!freeze.frozen && body->awake) {
+      double gravity = E.scaledGravity(R_GRAVITY) * tickDt;
+      double nextPx = body->px + body->vx * tickDt;
+      double nextPy = body->py + (body->vy + gravity) * tickDt;
+      double nextAngle = body->angle + body->omega * tickDt;
+      stopAtWindow = !occupancyInsideLoadedWindow(
+        body, nextPx, nextPy, nextAngle);
+      if (!stopAtWindow && body->jointRole == 1 && body->jointPeer) {
+        double dx = nextPx - body->px;
+        double dy = nextPy - body->py;
+        double da = nextAngle - body->angle;
+        stopAtWindow = !occupancyInsideLoadedWindow(
+          body->jointPeer,
+          body->jointPeer->px + dx,
+          body->jointPeer->py + dy,
+          body->jointPeer->angle + da);
+      }
+    }
+    if (stopAtWindow) {
+      body->vx = 0;
+      body->vy = 0;
+      body->omega = 0;
+    }
+    body->loadedWindowParked = freeze.frozen;
     if (freeze.frozen) body->awake = false;
-    if (body->awake) body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
+    if (body->awake && !stopAtWindow)
+      body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
     predictedLiquidVy[bi] = body->vy;
     body->cs = std::cos(body->angle);
     body->sn = std::sin(body->angle);

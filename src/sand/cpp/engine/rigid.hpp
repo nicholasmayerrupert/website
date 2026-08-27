@@ -148,6 +148,8 @@ class RigidBodySystem {
   double resolveContactRolling(Contact& first, Contact* second);
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
+  bool occupancyInsideLoadedWindow(
+    const Body* b, double px, double py, double angle) const;
   bool bodyFullyInsideLoadedWindow(Body* b) const;
   void resetSleepTracking(Body* b);
   void wakeBody(Body* b);

@@ -182,6 +182,15 @@
         addSupport(b->px + contact.rbx, b->py + contact.rby,
                    contact.a->id, currentLayer);
     }
+    // A dual-layer cut island can sit still on other free debris. That is not
+    // a load-bearing anchor; keep the joint leader awake until it has terrain,
+    // loose-medium, or fluid rest.
+    if (b->jointRole == 1 && b->nPts > 800
+        && b->sleepSupports.empty() && !fluidOnlySleep[bi]
+        && !bodyHasLooseSupport(b)) {
+      b->sleepSupports.clear();
+      continue;
+    }
     b->awake = false;
     b->vx = 0;
     b->vy = 0;
@@ -198,5 +207,6 @@
     body->stillTicks = freeze.stillTicks;
     body->recentImpactSpeed = freeze.recentImpactSpeed;
     body->denseMicrostepTicks = freeze.denseMicrostepTicks;
+    body->loadedWindowParked = false;
     if (body->jointRole == 1) syncJointFollower(body);
   }

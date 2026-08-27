@@ -57,25 +57,52 @@ static double rigidContactOmega(const Body* body) {
   return body->kinematic ? body->kinematicOmega : body->omega;
 }
 
+bool RigidBodySystem::occupancyInsideLoadedWindow(
+    const Body* b, double px, double py, double angle) const {
+  if (b->w <= 0 || b->h <= 0) return true;
+  // Unclipped inverse raster: any occupied cell whose centre maps onto a
+  // sentinel or outside the loaded grid is unrepresentable. Collision-rect
+  // corners are not a freeze test. Centre sampling does not see a rotated
+  // square that hangs into a sentinel without covering that cell's centre.
+  double sn = std::sin(angle), cs = std::cos(angle);
+  double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5;
+  double ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
+  double minWX = 1e18, minWY = 1e18, maxWX = -1e18, maxWY = -1e18;
+  auto corner = [&](double lx, double ly) {
+    double wx = px + lx * cs - ly * sn;
+    double wy = py + lx * sn + ly * cs;
+    minWX = std::fmin(minWX, wx);
+    maxWX = std::fmax(maxWX, wx);
+    minWY = std::fmin(minWY, wy);
+    maxWY = std::fmax(maxWY, wy);
+  };
+  corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
+  int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX);
+  int y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
+  for (int wy = y0; wy <= y1; wy++) {
+    for (int wx = x0; wx <= x1; wx++) {
+      double dx = wx + 0.5 - px, dy = wy + 0.5 - py;
+      double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+      int i = (int)std::lround(lx - b->offsetX);
+      int j = (int)std::lround(ly - b->offsetY);
+      if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
+      if (!b->occ[(size_t)j * b->w + i]) continue;
+      if (wx < 1 || wx > E.cols - 2 || wy < 1 || wy > E.rows - 2)
+        return false;
+    }
+  }
+  return true;
+}
+
 bool RigidBodySystem::bodyFullyInsideLoadedWindow(Body* body) const {
   if (!E.L->infinite) return true;
-  double cs = std::cos(body->angle), sn = std::sin(body->angle);
-  constexpr double edgeTolerance = 1e-7;
-  for (const BodyCollisionRect& rect : body->collisionRects) {
-    double lx0 = body->offsetX + rect.x0 - 0.5;
-    double lx1 = body->offsetX + rect.x1 - 0.5;
-    double ly0 = body->offsetY + rect.y0 - 0.5;
-    double ly1 = body->offsetY + rect.y1 - 0.5;
-    auto inside = [&](double lx, double ly) {
-      double x = body->px + lx * cs - ly * sn;
-      double y = body->py + lx * sn + ly * cs;
-      return x >= -edgeTolerance && x <= E.cols + edgeTolerance
-          && y >= -edgeTolerance && y <= E.rows + edgeTolerance;
-    };
-    if (!inside(lx0, ly0) || !inside(lx1, ly0)
-        || !inside(lx1, ly1) || !inside(lx0, ly1))
-      return false;
-  }
+  if (!occupancyInsideLoadedWindow(body, body->px, body->py, body->angle))
+    return false;
+  if (body->jointRole == 1 && body->jointPeer
+      && !occupancyInsideLoadedWindow(
+        body->jointPeer, body->jointPeer->px, body->jointPeer->py,
+        body->jointPeer->angle))
+    return false;
   return true;
 }
 
@@ -3012,6 +3039,7 @@ void RigidBodySystem::resetSleepTracking(Body* b) {
 }
 void RigidBodySystem::wakeBody(Body* b) {
   if (b->jointRole == 2 && b->jointPeer) b = b->jointPeer;
+  if (b->loadedWindowParked) return;
   if (!bodyFullyInsideLoadedWindow(b)) return;
   b->awake = true;
   resetSleepTracking(b);
@@ -5033,9 +5061,11 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
         double sx = nx * direction, sy = ny * direction;
         bool bothSleeping = !A->awake && !B->awake;
         bool aSleepingMove = bothSleeping && !A->rasterAssignmentLocked
+          && !A->loadedWindowParked
           && (sy < -0.1
             || (std::fabs(sy) <= 0.1 && A->id > B->id));
         bool bSleepingMove = bothSleeping && !B->rasterAssignmentLocked
+          && !B->loadedWindowParked
           && (sy > 0.1
             || (std::fabs(sy) <= 0.1 && B->id > A->id));
         bool aMovable = A->jointRole != 2 && (A->awake || aSleepingMove)
@@ -5863,7 +5893,8 @@ void RigidBodySystem::moveBodies() {
   }
   // A sub-cell body can have its entire proposed raster rejected at a solid or
   // fluid boundary. Restore its last accepted pose and raster; deleting it here
-  // would make one-cell bodies such as seeds vanish on first contact.
+  // would make one-cell bodies such as seeds vanish on first contact. Tiny
+  // seeds sleep on that locked cell; larger shapes keep velocity and stay awake.
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
     int slot = moveBodySlotById.find(body->id)->second;
@@ -5872,12 +5903,14 @@ void RigidBodySystem::moveBodies() {
     int lockCell = body->rasterLockCell;
     int lockOwner = body->rasterLockOwner;
     body->px = pose.px; body->py = pose.py; body->angle = pose.angle;
-    body->vx = body->vy = body->omega = 0;
-    body->awake = false;
-    resetSleepTracking(body);
-    body->rasterAssignmentLocked = true;
-    body->rasterLockCell = lockCell;
-    body->rasterLockOwner = lockOwner;
+    if (body->nPts <= 4) {
+      body->vx = body->vy = body->omega = 0;
+      body->awake = false;
+      resetSleepTracking(body);
+      body->rasterAssignmentLocked = true;
+      body->rasterLockCell = lockCell;
+      body->rasterLockOwner = lockOwner;
+    }
     body->cs = std::cos(body->angle); body->sn = std::sin(body->angle);
     if (body->jointRole == 1) syncJointFollower(body);
     for (int k : movePreviousFootprints[slot]) {

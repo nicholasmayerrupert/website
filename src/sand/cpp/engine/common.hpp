@@ -292,6 +292,9 @@ struct Body {
   bool rasterAssignmentLocked = false;
   int rasterLockCell = -1;
   int rasterLockOwner = -2;
+  // True for this rigid step when the occupied raster is on a sentinel or
+  // would leave the loaded window. wakeBody must not undo that park.
+  bool loadedWindowParked = false;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit fuse-profile body counting down to detonation
   // The ignition front is a body-local point, so its next crater follows the

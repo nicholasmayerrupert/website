@@ -125,7 +125,9 @@ lives in `rigid_impl.inc`.
   rejected correction; terrain-contact and kinematic islands use the static
   world as that reference. Bodies already in the world rest
   band park there, as does the final whole-stamp fallback for a body with no
-  representable proposed cells. One-cell lattice aliasing is tolerated while
+  representable proposed cells. Tiny seeds (`nPts <= 4`) sleep on that locked
+  raster; larger shapes restore the last pose, keep their velocity, and stay
+  awake without a persistent lock. One-cell lattice aliasing is tolerated while
   bodies remain dynamic, but overlapping bodies cannot bake into static terrain.
 - Raster depenetration remains a last-resort fallback.
 
@@ -133,10 +135,15 @@ Contact damping lets stable bodies sleep, but angular damping is skipped while a
 contact is consistently converting a fall into a real topple. In the current
 world-bridge solver, a structure-scale body pivoting directly on terrain also
 stays outside angular rest damping until its perimeter speed enters the rest
-band. A body crossing an infinite world's loaded-window boundary stays fixed
-until streaming brings its complete occupied shape back into the window. Finite-
-world boundaries remain solid, and camera-driven streaming persists bodies
-through the chunk store.
+band. A body stays parked for a step when an unclipped inverse-raster of its occupied
+mask at the current pose maps any cell centre onto a loaded-window sentinel or
+outside the loaded grid. Collision-rect corners are not a freeze test. Centre
+sampling does not detect a rotated square that hangs into a sentinel without
+covering that cell's centre. A body whose gravity-advected next pose would raster
+onto a sentinel keeps the current pose and drops its velocity so contacts can
+still separate it. Contacts treat a parked body as static so a neighbor cannot be
+projected through it. Finite-world boundaries remain solid, and camera-driven
+streaming persists bodies through the chunk store.
 
 The ordinary sleep path uses tight instantaneous linear and angular velocity
 thresholds. A cold fallback also tracks the centre of mass and two shape-scale
@@ -145,13 +152,17 @@ member remains inside the two-cell pose envelope for 180 world ticks. Actor
 contact, spatial forces, fluid-only support, fast point motion, geometry changes,
 and explicit wakes reset the envelope. Brief raster-manifold gaps retain an
 already established probe; actual free fall leaves the speed band or pose
-envelope before the sleep interval. The whole island sleeps together, and its
-solved load-bearing anchors preserve diagonal and cross-layer support. For a
+envelope before the sleep interval. The whole island sleeps together only when a
+substantial member records a solved load-bearing anchor, loose-medium rest, or
+fluid rest. A dual-layer joint leader with more than 800 cells does not sleep
+from contact against another free body; it stays awake until it has terrain,
+loose-medium, or fluid rest. Tiny blast debris still sleep from pile contact.
+Those anchors preserve diagonal and cross-layer support. For a
 substantial ordinary body, a one-sided static terrain contact never becomes a
 sleep anchor and carries no persistent friction when the body has no upward or
 body contact, so a nearby wall cannot counter gravity after an impact ends.
-Opposing walls can still support a genuinely wedged body. Tiny blast debris and
-cross-layer joints retain their pile/contact policy. Component-backed bodies pass
+Opposing walls can still support a genuinely wedged body. Tiny blast debris
+retains its pile/contact policy. Component-backed bodies pass
 through the same stable-raster and support checks before baking.
 
 The exact inverse-raster footprint is cached for one pose and geometry revision.

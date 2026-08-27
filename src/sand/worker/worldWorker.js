@@ -99,6 +99,7 @@ const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
 const REPLAY_RESUME_SLICE_MS = 100;
 const REPLAY_BUILD_SLICE_MS = 100;
+const REPLAY_PLAY_BUILD_SLICE_MS = SIM_STEP_MS / 2;
 const MAX_REPLAY_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
 const MAX_REPLAY_ACTIVE_SEGMENT_BYTES = 8 * 1024 * 1024;
 const MAX_REPLAY_DECODED_CACHE_BYTES = 24 * 1024 * 1024;
@@ -1503,8 +1504,6 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
   session.presentationDueAt = NaN;
   if (closing || replayBufferSession !== session || !session.playing
       || session.awaitingFrame !== null) return;
-  if (resetDeadline || !Number.isFinite(session.nextPlayAt))
-    session.nextPlayAt = performance.now();
   const target = session.playhead + 1;
   if (target > session.capsule.turns) {
     session.playing = false;
@@ -1519,9 +1518,19 @@ function scheduleReplayBufferPlayback(session, resetDeadline = false) {
     return;
   }
   session.buffering = false;
-  session.presentationDueAt = session.nextPlayAt;
-  const wait = Math.max(0, session.presentationDueAt - performance.now());
-  session.nextPlayAt += SIM_STEP_MS;
+  const now = performance.now();
+  // One immediate present after a stall, then a fresh 60 Hz interval. Do not
+  // repay missed turns or playback races ahead once capture finishes.
+  let wait;
+  if (resetDeadline || !Number.isFinite(session.nextPlayAt) || now >= session.nextPlayAt) {
+    session.presentationDueAt = now;
+    session.nextPlayAt = now + SIM_STEP_MS;
+    wait = 0;
+  } else {
+    session.presentationDueAt = session.nextPlayAt;
+    wait = session.nextPlayAt - now;
+    session.nextPlayAt += SIM_STEP_MS;
+  }
   session.playTimer = setTimeout(() => {
     session.playTimer = 0;
     session.presentationDueAt = NaN;
@@ -1567,13 +1576,14 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
   session.buildBusy = true;
   replayBufferCapturing = true;
   try {
-    // Unpaced left-to-right capture through the capsule end. Yield only for a
-    // still-future 60 Hz present so playback stays on time.
+    // Unpaced left-to-right capture through the capsule end. Playing slices
+    // stay shorter than a display turn so the 60 Hz present timer can fire.
     const started = performance.now();
     const presentAt = session.presentationDueAt;
     const presentDeadline = Number.isFinite(presentAt) && presentAt > started
       ? presentAt : Infinity;
-    const deadline = Math.min(started + REPLAY_BUILD_SLICE_MS, presentDeadline);
+    const sliceMs = session.playing ? REPLAY_PLAY_BUILD_SLICE_MS : REPLAY_BUILD_SLICE_MS;
+    const deadline = Math.min(started + sliceMs, presentDeadline);
     let advanced = false;
     while (replayNeedsBuild(session)) {
       const now = performance.now();
@@ -1632,9 +1642,6 @@ async function buildReplayBufferSlice(session, generation = session.buildGenerat
       const targetAvailable = !!activeReplayFrames(session, target)
         || !!session.cache.getByTurn(target);
       if (targetAvailable) {
-        if (session.playing && target === session.playhead + 1
-            && Number.isFinite(session.nextPlayAt))
-          session.nextPlayAt += SIM_STEP_MS;
         void postReplayVisualFrame(
           session, target, true, session.seekGeneration,
         ).catch((error) => failReplayBuffer(session, error));

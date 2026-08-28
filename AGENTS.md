@@ -90,3 +90,6 @@ Replay capsules are input recipes, not world snapshots. Save paste to a file (`c
    what the code currently does. Do not include historical comparisons, prior
    behavior, migration notes, or phrases such as “25% deeper than its original
    boundary.”
+6. **Minimal confirmations** — Do not rerun all tests for a small div change. 
+   Do not verify things to an unreasonable extent. Be efficient with your 
+   double-checking.

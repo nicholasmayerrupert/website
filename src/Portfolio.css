@@ -119,7 +119,7 @@ body {
 
 .career-card--wide {
   grid-column: 1 / -1;
-  min-height: 420px;
+  min-height: 320px;
 }
 
 .career-card--light {
@@ -741,6 +741,10 @@ a.project-card:hover .project-card__art .project-art {
     border-radius: 28px;
   }
 
+  .career-card--wide {
+    min-height: 320px;
+  }
+
   .life-showcase {
     border-radius: 0;
   }
@@ -798,6 +802,10 @@ a.project-card:hover .project-card__art .project-art {
 @media (max-width: 480px) {
   .career-card {
     min-height: 365px;
+  }
+
+  .career-card--wide {
+    min-height: 300px;
   }
 
   .career-card__topline {

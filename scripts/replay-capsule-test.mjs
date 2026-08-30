@@ -4,6 +4,7 @@ import {
   encodeReplayCapsule,
   normalizeReplayInit,
   normalizeReplayMessage,
+  replayDayPhaseAt,
   REPLAY_FORMAT,
   REPLAY_PREFIX,
   REPLAY_VERSION,
@@ -36,7 +37,14 @@ const init = normalizeReplayInit({
 assert.ok(!('paused' in init));
 assert.ok(!('artificialDelayMs' in init));
 assert.equal(init.weatherId, WEATHER.RAIN);
+assert.equal(init.dayOverridden, false);
+assert.equal(init.dayPhase, 5 / 24);
 assert.equal(normalizeReplayInit({}).weatherId, WEATHER.CLEAR);
+assert.equal(normalizeReplayInit({}).dayOverridden, false);
+assert.equal(normalizeReplayInit({
+  dayPhase: 0.5,
+  dayOverridden: true,
+}).dayPhase, 0.5);
 assert.equal(normalizeReplayInit({
   planetId: 2,
   weatherId: WEATHER.RAIN,
@@ -95,6 +103,14 @@ const events = [
   },
   { tick: 24, message: normalizeReplayMessage({ type: 'config', tool: 3, drawMode: false }) },
   { tick: 24, message: normalizeReplayMessage({ type: 'weather', weatherId: WEATHER.RAIN }) },
+  {
+    tick: 24,
+    message: normalizeReplayMessage({ type: 'day-phase', phase: 0.5, overridden: true }),
+  },
+  {
+    tick: 25,
+    message: normalizeReplayMessage({ type: 'day-phase', phase: 0.2, overridden: false }),
+  },
   {
     tick: 25,
     message: normalizeReplayMessage({
@@ -179,6 +195,26 @@ assert.equal(normalizeReplayMessage({ type: 'config', paused: true, artificialDe
 assert.deepEqual(
   normalizeReplayMessage({ type: 'weather', weatherId: WEATHER.RAIN }),
   { type: 'weather', weatherId: WEATHER.RAIN },
+);
+assert.deepEqual(
+  normalizeReplayMessage({ type: 'day-phase', phase: 1.25, overridden: 1 }),
+  { type: 'day-phase', phase: 0.25, overridden: true },
+);
+assert.deepEqual(
+  replayDayPhaseAt(init, events, 0),
+  { phase: 5 / 24, overridden: false },
+);
+assert.deepEqual(
+  replayDayPhaseAt(init, events, 24),
+  { phase: 0.5, overridden: true },
+);
+assert.deepEqual(
+  replayDayPhaseAt(init, events, 25),
+  { phase: 0.2, overridden: false },
+);
+assert.deepEqual(
+  replayDayPhaseAt({ dayPhase: 0.62, dayOverridden: true }, [], 10),
+  { phase: 0.62, overridden: true },
 );
 assert.throws(
   () => validateReplayCapsule({

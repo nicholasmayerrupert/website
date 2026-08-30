@@ -152,6 +152,10 @@ const describeMessage = (message, survival) => {
     }
     case 'weather':
       return named(WEATHER_NAMES, message.weatherId, 'weather');
+    case 'day-phase':
+      return message.overridden
+        ? `hold ${Number(message.phase).toFixed(3)}`
+        : `auto ${Number(message.phase).toFixed(3)}`;
     case 'resize':
       return `${message.cols}x${message.rows}`;
     case 'test-paint-disc':
@@ -300,6 +304,9 @@ export function summarizeReplayCapsule(capsule, options = {}) {
       mode: survival ? 'survival' : 'creative',
       planet: PLANET_NAMES[init.planetId | 0] || `planet#${init.planetId | 0}`,
       weather: named(WEATHER_NAMES, init.weatherId, 'weather'),
+      time: init.dayOverridden
+        ? `hold ${Number(init.dayPhase).toFixed(3)}`
+        : 'auto',
       seed: init.worldSeed >>> 0,
       grid: `${init.cols}x${init.rows}`,
       tool: named(TOOL_NAMES, init.tool, 'tool'),
@@ -353,7 +360,7 @@ export function formatReplayInspectText(summary) {
   lines.push('');
   const init = summary.init;
   lines.push('## Init');
-  lines.push(`mode: ${init.mode}    planet: ${init.planet}    weather: ${init.weather}`);
+  lines.push(`mode: ${init.mode}    planet: ${init.planet}    weather: ${init.weather}    time: ${init.time}`);
   lines.push(`seed: ${init.seed} (${hex(init.seed)})    grid: ${init.grid}    gravity: ${init.gravity}`);
   lines.push(`tool: ${init.tool}    creative: ${init.creative}    mission: ${init.mission}`);
   if (init.loadout.length) lines.push(`loadout: ${init.loadout.join(', ')}`);

@@ -139,6 +139,7 @@ export function createGameLoop(ctx, {
   const setDayPhase = (phase) => {
     const p = normalizeDayPhase(phase);
     ctx.dayPhaseOverride = p;
+    recordDayPhase(true);
     return applyDayPhase(p, `forced:${p.toFixed(6)}`);
   };
 
@@ -146,7 +147,29 @@ export function createGameLoop(ctx, {
     ctx.dayPhaseOverride = null;
     const elapsed = Math.max(0, performance.now() - dayCycleStart);
     dayVisualBucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
+    const changed = applyDayPhase(dayPhaseAt(elapsed), dayVisualBucket);
+    recordDayPhase(false);
+    return changed;
+  };
+
+  const applyReplayDayPhase = ({ phase, overridden }) => {
+    if (overridden) {
+      const p = normalizeDayPhase(phase);
+      ctx.dayPhaseOverride = p;
+      return applyDayPhase(p, `forced:${p.toFixed(6)}`);
+    }
+    ctx.dayPhaseOverride = null;
+    const elapsed = Math.max(0, performance.now() - dayCycleStart);
+    dayVisualBucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
     return applyDayPhase(dayPhaseAt(elapsed), dayVisualBucket);
+  };
+
+  const recordDayPhase = (overridden) => {
+    if (ctx.worldWorker?.state?.replayPlaying) return;
+    ctx.worldWorker?.sendDayPhase?.({
+      phase: overridden ? ctx.dayPhaseOverride : ctx.dayNight.phase,
+      overridden,
+    });
   };
 
   // Rolling perf samples for window.__sandPerf / perfStats()
@@ -477,6 +500,7 @@ export function createGameLoop(ctx, {
     perfPeaks: () => ({ ...perfPeaks }),
     setDayPhase,
     clearDayPhase,
+    applyReplayDayPhase,
     getDayNight: () => ({ ...ctx.dayNight, cycleMs: DAY_CYCLE_MS, overridden: ctx.dayPhaseOverride !== null }),
     setWeatherOverride,
     getWeatherState: () => ({

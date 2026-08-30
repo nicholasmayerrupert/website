@@ -1,5 +1,6 @@
 import { ABI_FINGERPRINT, ABI_VERSION } from '../wasmBridge/abi.generated.js';
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
+import { DEFAULT_DAY_PHASE, normalizeDayPhase } from './dayNightCycle.js';
 import {
   DEFAULT_WEATHER_ID,
   isWeatherId,
@@ -15,6 +16,7 @@ const LEGACY_REPLAY_PREFIX = 'SAND-REPLAY-2:';
 
 export const REPLAY_EVENT_TYPES = new Set([
   'control', 'input', 'intent', 'edge', 'config', 'resize', 'weather',
+  'day-phase',
   'test-paint-disc', 'test-seed-reaction', 'test-creature-runtime',
   'test-natural-spawn', 'test-step-actors',
 ]);
@@ -38,6 +40,7 @@ const OP = Object.freeze({
   TEST_STEP_ACTORS: 10,
   // Appended so previously packed capsules keep decoding.
   WEATHER: 11,
+  DAY_PHASE: 12,
 });
 
 const INTENT = Object.freeze({
@@ -101,6 +104,8 @@ export function normalizeReplayInit(data) {
       data.weatherId ?? DEFAULT_WEATHER_ID,
       planetId,
     ),
+    dayPhase: normalizeDayPhase(data.dayPhase ?? DEFAULT_DAY_PHASE),
+    dayOverridden: !!data.dayOverridden,
     gravityScale: Number(data.gravityScale),
     missionId: data.missionId | 0,
     loadout,
@@ -195,6 +200,12 @@ export function normalizeReplayMessage(data, survival = false) {
     }
     case 'weather':
       return { type: 'weather', weatherId: data.weatherId | 0 };
+    case 'day-phase':
+      return {
+        type: 'day-phase',
+        phase: normalizeDayPhase(data.phase),
+        overridden: !!data.overridden,
+      };
     case 'test-paint-disc':
       return {
         type: data.type, material: data.material | 0, radius: data.radius | 0,
@@ -242,6 +253,7 @@ function validateReplayMessage(message, survival, version) {
       && normalized.cols * normalized.rows <= ENGINE_MAX_CELLS;
   }
   if (message.type === 'weather') return isWeatherId(normalized.weatherId);
+  if (message.type === 'day-phase') return Number.isFinite(normalized.phase);
   return true;
 }
 
@@ -275,6 +287,8 @@ export function validateReplayCapsule(value, options = {}) {
         || resolveWeatherIdForPlanet(init.weatherId, init.planetId | 0)
           !== init.weatherId))
     throw new Error('Replay weather is invalid for its planet.');
+  if (init.dayPhase !== undefined && !Number.isFinite(Number(init.dayPhase)))
+    throw new Error('Replay day phase is invalid.');
 
   const turns = value.turns;
   const events = value.events;
@@ -316,6 +330,21 @@ export function validateReplayCapsule(value, options = {}) {
     throw new Error('Replay final-state check is invalid.');
 
   return value;
+}
+
+export function replayDayPhaseAt(init, events, turn) {
+  let phase = normalizeDayPhase(init?.dayPhase ?? DEFAULT_DAY_PHASE);
+  let overridden = !!init?.dayOverridden;
+  const tick = Math.max(0, turn | 0);
+  if (Array.isArray(events)) {
+    for (const event of events) {
+      if (!event || (event.tick | 0) > tick) break;
+      if (event.message?.type !== 'day-phase') continue;
+      phase = normalizeDayPhase(event.message.phase);
+      overridden = !!event.message.overridden;
+    }
+  }
+  return { phase, overridden };
 }
 
 function packChangedState(message, previous, fields, booleanFields) {
@@ -439,6 +468,9 @@ function packReplayEvents(capsule) {
         break;
       case 'config': row.push(OP.CONFIG, ...packConfig(message)); break;
       case 'weather': row.push(OP.WEATHER, message.weatherId); break;
+      case 'day-phase':
+        row.push(OP.DAY_PHASE, message.phase, message.overridden ? 1 : 0);
+        break;
       case 'resize':
         row.push(
           OP.RESIZE, message.cols, message.rows,
@@ -497,6 +529,9 @@ function unpackReplayEvents(rows) {
         break;
       case OP.CONFIG: message = unpackConfig(row); break;
       case OP.WEATHER: message = { type: 'weather', weatherId: row[2] }; break;
+      case OP.DAY_PHASE:
+        message = { type: 'day-phase', phase: row[2], overridden: !!row[3] };
+        break;
       case OP.RESIZE:
         if (row.length !== 6) throw new Error('Replay resize payload is invalid.');
         message = { type: 'resize', cols: row[2], rows: row[3] };

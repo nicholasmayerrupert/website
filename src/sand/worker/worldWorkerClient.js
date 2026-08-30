@@ -6,7 +6,7 @@ import { mapActorPacketToOffset, translatePackedPositions } from './replicaCoord
 import { prepareMirrorShift } from './mirrorShift.js';
 import { createWorkerLivenessMonitor } from './workerLiveness.js';
 import { createReplayCaptureJournal } from './replayCaptureJournal.js';
-import { REPLAY_EVENT_TYPES } from '../game/replayCapsule.js';
+import { REPLAY_EVENT_TYPES, replayDayPhaseAt } from '../game/replayCapsule.js';
 import {
   DEFAULT_WEATHER_ID,
   resolveWeatherIdForPlanet,
@@ -74,6 +74,8 @@ export function createWorldWorkerClient(ctx) {
   let replayBufferOpen = false;
   let pendingReplayFrameTurn = null;
   const replayJournal = createReplayCaptureJournal();
+  let activeReplayCapsule = null;
+  let replayDayPhaseKey = '';
   const liveness = createWorkerLivenessMonitor();
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
@@ -87,6 +89,15 @@ export function createWorldWorkerClient(ctx) {
         && REPLAY_EVENT_TYPES.has(message.type)) return true;
     worker.postMessage(message);
     return true;
+  };
+  const syncReplayDayPhase = (capsule, turn) => {
+    if (!capsule) return;
+    activeReplayCapsule = capsule;
+    const next = replayDayPhaseAt(capsule.init, capsule.events, turn);
+    const key = `${next.overridden ? 1 : 0}:${next.phase}`;
+    if (key === replayDayPhaseKey) return;
+    replayDayPhaseKey = key;
+    ctx.fns.applyReplayDayPhase?.(next);
   };
   const isBufferedReplayFrame = (packet) => replayBufferOpen
     && Number.isInteger(packet?.replayFrameTurn);
@@ -221,6 +232,7 @@ export function createWorldWorkerClient(ctx) {
         replayPersistentCache: !!data.persistentCache,
         replayBufferError: '',
       };
+      syncReplayDayPhase(activeReplayCapsule, state.replayTurn);
       return;
     }
     if (data.type === 'replay-buffer-frame-ready') {
@@ -257,6 +269,7 @@ export function createWorldWorkerClient(ctx) {
         replayTurn: Math.max(0, data.turn | 0),
         replayTurns: Math.max(0, data.turns | 0),
       };
+      syncReplayDayPhase(activeReplayCapsule, state.replayTurn);
       replayRequests.get(data.requestId)?.onProgress?.(data.turn, data.turns);
       return;
     }
@@ -531,15 +544,19 @@ export function createWorldWorkerClient(ctx) {
       creatureNaturalSpawning = false,
       planetId = ctx.planetId,
       weatherId = ctx.weatherId,
+      dayPhase = ctx.dayNight?.phase,
+      dayOverridden = ctx.dayPhaseOverride !== null,
       gravityScale = ctx.gravityScale,
       missionId = ctx.missionId,
       loadout = ctx.missionLoadout,
     } = {}) {
       if (closed) return;
       replayMicroscopeOpen = false;
+      activeReplayCapsule = null;
+      replayDayPhaseKey = '';
       initOptions = {
         survival, creativeKind, creativeValue, tool, creatureNaturalSpawning,
-        planetId, weatherId, gravityScale, missionId, loadout,
+        planetId, weatherId, dayPhase, dayOverridden, gravityScale, missionId, loadout,
         ...runtimeConfig,
       };
       const message = {
@@ -677,6 +694,7 @@ export function createWorldWorkerClient(ctx) {
       ctx.weatherVisualKey = 0;
       if (Number.isFinite(capsule.init.gravityScale)) ctx.gravityScale = capsule.init.gravityScale;
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      syncReplayDayPhase(capsule, 0);
       state = {
         ...state,
         replayPlaying: playback,
@@ -732,6 +750,7 @@ export function createWorldWorkerClient(ctx) {
       if (Number.isFinite(capsule.init.gravityScale))
         ctx.gravityScale = capsule.init.gravityScale;
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      syncReplayDayPhase(capsule, 0);
       replayBufferOpen = true;
       state = {
         ...state,
@@ -847,6 +866,7 @@ export function createWorldWorkerClient(ctx) {
       if (Number.isFinite(capsule.init.gravityScale))
         ctx.gravityScale = capsule.init.gravityScale;
       ctx.fns.rebuildEngineForReplay?.(cols, rows);
+      syncReplayDayPhase(capsule, 0);
       replayMicroscopeOpen = true;
       const requestId = ++replayRequestId;
       return new Promise((resolve, reject) => {
@@ -868,6 +888,7 @@ export function createWorldWorkerClient(ctx) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
       if (!replayMicroscopeOpen)
         return Promise.reject(new Error('Open a replay before seeking its timeline.'));
+      syncReplayDayPhase(activeReplayCapsule, turn);
       pending = null;
       pendingDraft = null;
       pendingCreatures = null;
@@ -900,6 +921,10 @@ export function createWorldWorkerClient(ctx) {
     // Discrete auto-weather flip. Recorded by the replay journal like config.
     sendWeather(weatherId) {
       post({ type: 'weather', weatherId: weatherId | 0 });
+    },
+    // Creative time-slider hold / Auto. Presentation-only; the worker records it.
+    sendDayPhase({ phase, overridden }) {
+      post({ type: 'day-phase', phase, overridden: !!overridden });
     },
     resize(cols, rows, worldCenter) {
       if (closed) return;
@@ -1214,6 +1239,7 @@ export function createWorldWorkerClient(ctx) {
         const turn = pendingReplayFrameTurn;
         pendingReplayFrameTurn = null;
         state = { ...state, replayTurn: turn };
+        syncReplayDayPhase(activeReplayCapsule, turn);
         // The RAF still has camera, HUD, audio, and rendering work after this
         // mirror apply. Release replay building once that presentation task has
         // completed so background simulation cannot contend with the frame.

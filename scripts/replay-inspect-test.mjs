@@ -61,6 +61,7 @@ const events = [
   },
   { tick: 14, message: normalizeReplayMessage({ type: 'config', tool: 3 }) },
   { tick: 15, message: normalizeReplayMessage({ type: 'weather', weatherId: WEATHER.RAIN }) },
+  { tick: 16, message: normalizeReplayMessage({ type: 'day-phase', phase: 0.5, overridden: true }) },
   { tick: 16, message: normalizeReplayMessage({ type: 'intent', intent: 'select', slot: 4 }) },
   {
     tick: 20,
@@ -96,6 +97,7 @@ assert.equal(summary.abi.matches, true);
 assert.equal(summary.init.mode, 'creative');
 assert.equal(summary.init.planet, 'earth');
 assert.equal(summary.init.weather, 'rain');
+assert.equal(summary.init.time, 'auto');
 assert.equal(summary.init.tool, 'water');
 assert.equal(summary.init.creative, 'material:sand');
 assert.ok(summary.init.loadout[0].includes('water'));
@@ -114,6 +116,8 @@ const text = formatReplayInspectText(summary);
 assert.match(text, /abi: MATCH/);
 assert.match(text, /planet: earth/);
 assert.match(text, /weather: rain/);
+assert.match(text, /time: auto/);
+assert.match(text, /hold 0\.500/);
 assert.match(text, /tool: water/);
 assert.match(text, /npm run replay:microscope/);
 

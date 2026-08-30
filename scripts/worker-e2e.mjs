@@ -202,6 +202,11 @@ try {
     return timeline && !timeline.hidden;
   }, null, { timeout: 30000 });
   check('Run replay opens the buffered bottom timeline', true);
+  check('replay hides the creative spawn palette',
+    await page.evaluate(() => {
+      const palette = document.querySelector('sand-game').shadowRoot.querySelector('.sg-palette');
+      return !!palette?.hidden;
+    }));
   await page.waitForFunction((turn) => Number(document.querySelector('sand-game').shadowRoot
     .querySelector('input[aria-label="Replay position"]')?.max) === turn,
   extendedReplayTurns, { timeout: 30000 });
@@ -392,6 +397,11 @@ try {
     throw error;
   });
   check('an arbitrary replay turn branches back into live simulation', true);
+  check('resuming live play restores the creative spawn palette',
+    await page.evaluate(() => {
+      const palette = document.querySelector('sand-game').shadowRoot.querySelector('.sg-palette');
+      return !!palette && !palette.hidden;
+    }));
 
   await page.evaluate(() => window.__sandTest.retryAuthority());
   await page.waitForFunction(() => {

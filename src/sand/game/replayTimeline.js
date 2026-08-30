@@ -22,7 +22,7 @@ const formatTime = (turn) => {
 };
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createReplayTimeline(ctx, { onResumed } = {}) {
+export function createReplayTimeline(ctx, { onResumed, onShow, onHide } = {}) {
   const root = document.createElement('section');
   root.hidden = true;
   root.setAttribute('role', 'group');
@@ -278,6 +278,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     resuming = false;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(draw);
+    onShow?.();
   };
   const hide = () => {
     root.hidden = true;
@@ -288,6 +289,7 @@ export function createReplayTimeline(ctx, { onResumed } = {}) {
     scrubRaf = 0;
     cancelAnimationFrame(raf);
     raf = 0;
+    onHide?.();
   };
 
   return {

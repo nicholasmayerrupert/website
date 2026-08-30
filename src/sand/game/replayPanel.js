@@ -23,7 +23,7 @@ const buttonStyle = [
 ].join(';');
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createReplayPanel(ctx) {
+export function createReplayPanel(ctx, { onReplayUi } = {}) {
   const overlay = document.createElement('section');
   overlay.hidden = true;
   overlay.setAttribute('role', 'dialog');
@@ -85,6 +85,8 @@ export function createReplayPanel(ctx) {
       status.style.color = '#b9e6b1';
       status.textContent = `Live simulation resumed from replay turn ${turn.toLocaleString()}.`;
     },
+    onShow: () => onReplayUi?.(true),
+    onHide: () => onReplayUi?.(false),
   });
 
   let openGeneration = 0;

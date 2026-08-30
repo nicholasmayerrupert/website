@@ -57,6 +57,7 @@ export function createSandGame(container, opts = {}) {
     onToggleInventory = null,
     onToggleFootprintMenu = null,
     onEquipCreativeMaterial = null,
+    onReplayUi = null,
   } = opts;
   const survival = mode === 'survival';
   const planetId = resolvePlanetId(planet);
@@ -208,6 +209,8 @@ export function createSandGame(container, opts = {}) {
       creatureNaturalSpawning: ctx.debugHitboxes,
       planetId: ctx.planetId,
       weatherId: ctx.weatherId,
+      dayPhase: ctx.dayNight?.phase,
+      dayOverridden: ctx.dayPhaseOverride !== null,
       gravityScale: ctx.gravityScale,
       missionId: ctx.missionId,
       loadout: ctx.missionLoadout,
@@ -337,7 +340,7 @@ export function createSandGame(container, opts = {}) {
 
   // Compose modules; order matters only for initial fit/attach.
   const lifecycle = createEngineLifecycle(ctx, { onLayoutChange });
-  const replayPanel = createReplayPanel(ctx);
+  const replayPanel = createReplayPanel(ctx, { onReplayUi });
   const inputs = createInputBindings(ctx, {
     refreshBounds: lifecycle.refreshBounds,
     zoomBy: lifecycle.zoomBy,
@@ -361,6 +364,7 @@ export function createSandGame(container, opts = {}) {
   });
   ctx.fns.render = loop.render;
   ctx.fns.rebuildEngineForReplay = lifecycle.rebuildEngineForDims;
+  ctx.fns.applyReplayDayPhase = loop.applyReplayDayPhase;
   let uninstallDevHooks = null;
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     uninstallDevHooks = installDevHooks(ctx, {

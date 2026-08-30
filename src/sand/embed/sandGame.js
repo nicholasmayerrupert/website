@@ -572,6 +572,8 @@ class SandGameElement extends HTMLElement {
       return initSandWasm()
       .then(() => {
         if (cancelled || !this.isConnected) return;
+        let replayUiHidden = false;
+        let syncMobileCreativeUi = () => {};
         const game = createSandGame(sim, {
           initialTool,
           mode,
@@ -582,6 +584,10 @@ class SandGameElement extends HTMLElement {
           loadout,
           debugHitboxes,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
+          onReplayUi: (active) => {
+            replayUiHidden = !!active;
+            syncMobileCreativeUi();
+          },
           // Survival inventory HUD wiring (the engine owns the inventory state).
           onInventory: (inv) => {
             this._hud?.update(inv);
@@ -630,7 +636,6 @@ class SandGameElement extends HTMLElement {
         this._game = game;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
-        let syncMobileCreativeUi = () => {};
         if (mode === 'survival') {
           // Survival uses the authoritative hotbar + openable inventory/crafting
           // grid. Combat weapons share the same slot/cursor model as mined blocks
@@ -660,10 +665,10 @@ class SandGameElement extends HTMLElement {
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
           let drawModeOn = !coarse || autoStart;
           syncMobileCreativeUi = () => {
+            this._palette?.setHidden(replayUiHidden || (coarse && !drawModeOn));
             if (!coarse) return;
             const controlsHidden = !drawModeOn;
             this._start?.setHidden(drawModeOn);
-            this._palette?.setHidden(!drawModeOn);
             this._stick?.setHidden(controlsHidden);
             this._zoom?.setHidden(controlsHidden);
           };

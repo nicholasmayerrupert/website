@@ -403,6 +403,76 @@ try {
       return !!palette && !palette.hidden;
     }));
 
+  await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('textarea[aria-label="Replay capsule text"]')?.value
+    .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
+  const parkedLiveTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  const parkedLiveOffset = await page.evaluate(() => window.__sandTest.worldOffset());
+  await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+  await page.waitForFunction(() => {
+    const timeline = document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Replay timeline"]');
+    return timeline && !timeline.hidden;
+  }, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__sandPerf().mirrorWorldTick === 0,
+    null, { timeout: 30000 });
+  await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await page.keyboard.press('r');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Replay timeline"]')?.hidden, null, { timeout: 30000 });
+  const restoredFromR = await page.evaluate(() => ({
+    tick: window.__sandPerf().worldTick,
+    offset: window.__sandTest.worldOffset(),
+    logsHidden: document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Authority logs"]')?.hidden,
+  }));
+  check('R leaves buffered replay at the parked live world, not the playhead',
+    restoredFromR.tick >= parkedLiveTick
+      && restoredFromR.offset.x === parkedLiveOffset.x
+      && restoredFromR.offset.y === parkedLiveOffset.y
+      && restoredFromR.logsHidden === true,
+    JSON.stringify({ parkedLiveTick, parkedLiveOffset, restoredFromR }));
+
+  await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('textarea[aria-label="Replay capsule text"]')?.value
+    .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
+  const parkedLogsTick = await page.evaluate(() => window.__sandPerf().worldTick);
+  await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+  await page.waitForFunction(() => {
+    const timeline = document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Replay timeline"]');
+    return timeline && !timeline.hidden;
+  }, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__sandPerf().mirrorWorldTick === 0,
+    null, { timeout: 30000 });
+  await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    return root.querySelector('[aria-label="Replay timeline"]')?.hidden
+      && root.querySelector('textarea[aria-label="Replay capsule text"]')?.value
+        .startsWith('SAND-REPLAY-3:');
+  }, null, { timeout: 30000 });
+  const restoredFromL = await page.evaluate(() => ({
+    tick: window.__sandPerf().worldTick,
+    logsHidden: document.querySelector('sand-game').shadowRoot
+      .querySelector('[aria-label="Authority logs"]')?.hidden,
+  }));
+  check('L leaves buffered replay at the parked live world and reopens logs',
+    restoredFromL.tick === parkedLogsTick && restoredFromL.logsHidden === false,
+    JSON.stringify({ parkedLogsTick, restoredFromL }));
+  await page.keyboard.press('l');
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('[aria-label="Authority logs"]')?.hidden, null, { timeout: 30000 });
+
   await page.evaluate(() => window.__sandTest.retryAuthority());
   await page.waitForFunction(() => {
     const perf = window.__sandPerf();

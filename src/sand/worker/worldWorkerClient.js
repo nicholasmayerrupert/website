@@ -32,6 +32,8 @@ const CAPTURE_PERF_KEYS = [
 /** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
 export function createWorldWorkerClient(ctx) {
   let worker = new WorldWorker();
+  let parkedLiveWorker = null;
+  let parkedLiveJournal = null;
   let initOptions = null;
   const runtimeConfig = {};
   let retryCount = 0;
@@ -73,6 +75,7 @@ export function createWorldWorkerClient(ctx) {
   let replayMicroscopeOpen = false;
   let replayBufferOpen = false;
   let pendingReplayFrameTurn = null;
+  let livePresentation = null;
   const replayJournal = createReplayCaptureJournal();
   let activeReplayCapsule = null;
   let replayDayPhaseKey = '';
@@ -108,6 +111,9 @@ export function createWorldWorkerClient(ctx) {
     pendingReplayView = null;
     pendingReplayFrameTurn = null;
     replayBufferOpen = false;
+    abandonWorker(parkedLiveWorker);
+    parkedLiveWorker = null;
+    discardLivePresentation();
     state = { ...state, replayPlaying: false, replayMode: '', replayBuffering: false };
   };
 
@@ -118,11 +124,58 @@ export function createWorldWorkerClient(ctx) {
     request.resolve(request.frame);
   };
 
+  const snapshotLivePresentation = () => {
+    const engine = ctx.engine;
+    const cam = engine?.getCam();
+    livePresentation = {
+      worldSeed: ctx.worldSeed,
+      planetId: ctx.planetId,
+      weatherId: ctx.weatherId,
+      weatherVisualKey: ctx.weatherVisualKey,
+      weatherMix: ctx.weatherMix,
+      weatherMode: ctx.weatherMode,
+      weatherCycleStart: ctx.weatherCycleStart,
+      gravityScale: ctx.gravityScale,
+      zoom: ctx.zoom,
+      viewCols: ctx.viewCols,
+      viewRows: ctx.viewRows,
+      requestedViewCols: ctx.requestedViewCols,
+      requestedViewRows: ctx.requestedViewRows,
+      cameraWorldX: engine && cam ? engine.getWorldOffsetX() + cam.x : 0,
+      cameraWorldY: engine && cam ? engine.getWorldOffsetY() + cam.y : 0,
+    };
+    parkedLiveJournal = replayJournal.snapshot();
+  };
+  const applyLivePresentation = () => {
+    const snap = livePresentation;
+    if (!snap) return;
+    ctx.worldSeed = snap.worldSeed;
+    ctx.planetId = snap.planetId;
+    ctx.weatherId = snap.weatherId;
+    ctx.weatherVisualKey = snap.weatherVisualKey;
+    ctx.weatherMix = snap.weatherMix;
+    ctx.weatherMode = snap.weatherMode;
+    ctx.weatherCycleStart = snap.weatherCycleStart;
+    if (Number.isFinite(snap.gravityScale)) ctx.gravityScale = snap.gravityScale;
+    ctx.zoom = snap.zoom;
+    ctx.viewCols = snap.viewCols;
+    ctx.viewRows = snap.viewRows;
+    ctx.requestedViewCols = snap.requestedViewCols;
+    ctx.requestedViewRows = snap.requestedViewRows;
+    if (parkedLiveJournal?.init && Array.isArray(parkedLiveJournal.events))
+      replayJournal.replace(parkedLiveJournal);
+  };
+  const discardLivePresentation = () => {
+    livePresentation = null;
+    parkedLiveJournal = null;
+  };
+
   const settleReplayResumeRequest = (requestId) => {
     const request = replayRequests.get(requestId);
     if (!request?.ready || !request.mirrorApplied) return;
     replayRequests.delete(requestId);
     replayBufferOpen = false;
+    discardLivePresentation();
     state = {
       ...state,
       replayPlaying: false,
@@ -132,6 +185,27 @@ export function createWorldWorkerClient(ctx) {
     };
     post({ type: 'replay-buffer-resume-applied', requestId });
     request.resolve({ turn: request.turn });
+  };
+
+  const settleReplayRestoreRequest = (requestId) => {
+    const request = replayRequests.get(requestId);
+    if (!request?.ready || !request.mirrorApplied) return;
+    replayRequests.delete(requestId);
+    replayBufferOpen = false;
+    discardLivePresentation();
+    state = {
+      ...state,
+      replayPlaying: false,
+      replayMode: '',
+      replayBuffering: false,
+      replayPaused: false,
+    };
+    post({
+      type: 'replay-live-restore-applied',
+      requestId,
+      paused: !!request.keepPaused,
+    });
+    request.resolve({ paused: !!request.keepPaused });
   };
 
   const probeLiveness = () => {
@@ -258,6 +332,15 @@ export function createWorldWorkerClient(ctx) {
       }
       return;
     }
+    if (data.type === 'replay-buffer-cancel-ready') {
+      const request = replayRequests.get(data.requestId);
+      if (request?.kind === 'buffer-cancel') {
+        request.ready = true;
+        request.keepPaused = !!data.paused;
+        settleReplayRestoreRequest(data.requestId);
+      }
+      return;
+    }
     if (data.type === 'replay-branch') {
       replayJournal.replace(data.capsule);
       return;
@@ -301,8 +384,14 @@ export function createWorldWorkerClient(ctx) {
       if (request) {
         replayRequests.delete(data.requestId);
         if (request.kind === 'run') lastControl = '';
-        if (request.kind === 'buffer-start' || request.kind === 'buffer-resume')
+        if (request.kind === 'buffer-start' || request.kind === 'buffer-resume'
+            || request.kind === 'buffer-cancel')
           replayBufferOpen = false;
+        if (request.kind === 'buffer-start' || request.kind === 'buffer-cancel') {
+          if (request.kind === 'buffer-start') restoreParkedLiveWorker();
+          applyLivePresentation();
+          discardLivePresentation();
+        }
         state = {
           ...state,
           replayPlaying: false,
@@ -326,14 +415,16 @@ export function createWorldWorkerClient(ctx) {
         pendingReplayView = data.replayView;
       liveness.notePacket(data.worldTick, receivedAt);
       const resumeSnapshot = Number.isInteger(data.replayResumeRequestId);
-      if (!bufferedReplayFrame && !resumeSnapshot && (data.epoch | 0) < appliedEpoch) {
+      const restoreSnapshot = Number.isInteger(data.replayRestoreRequestId);
+      if (!bufferedReplayFrame && !resumeSnapshot && !restoreSnapshot
+          && (data.epoch | 0) < appliedEpoch) {
         acknowledge(data);
         return;
       }
       // Runtime zoom can emit many buffer sizes in quick succession. While the
       // worker is catching up, discard packets from its old-sized world; applying
       // them to the already-resized render mirror is both stale and expensive.
-      if (awaitingResizeId &&
+      if (awaitingResizeId && !resumeSnapshot && !restoreSnapshot &&
           (data.type !== 'full' || data.resizeId !== awaitingResizeId)) {
         acknowledge(data);
         return;
@@ -345,7 +436,7 @@ export function createWorldWorkerClient(ctx) {
         return;
       }
       const packetPriority = { diff: 0, shift: 1, full: 2 };
-      if (resumeSnapshot || bufferedReplayFrame || !pending || data.epoch > pending.epoch ||
+      if (resumeSnapshot || restoreSnapshot || bufferedReplayFrame || !pending || data.epoch > pending.epoch ||
           (data.epoch === pending.epoch &&
            (packetPriority[data.type] > packetPriority[pending.type] ||
             (packetPriority[data.type] === packetPriority[pending.type] &&
@@ -715,6 +806,8 @@ export function createWorldWorkerClient(ctx) {
     },
     startBufferedReplay(capsule) {
       if (closed) return Promise.reject(new Error('Simulation worker is closed.'));
+      if (replayBufferOpen)
+        return Promise.reject(new Error('A buffered replay is already open.'));
       replayMicroscopeOpen = false;
       if (!!capsule?.init?.survival !== ctx.survival)
         return Promise.reject(new Error('Open this replay in the matching creative or survival mode.'));
@@ -732,6 +825,7 @@ export function createWorldWorkerClient(ctx) {
       const rows = capsule?.init?.rows | 0;
       if (!cols || !rows)
         return Promise.reject(new Error('Replay dimensions are missing.'));
+      snapshotLivePresentation();
       pending = pendingDraft = pendingCreatures = pendingActors = null;
       pendingReplayView = null;
       pendingReplayFrameTurn = null;
@@ -770,12 +864,19 @@ export function createWorldWorkerClient(ctx) {
         replayPersistentCache: false,
         replayBufferError: '',
       };
+      parkedLiveWorker = worker;
+      adoptWorker(new WorldWorker());
+      liveness.reset();
+      livenessProbePending = false;
       const requestId = ++replayRequestId;
       return new Promise((resolve, reject) => {
         replayRequests.set(requestId, { resolve, reject, kind: 'buffer-start' });
         if (!post({ type: 'replay-buffer-start', requestId, capsule })) {
           replayRequests.delete(requestId);
           replayBufferOpen = false;
+          restoreParkedLiveWorker();
+          applyLivePresentation();
+          discardLivePresentation();
           state = { ...state, replayPlaying: false, replayMode: '' };
           reject(new Error('Simulation worker is unavailable.'));
         }
@@ -806,6 +907,9 @@ export function createWorldWorkerClient(ctx) {
     resumeBufferedReplay(turn, onProgress) {
       if (!replayBufferOpen)
         return Promise.reject(new Error('Open a buffered replay before resuming.'));
+      abandonWorker(parkedLiveWorker);
+      parkedLiveWorker = null;
+      discardLivePresentation();
       const requestId = ++replayRequestId;
       pending = pendingDraft = pendingCreatures = pendingActors = null;
       pendingReplayView = null;
@@ -820,6 +924,39 @@ export function createWorldWorkerClient(ctx) {
         if (!post({
           type: 'replay-buffer-resume', requestId,
           turn: Math.max(0, turn | 0),
+        })) {
+          replayRequests.delete(requestId);
+          reject(new Error('Simulation worker is unavailable.'));
+        }
+      });
+    },
+    cancelBufferedReplay({ paused = false } = {}) {
+      if (!replayBufferOpen)
+        return Promise.reject(new Error('Open a buffered replay before cancelling.'));
+      if (!restoreParkedLiveWorker())
+        return Promise.reject(new Error('The live simulation is not available to restore.'));
+      applyLivePresentation();
+      const requestId = ++replayRequestId;
+      pending = pendingDraft = pendingCreatures = pendingActors = null;
+      pendingReplayView = null;
+      pendingReplayFrameTurn = null;
+      awaitingResizeId = 0;
+      appliedEpoch = 0;
+      lastControl = '';
+      predictor = predictorEngine = null;
+      predictorPlayerId = authoritativePlayerId = 0;
+      players = [];
+      items = new Float32Array(0);
+      projectiles = new Float32Array(0);
+      state = { ...state, replayPaused: true, replayBuffering: true };
+      return new Promise((resolve, reject) => {
+        replayRequests.set(requestId, {
+          resolve, reject, kind: 'buffer-cancel',
+          ready: false, mirrorApplied: false, keepPaused: !!paused,
+        });
+        if (!post({
+          type: 'replay-live-restore', requestId, paused: !!paused,
+          view: livePresentation,
         })) {
           replayRequests.delete(requestId);
           reject(new Error('Simulation worker is unavailable.'));
@@ -971,8 +1108,11 @@ export function createWorldWorkerClient(ctx) {
           const bytes = new Uint8Array(packet.data);
           packetBytes = bytes.length;
           let requestResync = false;
+          if (Number.isInteger(packet.replayRestoreRequestId))
+            applyLivePresentation();
           if (packet.type === 'full'
-              && (packet.reason === 'replay-microscope' || state.replayPlaying)
+              && (packet.reason === 'replay-microscope' || packet.reason === 'replay-cancel'
+                || state.replayPlaying)
               && (packet.cols !== ctx.engine.cols || packet.rows !== ctx.engine.rows)) {
             ctx.fns.rebuildEngineForReplay?.(packet.cols, packet.rows);
           }
@@ -1032,6 +1172,13 @@ export function createWorldWorkerClient(ctx) {
                 if (request?.kind === 'buffer-resume') {
                   request.mirrorApplied = true;
                   settleReplayResumeRequest(packet.replayResumeRequestId);
+                }
+              }
+              if (packet.replayRestoreRequestId) {
+                const request = replayRequests.get(packet.replayRestoreRequestId);
+                if (request?.kind === 'buffer-cancel') {
+                  request.mirrorApplied = true;
+                  settleReplayRestoreRequest(packet.replayRestoreRequestId);
                 }
               }
             }
@@ -1258,6 +1405,8 @@ export function createWorldWorkerClient(ctx) {
       clearInterval(livenessTimer);
       livenessTimer = 0;
       workerGeneration++;
+      abandonWorker(parkedLiveWorker);
+      parkedLiveWorker = null;
       const target = worker;
       let finished = false;
       const finish = () => {
@@ -1327,10 +1476,23 @@ export function createWorldWorkerClient(ctx) {
   };
   const handleError = (event) => {
     if (closed) return;
-    rejectReplayRequests('Simulation worker failed during replay.');
-    liveness.noteFailure();
     clearTimeout(destroyTimer);
     console.error('sand world worker failed', event.message || event);
+    if (parkedLiveWorker) {
+      for (const request of replayRequests.values())
+        request.reject(new Error('Buffered replay failed.'));
+      replayRequests.clear();
+      pendingReplayView = null;
+      pendingReplayFrameTurn = null;
+      replayBufferOpen = false;
+      restoreParkedLiveWorker();
+      applyLivePresentation();
+      discardLivePresentation();
+      state = { ...state, replayPlaying: false, replayMode: '', replayBuffering: false };
+      return;
+    }
+    rejectReplayRequests('Simulation worker failed during replay.');
+    liveness.noteFailure();
     worker.terminate();
     if (!state.ready && retryCount === 0) {
       retryCount++;
@@ -1338,6 +1500,36 @@ export function createWorldWorkerClient(ctx) {
       return;
     }
     ctx.setAuthorityError?.('The simulation worker could not continue.');
+  };
+  const abandonWorker = (target) => {
+    if (!target) return;
+    target.onmessage = null;
+    target.onerror = null;
+    target.onmessageerror = null;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      try { target.terminate(); } catch { /* already stopped */ }
+    };
+    target.onmessage = ({ data }) => { if (data?.type === 'destroyed') finish(); };
+    try { target.postMessage({ type: 'destroy' }); } catch { finish(); return; }
+    setTimeout(finish, 1500);
+  };
+  const adoptWorker = (next) => {
+    workerGeneration++;
+    worker = next;
+    bindWorker();
+  };
+  const restoreParkedLiveWorker = () => {
+    if (!parkedLiveWorker) return false;
+    const replayWorker = worker;
+    adoptWorker(parkedLiveWorker);
+    parkedLiveWorker = null;
+    abandonWorker(replayWorker);
+    liveness.reset();
+    livenessProbePending = false;
+    return true;
   };
   const bindWorker = () => {
     const target = worker;
@@ -1367,6 +1559,9 @@ export function createWorldWorkerClient(ctx) {
     previous.onerror = null;
     previous.onmessageerror = null;
     try { previous.terminate(); } catch { /* already stopped */ }
+    abandonWorker(parkedLiveWorker);
+    parkedLiveWorker = null;
+    discardLivePresentation();
     if (predictorEngine && predictorPlayerId) {
       try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
     }

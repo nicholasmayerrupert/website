@@ -297,7 +297,9 @@ export function createReplayTimeline(ctx, { onResumed, onShow, onHide } = {}) {
     hide,
     togglePlayback,
     stepPlayback,
+    setBusy(on) { resuming = !!on; resume.disabled = resuming; },
     get visible() { return !root.hidden; },
+    get busy() { return resuming; },
     destroy() {
       hide();
       root.remove();

@@ -205,10 +205,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     const visibleReplayKey = (key === 'l' || key === 'r') && surfaceIsVisible() && !ctx.playMode;
     const bufferedReplayKey = surfaceIsVisible()
       && ctx.worldWorker?.state?.replayMode === 'buffered';
+    const visibleReplayExitKey = (key === 'l' || key === 'r') && bufferedReplayKey;
     const visibleReplayPlaybackKey = key === ' ' && bufferedReplayKey;
     const visibleReplayStepKey = (key === ',' || key === '.') && bufferedReplayKey;
     if (!ownsKeyboard() && !visibleCreativeShortcut && !visibleReplayKey
-        && !visibleReplayPlaybackKey && !visibleReplayStepKey) return;
+        && !visibleReplayPlaybackKey && !visibleReplayStepKey && !visibleReplayExitKey) return;
     if (key === 'l') { onLogs?.(); e.preventDefault(); return; }
     if (key === 'r') { onReplay?.(); e.preventDefault(); return; }
     if (visibleReplayPlaybackKey) {

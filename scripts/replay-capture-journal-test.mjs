@@ -264,6 +264,7 @@ const authorityA = deferred();
 const authorityB = deferred();
 const authorityC = deferred();
 let playbackRequest = null;
+let cancelRequest = null;
 const captures = [
   { fallback, verified: staleAuthority.promise },
   { fallback, verified: authorityA.promise },
@@ -281,10 +282,15 @@ const ctx = {
   viewRows: 96,
   zoom: 1,
   worldWorker: {
-    captureReplay: () => captures.shift(),
+    captureReplay: () => captures.length
+      ? captures.shift()
+      : { fallback, verified: Promise.resolve(verified) },
     config: () => {},
     startBufferedReplay: async (capsule) => {
       playbackRequest = { capsule };
+    },
+    cancelBufferedReplay: async ({ paused } = {}) => {
+      cancelRequest = { paused: !!paused };
     },
   },
 };
@@ -349,6 +355,24 @@ await replayPanel.startReplay();
 await eventually(() => playbackRequest?.capsule?.final?.gridHash === verified.final.gridHash);
 assert.equal(replayOverlay.hidden, true);
 assert.match(replayOverlay.children[0].children[1].textContent, /Buffered replay opened/);
+const replayTimeline = replayContainer.children[1];
+assert.equal(replayTimeline.hidden, false);
+
+cancelRequest = null;
+await replayPanel.startReplay();
+assert.deepEqual(cancelRequest, { paused: false });
+assert.equal(replayTimeline.hidden, true);
+
+playbackRequest = null;
+await replayPanel.startReplay();
+await eventually(() => playbackRequest?.capsule?.final?.gridHash === verified.final.gridHash);
+assert.equal(replayTimeline.hidden, false);
+
+cancelRequest = null;
+await replayPanel.open();
+assert.deepEqual(cancelRequest, { paused: true });
+assert.equal(replayTimeline.hidden, true);
+assert.equal(replayOverlay.hidden, false);
 replayPanel.destroy();
 
 console.log('replay capture journal preserves an immediately copyable exact prefix');

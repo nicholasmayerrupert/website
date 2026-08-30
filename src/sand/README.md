@@ -237,14 +237,17 @@ authority and opens the deterministic replay panel. Its copy/paste capsule keeps
 the real generated seed, initialization options (including weather),
 authority-turn input/config/resize events, the total turn count, and sparse ranges for streaming transport
 gates. Continuous tools use deterministic turn time. Replaying reconstructs a
-fresh authority in an unpaced worker and caches visual keyframes plus per-turn
+fresh authority in a second worker, leaving the live worker paused, and caches visual keyframes plus per-turn
 presentation deltas in independently compressed segments. Segments span at most
 two seconds and close sooner when their uncompressed payload becomes large.
 World shifts inside a segment store the shifted overlap plus its dirty bands
 instead of a new full frame. The bottom timeline plays at 60 turns per second,
 highlights every cached range (including disjoint ranges), shows the exact tick,
 toggles play/pause with `Space`, steps one tick with `,` / `.`, and reconstructs
-cached frames from their segment keyframe while the slider is dragged. The worker
+cached frames from their segment keyframe while the slider is dragged. Pressing
+`R` during buffered replay restores the parked live world and continues the
+game; `L` restores it and reopens the same logs panel `L` opens during live play.
+Neither uses the replay playhead. The replay worker
 simulates the capsule left to right as fast as it can, independent of the
 playhead, and stores every encoded segment in a session-scoped IndexedDB store.
 Playback reads those cached frames at 60 turns per second. The 128 MiB encoded RAM
@@ -253,7 +256,7 @@ their timeline ranges. Decoded segments use a 24 MiB working-set target while
 retaining the segment in use. Generated turns load from either tier without
 re-simulating. Seeking never rewinds the authority; an uncached future turn waits
 for the left-to-right builder, and an already-generated turn loads from cache.
-`Resume here` rebuilds the complete authority at the selected turn as fast as
+`Resume here` discards the parked live worker, rebuilds the complete authority at the selected turn as fast as
 the worker can step, without pacing or presenting intermediate frames, then
 truncates the replay recipe there, clears held input, and continues live as a
 new branch.
@@ -348,7 +351,7 @@ body bounds faintly visible for context.
 - `game/createSandGame.js`: browser runtime and presentation loop.
 - `worker/`: authority worker, main-thread replica client, prediction, and
   coordinate reconciliation.
-- `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, the `L` logs copy/paste UI, and `R` to start buffered replay immediately.
+- `game/replayCapsule.js`, `game/replayInspect.js`, `game/replayPanel.js`: versioned replay text codec, no-browser inspect summary, the `L` logs copy/paste UI, `R` to start buffered replay immediately, and `R`/`L` during replay to restore the parked live session.
 - `embed/`: the Web Component and framework-free UI.
 - `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.
 - `campaign/missions.js`: campaign metadata and bounded loadout construction.

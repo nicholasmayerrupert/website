@@ -94,6 +94,8 @@ let replayPlaybackStart = null;
 let replayBufferSession = null;
 let replayBufferCapturing = false;
 let replayResumeRequestId = 0;
+let replayRestoreRequestId = 0;
+let replayRestoreKeepPaused = false;
 const REPLAY_GATE_AWAITING_ACK = 1;
 const REPLAY_GATE_FULL_RESYNC = 2;
 const REPLAY_VISUAL_KEYFRAME_TURNS = 120;
@@ -2146,6 +2148,49 @@ self.onmessage = async ({ data }) => {
     paused = false;
     turnDeadline.reset(performance.now());
     schedule();
+    return;
+  }
+  if (data.type === 'replay-live-restore') {
+    if (!engine) {
+      self.postMessage({
+        type: 'replay-error', requestId: data.requestId,
+        message: 'The live simulation is not available to restore.',
+      });
+      return;
+    }
+    replayRestoreRequestId = data.requestId | 0;
+    replayRestoreKeepPaused = !!data.paused;
+    paused = true;
+    awaitingAck = false;
+    fullResyncRequested = false;
+    epoch++;
+    sequence = 0;
+    postFull('replay-cancel', {
+      replayView: replayView({ capsule: { view: data.view || {} } }),
+      replayRestoreRequestId: replayRestoreRequestId,
+    });
+    postCreatures();
+    postDraft();
+    postActors(true);
+    self.postMessage({
+      type: 'replay-buffer-cancel-ready',
+      requestId: replayRestoreRequestId,
+      paused: replayRestoreKeepPaused,
+    });
+    return;
+  }
+  if (data.type === 'replay-live-restore-applied') {
+    if ((data.requestId | 0) !== replayRestoreRequestId) return;
+    replayRestoreRequestId = 0;
+    if (replayRestoreKeepPaused) {
+      paused = true;
+      setLivenessStage(WORKER_LIVENESS_STAGE.PAUSED, true);
+    } else {
+      paused = false;
+      turnDeadline.reset(performance.now());
+      schedule();
+    }
+    replayRestoreKeepPaused = false;
     return;
   }
   if (data.type === 'replay-run') {

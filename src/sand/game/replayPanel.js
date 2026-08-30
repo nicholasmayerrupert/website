@@ -126,8 +126,8 @@ export function createReplayPanel(ctx) {
     overlay.hidden = !visible;
     overlay.style.display = visible ? 'grid' : 'none';
   };
-  const open = async () => {
-    if (timeline.visible) return;
+  let handingOff = false;
+  const openLogsPanel = async () => {
     if (!overlay.hidden || busy) return;
     setVisible(true);
     status.style.color = '#cbd2d9';
@@ -177,6 +177,30 @@ export function createReplayPanel(ctx) {
       if (generation === openGeneration) setBusy(false);
     }
   };
+  const exitReplay = async ({ openLogs }) => {
+    if (!timeline.visible || handingOff || timeline.busy) return;
+    handingOff = true;
+    timeline.setBusy(true);
+    try {
+      await ctx.worldWorker.cancelBufferedReplay({ paused: !!openLogs });
+      timeline.hide();
+      if (openLogs) await openLogsPanel();
+      else ctx.container.focus({ preventScroll: true });
+    } catch (error) {
+      timeline.setBusy(false);
+      showError(error);
+      setVisible(true);
+    } finally {
+      handingOff = false;
+    }
+  };
+  const open = async () => {
+    if (timeline.visible) {
+      await exitReplay({ openLogs: true });
+      return;
+    }
+    await openLogsPanel();
+  };
   const hide = (resume) => {
     openGeneration++;
     setBusy(false);
@@ -212,7 +236,10 @@ export function createReplayPanel(ctx) {
     }
   };
   const startReplay = async () => {
-    if (timeline.visible) return;
+    if (timeline.visible) {
+      await exitReplay({ openLogs: false });
+      return;
+    }
     if (!overlay.hidden) {
       if (textarea.value.trim()) await playFromText();
       return;

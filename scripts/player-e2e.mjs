@@ -1,57 +1,26 @@
 // Headless browser test for the local playable character. Boots the
-// Vite dev server, opens the About page, drives the player with real keyboard
+// Vite dev server, opens the survival sandbox, drives the player with real keyboard
 // events, and asserts the engine-simulated player responds (moves right, jumps).
 // Uses the `playwright` library directly (same approach as scripts/bench-pan.mjs)
 // so it runs without the @playwright/test runner.
 //
 //   node scripts/player-e2e.mjs
 
-import { spawn, spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import { chromium, webkit } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
+const { baseURL, close: stopServer } = await startTestServer();
 const INPUT_LEFT = 1;
 const INPUT_RIGHT = 2;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
 const INPUT_JETPACK = 128; // Space-specific sustained thrust bit
 const INPUT_SHIELD = 256;
 const PI_PRIMARY = 16;
-const NPM = process.platform === 'win32' ? process.execPath : 'npm';
-const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
-const baseURL = `http://localhost:${PORT}/`;
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
-// detached so we can kill the whole process group (npm spawns vite as a child;
-// killing only npm would orphan vite and leave the port held -> flaky reruns).
-const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-const killServer = () => {
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    else process.kill(-server.pid, 'SIGKILL');
-  } catch { /* already gone */ }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  let buf = '';
-  let done = false;
-  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); resolve(); };
-  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); killServer(); reject(err); };
-  const to = setTimeout(() => fail(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => {
-    try { if ((await fetch(baseURL)).ok) finish(); } catch {}
-  }, 500);
-  const onData = (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) finish(); };
-  server.stdout.on('data', onData);
-  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
-});
-
 let browser, webkitBrowser;
 try {
-  await waitForServer();
   browser = await chromium.launch();
   const context = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await context.newPage();
@@ -69,7 +38,7 @@ try {
       };
     };
   });
-  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' }); // direct survival sandbox
+  await page.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' }); // direct survival sandbox
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
   // This suite verifies browser input wiring, not enemy lethality. Combat AI is
   // covered deterministically by explosive-survival-test; freeze any naturally
@@ -723,7 +692,7 @@ try {
   console.log('mobile /game gate');
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobilePage = await mobileContext.newPage();
-  await mobilePage.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
+  await mobilePage.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' });
   await mobilePage.getByText('Explosive Survival is desktop-only for now').waitFor();
   check('mobile /game never connects a sand-game element', await mobilePage.locator('sand-game').count() === 0);
   await mobileContext.close();
@@ -737,7 +706,7 @@ try {
   }
   if (webkitBrowser) {
   const webkitPage = await webkitBrowser.newPage({ viewport: { width: 900, height: 650 } });
-  await webkitPage.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
+  await webkitPage.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' });
   await webkitPage.waitForFunction(() => window.__sandTest?.getPlayer?.() && window.__sandPerf?.().worldTps > 0, null, { timeout: 30000 });
   const webkitBefore = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
   await webkitPage.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
@@ -761,7 +730,7 @@ try {
 } finally {
   if (webkitBrowser) await webkitBrowser.close().catch(() => {});
   if (browser) await browser.close().catch(() => {});
-  killServer();
+  stopServer();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

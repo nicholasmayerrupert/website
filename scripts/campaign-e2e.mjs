@@ -1,49 +1,12 @@
 // Browser integration for the ship hub and all three planetary deployments.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const baseURL = `http://127.0.0.1:${PORT}/game`;
+const { baseURL: origin, close: stopServer } = await startTestServer();
+const baseURL = `${origin}/game`;
 const pngArg = process.argv.indexOf('--png-prefix');
 const pngPrefix = pngArg >= 0 ? process.argv[pngArg + 1] : null;
-const server = spawn(
-  'npm',
-  ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'],
-  {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-  },
-);
-const killServer = () => {
-  try {
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    } else {
-      process.kill(-server.pid, 'SIGKILL');
-    }
-  } catch {
-    // The dev server is already stopped.
-  }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  const timeout = setTimeout(() => reject(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => {
-    try {
-      if ((await fetch(baseURL)).ok) {
-        clearTimeout(timeout);
-        clearInterval(poll);
-        resolve();
-      }
-    } catch {
-      // The dev server is still starting.
-    }
-  }, 300);
-});
-
 let failures = 0;
 const check = (label, ok, detail = '') => {
   if (!ok) failures++;
@@ -141,7 +104,6 @@ const deployments = [
 
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
   const pageErrors = [];
@@ -529,7 +491,7 @@ try {
   await touchContext.close();
 } finally {
   await browser?.close().catch(() => {});
-  killServer();
+  stopServer();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

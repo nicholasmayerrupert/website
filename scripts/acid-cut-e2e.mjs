@@ -5,38 +5,19 @@
 //
 //   node scripts/acid-cut-e2e.mjs
 
-import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-const stop = () => {
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    else process.kill(-server.pid, 'SIGTERM');
-  } catch { /* already stopped */ }
-};
-const waitForServer = async () => {
-  const deadline = Date.now() + 60000;
-  while (Date.now() < deadline) {
-    try { if ((await fetch(`http://127.0.0.1:${PORT}/`)).ok) return; } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error('dev server timeout');
-};
+const { baseURL, close: stopServer } = await startTestServer();
 
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   // createSandGame samples Math.random once for its world seed. Fix that sample
   // so the generated terrain and the acid/stone contacts are reproducible.
   await page.addInitScript(() => { Math.random = () => 0x5eed1234 / 0x100000000; });
-  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+  await page.goto(baseURL, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__sandTest && window.__sandPerf().worldTick > 5);
   await page.evaluate(() => {
     window.__sandTest.setCreativeMaterial(0, 10); // MAT.ACID
@@ -80,6 +61,5 @@ try {
     console.log('performance budget diagnostic only (set REQUIRE_BROWSER_PERF=1 to enforce)');
   }
 } finally {
-  await browser?.close();
-  stop();
+  try { await browser?.close(); } finally { stopServer(); }
 }

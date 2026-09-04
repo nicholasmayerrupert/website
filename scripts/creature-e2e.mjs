@@ -5,50 +5,25 @@
 //   node scripts/creature-e2e.mjs
 //   node scripts/creature-e2e.mjs --png /tmp/creatures-fps.png
 
-import { spawn, spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const NPM = process.platform === 'win32' ? process.execPath : 'npm';
-const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
+const { baseURL, close: stopServer } = await startTestServer();
 const pngArg = process.argv.indexOf('--png');
 const pngPath = pngArg >= 0 ? process.argv[pngArg + 1] : null;
-const baseURL = `http://localhost:${PORT}/`;
 const WORLD_SEED = 0xD1EC70;
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
-const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-const killServer = () => {
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    else process.kill(-server.pid, 'SIGKILL');
-  } catch { /* already stopped */ }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  let buf = '', done = false;
-  const finish = () => { if (done) return; done = true; clearTimeout(timeout); clearInterval(poll); resolve(); };
-  const fail = (err) => { if (done) return; done = true; clearTimeout(timeout); clearInterval(poll); killServer(); reject(err); };
-  const timeout = setTimeout(() => fail(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => { try { if ((await fetch(baseURL)).ok) finish(); } catch {} }, 500);
-  server.stdout.on('data', (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) finish(); });
-  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
-});
-
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: 'no-preference' });
   const page = await context.newPage();
   // Keep viewport-dependent population and pixel probes on one terrain fixture;
   // the headless creature suites cover spawning across varied world seeds.
   await page.addInitScript((seed) => { Math.random = () => seed / 0x100000000; }, WORLD_SEED);
-  await page.goto(`${baseURL}fps`, { waitUntil: 'load' });
+  await page.goto(`${baseURL}/fps`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForTimeout(1500);
 
@@ -107,7 +82,7 @@ try {
   // The survival route is the real gameplay entry point. Its encounter director
   // should begin with one armed reservation rather than all five species popping
   // into view at once.
-  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
+  await page.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   // The presentation engine installs the test hook before its independently
   // initialized authority worker receives a viewport and starts actor time.
@@ -274,7 +249,7 @@ try {
   failures++;
 } finally {
   if (browser) await browser.close().catch(() => {});
-  killServer();
+  stopServer();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

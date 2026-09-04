@@ -5,44 +5,20 @@
 //   node scripts/zoom-e2e.mjs
 //   BROWSER=webkit node scripts/zoom-e2e.mjs
 
-import { spawn, spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import { chromium, webkit } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const NPM = process.platform === 'win32' ? process.execPath : 'npm';
-const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
-const baseURL = `http://localhost:${PORT}/`;
+const { baseURL, close: stopServer } = await startTestServer();
 let failures = 0;
 const browserType = process.env.BROWSER === 'webkit' ? webkit : chromium;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
-const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-const killServer = () => {
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    else process.kill(-server.pid, 'SIGKILL');
-  } catch { /* already gone */ }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  let done = false;
-  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); resolve(); };
-  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); killServer(); reject(err); };
-  const to = setTimeout(() => fail(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => { try { if ((await fetch(baseURL)).ok) finish(); } catch {} }, 500);
-  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
-});
-
 let browser;
 try {
-  await waitForServer();
   browser = await browserType.launch();
   const context = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1200, height: 800 } });
   const page = await context.newPage();
-  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
+  await page.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info && window.__sandTest.info().viewCols > 0, null, { timeout: 30000 });
   await page.waitForFunction(() => !!window.__sandTest.getPlayer?.(), null, { timeout: 30000 });
   const focusGame = () => page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
@@ -162,8 +138,7 @@ try {
   console.error(e);
   failures++;
 } finally {
-  await browser?.close();
-  killServer();
+  try { await browser?.close(); } finally { stopServer(); }
 }
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

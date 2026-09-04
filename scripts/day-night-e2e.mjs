@@ -1,38 +1,14 @@
-import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { NOON_SKY_LIGHT, SUNRISE_PHASE, SUNSET_PHASE } from '../src/sand/game/dayNightCycle.js';
 import { SURFACE_CAM_Y } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const URL = `http://127.0.0.1:${PORT}/`;
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-
-const waitForServer = () => new Promise((resolve, reject) => {
-  const timeout = setTimeout(() => reject(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => {
-    try {
-      if ((await fetch(URL)).ok) { clearTimeout(timeout); clearInterval(poll); resolve(); }
-    } catch { /* still booting */ }
-  }, 250);
-});
-
-const shutdownServer = () => {
-  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-  else {
-    try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already stopped */ }
-  }
-  server.stdout.destroy();
-  server.stderr.destroy();
-};
+const { baseURL: URL, close: stopServer } = await startTestServer();
 
 const { check, done } = makeChecker('day/night browser rendering');
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
@@ -395,7 +371,7 @@ try {
   await mobileContext.close();
 } finally {
   await browser?.close().catch(() => {});
-  shutdownServer();
+  stopServer();
 }
 
 const failures = done();

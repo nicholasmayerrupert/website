@@ -72,6 +72,15 @@ its world tick unchanged while the authority continues running.
 Mobile context options are declared beside the cases and use the same cleanup
 and artifact handling as desktop contexts.
 
+All Vite-backed browser suites use `startTestServer()` from `browser-harness.mjs`
+for loopback port allocation, bounded HTTP readiness checks, startup diagnostics,
+and process-tree cleanup. It returns `{ baseURL, close }`; `baseURL` has no
+trailing slash. Call `close()` in a `finally` block, including when browser
+launch or shutdown fails. Suites retain their own browser/context setup when
+they need multiple engines, devices, or a continuous sequence of assertions.
+The production startup-recovery suite owns its HTTP server because it serves
+deliberately stale HTML and missing deployment assets.
+
 ## Stress and profiling
 
 ```sh

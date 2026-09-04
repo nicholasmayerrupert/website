@@ -1,29 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const port = await getAvailablePort();
+const { baseURL, close: stopServer } = await startTestServer();
 const requestedWorkers = Math.max(1, Number(process.env.LIFE_TEST_WORKERS || 999) | 0);
 const holdMs = Math.max(0, Number(process.env.LIFE_TEST_HOLD_MS || 0) | 0);
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
-  cwd: new URL('..', import.meta.url),
-  stdio: 'ignore',
-});
-
-async function waitForServer() {
-  for (let i = 0; i < 100; i++) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/`);
-      if (response.ok) return;
-    } catch (_) {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('Life search test server did not start');
-}
-
 async function numericSibling(page, label) {
   return page.getByText(label, { exact: true }).evaluate((element) => {
     const value = element.nextElementSibling?.textContent || '0';
@@ -42,12 +23,11 @@ async function waitForValue(page, label, predicate) {
 
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${port}/#projects`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseURL}/#projects`, { waitUntil: 'networkidle' });
 
   await page.getByLabel('Game of Life board size').scrollIntoViewIfNeeded();
   await page.getByLabel('Game of Life board size').fill('8');
@@ -120,6 +100,5 @@ try {
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`);
   console.log(`life soup search e2e: ${soups} soups across ${workers} workers (${reportedRate}/s)`);
 } finally {
-  await browser?.close();
-  server.kill('SIGTERM');
+  try { await browser?.close(); } finally { stopServer(); }
 }

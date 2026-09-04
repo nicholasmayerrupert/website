@@ -2,34 +2,11 @@
 // instance can disconnect/reconnect, final teardown releases the canvas target
 // and shared WebGL context, and a transient WASM load failure exposes a retry.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const baseURL = `http://127.0.0.1:${PORT}/game?sandbox`;
-const server = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-});
-const killServer = () => {
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    else process.kill(-server.pid, 'SIGKILL');
-  } catch { /* already gone */ }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  const timeout = setTimeout(() => reject(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => {
-    try {
-      if ((await fetch(baseURL)).ok) {
-        clearTimeout(timeout);
-        clearInterval(poll);
-        resolve();
-      }
-    } catch { /* server is still starting */ }
-  }, 300);
-});
-
+const { baseURL: origin, close: stopServer } = await startTestServer();
+const baseURL = `${origin}/game?sandbox`;
 let failures = 0;
 const check = (label, ok, detail = '') => {
   if (!ok) failures++;
@@ -38,7 +15,6 @@ const check = (label, ok, detail = '') => {
 
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
 
   console.log('worker teardown during startup');
@@ -157,7 +133,7 @@ try {
   await guardBrowserPrototypes(coexistPage);
   const coexistErrors = [];
   coexistPage.on('pageerror', (error) => coexistErrors.push(error.message));
-  await coexistPage.goto(`http://127.0.0.1:${PORT}/#projects`, { waitUntil: 'load' });
+  await coexistPage.goto(`${origin}/#projects`, { waitUntil: 'load' });
   await coexistPage.waitForFunction(() => {
     const sandCanvas = document.querySelector('sand-game')?.shadowRoot
       ?.getElementById('sand-main');
@@ -195,7 +171,7 @@ try {
   await retryPage.close();
 } finally {
   await browser?.close().catch(() => {});
-  killServer();
+  stopServer();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

@@ -10,7 +10,7 @@ export function countMaterials(grid) {
   return c;
 }
 
-// Order-independent FNV-1a hash of a grid view (fixed-seed determinism checks).
+// Order-sensitive FNV-1a hash of a grid view (fixed-seed determinism checks).
 export function gridHash(grid) {
   let h = 0x811c9dc5 >>> 0;
   for (let i = 0; i < grid.length; i++) {

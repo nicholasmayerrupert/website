@@ -1,42 +1,19 @@
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
+import { installWorkerMock, installTestClock } from './worker-test-harness.mjs';
 import { encodeWorkerLiveness, WORKER_LIVENESS_STAGE as STAGE } from '../src/sand/worker/workerLiveness.js';
 
-// Replace only Vite's worker constructor; exercise the actual client protocol.
-const fakeWorkerModule = 'data:text/javascript,' + encodeURIComponent(`
-  export default class {
-    constructor() { globalThis.captureTestWorker = this; this.messages = []; }
-    postMessage(message) { this.messages.push(message); }
-    terminate() {}
-  }
-`);
-register('data:text/javascript,' + encodeURIComponent(`
-  export async function resolve(specifier, context, nextResolve) {
-    if (specifier === './worldWorkerConstructor.js')
-      return { url: ${JSON.stringify(fakeWorkerModule)}, shortCircuit: true };
-    return nextResolve(specifier, context);
-  }
-`), import.meta.url);
+const workers = installWorkerMock();
 const { createWorldWorkerClient } = await import('../src/sand/worker/worldWorkerClient.js');
-
-let now = 0, nextTimer = 0, probe;
-const timers = new Map();
-globalThis.performance = { now: () => now };
+const clock = installTestClock();
+const timers = clock.timeouts;
 globalThis.document = { hidden: false };
-globalThis.setTimeout = (callback, delay) => {
-  const id = ++nextTimer;
-  timers.set(id, { callback, delay });
-  return id;
-};
-globalThis.clearTimeout = (id) => timers.delete(id);
-globalThis.setInterval = (callback) => { probe = callback; return 1; };
-globalThis.clearInterval = () => {};
 let stallMessage = null;
 const client = createWorldWorkerClient({
   cols: 128, rows: 96, engine: null,
   setAuthorityStall: (message) => { stallMessage = message; },
 });
-const worker = globalThis.captureTestWorker;
+const worker = workers[0];
+const probe = [...clock.intervals.values()][0].callback;
 
 const first = client.exportReplay({});
 const superseded = assert.rejects(first, /superseded/);
@@ -63,7 +40,7 @@ assert.equal(timers.size, 0, 'successful captures clear their timer');
 
 worker.onmessage({ data: encodeWorkerLiveness(STAGE.STEP_WORLD, 10, false, true) });
 probe();
-now = 6000;
+clock.setNow(6000);
 probe();
 assert.match(stallMessage, /Press L/, 'a pending probe cannot suppress stall reporting');
 document.hidden = true;

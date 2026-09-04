@@ -42,6 +42,12 @@ slides and a fresh band is generated or restored from the chunk store.
 
 Replay capsules are input recipes, not world snapshots. Save paste to a file (`chat gzip wrapping/truncation breaks them`). `npm run replay:inspect -- <file>` first; `npm run replay:microscope -- <file>` for live frames (matching ABI only).
 
+Testing workflow: read `scripts/README.md`. Select related suites in one runner
+invocation (`--only a,b` or `--group rigid`) so they share preflight and exclusive
+scheduling. Full logs and failure diagnostics go to `.sand-artifacts/`.
+Use `--compare-ref REF` to check a failure against an earlier revision, and
+`npm run build:sand -- --profile` for an isolated named-function WASM build.
+
 ## The sand engine (read before touching it)
 
 - One grid of material ids (defined in `materials.schema.json`; see `MAT` in

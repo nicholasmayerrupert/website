@@ -27,3 +27,6 @@ dist-ssr
 
 # sand bench diagnostic image dumps (regenerate with scripts/bench-pan.mjs --png)
 bench/*.png
+
+# Local test, profiling, and comparison artifacts
+.sand-artifacts/

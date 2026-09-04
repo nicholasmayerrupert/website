@@ -2,17 +2,26 @@
 
 // Build the committed sand-engine JavaScript/WASM bundle.
 
-import { statSync } from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import {
   normalizeTextFile, requireEmscripten, run,
 } from './emscripten.mjs';
 
 const args = process.argv.slice(2);
 const dev = args.includes('--dev');
-const unknownArgs = args.filter((arg) => arg !== '--dev');
+const profile = args.includes('--profile');
+let outputDirectory = null;
+const unknownArgs = [];
+for (let index = 0; index < args.length; index++) {
+  const arg = args[index];
+  if (arg === '--out-dir' && args[index + 1] && !args[index + 1].startsWith('--'))
+    outputDirectory = args[++index];
+  else if (arg !== '--dev' && arg !== '--profile') unknownArgs.push(arg);
+}
 
-if (unknownArgs.length) {
-  console.error('Usage: npm run build:sand -- [--dev]');
+if (unknownArgs.length || (dev && profile)) {
+  console.error('Usage: npm run build:sand -- [--dev | --profile] [--out-dir DIR]');
   process.exit(2);
 }
 
@@ -27,11 +36,17 @@ run(process.execPath, ['scripts/generate-abi.mjs', '--check']);
 run(process.execPath, ['scripts/generate-biomes.mjs', '--check']);
 run(process.execPath, ['scripts/check-sand-contracts.mjs']);
 
-const output = 'src/sand/wasm/sandEngine.js';
+const output = `${outputDirectory || (profile ? '.sand-artifacts/profile' : 'src/sand/wasm')}/sandEngine.js`;
+if (profile && resolve(dirname(output)) === resolve('src/sand/wasm'))
+  throw new Error('Profiling builds must use a separate output directory.');
+mkdirSync(dirname(output), { recursive: true });
+if (resolve(dirname(output)) !== resolve('src/sand/wasm'))
+  writeFileSync(`${dirname(output)}/package.json`, '{"type":"module"}\n');
 const compilerArgs = [
   '-O3', '-msimd128', '-std=c++20',
   '-Wall', '-Wextra', '-Wpedantic', '-Wshadow', '-Wnull-dereference', '-Werror',
   ...(dev ? ['-DSAND_INVARIANT_CHECKS'] : []),
+  ...(profile ? ['--profiling-funcs'] : []),
   '-s', 'MODULARIZE=1',
   '-s', 'EXPORT_ES6=1',
   '-s', 'ENVIRONMENT=web,node',
@@ -55,7 +70,8 @@ const wasmOutput = output.replace(/\.js$/, '.wasm');
 console.log(`built ${output} (${statSync(output).size} bytes) + ${wasmOutput} (${statSync(wasmOutput).size} bytes)`);
 
 run(process.execPath, [
-  'scripts/write-wasm-build-info.mjs', output, ...(dev ? ['--dev'] : []),
+  'scripts/write-wasm-build-info.mjs', output,
+  ...(dev ? ['--dev'] : []), ...(profile ? ['--profile'] : []),
 ], {
   environment: {
     ...toolchain.environment,

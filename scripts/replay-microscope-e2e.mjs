@@ -1,18 +1,7 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
-import { npmInvocation, normalizedCwd, stopDetachedProcess } from './local-vite-process.mjs';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const port = await getAvailablePort();
-const baseURL = `http://127.0.0.1:${port}`;
-const npm = npmInvocation();
-const server = spawn(npm.command, [
-  ...npm.args, 'run', 'dev', '--', '--host', '127.0.0.1',
-  '--port', String(port), '--strictPort',
-], {
-  cwd: normalizedCwd(new URL('..', import.meta.url)),
-  stdio: 'ignore', detached: true,
-});
+const { baseURL, close: stopServer } = await startTestServer();
 let browser = null;
 let failures = 0;
 
@@ -20,20 +9,7 @@ const check = (label, ok, detail = '') => {
   if (!ok) failures++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` (${detail})` : ''}`);
 };
-const stopServer = () => {
-  try { stopDetachedProcess(server.pid); } catch {}
-};
-const waitForServer = async () => {
-  const until = Date.now() + 60000;
-  while (Date.now() < until) {
-    try { if ((await fetch(baseURL)).ok) return; } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('dev server timeout');
-};
-
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1000, height: 650 } });
   await page.goto(baseURL, { waitUntil: 'networkidle' });

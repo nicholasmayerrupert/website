@@ -2,50 +2,15 @@
 // diffs are presented back-to-back, well inside the periodic full-light interval;
 // both must update a distant skylight shadow immediately.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { makeChecker } from './sand-test-util.mjs';
-import { getAvailablePort } from './test-port.mjs';
+import { startTestServer } from './browser-harness.mjs';
 
-const PORT = await getAvailablePort();
-const URL = `http://127.0.0.1:${PORT}/`;
-const server = spawn(process.execPath, [
-  'node_modules/vite/bin/vite.js',
-  '--host', '127.0.0.1',
-  '--port', String(PORT),
-  '--strictPort',
-], {
-  cwd: process.cwd(),
-  env: process.env,
-  stdio: ['ignore', 'pipe', 'pipe'],
-  detached: true,
-});
-const stopServer = () => {
-  try {
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-    } else {
-      process.kill(-server.pid, 'SIGKILL');
-    }
-  } catch { /* already stopped */ }
-};
-const waitForServer = () => new Promise((resolve, reject) => {
-  const timeout = setTimeout(() => reject(new Error('dev server timeout')), 60000);
-  const poll = setInterval(async () => {
-    try {
-      if ((await fetch(URL)).ok) {
-        clearTimeout(timeout);
-        clearInterval(poll);
-        resolve();
-      }
-    } catch { /* still starting */ }
-  }, 250);
-});
+const { baseURL: URL, close: stopServer } = await startTestServer();
 
 const { check, done } = makeChecker('presentation lighting latency');
 let browser;
 try {
-  await waitForServer();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });

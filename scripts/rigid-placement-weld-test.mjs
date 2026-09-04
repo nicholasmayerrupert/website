@@ -8,6 +8,7 @@ import {
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { CREATIVE_KIND } from '../src/sand/wasmBridge/abi.generated.js';
+import { createFixtureEngine, paintPerforatedPlate } from './sand-fixtures.mjs';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 132;
@@ -214,16 +215,8 @@ const findForegroundOnlyBodyCell = (engine) => {
 
 for (const layer of [0, 1]) {
   const cols = 120, rows = 140;
-  const engine = attachTestHooks(createEngineWasmRaw({
-    cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
-  }));
-  engine.setBgEnabled(true);
-  engine.getGrid().fill(MAT.EMPTY);
-  engine.getGridBg().fill(MAT.EMPTY);
-  for (let y = 20; y < 100; y++) for (let x = 20; x < 100; x++)
-    if (x % 3 !== 0 || y % 3 !== 0)
-      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
-  engine.syncComponentsLayer(layer);
+  const engine = createFixtureEngine({ cols, rows });
+  paintPerforatedPlate(engine, { size: 80, layer });
   engine.stepWorld();
   const beforeId = engine._bodyIdLayer(layer, 0);
   const beforeTick = engine.getTick();

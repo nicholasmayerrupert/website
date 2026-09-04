@@ -10,9 +10,10 @@ import { dirname, relative, resolve } from 'node:path';
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const allowDev = args.includes('--allow-dev');
-const variant = args.includes('--dev') ? 'dev' : 'production';
-if (allowDev && !checkOnly) {
-  console.error('--allow-dev is valid only with --check');
+const allowProfile = args.includes('--allow-profile');
+const variant = args.includes('--dev') ? 'dev' : args.includes('--profile') ? 'profile' : 'production';
+if ((allowDev || allowProfile) && !checkOnly) {
+  console.error('--allow-dev and --allow-profile are valid only with --check');
   process.exit(2);
 }
 const positional = args.filter((arg) => !arg.startsWith('--'));
@@ -130,7 +131,8 @@ if (checkOnly) {
   }
   const failures = [];
   if (recorded.variant !== 'production'
-      && !(allowDev && recorded.variant === 'dev'))
+      && !(allowDev && recorded.variant === 'dev')
+      && !(allowProfile && recorded.variant === 'profile'))
     failures.push(`build variant is ${recorded.variant || 'unknown'}, not production`);
   if (recorded.source?.sha256 !== info.source.sha256)
     failures.push('compiled source hash is stale');

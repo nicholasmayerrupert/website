@@ -75,6 +75,18 @@ Use the invariant-checking build while diagnosing component or body ownership:
 npm run build:sand -- --dev
 ```
 
+For CPU profiling at production optimization, use a separate named-function build:
+
+```sh
+npm run build:sand -- --profile
+node scripts/scenario-runner.mjs --scenario aftermath --profile --wasm .sand-artifacts/profile/sandEngine.js
+```
+
+Profiling output defaults to `.sand-artifacts/profile/`; `--out-dir DIR` selects
+another directory. Headless suites accept `--wasm DIR/sandEngine.js` through the
+test runner. Production provenance rejects profiling builds. See
+[`scripts/README.md`](../scripts/README.md) for artifacts and revision comparisons.
+
 The development variant writes to the production artifact paths. Run the
 production command before committing generated artifacts.
 

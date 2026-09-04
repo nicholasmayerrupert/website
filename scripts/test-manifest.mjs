@@ -7,6 +7,7 @@ const exclusive = (timeoutMs) => ({ timeoutMs, concurrency: 'exclusive' });
 
 export const UNIT_SUITES = [
   ['test-runner', 'run-tests-test.mjs'],
+  ['scenario-runner', 'scenario-runner-test.mjs'],
   ['campaign', 'campaign-test.mjs'],
   ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],
@@ -144,9 +145,29 @@ export const BROWSER_SUITES = [
 // Focused suites are available by manifest key without joining the default
 // headless or browser aggregates.
 export const FOCUSED_SUITES = [
+  ['worker-startup-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'startup'] }],
+  ['worker-capture-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'capture'] }],
+  ['worker-seek-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'seek'] }],
+  ['worker-playback-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'playback'] }],
+  ['worker-restore-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'restore'] }],
+  ['worker-recovery-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'recovery'] }],
+  ['worker-desktop-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'desktop'] }],
+  ['worker-mobile-e2e', 'worker-e2e.mjs', { ...exclusive(180_000), args: ['--case', 'mobile'] }],
   ['tnt-u', 'repro-tnt-u.mjs', exclusive(120_000)],
   // Multi-seed settling soak; the aggregate uses the bounded exact-raster case.
   ['rigid-complex-stack', 'rigid-complex-stack-test.mjs', exclusive(300_000)],
 ];
 
 export const EXCLUDED_TESTS = [];
+
+// Groups select existing suites; their manifest order and scheduling stay intact.
+const allSuites = [...UNIT_SUITES, ...BROWSER_SUITES, ...FOCUSED_SUITES];
+const matching = (pattern) => allSuites.filter(([name, , settings]) => !settings?.args && pattern.test(name)).map(([name]) => name);
+export const TEST_GROUPS = {
+  rigid: matching(/rigid|tnt|structural-stress|house-blast/),
+  replay: [...matching(/replay|worker-capture/), 'worker-capture-e2e',
+    'worker-seek-e2e', 'worker-playback-e2e', 'worker-restore-e2e'],
+  worker: matching(/worker|replica|prediction|viewport-pause/),
+  generation: matching(/generator|worldgen|biome|world-context|deep-world/),
+  harness: ['test-runner', 'scenario-runner', 'worker-capture', 'replay-capture'],
+};

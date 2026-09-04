@@ -1,13 +1,13 @@
 // Manifest-driven parallel test runner. The default runs headless suites;
-// `--browser` selects browser suites. `--only` selects one manifest entry,
-// `--from` resumes by name, and `--jobs` overrides the bounded worker count.
+// Selections share one preflight and scheduler. Full output is saved as artifacts;
+// the console reports concise failures and periodic progress.
 
-import { readdirSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
-  BROWSER_SUITES, EXCLUDED_TESTS, FOCUSED_SUITES, UNIT_SUITES,
+  BROWSER_SUITES, EXCLUDED_TESTS, FOCUSED_SUITES, UNIT_SUITES, TEST_GROUPS,
 } from './test-manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,8 +36,10 @@ if (missing.length || stale.length) {
 }
 const malformed = selectableSuites.filter((suite) => {
   const { timeoutMs, concurrency } = suiteSettings(suite);
+  const args = suite[2]?.args;
   return !Number.isInteger(timeoutMs) || timeoutMs <= 0
-    || (concurrency !== 'parallel' && concurrency !== 'exclusive');
+    || (concurrency !== 'parallel' && concurrency !== 'exclusive')
+    || (args !== undefined && (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string')));
 });
 if (malformed.length) {
   console.error(`Test manifest has invalid metadata: ${malformed.map(([name]) => name).join(', ')}`);
@@ -52,8 +54,8 @@ if (duplicateNames.length) {
 }
 
 const args = process.argv.slice(2);
-const valueFlags = new Set(['--only', '--from', '--jobs']);
-const booleanFlags = new Set(['--browser', '--verbose', '--list']);
+const valueFlags = new Set(['--only', '--group', '--from', '--jobs', '--artifacts', '--compare-ref', '--wasm']);
+const booleanFlags = new Set(['--browser', '--verbose', '--list', '--help']);
 const parsed = new Map();
 for (let i = 0; i < args.length; i++) {
   const flag = args[i];
@@ -63,7 +65,12 @@ for (let i = 0; i < args.length; i++) {
       console.error(`${flag} requires a value`);
       process.exit(2);
     }
-    parsed.set(flag, value);
+    if (flag === '--only' || flag === '--group')
+      parsed.set(flag, [...(parsed.get(flag) || []), ...value.split(',')]);
+    else if (parsed.has(flag)) {
+      console.error(`Duplicate argument: ${flag}`);
+      process.exit(2);
+    } else parsed.set(flag, value);
   } else if (booleanFlags.has(flag)) {
     parsed.set(flag, true);
   } else {
@@ -71,41 +78,62 @@ for (let i = 0; i < args.length; i++) {
     process.exit(2);
   }
 }
-const only = parsed.get('--only') ?? null;
+if (parsed.has('--help')) {
+  console.log(`Usage: node scripts/run-tests.mjs [options]
+  --only NAME[,NAME]    Select suites; repeatable, exact names preferred
+  --group NAME[,NAME]   Select subsystem groups; repeatable
+  --browser            Default to all browser suites
+  --from NAME          Resume the default aggregate at a suite
+  --jobs N             Parallel jobs; exclusive suites still run alone
+  --list               List selected suites without running preflight
+  --verbose            Stream full suite output
+  --artifacts DIR      Save logs and summary.json in DIR
+  --compare-ref REF    Compare selected suites with a clean Git revision
+  --wasm FILE          Use an alternate source-current headless WASM loader
+Groups: ${Object.keys(TEST_GROUPS).join(', ')}`);
+  process.exit(0);
+}
+const only = parsed.get('--only') || [];
+const groups = parsed.get('--group') || [];
 const from = parsed.get('--from') ?? null;
-let browser = parsed.has('--browser');
 const verbose = parsed.has('--verbose');
 const listOnly = parsed.has('--list');
-const defaultJobs = browser ? 1 : 2;
-const jobsArg = parsed.get('--jobs') ?? process.env.TEST_JOBS;
-const jobs = jobsArg === null || jobsArg === undefined ? defaultJobs : Number(jobsArg);
-if (!Number.isInteger(jobs) || jobs < 1) {
-  console.error(`--jobs must be a positive integer (got "${jobsArg}")`);
-  process.exit(2);
-}
-
 let suites;
-if (only) {
-  const exact = selectableSuites.filter(([name]) => name === only);
-  const matches = exact.length ? exact : selectableSuites.filter(([name, file]) => {
-    return name.includes(only) || file.includes(only);
-  });
-  if (!matches.length) {
-    console.error(`--only: no suite matches "${only}"`);
-    process.exit(2);
+if (only.length || groups.length) {
+  const selected = new Set();
+  for (const query of only) {
+    const exact = selectableSuites.filter(([name]) => name === query);
+    const matches = exact.length ? exact : selectableSuites.filter(([name, file]) =>
+      name.includes(query) || file.includes(query));
+    if (!query || matches.length !== 1) {
+      console.error(matches.length > 1
+        ? `--only: "${query}" is ambiguous; matches ${matches.map(([name]) => name).join(', ')}`
+        : `--only: no suite matches "${query}"`);
+      process.exit(2);
+    }
+    selected.add(matches[0][0]);
   }
-  if (matches.length > 1) {
-    console.error(`--only: "${only}" is ambiguous; matches ${matches.map(([name]) => name).join(', ')}`);
-    process.exit(2);
+  for (const group of groups) {
+    if (!Object.hasOwn(TEST_GROUPS, group)) {
+      console.error(`Unknown group "${group}". Groups: ${Object.keys(TEST_GROUPS).join(', ')}`);
+      process.exit(2);
+    }
+    for (const name of TEST_GROUPS[group]) {
+      if (!selectableSuites.some(([key]) => key === name))
+        throw new Error(`Group ${group} names missing suite ${name}`);
+      selected.add(name);
+    }
   }
-  if (from) {
-    console.error('--only and --from cannot be combined');
-    process.exit(2);
-  }
-  suites = matches;
-  browser = BROWSER_SUITES.includes(matches[0]);
-} else {
-  suites = browser ? BROWSER_SUITES : UNIT_SUITES;
+  if (from) { console.error('--from cannot be combined with --only or --group'); process.exit(2); }
+  suites = selectableSuites.filter(([name]) => selected.has(name));
+} else suites = parsed.has('--browser') ? BROWSER_SUITES : UNIT_SUITES;
+const isBrowser = (suite) => BROWSER_SUITES.some(([, file]) => file === suite[1]);
+const hasBrowser = suites.some(isBrowser);
+const kind = hasBrowser ? (suites.every(isBrowser) ? 'browser' : 'mixed') : 'headless';
+const jobs = Number(parsed.get('--jobs') ?? process.env.TEST_JOBS ?? (hasBrowser ? 1 : 2));
+if (!Number.isInteger(jobs) || jobs < 1) {
+  console.error(`--jobs must be a positive integer (got "${jobs}")`);
+  process.exit(2);
 }
 if (from) {
   const i = suites.findIndex(([name]) => name === from);
@@ -124,6 +152,24 @@ if (listOnly) {
   process.exit(0);
 }
 
+const artifactDir = resolve(root, parsed.get('--artifacts')
+  || `.sand-artifacts/tests/${new Date().toISOString().replaceAll(':', '-')}-${process.pid}`);
+mkdirSync(artifactDir, { recursive: true });
+if (parsed.has('--compare-ref')) {
+  if (parsed.has('--wasm')) {
+    console.error('--compare-ref and --wasm cannot be combined');
+    process.exit(2);
+  }
+  const { compareRevision } = await import('./test-compare.mjs');
+  process.exit(await compareRevision({ root, ref: parsed.get('--compare-ref'), suites,
+    artifactDir, jobs, verbose }));
+}
+const wasmLoader = parsed.get('--wasm') ? resolve(root, parsed.get('--wasm')) : null;
+if (wasmLoader && hasBrowser) {
+  console.error('--wasm currently supports headless suites only');
+  process.exit(2);
+}
+
 // Tests import the committed WASM directly. Tests must execute generated tables
 // and an artifact built from the checked-out engine sources.
 // Invoke the underlying check scripts directly so this preflight never recurses
@@ -134,7 +180,7 @@ const preflightChecks = [
   ['generated ABI', 'generate-abi.mjs', ['--check']],
   ['generated biomes', 'generate-biomes.mjs', ['--check']],
   ['sand engine source contracts', 'check-sand-contracts.mjs', []],
-  ['sand WASM provenance', 'write-wasm-build-info.mjs', ['--check', '--allow-dev']],
+  ['sand WASM provenance', 'write-wasm-build-info.mjs', ['--check', '--allow-dev', ...(wasmLoader ? ['--allow-profile', wasmLoader] : [])]],
 ];
 console.log('Checking generated sources and sand WASM provenance...');
 for (const [label, file, checkArgs] of preflightChecks) {
@@ -179,24 +225,36 @@ const killTree = (child, signal = 'SIGTERM') => {
     }
   } catch { /* process already exited */ }
 };
-const runSuite = (file, timeoutMs) => new Promise((resolveRun) => {
-  const child = spawn(process.execPath, [resolve(root, 'scripts', file)], {
+const runSuite = (name, file, timeoutMs, suiteArgs = []) => new Promise((resolveRun) => {
+  const logPath = resolve(artifactDir, `${name}.log`);
+  const log = openSync(logPath, 'w');
+  let tail = '';
+  const child = spawn(process.execPath, [...(wasmLoader ? ['--import', resolve(root, 'scripts/sand-wasm-loader.mjs')] : []), resolve(root, 'scripts', file), ...suiteArgs], {
     cwd: root,
+    env: { ...process.env, SAND_TEST_ARTIFACTS: resolve(artifactDir, name), ...(wasmLoader ? { SAND_WASM_LOADER: wasmLoader } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   });
   activeChildren.add(child);
-  const output = [];
-  child.stdout.on('data', (chunk) => output.push(['stdout', chunk]));
-  child.stderr.on('data', (chunk) => output.push(['stderr', chunk]));
+  const capture = (stream, chunk) => {
+    writeSync(log, chunk);
+    tail = (tail + chunk.toString()).slice(-16384);
+    if (verbose) process[stream].write(chunk);
+  };
+  child.stdout.on('data', (chunk) => capture('stdout', chunk));
+  child.stderr.on('data', (chunk) => capture('stderr', chunk));
+  const heartbeat = setInterval(() => console.log(`[ ...] ${name} still running; log: ${logPath}`), 30000);
+  heartbeat.unref();
   let timedOut = false;
   let settled = false;
   const finish = (result) => {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
+    clearInterval(heartbeat);
+    closeSync(log);
     activeChildren.delete(child);
-    resolveRun({ ...result, timedOut, output });
+    resolveRun({ ...result, timedOut, tail, logPath });
   };
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -224,31 +282,30 @@ const stopChildren = (signal) => {
 process.once('SIGINT', () => stopChildren('SIGINT'));
 process.once('SIGTERM', () => stopChildren('SIGTERM'));
 
-const printOutput = ({ name, output }) => {
-  if (!output.length) return;
-  process.stdout.write(`\n--- ${name} output ---\n`);
-  for (const [stream, chunk] of output) process[stream].write(chunk);
-  const last = output.at(-1)?.[1];
-  if (last?.length && last[last.length - 1] !== 10) process.stdout.write('\n');
+const printOutput = ({ name, tail, logPath }) => {
+  const lines = tail.split('\n').filter((line) => line.length < 800);
+  const assertions = lines.filter((line) => /(?:^|\s)(?:FAIL\b|(?:Assertion|Type|Reference|Range|Syntax|Timeout)?Error:|TIMEOUT\b)/.test(line));
+  console.log(`\n${name}:\n${(assertions.length ? assertions : lines.slice(-20)).join('\n')}`);
+  console.log(`Full output: ${logPath}`);
 };
 
 const wallStarted = Date.now();
 const workerCount = Math.min(jobs, Math.max(1, suites.length));
 let nextSuite = 0;
 const exclusiveCount = suites.filter((suite) => suiteSettings(suite).concurrency === 'exclusive').length;
-console.log(`Running ${suites.length} ${browser ? 'browser' : 'headless'} suites with ${workerCount} jobs (${exclusiveCount} exclusive)`);
+console.log(`Running ${suites.length} ${kind} suites with ${workerCount} jobs (${exclusiveCount} exclusive)`);
 
 const runOne = async (index) => {
-  const [name, file] = suites[index];
+  const [name, file, settings] = suites[index];
   const { timeoutMs } = suiteSettings(suites[index]);
   const started = Date.now();
   console.log(`[RUN ] ${name}`);
-  const r = await runSuite(file, timeoutMs);
+  const r = await runSuite(name, file, timeoutMs, settings?.args);
   const ms = Date.now() - started;
   const failed = r.status !== 0 || r.timedOut;
   const result = { name, file, ms, failed, ...r };
   results[index] = result;
-  if (verbose || failed) printOutput(result);
+  if (failed && !verbose) printOutput(result);
   if (r.timedOut) console.error(`TIMEOUT: ${name} exceeded ${Math.round(timeoutMs / 1000)}s`);
   if (r.error) console.error(`Failed to start ${name}: ${r.error.message}`);
   console.log(`[${failed ? 'FAIL' : ' ok '}] ${name} ${(ms / 1000).toFixed(1)}s`);
@@ -286,6 +343,17 @@ for (const r of completed) {
   const mark = r.failed ? 'FAIL' : ' ok ';
   console.log(`  [${mark}] ${r.name.padEnd(20)} ${(r.ms / 1000).toFixed(1)}s${r.timedOut ? '  (timeout)' : r.signal ? `  (signal ${r.signal})` : ''}`);
 }
+const report = {
+  parameters: Object.fromEntries(['SEED', 'STEPS', 'COLS', 'ROWS', 'RIGID_SOLVER_MODE', 'MAX_CASES']
+    .filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])),
+  suites: completed.map(({ name, file, ms, failed, status, signal, timedOut, logPath }) =>
+    ({ name, file, ms, failed, status, signal, timedOut, logPath,
+      rerun: `node scripts/run-tests.mjs --only ${name}` })),
+  interrupted: stoppingSignal,
+  wallMs,
+};
+writeFileSync(resolve(artifactDir, 'summary.json'), `${JSON.stringify(report, null, 2)}\n`);
+console.log(`Artifacts: ${artifactDir}`);
 if (stoppingSignal) process.exit(stoppingSignal === 'SIGINT' ? 130 : 143);
 if (failures.length) {
   console.error(`\nFAILED: ${failures.map((r) => r.name).join(', ')}`);

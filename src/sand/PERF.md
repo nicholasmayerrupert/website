@@ -6,6 +6,9 @@ mapping, and pan stability.
 
 ## Commands
 
+For scenario artifacts, operation timeouts, and named WASM CPU profiles, see
+[`scripts/README.md`](../../scripts/README.md#stress-and-profiling).
+
 | Command | Purpose |
 | --- | --- |
 | `npm run sand:doctor` | Check generated sources, WASM provenance, and the recorded engine checksum. |

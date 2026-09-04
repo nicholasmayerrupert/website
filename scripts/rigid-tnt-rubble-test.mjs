@@ -661,6 +661,12 @@ if (process.env.SUMMARY_ONLY) {
         })),
     } : {}),
   }));
+} else if (process.env.SAND_TEST_ARTIFACTS) {
+  const directory = resolve(process.env.SAND_TEST_ARTIFACTS);
+  mkdirSync(directory, { recursive: true });
+  const path = resolve(directory, 'rubble.json');
+  writeFileSync(path, JSON.stringify(summary, null, 2));
+  console.log(`seed=${SEED} steps=${STEPS}; full rubble diagnostics: ${path}`);
 } else {
   console.log(JSON.stringify(summary));
 }

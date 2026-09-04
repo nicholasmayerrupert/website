@@ -795,6 +795,11 @@ Mars > Moon fall ordering. The campaign browser suite covers Kestrel and all
 three deployment configurations.
 
 `scripts/test-manifest.mjs` is the source of truth for executable test entries.
+See [`scripts/README.md`](../../scripts/README.md) for combined selection,
+subsystem groups, failure artifacts, revision comparisons, isolated browser
+cases, and profiling. For example, `node scripts/run-tests.mjs --only
+rigid-placement-weld,worker-capture` runs both suites under one preflight and
+scheduler; `--group rigid --list` lists the rigid group.
 Before running a suite, the runner checks generated material/ABI/biome sources and
 the committed WASM provenance without rebuilding. It also checks that every
 `*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is declared. Headless tests use two workers; browser suites

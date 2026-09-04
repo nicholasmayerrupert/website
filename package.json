@@ -32,8 +32,8 @@
     "test:players": "node scripts/run-tests.mjs --only players",
     "test:actor-rigid": "node scripts/run-tests.mjs --only actor-rigid",
     "test:timing": "node scripts/run-tests.mjs --only timing",
-    "test:replay": "node scripts/run-tests.mjs --only replay-capsule && node scripts/run-tests.mjs --only replay-inspect && node scripts/run-tests.mjs --only replay-visual-buffer",
-    "test:replay-microscope": "node scripts/run-tests.mjs --only replay-microscope-platform && node scripts/run-tests.mjs --only replay-microscope-e2e",
+    "test:replay": "node scripts/run-tests.mjs --only replay-capsule,replay-inspect,replay-visual-buffer",
+    "test:replay-microscope": "node scripts/run-tests.mjs --only replay-microscope-platform,replay-microscope-e2e",
     "test:anim": "node scripts/run-tests.mjs --only anim",
     "test:audio": "node scripts/run-tests.mjs --only audio",
     "test:layer": "node scripts/run-tests.mjs --only layer",
@@ -159,18 +159,15 @@
     "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {
-    "@gsap/react": "^2.1.2",
-    "gsap": "^3.13.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-icons": "^5.1.0",
     "three": "^0.163.0",
     "wrangler": "^4.55.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.66",
-    "@types/three": "^0.163.0",
     "@types/react-dom": "^18.2.22",
+    "@types/three": "^0.163.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.57.0",
@@ -180,7 +177,6 @@
     "playwright": "^1.61.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
-    "tailwindcss-textshadow": "^2.1.3",
     "vite": "^5.4.21"
   }
 }

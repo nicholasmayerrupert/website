@@ -12,6 +12,7 @@ dist
 dist-embed
 dist-ssr
 .cache/
+.wrangler/
 *.local
 
 # Editor directories and files

@@ -133,11 +133,6 @@ const Hero = ({ onDrawModeChange }) => {
         <SplitText
           text="NICHOLAS MAYER-RUPERT"
           className="max-w-full text-[clamp(1.9rem,9.5vw,3rem)] sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-4 md:mb-6 leading-tight md:leading-none"
-          tag="h1"
-          textAlign="center"
-          splitType="words,chars"
-          delay={30}
-          duration={0.3}
         />
       </div>
 

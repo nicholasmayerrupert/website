@@ -171,8 +171,11 @@ event('finish');
   for (const [name, command] of Object.entries(scripts)) {
     if (!name.startsWith('test:') || name === 'test:all' || name === 'test:browser') continue;
     const selected = command.match(/node scripts\/run-tests\.mjs --only ([^ ]+)/)?.[1];
-    if (selected) assert.ok(manifestKeys.has(selected), `${name} selects manifest key ${selected}`);
-    else assert.ok(standalonePackageTests.has(name), `${name} must use the focused test runner`);
+    if (selected) {
+      for (const key of selected.split(',')) {
+        assert.ok(manifestKeys.has(key), `${name} selects manifest key ${key}`);
+      }
+    } else assert.ok(standalonePackageTests.has(name), `${name} must use the focused test runner`);
   }
 
   const provenanceRoot = resolve(fixtureRoot, 'provenance');

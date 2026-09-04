@@ -7,16 +7,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        'dark': '#121212', // Name the color 'dark' or any name you prefer
+        'dark': '#121212',
       }
     }
   },
-  variants: {
-    extend: {
-            backgroundColor: ['hover'],  // This is already set to enable hover states
-      transform: ['hover', 'focus'],        // Now 'hover' and 'focus' states can apply to transform utilities
-      translate: ['hover', 'focus'],
-    },
-  },
-  plugins: [],
 }

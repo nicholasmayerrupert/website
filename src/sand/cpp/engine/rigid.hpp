@@ -213,6 +213,13 @@ class RigidBodySystem {
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);
 
  private:
+  struct StepState;
+  void prepareRigidStep(StepState& step, double tickDt);
+  void solveRigidStep(StepState& step, double tickDt);
+  void finalizeRigidStep(StepState& step);
+  static constexpr int TERRAIN_RIGID_BIN_SHIFT = 3;
+  static constexpr int TERRAIN_RIGID_BIN_SIZE = 1 << TERRAIN_RIGID_BIN_SHIFT;
+
   struct ContactCacheKey {
     int aId = -1, bId = -1;
     int childA = -1, childB = -1, featureA = -1, featureB = -1;
@@ -362,8 +369,11 @@ class RigidBodySystem {
   std::vector<int32_t> movePreviousOwnerGrid;
   std::vector<std::pair<int, int>> terrainContactPairs;
   std::vector<int> terrainAdjustmentParents;
+  std::vector<int> terrainAdjustmentFirst, terrainAdjustmentNext;
+  std::vector<int> jointCellIndex;
   std::vector<int> moveCells, moveFootprint;
   std::vector<int> rasterProjectionOwner, rasterProjectionTouched;
+  std::vector<int> rasterOverlapNode, rasterOverlapCount;
   std::array<StampSet, 2> bakeRasterAliases;
   std::vector<Body*> rasterProjectionBodies;
   std::vector<std::pair<int, int>> rasterProjectionPairs;

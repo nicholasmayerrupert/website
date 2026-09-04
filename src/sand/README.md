@@ -332,9 +332,12 @@ body bounds faintly visible for context.
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
 - `cpp/engine/step.inc`: world-step coordinator and cross-layer transfer.
-- `cpp/engine/rigid_impl.inc`: rigid-body operations; the hot solver is grouped
-  into prepare/contact/substep/finalize includes and liquid coupling into
-  domain/projection/solve/writeback includes without adding runtime boundaries.
+- `cpp/engine/rigid_impl.inc`: rigid-body operations. `rigidStep()` coordinates
+  `prepareRigidStep`, `solveRigidStep`, and `finalizeRigidStep`, whose definitions
+  live in the prepare/substeps/finalize includes. Their per-tick `StepState`
+  contains only data shared across phases; contact helpers and solver scratch
+  stay inside the solve phase. Liquid coupling uses domain/projection/solve/
+  writeback includes.
 - `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world
   structure stamping under `worldgen_generation.inc`; loaded-window persistence,
   prefetch, shifting, and resize live separately in `world_streaming.inc`.

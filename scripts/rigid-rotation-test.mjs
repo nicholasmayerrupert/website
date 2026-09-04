@@ -12,6 +12,60 @@ import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const { check, done } = makeChecker('large rigid rotation');
 
+// Compare stamped ownership with an independent inverse-transform reference.
+// Tiny rotations and half-cell translations exercise footprint reuse and its
+// rounding boundary; larger rotations exercise the general raster path.
+for (const omega of [0, 1e-9, -1e-9, 0.005]) {
+  for (const vx of [0, 0.03125, 0.5]) {
+    const cols = 100, rows = 80, width = 46, height = 29;
+    const engine = attachTestHooks(createEngineWasmRaw({
+      cols, rows, worldSeed: 7, sinksOn: false, infinite: false,
+      gravityScale: 0.05,
+    }));
+    const cells = [];
+    const mask = new Set();
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const mirrored = Math.min(x, width - 1 - x)
+          + Math.min(y, height - 1 - y);
+        if (x > 5 && x < 40 && y > 5 && y < 23 && mirrored % 3 === 0)
+          continue;
+        cells.push([x + 8, y + 20]);
+        mask.add(y * width + x);
+      }
+    }
+    engine.spawnBody(cells);
+    const initial = engine._bodyState(0);
+    const offsetX = 8.5 - initial.px, offsetY = 20.5 - initial.py;
+    const id = engine._bodyIdLayer(0, 0);
+    engine._setBodyMotion(0, vx, 0, omega);
+    let mismatch = '';
+    for (let tick = 0; tick < 24 && !mismatch; tick++) {
+      engine.stepWorld();
+      const state = engine._bodyState(0);
+      const owners = engine._bodyOwnerGrid();
+      const cs = Math.cos(state.angle), sn = Math.sin(state.angle);
+      for (let y = 0; y < rows && !mismatch; y++) {
+        for (let x = 0; x < cols; x++) {
+          const dx = x + 0.5 - state.px, dy = y + 0.5 - state.py;
+          const lx = dx * cs + dy * sn - offsetX;
+          const ly = -dx * sn + dy * cs - offsetY;
+          const expected = lx > -0.5 && lx < width - 0.5
+            && ly > -0.5 && ly < height - 0.5
+            && mask.has(Math.round(ly) * width + Math.round(lx));
+          if ((owners[y * cols + x] === id) !== expected) {
+            mismatch = ` at tick ${tick}, cell ${x},${y}`;
+            break;
+          }
+        }
+      }
+    }
+    check(`inverse raster agrees for vx=${vx}, omega=${omega}${mismatch}`,
+      !mismatch);
+    engine.destroy();
+  }
+}
+
 const cols = 420;
 const rows = 330;
 const floorY = 280;

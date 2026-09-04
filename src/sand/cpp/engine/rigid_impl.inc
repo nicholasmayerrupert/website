@@ -1193,7 +1193,10 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       Layer& layer = layerIndex ? E.bg : E.fg;
       // A single shared lattice sample is an alias, as in the per-layer
       // projection. Repeated overlap still invalidates the whole assignment.
-      std::unordered_map<uint64_t, int> overlapCounts;
+      // Claims arrive in node order, so each overlap is with an earlier node.
+      // A generation per earlier node counts pairs without hashing every cell.
+      rasterOverlapNode.assign(worldRasterNodes.size(), -1);
+      rasterOverlapCount.resize(worldRasterNodes.size());
       clearOwners();
       for (int nodeIndex = 0;
            nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
@@ -1217,11 +1220,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
               rasterProjectionOwner[k] = nodeIndex;
               rasterProjectionTouched.push_back(k);
             } else if (previous != nodeIndex) {
-              int first = imin(previous, nodeIndex);
-              int second = imax(previous, nodeIndex);
-              uint64_t key = ((uint64_t)(uint32_t)first << 32)
-                           | (uint32_t)second;
-              if (++overlapCounts[key] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
+              if (rasterOverlapNode[previous] != nodeIndex) {
+                rasterOverlapNode[previous] = nodeIndex;
+                rasterOverlapCount[previous] = 0;
+              }
+              if (++rasterOverlapCount[previous] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
                 continue;
               valid = false;
               if (violating) {
@@ -1289,15 +1292,12 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   }
 
   auto setPose = [&](WorldRasterNode& node, const MovePose& pose) {
-    bool changed = node.body->px != pose.px
-      || node.body->py != pose.py
-      || node.body->angle != pose.angle;
     node.body->px = pose.px;
     node.body->py = pose.py;
     node.body->angle = pose.angle;
     node.body->cs = std::cos(pose.angle);
     node.body->sn = std::sin(pose.angle);
-    if (changed) node.body->rasterFootprintValid = false;
+    // ensureBodyRaster validates the pose and can reuse an unchanged cell map.
     if (node.body->jointRole == 1) syncJointFollower(node.body);
   };
   worldRasterRollback = worldRasterViolating;
@@ -3105,17 +3105,18 @@ void RigidBodySystem::breakJointBody(Body* member) {
   }
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
-void RigidBodySystem::rigidStep(double tickDt) {
-  double rigidStageStart = emscripten_get_now();
 #include "rigid_step_prepare.inc"
-  rigidStepPrepareMs += emscripten_get_now() - rigidStageStart;
-  rigidStageStart = emscripten_get_now();
-#include "rigid_step_contacts.inc"
-  rigidContactSetupMs += emscripten_get_now() - rigidStageStart;
-  rigidStageStart = emscripten_get_now();
 #include "rigid_step_substeps.inc"
-  rigidStageStart = emscripten_get_now();
 #include "rigid_step_finalize.inc"
+
+void RigidBodySystem::rigidStep(double tickDt) {
+  StepState step;
+  double rigidStageStart = emscripten_get_now();
+  prepareRigidStep(step, tickDt);
+  rigidStepPrepareMs += emscripten_get_now() - rigidStageStart;
+  solveRigidStep(step, tickDt);
+  rigidStageStart = emscripten_get_now();
+  finalizeRigidStep(step);
   rigidStepFinalizeMs += emscripten_get_now() - rigidStageStart;
   rigidFluidReferenceTotalMs += fluidReferenceMs;
   rigidFluidDomainTotalMs += fluidDomainMs;
@@ -3128,10 +3129,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
   // Background contacts resolve against the physical foreground leader. Mirror
   // any resulting motion into its passive background footprint.
   if (E.L == &E.bg)
-    for (const auto& entry : peerJointLeaders)
+    for (const auto& entry : step.peerJointLeaders)
       syncJointFollower(entry.second);
   if (E.reactions.acceptsRigidContacts()) {
-    for (const Contact& contact : contacts) {
+    for (const Contact& contact : solverContactScratch) {
       if (!contact.b || !contact.bIntegrated
           || contact.a->kinematic || contact.b->kinematic) continue;
       double ax = contact.a->px + contact.rax;
@@ -3177,21 +3178,64 @@ void RigidBodySystem::ensureBodyRaster(Body* b) {
   corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
   int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX), y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
   if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= E.cols) x1 = E.cols - 1; if (y1 >= E.rows) y1 = E.rows - 1;
-  b->rasterFootprint.clear();
-  b->rasterBoundaryFootprint.clear();
-  for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
-    double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
-    double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
-    int i = rigidRasterCoordinate(lx - b->offsetX, b->w);
-    int j = rigidRasterCoordinate(ly - b->offsetY, b->h);
-    if (i < 0 || j < 0) continue;
-    int local = j * b->w + i;
-    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) {
-      b->rasterFootprint.push_back({wx, wy, local});
-      if (b->erosionBoundaryMask[local])
-        b->rasterBoundaryFootprint.push_back({wx, wy, local});
+  // If the inverse transform differs from integer translation by less than
+  // half a cell everywhere in this rectangle, every sample has the same local
+  // index as that translation. The affine residual reaches its extrema at the
+  // corners. Keep a conservative margin around rounding ties.
+  bool aligned = x0 <= x1 && y0 <= y1;
+  int alignedX = 0, alignedY = 0;
+  const std::array<int, 4> bounds{{x0, y0, x1, y1}};
+  if (aligned) {
+    double dx = x0 + 0.5 - b->px, dy = y0 + 0.5 - b->py;
+    alignedX = (int)std::floor(dx * cs + dy * sn - b->offsetX - x0 + 0.5);
+    alignedY = (int)std::floor(-dx * sn + dy * cs - b->offsetY - y0 + 0.5);
+    for (int wy : {y0, y1}) for (int wx : {x0, x1}) {
+      dx = wx + 0.5 - b->px; dy = wy + 0.5 - b->py;
+      double rx = dx * cs + dy * sn - b->offsetX - (wx + alignedX);
+      double ry = -dx * sn + dy * cs - b->offsetY - (wy + alignedY);
+      aligned = aligned && std::fabs(rx) < 0.5 - 1e-7
+                        && std::fabs(ry) < 0.5 - 1e-7;
     }
   }
+  bool sameCells = aligned && b->rasterAligned && b->rasterFootprintValid
+    && b->rasterAlignedX == alignedX && b->rasterAlignedY == alignedY
+    && b->rasterBounds == bounds
+    && b->rasterGeometryRevision == b->geometryRevision
+    && b->rasterCols == E.cols && b->rasterRows == E.rows;
+  if (!sameCells) {
+    b->rasterFootprint.clear();
+    b->rasterBoundaryFootprint.clear();
+    if (aligned) {
+      int ax0 = imax(x0, -alignedX), ax1 = imin(x1, b->w - 1 - alignedX);
+      int ay0 = imax(y0, -alignedY), ay1 = imin(y1, b->h - 1 - alignedY);
+      for (int wy = ay0; wy <= ay1; wy++) for (int wx = ax0; wx <= ax1; wx++) {
+        int local = (wy + alignedY) * b->w + wx + alignedX;
+        if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) {
+          b->rasterFootprint.push_back({wx, wy, local});
+          if (b->erosionBoundaryMask[local])
+            b->rasterBoundaryFootprint.push_back({wx, wy, local});
+        }
+      }
+    } else {
+      for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
+        double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
+        double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+        int i = rigidRasterCoordinate(lx - b->offsetX, b->w);
+        int j = rigidRasterCoordinate(ly - b->offsetY, b->h);
+        if (i < 0 || j < 0) continue;
+        int local = j * b->w + i;
+        if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) {
+          b->rasterFootprint.push_back({wx, wy, local});
+          if (b->erosionBoundaryMask[local])
+            b->rasterBoundaryFootprint.push_back({wx, wy, local});
+        }
+      }
+    }
+  }
+  b->rasterAligned = aligned;
+  b->rasterAlignedX = alignedX;
+  b->rasterAlignedY = alignedY;
+  b->rasterBounds = bounds;
   b->rasterPx = b->px;
   b->rasterPy = b->py;
   b->rasterAngle = b->angle;
@@ -3821,11 +3865,11 @@ void RigidBodySystem::finishErasedJointBodies(
                      worldCells.end());
 
     std::vector<uint8_t> layerMask(worldCells.size(), 0);
-    std::unordered_map<int, int> indexOf;
-    indexOf.reserve(worldCells.size());
+    if (jointCellIndex.size() != (size_t)E.cols * E.rows)
+      jointCellIndex.assign((size_t)E.cols * E.rows, -1);
     for (size_t i = 0; i < worldCells.size(); i++) {
       int k = worldCells[i];
-      indexOf[k] = (int)i;
+      jointCellIndex[k] = (int)i;
       if (E.fg.bodyOwner[k] == oldId) layerMask[i] |= 1;
       if (E.bg.bodyOwner[k] == oldId) layerMask[i] |= 2;
     }
@@ -3847,9 +3891,8 @@ void RigidBodySystem::finishErasedJointBodies(
           if (!ox && !oy) continue;
           int nx = x + ox, ny = y + oy;
           if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-          auto it = indexOf.find(ny * E.cols + nx);
-          if (it == indexOf.end()) continue;
-          int ni = it->second;
+          int ni = jointCellIndex[ny * E.cols + nx];
+          if (ni < 0) continue;
           // The two rendered layers are adjacent depth slices of one bonded
           // assembly. Surviving cells that touch in the projected raster keep
           // that bond even when a blast removed the last exactly co-occupied
@@ -3860,6 +3903,7 @@ void RigidBodySystem::finishErasedJointBodies(
         }
       }
     }
+    for (int k : worldCells) jointCellIndex[k] = -1;
     uint8_t remainingLayers = 0;
     for (uint8_t mask : layerMask) remainingLayers |= mask;
     if (groups.size() <= 1 && !worldCells.empty() && remainingLayers == 3) {
@@ -5551,6 +5595,10 @@ void RigidBodySystem::moveBodies() {
   if (rigidTraceLayer == (E.L == &E.bg ? 1 : 0)) captureTracePose(7);
   double depenStart = emscripten_get_now();
   bool terrainPoseChanged = false;
+  std::vector<Body*> moveBodies;
+  moveBodies.reserve(simulatedBodyCount);
+  for (Body* body : E.L->bodies)
+    if (body->jointRole != 2) moveBodies.push_back(body);
   terrainAdjustmentParents.resize(simulatedBodyCount);
   auto adjustmentRoot = [&](int slot) {
     int root = slot;
@@ -5580,6 +5628,14 @@ void RigidBodySystem::moveBodies() {
     int a = adjustmentRoot(first->second);
     int b = adjustmentRoot(second->second);
     if (a != b) terrainAdjustmentParents[b] = a;
+  }
+  // Linked membership retains layer body order while visiting only one island.
+  terrainAdjustmentFirst.assign(simulatedBodyCount, -1);
+  terrainAdjustmentNext.resize(simulatedBodyCount);
+  for (int slot = (int)simulatedBodyCount - 1; slot >= 0; slot--) {
+    int root = adjustmentRoot(slot);
+    terrainAdjustmentNext[slot] = terrainAdjustmentFirst[root];
+    terrainAdjustmentFirst[root] = slot;
   }
   static constexpr uint8_t ROOT_ACTIVE = 1 << 0;
   static constexpr uint8_t ROOT_EXACT = 1 << 1;
@@ -5624,10 +5680,9 @@ void RigidBodySystem::moveBodies() {
             : bodyFootprintOverlapsSolid(body))) continue;
       double dx = 0, dy = 0;
       if (!findTerrainClearAdjustment(body, dx, dy)) continue;
-      for (Body* member : E.L->bodies) {
-        if (member->jointRole == 2) continue;
-        int memberSlot = moveBodySlotById.find(member->id)->second;
-        if (adjustmentRoot(memberSlot) != root) continue;
+      for (int memberSlot = terrainAdjustmentFirst[root]; memberSlot >= 0;
+           memberSlot = terrainAdjustmentNext[memberSlot]) {
+        Body* member = moveBodies[memberSlot];
         member->px += dx;
         member->py += dy;
         if (member->jointRole == 1) syncJointFollower(member);
@@ -5656,10 +5711,9 @@ void RigidBodySystem::moveBodies() {
     bool overlapsTerrain = false;
     bool structureScale = false;
     bool quietIsland = true;
-    for (Body* member : E.L->bodies) {
-      if (member->jointRole == 2) continue;
-      int memberSlot = moveBodySlotById.find(member->id)->second;
-      if (adjustmentRoot(memberSlot) != root) continue;
+    for (int memberSlot = terrainAdjustmentFirst[root]; memberSlot >= 0;
+         memberSlot = terrainAdjustmentNext[memberSlot]) {
+      Body* member = moveBodies[memberSlot];
       structureScale = structureScale
         || member->maxR >= R_EXACT_RASTER_BODY_RADIUS
         || member->nPts >= R_EXACT_RASTER_BODY_CELLS;
@@ -5675,10 +5729,9 @@ void RigidBodySystem::moveBodies() {
 
     std::vector<std::pair<Body*, MovePose>> proposed;
     std::vector<int> proposedTerrain;
-    for (Body* member : E.L->bodies) {
-      if (member->jointRole == 2) continue;
-      int memberSlot = moveBodySlotById.find(member->id)->second;
-      if (adjustmentRoot(memberSlot) != root) continue;
+    for (int memberSlot = terrainAdjustmentFirst[root]; memberSlot >= 0;
+         memberSlot = terrainAdjustmentNext[memberSlot]) {
+      Body* member = moveBodies[memberSlot];
       proposed.push_back({member, {
         member->px, member->py, member->angle,
       }});

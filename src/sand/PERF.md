@@ -251,7 +251,14 @@ component registration, and restoration. Browser presentation exposes
 - Inverse rasterization is cached by exact body pose, geometry revision, and
   loaded-grid dimensions. Fluid coupling, blocked-footprint probes, actor
   overlap, support checks, and final stamping reuse that footprint whenever the
-  body has not moved between queries. A conservative center-line capsule rejects
+  body has not moved between queries. Near-axis poses also reuse the footprint
+  when corner bounds prove that the rounded inverse mapping is unchanged across
+  the entire clipped rectangle. Integer mapping fills new aligned footprints;
+  transforms near rounding ties use the general inverse rasterizer.
+  Terrain recovery traverses indexed island members, sleep support collection
+  traverses incident contacts, and joint fracture connectivity uses a reusable
+  cell index. Cross-layer raster overlap counts use ordered node indices.
+  A conservative center-line capsule rejects
   actor sweeps before rasterization when no live actor can be reached, and a
   boundary preflight skips fluid stamping when no awake body touches liquid.
 - Layers with at least 8,192 body-owned cells snapshot material and ownership

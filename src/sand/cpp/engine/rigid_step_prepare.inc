@@ -1,3 +1,88 @@
+// Per-tick data shared by preparation, contact solving, and finalization.
+struct RigidBodySystem::StepState {
+  struct LoadedWindowFreezeState {
+    bool frozen = false;
+    bool awake = false;
+    bool hadContact = false;
+    bool rasterMayOverlapSolid = false;
+    int stillTicks = 0;
+    double recentImpactSpeed = 0;
+    uint8_t denseMicrostepTicks = 0;
+  };
+  struct ActorProxy {
+    Body body;
+    Player* player = nullptr;
+    Creature* creature = nullptr;
+    double crushImpulse = 0;
+  };
+  std::vector<Body*> solverBodies{};
+  bool hasWorldJointBody{};
+  int n{};
+  bool terrainOccupancyReady{};
+  std::vector<uint8_t> liquidContact{};
+  std::vector<uint8_t> liquidSurfaceContact{};
+  std::vector<uint8_t> liquidDensityEquilibrium{};
+  std::vector<uint8_t> fluidOnlySleep{};
+  std::vector<std::array<double, 3>> fluidStartPose{};
+  std::vector<LoadedWindowFreezeState> loadedWindowFreeze{};
+  std::vector<ActorProxy> actorProxies{};
+  std::unordered_map<Body*, int> actorProxyIndex{};
+  std::vector<int> actorProxyOrder{};
+  std::vector<int> stepIslandParent{};
+  std::vector<int> bodySubsteps{};
+  int worldStructureScaleBodyCount{};
+  int substeps{};
+  std::vector<uint8_t> actorContact{};
+  std::unordered_map<int, Body*> peerJointLeaders{};
+};
+
+static void rigidBodyBounds(Body* body, double margin,
+                            double& x0, double& y0, double& x1, double& y1) {
+  double cs = body->cs, sn = body->sn;
+  double lx0 = body->offsetX - 0.5;
+  double lx1 = body->offsetX + body->w - 0.5;
+  double ly0 = body->offsetY - 0.5;
+  double ly1 = body->offsetY + body->h - 0.5;
+  x0 = y0 = 1e18;
+  x1 = y1 = -1e18;
+  auto include = [&](double lx, double ly) {
+    double wx = body->px + lx * cs - ly * sn;
+    double wy = body->py + lx * sn + ly * cs;
+    x0 = std::fmin(x0, wx);
+    x1 = std::fmax(x1, wx);
+    y0 = std::fmin(y0, wy);
+    y1 = std::fmax(y1, wy);
+  };
+  include(lx0, ly0);
+  include(lx1, ly0);
+  include(lx1, ly1);
+  include(lx0, ly1);
+  x0 -= margin;
+  y0 -= margin;
+  x1 += margin;
+  y1 += margin;
+}
+
+void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
+  using LoadedWindowFreezeState = StepState::LoadedWindowFreezeState;
+  using ActorProxy = StepState::ActorProxy;
+  auto& solverBodies = step.solverBodies;
+  auto& hasWorldJointBody = step.hasWorldJointBody;
+  auto& n = step.n;
+  auto& terrainOccupancyReady = step.terrainOccupancyReady;
+  auto& liquidContact = step.liquidContact;
+  auto& liquidSurfaceContact = step.liquidSurfaceContact;
+  auto& liquidDensityEquilibrium = step.liquidDensityEquilibrium;
+  auto& fluidOnlySleep = step.fluidOnlySleep;
+  auto& fluidStartPose = step.fluidStartPose;
+  auto& loadedWindowFreeze = step.loadedWindowFreeze;
+  auto& actorProxies = step.actorProxies;
+  auto& actorProxyIndex = step.actorProxyIndex;
+  auto& actorProxyOrder = step.actorProxyOrder;
+  auto& stepIslandParent = step.stepIslandParent;
+  auto& bodySubsteps = step.bodySubsteps;
+  auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
+  auto& substeps = step.substeps;
   rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
   rigidVelocityIterations = rigidBiasIterations = 0;
   rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
@@ -31,21 +116,20 @@
     }
   }
   terrainContactPairs.clear();
-  std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)
     if (body->jointRole != 2) solverBodies.push_back(body);
   bool hasJointSolverBody = false;
   for (Body* body : solverBodies)
     hasJointSolverBody = hasJointSolverBody || body->jointRole == 1;
-  bool hasWorldJointBody = hasJointSolverBody;
+  hasWorldJointBody = hasJointSolverBody;
   if (E.bgEnabled && !hasWorldJointBody)
     for (Body* body : E.fg.bodies)
       hasWorldJointBody = hasWorldJointBody || body->jointRole == 1;
   for (Body* body : solverBodies)
     rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
-  int n = (int)solverBodies.size();
-  bool terrainOccupancyReady = n >= 16;
+  n = (int)solverBodies.size();
+  terrainOccupancyReady = n >= 16;
   if (!terrainOccupancyReady)
     for (Body* body : solverBodies)
       if (body->nPts >= 4096
@@ -55,8 +139,6 @@
         break;
       }
   double occupancyBuildStart = emscripten_get_now();
-  static constexpr int TERRAIN_RIGID_BIN_SHIFT = 3;
-  static constexpr int TERRAIN_RIGID_BIN_SIZE = 1 << TERRAIN_RIGID_BIN_SHIFT;
   terrainRigidBinCols = (E.cols + TERRAIN_RIGID_BIN_SIZE - 1)
                       >> TERRAIN_RIGID_BIN_SHIFT;
   terrainRigidBinRows = (E.rows + TERRAIN_RIGID_BIN_SIZE - 1)
@@ -93,28 +175,16 @@
     }
   }
   rigidOccupancyBuildMs += emscripten_get_now() - occupancyBuildStart;
-  std::vector<int> islandParent(n);
   std::vector<uint8_t> priorRasterRisk(n, 0);
   std::vector<double> priorImpactSpeed(n, 0);
-  std::vector<double> islandMinStill(n);
-  std::vector<int> islandMinRestProbe(n);
-  std::vector<uint8_t> liquidContact(n, 0);
-  std::vector<uint8_t> liquidSurfaceContact(n, 0);
-  std::vector<uint8_t> liquidDensityEquilibrium(n, 0);
-  std::vector<uint8_t> fluidOnlySleep(n, 0);
+  liquidContact.assign(n, 0);
+  liquidSurfaceContact.assign(n, 0);
+  liquidDensityEquilibrium.assign(n, 0);
+  fluidOnlySleep.assign(n, 0);
   std::vector<uint8_t> awakeBeforeLiquid(n, 0);
   std::vector<double> vyBeforeLiquid(n, 0), predictedLiquidVy(n, 0);
-  std::vector<std::array<double, 3>> fluidStartPose(n);
-  struct LoadedWindowFreezeState {
-    bool frozen = false;
-    bool awake = false;
-    bool hadContact = false;
-    bool rasterMayOverlapSolid = false;
-    int stillTicks = 0;
-    double recentImpactSpeed = 0;
-    uint8_t denseMicrostepTicks = 0;
-  };
-  std::vector<LoadedWindowFreezeState> loadedWindowFreeze(n);
+  fluidStartPose.resize(n);
+  loadedWindowFreeze.resize(n);
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
@@ -192,39 +262,6 @@
     else if (awakeBeforeLiquid[bi])
       body->vy = vyBeforeLiquid[bi] + (body->vy - predictedLiquidVy[bi]);
   }
-  auto bodyBounds = [](Body* body, double margin,
-                       double& x0, double& y0, double& x1, double& y1) {
-    double cs = body->cs, sn = body->sn;
-    double lx0 = body->offsetX - 0.5;
-    double lx1 = body->offsetX + body->w - 0.5;
-    double ly0 = body->offsetY - 0.5;
-    double ly1 = body->offsetY + body->h - 0.5;
-    x0 = y0 = 1e18;
-    x1 = y1 = -1e18;
-    auto include = [&](double lx, double ly) {
-      double wx = body->px + lx * cs - ly * sn;
-      double wy = body->py + lx * sn + ly * cs;
-      x0 = std::fmin(x0, wx);
-      x1 = std::fmax(x1, wx);
-      y0 = std::fmin(y0, wy);
-      y1 = std::fmax(y1, wy);
-    };
-    include(lx0, ly0);
-    include(lx1, ly0);
-    include(lx1, ly1);
-    include(lx0, ly1);
-    x0 -= margin;
-    y0 -= margin;
-    x1 += margin;
-    y1 += margin;
-  };
-  struct ActorProxy {
-    Body body;
-    Player* player = nullptr;
-    Creature* creature = nullptr;
-    double crushImpulse = 0;
-  };
-  std::vector<ActorProxy> actorProxies;
   if (E.L == &E.fg) {
     actorProxies.reserve(
       E.psys.players.size() + E.creatures.creatures.size());
@@ -291,7 +328,7 @@
       body.idx = -1;
       body.cs = 1;
       body.sn = 0;
-      bodyBounds(&body, R_CONTACT_SKIN + 0.5,
+      rigidBodyBounds(&body, R_CONTACT_SKIN + 0.5,
                  body.aabbX0, body.aabbY0, body.aabbX1, body.aabbY1);
     };
     for (size_t i = 0; i < E.psys.players.size(); i++) {
@@ -311,9 +348,9 @@
                -1500000000 - creature.id, nullptr, &creature);
     }
   }
-  std::unordered_map<Body*, int> actorProxyIndex;
+
   actorProxyIndex.reserve(actorProxies.size() * 2);
-  std::vector<int> actorProxyOrder(actorProxies.size());
+  actorProxyOrder.resize(actorProxies.size());
   for (int i = 0; i < (int)actorProxies.size(); i++) {
     actorProxyIndex[&actorProxies[i].body] = i;
     actorProxyOrder[i] = i;
@@ -330,10 +367,11 @@
   // one cadence; unrelated slow islands keep their own rotational and
   // translational substep counts.
   double cadenceStart = emscripten_get_now();
-  std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
+  stepIslandParent.resize(n);
+  bodySubsteps.assign(n, 1);
   double globalPointSpeed = 0;
   int structureScaleBodyCount = 0;
-  int worldStructureScaleBodyCount = 0;
+  worldStructureScaleBodyCount = 0;
   for (Body* body : E.fg.bodies)
     if (body->jointRole != 2 && rigidStructureScaleBody(body))
       worldStructureScaleBodyCount++;
@@ -409,7 +447,7 @@
           * tickDt
         + R_CONTACT_SKIN + 0.5;
       double riskX0, riskY0, riskX1, riskY1;
-      bodyBounds(body, reach, riskX0, riskY0, riskX1, riskY1);
+      rigidBodyBounds(body, reach, riskX0, riskY0, riskX1, riskY1);
       bool terrainRisk =
         priorRasterRisk[bi]
         || riskX0 <= 0 || riskY0 <= 0
@@ -439,7 +477,7 @@
     denseWetScene && !denseGlobalNewRisk && !denseGlobalCooldown;
   double initialSafeSubstep = denseGlobalCoherent
     ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
-  int substeps = (int)std::ceil(
+  substeps = (int)std::ceil(
     (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
       / initialSafeSubstep);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
@@ -471,7 +509,7 @@
         : 0;
       double reach = (pointSpeed + R_MAX_SPEED + E.scaledGravity(R_GRAVITY) * tickDt) * tickDt
         + R_CONTACT_SKIN + 0.5;
-      bodyBounds(body, reach,
+      rigidBodyBounds(body, reach,
                  tickX0[bi], tickY0[bi], tickX1[bi], tickY1[bi]);
     }
     std::sort(islandOrder.begin(), islandOrder.end(), [&](int a, int b) {
@@ -592,30 +630,4 @@
   rigidSubsteps = substeps;
   rigidCadenceMs += emscripten_get_now() - cadenceStart;
   rigidGlobalBodySteps = n * substeps;
-  std::vector<Contact>& contacts = solverContactScratch;
-  contacts.clear();
-  int nc = 0;
-  std::vector<uint8_t> actorContact(n, 0);
-  std::vector<uint8_t> solidContact(n, 0);
-  std::vector<uint8_t> upwardContact(n, 0);
-  std::vector<uint8_t> bodyContact(n, 0);
-  std::vector<uint8_t> terrainSideContactDirections(n, 0);
-  std::vector<int> solveParent(n), solveBodyCount(n);
-  std::vector<int> contactOrder, contactRoot;
-  std::vector<double> solveMaxRadius(n);
-  std::vector<double> solveMinX(n), solveMinY(n), solveMaxX(n), solveMaxY(n);
-  std::vector<uint64_t> solveShockKey(n);
-  std::vector<uint8_t> solveHasGeneral(n);
-  std::vector<uint8_t> solveHasPeerContacts(n);
-  std::vector<uint8_t> solveHasSpatialForce(n);
-  std::vector<uint8_t> solveHasJointBody(n);
-  struct PenPt {
-    double wx, wy, nx, ny, depth;
-    int bk = 0;
-    int childA = -1, childB = -1;
-    int featureA = -1, featureB = -1;
-  };
-  struct TerrainGroup { Body* peer; std::vector<PenPt> points; };
-  std::vector<PenPt> penAcc, terrAcc;
-  std::vector<Body*> terrPeers;
-  std::vector<TerrainGroup> terrGroups;
+}

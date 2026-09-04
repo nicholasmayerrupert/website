@@ -115,7 +115,15 @@ export async function aftermath({ steps = 92, seed = 1401181199, report }) {
       const ms = performance.now() - start;
       if (ms > peakWorld.ms)
         peakWorld = { tick, ms, phases: engine.getStepPerf() };
-      report({ tick, worldMs: ms, peakWorldMs: peakWorld.ms });
+      const bodyStates = [0, 1].map((layer) =>
+        Array.from({ length: engine._bodyCountLayer(layer) }, (_, body) => ({
+          id: engine._bodyIdLayer(layer, body),
+          awake: engine._bodyAwakeLayer(layer, body),
+          role: engine._bodyJointRoleLayer(layer, body),
+          ...engine._bodyStateLayer(layer, body),
+        })));
+      report({ tick, worldMs: ms, peakWorldMs: peakWorld.ms,
+        gridHash: engine.gridHash(), bodyStates });
     }
     report({
       peakWorld, peakDetonation,

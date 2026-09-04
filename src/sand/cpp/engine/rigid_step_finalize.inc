@@ -1,3 +1,21 @@
+void RigidBodySystem::finalizeRigidStep(StepState& step) {
+  using LoadedWindowFreezeState = StepState::LoadedWindowFreezeState;
+  using ActorProxy = StepState::ActorProxy;
+  auto& solverBodies = step.solverBodies;
+  auto& n = step.n;
+  auto& liquidContact = step.liquidContact;
+  auto& fluidOnlySleep = step.fluidOnlySleep;
+  auto& fluidStartPose = step.fluidStartPose;
+  auto& loadedWindowFreeze = step.loadedWindowFreeze;
+  auto& actorProxies = step.actorProxies;
+  auto& actorContact = step.actorContact;
+  auto& contacts = solverContactScratch;
+  int nc = (int)contacts.size();
+  int activeLayer = E.L == &E.fg ? 0 : 1;
+  auto& broadphaseOrder = broadphaseOrderScratch;
+  std::vector<int> islandParent(n);
+  std::vector<double> islandMinStill(n);
+  std::vector<int> islandMinRestProbe(n);
   // Fast liquid entry is projected at the advected pose immediately. Sustained
   // interface slip is corrected periodically while the primary projection
   // continues every tick, and unrelated wet bodies stay outside the regional
@@ -140,6 +158,27 @@
     if ((int)b->restProbeTicks < islandMinRestProbe[r])
       islandMinRestProbe[r] = b->restProbeTicks;
   }
+  // Build contact adjacency only when a body is ready to sleep. Preserve the
+  // solver's contact order because the first eight distinct supports are kept.
+  std::vector<int> sleepContactOffsets, sleepContactIndices;
+  auto indexSleepContacts = [&]() {
+    sleepContactOffsets.assign(n + 1, 0);
+    for (const Contact& c : contacts) {
+      sleepContactOffsets[c.a->idx + 1]++;
+      if (c.b && c.bIntegrated && c.b != c.a)
+        sleepContactOffsets[c.b->idx + 1]++;
+    }
+    for (int i = 1; i <= n; i++)
+      sleepContactOffsets[i] += sleepContactOffsets[i - 1];
+    sleepContactIndices.resize(sleepContactOffsets[n]);
+    std::vector<int> cursor = sleepContactOffsets;
+    for (int i = 0; i < (int)contacts.size(); i++) {
+      const Contact& c = contacts[i];
+      sleepContactIndices[cursor[c.a->idx]++] = i;
+      if (c.b && c.bIntegrated && c.b != c.a)
+        sleepContactIndices[cursor[c.b->idx]++] = i;
+    }
+  };
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
     if (!b->awake) continue;
@@ -147,6 +186,7 @@
     bool sleep = islandMinStill[root] >= R_SLEEP_TICKS
               || islandMinRestProbe[root] >= R_REST_PROBE_TICKS;
     if (!sleep) continue;
+    if (sleepContactOffsets.empty()) indexSleepContacts();
     b->sleepSupports.clear();
     int currentLayer = E.L == &E.bg ? 1 : 0;
     auto addSupport = [&](double x, double y, int owner, int layer) {
@@ -159,10 +199,13 @@
       b->sleepSupports.push_back({x, y, owner, (uint8_t)layer});
     };
     uint8_t bodyTerrainSideDirections = 0;
-    for (const Contact& contact : contacts)
+    for (int i = sleepContactOffsets[bi]; i < sleepContactOffsets[bi + 1]; i++) {
+      const Contact& contact = contacts[sleepContactIndices[i]];
       if (contact.a == b && !contact.b && std::fabs(contact.ny) < 0.1)
         bodyTerrainSideDirections |= contact.nx < 0 ? 1 : 2;
-    for (const Contact& contact : contacts) {
+    }
+    for (int i = sleepContactOffsets[bi]; i < sleepContactOffsets[bi + 1]; i++) {
+      const Contact& contact = contacts[sleepContactIndices[i]];
       double impulseY = contact.accJn * contact.ny
                       + contact.accJt * contact.nx;
       bool unloadedTerrainSide = !contact.b && std::fabs(contact.ny) < 0.1
@@ -210,3 +253,4 @@
     body->loadedWindowParked = false;
     if (body->jointRole == 1) syncJointFollower(body);
   }
+}

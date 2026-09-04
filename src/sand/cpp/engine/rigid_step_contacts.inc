@@ -231,7 +231,7 @@
   // present in both grids. Resolve owner-marked contacts against the peer's real
   // dynamics while leaving positional integration to that body's owning pass.
   std::unordered_map<int, Body*> peerBackgroundBodies;
-  std::unordered_map<int, Body*> peerJointLeaders;
+
   if (E.bgEnabled) {
     if (E.L == &E.fg) {
       bool hasJointLeader = false;

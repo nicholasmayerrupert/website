@@ -324,9 +324,9 @@ struct Body {
   std::vector<BodyCollisionNode> collisionTree;
   int collisionTreeRoot = -1;
   uint32_t geometryRevision = 0;
-  // Exact inverse-raster result for one pose. Multiple systems query an
-  // unchanged pose in the same tick; the pose/revision/grid key prevents reuse
-  // after integration, depenetration, erosion, streaming, or resize.
+  // Exact inverse-raster result, keyed by pose, geometry revision, and grid.
+  // Near-axis poses can share the footprint when their rounded cell mapping
+  // is identical throughout the clipped bounds.
   std::vector<BodyRasterCell> rasterFootprint;
   // Exact erosion candidates for the cached raster. A world-raster boundary
   // can only map to a local cell whose eight-neighbourhood is not fully solid.
@@ -335,6 +335,9 @@ struct Body {
   uint32_t rasterGeometryRevision = 0;
   int rasterCols = 0, rasterRows = 0;
   bool rasterFootprintValid = false;
+  bool rasterAligned = false;
+  int rasterAlignedX = 0, rasterAlignedY = 0;
+  std::array<int, 4> rasterBounds{};
   bool erodible = false;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   uint8_t bakeRasterStableTicks = 0;

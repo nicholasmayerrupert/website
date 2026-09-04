@@ -1,3 +1,51 @@
+void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+  auto& solverBodies = step.solverBodies;
+  auto& hasWorldJointBody = step.hasWorldJointBody;
+  auto& n = step.n;
+  auto& terrainOccupancyReady = step.terrainOccupancyReady;
+  auto& liquidContact = step.liquidContact;
+  auto& liquidSurfaceContact = step.liquidSurfaceContact;
+  auto& liquidDensityEquilibrium = step.liquidDensityEquilibrium;
+  auto& fluidOnlySleep = step.fluidOnlySleep;
+  auto& actorProxies = step.actorProxies;
+  auto& actorProxyIndex = step.actorProxyIndex;
+  auto& actorProxyOrder = step.actorProxyOrder;
+  auto& stepIslandParent = step.stepIslandParent;
+  auto& bodySubsteps = step.bodySubsteps;
+  auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
+  auto& substeps = step.substeps;
+  auto& actorContact = step.actorContact;
+  auto& peerJointLeaders = step.peerJointLeaders;
+  double contactSetupStart = emscripten_get_now();
+  std::vector<Contact>& contacts = solverContactScratch;
+  contacts.clear();
+  int nc = 0;
+  actorContact.assign(n, 0);
+  std::vector<uint8_t> solidContact(n, 0);
+  std::vector<uint8_t> upwardContact(n, 0);
+  std::vector<uint8_t> bodyContact(n, 0);
+  std::vector<uint8_t> terrainSideContactDirections(n, 0);
+  std::vector<int> solveParent(n), solveBodyCount(n);
+  std::vector<int> contactOrder, contactRoot;
+  std::vector<double> solveMaxRadius(n);
+  std::vector<double> solveMinX(n), solveMinY(n), solveMaxX(n), solveMaxY(n);
+  std::vector<uint64_t> solveShockKey(n);
+  std::vector<uint8_t> solveHasGeneral(n);
+  std::vector<uint8_t> solveHasPeerContacts(n);
+  std::vector<uint8_t> solveHasSpatialForce(n);
+  std::vector<uint8_t> solveHasJointBody(n);
+  struct PenPt {
+    double wx, wy, nx, ny, depth;
+    int bk = 0;
+    int childA = -1, childB = -1;
+    int featureA = -1, featureB = -1;
+  };
+  struct TerrainGroup { Body* peer; std::vector<PenPt> points; };
+  std::vector<PenPt> penAcc, terrAcc;
+  std::vector<Body*> terrPeers;
+  std::vector<TerrainGroup> terrGroups;
+#include "rigid_step_contacts.inc"
+  rigidContactSetupMs += emscripten_get_now() - contactSetupStart;
   for (int sub = 0; sub < substeps; sub++) {
     double motionPrepStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
@@ -12,7 +60,7 @@
     auto bodyMayTouchGranular = [&](Body* body) {
       if (!terrainOccupancyReady) return true;
       double minX, minY, maxX, maxY;
-      bodyBounds(body, 1.5, minX, minY, maxX, maxY);
+      rigidBodyBounds(body, 1.5, minX, minY, maxX, maxY);
       int binX0 = imax(0, (int)std::floor(minX))
                 >> TERRAIN_RIGID_BIN_SHIFT;
       int binY0 = imax(0, (int)std::floor(minY))
@@ -34,7 +82,7 @@
       b->cs = std::cos(b->angle);
       b->sn = std::sin(b->angle);
       if (!activeBody[bi]) {
-        bodyBounds(b, R_CONTACT_SKIN + 0.5,
+        rigidBodyBounds(b, R_CONTACT_SKIN + 0.5,
                    b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
         continue;
       }
@@ -99,7 +147,7 @@
       // travelled this substep + contact skin) so a swept sample that starts just
       // outside the static AABB but moves into the pair this substep is not pruned.
       b->sweepMargin = (std::sqrt(b->vx * b->vx + b->vy * b->vy) + std::fabs(b->omega) * (b->maxR > 0 ? b->maxR : 1)) * dt + R_CONTACT_SKIN + 0.5;
-      bodyBounds(b, b->sweepMargin,
+      rigidBodyBounds(b, b->sweepMargin,
                  b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
       b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
     }
@@ -1913,3 +1961,4 @@
     }
     rigidIntegrateMs += emscripten_get_now() - integrateStart;
   }
+}

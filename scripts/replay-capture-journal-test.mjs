@@ -375,4 +375,36 @@ assert.equal(replayTimeline.hidden, true);
 assert.equal(replayOverlay.hidden, false);
 replayPanel.destroy();
 
+// L must preempt R's capture wait even if the worker never answers either export.
+const stalledContainer = new FakeElement('div');
+const stalledR = deferred();
+const stalledL = deferred();
+const stalledCaptures = [stalledR, stalledL];
+playbackRequest = null;
+const stalledPanel = createReplayPanel({
+  ...ctx,
+  container: stalledContainer,
+  worldWorker: {
+    ...ctx.worldWorker,
+    captureReplay: () => ({ fallback, verified: stalledCaptures.shift().promise }),
+  },
+});
+const waitingR = stalledPanel.startReplay();
+await stalledPanel.open();
+const stalledOverlay = stalledContainer.children[0];
+const stalledText = find(stalledOverlay,
+  (node) => node.getAttribute('aria-label') === 'Replay capsule text');
+assert.equal(stalledOverlay.hidden, false);
+assert.ok(stalledText.value.startsWith(REPLAY_PREFIX));
+assert.equal(find(stalledOverlay, (node) => node.textContent === 'Copy').disabled, false);
+stalledR.reject(new Error('Replay export was superseded by a newer capture.'));
+await waitingR;
+assert.equal(playbackRequest, null, 'superseded R capture must not start playback');
+assert.equal(stalledOverlay.hidden, false);
+stalledL.reject(new Error('The simulation did not respond to replay capture within 5 seconds.'));
+await eventually(() => find(stalledOverlay,
+  (node) => node.textContent === 'Run replay').disabled === false);
+assert.ok(stalledText.value.startsWith(REPLAY_PREFIX));
+stalledPanel.destroy();
+
 console.log('replay capture journal preserves an immediately copyable exact prefix');

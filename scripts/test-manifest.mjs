@@ -93,6 +93,7 @@ export const UNIT_SUITES = [
   ['replay-microscope-platform', 'replay-microscope-platform-test.mjs'],
   ['worker-order', 'world-worker-order-test.mjs'],
   ['worker-liveness', 'worker-liveness-test.mjs'],
+  ['worker-capture', 'worker-capture-test.mjs'],
   ['viewport-pause', 'viewport-pause-test.mjs'],
   ['players', 'player-test.mjs'],
   ['actor-rigid', 'actor-rigid-test.mjs'],

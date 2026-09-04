@@ -3149,6 +3149,14 @@ void RigidBodySystem::rigidStep(double tickDt) {
     }
   }
 }
+// Exact lround ownership inside the local mask, including half-cell ties.
+// Rejecting outside coordinates first keeps the integer conversion bounded.
+static inline int rigidRasterCoordinate(double value, int size) {
+  if (!(value > -0.5 && value < size - 0.5)) return -1;
+  int whole = (int)value;
+  return whole + (value - whole >= 0.5 ? 1 : 0);
+}
+
 void RigidBodySystem::ensureBodyRaster(Body* b) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
   // center back into occ space and stamp if filled. This is hole-free for
@@ -3174,8 +3182,9 @@ void RigidBodySystem::ensureBodyRaster(Body* b) {
   for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
     double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
     double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
-    int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
-    if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
+    int i = rigidRasterCoordinate(lx - b->offsetX, b->w);
+    int j = rigidRasterCoordinate(ly - b->offsetY, b->h);
+    if (i < 0 || j < 0) continue;
     int local = j * b->w + i;
     if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) {
       b->rasterFootprint.push_back({wx, wy, local});
@@ -4893,14 +4902,21 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
     return R_STRUCTURE_RASTER_ALIAS_CELLS;
   };
   auto overlapCount = [&](Body* A, Body* B) {
-    occStamp.reset(gridSize);
+    // Sample the smaller raster against the other body's local mask. Trial
+    // translations never need to reconstruct the larger body's full footprint.
+    if ((int64_t)A->w * A->h > (int64_t)B->w * B->h) std::swap(A, B);
     ensureBodyRaster(A);
-    for (const BodyRasterCell& cell : A->rasterFootprint)
-      occStamp.add(cell.y * E.cols + cell.x);
+    double sn = std::sin(B->angle), cs = std::cos(B->angle);
     int count = 0;
-    ensureBodyRaster(B);
-    for (const BodyRasterCell& cell : B->rasterFootprint)
-      count += occStamp.has(cell.y * E.cols + cell.x);
+    for (const BodyRasterCell& cell : A->rasterFootprint) {
+      double dx = cell.x + 0.5 - B->px, dy = cell.y + 0.5 - B->py;
+      double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+      int i = rigidRasterCoordinate(lx - B->offsetX, B->w);
+      int j = rigidRasterCoordinate(ly - B->offsetY, B->h);
+      if (i < 0 || j < 0) continue;
+      int local = j * B->w + i;
+      if (B->occ[local] && bodyMaterialAt(B, local) != EMPTY) count++;
+    }
     return count;
   };
   auto terrainOverlapCount = [&](Body* body) {
@@ -6164,19 +6180,17 @@ bool RigidBodySystem::anchorPlacementToStatic(
   return true;
 }
 
-Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells,
-                                   uint8_t material, bool attachTouchingBodies) {
-  if (cells.empty() || material == EMPTY || !isMaterialId(material)) return nullptr;
-
-  // A single placement gesture may contain disconnected islands. Each island
-  // starts as its own body unless contact with an existing body welds them.
+// Group new patches by cell adjacency and the existing bodies they touch.
+// Each physical assembly is reconstructed once for the placement gesture.
+std::vector<std::vector<std::pair<int, int>>> RigidBodySystem::placementGroups(
+    const std::vector<std::pair<int, int>>& cells, bool attachTouchingBodies) {
   std::map<int, std::pair<int, int>> orderedCells;
   for (const auto& cell : cells) {
     if (cell.first < 0 || cell.first >= E.cols || cell.second < 0 || cell.second >= E.rows)
       continue;
     orderedCells[cell.second * E.cols + cell.first] = cell;
   }
-  if (orderedCells.empty()) return nullptr;
+  if (orderedCells.empty()) return {};
   std::unordered_set<int> unvisited;
   unvisited.reserve(orderedCells.size() * 2);
   for (const auto& entry : orderedCells) unvisited.insert(entry.first);
@@ -6200,11 +6214,39 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
         if (unvisited.erase(nk)) stack.push_back(nk);
       }
     }
-    std::sort(islands.back().begin(), islands.back().end(),
-              [&](const auto& a, const auto& b) {
-                return a.second * E.cols + a.first < b.second * E.cols + b.first;
-              });
   }
+  if (!attachTouchingBodies || islands.size() < 2) return islands;
+
+  std::vector<int> parents(islands.size());
+  std::unordered_map<int, int> firstPatchByBody;
+  for (int index = 0; index < (int)islands.size(); index++) parents[index] = index;
+  for (int index = 0; index < (int)islands.size(); index++) {
+    std::unordered_set<int> touchingIds;
+    collectPlacementTouchingBodyIds(islands[index], touchingIds);
+    for (int id : touchingIds) {
+      auto [found, inserted] = firstPatchByBody.emplace(id, index);
+      if (!inserted) ufUnite(parents, index, found->second);
+    }
+  }
+  std::vector<std::vector<std::pair<int, int>>> groups;
+  std::vector<int> groupByRoot(islands.size(), -1);
+  for (int index = 0; index < (int)islands.size(); index++) {
+    int root = ufFind(parents, index);
+    if (groupByRoot[root] < 0) {
+      groupByRoot[root] = (int)groups.size();
+      groups.push_back({});
+    }
+    auto& group = groups[groupByRoot[root]];
+    group.insert(group.end(), islands[index].begin(), islands[index].end());
+  }
+  return groups;
+}
+
+Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells,
+                                   uint8_t material, bool attachTouchingBodies) {
+  if (cells.empty() || material == EMPTY || !isMaterialId(material)) return nullptr;
+  auto islands = placementGroups(cells, attachTouchingBodies);
+  if (islands.empty()) return nullptr;
   if (islands.size() > 1) {
     Body* last = nullptr;
     for (const auto& island : islands) {
@@ -6213,7 +6255,10 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     }
     return last;
   }
-  const std::vector<std::pair<int, int>>& spawnCells = islands[0];
+  auto& spawnCells = islands[0];
+  std::sort(spawnCells.begin(), spawnCells.end(), [&](const auto& a, const auto& b) {
+    return a.second * E.cols + a.first < b.second * E.cols + b.first;
+  });
 
   std::unordered_set<int> touchingIds;
   if (attachTouchingBodies)

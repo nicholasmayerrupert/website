@@ -78,6 +78,7 @@
  * @property {(() => *)|null} startLocalAuthority
  * @property {(() => void)|null} stopLocalAuthority
  * @property {((message: string|null) => void)|null} setAuthorityError
+ * @property {((message: string|null) => void)|null} setAuthorityStall
  */
 
 export {};

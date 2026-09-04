@@ -7,6 +7,7 @@ import {
   MAT,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+import { CREATIVE_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 132;
@@ -208,6 +209,53 @@ const findForegroundOnlyBodyCell = (engine) => {
     check('joint placement weld conserves angular momentum',
       after && close(after.angular, before.angular));
   }
+  engine.destroy();
+}
+
+for (const layer of [0, 1]) {
+  const cols = 120, rows = 140;
+  const engine = attachTestHooks(createEngineWasmRaw({
+    cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  engine.getGrid().fill(MAT.EMPTY);
+  engine.getGridBg().fill(MAT.EMPTY);
+  for (let y = 20; y < 100; y++) for (let x = 20; x < 100; x++)
+    if (x % 3 !== 0 || y % 3 !== 0)
+      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+  engine.syncComponentsLayer(layer);
+  engine.stepWorld();
+  const beforeId = engine._bodyIdLayer(layer, 0);
+  const beforeTick = engine.getTick();
+  const beforeMomentum = momentum(engine._bodyStateLayer(layer, 0));
+  check(`layer ${layer}: perforated plate detaches as one body`,
+    engine._bodyCountLayer(layer) === 1);
+  engine.setCreativeMaterial(CREATIVE_KIND.MATERIAL, MAT.TNT);
+  const button = layer ? 2 : 0;
+  engine.pointerDown(22, 22, button);
+  for (let y = 22; y < 98; y += 3) {
+    engine.pointerDraft(22, y);
+    engine.pointerDraft(97, y);
+  }
+  const draftCells = engine.getStoneDraftCells().length;
+  engine.pointerUp(button);
+  check(`layer ${layer}: hundreds of disconnected TNT patches rebuild once`,
+    draftCells > 500 && engine._bodyCountLayer(layer) === 1
+      && engine._bodyIdLayer(layer, 0) === beforeId + 1);
+  const placed = layer ? engine.getGridBg() : engine.getGrid();
+  const owners = engine._bodyOwnerGrid(layer);
+  let tntCells = 0, unowned = 0;
+  for (let k = 0; k < placed.length; k++) if (placed[k] === MAT.TNT) {
+    tntCells++;
+    if (owners[k] < 0) unowned++;
+  }
+  check(`layer ${layer}: the complete draft has rigid ownership without stepping`,
+    tntCells === draftCells && unowned === 0 && engine.getTick() === beforeTick);
+  const afterMomentum = momentum(engine._bodyStateLayer(layer, 0));
+  check(`layer ${layer}: batched welding conserves momentum`,
+    close(afterMomentum.px, beforeMomentum.px)
+      && close(afterMomentum.py, beforeMomentum.py)
+      && close(afterMomentum.angular, beforeMomentum.angular));
   engine.destroy();
 }
 

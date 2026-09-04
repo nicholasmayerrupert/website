@@ -186,6 +186,7 @@ export function createSandGame(container, opts = {}) {
     startLocalAuthority: null,
     stopLocalAuthority: null,
     setAuthorityError: null,
+    setAuthorityStall: null,
 
     zoomFactor: () => ctx.zoom,
     // In-game zoom relative to the default — drives the parallax backdrop
@@ -268,6 +269,15 @@ export function createSandGame(container, opts = {}) {
   ctx.setAuthorityError = (message) => {
     authorityFailureText.textContent = message || '';
     authorityFailure.style.display = message ? 'grid' : 'none';
+  };
+
+  const authorityStall = document.createElement('div');
+  authorityStall.setAttribute('role', 'status');
+  authorityStall.style.cssText = 'position:absolute;left:12px;right:12px;top:12px;z-index:79;display:none;padding:10px;background:rgba(10,12,16,.9);color:#ffca78;text-align:center;font:600 13px/1.4 system-ui,sans-serif;pointer-events:none';
+  container.appendChild(authorityStall);
+  ctx.setAuthorityStall = (message) => {
+    authorityStall.textContent = message || '';
+    authorityStall.style.display = message ? 'block' : 'none';
   };
 
   // Mining-progress pill (a tiny DOM overlay next to the cursor).
@@ -413,6 +423,7 @@ export function createSandGame(container, opts = {}) {
     window.removeEventListener('pageshow', unlockAudio, { capture: true });
     mineProgress.remove();
     authorityFailure.remove();
+    authorityStall.remove();
     ro.disconnect();
     lifecycle.unwatchDpr();
     lifecycle.unwatchContext();

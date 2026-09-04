@@ -91,6 +91,7 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
 
   let openGeneration = 0;
   let busy = false;
+  let capturingReplay = false;
   const currentView = () => {
     const engine = ctx.engine;
     const cam = engine?.getCam();
@@ -130,7 +131,8 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
   };
   let handingOff = false;
   const openLogsPanel = async () => {
-    if (!overlay.hidden || busy) return;
+    if (!overlay.hidden || (busy && !capturingReplay)) return;
+    capturingReplay = false;
     setVisible(true);
     status.style.color = '#cbd2d9';
     status.textContent = 'Freezing this tick and collecting the authority log…';
@@ -251,6 +253,7 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
     setBusy(true);
     status.style.color = '#cbd2d9';
     status.textContent = 'Capturing this session for replay…';
+    capturingReplay = true;
     try {
       if (!ctx.worldWorker) throw new Error('The local simulation is not ready yet.');
       const capture = ctx.worldWorker.captureReplay(currentView());
@@ -261,6 +264,7 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
         capsule = (await materializeReplayFallback(capture)).capsule;
       }
       if (generation !== openGeneration) return;
+      capturingReplay = false;
       await runCapsule(capsule);
     } catch (error) {
       if (generation === openGeneration) {
@@ -268,7 +272,10 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
         showError(error);
       }
     } finally {
-      if (generation === openGeneration) setBusy(false);
+      if (generation === openGeneration) {
+        capturingReplay = false;
+        setBusy(false);
+      }
     }
   };
 

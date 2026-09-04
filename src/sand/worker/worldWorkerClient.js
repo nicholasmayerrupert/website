@@ -17,6 +17,7 @@ const REPLAYABLE_CONFIG_KEYS = [
   'creatureNaturalSpawning', 'paused', 'artificialDelayMs',
 ];
 const LIVENESS_PROBE_MS = 1000;
+const REPLAY_EXPORT_TIMEOUT_MS = 5000;
 const CAPTURE_PERF_KEYS = [
   'worldTps', 'stepMs', 'actorMs', 'groundingMs', 'crossLayerGroundingMs',
   'componentIndexMs', 'assemblyUnionMs', 'carryMs', 'bodyMs', 'sandMs',
@@ -209,7 +210,14 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const probeLiveness = () => {
-    if (closed || livenessProbePending) return;
+    if (closed) return;
+    const live = liveness.snapshot();
+    const stalled = live.progressAgeMs >= 5000
+      && (live.status.startsWith('blocked-') || live.status === 'stopped-scheduling');
+    ctx.setAuthorityStall?.(stalled && !document.hidden
+      ? 'The simulation is taking longer than expected. Press L to copy the logs.'
+      : null);
+    if (livenessProbePending) return;
     livenessProbePending = post({ type: 'liveness-probe' });
   };
 
@@ -618,10 +626,22 @@ export function createWorldWorkerClient(ctx) {
     }
     const requestId = ++replayRequestId;
     return new Promise((resolve, reject) => {
-      replayRequests.set(requestId, { resolve, reject, kind: 'export' });
-      if (!post({ type: 'replay-export', requestId, view })) {
+      const timer = setTimeout(() => {
         replayRequests.delete(requestId);
-        reject(new Error('Simulation worker is unavailable.'));
+        reject(new Error('The simulation did not respond to replay capture within 5 seconds.'));
+      }, REPLAY_EXPORT_TIMEOUT_MS);
+      const request = {
+        kind: 'export',
+        resolve(value) { clearTimeout(timer); resolve(value); },
+        reject(error) { clearTimeout(timer); reject(error); },
+      };
+      replayRequests.set(requestId, request);
+      try {
+        if (!post({ type: 'replay-export', requestId, view }))
+          throw new Error('Simulation worker is unavailable.');
+      } catch (error) {
+        replayRequests.delete(requestId);
+        request.reject(error);
       }
     });
   };

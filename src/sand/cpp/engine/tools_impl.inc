@@ -235,7 +235,7 @@ void ToolSystem::registerComponentCells(
   }
 }
 
-// Resolve each connected island from one placement gesture independently.
+// Resolve each connected physical assembly from one placement gesture.
 // Growth origins always enter through the rigid solver. Other structural
 // material becomes static on contact or enters as a free body.
 void ToolSystem::finalizeStructuralPlacement(
@@ -248,34 +248,9 @@ void ToolSystem::finalizeStructuralPlacement(
     E.rigid.finishSpawn(cells, mat);
     return;
   }
-  std::map<int, std::pair<int, int>> ordered;
-  for (const auto& cell : cells) {
-    if (!E.isInBounds(cell.first, cell.second)) continue;
-    ordered[cell.second * E.cols + cell.first] = cell;
-  }
-  std::unordered_set<int> remaining;
-  remaining.reserve(ordered.size() * 2);
-  for (const auto& entry : ordered) remaining.insert(entry.first);
-  std::vector<int> stack;
-  for (const auto& entry : ordered) {
-    if (!remaining.erase(entry.first)) continue;
-    std::vector<std::pair<int, int>> island;
-    stack.clear();
-    stack.push_back(entry.first);
-    while (!stack.empty()) {
-      int k = stack.back();
-      stack.pop_back();
-      int x = k % E.cols, y = k / E.cols;
-      island.push_back({x, y});
-      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-        if (!ox && !oy) continue;
-        int nx = x + ox, ny = y + oy;
-        if (!E.isInBounds(nx, ny)) continue;
-        int nk = ny * E.cols + nx;
-        if (remaining.erase(nk)) stack.push_back(nk);
-      }
-    }
-
+  const bool growthOrigin = E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE;
+  const auto groups = E.rigid.placementGroups(cells, !growthOrigin);
+  for (const auto& island : groups) {
     if (E.isSeedMaterial(mat) || mat == MYCELIUM_SPORE) {
       Body* body = E.rigid.finishSpawn(island, mat, false);
       if (body && E.isSeedMaterial(mat)) body->plantType = plantType;

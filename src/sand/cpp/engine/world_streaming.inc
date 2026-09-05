@@ -1,4 +1,4 @@
-  void initInfiniteLayerState(uint32_t seed, uint32_t layerSalt, bool background) {
+  void initInfiniteLayerState(uint32_t seed, uint32_t layerSalt, bool background, int viewCols = 0, int viewRows = 0) {
     L->infinite = true; L->isBackground = background; L->worldSeed = seed;
     L->gSurfBase = imax(8, (int)std::floor(rows * 0.22));
     L->gSeaRow = TerrainGen::SEA_LEVEL;
@@ -15,26 +15,35 @@
     }
     L->worldOffsetX = (-(cols / 2)) & ~(CHUNK_SIZE - 1);   // tile-aligned origin (2D tile store needs alignment)
     L->worldOffsetY = (-L->gSurfBase) & ~(CHUNK_SIZE - 1); // surface centre (worldY=0) ~gSurfBase down the buffer
+    if (viewCols > 0 && viewRows > 0) {
+      double cameraX = (cols - viewCols) / 2.0;
+      double cameraWorldY = initialTerrainCameraWorldY(cameraX, viewCols, viewRows);
+      // Center the loaded window around the opening view, including sky above it.
+      int top = (int)std::floor(cameraWorldY - (rows - viewRows) / 2.0);
+      L->worldOffsetY = floorDiv(top, CHUNK_SIZE) * CHUNK_SIZE;
+      cam.setViewport(1, 1, viewCols, viewRows, cols, rows);
+      cam.set(cameraX, cameraWorldY - L->worldOffsetY);
+    }
   }
-  void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background) {
-    initInfiniteLayerState(seed, layerSalt, background);
+  void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background, int viewCols = 0, int viewRows = 0) {
+    initInfiniteLayerState(seed, layerSalt, background, viewCols, viewRows);
     fillRect(0, cols, 0, rows);
     comps.registerSeededComponents(0, cols);
   }
-  void initInfinite(uint32_t seed) {
+  void initInfinite(uint32_t seed, int viewCols = 0, int viewRows = 0) {
     ActiveLayerScope boundary(*this, &fg, &fg);
-    { ActiveLayerScope active(*this, &fg); initInfiniteLayer(seed, 0, false); }
-    { ActiveLayerScope active(*this, &bg); initInfiniteLayer(seed, 1, true); }
+    { ActiveLayerScope active(*this, &fg); initInfiniteLayer(seed, 0, false, viewCols, viewRows); }
+    { ActiveLayerScope active(*this, &bg); initInfiniteLayer(seed, 1, true, viewCols, viewRows); }
     bgEnabled = true;
   }
   // The browser mirror receives its actual cells from the authority worker. It
   // still needs deterministic terrain metadata for the initial camera surface,
   // but generating a duplicate world would require all simulation scratch and
   // defeat the presentation storage profile.
-  void initInfinitePresentation(uint32_t seed) {
+  void initInfinitePresentation(uint32_t seed, int viewCols = 0, int viewRows = 0) {
     ActiveLayerScope boundary(*this, &fg, &fg);
-    { ActiveLayerScope active(*this, &fg); initInfiniteLayerState(seed, 0, false); }
-    { ActiveLayerScope active(*this, &bg); initInfiniteLayerState(seed, 1, true); }
+    { ActiveLayerScope active(*this, &fg); initInfiniteLayerState(seed, 0, false, viewCols, viewRows); }
+    { ActiveLayerScope active(*this, &bg); initInfiniteLayerState(seed, 1, true, viewCols, viewRows); }
     bgEnabled = true;
   }
   template <typename T>

@@ -28,7 +28,7 @@ EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
 EMSCRIPTEN_KEEPALIVE double engine_abi_fingerprint() { return (double)ABI_FINGERPRINT; }
 EMSCRIPTEN_KEEPALIVE int engine_world_generation_version() { return WORLD_GENERATION_VERSION; }
 EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite,
-                                          int storageRole, int planetId) {
+                                          int storageRole, int planetId, int initialViewCols, int initialViewRows) {
   if (cols <= 0 || rows <= 0
       || cols > ENGINE_MAX_DIMENSION || rows > ENGINE_MAX_DIMENSION
       || (uint64_t)cols * (uint64_t)rows > ENGINE_MAX_CELLS)
@@ -37,8 +37,10 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
                          : (storageRole == ESR_AUTHORITY ? ESR_AUTHORITY : ESR_FULL);
   Engine* e = new Engine(cols, rows, seed, sinks != 0, role, planetId);
   if (infinite) {
-    if (role == ESR_PRESENTATION) e->initInfinitePresentation(seed);
-    else e->initInfinite(seed);
+    int viewCols = initialViewCols > 0 && initialViewRows > 0 ? imin(cols, initialViewCols) : 0;
+    int viewRows = viewCols ? imin(rows, initialViewRows) : 0;
+    if (role == ESR_PRESENTATION) e->initInfinitePresentation(seed, viewCols, viewRows);
+    else e->initInfinite(seed, viewCols, viewRows);
   }
   e->markAllDirty();
   return e;

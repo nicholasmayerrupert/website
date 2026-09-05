@@ -49,7 +49,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   };
 
   // Construct a presentation engine and reapply all runtime state.
-  const buildEngine = ({ cols = ctx.cols, rows = ctx.rows } = {}) => {
+  const buildEngine = ({ cols = ctx.cols, rows = ctx.rows, frameTerrain = false } = {}) => {
     const previous = ctx.engine;
     let e = null;
     try {
@@ -58,6 +58,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
         rows,
         infinite: true,
         storageRole: 'presentation',
+        initialViewCols: frameTerrain ? ctx.viewCols : 0,
+        initialViewRows: frameTerrain ? ctx.viewRows : 0,
         worldSeed: ctx.worldSeed,
         sinksOn: false, // taps/sinks are obsolete in the streaming world
         planetId: ctx.planetId,
@@ -193,14 +195,14 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     }
 
     // First build.
-    const engine = buildEngine({ cols: bufCols, rows: worldRows });
-    const spawnCol = Math.floor(ctx.cols / 2);
-    const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
-    // The browser engine is always a presentation replica. Players are spawned
-    // by the authority worker; the mirror creates a prediction body after the
-    // first authoritative player snapshot arrives.
-    // Start centered horizontally, with roughly one third of the view underground.
-    engine.cameraSet((ctx.cols - ctx.viewCols) / 2, spawnRow - Math.floor(ctx.viewRows * (2 / 3)));
+    const engine = buildEngine({ cols: bufCols, rows: worldRows, frameTerrain: !ctx.survival });
+    // Creative startup is framed by the engine before either layer is generated.
+    // Survival follows its authority-owned player after the first actor snapshot.
+    if (ctx.survival) {
+      const spawnCol = Math.floor(ctx.cols / 2);
+      const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
+      engine.cameraSet((ctx.cols - ctx.viewCols) / 2, spawnRow - Math.floor(ctx.viewRows * (2 / 3)));
+    }
     parallax.draw(parallaxCamera());
     ctx.lastCamX = NaN;
     ctx.lastCamY = NaN;

@@ -213,6 +213,13 @@ writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders
 their actual composited cell grids to `bench/structure-atlas.png`.
 
+Creative worlds open with the highest generated terrain or sea surface across
+the visible width at 60% of the viewport height. The initial loaded window is
+centered around that view so camera bounds cannot force the terrain upward.
+Authority and presentation use the same recorded opening viewport dimensions.
+Trees, structures, and decorative background ridges do not determine this framing;
+subsequent camera movement and zoom remain user-controlled.
+
 Zoom changes both the visible cell count and the loaded-window dimensions. A
 larger zoomed-out window costs more to store and initially settle, while quiet
 loaded terrain remains passive outside exact active spans. Extreme buffers shed

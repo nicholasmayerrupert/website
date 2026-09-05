@@ -20,6 +20,8 @@ const init = normalizeReplayInit({
   cols: 256,
   rows: 192,
   worldSeed: 0x51f7,
+  initialViewCols: 128,
+  initialViewRows: 96,
   survival: false,
   creativeKind: 0,
   creativeValue: 1,
@@ -34,6 +36,10 @@ const init = normalizeReplayInit({
   paused: true,
   artificialDelayMs: 100,
 });
+assert.equal(init.initialViewCols, 128);
+assert.equal(init.initialViewRows, 96);
+assert.equal(normalizeReplayInit({}).initialViewCols, 0);
+assert.equal(normalizeReplayInit({}).initialViewRows, 0);
 assert.ok(!('paused' in init));
 assert.ok(!('artificialDelayMs' in init));
 assert.equal(init.weatherId, WEATHER.RAIN);

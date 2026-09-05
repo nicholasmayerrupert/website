@@ -4,6 +4,16 @@
   ViewCamera cam;
 
   // ---- cross-system drivers (Engine-level orchestration; NOT camera math) ----
+  // Frame the highest generated ground or sea surface across the full opening view.
+  double initialTerrainCameraWorldY(double cameraX, int viewCols, int viewRows) {
+    int left = (int)std::floor(L->worldOffsetX + cameraX);
+    int right = (int)std::ceil(L->worldOffsetX + cameraX + viewCols);
+    int highest = L->gSeaRow;
+    for (int x = left; x < right; ++x)
+      highest = imin(highest, terrain.genSurfaceAbs(x));
+    return highest - viewRows * 0.60;
+  }
+
   // Decide + apply a world-stream: slide the buffer (worldgen), the cell
   // texture (GL), and pull the camera back in lockstep. Returns the applied dx.
   int streamWorld() {

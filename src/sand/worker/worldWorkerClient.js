@@ -667,6 +667,8 @@ export function createWorldWorkerClient(ctx) {
       replayDayPhaseKey = '';
       initOptions = {
         survival, creativeKind, creativeValue, tool, creatureNaturalSpawning,
+        initialViewCols: survival ? 0 : ctx.viewCols,
+        initialViewRows: survival ? 0 : ctx.viewRows,
         planetId, weatherId, dayPhase, dayOverridden, gravityScale, missionId, loadout,
         ...runtimeConfig,
       };

@@ -1099,6 +1099,8 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       engine = createEngineWasm({
         cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
         infinite: true, sinksOn: false, storageRole: 'authority',
+        initialViewCols: data.survival ? 0 : data.initialViewCols,
+        initialViewRows: data.survival ? 0 : data.initialViewRows,
         planetId: data.planetId,
         gravityScale: data.gravityScale,
       });

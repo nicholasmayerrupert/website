@@ -7,6 +7,7 @@ import {
 import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { computeViewportSizing } from '../src/sand/game/viewportSizing.js';
 
 await initSandWasm();
 
@@ -267,6 +268,40 @@ for (const role of ['full', 'authority', 'presentation']) {
   authority.destroy();
   mirror.destroy();
 }
+
+// Opening terrain framing must survive the real viewport clamp at every aspect ratio.
+let sawOffCenterPeak = false;
+for (const [width, height] of [[1440, 900], [390, 844], [2030, 700]]) {
+  const size = computeViewportSizing(width, height, 1);
+  for (let seed = 1; seed <= 12; seed++) {
+    const options = {
+      cols: size.bufCols, rows: size.worldRows, infinite: true, sinksOn: false,
+      worldSeed: seed, initialViewCols: size.viewCols, initialViewRows: size.viewRows,
+    };
+    const mirror = createEngineWasm({ ...options, storageRole: 'presentation' });
+    mirror.setViewport(1, size.cellDev, size.viewCols, size.viewRows);
+    const cam = mirror.getCam();
+    const left = mirror.getWorldOffsetX() + cam.x;
+    const top = mirror.getWorldOffsetY() + cam.y;
+    const heights = Array.from({ length: Math.ceil(size.viewCols) }, (_, x) =>
+      mirror.worldSurfaceAbsAt(Math.floor(left) + x));
+    const highest = Math.min(...heights);
+    sawOffCenterPeak ||= highest < heights[Math.floor(heights.length / 2)] - 20;
+    check(`opening ${width}x${height} seed ${seed} keeps every terrain peak below halfway`,
+      (highest - top) / size.viewRows >= 0.60 - 1e-9);
+    check(`opening ${width}x${height} seed ${seed} keeps streaming runway above and below`,
+      cam.y >= 40 && cam.y + size.viewRows <= size.worldRows - 40);
+    if (seed === 1) {
+      const authority = createEngineWasm({ ...options, storageRole: 'authority' });
+      check(`opening ${width}x${height} authority and mirror agree before the first snapshot`,
+        authority.getWorldOffsetY() === mirror.getWorldOffsetY()
+        && authority.getCam().y === cam.y && authority.getCam().x === cam.x);
+      authority.destroy();
+    }
+    mirror.destroy();
+  }
+}
+check('opening fixtures include a peak well above the center-column surface', sawOffCenterPeak);
 
 const failures = done();
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

@@ -89,7 +89,7 @@ export function initSandWasm() {
       }
       M = {
         mod,
-        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         worldGenerationVersion: c('engine_world_generation_version', 'number', []),
         getPlanet: c('engine_get_planet', 'number', ['number']),
         getGravityScale: c('engine_get_gravity_scale', 'number', ['number']),
@@ -309,6 +309,8 @@ export function createEngineWasm({
   sinksOn = true,
   infinite = false,
   storageRole = 'full',
+  initialViewCols = 0,
+  initialViewRows = 0,
   planetId = PLANET.EARTH,
   gravityScale,
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
@@ -326,6 +328,7 @@ export function createEngineWasm({
   const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
   const ptr = M.create(
     cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role, planetId,
+    initialViewCols | 0, initialViewRows | 0,
   );
   if (!ptr) throw new Error('sand engine allocation failed');
   if (gravityScale !== undefined) M.setGravityScale(ptr, gravityScale);

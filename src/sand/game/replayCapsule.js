@@ -95,6 +95,8 @@ export function normalizeReplayInit(data) {
     cols: data.cols | 0,
     rows: data.rows | 0,
     worldSeed: data.worldSeed >>> 0,
+    initialViewCols: Math.max(0, Math.min(data.cols | 0, data.initialViewCols | 0)),
+    initialViewRows: Math.max(0, Math.min(data.rows | 0, data.initialViewRows | 0)),
     survival: !!data.survival,
     creativeKind: data.creativeKind | 0,
     creativeValue: data.creativeValue | 0,

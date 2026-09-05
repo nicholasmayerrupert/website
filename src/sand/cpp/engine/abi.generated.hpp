@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 36;
 
-static const uint64_t ABI_FINGERPRINT = 0xc9a6fe8af069ULL;
+static const uint64_t ABI_FINGERPRINT = 0x6d6795dc5f15ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {

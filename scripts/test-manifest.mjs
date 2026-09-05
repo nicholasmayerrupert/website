@@ -62,6 +62,7 @@ export const UNIT_SUITES = [
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-jitter', 'rigid-jitter-test.mjs', exclusive(120_000)],
   ['rigid-massive-stack', 'rigid-massive-stack-test.mjs', exclusive(240_000)],
+  ['rigid-layer-solver', 'rigid-layer-solver-test.mjs'],
   ['rigid-world-raster', 'rigid-world-raster-test.mjs', exclusive(120_000)],
   ['rigid-rollback-cache', 'rigid-rollback-cache-test.mjs', exclusive(120_000)],
   ['rigid-world-raster-island', 'rigid-world-raster-island-test.mjs', exclusive(120_000)],

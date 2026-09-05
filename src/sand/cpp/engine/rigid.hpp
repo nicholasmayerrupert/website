@@ -94,9 +94,8 @@ class RigidBodySystem {
   std::array<double, 3> rigidTraceProjectionMotion{};
   std::array<std::array<double, 3>, 3> rigidTraceBiasByKind{};
   void clearContactCaches();
-  void beginWorldContactRelax();
+  void beginWorldStep();
   void captureTracePose(int stage);
-  void relaxWorldContacts();
   void resolveWorldRasterAssignment();
   void bakeWorldBodies(bool foregroundActive, bool backgroundActive);
   int worldContactCount() const;
@@ -122,7 +121,7 @@ class RigidBodySystem {
   void setBodyFusePoint(Body* b, double wx, double wy);
 
   void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy);
-  bool computeDerived(Body* b, bool preserveWorld);
+  bool computeDerived(Body* b, bool preserveWorld, bool recenter = true);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, const std::vector<uint8_t>& materials);
   Body* spawnJointBodyImpl(const std::vector<std::pair<int, int>>& fgCells,
@@ -199,7 +198,7 @@ class RigidBodySystem {
   void restampBodiesAfterStream(PersistentCellOperation operation);
   void bakeRestingBodies();
   void resolveStructureRasterOverlaps(bool allowPreviousPoseRollback = true);
-  void moveBodies();
+  void moveWorldBodies();
   void collectPlacementTouchingBodyIds(
     const std::vector<std::pair<int, int>>& cells,
     std::unordered_set<int>& touchingIds);
@@ -216,6 +215,15 @@ class RigidBodySystem {
 
  private:
   struct StepState;
+  bool prepareBodyMovement();
+  void commitBodyMovement();
+  Layer* bodyLayer(const Body* body) const;
+  static uint8_t bodyLayerMask(const Body* body) {
+    return body->jointRole == 1 ? 3 : (1 << body->solverLayer);
+  }
+  struct LayerShape { uint32_t revision = 0; Body body; };
+  std::unordered_map<uint64_t, LayerShape> layerShapes;
+  Body* collisionShape(Body* body, int layer);
   void prepareRigidStep(StepState& step, double tickDt);
   void solveRigidStep(StepState& step, double tickDt);
   void finalizeRigidStep(StepState& step);
@@ -232,13 +240,15 @@ class RigidBodySystem {
     int childA = -1, childB = -1, featureA = -1, featureB = -1;
     uint32_t aRevision = 0, bRevision = 0;
     uint8_t normalBucket = 0, bLayer = 0;
+    uint8_t aLayer = 0, collisionLayer = 0;
     uint8_t retainMissed = 0; // pair metadata, not key identity
     bool operator==(const ContactCacheKey& other) const {
       return aId == other.aId && bId == other.bId
           && childA == other.childA && childB == other.childB
           && featureA == other.featureA && featureB == other.featureB
           && aRevision == other.aRevision && bRevision == other.bRevision
-          && normalBucket == other.normalBucket && bLayer == other.bLayer;
+          && normalBucket == other.normalBucket && bLayer == other.bLayer
+          && aLayer == other.aLayer && collisionLayer == other.collisionLayer;
     }
   };
   struct ContactCacheKeyHash {
@@ -253,6 +263,8 @@ class RigidBodySystem {
       h ^= key.bRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
       h ^= (size_t)key.normalBucket << 1;
       h ^= (size_t)key.bLayer << 5;
+      h ^= (size_t)key.aLayer << 7;
+      h ^= (size_t)key.collisionLayer << 9;
       return h;
     }
   };
@@ -264,14 +276,14 @@ class RigidBodySystem {
   };
   using ContactCache = std::unordered_map<
     ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
-  std::array<ContactCache, 2> contactCaches;
-  std::array<std::unordered_map<uint64_t, int>, 2> impactContactTicks;
+  ContactCache contactCache;
+  std::array<std::unordered_map<uint64_t, int>, 8> impactContactTicks;
   struct PairAxisState {
     uint32_t aRevision = 0, bRevision = 0;
     double nx = 0, ny = 0;
     uint8_t age = 0;
   };
-  std::array<std::unordered_map<uint64_t, PairAxisState>, 2> pairAxes;
+  std::array<std::unordered_map<uint64_t, PairAxisState>, 8> pairAxes;
   struct ShockAttemptState {
     uint8_t consecutiveFailures = 0;
     int retryTick = 0, lastTick = 0;
@@ -288,7 +300,7 @@ class RigidBodySystem {
   std::vector<Contact> solverContactScratch;
   std::vector<int> broadphaseOrderScratch;
   std::vector<std::pair<int, int>> broadphasePairScratch;
-  std::array<std::vector<int>, 2> broadphaseBodyIds;
+  std::vector<uint64_t> broadphaseBodyIds;
   std::vector<uint8_t> terrainRigidBins;
   std::vector<uint8_t> terrainGranularBins;
   int terrainRigidBinCols = 0, terrainRigidBinRows = 0;
@@ -359,28 +371,33 @@ class RigidBodySystem {
   std::vector<double> fluidBodyMaxSlip;
   std::vector<uint8_t> fluidBodySurface, fluidBodyDensityEquilibrium;
   std::vector<uint8_t> fluidBodyIceCoupling;
-  std::vector<int> moveBodyIds;
-  std::unordered_map<int, int> moveBodySlotById;
   struct MovePose {
     double px = 0, py = 0, angle = 0;
   };
   bool preserveRasterRecoveryMotion(
     Body* body, const MovePose& rejectedPose,
     double referenceVx = 0, double referenceVy = 0);
-  std::vector<MovePose> movePreviousPoses;
-  std::vector<std::vector<int>> movePreviousFootprints;
-  std::vector<std::vector<uint8_t>> movePreviousMaterials;
-  std::vector<std::vector<Disp>> moveDisplaced;
-  std::vector<std::vector<int>> moveStamped;
-  std::vector<uint8_t> movePreviousMaterialGrid;
-  std::vector<int32_t> movePreviousOwnerGrid;
-  std::vector<std::pair<int, int>> terrainContactPairs;
+  struct MovementState {
+    bool prepared = false, batchRasterRestore = false;
+    std::vector<int> moveBodyIds;
+    std::unordered_map<int, int> moveBodySlotById;
+    std::vector<MovePose> movePreviousPoses;
+    std::vector<std::vector<int>> movePreviousFootprints;
+    std::vector<std::vector<uint8_t>> movePreviousMaterials;
+    std::vector<std::vector<Disp>> moveDisplaced;
+    std::vector<std::vector<int>> moveStamped;
+    std::vector<uint8_t> movePreviousMaterialGrid;
+    std::vector<int32_t> movePreviousOwnerGrid;
+    std::vector<std::pair<int, int>> terrainContactPairs;
+    std::vector<int> moveCells, moveFootprint;
+  };
+  std::array<MovementState, 2> movements;
+  MovementState& movement();
   std::vector<int> terrainAdjustmentParents;
   std::vector<int> terrainAdjustmentFirst, terrainAdjustmentNext;
   std::vector<int> jointCellIndex;
-  std::vector<int> moveCells, moveFootprint;
+
   std::vector<int> rasterProjectionOwner, rasterProjectionTouched;
-  std::vector<int> rasterOverlapNode, rasterOverlapCount;
   std::array<StampSet, 2> bakeRasterAliases;
   std::vector<Body*> rasterProjectionBodies;
   std::vector<std::pair<int, int>> rasterProjectionPairs;
@@ -412,8 +429,6 @@ class RigidBodySystem {
     double accJn = 0, accJt = 0;
   };
   std::vector<WorldContact> worldContacts;
-  std::unordered_map<uint64_t, MovePose> worldPreviousPoses;
-  bool worldHasPeerContact = false;
 
   Engine& E;
 };

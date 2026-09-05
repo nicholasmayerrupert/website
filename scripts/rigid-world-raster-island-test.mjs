@@ -87,6 +87,8 @@ check('fixture creates one joint and three ordinary bodies',
     && jointLeaders === 1);
 
 let maxBlocked = 0;
+let totalContacts = 0;
+let maxTravel = 0;
 let maxTerrainBlocked = 0;
 let maxOwnershipConflicts = 0;
 let maxProjectionFailures = 0;
@@ -105,6 +107,7 @@ const bodySnapshot = () => {
       const state = engine._bodyStateLayer(layer, body);
       if (!state) continue;
       snapshot.set(`${layer}:${engine._bodyIdLayer(layer, body)}`, {
+        px: state.px, py: state.py,
         awake: engine._bodyAwakeLayer(layer, body) > 0,
         pointSpeed: Math.hypot(state.vx, state.vy)
           + Math.abs(state.omega) * state.maxR,
@@ -115,12 +118,19 @@ const bodySnapshot = () => {
   return snapshot;
 };
 let previousBodies = bodySnapshot();
+const initialBodies = previousBodies;
 const motion = trackRigidMotion(engine, 0, engine._bodyIdLayer(0, 0));
 for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
   motion.sample(tick);
   const solver = engine.getRigidSolverDebug();
+  totalContacts += solver.contacts;
   const currentBodies = bodySnapshot();
+  for (const [key, pose] of currentBodies) {
+    const start = initialBodies.get(key);
+    if (start) maxTravel = Math.max(maxTravel,
+      Math.hypot(pose.px - start.px, pose.py - start.py));
+  }
   if (solver.rasterCorrections > 0) {
     for (const [key, previous] of previousBodies) {
       const current = currentBodies.get(key);
@@ -173,8 +183,10 @@ for (let layer = 0; layer < 2; layer++) {
   }
 }
 
-check(`one-cell theoretical aliases stay bounded and exercised (${maxBlocked})`,
-  maxBlocked === 1);
+check(`body rasters have no shared cells (${maxBlocked})`,
+  maxBlocked === 0);
+check(`moving island exercises collision solving (${totalContacts}, travel ${maxTravel.toFixed(1)})`,
+  totalContacts > 0 && maxTravel > 20);
 check(`every body remains outside terrain (${maxTerrainBlocked})`,
   maxTerrainBlocked === 0);
 check(`committed ownership remains conflict-free (${maxOwnershipConflicts})`,
@@ -183,7 +195,7 @@ check(`every island projection succeeds (${maxProjectionFailures})`,
   maxProjectionFailures === 0);
 check(`projection correction remains bounded `
     + `(${maxCorrection.toFixed(4)} at ${maxCorrectionTick})`,
-  maxCorrection > 0 && maxCorrection <= 2);
+  maxCorrection <= 2);
 check(`raster recovery preserves active motion `
     + `(${abruptRasterStops} body stops, `
     + `${abruptRasterRotationStops} rotation stops, peak speed `
@@ -198,7 +210,7 @@ check('motion trace observes the body and finite correction stages',
   motionSummary.samples > 0 && Number.isFinite(motionSummary.maxCorrection));
 check(`tracked correction perimeter travel stays bounded `
     + `(${motionSummary.maxCorrection.toFixed(4)} at `
-    + `${motionSummary.maxCorrectionTick})`, motionSummary.maxCorrection <= 2.2);
+    + `${motionSummary.maxCorrectionTick})`, motionSummary.maxCorrection <= 0.1);
 console.log(`motion corrections: ${JSON.stringify(motionSummary)}`);
 if (process.env.SAND_TEST_ARTIFACTS) {
   mkdirSync(process.env.SAND_TEST_ARTIFACTS, { recursive: true });

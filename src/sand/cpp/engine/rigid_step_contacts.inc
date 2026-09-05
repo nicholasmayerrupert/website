@@ -102,12 +102,14 @@
   broadphasePairs.clear();
   if (broadphasePairs.capacity() < (size_t)n * 4)
     broadphasePairs.reserve((size_t)n * 4);
-  int activeLayer = E.L == &E.fg ? 0 : 1;
-  std::unordered_map<int, int> bodyIndexById;
+  auto bodyKey = [](Body* body) {
+    return ((uint64_t)body->solverLayer << 32) | (uint32_t)body->id;
+  };
+  std::unordered_map<uint64_t, int> bodyIndexById;
   bodyIndexById.reserve((size_t)n * 2);
-  for (int i = 0; i < n; i++) bodyIndexById[solverBodies[i]->id] = i;
+  for (int i = 0; i < n; i++) bodyIndexById[bodyKey(solverBodies[i])] = i;
   std::vector<uint8_t> broadphaseSeen(n, 0);
-  for (int id : broadphaseBodyIds[activeLayer]) {
+  for (uint64_t id : broadphaseBodyIds) {
     auto it = bodyIndexById.find(id);
     if (it == bodyIndexById.end() || broadphaseSeen[it->second]) continue;
     broadphaseSeen[it->second] = 1;
@@ -115,31 +117,23 @@
   }
   for (int i = 0; i < n; i++)
     if (!broadphaseSeen[i]) broadphaseOrder.push_back(i);
-  ContactCache& previousContacts = contactCaches[activeLayer];
+  ContactCache& previousContacts = contactCache;
   ContactCacheKey previousRestoreKey;
   ContactCache::iterator previousRestoreEntry = previousContacts.end();
   bool previousRestoreKeyValid = false;
-  auto& impactTicks = impactContactTicks[activeLayer];
-  for (auto it = impactTicks.begin(); it != impactTicks.end();) {
-    if (it->second < E.tick - R_IMPACT_SOUND_SEPARATION_TICKS)
-      it = impactTicks.erase(it);
-    else
-      ++it;
-  }
-  auto& activePairAxes = pairAxes[activeLayer];
+  for (auto& ticks : impactContactTicks)
+    for (auto it = ticks.begin(); it != ticks.end();)
+      if (it->second < E.tick - R_IMPACT_SOUND_SEPARATION_TICKS)
+        it = ticks.erase(it);
+      else ++it;
+  for (auto& axes : pairAxes)
+    for (auto it = axes.begin(); it != axes.end();)
+      if (it->second.age >= 4) it = axes.erase(it);
+      else { it->second.age++; ++it; }
   auto bodyPairKey = [](int aId, int bId) {
     return ((uint64_t)(uint32_t)aId << 32) | (uint32_t)bId;
   };
-  for (auto it = activePairAxes.begin(); it != activePairAxes.end();) {
-    if (it->second.age >= 4) it = activePairAxes.erase(it);
-    else {
-      it->second.age++;
-      ++it;
-    }
-  }
   auto cacheKey = [&](const Contact& contact, int normalBucket) {
-    bool peerLayer = contact.b && !contact.bIntegrated
-      && !contact.b->actorProxy;
     return ContactCacheKey{
       contact.a->id,
       contact.b ? contact.b->id : -1,
@@ -150,7 +144,8 @@
       contact.a->geometryRevision,
       contact.b ? contact.b->geometryRevision : 0,
       (uint8_t)normalBucket,
-      (uint8_t)(contact.b ? (peerLayer ? 1 - activeLayer : activeLayer) : 2),
+      (uint8_t)(contact.b ? contact.b->solverLayer : 2),
+      contact.a->solverLayer, contact.layer,
       (uint8_t)(contact.a->maxR >= 24
         || (contact.b && contact.b->maxR >= 24)),
     };
@@ -226,49 +221,6 @@
     else if (contact.accJt < -maxFriction) contact.accJt = -maxFriction;
     contact.persisted = true;
     contact.targetVn = 0;
-  };
-  // Each layer owns its integration pass, but a joint body's collision shape is
-  // present in both grids. Resolve owner-marked contacts against the peer's real
-  // dynamics while leaving positional integration to that body's owning pass.
-  std::unordered_map<int, Body*> peerBackgroundBodies;
-
-  if (E.bgEnabled) {
-    if (E.L == &E.fg) {
-      bool hasJointLeader = false;
-      for (Body* body : solverBodies)
-        if (body->jointRole == 1) { hasJointLeader = true; break; }
-      if (hasJointLeader)
-        for (Body* peer : E.bg.bodies)
-          if (peer->jointRole == 0) peerBackgroundBodies[peer->id] = peer;
-    } else if (!E.bg.passiveBodyIds.empty()) {
-      for (Body* leader : E.fg.bodies)
-        if (leader->jointRole == 1) peerJointLeaders[leader->id] = leader;
-    }
-  }
-  auto peerDynamicBodyAt = [&](Body* body, int x, int y) -> Body* {
-    if (!E.bgEnabled || x < 0 || x >= E.cols || y < 0 || y >= E.rows)
-      return nullptr;
-    int k = y * E.cols + x;
-    if (E.L == &E.fg && body->jointRole == 1) {
-      int owner = E.bg.bodyOwner[k];
-      if (owner < 0 || owner == body->id
-          || E.bg.passiveBodyIds.count(owner)) return nullptr;
-      auto it = peerBackgroundBodies.find(owner);
-      return it == peerBackgroundBodies.end() ? nullptr : it->second;
-    }
-    if (E.L == &E.bg && body->jointRole == 0) {
-      int owner = E.bg.bodyOwner[k];
-      if (owner < 0 || !E.bg.passiveBodyIds.count(owner)) return nullptr;
-      auto it = peerJointLeaders.find(owner);
-      return it == peerJointLeaders.end() ? nullptr : it->second;
-    }
-    return nullptr;
-  };
-  auto bodyUsesPeerContacts = [&](Body* body) {
-    return (E.L == &E.fg && body->jointRole == 1
-            && !peerBackgroundBodies.empty())
-        || (E.L == &E.bg && body->jointRole == 0
-            && !peerJointLeaders.empty());
   };
   double wpx, wpy, nx_, ny_;
   auto sweptPoint = [](Body* body, double lx, double ly, double t,
@@ -439,11 +391,11 @@
     std::vector<ChildBounds> nodeBounds;
     std::vector<uint32_t> nodeBoundsGeneration;
   };
-  std::vector<ChildPose> currentChildPoses(n), nextChildPoses(n);
-  std::vector<double> nextChildPoseDt(n, -1);
-  std::vector<std::vector<ChildFrame>> currentChildFrames(n), nextChildFrames(n);
-  std::vector<uint8_t> currentChildFramesValid(n, 0);
-  std::vector<ChildTreePoseCache> childTreePoseCaches(n);
+  std::vector<ChildPose> currentChildPoses(n * 3), nextChildPoses(n * 3);
+  std::vector<double> nextChildPoseDt(n * 3, -1);
+  std::vector<std::vector<ChildFrame>> currentChildFrames(n * 3), nextChildFrames(n * 3);
+  std::vector<uint8_t> currentChildFramesValid(n * 3, 0);
+  std::vector<ChildTreePoseCache> childTreePoseCaches(n * 3);
   ChildTreePoseCache scratchChildTreePoseCacheA;
   ChildTreePoseCache scratchChildTreePoseCacheB;
   const std::vector<ChildFrame>* activeCurrentChildFramesA = nullptr;
@@ -464,6 +416,12 @@
       ux, uy, -uy, ux,
     };
   };
+  auto samePose = [](const ChildPose& a, const ChildPose& b) {
+    return a.px == b.px && a.py == b.py
+        && a.ux == b.ux && a.uy == b.uy
+        && a.vx == b.vx && a.vy == b.vy;
+  };
+
   auto makeChildFrame = [&](Body* body, const ChildPose& pose, int child,
                             ChildFrame& frame) {
     frame.body = body;
@@ -552,11 +510,6 @@
       Body* body, double dt) {
     ChildPose currentPose = childPose(body, 0);
     ChildPose nextPose = childPose(body, dt);
-    auto samePose = [](const ChildPose& a, const ChildPose& b) {
-      return a.px == b.px && a.py == b.py
-          && a.ux == b.ux && a.uy == b.uy
-          && a.vx == b.vx && a.vy == b.vy;
-    };
     if (cache.body == body
         && cache.geometryRevision == body->geometryRevision
         && cache.dt == dt
@@ -1068,8 +1021,11 @@
         collectChildFrames(body, childPose(body, 0), scratch);
         return scratch;
       }
-      if (!currentChildFramesValid[bodyIndex]) {
-        collectChildFrames(body, currentChildPoses[bodyIndex],
+      ChildPose pose = childPose(body, 0);
+      if (!currentChildFramesValid[bodyIndex]
+          || !samePose(currentChildPoses[bodyIndex], pose)) {
+        currentChildPoses[bodyIndex] = pose;
+        collectChildFrames(body, pose,
                            currentChildFrames[bodyIndex]);
         currentChildFramesValid[bodyIndex] = 1;
       }
@@ -1082,9 +1038,11 @@
         collectChildFrames(body, childPose(body, dt), scratch);
         return scratch;
       }
-      if (nextChildPoseDt[bodyIndex] != dt) {
+      ChildPose pose = childPose(body, dt);
+      if (nextChildPoseDt[bodyIndex] != dt
+          || !samePose(nextChildPoses[bodyIndex], pose)) {
         nextChildPoseDt[bodyIndex] = dt;
-        nextChildPoses[bodyIndex] = childPose(body, dt);
+        nextChildPoses[bodyIndex] = pose;
         collectChildFrames(body, nextChildPoses[bodyIndex],
                            nextChildFrames[bodyIndex]);
       }

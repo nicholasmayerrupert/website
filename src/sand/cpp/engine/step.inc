@@ -1,11 +1,11 @@
-  // World-step orchestration. One shared tick steps foreground, then background,
-  // and finally reconciles cross-layer support, reactions, and transfer. Actor
+  // World-step orchestration prepares both layers, advances their rigid bodies
+  // together, then steps cells and reconciles cross-layer reactions and transfer. Actor
   // updates run independently in stepActors(); step() composes both clocks for
   // compatibility. Local cell movement rules live in core.inc.
 
-  void stepLayer(Layer* layer) {
+  bool prepareLayer(Layer* layer) {
     useLayer(layer);
-    if (!beginStepDirty()) return; // nothing active in this layer this step
+    if (!beginStepDirty()) return false; // nothing active in this layer this step
     if (L->groundDirty || L->groundContentDirty || !L->groundBaseValid)
       L->componentCarryDirty = true;
     audio.beginRegionalPass();
@@ -24,7 +24,15 @@
     double tB = emscripten_get_now();
     reactions.runPhase(ReactionPhase::BEFORE_BODY_MOVE);
     forces.applyBodyForces();
-    rigid.moveBodies();
+    perfBodyMs += emscripten_get_now() - tB;
+    audio.flushRegionalPass();
+    return true;
+  }
+
+  void finishLayer(Layer* layer) {
+    useLayer(layer);
+    audio.beginRegionalPass();
+    double tB = emscripten_get_now();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-moveBodies");
 #endif
@@ -272,14 +280,21 @@
       bgA = bgA || layerActive(&bg);
     }
     double tL0 = emscripten_get_now();
-    rigid.beginWorldContactRelax();
-    if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
+    rigid.beginWorldStep();
+    bool fgPrepared = fgA && prepareLayer(&fg);
+    bool bgPrepared = bgA && prepareLayer(&bg);
+    audio.beginRegionalPass();
+    double tRigid = emscripten_get_now();
+    rigid.moveWorldBodies();
+    perfBodyMs += emscripten_get_now() - tRigid;
+    audio.flushRegionalPass();
+    if (fgPrepared) finishLayer(&fg);
     rigid.captureTracePose(1);
-    if (bgA) stepLayer(&bg);
+    if (bgPrepared) finishLayer(&bg);
     rigid.captureTracePose(2);
-    rigid.relaxWorldContacts();
-    rigid.resolveWorldRasterAssignment();
+    rigid.captureTracePose(3);
     double tBake = emscripten_get_now();
+    rigid.resolveWorldRasterAssignment();
     rigid.resolveActorRasterContacts();
     rigid.bakeWorldBodies(fgA, bgA);
     rigid.captureTracePose(5);

@@ -255,6 +255,9 @@ struct Body {
   // this inverse map supplies the peer layer for combined mass/collision.
   std::vector<uint8_t> jointPeerMaterials;
   Body* jointPeer = nullptr;
+  // Transient world-solver ownership; geometry proxies point to their dynamics.
+  uint8_t solverLayer = 0;
+  Body* solverBody = nullptr; // non-null only on a layer collision shape
   // 0 = ordinary body, 1 = simulated foreground leader, 2 = kinematic
   // background follower. Bodies become joint only when one structural
   // detachment event creates both halves.
@@ -273,9 +276,7 @@ struct Body {
   double actorVx = 0, actorVy = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
-  // Cross-layer contacts form one physical island even though each layer has
-  // its own solver pass. This counter is advanced only when that complete
-  // world island is quiet and connected to static support.
+  // Reserved world-rest diagnostic carried in replay snapshots.
   uint16_t worldStillTicks = 0;
   // A cold sleep fallback tracks the world-space motion of the centre and two
   // shape-scale probes. Contact islands that stay inside a small pose envelope
@@ -376,10 +377,8 @@ struct Contact {
   double rax, ray, rbx, rby, nx, ny, depth;
   int childA, childB, featureA, featureB;
   uint8_t normalBucket;
-  // Cross-layer contacts exchange velocity impulses immediately even though the
-  // peer body integrates in a different layer pass. Positional bias remains on
-  // the body in the active solver so neither layer's stamped raster becomes
-  // stale before its normal moveBodies pass.
+  // Dynamic bodies integrate together. Actor proxies have their own gameplay
+  // clock and integrate only the collision-induced displacement.
   bool bIntegrated;
   // Separating speed captured from the contact's initial impact. Keeping this
   // target fixed lets sequential impulses preserve a small rebound instead of
@@ -395,6 +394,7 @@ struct Contact {
   int blockMate;
   bool persisted;
   double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
+  uint8_t layer = 0;
 };
 
 // ---- Dropped items + cosmetic particles (items.inc) ----

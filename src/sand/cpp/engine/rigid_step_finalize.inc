@@ -8,7 +8,6 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
   auto& loadedWindowFreeze = step.loadedWindowFreeze;
   auto& contacts = solverContactScratch;
   int nc = (int)contacts.size();
-  int activeLayer = E.L == &E.fg ? 0 : 1;
   auto& broadphaseOrder = broadphaseOrderScratch;
   std::vector<int> islandParent(n);
   std::vector<double> islandMinStill(n);
@@ -71,10 +70,12 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
     }
   }
   finalizeActorStep(step);
-  std::vector<int>& savedBroadphaseIds = broadphaseBodyIds[activeLayer];
+  std::vector<uint64_t>& savedBroadphaseIds = broadphaseBodyIds;
   savedBroadphaseIds.resize(broadphaseOrder.size());
   for (size_t i = 0; i < broadphaseOrder.size(); i++)
-    savedBroadphaseIds[i] = solverBodies[broadphaseOrder[i]]->id;
+    savedBroadphaseIds[i] =
+      ((uint64_t)solverBodies[broadphaseOrder[i]]->solverLayer << 32)
+      | (uint32_t)solverBodies[broadphaseOrder[i]]->id;
   for (int bi = 0; bi < n; bi++) islandParent[bi] = bi;
   for (int ci = 0; ci < nc; ci++) {
     Contact& c = contacts[ci];
@@ -131,6 +132,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
   for (int bi = 0; bi < n; bi++) islandMinRestProbe[bi] = INT_MAX;
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
+    Engine::ActiveLayerScope scope(E, bodyLayer(b));
     if (!b->awake) continue;
     int r = ufFind(islandParent, bi);
     double st = b->hadContact ? b->stillTicks : 0;
@@ -163,6 +165,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
   };
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
+    Engine::ActiveLayerScope scope(E, bodyLayer(b));
     if (!b->awake) continue;
     int root = ufFind(islandParent, bi);
     bool sleep = islandMinStill[root] >= R_SLEEP_TICKS
@@ -170,7 +173,6 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
     if (!sleep) continue;
     if (sleepContactOffsets.empty()) indexSleepContacts();
     b->sleepSupports.clear();
-    int currentLayer = E.L == &E.bg ? 1 : 0;
     auto addSupport = [&](double x, double y, int owner, int layer) {
       if (b->sleepSupports.size() >= 8) return;
       for (const BodySleepSupport& support : b->sleepSupports)
@@ -199,14 +201,15 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
       // a one-sided wall is not a load-bearing anchor after the solver sleeps.
       if (contact.a == b && impulseY < -1e-8
           && !unloadedTerrainSide) {
-        int layer = contact.b && !contact.bIntegrated
-          && !contact.b->actorProxy ? 1 - currentLayer : currentLayer;
+        int layer = contact.layer;
         addSupport(b->px + contact.rax, b->py + contact.ray,
-                   contact.b ? contact.b->id : -1, layer);
+                   contact.b ? (layer == 1 && contact.b->jointRole == 1
+                     ? contact.b->jointPeer->id : contact.b->id) : -1, layer);
       }
       if (contact.b == b && contact.bIntegrated && impulseY > 1e-8)
         addSupport(b->px + contact.rbx, b->py + contact.rby,
-                   contact.a->id, currentLayer);
+                   contact.layer == 1 && contact.a->jointRole == 1
+                     ? contact.a->jointPeer->id : contact.a->id, contact.layer);
     }
     // A dual-layer cut island can sit still on other free debris. That is not
     // a load-bearing anchor; keep the joint leader awake until it has terrain,

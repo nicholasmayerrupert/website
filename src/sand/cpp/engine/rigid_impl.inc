@@ -107,13 +107,14 @@ bool RigidBodySystem::bodyFullyInsideLoadedWindow(Body* body) const {
 }
 
 void RigidBodySystem::clearContactCaches() {
-  for (ContactCache& cache : contactCaches) cache.clear();
+  contactCache.clear();
   for (auto& contacts : impactContactTicks) contacts.clear();
   for (auto& axes : pairAxes) axes.clear();
+  layerShapes.clear();
+  for (auto& state : movements) state = MovementState{};
   shockAttemptCache.clear();
-  for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
+  broadphaseBodyIds.clear();
   worldContacts.clear();
-  worldHasPeerContact = false;
 }
 
 void RigidBodySystem::captureTracePose(int stage) {
@@ -129,131 +130,54 @@ void RigidBodySystem::captureTracePose(int stage) {
   }
 }
 
-void RigidBodySystem::beginWorldContactRelax() {
-  if (solverMode == 46 && !worldContacts.empty()) {
-    auto key = [](int layer, int id) {
-      return ((uint64_t)(uint32_t)layer << 32) | (uint32_t)id;
-    };
-    std::unordered_map<uint64_t, Body*> bodies;
-    bodies.reserve(E.fg.bodies.size() + E.bg.bodies.size());
-    for (Body* body : E.fg.bodies)
-      if (body->jointRole != 2) bodies[key(0, body->id)] = body;
-    for (Body* body : E.bg.bodies)
-      if (body->jointRole == 0) bodies[key(1, body->id)] = body;
-    std::vector<Body*> indexed;
-    std::unordered_map<Body*, int> indices;
-    auto indexBody = [&](Body* body) {
-      auto found = indices.find(body);
-      if (found != indices.end()) return found->second;
-      int index = (int)indexed.size();
-      indexed.push_back(body);
-      indices[body] = index;
-      return index;
-    };
-    struct PreBiasConstraint {
-      int a = -1, b = -1;
-      double nx = 0, ny = 0;
-      double rax = 0, ray = 0, rbx = 0, rby = 0;
-      double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
-      double bias = 0, mass = 0, impulse = 0;
-    };
-    std::vector<PreBiasConstraint> constraints;
-    constraints.reserve(worldContacts.size());
-    auto anchor = [](Body* body, double lx, double ly,
-                     double& rx, double& ry) {
-      double cs = std::cos(body->angle), sn = std::sin(body->angle);
-      rx = lx * cs - ly * sn;
-      ry = lx * sn + ly * cs;
-    };
-    for (const WorldContact& contact : worldContacts) {
-      if (contact.bLayer < 0 || contact.aLayer == contact.bLayer) continue;
-      auto aFound = bodies.find(key(contact.aLayer, contact.aId));
-      auto bFound = bodies.find(key(contact.bLayer, contact.bId));
-      if (aFound == bodies.end() || bFound == bodies.end()) continue;
-      Body* A = aFound->second;
-      Body* B = bFound->second;
-      if (!A->awake && !B->awake) continue;
-      PreBiasConstraint constraint;
-      constraint.a = indexBody(A);
-      constraint.b = indexBody(B);
-      constraint.nx = contact.nx;
-      constraint.ny = contact.ny;
-      anchor(A, contact.lax, contact.lay, constraint.rax, constraint.ray);
-      anchor(B, contact.lbx, contact.lby, constraint.rbx, constraint.rby);
-      double projection =
-        (A->px + constraint.rax - B->px - constraint.rbx) * contact.nx
-        + (A->py + constraint.ray - B->py - constraint.rby) * contact.ny;
-      double penetration = contact.depth
-        - (projection - contact.initialProjection) - R_BODY_PEN_SLOP;
-      if (penetration <= 0) continue;
-      constraint.aInvM = A->awake ? A->invMass : 0;
-      constraint.aInvI = A->awake ? A->invInertia : 0;
-      constraint.bInvM = B->awake ? B->invMass : 0;
-      constraint.bInvI = B->awake ? B->invInertia : 0;
-      double rnA = constraint.rax * contact.ny
-                 - constraint.ray * contact.nx;
-      double rnB = constraint.rbx * contact.ny
-                 - constraint.rby * contact.nx;
-      double inverseMass = constraint.aInvM + constraint.bInvM
-        + constraint.aInvI * rnA * rnA
-        + constraint.bInvI * rnB * rnB;
-      if (inverseMass <= 0) continue;
-      constraint.bias = std::fmin(
-        R_MAX_BIAS_VEL, R_BAUMGARTE * penetration);
-      constraint.mass = 1 / inverseMass;
-      constraints.push_back(constraint);
-    }
-    std::vector<double> dx(indexed.size(), 0), dy(indexed.size(), 0);
-    std::vector<double> da(indexed.size(), 0);
-    for (int iteration = 0; iteration < 8; iteration++) {
-      bool reverse = (iteration & 1) != 0;
-      double moved = 0;
-      for (int position = 0; position < (int)constraints.size(); position++) {
-        int ci = reverse ? (int)constraints.size() - 1 - position : position;
-        PreBiasConstraint& constraint = constraints[ci];
-        double rvx = dx[constraint.a] - da[constraint.a] * constraint.ray
-                   - dx[constraint.b] + da[constraint.b] * constraint.rby;
-        double rvy = dy[constraint.a] + da[constraint.a] * constraint.rax
-                   - dy[constraint.b] - da[constraint.b] * constraint.rbx;
-        double vn = rvx * constraint.nx + rvy * constraint.ny;
-        double next = std::fmax(0.0, constraint.impulse
-          + (constraint.bias - vn) * constraint.mass);
-        double impulse = next - constraint.impulse;
-        constraint.impulse = next;
-        double jx = impulse * constraint.nx;
-        double jy = impulse * constraint.ny;
-        dx[constraint.a] += jx * constraint.aInvM;
-        dy[constraint.a] += jy * constraint.aInvM;
-        da[constraint.a] += constraint.aInvI
-          * (constraint.rax * jy - constraint.ray * jx);
-        dx[constraint.b] -= jx * constraint.bInvM;
-        dy[constraint.b] -= jy * constraint.bInvM;
-        da[constraint.b] -= constraint.bInvI
-          * (constraint.rbx * jy - constraint.rby * jx);
-        moved += std::fabs(impulse);
-      }
-      if (moved <= 1e-12) break;
-    }
-    for (int index = 0; index < (int)indexed.size(); index++) {
-      Body* body = indexed[index];
-      double translation = std::hypot(dx[index], dy[index]);
-      double scale = translation > worldPositionMotionLimit
-        ? worldPositionMotionLimit / translation : 1;
-      double rotation = std::fabs(da[index]);
-      if (rotation > 0.01) scale = std::fmin(scale, 0.01 / rotation);
-      body->px += dx[index] * scale;
-      body->py += dy[index] * scale;
-      body->angle += da[index] * scale;
-      body->cs = std::cos(body->angle);
-      body->sn = std::sin(body->angle);
-      body->rasterFootprintValid = false;
-    }
-    for (Body* body : E.fg.bodies)
-      if (body->jointRole == 1) syncJointFollower(body);
-  }
+void RigidBodySystem::beginWorldStep() {
+  rigidRejectedCells = rigidDepenetrations = 0;
+  rigidOwnershipConflicts = rigidRecoveryBodies = 0;
+  rigidTerrainRecoveryBodies = rigidStampRecoveryBodies = 0;
+  rigidRasterPlaceholderBodies = 0;
+  rigidRasterCorrections = rigidRasterProjectionFailures = 0;
+  rigidRasterMaxCorrection = 0;
+  rigidCoreMs = rigidClearMs = rigidDepenMs = rigidBakeMs = 0;
+  rigidBakeSupportMs = rigidBakeRasterMs = rigidBakeRegisterMs = 0;
+  rigidBakedCells = 0;
+  rigidStampMs = rigidSpillMs = 0;
+  rigidPrepareMs = rigidFinalizeMs = 0;
+  rigidContactMs = rigidSolveMs = 0;
+  rigidPairContactMs = rigidTerrainContactMs = 0;
+  rigidMotionPrepMs = rigidIntegrateMs = 0;
+  rigidStepPrepareMs = rigidContactSetupMs = rigidStepFinalizeMs = 0;
+  rigidOccupancyBuildMs = rigidCadenceMs = 0;
+  rigidFluidCoupleMs = 0;
+  rigidFluidReferenceTotalMs = rigidFluidDomainTotalMs = 0;
+  rigidFluidMatrixTotalMs = rigidFluidSolveTotalMs = 0;
+  rigidFluidWritebackTotalMs = 0;
+  rigidFluidNodesTotal = rigidFluidFacesTotal = 0;
+  rigidFluidIterationsTotal = rigidFluidDryReferencesSkipped = 0;
+  rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
+  rigidVelocityIterations = rigidBiasIterations = 0;
+  rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
+  rigidShockIslands = rigidShockConstraintEvals = 0;
+  rigidShockFallbacks = rigidShockMaxLayers = rigidShockSkipped = 0;
+  rigidIslands = rigidBlockSolves = 0;
+  rigidIslandBodySteps = rigidGlobalBodySteps = 0;
+  rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
+  rigidMaxChildren = rigidChildTransforms = 0;
+  rigidCoherentIslands = rigidDenseFallbackIslands = 0;
+  rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
+  rigidTerrainSamples = rigidTerrainSamplesSkipped = 0;
+  rigidGranularBodiesSkipped = 0;
+  rigidPositionCorrections = 0;
+  rigidMaxRelativeSpeed = 0;
+  fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
+  fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
+  fluidInitialMs = fluidCorrectorMs = 0;
+  fluidReferenceMs = fluidDomainMs = fluidMatrixMs = 0;
+  fluidSolveMs = fluidWritebackMs = 0;
+  rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
+  rigidMaxContactDepth = 0;
+  rigidMaxVelocityResidual = rigidMaxBiasResidual = 0;
+  rigidMaxPenetrationResidual = 0;
   worldContacts.clear();
-  worldHasPeerContact = false;
-  worldPreviousPoses.clear();
   rigidWorldRelaxBodies = 0;
   rigidWorldRelaxContacts = 0;
   rigidWorldPositionIterations = 0;
@@ -266,21 +190,6 @@ void RigidBodySystem::beginWorldContactRelax() {
   rigidTraceProjectionMotion = {};
   rigidTraceBiasByKind = {};
   captureTracePose(0);
-  if (solverMode < 5) return;
-  auto key = [](int layer, int id) {
-    return ((uint64_t)(uint32_t)layer << 32) | (uint32_t)id;
-  };
-  worldPreviousPoses.reserve(E.fg.bodies.size() + E.bg.bodies.size());
-  for (Body* body : E.fg.bodies)
-    if (body->jointRole != 2)
-      worldPreviousPoses[key(0, body->id)] = {
-        body->px, body->py, body->angle,
-      };
-  for (Body* body : E.bg.bodies)
-    if (body->jointRole == 0)
-      worldPreviousPoses[key(1, body->id)] = {
-        body->px, body->py, body->angle,
-      };
 }
 
 int RigidBodySystem::worldContactCount() const {
@@ -309,688 +218,6 @@ double RigidBodySystem::worldContactState(int index, int field) const {
     case 15: return contact.staticFriction;
     case 16: return contact.dynamicFriction;
     default: return NAN;
-  }
-}
-
-void RigidBodySystem::relaxWorldContacts() {
-  if (solverMode < 5) return;
-  bool worldRasterPotential = false;
-  if (E.bgEnabled) {
-    bool hasBackgroundBody = false;
-    for (Body* body : E.bg.bodies)
-      hasBackgroundBody = hasBackgroundBody || body->jointRole == 0;
-    if (hasBackgroundBody)
-      for (Body* body : E.fg.bodies)
-        if (body->jointRole == 1
-            && (body->maxR >= R_EXACT_RASTER_BODY_RADIUS
-              || body->nPts >= R_EXACT_RASTER_BODY_CELLS)) {
-          worldRasterPotential = true;
-          break;
-        }
-  }
-  if ((!worldHasPeerContact || worldContacts.empty())
-      && !worldRasterPotential) return;
-  std::array<std::unordered_map<int, Body*>, 2> bodies;
-  bodies[0].reserve(E.fg.bodies.size() * 2);
-  bodies[1].reserve(E.bg.bodies.size() * 2);
-  for (Body* body : E.fg.bodies)
-    if (body->jointRole != 2) bodies[0][body->id] = body;
-  for (Body* body : E.bg.bodies)
-    if (body->jointRole == 0) bodies[1][body->id] = body;
-
-  auto bodyAt = [&](int layer, int id) -> Body* {
-    if (layer < 0 || layer > 1) return nullptr;
-    auto found = bodies[layer].find(id);
-    return found == bodies[layer].end() ? nullptr : found->second;
-  };
-  auto bodyKey = [](int layer, int id) {
-    return ((uint64_t)(uint32_t)layer << 32) | (uint32_t)id;
-  };
-  std::unordered_map<uint64_t, int> bodyIndex;
-  bodyIndex.reserve(E.fg.bodies.size() + E.bg.bodies.size());
-  int bodyCount = 0;
-  for (int layer = 0; layer < 2; layer++)
-    for (const auto& entry : bodies[layer])
-      bodyIndex[bodyKey(layer, entry.first)] = bodyCount++;
-  std::vector<int> parent(bodyCount);
-  for (int body = 0; body < bodyCount; body++) parent[body] = body;
-  auto root = [&](int body) {
-    int result = body;
-    while (parent[result] != result) result = parent[result];
-    while (parent[body] != body) {
-      int next = parent[body];
-      parent[body] = result;
-      body = next;
-    }
-    return result;
-  };
-  auto unite = [&](int a, int b) {
-    a = root(a);
-    b = root(b);
-    if (a != b) parent[b] = a;
-  };
-  for (const WorldContact& contact : worldContacts) {
-    if (contact.bLayer < 0) continue;
-    auto a = bodyIndex.find(bodyKey(contact.aLayer, contact.aId));
-    auto b = bodyIndex.find(bodyKey(contact.bLayer, contact.bId));
-    if (a != bodyIndex.end() && b != bodyIndex.end())
-      unite(a->second, b->second);
-  }
-  std::vector<uint8_t> peerIsland(bodyCount, 0);
-  for (const WorldContact& contact : worldContacts) {
-    if (contact.bLayer < 0 || contact.aLayer == contact.bLayer) continue;
-    auto a = bodyIndex.find(bodyKey(contact.aLayer, contact.aId));
-    if (a != bodyIndex.end()) peerIsland[root(a->second)] = 1;
-  }
-  auto inPeerIsland = [&](const WorldContact& contact) {
-    auto found = bodyIndex.find(bodyKey(contact.aLayer, contact.aId));
-    return found != bodyIndex.end() && peerIsland[root(found->second)];
-  };
-  std::vector<Body*> indexedBodies(bodyCount, nullptr);
-  std::vector<uint64_t> indexedBodyKeys(bodyCount, 0);
-  for (int layer = 0; layer < 2; layer++)
-    for (const auto& entry : bodies[layer]) {
-      auto found = bodyIndex.find(bodyKey(layer, entry.first));
-      if (found != bodyIndex.end()) {
-        indexedBodies[found->second] = entry.second;
-        indexedBodyKeys[found->second] = bodyKey(layer, entry.first);
-      }
-    }
-  if (solverMode == 15 || solverMode == 16
-      || (solverMode >= 19 && solverMode <= 22)) {
-    std::vector<uint8_t> awakeIsland(bodyCount, 0);
-    for (int index = 0; index < bodyCount; index++) {
-      Body* body = indexedBodies[index];
-      if (body && peerIsland[root(index)] && body->awake)
-        awakeIsland[root(index)] = 1;
-    }
-    for (int index = 0; index < bodyCount; index++) {
-      Body* body = indexedBodies[index];
-      if (body && !body->awake && awakeIsland[root(index)])
-        wakeBody(body);
-    }
-  }
-  std::vector<MovePose> worldRelaxStart(bodyCount);
-  for (int index = 0; index < bodyCount; index++) {
-    Body* body = indexedBodies[index];
-    if (!body || !peerIsland[root(index)]) continue;
-    rigidWorldRelaxBodies++;
-    worldRelaxStart[index] = {body->px, body->py, body->angle};
-  }
-  for (const WorldContact& contact : worldContacts)
-    rigidWorldRelaxContacts += inPeerIsland(contact);
-  auto anchor = [](Body* body, double lx, double ly,
-                   double& rx, double& ry) {
-    double cs = std::cos(body->angle), sn = std::sin(body->angle);
-    rx = lx * cs - ly * sn;
-    ry = lx * sn + ly * cs;
-  };
-  std::stable_sort(worldContacts.begin(), worldContacts.end(),
-    [&](const WorldContact& a, const WorldContact& b) {
-      Body* aBody = bodyAt(a.aLayer, a.aId);
-      Body* bBody = bodyAt(b.aLayer, b.aId);
-      double arx = 0, ary = 0, brx = 0, bry = 0;
-      if (aBody) anchor(aBody, a.lax, a.lay, arx, ary);
-      if (bBody) anchor(bBody, b.lax, b.lay, brx, bry);
-      double ay = aBody ? aBody->py + ary : -1e18;
-      double by = bBody ? bBody->py + bry : -1e18;
-      return ay > by;
-    });
-  // The world-wide bias-free pass follows Box2D's MIT-licensed
-  // solve/integrate/relax staging. It is world-wide here because foreground and
-  // background bodies are integrated by separate layer passes.
-  // https://github.com/erincatto/box2d/blob/main/src/solver.c
-  for (int iteration = 0; iteration < 8; iteration++) {
-    bool reverse = (iteration & 1) != 0;
-    double moved = 0;
-    for (int position = 0; position < (int)worldContacts.size(); position++) {
-      int ci = reverse ? (int)worldContacts.size() - 1 - position : position;
-      WorldContact& contact = worldContacts[ci];
-      if (!inPeerIsland(contact)) continue;
-      Body* A = bodyAt(contact.aLayer, contact.aId);
-      Body* B = bodyAt(contact.bLayer, contact.bId);
-      if (!A || !A->awake || (contact.bLayer >= 0 && !B)) continue;
-      double aInvM = A->invMass, aInvI = A->invInertia;
-      double bInvM = B && B->awake ? B->invMass : 0;
-      double bInvI = B && B->awake ? B->invInertia : 0;
-      double rax, ray, rbx = 0, rby = 0;
-      anchor(A, contact.lax, contact.lay, rax, ray);
-      if (B) anchor(B, contact.lbx, contact.lby, rbx, rby);
-      double rnA = rax * contact.ny - ray * contact.nx;
-      double rnB = B ? rbx * contact.ny - rby * contact.nx : 0;
-      double normalK = aInvM + bInvM
-        + aInvI * rnA * rnA + bInvI * rnB * rnB;
-      if (normalK <= 0) continue;
-      double rvx = A->vx - A->omega * ray;
-      double rvy = A->vy + A->omega * rax;
-      if (B) {
-        rvx -= B->vx - B->omega * rby;
-        rvy -= B->vy + B->omega * rbx;
-      }
-      double vn = rvx * contact.nx + rvy * contact.ny;
-      double nextJn = std::fmax(0.0,
-        contact.accJn + (contact.targetVn - vn) / normalK);
-      double appliedN = nextJn - contact.accJn;
-      contact.accJn = nextJn;
-      double jx = appliedN * contact.nx;
-      double jy = appliedN * contact.ny;
-      A->vx += jx * aInvM;
-      A->vy += jy * aInvM;
-      A->omega += aInvI * (rax * jy - ray * jx);
-      if (B) {
-        B->vx -= jx * bInvM;
-        B->vy -= jy * bInvM;
-        B->omega -= bInvI * (rbx * jy - rby * jx);
-      }
-
-      double tx = -contact.ny, ty = contact.nx;
-      double rtA = rax * ty - ray * tx;
-      double rtB = B ? rbx * ty - rby * tx : 0;
-      double tangentK = aInvM + bInvM
-        + aInvI * rtA * rtA + bInvI * rtB * rtB;
-      if (tangentK > 0) {
-        rvx = A->vx - A->omega * ray;
-        rvy = A->vy + A->omega * rax;
-        if (B) {
-          rvx -= B->vx - B->omega * rby;
-          rvy -= B->vy + B->omega * rbx;
-        }
-        double vt = rvx * tx + rvy * ty;
-        double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
-          ? contact.staticFriction : contact.dynamicFriction;
-        double limit = coefficient * contact.accJn;
-        double nextJt = std::fmax(-limit, std::fmin(
-          limit, contact.accJt - vt / tangentK));
-        double appliedT = nextJt - contact.accJt;
-        contact.accJt = nextJt;
-        jx = appliedT * tx;
-        jy = appliedT * ty;
-        A->vx += jx * aInvM;
-        A->vy += jy * aInvM;
-        A->omega += aInvI * (rax * jy - ray * jx);
-        if (B) {
-          B->vx -= jx * bInvM;
-          B->vy -= jy * bInvM;
-          B->omega -= bInvI * (rbx * jy - rby * jx);
-        }
-        moved += std::fabs(appliedT);
-      }
-      moved += std::fabs(appliedN);
-    }
-    if (moved <= 1e-12) break;
-  }
-  for (Body* body : E.fg.bodies)
-    if (body->jointRole == 1) syncJointFollower(body);
-  if (solverMode == 6 || solverMode == 7
-      || solverMode == 31 || solverMode == 46) return;
-
-  std::vector<uint8_t> terrainAnchored(bodyCount, 0);
-  auto markTerrainAnchor = [&](int layer, Body* body) {
-    auto found = bodyIndex.find(bodyKey(layer, body->id));
-    if (found == bodyIndex.end() || !peerIsland[root(found->second)]) return;
-    Layer& active = layer ? E.bg : E.fg;
-    Engine::ActiveLayerScope layerScope(E, &active);
-    bool supported = bodyTouchesStaticSupport(body);
-    if (!supported && body->jointRole == 1 && body->jointPeer) {
-      Engine::ActiveLayerScope peerScope(E, &E.bg);
-      supported = bodyTouchesStaticSupport(body->jointPeer);
-    }
-    terrainAnchored[found->second] = supported;
-  };
-  for (Body* body : E.fg.bodies)
-    if (body->jointRole != 2) markTerrainAnchor(0, body);
-  for (Body* body : E.bg.bodies)
-    if (body->jointRole == 0) markTerrainAnchor(1, body);
-  auto anchored = [&](int layer, int id) {
-    auto found = bodyIndex.find(bodyKey(layer, id));
-    return found != bodyIndex.end() && terrainAnchored[found->second];
-  };
-
-  bool positionMoved = false;
-  auto positionMotion = [&](int index, Body* body,
-                            double px, double py, double angle) {
-    const MovePose& start = worldRelaxStart[index];
-    return std::hypot(px - start.px, py - start.py)
-      + std::fabs(angle - start.angle) * body->maxR;
-  };
-  auto correctionScale = [&](int index, Body* body,
-                             double dpx, double dpy, double dangle,
-                             bool deepContact) {
-    if (dpx == 0 && dpy == 0 && dangle == 0) return 1.0;
-    bool independentAngle = solverMode == 27 || solverMode == 30
-      || solverMode == 31
-      || solverMode == 32
-      || solverMode == 33
-      || solverMode == 34
-      || solverMode == 35
-      || solverMode == 36
-      || solverMode == 37
-      || solverMode == 38
-      || solverMode == 39
-      || solverMode == 40
-      || solverMode == 42
-      || solverMode == 43
-      || solverMode == 44
-      || solverMode == 45
-      || (solverMode == 28 && deepContact
-        && rigidStructureScaleBody(body));
-    if (independentAngle) {
-      const MovePose& start = worldRelaxStart[index];
-      double translationLimit = std::fmax(
-        1e-9, worldPositionMotionLimit);
-      auto normalizedMotion = [&](double scale) {
-        double translation = std::hypot(
-          body->px + scale * dpx - start.px,
-          body->py + scale * dpy - start.py) / translationLimit;
-        double rotation = std::fabs(
-          body->angle + scale * dangle - start.angle) / 0.01;
-        return std::fmax(translation, rotation);
-      };
-      double current = normalizedMotion(0);
-      double candidate = normalizedMotion(1);
-      if (candidate <= 1 || candidate < current) return 1.0;
-      if (current >= 1) return 0.0;
-      double low = 0, high = 1;
-      for (int step = 0; step < 12; step++) {
-        double mid = 0.5 * (low + high);
-        if (normalizedMotion(mid) <= 1) low = mid;
-        else high = mid;
-      }
-      return low;
-    }
-    double current = positionMotion(
-      index, body, body->px, body->py, body->angle);
-    double candidate = positionMotion(index, body,
-      body->px + dpx, body->py + dpy, body->angle + dangle);
-    if (candidate <= worldPositionMotionLimit || candidate < current)
-      return 1.0;
-    if (current >= worldPositionMotionLimit) return 0.0;
-    double low = 0, high = 1;
-    for (int step = 0; step < 12; step++) {
-      double mid = 0.5 * (low + high);
-      double motion = positionMotion(index, body,
-        body->px + mid * dpx, body->py + mid * dpy,
-        body->angle + mid * dangle);
-      if (motion <= worldPositionMotionLimit) low = mid;
-      else high = mid;
-    }
-    return low;
-  };
-  if (solverMode == 9 || solverMode == 23 || solverMode == 40) {
-    struct WorldBiasConstraint {
-      int aIndex = -1, bIndex = -1;
-      double nx = 0, ny = 0;
-      double rax = 0, ray = 0, rbx = 0, rby = 0;
-      double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
-      double bias = 0, normalMass = 0, impulse = 0;
-    };
-    std::vector<WorldBiasConstraint> constraints;
-    constraints.reserve(worldContacts.size());
-    for (const WorldContact& contact : worldContacts) {
-      if (!inPeerIsland(contact) || contact.bLayer < 0) continue;
-      if (solverMode == 40 && contact.aLayer == contact.bLayer) continue;
-      Body* A = bodyAt(contact.aLayer, contact.aId);
-      Body* B = bodyAt(contact.bLayer, contact.bId);
-      if (!A || !B) continue;
-      int aIndex = bodyIndex[bodyKey(contact.aLayer, contact.aId)];
-      int bIndex = bodyIndex[bodyKey(contact.bLayer, contact.bId)];
-      WorldBiasConstraint constraint;
-      constraint.aIndex = aIndex;
-      constraint.bIndex = bIndex;
-      constraint.nx = contact.nx;
-      constraint.ny = contact.ny;
-      anchor(A, contact.lax, contact.lay,
-             constraint.rax, constraint.ray);
-      anchor(B, contact.lbx, contact.lby,
-             constraint.rbx, constraint.rby);
-      double projection =
-        (A->px + constraint.rax - B->px - constraint.rbx) * contact.nx
-        + (A->py + constraint.ray - B->py - constraint.rby) * contact.ny;
-      double penetration = contact.depth
-        - (projection - contact.initialProjection) - R_BODY_PEN_SLOP;
-      if (penetration <= 0) continue;
-      bool aAnchored = anchored(contact.aLayer, contact.aId);
-      bool bAnchored = anchored(contact.bLayer, contact.bId);
-      constraint.aInvM = aAnchored
-          || (!A->awake && A->rasterAssignmentLocked)
-        ? 0 : A->invMass;
-      constraint.aInvI = aAnchored
-          || (!A->awake && A->rasterAssignmentLocked)
-        ? 0 : A->invInertia;
-      constraint.bInvM = bAnchored
-          || (!B->awake && B->rasterAssignmentLocked)
-        ? 0 : B->invMass;
-      constraint.bInvI = bAnchored
-          || (!B->awake && B->rasterAssignmentLocked)
-        ? 0 : B->invInertia;
-      double rnA = constraint.rax * contact.ny
-                 - constraint.ray * contact.nx;
-      double rnB = constraint.rbx * contact.ny
-                 - constraint.rby * contact.nx;
-      double normalK = constraint.aInvM + constraint.bInvM
-        + constraint.aInvI * rnA * rnA
-        + constraint.bInvI * rnB * rnB;
-      if (normalK <= 0) continue;
-      constraint.bias = std::fmin(
-        R_MAX_BIAS_VEL, R_BAUMGARTE * penetration);
-      constraint.normalMass = 1 / normalK;
-      constraints.push_back(constraint);
-    }
-    std::vector<double> biasVx(bodyCount, 0), biasVy(bodyCount, 0);
-    std::vector<double> biasW(bodyCount, 0);
-    for (int iteration = 0; iteration < 8; iteration++) {
-      bool reverse = (iteration & 1) != 0;
-      double moved = 0;
-      for (int position = 0; position < (int)constraints.size(); position++) {
-        int ci = reverse ? (int)constraints.size() - 1 - position : position;
-        WorldBiasConstraint& constraint = constraints[ci];
-        int ai = constraint.aIndex, bi = constraint.bIndex;
-        double rvx = biasVx[ai] - biasW[ai] * constraint.ray
-                   - biasVx[bi] + biasW[bi] * constraint.rby;
-        double rvy = biasVy[ai] + biasW[ai] * constraint.rax
-                   - biasVy[bi] - biasW[bi] * constraint.rbx;
-        double vn = rvx * constraint.nx + rvy * constraint.ny;
-        double nextImpulse = std::fmax(0.0,
-          constraint.impulse
-            + (constraint.bias - vn) * constraint.normalMass);
-        double impulse = nextImpulse - constraint.impulse;
-        constraint.impulse = nextImpulse;
-        double jx = impulse * constraint.nx;
-        double jy = impulse * constraint.ny;
-        biasVx[ai] += jx * constraint.aInvM;
-        biasVy[ai] += jy * constraint.aInvM;
-        biasW[ai] += constraint.aInvI
-          * (constraint.rax * jy - constraint.ray * jx);
-        biasVx[bi] -= jx * constraint.bInvM;
-        biasVy[bi] -= jy * constraint.bInvM;
-        biasW[bi] -= constraint.bInvI
-          * (constraint.rbx * jy - constraint.rby * jx);
-        moved += std::fabs(impulse);
-      }
-      rigidWorldPositionIterations = iteration + 1;
-      if (moved <= 1e-12) break;
-    }
-    // Box2D's contact solver accumulates bias impulses against fixed local
-    // anchors and integrates the island together. Applying the resulting pose
-    // deltas simultaneously prevents constraint order from exposing a
-    // half-updated compound body to the next contact.
-    // https://github.com/erincatto/box2d/blob/main/src/contact_solver.c
-    for (int index = 0; index < bodyCount; index++) {
-      Body* body = indexedBodies[index];
-      if (!body || !peerIsland[root(index)]) continue;
-      double scale = correctionScale(
-        index, body, biasVx[index], biasVy[index], biasW[index], false);
-      if (scale < 1) rigidWorldPositionLimitHits++;
-      if (scale <= 0) continue;
-      double dx = biasVx[index] * scale;
-      double dy = biasVy[index] * scale;
-      double da = biasW[index] * scale;
-      if (dx == 0 && dy == 0 && da == 0) continue;
-      body->px += dx;
-      body->py += dy;
-      body->angle += da;
-      body->cs = std::cos(body->angle);
-      body->sn = std::sin(body->angle);
-      body->rasterFootprintValid = false;
-      positionMoved = true;
-    }
-    for (Body* body : E.fg.bodies)
-      if (body->jointRole == 1) syncJointFollower(body);
-  } else {
-    for (int iteration = 0; iteration < 8; iteration++) {
-      bool reverse = (iteration & 1) != 0;
-      double moved = 0;
-      for (int position = 0; position < (int)worldContacts.size(); position++) {
-        int ci = reverse ? (int)worldContacts.size() - 1 - position : position;
-        const WorldContact& contact = worldContacts[ci];
-        if (!inPeerIsland(contact) || contact.bLayer < 0) continue;
-        Body* A = bodyAt(contact.aLayer, contact.aId);
-        Body* B = bodyAt(contact.bLayer, contact.bId);
-        if (!A || (contact.bLayer >= 0 && !B)) continue;
-        if (solverMode == 45 && contact.aLayer != contact.bLayer
-            && A->awake && B->awake
-            && (A->nPts >= 8 * B->nPts || B->nPts >= 8 * A->nPts))
-          continue;
-        double rax, ray, rbx = 0, rby = 0;
-        anchor(A, contact.lax, contact.lay, rax, ray);
-        if (B) anchor(B, contact.lbx, contact.lby, rbx, rby);
-        double projection = (A->px + rax) * contact.nx
-          + (A->py + ray) * contact.ny;
-        if (B)
-          projection -= (B->px + rbx) * contact.nx
-            + (B->py + rby) * contact.ny;
-        double positionSlop = solverMode == 33 ? 0.125 : R_BODY_PEN_SLOP;
-        double penetration = contact.depth
-          - (projection - contact.initialProjection) - positionSlop;
-        if (penetration <= 0) continue;
-        bool aAnchored = anchored(contact.aLayer, contact.aId);
-        bool bAnchored = B && anchored(contact.bLayer, contact.bId);
-        int aIndex = bodyIndex[bodyKey(contact.aLayer, contact.aId)];
-        int bIndex = bodyIndex[bodyKey(contact.bLayer, contact.bId)];
-        double aInvM = aAnchored
-            || (!A->awake && A->rasterAssignmentLocked)
-          ? 0 : A->invMass;
-        double aInvI = aAnchored
-            || (!A->awake && A->rasterAssignmentLocked)
-          ? 0 : A->invInertia;
-        double bInvM = !B || bAnchored
-            || (!B->awake && B->rasterAssignmentLocked)
-          ? 0 : B->invMass;
-        double bInvI = !B || bAnchored
-            || (!B->awake && B->rasterAssignmentLocked)
-          ? 0 : B->invInertia;
-        double rnA = rax * contact.ny - ray * contact.nx;
-        double rnB = B ? rbx * contact.ny - rby * contact.nx : 0;
-        double normalK = aInvM + bInvM
-          + aInvI * rnA * rnA + bInvI * rnB * rnB;
-        if (normalK <= 0) continue;
-        double impulse = std::fmin(
-          R_MAX_BIAS_VEL, R_BAUMGARTE * penetration) / normalK;
-        double dx = impulse * contact.nx;
-        double dy = impulse * contact.ny;
-        double aAngle = aInvI * (rax * dy - ray * dx);
-        double bAngle = -bInvI * (rbx * dy - rby * dx);
-        double scale = std::fmin(
-          correctionScale(aIndex, A,
-            dx * aInvM, dy * aInvM, aAngle, penetration > 0.5),
-          correctionScale(bIndex, B,
-            -dx * bInvM, -dy * bInvM, bAngle, penetration > 0.5));
-        if (scale < 1) rigidWorldPositionLimitHits++;
-        if (scale <= 0) continue;
-        dx *= scale;
-        dy *= scale;
-        aAngle *= scale;
-        bAngle *= scale;
-        A->px += dx * aInvM;
-        A->py += dy * aInvM;
-        A->angle += aAngle;
-        A->cs = std::cos(A->angle);
-        A->sn = std::sin(A->angle);
-        A->rasterFootprintValid = false;
-        if (B) {
-          B->px -= dx * bInvM;
-          B->py -= dy * bInvM;
-          B->angle += bAngle;
-          B->cs = std::cos(B->angle);
-          B->sn = std::sin(B->angle);
-          B->rasterFootprintValid = false;
-        }
-        moved += std::fabs(impulse);
-        positionMoved = true;
-      }
-      for (Body* body : E.fg.bodies)
-        if (body->jointRole == 1) syncJointFollower(body);
-      rigidWorldPositionIterations = iteration + 1;
-      if (moved <= 1e-12) break;
-    }
-  }
-  for (int index = 0; index < bodyCount; index++) {
-    Body* body = indexedBodies[index];
-    if (!body || !peerIsland[root(index)]) continue;
-    const MovePose& start = worldRelaxStart[index];
-    rigidWorldMaxPositionTranslation = std::fmax(
-      rigidWorldMaxPositionTranslation,
-      std::hypot(body->px - start.px, body->py - start.py));
-    rigidWorldMaxPositionRotation = std::fmax(
-      rigidWorldMaxPositionRotation, std::fabs(body->angle - start.angle));
-  }
-  captureTracePose(3);
-  if (positionMoved) {
-    // The world bridge can rotate a distant arm of a large joint body after
-    // each layer has completed its exact raster projection. Re-run that final
-    // discrete constraint at the committed world pose; the continuous pass
-    // remains responsible for impulses, while this pass only chooses a unique
-    // sand-cell assignment.
-    auto loadWorldProjectionRollback = [&](int layer, Layer& source) {
-      // Rollback repurposes movement scratch; invalidate its cached roster so
-      // the next movement pass rebuilds the matching slots and pose storage.
-      moveBodyIds.clear();
-      moveBodySlotById.clear();
-      movePreviousPoses.clear();
-      for (Body* body : source.bodies) {
-        if (body->jointRole == 2) continue;
-        auto found = bodyIndex.find(bodyKey(layer, body->id));
-        if (found == bodyIndex.end()) continue;
-        moveBodySlotById[body->id] = (int)movePreviousPoses.size();
-        movePreviousPoses.push_back(worldRelaxStart[found->second]);
-      }
-    };
-    loadWorldProjectionRollback(0, E.fg);
-    {
-      Engine::ActiveLayerScope foreground(E, &E.fg);
-      resolveStructureRasterOverlaps();
-    }
-    loadWorldProjectionRollback(1, E.bg);
-    {
-      Engine::ActiveLayerScope background(E, &E.bg);
-      resolveStructureRasterOverlaps();
-    }
-    auto clearLayerRasters = [&](Layer& layer) {
-      Engine::ActiveLayerScope layerScope(E, &layer);
-      auto clear = [&](std::vector<int>& cells) {
-        for (int k : cells) {
-          if (k < 0 || k >= E.cols * E.rows) continue;
-          if (E.isBodyCell(k)) layer.clearVacatedCellPhases((size_t)k);
-          else layer.bodyOwner[k] = -1;
-        }
-        cells.clear();
-      };
-      clear(layer.bodyCells);
-      clear(layer.passiveBodyCells);
-      layer.blastSparseCarryReady = false;
-    };
-    clearLayerRasters(E.fg);
-    clearLayerRasters(E.bg);
-    {
-      Engine::ActiveLayerScope foreground(E, &E.fg);
-      restampBodiesAfterStream(PCSO_BODY_MOTION);
-    }
-    {
-      Engine::ActiveLayerScope background(E, &E.bg);
-      restampBodiesAfterStream(PCSO_BODY_MOTION);
-    }
-  }
-  captureTracePose(4);
-  // Box2D sleeps a complete island only after every active body's farthest
-  // point velocity, including half-weighted pose correction, remains below the
-  // threshold for 0.5 seconds. The world graph supplies that same decision for
-  // contacts spanning the foreground/background solver passes.
-  // https://github.com/erincatto/box2d/blob/main/src/solver.c
-  if (solverMode == 30) {
-    std::vector<uint8_t> islandQuiet(bodyCount, 1);
-    std::vector<uint16_t> islandStill(bodyCount, UINT16_MAX);
-    std::vector<uint8_t> islandHasAwake(bodyCount, 0);
-    for (int index = 0; index < bodyCount; index++) {
-      Body* body = indexedBodies[index];
-      int island = root(index);
-      if (!body || !peerIsland[island]) continue;
-      islandHasAwake[island] = islandHasAwake[island] || body->awake;
-      if (!body->awake) continue;
-      double pointSpeed = std::hypot(body->vx, body->vy)
-        + std::fabs(body->omega) * body->maxR;
-      double poseSpeed = 0;
-      auto previous = worldPreviousPoses.find(indexedBodyKeys[index]);
-      if (previous != worldPreviousPoses.end())
-        poseSpeed = 0.5 * (
-          std::hypot(body->px - previous->second.px,
-                     body->py - previous->second.py)
-          + std::fabs(body->angle - previous->second.angle) * body->maxR);
-      double sleepVelocity = std::fmax(pointSpeed, poseSpeed);
-      if (sleepVelocity > R_WORLD_SLEEP_VELOCITY
-          || body->spatialForceApplied)
-        islandQuiet[island] = 0;
-      islandStill[island] = std::min(
-        islandStill[island], body->worldStillTicks);
-    }
-    for (int index = 0; index < bodyCount; index++) {
-      Body* body = indexedBodies[index];
-      int island = root(index);
-      if (!body || !body->awake || !peerIsland[island]) continue;
-      if (!islandQuiet[island]) {
-        body->worldStillTicks = 0;
-        continue;
-      }
-      body->worldStillTicks = islandStill[island] == UINT16_MAX
-        ? 1 : (uint16_t)imin(
-          (int)UINT16_MAX, (int)islandStill[island] + 1);
-    }
-    for (int island = 0; island < bodyCount; island++) {
-      if (!peerIsland[island] || root(island) != island
-          || !islandQuiet[island]
-          || !islandHasAwake[island])
-        continue;
-      uint16_t still = UINT16_MAX;
-      for (int index = 0; index < bodyCount; index++)
-        if (root(index) == island && indexedBodies[index]
-            && indexedBodies[index]->awake)
-          still = std::min(still, indexedBodies[index]->worldStillTicks);
-      if (still < R_WORLD_SLEEP_TICKS) continue;
-      std::vector<uint8_t> newlySleeping(bodyCount, 0);
-      for (int index = 0; index < bodyCount; index++) {
-        Body* body = indexedBodies[index];
-        if (!body || !body->awake || root(index) != island) continue;
-        newlySleeping[index] = 1;
-        body->awake = false;
-        body->vx = body->vy = body->omega = 0;
-        body->pvx = body->pvy = body->pw = 0;
-        body->stillTicks = R_SLEEP_TICKS;
-        body->sleepSupports.clear();
-      }
-      auto addSupport = [](Body* body, double x, double y,
-                           int owner, int layer) {
-        if (!body || body->sleepSupports.size() >= 8) return;
-        for (const BodySleepSupport& support : body->sleepSupports)
-          if (support.owner == owner && support.layer == layer
-              && std::fabs(support.x - x) <= 0.5
-              && std::fabs(support.y - y) <= 0.5)
-            return;
-        body->sleepSupports.push_back({x, y, owner, (uint8_t)layer});
-      };
-      for (const WorldContact& contact : worldContacts) {
-        auto found = bodyIndex.find(bodyKey(contact.aLayer, contact.aId));
-        if (found == bodyIndex.end() || root(found->second) != island)
-          continue;
-        Body* A = bodyAt(contact.aLayer, contact.aId);
-        Body* B = bodyAt(contact.bLayer, contact.bId);
-        if (!A) continue;
-        double rax = 0, ray = 0, rbx = 0, rby = 0;
-        anchor(A, contact.lax, contact.lay, rax, ray);
-        if (B) anchor(B, contact.lbx, contact.lby, rbx, rby);
-        if (newlySleeping[found->second])
-          addSupport(A, A->px + rax, A->py + ray,
-            B ? B->id : -1, B ? contact.bLayer : contact.aLayer);
-        auto bFound = B ? bodyIndex.find(
-          bodyKey(contact.bLayer, contact.bId)) : bodyIndex.end();
-        if (B && bFound != bodyIndex.end() && newlySleeping[bFound->second])
-          addSupport(B, B->px + rbx, B->py + rby,
-            A->id, contact.aLayer);
-      }
-      for (int index = 0; index < bodyCount; index++) {
-        Body* body = indexedBodies[index];
-        if (body && newlySleeping[index] && body->jointRole == 1)
-          syncJointFollower(body);
-      }
-    }
   }
 }
 
@@ -1041,13 +268,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     hasJoint = hasJoint
       || (body->jointRole == 1 && body->jointPeer);
   }
-  bool hasIndependentBackground = false;
   for (Body* body : E.bg.bodies) {
     if (body->jointRole != 0) continue;
     nodeCount++;
-    hasIndependentBackground = true;
   }
-  if (!hasJoint || !hasIndependentBackground) {
+  if (!hasJoint || nodeCount < 2) {
     worldRasterAssignmentValid = true;
     worldRasterAcceptedRosterValid = false;
     return;
@@ -1217,27 +442,14 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     bool valid = true;
     for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
       Layer& layer = layerIndex ? E.bg : E.fg;
-      // A single shared lattice sample is an alias, as in the per-layer
-      // projection. Repeated overlap still invalidates the whole assignment.
-      // Claims arrive in node order, so each overlap is with an earlier node.
-      // A generation per earlier node counts pairs without hashing every cell.
-      rasterOverlapNode.assign(worldRasterNodes.size(), -1);
-      rasterOverlapCount.resize(worldRasterNodes.size());
+      // Every occupied lattice sample has one physical owner in its layer.
       clearOwners();
       for (int nodeIndex = 0;
            nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
         WorldRasterNode& node = worldRasterNodes[nodeIndex];
-        std::array<Body*, 2> members{{nullptr, nullptr}};
-        int memberCount = 0;
-        if (node.body->jointRole == 1) {
-          if (node.foreground) members[memberCount++] = node.foreground;
-          if (node.background) members[memberCount++] = node.background;
-        } else {
+        {
           Body* member = layerIndex ? node.background : node.foreground;
-          if (member) members[memberCount++] = member;
-        }
-        for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
-          Body* member = members[memberIndex];
+          if (!member) continue;
           ensureBodyRaster(member);
           for (const BodyRasterCell& cell : member->rasterFootprint) {
             int k = cell.y * E.cols + cell.x;
@@ -1246,12 +458,6 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
               rasterProjectionOwner[k] = nodeIndex;
               rasterProjectionTouched.push_back(k);
             } else if (previous != nodeIndex) {
-              if (rasterOverlapNode[previous] != nodeIndex) {
-                rasterOverlapNode[previous] = nodeIndex;
-                rasterOverlapCount[previous] = 0;
-              }
-              if (++rasterOverlapCount[previous] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
-                continue;
               valid = false;
               if (violating) {
                 (*violating)[previous] = 1;
@@ -1287,8 +493,6 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       occupiedWords.assign(wordCount, 0);
       claimHeads.assign(wordCount, -1);
       claims.clear();
-      rasterOverlapNode.assign(worldRasterNodes.size(), -1);
-      rasterOverlapCount.resize(worldRasterNodes.size());
       for (int nodeIndex = 0; nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
         WorldRasterNode& node = worldRasterNodes[nodeIndex];
         auto visitMember = [&](Body* member) {
@@ -1306,7 +510,6 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
           }
           for (const BodyRasterWord& word : member->rasterWords) {
             uint64_t overlaps = word.mask & occupiedWords[word.word];
-            uint64_t allowedAliases = 0;
             for (int link = claimHeads[word.word]; link >= 0 && overlaps;
                  link = claims[link].next) {
               const PackedClaim& claim = claims[link];
@@ -1314,28 +517,13 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
               overlaps &= ~hit;
               if (!hit || claim.node == nodeIndex) continue;
               int previous = claim.node;
-              if (rasterOverlapNode[previous] != nodeIndex) {
-                rasterOverlapNode[previous] = nodeIndex;
-                rasterOverlapCount[previous] = 0;
-              }
-              int& count = rasterOverlapCount[previous];
-              int allowance = imax(0, R_STRUCTURE_RASTER_ALIAS_CELLS - count);
-              uint64_t pending = hit;
-              while (allowance-- > 0 && pending) {
-                uint64_t first = pending & (~pending + 1);
-                allowedAliases |= first;
-                pending &= ~first;
-              }
-              count += __builtin_popcountll(hit);
-              if (count > R_STRUCTURE_RASTER_ALIAS_CELLS) {
-                valid = false;
-                if (violating) {
-                  (*violating)[previous] = 1;
-                  (*violating)[nodeIndex] = 1;
-                }
+              valid = false;
+              if (violating) {
+                (*violating)[previous] = 1;
+                (*violating)[nodeIndex] = 1;
               }
             }
-            if (word.mask & terrainWords[layerIndex][word.word] & ~allowedAliases) {
+            if (word.mask & terrainWords[layerIndex][word.word]) {
               valid = false;
               if (violating) (*violating)[nodeIndex] = 1;
             }
@@ -1347,10 +535,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
             }
           }
         };
-        if (node.body->jointRole == 1) {
-          visitMember(node.foreground);
-          visitMember(node.background);
-        } else visitMember(layerIndex ? node.background : node.foreground);
+        visitMember(layerIndex ? node.background : node.foreground);
       }
     }
     return valid;
@@ -1432,17 +617,9 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     for (int nodeIndex = 0;
          nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
       WorldRasterNode& node = worldRasterNodes[nodeIndex];
-      std::array<Body*, 2> members{{nullptr, nullptr}};
-      int memberCount = 0;
-      if (node.body->jointRole == 1) {
-        if (node.foreground) members[memberCount++] = node.foreground;
-        if (node.background) members[memberCount++] = node.background;
-      } else {
+      {
         Body* member = layerIndex ? node.background : node.foreground;
-        if (member) members[memberCount++] = member;
-      }
-      for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
-        Body* member = members[memberIndex];
+        if (!member) continue;
         ensureBodyRaster(member);
         for (const BodyRasterCell& cell : member->rasterFootprint) {
           int k = cell.y * E.cols + cell.x;
@@ -1504,6 +681,8 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   int remainingSearchCandidates = 8192;
   size_t remainingSearchRasterCells = std::min(
     gridSize * 64, (size_t)16 * 1024 * 1024);
+  std::vector<std::array<int, 2>> rejectionCells(
+    worldRasterNodes.size(), std::array<int, 2>{{-1, -1}});
   auto searchBoundedAssignment = [&](
       const std::vector<uint8_t>& moving,
       const std::vector<uint8_t>& included) {
@@ -1561,13 +740,33 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       remainingSearchRasterCells -= cells;
       return true;
     };
+    auto blockedClaim = [&](int layerIndex, int k) {
+      if (worldRasterSearchOwner[layerIndex * gridSize + k] >= 0)
+        return true;
+      Layer& layer = layerIndex ? E.bg : E.fg;
+      int x = k % E.cols;
+      if ((layer.infinite && (x == 0 || x == E.cols - 1))
+          || layer.bodyOwner[k] >= 0)
+        return false;
+      uint8_t material = layer.grid[k];
+      return material != EMPTY && !E.isGasMaterial(material)
+        && !E.isBuoyantMedium(material);
+    };
     auto claimNode = [&](int nodeIndex) {
       size_t start = worldRasterSearchTouched.size();
       WorldRasterNode& node = worldRasterNodes[nodeIndex];
       for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
-        Layer& layer = layerIndex ? E.bg : E.fg;
         Body* member = layerIndex ? node.background : node.foreground;
         if (!member) continue;
+        // A failed lattice claim remains an exact rejection witness while
+        // both the obstacle and this member still occupy that sample.
+        int& rejected = rejectionCells[nodeIndex][layerIndex];
+        if (rejected >= 0 && blockedClaim(layerIndex, rejected)
+            && insideBodyIndex(member, rejected % E.cols + 0.5,
+                 rejected / E.cols + 0.5, true) >= 0) {
+          releaseClaims(start);
+          return false;
+        }
         if (!spendRasterCells(rasterScanCells(member))) {
           releaseClaims(start);
           return false;
@@ -1580,19 +779,10 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         for (const BodyRasterCell& cell : member->rasterFootprint) {
           int k = cell.y * E.cols + cell.x;
           int claim = layerIndex * (int)gridSize + k;
-          if (worldRasterSearchOwner[claim] >= 0) {
+          if (blockedClaim(layerIndex, k)) {
+            rejected = k;
             releaseClaims(start);
             return false;
-          }
-          if (!(layer.infinite
-                && (cell.x == 0 || cell.x == E.cols - 1))
-              && layer.bodyOwner[k] < 0) {
-            uint8_t material = layer.grid[k];
-            if (material != EMPTY && !E.isGasMaterial(material)
-                && !E.isBuoyantMedium(material)) {
-              releaseClaims(start);
-              return false;
-            }
           }
           worldRasterSearchOwner[claim] = nodeIndex;
           worldRasterSearchTouched.push_back(claim);
@@ -1968,7 +1158,7 @@ uint8_t RigidBodySystem::bodyMaterialAt(Body* b, int localIndex) {
   if (localIndex < 0 || localIndex >= (int)b->occ.size() || !b->occ[localIndex]) return EMPTY;
   return b->cellMaterials.empty() ? b->material : b->cellMaterials[localIndex];
 }
-bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
+bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld, bool recenter) {
   b->rasterFootprintValid = false;
   b->erodible = false;
   b->erosionBoundaryMask.assign(b->occ.size(), 0);
@@ -2009,7 +1199,8 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   }
   if (nPts == 0) return false;
   double divisor = b->cellMaterials.empty() && !b->jointRole ? nPts : totalMass;
-  double dx = sumX / divisor, dy = sumY / divisor;
+  double dx = recenter ? sumX / divisor : 0;
+  double dy = recenter ? sumY / divisor : 0;
   if (preserveWorld && (dx != 0 || dy != 0)) {
     double c = std::cos(b->angle), s = std::sin(b->angle);
     double worldDx = dx * c - dy * s;
@@ -3116,8 +2307,6 @@ void RigidBodySystem::applyWarmStart(Contact& c) {
 }
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  if ((solverMode == 32 || solverMode == 40 || solverMode == 46)
-      && B && !c.bIntegrated && !B->actorProxy) return 0;
   double slop = rigidContactSlop(c);
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
@@ -3132,15 +2321,14 @@ double RigidBodySystem::resolveBias(Contact& c) {
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
-  int traceLayer = E.L == &E.bg ? 1 : 0;
-  int traceKind = !B ? 0 : (c.bIntegrated ? 1 : 2);
-  if (rigidTraceLayer == traceLayer && A->id == rigidTraceBodyId) {
+  int traceKind = !B ? 0 : (A->solverLayer == B->solverLayer ? 1 : 2);
+  if (rigidTraceLayer == A->solverLayer && A->id == rigidTraceBodyId) {
     rigidTraceBiasByKind[traceKind][0] += jx * c.aInvM * c.dt;
     rigidTraceBiasByKind[traceKind][1] += jy * c.aInvM * c.dt;
     rigidTraceBiasByKind[traceKind][2] += c.aInvI
       * (c.rax * jy - c.ray * jx) * c.dt;
   }
-  if (B && (c.bIntegrated || B->actorProxy) && rigidTraceLayer == traceLayer
+  if (B && (c.bIntegrated || B->actorProxy) && rigidTraceLayer == B->solverLayer
       && B->id == rigidTraceBodyId) {
     rigidTraceBiasByKind[traceKind][0] -= jx * c.bInvM * c.dt;
     rigidTraceBiasByKind[traceKind][1] -= jy * c.bInvM * c.dt;
@@ -3233,6 +2421,7 @@ void RigidBodySystem::breakJointBody(Body* member) {
   }
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
+#include "rigid_world_step.inc"
 #include "rigid_step_prepare.inc"
 #include "rigid_actors.inc"
 #include "rigid_step_substeps.inc"
@@ -3255,11 +2444,6 @@ void RigidBodySystem::rigidStep(double tickDt) {
   rigidFluidNodesTotal += fluidNodeCount;
   rigidFluidFacesTotal += fluidFaceCount;
   rigidFluidIterationsTotal += fluidPressureIterations;
-  // Background contacts resolve against the physical foreground leader. Mirror
-  // any resulting motion into its passive background footprint.
-  if (E.L == &E.bg)
-    for (const auto& entry : step.peerJointLeaders)
-      syncJointFollower(entry.second);
   if (E.reactions.acceptsRigidContacts()) {
     for (const Contact& contact : solverContactScratch) {
       if (!contact.b || !contact.bIntegrated
@@ -3269,11 +2453,15 @@ void RigidBodySystem::rigidStep(double tickDt) {
       double bx = contact.b->px + contact.rbx;
       double by = contact.b->py + contact.rby;
       E.reactions.recordRigidContact({
-        E.L, contact.a->id, contact.b->id,
+        contact.layer == 0 ? &E.fg : &E.bg,
+        contact.layer == 1 && contact.a->jointRole == 1 ? contact.a->jointPeer->id : contact.a->id,
+        contact.layer == 1 && contact.b->jointRole == 1 ? contact.b->jointPeer->id : contact.b->id,
         ax, ay, bx, by, contact.impactSpeed, contact.nx, contact.ny,
       });
       E.reactions.recordRigidContact({
-        E.L, contact.b->id, contact.a->id,
+        contact.layer == 0 ? &E.fg : &E.bg,
+        contact.layer == 1 && contact.b->jointRole == 1 ? contact.b->jointPeer->id : contact.b->id,
+        contact.layer == 1 && contact.a->jointRole == 1 ? contact.a->jointPeer->id : contact.a->id,
         bx, by, ax, ay, contact.impactSpeed, -contact.nx, -contact.ny,
       });
     }
@@ -3408,24 +2596,10 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
   // to straddle a streaming edge.
   if (E.L->infinite && (x == 0 || x == E.cols - 1)) return false;
   int k = y * E.cols + x;
-  auto solidIn = [&](Layer& lay, bool peerLayer) {
-    int owner = lay.bodyOwner[k];
-    if (owner >= 0) {
-      if (body && owner == body->id
-          && (!peerLayer || body->jointRole == 1)) return false;
-      // Owner cells stay present in the grid sweep. Same-layer ordinary bodies
-      // use the body/body broad phase, while rigidStep promotes peer-layer owner
-      // hits to dynamic contacts after the sweep identifies their exact cells.
-      // Passive followers without an active leader mapping remain terrain.
-      return peerLayer || lay.passiveBodyIds.count(owner) != 0;
-    }
-    uint8_t material = lay.grid[k];
-    if (E.isBuoyantMedium(material)) return false;
-    return E.isRigidMaterialClass(material);
-  };
-  if (body && body->jointRole == 1)
-    return solidIn(E.fg, false) || solidIn(E.bg, true);
-  return solidIn(*E.L, false);
+  (void)body;
+  if (E.L->bodyOwner[k] >= 0) return false;
+  uint8_t material = E.L->grid[k];
+  return !E.isBuoyantMedium(material) && E.isRigidMaterialClass(material);
 }
 bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt) {
 #include "rigid_fluid_domain.inc"
@@ -4233,59 +3407,32 @@ void RigidBodySystem::erodeBodies(
 }
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   int blocked = 0;
-  auto blockedIn = [&](Layer& lay, int k) {
-    if (lay.bodyOwner[k] == b->id) return false;
-    uint8_t material = lay.grid[k];
-    return material != EMPTY && !E.isGasMaterial(material)
-      && !E.isBuoyantMedium(material);
+  auto probe = [&](Body* member, Layer& layer) {
+    forEachBodyCell(member, [&](int x, int y, int) {
+      if (layer.infinite && (x == 0 || x == E.cols - 1)) return;
+      int k = y * E.cols + x;
+      if (layer.bodyOwner[k] == member->id) return;
+      uint8_t material = layer.grid[k];
+      if (material != EMPTY && !E.isGasMaterial(material)
+          && !E.isBuoyantMedium(material)) blocked++;
+    });
   };
-  auto probe = [&](int x, int y, int) {
-    if (E.L->infinite && (x == 0 || x == E.cols - 1)) return;
-    int k = y * E.cols + x;
-    if (occStamp.has(k)) return;
-    occStamp.add(k);
-    if (blockedIn(*E.L, k)
-        || (b->jointRole == 1 && blockedIn(E.bg, k))) blocked++;
-  };
-  occStamp.reset((size_t)E.cols * E.rows);
-  forEachBodyCell(b, probe);
-  if (b->jointRole == 1 && b->jointPeer) forEachBodyCell(b->jointPeer, probe);
+  probe(b, *E.L);
+  if (b->jointRole == 1 && b->jointPeer) probe(b->jointPeer, E.bg);
   return blocked;
 }
 bool RigidBodySystem::bodyFootprintOverlapsSolid(Body* b) {
-  auto blockedIn = [&](Layer& layer, int k) {
-    if (layer.bodyOwner[k] == b->id) return false;
-    uint8_t material = layer.grid[k];
-    return material != EMPTY && !E.isGasMaterial(material)
-      && !E.isBuoyantMedium(material);
-  };
-  auto blockedBody = [&](Body* member) {
-    ensureBodyRaster(member);
-    for (const BodyRasterCell& cell : member->rasterFootprint) {
-      if (E.L->infinite && (cell.x == 0 || cell.x == E.cols - 1))
-        continue;
-      int k = cell.y * E.cols + cell.x;
-      if (blockedIn(*E.L, k)
-          || (b->jointRole == 1 && blockedIn(E.bg, k))) return true;
-    }
-    return false;
-  };
-  return blockedBody(b)
-      || (b->jointRole == 1 && b->jointPeer && blockedBody(b->jointPeer));
+  return bodyFootprintBlocked(b) > 0;
 }
 int RigidBodySystem::bodyTerrainBlocked(Body* b) {
   int blocked = 0;
   forEachBodyCell(b, [&](int x, int y, int) {
     if (E.L->infinite && (x == 0 || x == E.cols - 1)) return;
     int k = y * E.cols + x;
-    auto staticIn = [&](Layer& layer) {
-      if (layer.bodyOwner[k] >= 0) return false;
-      uint8_t material = layer.grid[k];
-      return material != EMPTY && !E.isGasMaterial(material)
-        && !E.isBuoyantMedium(material);
-    };
-    if (staticIn(*E.L)
-        || (b->jointRole == 1 && staticIn(E.bg))) blocked++;
+    if (E.L->bodyOwner[k] >= 0) return;
+    uint8_t material = E.L->grid[k];
+    if (material != EMPTY && !E.isGasMaterial(material)
+        && !E.isBuoyantMedium(material)) blocked++;
   });
   return blocked;
 }
@@ -4415,7 +3562,7 @@ bool RigidBodySystem::findTerrainClearAdjustment(
 
   // Translation keeps the body's angle fixed, so every possible blocker lies
   // in this small swept AABB. Reuse those terrain cell centers for all probes.
-  std::vector<int> blockingCells;
+  std::vector<std::pair<int, int>> blockingCells;
   if (maxX >= minX && maxY >= minY) {
     minX = imax(0, minX - 3); minY = imax(0, minY - 3);
     maxX = imin(E.cols - 1, maxX + 3); maxY = imin(E.rows - 1, maxY + 3);
@@ -4431,9 +3578,9 @@ bool RigidBodySystem::findTerrainClearAdjustment(
       for (int x = minX; x <= maxX; x++) {
         if (E.L->infinite && (x == 0 || x == E.cols - 1)) continue;
         int k = y * E.cols + x;
-        if (blockedIn(*E.L, k)
-            || (b->jointRole == 1 && blockedIn(E.bg, k)))
-          blockingCells.push_back(k);
+        if (blockedIn(*E.L, k)) blockingCells.push_back({0, k});
+        if (b->jointRole == 1 && b->jointPeer && blockedIn(E.bg, k))
+          blockingCells.push_back({1, k});
       }
     }
   }
@@ -4445,12 +3592,11 @@ bool RigidBodySystem::findTerrainClearAdjustment(
     if (b->jointRole == 1) syncJointFollower(b);
   };
   auto overlapsBlockingCell = [&]() {
-    for (int k : blockingCells) {
+    for (const auto& blocker : blockingCells) {
+      int k = blocker.second;
       int y = k / E.cols, x = k - y * E.cols;
-      if (insideBodyIndex(b, x + 0.5, y + 0.5) >= 0
-          || (b->jointRole == 1 && b->jointPeer
-            && insideBodyIndex(b->jointPeer, x + 0.5, y + 0.5) >= 0))
-        return true;
+      Body* member = blocker.first == 0 ? b : b->jointPeer;
+      if (insideBodyIndex(member, x + 0.5, y + 0.5, true) >= 0) return true;
     }
     return false;
   };
@@ -4479,28 +3625,16 @@ bool RigidBodySystem::findTerrainClearAdjustment(
   // Follow the blocking terrain's outward normal so raster clearance cannot
   // undo the solver's tangential travel along a slope.
   double normalX = 0, normalY = 0;
-  occStamp.reset((size_t)E.cols * E.rows);
-  auto accumulateNormal = [&](int x, int y, int) {
-    int k = y * E.cols + x;
-    if (occStamp.has(k)) return;
-    occStamp.add(k);
-    auto blockedIn = [&](Layer& layer) {
-      int owner = layer.bodyOwner[k];
-      if (owner >= 0) return false;
-      uint8_t material = layer.grid[k];
-      return material != EMPTY && !E.isGasMaterial(material)
-        && !E.isBuoyantMedium(material);
-    };
-    if (!blockedIn(*E.L)
-        && !(b->jointRole == 1 && blockedIn(E.bg))) return;
+  for (const auto& blocker : blockingCells) {
+    int k = blocker.second;
+    int y = k / E.cols, x = k - y * E.cols;
+    Body* member = blocker.first == 0 ? b : b->jointPeer;
+    if (insideBodyIndex(member, x + 0.5, y + 0.5, true) < 0) continue;
+    Engine::ActiveLayerScope scope(E, blocker.first == 0 ? E.L : &E.bg);
     double nx = 0, ny = 0;
-    terrainNormalAt(b, x, y, b->density, nx, ny);
-    normalX += nx;
-    normalY += ny;
-  };
-  forEachBodyCell(b, accumulateNormal);
-  if (b->jointRole == 1 && b->jointPeer)
-    forEachBodyCell(b->jointPeer, accumulateNormal);
+    terrainNormalAt(member, x, y, member->density, nx, ny);
+    normalX += nx; normalY += ny;
+  }
   double normalLength = std::hypot(normalX, normalY);
   if (normalLength > 1e-9) {
     normalX /= normalLength;
@@ -5178,10 +4312,11 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
         structureOverlap[ufFind(overlapParent, body)] = 1;
 
     int activeLayer = E.L == &E.bg ? 1 : 0;
-    auto& axes = pairAxes[activeLayer];
+
     for (const auto& pair : rasterProjectionPairs) {
       Body* A = rasterProjectionBodies[pair.first];
       Body* B = rasterProjectionBodies[pair.second];
+      auto& axes = pairAxes[activeLayer * 4 + A->solverLayer * 2 + B->solverLayer];
       int allowedAliasCells = allowedOverlap(A, B);
       int pairOverlap = overlapCount(A, B);
       if (pairOverlap <= allowedAliasCells) continue;
@@ -5332,9 +4467,9 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
         auto rollbackAcceptedPose = [&](Body* candidate) {
           if (!allowPreviousPoseRollback) return false;
           if (!candidate->awake || candidate->jointRole == 2) return false;
-          auto slot = moveBodySlotById.find(candidate->id);
-          if (slot == moveBodySlotById.end()) return false;
-          const MovePose& previous = movePreviousPoses[slot->second];
+          auto slot = movement().moveBodySlotById.find(candidate->id);
+          if (slot == movement().moveBodySlotById.end()) return false;
+          const MovePose& previous = movement().movePreviousPoses[slot->second];
           MovePose current{
             candidate->px, candidate->py, candidate->angle,
           };
@@ -5395,13 +4530,13 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
         auto rollbackPairAcceptedPose = [&]() {
           if (!allowPreviousPoseRollback) return false;
           if (A->jointRole == 2 || B->jointRole == 2) return false;
-          auto aSlot = moveBodySlotById.find(A->id);
-          auto bSlot = moveBodySlotById.find(B->id);
-          if (aSlot == moveBodySlotById.end()
-              || bSlot == moveBodySlotById.end())
+          auto aSlot = movement().moveBodySlotById.find(A->id);
+          auto bSlot = movement().moveBodySlotById.find(B->id);
+          if (aSlot == movement().moveBodySlotById.end()
+              || bSlot == movement().moveBodySlotById.end())
             return false;
-          const MovePose& aPrevious = movePreviousPoses[aSlot->second];
-          const MovePose& bPrevious = movePreviousPoses[bSlot->second];
+          const MovePose& aPrevious = movement().movePreviousPoses[aSlot->second];
+          const MovePose& bPrevious = movement().movePreviousPoses[bSlot->second];
           MovePose aCurrent{A->px, A->py, A->angle};
           MovePose bCurrent{B->px, B->py, B->angle};
           double aTravel = std::hypot(
@@ -5510,44 +4645,18 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
   clearOwners();
 }
 
-void RigidBodySystem::moveBodies() {
+bool RigidBodySystem::prepareBodyMovement() {
+  movement().prepared = false;
   double bodyPhaseStart = emscripten_get_now();
   if (E.reactions.acceptsRigidContacts()) E.reactions.beginRigidContacts(*E.L);
-  if (E.L == &E.fg) {
-    rigidRejectedCells = rigidDepenetrations = 0;
-    rigidOwnershipConflicts = rigidRecoveryBodies = 0;
-    rigidTerrainRecoveryBodies = rigidStampRecoveryBodies = 0;
-    rigidRasterPlaceholderBodies = 0;
-    rigidRasterCorrections = rigidRasterProjectionFailures = 0;
-    rigidRasterMaxCorrection = 0;
-    rigidCoreMs = rigidClearMs = rigidDepenMs = rigidBakeMs = 0;
-    rigidBakeSupportMs = rigidBakeRasterMs = rigidBakeRegisterMs = 0;
-    rigidBakedCells = 0;
-    rigidStampMs = rigidSpillMs = 0;
-    rigidPrepareMs = rigidFinalizeMs = 0;
-    rigidContactMs = rigidSolveMs = 0;
-    rigidPairContactMs = rigidTerrainContactMs = 0;
-    rigidMotionPrepMs = rigidIntegrateMs = 0;
-    rigidStepPrepareMs = rigidContactSetupMs = rigidStepFinalizeMs = 0;
-    rigidOccupancyBuildMs = rigidCadenceMs = 0;
-    rigidFluidCoupleMs = 0;
-    rigidFluidReferenceTotalMs = rigidFluidDomainTotalMs = 0;
-    rigidFluidMatrixTotalMs = rigidFluidSolveTotalMs = 0;
-    rigidFluidWritebackTotalMs = 0;
-    rigidFluidNodesTotal = rigidFluidFacesTotal = 0;
-    rigidFluidIterationsTotal = rigidFluidDryReferencesSkipped = 0;
-  }
-  // Joint followers inherit their leader's pose and skip background integration,
-  // but their stamped material still participates in background reactions.
-  if (E.L == &E.bg) erodeBodies(E.bg.passiveBodyCells, true);
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)
     if (b->jointRole != 2) { hasSimulatedBody = true; break; }
   if (!hasSimulatedBody && E.L->bodyCells.empty()) {
     E.L->sleepingBodySupportDirty = false;
-    return;
+    return false;
   }
-  // stepLayer already grounded the live grid before assembly motion. Repeat that
+  // Layer preparation grounds the live grid before assembly motion. Repeat that
   // full-grid work only if an assembly/loose-support change dirtied it afterward,
   // or if a sleeping body needs its support revalidated. This matters for blast
   // rubble: a long fuse-profile chain otherwise pays two grounding floods on
@@ -5556,37 +4665,10 @@ void RigidBodySystem::moveBodies() {
   // the next tick then skips joint, co-supported terrain sloughs off. Preserve
   // stamps when joint already ran this tick OR a prior joint closure is valid.
   bool hasSleepingBody = false;
-  bool hasAwakeBody = false;
-  bool hasPendingBakeRaster = false;
-  bool bakeRetryDeferred = E.layerBakeRetryDeferred(E.L);
-  for (Body* b : E.L->bodies) {
-    if (b->jointRole == 2) continue;
-    if (b->awake) hasAwakeBody = true;
-    else hasSleepingBody = true;
-    if (!bakeRetryDeferred && E.bodyNeedsBakeTick(b))
-      hasPendingBakeRaster = true;
-  }
-  bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
-  auto awaitingStableBakeRaster = [&]() {
-    bool awaiting = false;
-    for (Body* b : E.L->bodies) {
-      if (bakeRetryDeferred || !E.bodyNeedsBakeTick(b)) continue;
-      if (!rasterStableForBake(b)) awaiting = true;
-      if (b->jointRole == 1 && b->jointPeer) {
-        Engine::ActiveLayerScope layerScope(E, &E.bg);
-        if (!rasterStableForBake(b->jointPeer)) awaiting = true;
-      }
-    }
-    return awaiting;
-  };
-  if (!hasAwakeBody && hasPendingBakeRaster
-      && !needsGroundRefresh && !E.L->sleepingBodySupportDirty
-      && awaitingStableBakeRaster()) return;
-  // Stable sleeping bodies remain stamped in the live grid. Support/topology
-  // invalidation wakes this path even when the preceding grounding pass consumed
-  // the source dirty flags.
-  if (!hasAwakeBody && !hasPendingBakeRaster
-      && !needsGroundRefresh && !E.L->sleepingBodySupportDirty) return;
+  for (Body* b : E.L->bodies)
+    if (b->jointRole != 2 && !b->awake) hasSleepingBody = true;
+  bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty
+    || E.L->looseGroundDirty;
   if (hasSleepingBody || needsGroundRefresh) {
     if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
       // joint stamps intact; body wake probes do not need a re-flood
@@ -5624,12 +4706,6 @@ void RigidBodySystem::moveBodies() {
     if (!supported) wakeBody(b);
   }
   E.L->sleepingBodySupportDirty = false;
-  if (!hasAwakeBody && hasPendingBakeRaster) {
-    bool wokeDuringSupportCheck = false;
-    for (Body* b : E.L->bodies)
-      if (b->jointRole != 2 && b->awake) { wokeDuringSupportCheck = true; break; }
-    if (!wokeDuringSupportCheck && awaitingStableBakeRaster()) return;
-  }
   if (E.L == &E.fg) {
     {
       Engine::ActiveLayerScope background(E, &E.bg);
@@ -5647,38 +4723,38 @@ void RigidBodySystem::moveBodies() {
   bool rosterChanged = false;
   size_t simulatedBodyCount = 0;
   for (Body* b : E.L->bodies) if (b->jointRole != 2) {
-    if (simulatedBodyCount >= moveBodyIds.size()
-        || moveBodyIds[simulatedBodyCount] != b->id)
+    if (simulatedBodyCount >= movement().moveBodyIds.size()
+        || movement().moveBodyIds[simulatedBodyCount] != b->id)
       rosterChanged = true;
     simulatedBodyCount++;
   }
-  if (simulatedBodyCount != moveBodyIds.size()) rosterChanged = true;
+  if (simulatedBodyCount != movement().moveBodyIds.size()) rosterChanged = true;
   if (rosterChanged) {
-    moveBodyIds.clear();
-    moveBodySlotById.clear();
-    moveBodyIds.reserve(simulatedBodyCount);
-    moveBodySlotById.reserve(simulatedBodyCount * 2);
+    movement().moveBodyIds.clear();
+    movement().moveBodySlotById.clear();
+    movement().moveBodyIds.reserve(simulatedBodyCount);
+    movement().moveBodySlotById.reserve(simulatedBodyCount * 2);
     for (Body* b : E.L->bodies) if (b->jointRole != 2) {
-      int slot = (int)moveBodyIds.size();
-      moveBodyIds.push_back(b->id);
-      moveBodySlotById[b->id] = slot;
+      int slot = (int)movement().moveBodyIds.size();
+      movement().moveBodyIds.push_back(b->id);
+      movement().moveBodySlotById[b->id] = slot;
     }
-    movePreviousPoses.resize(simulatedBodyCount);
-    movePreviousFootprints.resize(simulatedBodyCount);
-    movePreviousMaterials.resize(simulatedBodyCount);
-    moveDisplaced.resize(simulatedBodyCount);
-    moveStamped.resize(simulatedBodyCount);
+    movement().movePreviousPoses.resize(simulatedBodyCount);
+    movement().movePreviousFootprints.resize(simulatedBodyCount);
+    movement().movePreviousMaterials.resize(simulatedBodyCount);
+    movement().moveDisplaced.resize(simulatedBodyCount);
+    movement().moveStamped.resize(simulatedBodyCount);
   }
   for (size_t slot = 0; slot < simulatedBodyCount; slot++) {
-    movePreviousFootprints[slot].clear();
-    movePreviousMaterials[slot].clear();
-    moveDisplaced[slot].clear();
-    moveStamped[slot].clear();
+    movement().movePreviousFootprints[slot].clear();
+    movement().movePreviousMaterials[slot].clear();
+    movement().moveDisplaced[slot].clear();
+    movement().moveStamped[slot].clear();
   }
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
-    movePreviousPoses[slot] = {
+    int slot = movement().moveBodySlotById.find(body->id)->second;
+    movement().movePreviousPoses[slot] = {
       body->px, body->py, body->angle,
     };
   }
@@ -5686,23 +4762,23 @@ void RigidBodySystem::moveBodies() {
                          >= (size_t)R_BODY_RASTER_BATCH_THRESHOLD;
   if (batchRasterRestore) {
     size_t gridSize = (size_t)E.cols * E.rows;
-    if (movePreviousMaterialGrid.size() != gridSize) {
-      movePreviousMaterialGrid.assign(gridSize, EMPTY);
-      movePreviousOwnerGrid.assign(gridSize, -1);
+    if (movement().movePreviousMaterialGrid.size() != gridSize) {
+      movement().movePreviousMaterialGrid.assign(gridSize, EMPTY);
+      movement().movePreviousOwnerGrid.assign(gridSize, -1);
     }
   }
   double clearStart = emscripten_get_now();
   rigidPrepareMs = rigidPrepareMs + (clearStart - bodyPhaseStart);
   for (int k : E.L->bodyCells) {
     int owner = E.L->bodyOwner[k];
-    auto slot = moveBodySlotById.find(owner);
-    if (slot != moveBodySlotById.end()) {
-      movePreviousFootprints[slot->second].push_back(k);
-      movePreviousMaterials[slot->second].push_back(E.L->grid[k]);
+    auto slot = movement().moveBodySlotById.find(owner);
+    if (slot != movement().moveBodySlotById.end()) {
+      movement().movePreviousFootprints[slot->second].push_back(k);
+      movement().movePreviousMaterials[slot->second].push_back(E.L->grid[k]);
     }
     if (batchRasterRestore) {
-      movePreviousMaterialGrid[k] = E.L->grid[k];
-      movePreviousOwnerGrid[k] = owner;
+      movement().movePreviousMaterialGrid[k] = E.L->grid[k];
+      movement().movePreviousOwnerGrid[k] = owner;
       E.L->grid[k] = EMPTY;
       E.clearPersistentCurrentState(E.L, k);
       E.L->bodyOwner[k] = -1;
@@ -5714,11 +4790,15 @@ void RigidBodySystem::moveBodies() {
   }
   double clearElapsed = emscripten_get_now() - clearStart;
   rigidClearMs = rigidClearMs + clearElapsed;
-  double coreStart = emscripten_get_now();
-  rigidStep(1.0);
-  if (rigidTraceLayer == (E.L == &E.bg ? 1 : 0)) captureTracePose(6);
-  double coreElapsed = emscripten_get_now() - coreStart;
-  rigidCoreMs = rigidCoreMs + coreElapsed;
+  movement().batchRasterRestore = batchRasterRestore;
+  movement().prepared = true;
+  return true;
+}
+
+void RigidBodySystem::commitBodyMovement() {
+  if (!movement().prepared) return;
+  size_t simulatedBodyCount = movement().moveBodyIds.size();
+  bool batchRasterRestore = movement().batchRasterRestore;
   // First reconcile integer-raster body contacts so terrain recovery starts
   // from a pose whose neighboring structure bodies are already separated.
   resolveStructureRasterOverlaps();
@@ -5749,11 +4829,11 @@ void RigidBodySystem::moveBodies() {
   };
   for (int slot = 0; slot < (int)simulatedBodyCount; slot++)
     terrainAdjustmentParents[slot] = slot;
-  for (const auto& pair : terrainContactPairs) {
-    auto first = moveBodySlotById.find(pair.first);
-    auto second = moveBodySlotById.find(pair.second);
-    if (first == moveBodySlotById.end()
-        || second == moveBodySlotById.end())
+  for (const auto& pair : movement().terrainContactPairs) {
+    auto first = movement().moveBodySlotById.find(pair.first);
+    auto second = movement().moveBodySlotById.find(pair.second);
+    if (first == movement().moveBodySlotById.end()
+        || second == movement().moveBodySlotById.end())
       continue;
     int a = adjustmentRoot(first->second);
     int b = adjustmentRoot(second->second);
@@ -5774,7 +4854,7 @@ void RigidBodySystem::moveBodies() {
   std::vector<uint8_t> adjustmentRootState(simulatedBodyCount, 0);
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
+    int slot = movement().moveBodySlotById.find(body->id)->second;
     int root = adjustmentRoot(slot);
     if (body->rasterMayOverlapSolid)
       adjustmentRootState[root] |= ROOT_ACTIVE;
@@ -5801,7 +4881,7 @@ void RigidBodySystem::moveBodies() {
     bool adjusted = false;
     for (Body* body : E.L->bodies) {
       if (body->jointRole == 2) continue;
-      int slot = moveBodySlotById.find(body->id)->second;
+      int slot = movement().moveBodySlotById.find(body->id)->second;
       int root = adjustmentRoot(slot);
       uint8_t rootState = adjustmentRootState[root];
       if (!(rootState & ROOT_ACTIVE)
@@ -5831,7 +4911,7 @@ void RigidBodySystem::moveBodies() {
   // next support check wakes any member that is not actually resting there.
   for (Body* seed : E.L->bodies) {
     if (seed->jointRole == 2) continue;
-    int seedSlot = moveBodySlotById.find(seed->id)->second;
+    int seedSlot = movement().moveBodySlotById.find(seed->id)->second;
     int root = adjustmentRoot(seedSlot);
     uint8_t& rootState = adjustmentRootState[root];
     if (!(rootState & ROOT_ACTIVE) || (rootState & ROOT_VISITED)) continue;
@@ -5871,7 +4951,7 @@ void RigidBodySystem::moveBodies() {
         blocked += bodyTerrainBlocked(member->jointPeer);
       }
       proposedTerrain.push_back(blocked);
-      const MovePose& previous = movePreviousPoses[memberSlot];
+      const MovePose& previous = movement().movePreviousPoses[memberSlot];
       member->px = previous.px;
       member->py = previous.py;
       member->angle = previous.angle;
@@ -5924,7 +5004,7 @@ void RigidBodySystem::moveBodies() {
   }
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
+    int slot = movement().moveBodySlotById.find(body->id)->second;
     int root = adjustmentRoot(slot);
     uint8_t rootState = adjustmentRootState[root];
     if (!(rootState & ROOT_ACTIVE) || (rootState & ROOT_RECOVERED)
@@ -5942,8 +5022,8 @@ void RigidBodySystem::moveBodies() {
   if (rigidTraceLayer == (E.L == &E.bg ? 1 : 0)) captureTracePose(8);
   double depenElapsed = emscripten_get_now() - depenStart;
   rigidDepenMs = rigidDepenMs + depenElapsed;
-  moveCells.clear();
-  moveFootprint.clear();
+  movement().moveCells.clear();
+  movement().moveFootprint.clear();
   double stampStart = emscripten_get_now();
   // A body whose last proposed raster was wholly rejected already has a unique,
   // accepted cell assignment in its previous footprint. Reclaim those cells
@@ -5953,8 +5033,8 @@ void RigidBodySystem::moveBodies() {
   // only representable cell and force it through rollback every tick.
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2 || !body->rasterAssignmentLocked) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
-    for (int k : movePreviousFootprints[slot]) {
+    int slot = movement().moveBodySlotById.find(body->id)->second;
+    for (int k : movement().movePreviousFootprints[slot]) {
       body->stampPreclaimAttempts++;
       if (k < 0 || k >= E.cols * E.rows) {
         body->stampPreclaimOutside++;
@@ -5968,7 +5048,7 @@ void RigidBodySystem::moveBodies() {
       int local = localCellAt(body, x + 0.5, y + 0.5);
       if (local < 0) {
         body->stampPreclaimOutside++;
-        const MovePose& previous = movePreviousPoses[slot];
+        const MovePose& previous = movement().movePreviousPoses[slot];
         double cs = std::cos(previous.angle);
         double sn = std::sin(previous.angle);
         double dx = x + 0.5 - previous.px;
@@ -5988,28 +5068,28 @@ void RigidBodySystem::moveBodies() {
       E.writeGridIndexUnsafe(k, material);
       E.L->bodyOwner[k] = body->id;
       if (body->blastDebris) E.L->groundedCell[k] = 0;
-      moveCells.push_back(k);
-      moveFootprint.push_back(k);
-      moveStamped[slot].push_back(k);
+      movement().moveCells.push_back(k);
+      movement().moveFootprint.push_back(k);
+      movement().moveStamped[slot].push_back(k);
       body->stampPreclaimSuccesses++;
     }
   }
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(b->id)->second;
+    int slot = movement().moveBodySlotById.find(b->id)->second;
     if (!b->rasterAssignmentLocked) {
       b->rasterLockCell = -1;
       b->rasterLockOwner = -2;
     }
-    std::vector<Disp>& displaced = moveDisplaced[slot];
-    std::vector<int>& stamped = moveStamped[slot];
+    std::vector<Disp>& displaced = movement().moveDisplaced[slot];
+    std::vector<int>& stamped = movement().moveStamped[slot];
     forEachBodyCell(b, [&](int x, int y, int local) {
       int k = y * E.cols + x;
       int owner = E.L->bodyOwner[k];
       uint8_t material = bodyMaterialAt(b, local);
       if (batchRasterRestore && owner == -1 && E.L->grid[k] == EMPTY
-          && movePreviousOwnerGrid[k] == b->id
-          && movePreviousMaterialGrid[k] == material) {
+          && movement().movePreviousOwnerGrid[k] == b->id
+          && movement().movePreviousMaterialGrid[k] == material) {
         E.L->grid[k] = material;
         E.clearPersistentCurrentState(E.L, k);
         E.L->bodyOwner[k] = b->id;
@@ -6020,8 +5100,8 @@ void RigidBodySystem::moveBodies() {
         if (E.isHeatSource(material))
           E.L->heatAddedAfterPrepare = true;
         if (b->blastDebris) E.L->groundedCell[k] = 0;
-        moveCells.push_back(k);
-        moveFootprint.push_back(k);
+        movement().moveCells.push_back(k);
+        movement().moveFootprint.push_back(k);
         stamped.push_back(k);
         return;
       }
@@ -6048,16 +5128,16 @@ void RigidBodySystem::moveBodies() {
       });
       E.writeGridIndexUnsafe(k, material); E.L->bodyOwner[k] = b->id;
       if (b->blastDebris) E.L->groundedCell[k] = 0;
-      moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      movement().moveCells.push_back(k); movement().moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   if (batchRasterRestore)
     for (int k : E.L->bodyCells) {
-      if (E.L->grid[k] != movePreviousMaterialGrid[k]
-          || E.L->bodyOwner[k] != movePreviousOwnerGrid[k])
+      if (E.L->grid[k] != movement().movePreviousMaterialGrid[k]
+          || E.L->bodyOwner[k] != movement().movePreviousOwnerGrid[k])
         E.markCellIndex(k);
-      movePreviousMaterialGrid[k] = EMPTY;
-      movePreviousOwnerGrid[k] = -1;
+      movement().movePreviousMaterialGrid[k] = EMPTY;
+      movement().movePreviousOwnerGrid[k] = -1;
     }
   double stampElapsed = emscripten_get_now() - stampStart;
   rigidStampMs = rigidStampMs + stampElapsed;
@@ -6067,13 +5147,13 @@ void RigidBodySystem::moveBodies() {
   // the shape, the ordinary stamp resumes at the new location.
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
-    if (!moveStamped[slot].empty() || movePreviousFootprints[slot].empty())
+    int slot = movement().moveBodySlotById.find(body->id)->second;
+    if (!movement().moveStamped[slot].empty() || movement().movePreviousFootprints[slot].empty())
       continue;
     ensureBodyRaster(body);
     if (!body->rasterFootprint.empty()) continue;
-    const std::vector<int>& previous = movePreviousFootprints[slot];
-    const std::vector<uint8_t>& materials = movePreviousMaterials[slot];
+    const std::vector<int>& previous = movement().movePreviousFootprints[slot];
+    const std::vector<uint8_t>& materials = movement().movePreviousMaterials[slot];
     for (int index = 0; index < (int)previous.size(); index++) {
       int k = previous[index];
       if (k < 0 || k >= E.cols * E.rows
@@ -6084,11 +5164,11 @@ void RigidBodySystem::moveBodies() {
       E.writeGridIndexUnsafe(k, material);
       E.L->bodyOwner[k] = body->id;
       if (body->blastDebris) E.L->groundedCell[k] = 0;
-      moveCells.push_back(k);
-      moveFootprint.push_back(k);
-      moveStamped[slot].push_back(k);
+      movement().moveCells.push_back(k);
+      movement().moveFootprint.push_back(k);
+      movement().moveStamped[slot].push_back(k);
     }
-    if (!moveStamped[slot].empty()) rigidRasterPlaceholderBodies++;
+    if (!movement().moveStamped[slot].empty()) rigidRasterPlaceholderBodies++;
   }
   // A sub-cell body can have its entire proposed raster rejected at a solid or
   // fluid boundary. Restore its last accepted pose and raster; deleting it here
@@ -6096,9 +5176,9 @@ void RigidBodySystem::moveBodies() {
   // seeds sleep on that locked cell; larger shapes keep velocity and stay awake.
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(body->id)->second;
-    if (!moveStamped[slot].empty() || movePreviousFootprints[slot].empty()) continue;
-    const MovePose& pose = movePreviousPoses[slot];
+    int slot = movement().moveBodySlotById.find(body->id)->second;
+    if (!movement().moveStamped[slot].empty() || movement().movePreviousFootprints[slot].empty()) continue;
+    const MovePose& pose = movement().movePreviousPoses[slot];
     int lockCell = body->rasterLockCell;
     int lockOwner = body->rasterLockOwner;
     body->px = pose.px; body->py = pose.py; body->angle = pose.angle;
@@ -6112,7 +5192,7 @@ void RigidBodySystem::moveBodies() {
     }
     body->cs = std::cos(body->angle); body->sn = std::sin(body->angle);
     if (body->jointRole == 1) syncJointFollower(body);
-    for (int k : movePreviousFootprints[slot]) {
+    for (int k : movement().movePreviousFootprints[slot]) {
       if (k < 0 || k >= E.cols * E.rows
           || E.L->bodyOwner[k] >= 0 || E.L->grid[k] != EMPTY) continue;
       int y = k / E.cols, x = k - y * E.cols;
@@ -6121,11 +5201,11 @@ void RigidBodySystem::moveBodies() {
       uint8_t material = bodyMaterialAt(body, local);
       E.writeGridIndexUnsafe(k, material);
       E.L->bodyOwner[k] = body->id;
-      moveCells.push_back(k);
-      moveFootprint.push_back(k);
-      moveStamped[slot].push_back(k);
+      movement().moveCells.push_back(k);
+      movement().moveFootprint.push_back(k);
+      movement().moveStamped[slot].push_back(k);
     }
-    if (!moveStamped[slot].empty()) {
+    if (!movement().moveStamped[slot].empty()) {
       body->stampRecoveryStreak = body->stampRecoveryTick == E.tick - 1
         ? (uint16_t)imin((int)UINT16_MAX,
                          (int)body->stampRecoveryStreak + 1)
@@ -6141,8 +5221,8 @@ void RigidBodySystem::moveBodies() {
     keep.reserve(E.L->bodies.size());
     for (Body* b : E.L->bodies) {
       if (b->jointRole == 2) { keep.push_back(b); continue; }
-      int slot = moveBodySlotById.find(b->id)->second;
-      if (moveStamped[slot].empty()) {
+      int slot = movement().moveBodySlotById.find(b->id)->second;
+      if (movement().moveStamped[slot].empty()) {
         if (b->jointRole == 1 && b->jointPeer) {
           bool hasUnionCell = false;
           for (uint8_t occupied : b->occ)
@@ -6168,14 +5248,14 @@ void RigidBodySystem::moveBodies() {
   E.L->reserveSeenGenerations(
     SPILL_GENERATION_BUDGET * std::max<size_t>(1, E.L->bodies.size()));
   int32_t footprintGen = E.L->nextSeenGeneration();
-  for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
+  for (int k : movement().moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
   double spillStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
-    int slot = moveBodySlotById.find(b->id)->second;
-    const std::vector<int>* vacated = movePreviousFootprints[slot].empty()
-      ? nullptr : &movePreviousFootprints[slot];
-    spillDisplacedBodyMaterial(moveDisplaced[slot], moveStamped[slot],
+    int slot = movement().moveBodySlotById.find(b->id)->second;
+    const std::vector<int>* vacated = movement().movePreviousFootprints[slot].empty()
+      ? nullptr : &movement().movePreviousFootprints[slot];
+    spillDisplacedBodyMaterial(movement().moveDisplaced[slot], movement().moveStamped[slot],
                                footprintGen, b->id, b->density,
                                PCSO_BODY_MOTION, vacated);
   }
@@ -6192,7 +5272,7 @@ void RigidBodySystem::moveBodies() {
     for (Body* leader : leaders)
       stampJointFollower(leader, PCSO_BODY_MOTION);
   }
-  erodeBodies(moveCells);
+
   if (E.L == &E.bg)
     for (Body* leader : E.fg.bodies)
       if (leader->jointRole == 1) syncJointFollower(leader);

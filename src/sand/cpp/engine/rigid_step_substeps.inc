@@ -14,7 +14,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
   auto& bodySubsteps = step.bodySubsteps;
   auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
   auto& substeps = step.substeps;
-  auto& peerJointLeaders = step.peerJointLeaders;
   double contactSetupStart = emscripten_get_now();
   std::vector<Contact>& contacts = solverContactScratch;
   contacts.clear();
@@ -38,10 +37,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     int childA = -1, childB = -1;
     int featureA = -1, featureB = -1;
   };
-  struct TerrainGroup { Body* peer; std::vector<PenPt> points; };
   std::vector<PenPt> penAcc, terrAcc;
-  std::vector<Body*> terrPeers;
-  std::vector<TerrainGroup> terrGroups;
 #include "rigid_step_contacts.inc"
   rigidContactSetupMs += emscripten_get_now() - contactSetupStart;
   for (int sub = 0; sub < substeps; sub++) {
@@ -77,6 +73,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     };
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
+      Engine::ActiveLayerScope scope(E, bodyLayer(b));
       double dt = bodyDt[bi];
       b->cs = std::cos(b->angle);
       b->sn = std::sin(b->angle);
@@ -150,11 +147,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
                  b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
       b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
     }
-    for (int bi = 0; bi < n; bi++) {
-      currentChildPoses[bi] = childPose(solverBodies[bi], 0);
-      currentChildFramesValid[bi] = 0;
-      nextChildPoseDt[bi] = -1;
-    }
     rigidMotionPrepMs += emscripten_get_now() - motionPrepStart;
     double contactStart = emscripten_get_now();
     contacts.clear();
@@ -197,21 +189,9 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     // from T's mask surface (bodyNormalAt), oriented from B toward A via `sign`,
     // never a centre-to-centre direction. This stops a sample crossing from one
     // side of a thin body to the other without generating a contact.
-    auto collectSweep = [&](Body* P, Body* T, double sign, double dt, bool foregroundOnly = false) {
-      // A joint's foreground can lie inside its union outline. Sample the
-      // small actor footprint to find those surfaces without scanning the land.
-      std::vector<float> foregroundSamples;
-      std::vector<double> foregroundRadii;
-      if (foregroundOnly) {
-        for (int y = 0; y <= P->h * 2; y++) for (int x = 0; x <= P->w * 2; x++) {
-          double lx = (x - P->w) * 0.5, ly = (y - P->h) * 0.5;
-          foregroundSamples.push_back((float)lx);
-          foregroundSamples.push_back((float)ly);
-          foregroundRadii.push_back(std::hypot(lx, ly));
-        }
-      }
-      const std::vector<float>& S = foregroundOnly ? foregroundSamples : P->boundarySamples;
-      const std::vector<double>& radii = foregroundOnly ? foregroundRadii : P->boundarySampleRadii;
+    auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
+      const std::vector<float>& S = P->boundarySamples;
+      const std::vector<double>& radii = P->boundarySampleRadii;
       double pm = P->sweepMargin;
       bool preciseDepth =
         P->maxR >= R_SOLVER_HUGE_BODY_RADIUS
@@ -226,12 +206,12 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         double lx = S[si], ly = S[si + 1];
         double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
         if (sx < T->aabbX0 - pm || sx > T->aabbX1 + pm || sy < T->aabbY0 - pm || sy > T->aabbY1 + pm) continue;
-        int idx0 = insideBodyIndex(T, sx, sy, foregroundOnly);
+        int idx0 = insideBodyIndex(T, sx, sy);
         if (idx0 >= 0) {
-          bodyNormalAt(T, idx0, sx, sy, nx_, ny_, foregroundOnly);
+          bodyNormalAt(T, idx0, sx, sy, nx_, ny_);
           penAcc.push_back({
             sx, sy, nx_ * sign, ny_ * sign,
-            penDepth(T, sx, sy, nx_, ny_, preciseDepth, foregroundOnly), 0,
+            penDepth(T, sx, sy, nx_, ny_, preciseDepth), 0,
           });
           continue;
         }
@@ -253,25 +233,25 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           if (steps < 1) steps = 1;
           for (int k = 1; k <= steps; k++) {
             double dk = total * (double)k / steps;
-            if (insideBodyIndex(T, sx + dirx * dk, sy + diry * dk, foregroundOnly) < 0)
+            if (insideBodyIndex(T, sx + dirx * dk, sy + diry * dk) < 0)
               continue;
             double miss = total * (double)(k - 1) / steps, hit = dk;
             for (int it = 0; it < 6; it++) {
               double mid = (miss + hit) * 0.5;
-              if (insideBodyIndex(T, sx + dirx * mid, sy + diry * mid, foregroundOnly) >= 0)
+              if (insideBodyIndex(T, sx + dirx * mid, sy + diry * mid) >= 0)
                 hit = mid;
               else
                 miss = mid;
             }
             double hx = sx + dirx * hit, hy = sy + diry * hit;
-            int hidx = insideBodyIndex(T, hx, hy, foregroundOnly);
+            int hidx = insideBodyIndex(T, hx, hy);
             if (hidx < 0) {
               hx = sx + dirx * dk;
               hy = sy + diry * dk;
-              hidx = insideBodyIndex(T, hx, hy, foregroundOnly);
+              hidx = insideBodyIndex(T, hx, hy);
             }
             if (hidx < 0) break;
-            bodyNormalAt(T, hidx, hx, hy, nx_, ny_, foregroundOnly);
+            bodyNormalAt(T, hidx, hx, hy, nx_, ny_);
             penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
             break;
           }
@@ -290,31 +270,30 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           double hitTime = timeEnd * (double)k / steps;
           double hx, hy;
           sweptPoint(P, lx, ly, hitTime, hx, hy);
-          if (insideBodyAt(T, hx, hy, hitTime, foregroundOnly) < 0) continue;
+          if (insideBodyAt(T, hx, hy, hitTime) < 0) continue;
           double missTime = timeEnd * (double)(k - 1) / steps;
           for (int it = 0; it < 7; it++) {
             double midTime = (missTime + hitTime) * 0.5;
             double mx, my;
             sweptPoint(P, lx, ly, midTime, mx, my);
-            if (insideBodyAt(T, mx, my, midTime, foregroundOnly) >= 0) hitTime = midTime;
+            if (insideBodyAt(T, mx, my, midTime) >= 0) hitTime = midTime;
             else missTime = midTime;
           }
           sweptPoint(P, lx, ly, hitTime, hx, hy);
-          int hidx = insideBodyAt(T, hx, hy, hitTime, foregroundOnly);
+          int hidx = insideBodyAt(T, hx, hy, hitTime);
           if (hidx < 0) {
             hitTime = timeEnd * (double)k / steps;
             sweptPoint(P, lx, ly, hitTime, hx, hy);
-            hidx = insideBodyAt(T, hx, hy, hitTime, foregroundOnly);
+            hidx = insideBodyAt(T, hx, hy, hitTime);
           }
           if (hidx < 0) break;
-          bodyNormalAtTime(T, hidx, hx, hy, hitTime, nx_, ny_, foregroundOnly);
+          bodyNormalAtTime(T, hidx, hx, hy, hitTime, nx_, ny_);
           penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
           break;
         }
       }
     };
-    // Swept body-to-grid sampling. Static cells stay terrain contacts; owner-
-    // marked peer-layer cells are grouped by their dynamic body below.
+    // Swept shape-to-grid sampling uses the current collision layer.
     // The loaded-buffer rim counts as solid wall: a body's own motion must not
     // carry it off the simulated window (where its raster is clipped away and it
     // silently vanishes). Off-buffer cells get an inward-pointing normal so the
@@ -322,13 +301,12 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     // window streams that region into view. World-stream eviction (which legitly
     // carries bodies off-buffer and persists them) is a separate path.
     auto collectTerrain = [&](Body* b, double dt) {
-      bool bodyHasPeerContacts = bodyUsesPeerContacts(b);
       const std::vector<float>& S = b->boundarySamples;
       const std::vector<double>& radii = b->boundarySampleRadii;
       bool exactAngular = needsExactAngularSweep(b);
       double linearSpeed = std::hypot(b->vx, b->vy);
       double angularSpeed = std::fabs(b->omega);
-      if (!bodyHasPeerContacts) {
+      {
         // The complete substep sweep lies inside the current oriented bounds
         // expanded by translation, rotational point travel, contact skin, and
         // one terrain-cell corner radius. Scan only its horizontal row spans;
@@ -431,21 +409,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         if (iy >= E.rows) { ox = 0; oy = -1; return; }
         terrainNormalAt(b, ix, iy, b->density, ox, oy);
       };
-      auto contactNormal = [&](int ix, int iy, double wx, double wy,
-                               double& ox, double& oy) {
-        Body* peer = bodyHasPeerContacts
-          ? peerDynamicBodyAt(b, ix, iy) : nullptr;
-        if (!peer) {
-          tnorm(ix, iy, ox, oy);
-          return peer;
-        }
-        int local = insideBodyIndex(peer, wx, wy);
-        if (local < 0)
-          local = insideBodyIndex(peer, ix + 0.5, iy + 0.5);
-        if (local >= 0) bodyNormalAt(peer, local, wx, wy, ox, oy);
-        else tnorm(ix, iy, ox, oy);
-        return peer;
-      };
       auto terrainPenetrationDepth = [&](double x, double y,
                                          double nx, double ny) {
         double inside = 0, outside = 0.25;
@@ -495,7 +458,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         }
         int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
         if (solid(cx, cy)) {
-          Body* peer = contactNormal(cx, cy, sx, sy, nx_, ny_);
+          tnorm(cx, cy, nx_, ny_);
           double depth = b->maxR >= R_SOLVER_HUGE_BODY_RADIUS
             ? terrainPenetrationDepth(sx, sy, nx_, ny_)
             : 0.5;
@@ -509,7 +472,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
             }
           }
           terrAcc.push_back({sx, sy, nx_, ny_, depth, 0});
-          if (bodyHasPeerContacts) terrPeers.push_back(peer);
           return;
         }
         if (!exactAngular) {
@@ -544,9 +506,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
               hxx = (int)std::floor(hx);
               hyy = (int)std::floor(hy);
             }
-            Body* peer = contactNormal(hxx, hyy, hx, hy, nx_, ny_);
+            tnorm(hxx, hyy, nx_, ny_);
             terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
-            if (bodyHasPeerContacts) terrPeers.push_back(peer);
             break;
           }
           return;
@@ -579,9 +540,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
             hxx = (int)std::floor(hx);
             hyy = (int)std::floor(hy);
           }
-          Body* peer = contactNormal(hxx, hyy, hx, hy, nx_, ny_);
+          tnorm(hxx, hyy, nx_, ny_);
           terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
-          if (bodyHasPeerContacts) terrPeers.push_back(peer);
           break;
         }
       };
@@ -627,6 +587,10 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     auto reduceManifold = [&](std::vector<PenPt>& acc, Body* A, Body* B,
                               double fbx, double fby, double contactDt) {
       if (acc.empty()) return;
+      Body* shapeA = A;
+      Body* shapeB = B;
+      if (A->solverBody) A = A->solverBody;
+      if (B && B->solverBody) B = B->solverBody;
       int bIndex = B && B->idx >= 0 && B->idx < n
         && solverBodies[B->idx] == B ? B->idx : -1;
       const double Q = 8.0 / (2.0 * M_PI);
@@ -704,8 +668,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           int local = insideBodyIndex(body, p->wx, p->wy);
           return local >= 0 ? bodyMaterialAt(body, local) : body->material;
         };
-        bool icyContact = materialAtContact(A) == ICE
-          || (B && materialAtContact(B) == ICE);
+        bool icyContact = materialAtContact(shapeA) == ICE
+          || (shapeB && materialAtContact(shapeB) == ICE);
         bool streamedSideBoundary = !B && E.L->infinite
           && (p->wx < 0 || p->wx >= E.cols);
         if (!B) {
@@ -727,6 +691,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           0, 0, 0,
           0, 0, 0, 0, -1, false,
         };
+        contact.layer = E.L == &E.bg ? 1 : 0;
         restoreContact(contact, bk, contactDt);
         int contactIndex = (int)contacts.size();
         contacts.push_back(contact);
@@ -780,119 +745,136 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         if (B->aabbX0 > A->aabbX1) break;
         if (!activeBody[b]) continue;
         if (A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
-        broadphasePairs.push_back({imin(a, b), imax(a, b)});
+        if (bodyLayerMask(A) & bodyLayerMask(B))
+          broadphasePairs.push_back({imin(a, b), imax(a, b)});
       }
     }
     // Contact order is part of deterministic sequential impulse behavior.
     // Restore the original nested-loop order after sweep-and-prune culling.
     std::sort(broadphasePairs.begin(), broadphasePairs.end());
     for (const auto& pair : broadphasePairs) {
-      Body* A = solverBodies[pair.first];
-      Body* B = solverBodies[pair.second];
-      if (!A->awake && !B->awake) continue;
-      double pairDt = std::fmin(bodyDt[pair.first], bodyDt[pair.second]);
-      bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
-      bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
-      ChildContactState childContactState =
-        collectChildContacts(A, B, pairDt, pair.first, pair.second);
-      if (childContactState == CCS_SEPARATED) continue;
-      ChildBounds sweptA, sweptB;
-      if (childContactState != CCS_CURRENT) {
-        sweptA = sweptBodyBounds(
-          A, (*activeCurrentChildFramesA)[0],
-          (*activeNextChildFramesA)[0], pairDt);
-        sweptB = sweptBodyBounds(
-          B, (*activeCurrentChildFramesB)[0],
-          (*activeNextChildFramesB)[0], pairDt);
-        if (childContactState == CCS_NONE
-            && !sweptBoundsOverlap(sweptA, sweptB))
-          continue;
-        if (childContactState == CCS_NONE
-            && sweptObbsSeparated(
-              A, (*activeCurrentChildFramesA)[0],
-              (*activeNextChildFramesA)[0],
-              B, (*activeCurrentChildFramesB)[0],
-              (*activeNextChildFramesB)[0], pairDt)) {
-          continue;
-        }
-      }
-      uint64_t pairKey = bodyPairKey(A->id, B->id);
-      auto remembered = activePairAxes.find(pairKey);
-      if (remembered != activePairAxes.end()
-          && (remembered->second.aRevision != A->geometryRevision
-              || remembered->second.bRevision != B->geometryRevision)) {
-        activePairAxes.erase(remembered);
-        remembered = activePairAxes.end();
-      }
-      double scratchNormalX = 0, scratchNormalY = 0;
-      int scratchPointCount = 0;
-      for (const ChildManifold& manifold : childManifoldScratch)
-        for (int pi = 0; pi < manifold.count; pi++) {
-          scratchNormalX += manifold.points[pi].nx;
-          scratchNormalY += manifold.points[pi].ny;
-          scratchPointCount++;
-        }
-      double scratchNormalLength =
-        std::hypot(scratchNormalX, scratchNormalY);
-      bool coherentScratch = scratchPointCount > 0
-        && scratchNormalLength >= scratchPointCount * 0.65;
-      if (coherentScratch) {
-        scratchNormalX /= scratchNormalLength;
-        scratchNormalY /= scratchNormalLength;
-        if (remembered == activePairAxes.end()) {
-          remembered = activePairAxes.emplace(pairKey, PairAxisState{
-            A->geometryRevision, B->geometryRevision,
-            scratchNormalX, scratchNormalY, 0,
-          }).first;
-        }
-      }
-      if (childContactState != CCS_NONE
-          && remembered != activePairAxes.end())
-        remembered->second.age = 0;
-      if (childContactState != CCS_CURRENT) {
-        rigidSweepFallbacks++;
-        penAcc.clear();
-        collectSweep(A, B, 1, pairDt);
-        collectSweep(B, A, -1, pairDt);
-        double fbx, fby;
-        bool hasSlenderObb = addSlenderObbManifold(
-          A, B, penAcc, fbx, fby);
-        if (!penAcc.empty()) {
-          if (!A->awake && bMoving) wakeBody(A);
-          if (!B->awake && aMoving) wakeBody(B);
-          if (!A->awake && !B->awake) continue;
-          if (!hasSlenderObb)
-            pairSeparatingDirection(A, B, fbx, fby);
-          reduceManifold(penAcc, A, B, fbx, fby, pairDt);
-          continue;
-        }
-        if (childContactState == CCS_NONE) continue;
-      }
-      if (!A->awake && bMoving) wakeBody(A);
-      if (!B->awake && aMoving) wakeBody(B);
-      if (!A->awake && !B->awake) continue;
-      double preferredX = 0, preferredY = 0;
-      bool hasPreferredNormal = false;
-      if (remembered != activePairAxes.end()) {
-        preferredX = remembered->second.nx;
-        preferredY = remembered->second.ny;
-        hasPreferredNormal = true;
-      }
-      penAcc.clear();
-      for (const ChildManifold& manifold : childManifoldScratch) {
-        for (int pi = 0; pi < manifold.count; pi++) {
-          const PenPt& point = manifold.points[pi];
-          if (hasPreferredNormal
-              && point.nx * preferredX + point.ny * preferredY < -0.25)
+      Body* physicalA = solverBodies[pair.first];
+      Body* physicalB = solverBodies[pair.second];
+      uint8_t sharedLayers = bodyLayerMask(physicalA) & bodyLayerMask(physicalB);
+      for (int layer = 0; layer < 2; layer++) {
+        if (!(sharedLayers & (1 << layer))) continue;
+        Engine::ActiveLayerScope scope(E, layer == 0 ? &E.fg : &E.bg);
+        Body* A = collisionShape(physicalA, layer);
+        Body* B = collisionShape(physicalB, layer);
+        if (!A || !B) continue;
+        auto& activePairAxes = pairAxes[layer * 4 + physicalA->solverLayer * 2
+                                      + physicalB->solverLayer];
+        if (!physicalA->awake && !physicalB->awake) continue;
+        double pairDt = std::fmin(bodyDt[pair.first], bodyDt[pair.second]);
+        bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
+        bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
+        ChildContactState childContactState =
+          collectChildContacts(A, B, pairDt,
+            A == physicalA ? pair.first : n + pair.first * 2 + layer,
+            B == physicalB ? pair.second : n + pair.second * 2 + layer);
+        if (childContactState == CCS_SEPARATED) continue;
+        ChildBounds sweptA, sweptB;
+        if (childContactState != CCS_CURRENT) {
+          sweptA = sweptBodyBounds(
+            A, (*activeCurrentChildFramesA)[0],
+            (*activeNextChildFramesA)[0], pairDt);
+          sweptB = sweptBodyBounds(
+            B, (*activeCurrentChildFramesB)[0],
+            (*activeNextChildFramesB)[0], pairDt);
+          if (childContactState == CCS_NONE
+              && !sweptBoundsOverlap(sweptA, sweptB))
             continue;
-          penAcc.push_back(point);
+          if (childContactState == CCS_NONE
+              && sweptObbsSeparated(
+                A, (*activeCurrentChildFramesA)[0],
+                (*activeNextChildFramesA)[0],
+                B, (*activeCurrentChildFramesB)[0],
+                (*activeNextChildFramesB)[0], pairDt)) {
+            continue;
+          }
         }
+        uint64_t pairKey = bodyPairKey(A->id, B->id);
+        auto remembered = activePairAxes.find(pairKey);
+        if (remembered != activePairAxes.end()
+            && (remembered->second.aRevision != A->geometryRevision
+                || remembered->second.bRevision != B->geometryRevision)) {
+          activePairAxes.erase(remembered);
+          remembered = activePairAxes.end();
+        }
+        double scratchNormalX = 0, scratchNormalY = 0;
+        int scratchPointCount = 0;
+        for (const ChildManifold& manifold : childManifoldScratch)
+          for (int pi = 0; pi < manifold.count; pi++) {
+            scratchNormalX += manifold.points[pi].nx;
+            scratchNormalY += manifold.points[pi].ny;
+            scratchPointCount++;
+          }
+        double scratchNormalLength =
+          std::hypot(scratchNormalX, scratchNormalY);
+        bool coherentScratch = scratchPointCount > 0
+          && scratchNormalLength >= scratchPointCount * 0.65;
+        if (coherentScratch) {
+          scratchNormalX /= scratchNormalLength;
+          scratchNormalY /= scratchNormalLength;
+          if (remembered == activePairAxes.end()) {
+            remembered = activePairAxes.emplace(pairKey, PairAxisState{
+              A->geometryRevision, B->geometryRevision,
+              scratchNormalX, scratchNormalY, 0,
+            }).first;
+          }
+        }
+        if (childContactState != CCS_NONE
+            && remembered != activePairAxes.end())
+          remembered->second.age = 0;
+        if (childContactState != CCS_CURRENT) {
+          rigidSweepFallbacks++;
+          penAcc.clear();
+          collectSweep(A, B, 1, pairDt);
+          collectSweep(B, A, -1, pairDt);
+          double fbx, fby;
+          bool hasSlenderObb = addSlenderObbManifold(
+            A, B, penAcc, fbx, fby);
+          if (!penAcc.empty()) {
+            if (!A->awake && bMoving) wakeBody(physicalA);
+            if (!B->awake && aMoving) wakeBody(physicalB);
+            if (!physicalA->awake && !physicalB->awake) continue;
+            if (!hasSlenderObb)
+              pairSeparatingDirection(A, B, fbx, fby);
+            reduceManifold(penAcc, A, B, fbx, fby, pairDt);
+            continue;
+          }
+          if (childContactState == CCS_NONE) continue;
+        }
+        if (!A->awake && bMoving) wakeBody(physicalA);
+        if (!B->awake && aMoving) wakeBody(physicalB);
+        if (!physicalA->awake && !physicalB->awake) continue;
+        double preferredX = 0, preferredY = 0;
+        bool hasPreferredNormal = false;
+        if (remembered != activePairAxes.end()) {
+          preferredX = remembered->second.nx;
+          preferredY = remembered->second.ny;
+          hasPreferredNormal = true;
+        }
+        penAcc.clear();
+        for (const ChildManifold& manifold : childManifoldScratch) {
+          for (int pi = 0; pi < manifold.count; pi++) {
+            const PenPt& point = manifold.points[pi];
+            if (hasPreferredNormal
+                && point.nx * preferredX + point.ny * preferredY < -0.25)
+              continue;
+            penAcc.push_back(point);
+          }
+        }
+        reduceManifold(penAcc, A, B, 0, -1, pairDt);
       }
-      reduceManifold(penAcc, A, B, 0, -1, pairDt);
     }
     for (int ai = 0; ai < n; ai++) {
       if (!activeBody[ai]) continue;
-      Body* A = solverBodies[ai];
+      Body* physicalA = solverBodies[ai];
+      Body* A = collisionShape(physicalA, 0);
+      if (!A) continue;
+      int shapeIndex = A == physicalA ? ai : n + ai * 2;
+      Engine::ActiveLayerScope actorLayer(E, &E.fg);
       for (int proxyIndex : actorProxyOrder) {
         Body* B = &actorProxies[proxyIndex].body;
         if (B->aabbX0 > A->aabbX1) break;
@@ -901,14 +883,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
             || B->aabbY1 < A->aabbY0)
           continue;
         double pairDt = bodyDt[ai];
-        if (A->jointRole == 1) {
-          penAcc.clear();
-          collectSweep(B, A, -1, pairDt, true);
-          reduceManifold(penAcc, A, B, 0, -1, pairDt);
-          continue;
-        }
         ChildContactState childContactState =
-          collectChildContacts(A, B, pairDt, ai, -1);
+          collectChildContacts(A, B, pairDt, shapeIndex, -1);
         if (childContactState == CCS_SEPARATED) continue;
         ChildBounds sweptA, sweptB;
         if (childContactState != CCS_CURRENT) {
@@ -957,88 +933,16 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     rigidPairContactMs += emscripten_get_now() - pairContactStart;
     double terrainContactStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
-      Body* b = solverBodies[bi];
-      if (!activeBody[bi] || !b->awake) continue;
-      double contactDt = bodyDt[bi];
-      terrAcc.clear();
-      terrPeers.clear();
-      collectTerrain(b, contactDt);
-      if (!bodyUsesPeerContacts(b)) {
-        reduceManifold(terrAcc, b, nullptr, 0, -1, contactDt);
-        continue;
-      }
-      size_t terrGroupCount = 0;
-      for (size_t pi = 0; pi < terrAcc.size(); pi++) {
-        const PenPt& point = terrAcc[pi];
-        Body* peer = terrPeers[pi];
-        auto it = std::find_if(
-          terrGroups.begin(), terrGroups.begin() + terrGroupCount,
-          [&](const TerrainGroup& group) { return group.peer == peer; });
-        if (it == terrGroups.begin() + terrGroupCount) {
-          if (terrGroupCount == terrGroups.size())
-            terrGroups.push_back({nullptr, {}});
-          it = terrGroups.begin() + terrGroupCount++;
-          it->peer = peer;
-          it->points.clear();
-        }
-        it->points.push_back(point);
-      }
-      for (size_t gi = 0; gi < terrGroupCount; gi++) {
-        TerrainGroup& group = terrGroups[gi];
-        Body* peer = group.peer;
-        if (peer) {
-          if ((solverMode == 25 || solverMode == 42)
-              && activeLayer == 1) continue;
-          bool bodyMoving = b->awake
-            && (b->vx * b->vx + b->vy * b->vy > R_WAKE_LIN2
-                || b->omega * b->omega > R_WAKE_ANG2);
-          bool peerMoving = peer->awake
-            && (peer->vx * peer->vx + peer->vy * peer->vy > R_WAKE_LIN2
-                || peer->omega * peer->omega > R_WAKE_ANG2);
-          if (!b->awake && peerMoving) wakeBody(b);
-          if (!peer->awake && bodyMoving) wakeBody(peer);
-          if (!b->awake && !peer->awake) continue;
-          double fbx, fby;
-          pairSeparatingDirection(b, peer, fbx, fby);
-          bool hasDeepPeerContact = false;
-          for (const PenPt& point : group.points)
-            if (point.depth > R_PEN_SLOP) {
-              hasDeepPeerContact = true;
-              break;
-            }
-          bool exactPeerManifold =
-            (solverMode >= 18 && solverMode <= 23)
-            || solverMode == 25 || solverMode == 27 || solverMode == 28
-            || solverMode == 30 || solverMode == 31 || solverMode == 32
-            || solverMode == 33 || solverMode == 34 || solverMode == 35
-            || solverMode == 36
-            || solverMode == 37 || solverMode == 38 || solverMode == 39
-            || solverMode == 40
-            || solverMode == 42
-            || solverMode == 43
-            || solverMode == 44
-            || solverMode == 45
-            || solverMode == 46
-            || (b->jointRole == 1 && hasDeepPeerContact
-              && (b->nPts >= 200 || peer->nPts >= 200));
-          if (!exactPeerManifold) {
-            reduceManifold(group.points, b, peer, fbx, fby, contactDt);
-            continue;
-          }
-          currentChildPoses[bi] = childPose(b, 0);
-          currentChildFramesValid[bi] = 0;
-          nextChildPoseDt[bi] = -1;
-          ChildContactState peerContact = collectChildContacts(
-            b, peer, contactDt, bi, -1);
-          if (peerContact == CCS_SEPARATED) continue;
-          penAcc.clear();
-          for (const ChildManifold& manifold : childManifoldScratch)
-            for (int pi = 0; pi < manifold.count; pi++)
-              penAcc.push_back(manifold.points[pi]);
-          reduceManifold(penAcc, b, peer, fbx, fby, contactDt);
-        } else {
-          reduceManifold(group.points, b, nullptr, 0, -1, contactDt);
-        }
+      Body* body = solverBodies[bi];
+      if (!activeBody[bi] || !body->awake) continue;
+      for (int layer = 0; layer < 2; layer++) {
+        Body* shape = collisionShape(body, layer);
+        if (!shape) continue;
+        Engine::ActiveLayerScope scope(E, layer == 0 ? &E.fg : &E.bg);
+        terrAcc.clear();
+        collectTerrain(shape, bodyDt[bi]);
+        body->rasterMayOverlapSolid |= shape->rasterMayOverlapSolid;
+        reduceManifold(terrAcc, shape, nullptr, 0, -1, bodyDt[bi]);
       }
     }
     rigidTerrainContactMs += emscripten_get_now() - terrainContactStart;
@@ -1082,8 +986,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     bool softLayer = solverMode == 7 || solverMode == 8
       || solverMode == 21 || solverMode == 22
       || (solverMode == 4
-        && !hasWorldJointBody
-        && peerBackgroundBodies.empty() && peerJointLeaders.empty());
+        && !hasWorldJointBody);
     if (solverMode != 7 && solverMode != 8
         && solverMode != 21 && solverMode != 22)
       for (const Contact& contact : contacts)
@@ -1096,7 +999,9 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         if (!contact.b || !contact.bIntegrated
             || contact.a->idx < 0 || contact.b->idx < 0)
           continue;
-        terrainContactPairs.push_back({contact.a->id, contact.b->id});
+        if (contact.a->solverLayer == contact.b->solverLayer)
+          movements[contact.a->solverLayer].terrainContactPairs.push_back(
+            {contact.a->id, contact.b->id});
       }
     }
     rigidContacts += nc;
@@ -1122,66 +1027,18 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         + aInvI * rnA * rnA + bInvI * rnB * rnB;
       double tangentK = aInvM + bInvM
         + aInvI * rtA * rtA + bInvI * rtB * rtB;
-      double aBiasK = aInvM + aInvI * rnA * rnA;
-      double bBiasK = bInvM + bInvI * rnB * rnB;
-      bool peerContact = contact.b && !contact.bIntegrated
-        && !contact.b->actorProxy;
-      bool sharePeerBias = peerContact && (solverMode == 35
-        || solverMode == 43
-        || (solverMode == 44
-          && (!rigidStructureScaleBody(contact.a)
-            || !rigidStructureScaleBody(contact.b)))
-        || (solverMode == 45
-          && (!rigidStructureScaleBody(contact.a)
-            || !rigidStructureScaleBody(contact.b)))
-        || (solverMode == 39
-          && (!rigidStructureScaleBody(contact.a)
-            || !rigidStructureScaleBody(contact.b)))
-        || ((solverMode == 36 || solverMode == 37 || solverMode == 38)
-          && aBiasK > 0 && bBiasK > 0
-          && (aBiasK > 8 * bBiasK || bBiasK > 8 * aBiasK)));
-      if (!contact.bIntegrated && !sharePeerBias
-          && !(B && B->actorProxy)) {
-        bInvM = 0;
-        bInvI = 0;
-      }
       double biasK = aInvM + bInvM
         + aInvI * rnA * rnA + bInvI * rnB * rnB;
       contact.normalMass = normalK > 0 ? 1 / normalK : 0;
       contact.tangentMass = tangentK > 0 ? 1 / tangentK : 0;
-      double peerScale = 1;
-      if (solverMode == 35 && peerContact) {
-        peerScale = peerBiasScale;
-      } else if (solverMode == 36 && sharePeerBias) {
-        peerScale = (aBiasK + bBiasK) / std::fmax(aBiasK, bBiasK);
-      } else if (solverMode == 37 && sharePeerBias) {
-        peerScale = 2;
-      } else if (solverMode == 38 && sharePeerBias) {
-        peerScale = (aBiasK + bBiasK) / std::fmax(aBiasK, bBiasK);
-      } else if (solverMode == 39 && sharePeerBias) {
-        peerScale = 2;
-      } else if (solverMode == 43 && sharePeerBias) {
-        peerScale = 2;
-      } else if (solverMode == 44 && sharePeerBias) {
-        peerScale = 2;
-      } else if (solverMode == 45 && sharePeerBias) {
-        peerScale = 2;
-      } else if (!contact.b && (solverMode == 37 || solverMode == 38
-          || solverMode == 39)) {
-        peerScale = 2;
-      } else if (!contact.b && solverMode == 43
-          && !rigidStructureScaleBody(contact.a)) {
-        peerScale = 2;
-      } else if (!contact.b && solverMode == 44
-          && !rigidStructureScaleBody(contact.a)) {
-        peerScale = 2;
-      } else if (!contact.b
-          && solverMode == 45
-          && worldStructureScaleBodyCount < 8) {
-        peerScale = 2;
-      }
+      double terrainScale = 1;
+      if (!B && ((solverMode >= 37 && solverMode <= 39)
+          || ((solverMode == 43 || solverMode == 44)
+            && !rigidStructureScaleBody(A))
+          || (solverMode == 45 && worldStructureScaleBodyCount < 8)))
+        terrainScale = 2;
       contact.biasMass = biasK > 0
-        ? peerScale / biasK
+        ? terrainScale / biasK
         : 0;
       double softDt = std::fmax(1e-9, contact.dt);
       double contactHertz = std::fmin(30.0, 0.125 / softDt);
@@ -1216,6 +1073,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       uint32_t bId = contact.b ? (uint32_t)contact.b->id : UINT32_MAX;
       if (contact.b && bId < aId) std::swap(aId, bId);
       uint64_t soundKey = ((uint64_t)aId << 32) | bId;
+      auto& impactTicks = impactContactTicks[contact.layer * 4
+        + contact.a->solverLayer * 2 + (contact.b ? contact.b->solverLayer : 0)];
       auto previous = impactTicks.find(soundKey);
       bool contactStarted = previous == impactTicks.end()
         || previous->second < E.tick - R_IMPACT_SOUND_SEPARATION_TICKS;
@@ -1243,7 +1102,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     std::fill(solveMaxX.begin(), solveMaxX.end(), -1e18);
     std::fill(solveMaxY.begin(), solveMaxY.end(), -1e18);
     std::fill(solveShockKey.begin(), solveShockKey.end(),
-      E.L == &E.bg ? 0xcbf29ce484222325ULL : 0x84222325cbf29ce4ULL);
+      0x84222325cbf29ce4ULL);
     std::fill(solveHasGeneral.begin(), solveHasGeneral.end(), 0);
     std::fill(solveHasPeerContacts.begin(), solveHasPeerContacts.end(), 0);
     std::fill(solveHasSpatialForce.begin(), solveHasSpatialForce.end(), 0);
@@ -1257,19 +1116,21 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       solveMinY[root] = std::fmin(solveMinY[root], body->aabbY0);
       solveMaxX[root] = std::fmax(solveMaxX[root], body->aabbX1);
       solveMaxY[root] = std::fmax(solveMaxY[root], body->aabbY1);
-      solveShockKey[root] ^= (uint32_t)body->id;
+      solveShockKey[root] ^= bodyKey(body);
       solveShockKey[root] *= 0x100000001b3ULL;
       if (!body->blastDebris) solveHasGeneral[root] = 1;
       if (body->spatialForceApplied) solveHasSpatialForce[root] = 1;
       if (body->jointRole != 0) solveHasJointBody[root] = 1;
-      solveHasPeerContacts[root] = solveHasPeerContacts[root]
-        || bodyUsesPeerContacts(body);
     }
     contactOrder.resize(nc);
     contactRoot.resize(nc);
     for (int ci = 0; ci < nc; ci++) {
       contactOrder[ci] = ci;
       contactRoot[ci] = ufFind(solveParent, contacts[ci].a->idx);
+      const Contact& contact = contacts[ci];
+      if (contact.b && contact.bIntegrated
+          && contact.a->solverLayer != contact.b->solverLayer)
+        solveHasPeerContacts[contactRoot[ci]] = 1;
     }
     std::sort(contactOrder.begin(), contactOrder.end(), [&](int a, int b) {
         if (contactRoot[a] != contactRoot[b])
@@ -1312,7 +1173,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       bool separateImpactPhase = hasImpactTarget
         && solveBodyCount[root] >= 16
         && !solveHasPeerContacts[root]
-        && !E.L->forceActive
+        && !(E.fg.forceActive || E.bg.forceActive)
         && solveMaxY[root] - solveMinY[root]
           >= 2 * (solveMaxX[root] - solveMinX[root]);
       auto solveVelocity = [&](int ci) {
@@ -1389,7 +1250,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         }
       }
       if (solverMode >= 2 && !hasImpactTarget && solveBodyCount[root] >= 4
-          && !E.L->forceActive && shockAttemptAllowed
+          && !(E.fg.forceActive || E.bg.forceActive) && shockAttemptAllowed
           && shockSupportEligible) {
 #include "rigid_step_shock.inc"
       }
@@ -1482,9 +1343,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
            contactIndex < (int)contacts.size(); contactIndex++) {
         const Contact& contact = contacts[contactIndex];
         if (contact.b && contact.b->actorProxy) continue;
-        bool peerLayer = contact.b && !contact.bIntegrated;
-        if (peerLayer && activeLayer != 0) continue;
-        worldHasPeerContact = worldHasPeerContact || peerLayer;
         double lax, lay, lbx, lby;
         localAnchors(contact, lax, lay, lbx, lby);
         double initialProjection =
@@ -1495,8 +1353,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
             (contact.b->px + contact.rbx) * contact.nx
             + (contact.b->py + contact.rby) * contact.ny;
         worldContacts.push_back({
-          activeLayer,
-          contact.b ? (peerLayer ? 1 - activeLayer : activeLayer) : -1,
+          contact.a->solverLayer,
+          contact.b ? contact.b->solverLayer : -1,
           contact.a->id, contact.b ? contact.b->id : -1,
           lax, lay, lbx, lby, contact.nx, contact.ny,
           contact.depth, initialProjection,
@@ -1528,7 +1386,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     // with decaying impulses so the manifold reconnects without a cold solve.
     for (auto& entry : previousContacts) {
       for (CachedContact cached : entry.second) {
-        auto bodyIt = bodyIndexById.find(entry.first.aId);
+        auto bodyIt = bodyIndexById.find(((uint64_t)entry.first.aLayer << 32)
+          | (uint32_t)entry.first.aId);
         bool activeKey = bodyIt != bodyIndexById.end()
           && activeBody[bodyIt->second];
         if (!activeKey) {
@@ -1577,10 +1436,11 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
+      Engine::ActiveLayerScope scope(E, bodyLayer(b));
       if (!activeBody[bi] || !b->awake) continue;
       double dt = bodyDt[bi];
       if (!softLayer) {
-        if (rigidTraceLayer == activeLayer && b->id == rigidTraceBodyId) {
+        if (rigidTraceLayer == b->solverLayer && b->id == rigidTraceBodyId) {
           rigidTraceVelocityMotion[0] += b->vx * dt;
           rigidTraceVelocityMotion[1] += b->vy * dt;
           rigidTraceVelocityMotion[2] += b->omega * dt;
@@ -1730,19 +1590,22 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       for (const auto& pair : broadphasePairs) {
         Body* A = solverBodies[pair.first];
         Body* B = solverBodies[pair.second];
-        currentChildPoses[pair.first] = childPose(A, 0);
-        currentChildPoses[pair.second] = childPose(B, 0);
-        currentChildFramesValid[pair.first] = 0;
-        currentChildFramesValid[pair.second] = 0;
-        nextChildPoseDt[pair.first] = -1;
-        nextChildPoseDt[pair.second] = -1;
-        if (collectChildContacts(
-              A, B, 0, pair.first, pair.second) != CCS_CURRENT)
-          continue;
         bool penetrating = false;
-        for (const ChildManifold& manifold : childManifoldScratch)
-          for (int point = 0; point < manifold.count; point++)
-            penetrating = penetrating || manifold.points[point].depth > 0;
+        uint8_t sharedLayers = bodyLayerMask(A) & bodyLayerMask(B);
+        for (int layer = 0; layer < 2 && !penetrating; layer++) {
+          if (!(sharedLayers & (1 << layer))) continue;
+          Body* shapeA = collisionShape(A, layer);
+          Body* shapeB = collisionShape(B, layer);
+          if (!shapeA || !shapeB) continue;
+          if (collectChildContacts(shapeA, shapeB, 0,
+                shapeA == A ? pair.first : n + pair.first * 2 + layer,
+                shapeB == B ? pair.second : n + pair.second * 2 + layer)
+              != CCS_CURRENT)
+            continue;
+          for (const ChildManifold& manifold : childManifoldScratch)
+            for (int point = 0; point < manifold.count; point++)
+              penetrating = penetrating || manifold.points[point].depth > 0;
+        }
         if (!penetrating) continue;
         finalContactPairs.push_back(pair);
         ufUnite(positionParent, pair.first, pair.second);
@@ -1757,10 +1620,10 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           positionPairs.push_back(pair);
       hasStructurePair = !positionPairs.empty();
     }
-    if (E.L->forceActive || hasStructurePair) {
+    if ((E.fg.forceActive || E.bg.forceActive) || hasStructurePair) {
       spatialForceIsland.assign(n, 0);
       bool hasForceDrivenIsland = false;
-      if (E.L->forceActive)
+      if ((E.fg.forceActive || E.bg.forceActive))
         for (int bi = 0; bi < n; bi++) {
           if (!solverBodies[bi]->spatialForceApplied) continue;
           spatialForceIsland[ufFind(solveParent, bi)] = 1;
@@ -1872,99 +1735,102 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         for (const auto& pair : positionPairs) {
           Body* A = solverBodies[pair.first];
           Body* B = solverBodies[pair.second];
-          // Large slender pairs receive two extra projection passes because
-          // their long angular lever arms make scalar correction converge more
-          // slowly.
-          if (iteration >= R_BODY_POSITION_ITERS
-              && (!rigidLargeSlenderBody(A)
-                  || !rigidLargeSlenderBody(B)))
-            continue;
-          currentChildPoses[pair.first] = childPose(A, 0);
-          currentChildPoses[pair.second] = childPose(B, 0);
-          currentChildFramesValid[pair.first] = 0;
-          currentChildFramesValid[pair.second] = 0;
-          nextChildPoseDt[pair.first] = -1;
-          nextChildPoseDt[pair.second] = -1;
-          if (collectChildContacts(
-                A, B, 0, pair.first, pair.second) != CCS_CURRENT)
-            continue;
-          PenPt deepest{};
-          bool hasPenetration = false;
-          double deepestX = 0, deepestY = 0;
-          int deepestCount = 0;
-          // Co-depth, co-normal samples describe one contact face. Project at
-          // their centroid so correction does not depend on an endpoint.
-          for (const ChildManifold& manifold : childManifoldScratch) {
-            for (int pi = 0; pi < manifold.count; pi++) {
-              const PenPt& point = manifold.points[pi];
-              if (point.depth <= 0) continue;
-              if (!hasPenetration
-                  || point.depth > deepest.depth + 1e-6) {
-                deepest = point;
-                deepestX = point.wx;
-                deepestY = point.wy;
-                deepestCount = 1;
-                hasPenetration = true;
-              } else if (std::fabs(point.depth - deepest.depth) <= 1e-6
-                         && point.nx * deepest.nx
-                              + point.ny * deepest.ny > 0.999) {
-                deepestX += point.wx;
-                deepestY += point.wy;
-                deepestCount++;
+          uint8_t sharedLayers = bodyLayerMask(A) & bodyLayerMask(B);
+          for (int layer = 0; layer < 2; layer++) {
+            if (!(sharedLayers & (1 << layer))) continue;
+            Body* shapeA = collisionShape(A, layer);
+            Body* shapeB = collisionShape(B, layer);
+            if (!shapeA || !shapeB) continue;
+            // Large slender pairs receive two extra projection passes because
+            // their long angular lever arms make scalar correction converge more
+            // slowly.
+            if (iteration >= R_BODY_POSITION_ITERS
+                && (!rigidLargeSlenderBody(A)
+                    || !rigidLargeSlenderBody(B)))
+              continue;
+            int shapeIndexA = shapeA == A ? pair.first : n + pair.first * 2 + layer;
+            int shapeIndexB = shapeB == B ? pair.second : n + pair.second * 2 + layer;
+            if (collectChildContacts(
+                  shapeA, shapeB, 0, shapeIndexA, shapeIndexB) != CCS_CURRENT)
+              continue;
+            PenPt deepest{};
+            bool hasPenetration = false;
+            double deepestX = 0, deepestY = 0;
+            int deepestCount = 0;
+            // Co-depth, co-normal samples describe one contact face. Project at
+            // their centroid so correction does not depend on an endpoint.
+            for (const ChildManifold& manifold : childManifoldScratch) {
+              for (int pi = 0; pi < manifold.count; pi++) {
+                const PenPt& point = manifold.points[pi];
+                if (point.depth <= 0) continue;
+                if (!hasPenetration
+                    || point.depth > deepest.depth + 1e-6) {
+                  deepest = point;
+                  deepestX = point.wx;
+                  deepestY = point.wy;
+                  deepestCount = 1;
+                  hasPenetration = true;
+                } else if (std::fabs(point.depth - deepest.depth) <= 1e-6
+                           && point.nx * deepest.nx
+                                + point.ny * deepest.ny > 0.999) {
+                  deepestX += point.wx;
+                  deepestY += point.wy;
+                  deepestCount++;
+                }
               }
             }
+            if (!hasPenetration) continue;
+            deepest.wx = deepestX / deepestCount;
+            deepest.wy = deepestY / deepestCount;
+            double aInvM = A->awake && !terrainAnchored[pair.first]
+              ? A->invMass : 0;
+            double aInvI = A->awake && !terrainAnchored[pair.first]
+              ? A->invInertia : 0;
+            double bInvM = B->awake && !terrainAnchored[pair.second]
+              ? B->invMass : 0;
+            double bInvI = B->awake && !terrainAnchored[pair.second]
+              ? B->invInertia : 0;
+            double rax = deepest.wx - A->px, ray = deepest.wy - A->py;
+            double rbx = deepest.wx - B->px, rby = deepest.wy - B->py;
+            double aCross = rax * deepest.ny - ray * deepest.nx;
+            double bCross = rbx * deepest.ny - rby * deepest.nx;
+            double inverseMass = aInvM + bInvM
+              + aCross * aCross * aInvI + bCross * bCross * bInvI;
+            if (inverseMass <= 1e-12) continue;
+            double impulse =
+              (deepest.depth + R_BODY_RASTER_CLEARANCE) / inverseMass;
+            double dx = deepest.nx * impulse;
+            double dy = deepest.ny * impulse;
+            double aAngle = aCross * impulse * aInvI;
+            double bAngle = -bCross * impulse * bInvI;
+            double scale = std::fmin(
+              correctionScale(
+                pair.first, A, dx * aInvM, dy * aInvM, aAngle,
+                deepest.depth > 0.5),
+              correctionScale(
+                pair.second, B, -dx * bInvM, -dy * bInvM, bAngle,
+                deepest.depth > 0.5));
+            if (scale < 1) rigidWorldPositionLimitHits++;
+            if (scale <= 0) continue;
+            if (rigidTraceLayer == A->solverLayer && A->id == rigidTraceBodyId) {
+              rigidTraceProjectionMotion[0] += dx * aInvM * scale;
+              rigidTraceProjectionMotion[1] += dy * aInvM * scale;
+              rigidTraceProjectionMotion[2] += aAngle * scale;
+            }
+            if (rigidTraceLayer == B->solverLayer && B->id == rigidTraceBodyId) {
+              rigidTraceProjectionMotion[0] -= dx * bInvM * scale;
+              rigidTraceProjectionMotion[1] -= dy * bInvM * scale;
+              rigidTraceProjectionMotion[2] += bAngle * scale;
+            }
+            A->px += dx * aInvM * scale;
+            A->py += dy * aInvM * scale;
+            A->angle += aAngle * scale;
+            B->px -= dx * bInvM * scale;
+            B->py -= dy * bInvM * scale;
+            B->angle += bAngle * scale;
+            rigidPositionCorrections++;
+            corrected = true;
           }
-          if (!hasPenetration) continue;
-          deepest.wx = deepestX / deepestCount;
-          deepest.wy = deepestY / deepestCount;
-          double aInvM = A->awake && !terrainAnchored[pair.first]
-            ? A->invMass : 0;
-          double aInvI = A->awake && !terrainAnchored[pair.first]
-            ? A->invInertia : 0;
-          double bInvM = B->awake && !terrainAnchored[pair.second]
-            ? B->invMass : 0;
-          double bInvI = B->awake && !terrainAnchored[pair.second]
-            ? B->invInertia : 0;
-          double rax = deepest.wx - A->px, ray = deepest.wy - A->py;
-          double rbx = deepest.wx - B->px, rby = deepest.wy - B->py;
-          double aCross = rax * deepest.ny - ray * deepest.nx;
-          double bCross = rbx * deepest.ny - rby * deepest.nx;
-          double inverseMass = aInvM + bInvM
-            + aCross * aCross * aInvI + bCross * bCross * bInvI;
-          if (inverseMass <= 1e-12) continue;
-          double impulse =
-            (deepest.depth + R_BODY_RASTER_CLEARANCE) / inverseMass;
-          double dx = deepest.nx * impulse;
-          double dy = deepest.ny * impulse;
-          double aAngle = aCross * impulse * aInvI;
-          double bAngle = -bCross * impulse * bInvI;
-          double scale = std::fmin(
-            correctionScale(
-              pair.first, A, dx * aInvM, dy * aInvM, aAngle,
-              deepest.depth > 0.5),
-            correctionScale(
-              pair.second, B, -dx * bInvM, -dy * bInvM, bAngle,
-              deepest.depth > 0.5));
-          if (scale < 1) rigidWorldPositionLimitHits++;
-          if (scale <= 0) continue;
-          if (rigidTraceLayer == activeLayer && A->id == rigidTraceBodyId) {
-            rigidTraceProjectionMotion[0] += dx * aInvM * scale;
-            rigidTraceProjectionMotion[1] += dy * aInvM * scale;
-            rigidTraceProjectionMotion[2] += aAngle * scale;
-          }
-          if (rigidTraceLayer == activeLayer && B->id == rigidTraceBodyId) {
-            rigidTraceProjectionMotion[0] -= dx * bInvM * scale;
-            rigidTraceProjectionMotion[1] -= dy * bInvM * scale;
-            rigidTraceProjectionMotion[2] += bAngle * scale;
-          }
-          A->px += dx * aInvM * scale;
-          A->py += dy * aInvM * scale;
-          A->angle += aAngle * scale;
-          B->px -= dx * bInvM * scale;
-          B->py -= dy * bInvM * scale;
-          B->angle += bAngle * scale;
-          rigidPositionCorrections++;
-          corrected = true;
         }
         if (!corrected) break;
       }

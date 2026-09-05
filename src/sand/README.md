@@ -127,8 +127,9 @@ is Earth, then Mars, then Moon.
 ## Two simulated layers
 
 `Engine` owns foreground and background `Layer` instances. `useLayer()` points
-hot paths at one layer. A world tick steps foreground, then background, then runs
-cross-layer reactions and transfer.
+hot paths at one layer. A world tick prepares both layers, advances all free
+rigid bodies on one timeline, commits both body rasters, then steps foreground
+and background cells before cross-layer reactions and transfer.
 
 Both layers generate from the same seed, so their surface and shallow terrain
 align. The background is rendered darker behind transparent foreground cells.
@@ -335,6 +336,11 @@ body bounds faintly visible for context.
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
 - `cpp/engine/step.inc`: world-step coordinator and cross-layer transfer.
+- `cpp/engine/rigid_world_step.inc`: world rigid scheduler and cached collision
+  masks. Each joint object has one physical body and one shape per occupied
+  layer. Contacts include layer identity; unrelated layers do not collide.
+  Movement snapshots belong to their layers. Both rasters commit before erosion
+  can change the body roster. Exact world raster validation guards the result.
 - `cpp/engine/rigid_impl.inc`: rigid-body operations. `rigidStep()` coordinates
   `prepareRigidStep`, `solveRigidStep`, and `finalizeRigidStep`, whose definitions
   live in the prepare/substeps/finalize includes. Their per-tick `StepState`

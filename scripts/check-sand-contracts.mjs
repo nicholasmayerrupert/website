@@ -43,7 +43,7 @@ const rawLayerAllow = new Map([
     ]),
   }],
   ['step.inc', {
-    count: 6,
+    count: 7,
     lines: new Set([
       'useLayer(layer);',
       'useLayer(&fg);',
@@ -220,13 +220,11 @@ for (const entry of readdirSync(engineDir, { withFileTypes: true })) {
   const source = sourceWithoutComments(readFileSync(path, 'utf8'));
   const spill = functionBody(
     source, 'void RigidBodySystem::spillDisplacedBodyMaterial(');
-  const move = functionBody(source, 'void RigidBodySystem::moveBodies(');
-  const relax = functionBody(source, 'void RigidBodySystem::relaxWorldContacts(');
+  const move = functionBody(source, 'void RigidBodySystem::commitBodyMovement(');
   const restamp = functionBody(
     source, 'void RigidBodySystem::restampBodiesAfterStream(');
   if (!spill || [...spill.matchAll(/state,\s*operation\)/g)].length < 2
       || !move?.includes('PCSO_BODY_MOTION')
-      || !relax?.includes('PCSO_BODY_MOTION')
       || !restamp?.includes('stampJointFollower(body, operation)')) {
     fail(`${relative(root, path)} must keep static footprint displacement distinct from per-tick body motion`);
   }

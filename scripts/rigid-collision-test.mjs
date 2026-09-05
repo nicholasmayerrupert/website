@@ -584,14 +584,18 @@ for (const dt of [16, 8, 33, 50]) {
     e.syncComponents();
     const index = e._bodyCount();
     e.spawnBox(105, 30, 5, 5, material);
+    const bodyId = e._bodyIdLayer(0, index);
     let reachedFloorAt = -1, landedAt = -1, peakVx = 0, maxX = 105, finalState = null;
     for (let tick = 1; tick <= 200; tick++) {
       t = run(e, 1, t);
-      if (index >= e._bodyCount()) {
+      let currentIndex = -1;
+      for (let body = 0; body < e._bodyCount(); body++)
+        if (e._bodyIdLayer(0, body) === bodyId) { currentIndex = body; break; }
+      if (currentIndex < 0) {
         landedAt = tick;
         break;
       }
-      const state = e._bodyState(index);
+      const state = e._bodyState(currentIndex);
       finalState = state;
       if (reachedFloorAt < 0 && state.py >= 118.5) reachedFloorAt = tick;
       peakVx = Math.max(peakVx, Math.abs(state.vx));

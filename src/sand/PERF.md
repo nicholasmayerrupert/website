@@ -63,7 +63,7 @@ across environments.
 | `componentIndexMs` | Component index and adjacency rebuild | `components_impl.inc` |
 | `assemblyUnionMs` | Static support grouping and rigid-body detachment | `components_impl.inc`, `step.inc` |
 | `carryMs` | Component/body double-buffer carry | `step.inc` |
-| `bodyMs` | Free rigid-body simulation and ice accretion | `rigid_impl.inc`, `reactions_impl.inc` |
+| `bodyMs` | World rigid-body simulation and ice accretion | `rigid_world_step.inc`, `rigid_impl.inc`, `reactions_impl.inc` |
 | `sandMs` | Density interface and powder movement | `core.inc` |
 | `liquidMs` | Ordinary liquid movement | `core.inc` |
 | `gasMs` | Gas movement | `core.inc` |
@@ -71,7 +71,7 @@ across environments.
 | `tailMs` | Buffer swap, local density exchange, and liquid relaxation | `step.inc`, `core.inc` |
 | `liquidRelaxMs` | Gap relaxation after the buffer swap (nested in `tailMs`) | `core.inc` |
 | `liquidSurfaceMs` | Free-surface leveling after the buffer swap (nested in `tailMs`) | `core.inc` |
-| `layersMs` | Both `stepLayer()` calls | `step.inc` |
+| `layersMs` | Layer preparation, world rigid solve, and both cell phases | `step.inc` |
 | `crossMs` | Post-layer joint refresh and transfer | `step.inc` |
 
 Legacy aggregates remain for older scripts: `joint` combines grounding phases,

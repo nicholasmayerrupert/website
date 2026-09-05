@@ -3,7 +3,6 @@
   fluidBodyDensityEquilibrium.assign(bodies.size(), 0);
   fluidBodyMaxSlip.assign(bodies.size(), 0);
   if (bodies.empty() || cellCount == 0) return false;
-  const int activeLayer = E.L == &E.bg ? 1 : 0;
   auto touchesLiquid = [&](Body* body, Layer& layer) {
     ensureBodyRaster(body);
     for (const BodyRasterCell& cell : body->rasterBoundaryFootprint) {
@@ -20,6 +19,7 @@
   };
   bool liquidCandidate = false;
   for (Body* body : bodies) {
+    int activeLayer = body->solverLayer;
     if (!body->awake) continue;
     Layer& layer = activeLayer == 0 ? E.fg : E.bg;
     if (touchesLiquid(body, layer)) {
@@ -109,6 +109,7 @@
   };
   for (int i = 0; i < (int)bodies.size(); i++) {
     Body* body = bodies[i];
+    int activeLayer = body->solverLayer;
     stampBody(body, i, activeLayer, body->awake);
     if (body->jointRole == 1 && body->jointPeer)
       stampBody(body->jointPeer, i, 1 - activeLayer, body->awake);

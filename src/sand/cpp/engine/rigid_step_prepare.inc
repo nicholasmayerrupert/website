@@ -37,7 +37,6 @@ struct RigidBodySystem::StepState {
   std::vector<int> bodySubsteps{};
   int worldStructureScaleBodyCount{};
   int substeps{};
-  std::unordered_map<int, Body*> peerJointLeaders{};
 };
 
 static void rigidBodyBounds(Body* body, double margin,
@@ -87,30 +86,6 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   auto& bodySubsteps = step.bodySubsteps;
   auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
   auto& substeps = step.substeps;
-  rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
-  rigidVelocityIterations = rigidBiasIterations = 0;
-  rigidVelocityConstraintEvals = rigidBiasConstraintEvals = 0;
-  rigidShockIslands = rigidShockConstraintEvals = 0;
-  rigidShockFallbacks = rigidShockMaxLayers = rigidShockSkipped = 0;
-  rigidIslands = rigidBlockSolves = 0;
-  rigidIslandBodySteps = rigidGlobalBodySteps = 0;
-  rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
-  rigidMaxChildren = rigidChildTransforms = 0;
-  rigidCoherentIslands = rigidDenseFallbackIslands = 0;
-  rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
-  rigidTerrainSamples = rigidTerrainSamplesSkipped = 0;
-  rigidGranularBodiesSkipped = 0;
-  rigidPositionCorrections = 0;
-  rigidMaxRelativeSpeed = 0;
-  fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
-  fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
-  fluidInitialMs = fluidCorrectorMs = 0;
-  fluidReferenceMs = fluidDomainMs = fluidMatrixMs = 0;
-  fluidSolveMs = fluidWritebackMs = 0;
-  rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
-  rigidMaxContactDepth = 0;
-  rigidMaxVelocityResidual = rigidMaxBiasResidual = 0;
-  rigidMaxPenetrationResidual = 0;
   if ((E.tick & 255) == 0) {
     for (auto it = shockAttemptCache.begin(); it != shockAttemptCache.end();) {
       if (it->second.lastTick + 512 < E.tick)
@@ -119,10 +94,13 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
         ++it;
     }
   }
-  terrainContactPairs.clear();
-  solverBodies.reserve(E.L->bodies.size());
-  for (Body* body : E.L->bodies)
-    if (body->jointRole != 2) solverBodies.push_back(body);
+  for (auto& state : movements) state.terrainContactPairs.clear();
+  for (int layer = 0; layer < (E.bgEnabled ? 2 : 1); layer++) {
+    Layer* lay = layer == 0 ? &E.fg : &E.bg;
+    if (!movements[layer].prepared) continue;
+    for (Body* body : lay->bodies)
+      if (body->jointRole != 2) solverBodies.push_back(body);
+  }
   bool hasJointSolverBody = false;
   for (Body* body : solverBodies)
     hasJointSolverBody = hasJointSolverBody || body->jointRole == 1;
@@ -163,7 +141,8 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
           const uint8_t* row = E.L->grid + y * E.cols;
           for (int x = x0; x < x1; x++) {
             int k = y * E.cols + x;
-            granular = granular || E.isLooseSolidMaterial(row[x]);
+            granular = granular || E.isLooseSolidMaterial(row[x])
+              || (E.bgEnabled && E.isLooseSolidMaterial(E.bg.grid[k]));
             bool peerRigid = E.L == &E.fg && E.bgEnabled
               && (E.bg.bodyOwner[k] >= 0
                   || E.isRigidMaterialClass(E.bg.grid[k]));
@@ -191,6 +170,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   loadedWindowFreeze.resize(n);
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
+    Engine::ActiveLayerScope scope(E, bodyLayer(body));
     LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
     freeze.frozen = !bodyFullyInsideLoadedWindow(body);
     if (freeze.frozen && body->acceptedRasterPoseValid) {
@@ -256,6 +236,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   rigidFluidCoupleMs += fluidInitialMs;
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
+    Engine::ActiveLayerScope scope(E, bodyLayer(body));
     liquidContact[bi] = body->hadContact;
     if (bi < (int)fluidBodySurface.size())
       liquidSurfaceContact[bi] = fluidBodySurface[bi];
@@ -336,6 +317,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
       bool canRide = vy >= -0.05 && (!creature
         || E.creatures.species(*creature).locomotion != CL_FLYING);
       if (canRide) for (Body* candidate : solverBodies) {
+        if (!(bodyLayerMask(candidate) & 1)) continue;
         if (x + w < candidate->px - candidate->maxR - 2
             || x > candidate->px + candidate->maxR + 2
             || y + h < candidate->py - candidate->maxR - 2
@@ -419,6 +401,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   for (int bi = 0; bi < n; bi++) {
     stepIslandParent[bi] = bi;
     Body* body = solverBodies[bi];
+    Engine::ActiveLayerScope scope(E, bodyLayer(body));
     if (liquidContact[bi]) wetSolverBodyCount++;
     if (body->awake) {
       denseFrameVx += body->vx;
@@ -474,6 +457,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   if (denseWetScene) {
     for (int bi = 0; bi < n; bi++) {
       Body* body = solverBodies[bi];
+      Engine::ActiveLayerScope scope(E, bodyLayer(body));
       double pointSpeed = body->awake
         ? std::hypot(body->vx, body->vy)
           + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
@@ -539,6 +523,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     for (int bi = 0; bi < n; bi++) {
       islandOrder[bi] = bi;
       Body* body = solverBodies[bi];
+      Engine::ActiveLayerScope scope(E, bodyLayer(body));
       double pointSpeed = body->awake
         ? std::hypot(body->vx, body->vy)
           + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
@@ -558,7 +543,8 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
         int b = islandOrder[oj];
         if (tickX0[b] > tickX1[a]) break;
         if (tickY1[a] < tickY0[b] || tickY1[b] < tickY0[a]) continue;
-        ufUnite(stepIslandParent, a, b);
+        if (bodyLayerMask(solverBodies[a]) & bodyLayerMask(solverBodies[b]))
+          ufUnite(stepIslandParent, a, b);
       }
     }
     std::vector<double> islandPointSpeed(n, 0);
@@ -669,6 +655,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     std::vector<uint8_t> actorIslands(n, 0);
     for (int bi = 0; bi < n; bi++) {
       Body* body = solverBodies[bi];
+      if (!(bodyLayerMask(body) & 1)) continue;
       double reach = (std::hypot(body->vx, body->vy)
         + std::fabs(body->omega) * body->maxR) * tickDt + R_MAX_SPEED + 2;
       double x0, y0, x1, y1;

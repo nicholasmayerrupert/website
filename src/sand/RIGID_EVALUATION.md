@@ -9,7 +9,7 @@ continued sliding/toppling, stable rest, and affordable step time are required.
 | Proposal | Status | Evidence |
 | --- | --- | --- |
 | 1. Accept raster-valid motion earlier | Reject tested prototype | Beam collision regression, slower crowded case, no peak-correction improvement. |
-| 2. Unified foreground/background contact solve | Unevaluated; still a candidate | Architecture reviewed, but no unified solver was prototyped. Scope alone does not establish rejection. |
+| 2. Unified foreground/background contact solve | Keep | Crowded correction 2.10825 → 0.00973 cells; large stacks settle without raster repairs; slivers have no clipping. Brutal p95 improves 1.3%, p99 costs 7.2%. |
 | 3. Stable terrain contact directions | Reject tested variants | Unrestricted persistence suppresses real pivots. Large-body-only persistence is neutral alone; the combined improvement does not generalize. |
 | 4. Time-scaled settling damping | Reject tested rates | One-tick rate misses the crowded settling deadline; combined rate increases large-stack repair jumps; double contact rate prevents toppling. |
 | 5. Measure correction motion by stage | Keep | Baseline trace isolates corrections and exposes different outcomes despite passing clipping checks. |
@@ -18,8 +18,9 @@ continued sliding/toppling, stable rest, and affordable step time are required.
 
 Raw logs and temporary builds live in `.sand-artifacts/rigid-evaluation/`.
 Durable results and source patches are in [bench/rigid-evaluation](../../bench/rigid-evaluation/).
-All patches apply independently to starting revision `455a103`. No experimental
-C++ or WASM changes are retained in the working engine.
+The original proposal patches apply independently to starting revision `455a103`.
+That evaluation retained only motion diagnostics. The subsequent unified-solver
+implementation starts at `55478bb` and is recorded separately below.
 The initial engine benchmark matches the committed terrain checksum.
 Run comparisons with `RIGID_SOLVER_MODE=45`; some existing suites otherwise
 select experimental mode 2. The crowded raster-island fixture explicitly uses 45.
@@ -95,7 +96,7 @@ changing terrain normals. No combined trial is justified by that failure.
 This does not disprove a future contact-generating transactional integrator.
 Logs: `early-raster-tests/`; patch: `early-raster.patch`.
 
-### Unified foreground/background solve: untested architecture proposal
+### Unified foreground/background solve: initial architecture review
 
 The starting implementation already gives a joint object a canonical foreground
 leader, combined mass/inertia, and a synchronized background follower. Contact
@@ -205,3 +206,96 @@ JavaScript files pass syntax checking, all seven saved patches pass
 `git apply --check`, and `git diff --check` passes. The post-evaluation engine
 benchmark matches the initial and committed checksum `0xb1117be5`; simulation
 source and committed WASM are unchanged, so no benchmark baseline update is needed.
+
+## Unified solver implementation trials
+
+Branch: `rigid-unified-solver`, based on `55478bb`. These trials implement a
+shared world solve: both layers prepare their terrain and forces, canonical
+bodies enter one contact/island solve, and both rasters commit before erosion.
+Joint bodies expose a separate collision mask in each layer, with a shared
+origin, mass, velocity, and integrated pose. Contact identities include body
+ownership and the collision layer. The final raster guard remains enabled;
+the additional end-of-tick world impulse relaxation is not applied.
+
+Initial prototype artifacts: `.sand-artifacts/rigid-unified/first-prototype.patch`,
+`first-tests/`, and `first-extended/`. The crowded fixture settles at tick 227
+(baseline 249), with zero terrain penetration, ownership conflicts, failed
+projections, or final raster repairs. Tracked maximum perimeter correction is
+0.014918 (baseline 2.108248). Toppling, terrain contact, world raster, fluid
+accuracy, dense piles, large bodies, joint erosion, and window-edge suites pass.
+The large mixed-stack trial does not qualify: seed 7 does not settle by tick
+620, and the combined run times out at 300 seconds before completing seed 19.
+It is not a successful implementation yet.
+
+Two fixture assumptions needed correction. The crowded test demanded that a
+raster alias and a repair occur; it now accepts zero, retains their upper bounds,
+and checks that the island moves and exercises contacts. The breaking-current
+test followed an array index after its stone body disappeared, subsequently
+measuring a 24-cell wall fragment. It now follows the stone's stable body ID.
+The new `rigid-layer-solver` suite checks duplicate IDs in different layers,
+independent overlapping bodies, and an asymmetric joint mask passing terrain
+that exists only in the other layer.
+
+Subsequent trials make recovery and validation queries use the actual layer
+masks. A cached geometric shape keeps the canonical local origin, and all
+contact, projection, support, and terrain paths use the collision layer. The
+crowded fixture settles at tick 231, with no shared raster cells, terrain
+penetration, ownership conflicts, or raster repairs. Maximum tracked correction
+is 0.009726 cells (at tick 123); its regression limit is tightened from 2.2 to
+0.1 cells. The test no longer demands an alias or repair and now requires zero
+shared cells. The new layer suite also checks an ordinary background body
+intersecting only a joint object's foreground silhouette.
+
+Extending world assignment to all-joint piles initially leaves two blocked
+cells and five ownership conflicts in the sliver fixture. Removing the one-cell
+alias allowance fixes both: the tested slivers have zero overlap, rejected cells,
+ownership conflicts, and failed projections. Their maximum raster correction is
+0.2144 cells in shipping mode 45 (0.125 in the additional mode-2 run).
+The separate force-driven single-layer pile still sleeps (0/48
+moving); that failure predates this work and is retained in the test record.
+
+The first performance-qualified candidate was rejected: its brutal-scene step
+p95 was 106.451 ms versus the committed 63.616 ms. A CPU profile located repeated
+full raster construction inside the bounded assignment search. The search now
+remembers the exact lattice cell that rejected each member; a trial is rejected
+early only if the obstacle and member still occupy that cell. Successful
+assignments still pass the complete validation. A single-run check reduces p95
+to 62.327 ms. Candidate and raster-work budgets remain bounded.
+
+Review also found that non-tree collision-frame caches did not invalidate joint
+shapes on every substep. Both current and predicted frames now validate their
+actual pose, removing scattered manual resets. Final projection islands use
+actual layer shapes as well. With those corrections, shipping mode 45 settles large-stack seeds 7/19 at
+400/485 ticks, with zero overlaps, terrain penetration, ownership conflicts,
+failed projections, or raster repairs. Baseline seed 7 settles at 405; seed 19
+remains awake at 620. Both now finish with zero measured tail motion. An
+additional mode-2 run settles at 553/466; the mode-45 run is the shipping
+comparison.
+
+Invariant checking exposed a new phase-boundary issue: spatial forces changed a
+joint leader's velocity before the background preparation validated its follower.
+The force application now synchronizes the follower immediately. The deliberate
+invalid-owner injection in `rigid-stamp-reject` cannot pass the invariant build's
+earlier validator and must be checked with production WASM.
+
+Final production benchmark comparisons and verification are recorded in
+[unified-results.json](../../bench/rigid-evaluation/unified-results.json).
+Raw logs, CPU profile, and isolated builds live in `.sand-artifacts/rigid-unified/`.
+
+Decision: **keep**. The final shipping-mode invariant run passes twenty suites,
+including collisions, fluids, actors, erosion, streaming, and both complex-stack
+seeds. The corrected force boundary passes the sliver invariant check; its only
+remaining assertion failure is the pre-existing single-layer force/sleep issue.
+Production passes the intentional stamp-rejection fixture and the tightened
+crowded-motion/zero-alias checks. Broader comparison also fixes `rigid-blast-settle`;
+the recorded jitter, detached-hall, TNT-bake, and replay-ABI failures predate this
+change. These limitations remain visible in the tests and durable results.
+
+Final production benchmarks: two engine repeats have stable checksum
+`0x4a1d6729` (previously `0xb1117be5`), step mean +6.7%, and step p99 +4.5%; all
+comparison timing gates remain within 15%. Three brutal repeats have stable
+fingerprint `0x5fccf50a` (previously `0x871653e4`), step p95 63.616 → 62.806 ms,
+p99 65.951 → 70.673 ms, and worst-30-step median 62.680 → 59.627 ms. This stress
+scene remains well above a 60-Hz frame budget in both versions. Actor checksums
+are unchanged and its benchmark passes. The intentional engine and brutal
+checksum changes are captured in their updated committed baselines.

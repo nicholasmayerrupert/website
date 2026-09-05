@@ -49,6 +49,8 @@ let maxJointSlivers = 0;
 let maxBlocked = 0;
 let maxOwnershipConflicts = 0;
 let maxRejected = 0;
+let maxRasterCorrection = 0;
+let maxProjectionFailures = 0;
 let maxBodyMs = 0;
 let maxBodyTick = -1;
 let maxBodyCount = 0;
@@ -65,6 +67,8 @@ for (let tick = 0; tick < 360; tick++) {
   engine.stepWorld();
   const solver = engine.getRigidSolverDebug();
   const rigid = engine.getRigidDebug();
+  maxRasterCorrection = Math.max(maxRasterCorrection, solver.rasterMaxCorrection);
+  maxProjectionFailures = Math.max(maxProjectionFailures, solver.rasterProjectionFailures);
   maxOwnershipConflicts = Math.max(
     maxOwnershipConflicts, solver.ownershipConflicts);
   maxRejected = Math.max(maxRejected, rigid.rejectedCells);
@@ -100,13 +104,16 @@ check(`eraser strokes create many cross-layer slivers (${maxJointSlivers})`,
   maxJointSlivers >= 24);
 check(`slivers reach the neutronium collision zone (y ${maxBodyCenterY.toFixed(1)})`,
   maxBodyCenterY >= 160);
-check(`sliver raster overlap stays within one discrete CCD cell `
+check(`sliver rasters remain disjoint `
     + `(${maxBlocked} blocked cells)`,
-  maxBlocked <= 1);
+  maxBlocked === 0);
 check(`sliver stamping keeps unique ownership (${maxOwnershipConflicts} conflicts)`,
   maxOwnershipConflicts === 0);
 check(`sliver rasters remain clear of terrain (${maxRejected} rejected cells)`,
   maxRejected === 0);
+check(`sliver raster projection succeeds (${maxProjectionFailures} failures)`,
+  maxProjectionFailures === 0);
+console.log(`  info maximum raster correction ${maxRasterCorrection.toFixed(4)} cells`);
 console.log(`  info body max ${maxBodyMs.toFixed(3)} ms at tick ${maxBodyTick} with ${maxBodyCount} foreground bodies (core/depen/stamp ${maxRigidCoreMs.toFixed(3)}/${maxRigidDepenMs.toFixed(3)}/${maxRigidStampMs.toFixed(3)}), solver body-steps max ${maxGlobalBodySteps}, position corrections/recoveries max ${maxPositionCorrections}/${maxRecoveryBodies}, first blocked/conflict ticks ${firstBlockedTick}/${firstConflictTick}`);
 
 engine.destroy();

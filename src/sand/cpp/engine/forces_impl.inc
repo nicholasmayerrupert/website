@@ -1604,6 +1604,7 @@ void ForceSystem::applyBodyForces() {
     body->spatialForceApplied = true;
     body->vx += forceX;
     body->vy += forceY;
+    if (body->jointRole == 1) E.rigid.syncJointFollower(body);
   }
 }
 

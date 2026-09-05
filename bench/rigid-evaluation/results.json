@@ -1,0 +1,1132 @@
+{
+  "startingRevision": "455a103",
+  "solverMode": 45,
+  "note": "Test elapsed times are informational; compilation and separate variant runs sometimes overlapped. Motion metrics observe foreground body 3 in the crowded-island fixture.",
+  "runs": {
+    "baseline-tests": {
+      "suites": [
+        {
+          "name": "rigid-fluid-accuracy",
+          "failed": false,
+          "timedOut": false,
+          "ms": 700
+        },
+        {
+          "name": "rigid-dense-pile",
+          "failed": false,
+          "timedOut": false,
+          "ms": 3655
+        },
+        {
+          "name": "rigid-world-raster",
+          "failed": false,
+          "timedOut": false,
+          "ms": 798
+        },
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11137
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": false,
+          "timedOut": false,
+          "ms": 750
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1846
+        },
+        {
+          "name": "rigid-topple",
+          "failed": false,
+          "timedOut": false,
+          "ms": 332
+        },
+        {
+          "name": "rigid-complex-stack",
+          "failed": true,
+          "timedOut": false,
+          "ms": 105662
+        }
+      ],
+      "failedAssertions": {
+        "rigid-complex-stack": []
+      },
+      "complexStack": [
+        {
+          "seed": 7,
+          "settledAt": 405,
+          "finalAwake": 0,
+          "maxRasterDistance": 1.821532261965148,
+          "tailPeakPointSpeed": 0,
+          "tailPeakPoseSpan": 0,
+          "maxConflicts": 0,
+          "maxTerrainBlocked": 0,
+          "maxBackgroundTerrainBlocked": 0,
+          "maxRejected": 0,
+          "maxRasterFailures": 0,
+          "finalBlocked": 2
+        },
+        {
+          "seed": 19,
+          "settledAt": -1,
+          "finalAwake": 7,
+          "maxRasterDistance": 3.1918516531268364,
+          "tailPeakPointSpeed": 0.04269189329012031,
+          "tailPeakPoseSpan": 1.209089254215537,
+          "maxConflicts": 0,
+          "maxTerrainBlocked": 0,
+          "maxBackgroundTerrainBlocked": 0,
+          "maxRejected": 0,
+          "maxRasterFailures": 0,
+          "finalBlocked": 2
+        }
+      ]
+    },
+    "baseline-motion": {
+      "suites": [
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11299
+        }
+      ],
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 250,
+        "correctionTicks": 113,
+        "maxCorrection": 2.1082477025134776,
+        "maxCorrectionTick": 127,
+        "stages": {
+          "biasMotion": {
+            "max": 0.20219432558954034,
+            "total": 0.7793476958705922,
+            "ticks": 67
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.7343689070301603,
+            "total": 7.585639961730565,
+            "ticks": 112
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 1.174163494162157,
+            "total": 3.674724688481577,
+            "ticks": 46
+          }
+        }
+      }
+    },
+    "damping-tests": {
+      "suites": [
+        {
+          "name": "rigid-fluid-accuracy",
+          "failed": false,
+          "timedOut": false,
+          "ms": 682
+        },
+        {
+          "name": "rigid-dense-pile",
+          "failed": false,
+          "timedOut": false,
+          "ms": 3968
+        },
+        {
+          "name": "rigid-world-raster",
+          "failed": false,
+          "timedOut": false,
+          "ms": 759
+        },
+        {
+          "name": "rigid-world-raster-island",
+          "failed": true,
+          "timedOut": false,
+          "ms": 11128
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": false,
+          "timedOut": false,
+          "ms": 759
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1864
+        },
+        {
+          "name": "rigid-topple",
+          "failed": false,
+          "timedOut": false,
+          "ms": 335
+        }
+      ],
+      "failedAssertions": {
+        "rigid-world-raster-island": [
+          "FAIL island settles with unique committed ownership (-1/0)"
+        ]
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 320,
+        "correctionTicks": 161,
+        "maxCorrection": 0.4113934319830544,
+        "maxCorrectionTick": 193,
+        "stages": {
+          "biasMotion": {
+            "max": 0.06480601481837969,
+            "total": 0.6703109343453909,
+            "ticks": 158
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.21480674917203932,
+            "total": 9.325687747231425,
+            "ticks": 145
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 0.31318569574100263,
+            "total": 0.4381856957409834,
+            "ticks": 2
+          }
+        }
+      }
+    },
+    "terrain-anchors-tests": {
+      "suites": [
+        {
+          "name": "rigid-dense-pile",
+          "failed": false,
+          "timedOut": false,
+          "ms": 3587
+        },
+        {
+          "name": "rigid-world-raster",
+          "failed": false,
+          "timedOut": false,
+          "ms": 809
+        },
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11165
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": false,
+          "timedOut": false,
+          "ms": 775
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1866
+        },
+        {
+          "name": "rigid-topple",
+          "failed": true,
+          "timedOut": false,
+          "ms": 351
+        }
+      ],
+      "failedAssertions": {
+        "rigid-topple": [
+          "FAIL bar w=3 fully topples (max |angle| 1 >= 80)",
+          "FAIL bar w=3 tips past 45 deg promptly (@tick -1, want >=0 && < 100)",
+          "2 checks FAILED"
+        ]
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 250,
+        "correctionTicks": 113,
+        "maxCorrection": 2.1082477025134776,
+        "maxCorrectionTick": 127,
+        "stages": {
+          "biasMotion": {
+            "max": 0.20219432558954034,
+            "total": 0.7793476958705922,
+            "ticks": 67
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.7343689070301603,
+            "total": 7.585639961730565,
+            "ticks": 112
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 1.174163494162157,
+            "total": 3.674724688481577,
+            "ticks": 46
+          }
+        }
+      }
+    },
+    "damping-anchors-tests": {
+      "suites": [
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11337
+        },
+        {
+          "name": "rigid-topple",
+          "failed": true,
+          "timedOut": false,
+          "ms": 317
+        }
+      ],
+      "failedAssertions": {
+        "rigid-topple": [
+          "FAIL bar w=3 fully topples (max |angle| 1 >= 80)",
+          "FAIL bar w=3 tips past 45 deg promptly (@tick -1, want >=0 && < 100)",
+          "2 checks FAILED"
+        ]
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 269,
+        "correctionTicks": 131,
+        "maxCorrection": 0.26045903519108377,
+        "maxCorrectionTick": 211,
+        "stages": {
+          "biasMotion": {
+            "max": 0.06504302791866295,
+            "total": 0.6322087375970814,
+            "ticks": 102
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.25019765994252713,
+            "total": 6.44122938218106,
+            "ticks": 111
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 0.12499999999998082,
+            "total": 1.3559089886281293,
+            "ticks": 27
+          }
+        }
+      }
+    },
+    "early-raster-tests": {
+      "suites": [
+        {
+          "name": "rigid-world-raster-island",
+          "failed": true,
+          "timedOut": false,
+          "ms": 18824
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": true,
+          "timedOut": false,
+          "ms": 966
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 2318
+        },
+        {
+          "name": "rigid-topple",
+          "failed": false,
+          "timedOut": false,
+          "ms": 367
+        }
+      ],
+      "failedAssertions": {
+        "rigid-world-raster-island": [
+          "FAIL island settles with unique committed ownership (-1/1)"
+        ],
+        "rigid-large-body": [
+          "FAIL staggered jagged beams do not phase through one another (1 overlaps < 0.4, minimum 0.333 at 0/1, angles 0.015/-0.005, children 9/9)"
+        ]
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 320,
+        "correctionTicks": 183,
+        "maxCorrection": 2.1082477025134776,
+        "maxCorrectionTick": 127,
+        "stages": {
+          "biasMotion": {
+            "max": 0.20219432558954034,
+            "total": 1.083206251552481,
+            "ticks": 181
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.7343689070301603,
+            "total": 13.56682037886743,
+            "ticks": 182
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 1.174163494162157,
+            "total": 1.174163494162157,
+            "ticks": 1
+          }
+        }
+      }
+    },
+    "large-anchors-tests": {
+      "suites": [
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11447
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1999
+        },
+        {
+          "name": "rigid-topple",
+          "failed": false,
+          "timedOut": false,
+          "ms": 385
+        }
+      ],
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 250,
+        "correctionTicks": 113,
+        "maxCorrection": 2.1082477025134776,
+        "maxCorrectionTick": 127,
+        "stages": {
+          "biasMotion": {
+            "max": 0.20219432558954034,
+            "total": 0.7793476958705922,
+            "ticks": 67
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.7343689070301603,
+            "total": 7.585639961730565,
+            "ticks": 112
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 1.174163494162157,
+            "total": 3.674724688481577,
+            "ticks": 46
+          }
+        }
+      }
+    },
+    "damping-large-anchors-tests": {
+      "suites": [
+        {
+          "name": "rigid-fluid-accuracy",
+          "failed": false,
+          "timedOut": false,
+          "ms": 702
+        },
+        {
+          "name": "rigid-dense-pile",
+          "failed": false,
+          "timedOut": false,
+          "ms": 3851
+        },
+        {
+          "name": "rigid-world-raster",
+          "failed": false,
+          "timedOut": false,
+          "ms": 757
+        },
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11369
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": false,
+          "timedOut": false,
+          "ms": 765
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1852
+        },
+        {
+          "name": "rigid-topple",
+          "failed": false,
+          "timedOut": false,
+          "ms": 346
+        },
+        {
+          "name": "rigid-complex-stack",
+          "failed": true,
+          "timedOut": false,
+          "ms": 86200
+        }
+      ],
+      "failedAssertions": {
+        "rigid-complex-stack": []
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 269,
+        "correctionTicks": 131,
+        "maxCorrection": 0.26045903519108377,
+        "maxCorrectionTick": 211,
+        "stages": {
+          "biasMotion": {
+            "max": 0.06504302791866295,
+            "total": 0.6322087375970814,
+            "ticks": 102
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.25019765994252713,
+            "total": 6.44122938218106,
+            "ticks": 111
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 0.12499999999998082,
+            "total": 1.3559089886281293,
+            "ticks": 27
+          }
+        }
+      },
+      "complexStack": [
+        {
+          "seed": 7,
+          "settledAt": 355,
+          "finalAwake": 0,
+          "maxRasterDistance": 2.6392182501071098,
+          "tailPeakPointSpeed": 0,
+          "tailPeakPoseSpan": 0,
+          "maxConflicts": 0,
+          "maxTerrainBlocked": 0,
+          "maxBackgroundTerrainBlocked": 0,
+          "maxRejected": 0,
+          "maxRasterFailures": 0,
+          "finalBlocked": 1
+        },
+        {
+          "seed": 19,
+          "settledAt": 521,
+          "finalAwake": 0,
+          "maxRasterDistance": 4.247190429982732,
+          "tailPeakPointSpeed": 0,
+          "tailPeakPoseSpan": 0,
+          "maxConflicts": 0,
+          "maxTerrainBlocked": 0,
+          "maxBackgroundTerrainBlocked": 0,
+          "maxRejected": 0,
+          "maxRasterFailures": 0,
+          "finalBlocked": 1
+        }
+      ]
+    },
+    "combination-validation": {
+      "suites": [
+        {
+          "name": "rigid-collision",
+          "failed": false,
+          "timedOut": false,
+          "ms": 939
+        },
+        {
+          "name": "rigid-displacement",
+          "failed": false,
+          "timedOut": false,
+          "ms": 133
+        },
+        {
+          "name": "rigid-inertia",
+          "failed": false,
+          "timedOut": false,
+          "ms": 157
+        },
+        {
+          "name": "rigid-shock",
+          "failed": false,
+          "timedOut": false,
+          "ms": 337
+        },
+        {
+          "name": "rigid-jitter",
+          "failed": true,
+          "timedOut": false,
+          "ms": 5727
+        },
+        {
+          "name": "rigid-rotation",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1910
+        },
+        {
+          "name": "rigid-blast-impulse",
+          "failed": false,
+          "timedOut": false,
+          "ms": 357
+        },
+        {
+          "name": "rigid-blast-settle",
+          "failed": true,
+          "timedOut": false,
+          "ms": 3455
+        },
+        {
+          "name": "rigid-stamp-reject",
+          "failed": false,
+          "timedOut": false,
+          "ms": 313
+        },
+        {
+          "name": "rigid-window-edge",
+          "failed": false,
+          "timedOut": false,
+          "ms": 412
+        },
+        {
+          "name": "rigid-shape-stress",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1200
+        },
+        {
+          "name": "rigid-sliver",
+          "failed": true,
+          "timedOut": false,
+          "ms": 1461
+        },
+        {
+          "name": "actor-rigid",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1161
+        }
+      ],
+      "failedAssertions": {
+        "rigid-jitter": [
+          "FAIL seed 13 fully settles and bakes (2 bodies, tick -1)"
+        ],
+        "rigid-blast-settle": [
+          "FAIL blast debris body overlap stays within one raster alias and clears"
+        ],
+        "rigid-sliver": [
+          "FAIL force-driven pile stays live (late peak 15/48 moving, final 3 moving, 8 awake)"
+        ]
+      }
+    },
+    "baseline-validation": {
+      "suites": [
+        {
+          "name": "rigid-jitter",
+          "failed": true,
+          "timedOut": false,
+          "ms": 5764
+        },
+        {
+          "name": "rigid-blast-settle",
+          "failed": true,
+          "timedOut": false,
+          "ms": 3327
+        },
+        {
+          "name": "rigid-sliver",
+          "failed": true,
+          "timedOut": false,
+          "ms": 1685
+        }
+      ],
+      "failedAssertions": {
+        "rigid-jitter": [
+          "FAIL seed 13 fully settles and bakes (2 bodies, tick -1)"
+        ],
+        "rigid-blast-settle": [
+          "FAIL blast debris body overlap stays within one raster alias and clears"
+        ],
+        "rigid-sliver": [
+          "FAIL sliver raster overlap stays within one discrete CCD cell (27 blocked cells)",
+          "FAIL sliver stamping keeps unique ownership (2 conflicts)",
+          "FAIL force-driven pile stays live (late peak 0/48 moving, final 0 moving, 0 awake)"
+        ]
+      }
+    },
+    "damping-rate2-tests": {
+      "suites": [
+        {
+          "name": "rigid-fluid-accuracy",
+          "failed": false,
+          "timedOut": false,
+          "ms": 638,
+          "signal": null
+        },
+        {
+          "name": "rigid-world-raster-island",
+          "failed": true,
+          "timedOut": false,
+          "ms": 11032,
+          "signal": null
+        },
+        {
+          "name": "rigid-large-body",
+          "failed": false,
+          "timedOut": false,
+          "ms": 762,
+          "signal": null
+        },
+        {
+          "name": "rigid-terrain-contact",
+          "failed": false,
+          "timedOut": false,
+          "ms": 1900,
+          "signal": null
+        },
+        {
+          "name": "rigid-sliver",
+          "failed": true,
+          "timedOut": false,
+          "ms": 1619,
+          "signal": null
+        },
+        {
+          "name": "rigid-topple",
+          "failed": true,
+          "timedOut": false,
+          "ms": 320,
+          "signal": null
+        },
+        {
+          "name": "rigid-complex-stack",
+          "failed": true,
+          "timedOut": false,
+          "ms": 37787,
+          "signal": "SIGTERM"
+        }
+      ],
+      "note": "Large-stack suite interrupted after toppling regression rejected this candidate; not a completed large-stack result.",
+      "failedAssertions": {
+        "rigid-world-raster-island": [
+          "FAIL island settles with unique committed ownership (-1/0)"
+        ],
+        "rigid-sliver": [
+          "FAIL sliver raster overlap stays within one discrete CCD cell (17 blocked cells)",
+          "FAIL force-driven pile stays live (late peak 14/48 moving, final 13 moving, 14 awake)"
+        ],
+        "rigid-topple": [
+          "FAIL bar w=3 fully topples (max |angle| 1 >= 80)",
+          "FAIL bar w=3 tips past 45 deg promptly (@tick -1, want >=0 && < 100)",
+          "2 checks FAILED"
+        ],
+        "rigid-complex-stack": []
+      },
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 320,
+        "correctionTicks": 170,
+        "maxCorrection": 0.2558185330963845,
+        "maxCorrectionTick": 217,
+        "stages": {
+          "biasMotion": {
+            "max": 0.09068892626824482,
+            "total": 0.8195077628675387,
+            "ticks": 167
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.23434323379733185,
+            "total": 9.074990388895412,
+            "ticks": 158
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          }
+        }
+      }
+    },
+    "final-diagnostics": {
+      "suites": [
+        {
+          "name": "rigid-world-raster-island",
+          "failed": false,
+          "timedOut": false,
+          "ms": 11185,
+          "signal": null
+        }
+      ],
+      "failedAssertions": {},
+      "motion": {
+        "layer": 0,
+        "bodyId": 3,
+        "samples": 250,
+        "correctionTicks": 113,
+        "maxCorrection": 2.1082477025134776,
+        "maxCorrectionTick": 127,
+        "stages": {
+          "biasMotion": {
+            "max": 0.20219432558954034,
+            "total": 0.7793476958705922,
+            "ticks": 67
+          },
+          "projectionMotion": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "bodyRaster": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "terrainRecovery": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "stamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "layerFinalize": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "peerLayer": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldRelax": {
+            "max": 0.7343689070301603,
+            "total": 7.585639961730565,
+            "ticks": 112
+          },
+          "worldRestamp": {
+            "max": 0,
+            "total": 0,
+            "ticks": 0
+          },
+          "worldCommit": {
+            "max": 1.174163494162157,
+            "total": 3.674724688481577,
+            "ticks": 46
+          }
+        }
+      }
+    }
+  },
+  "decisions": {
+    "earlierRasterAcceptance": "reject tested prototype",
+    "unifiedLayerSolve": "reject production rewrite after architecture review; not prototyped",
+    "terrainContactPersistence": "reject alone and tested combinations",
+    "timeScaledDamping": "reject tested rates and combinations",
+    "correctionDiagnostics": "keep"
+  },
+  "finalVerification": {
+    "diagnosticSuite": "pass",
+    "javascriptSyntax": "pass",
+    "savedPatchApplyChecks": 7,
+    "diffWhitespace": "pass",
+    "initialChecksum": "0xb1117be5",
+    "finalChecksum": "0xb1117be5",
+    "simulationSourceChanged": false,
+    "wasmChanged": false
+  }
+}

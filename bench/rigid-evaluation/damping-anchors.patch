@@ -1,0 +1,105 @@
+diff --git a/src/sand/cpp/engine/rigid_step_substeps.inc b/src/sand/cpp/engine/rigid_step_substeps.inc
+index f895caa..649fb44 100644
+--- a/src/sand/cpp/engine/rigid_step_substeps.inc
++++ b/src/sand/cpp/engine/rigid_step_substeps.inc
+@@ -627,6 +627,47 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+     auto reduceManifold = [&](std::vector<PenPt>& acc, Body* A, Body* B,
+                               double fbx, double fby, double contactDt) {
+       if (acc.empty()) return;
++      // Retain a nearby loaded cardinal terrain face while its outward cell
++      // remains clear. Removed support and genuine corners invalidate the face.
++      if (!B) {
++        std::vector<const CachedContact*> terrainAnchors;
++        for (int bucket : {0, 2, 4, 6}) {
++          ContactCacheKey key{A->id, -1, -1, -1, -1, -1,
++            A->geometryRevision, 0, (uint8_t)bucket, 2, 0};
++          auto found = previousContacts.find(key);
++          if (found == previousContacts.end()) continue;
++          for (const CachedContact& cached : found->second)
++            if (cached.age == 0 && cached.jn > 0
++                && (std::fabs(cached.nx) < 1e-8
++                  || std::fabs(cached.ny) < 1e-8))
++              terrainAnchors.push_back(&cached);
++        }
++        for (PenPt& point : acc) {
++          if (std::fabs(point.nx) < 1e-8
++              || std::fabs(point.ny) < 1e-8) continue;
++          int x = (int)std::floor(point.wx), y = (int)std::floor(point.wy);
++          if (x < 1 || y < 1 || x >= E.cols - 1 || y >= E.rows - 1)
++            continue;
++          double dx = point.wx - A->px, dy = point.wy - A->py;
++          double lx = dx * A->cs + dy * A->sn;
++          double ly = -dx * A->sn + dy * A->cs;
++          const CachedContact* best = nullptr;
++          double distance = R_CONTACT_CACHE_MATCH2;
++          for (const CachedContact* cached : terrainAnchors) {
++            if (cached->nx * point.nx + cached->ny * point.ny < 0.7)
++              continue;
++            int ox = (int)std::lround(cached->nx);
++            int oy = (int)std::lround(cached->ny);
++            if (isBodyTerrain(A, x + ox, y + oy, A->density)) continue;
++            double nextDistance = (cached->lax - lx) * (cached->lax - lx)
++              + (cached->lay - ly) * (cached->lay - ly);
++            if (nextDistance >= distance) continue;
++            best = cached;
++            distance = nextDistance;
++          }
++          if (best) { point.nx = best->nx; point.ny = best->ny; }
++        }
++      }
+       int bIndex = B && B->idx >= 0 && B->idx < n
+         && solverBodies[B->idx] == B ? B->idx : -1;
+       const double Q = 8.0 / (2.0 * M_PI);
+@@ -1608,8 +1649,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+       bool frictionalContact = solidContact[bi] || looseContact;
+       if (frictionalContact
+           && b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) {
+-        b->vx *= R_CONTACT_LIN_DAMP;
+-        b->vy *= R_CONTACT_LIN_DAMP;
++        b->vx *= std::pow(R_CONTACT_LIN_DAMP, dt);
++        b->vy *= std::pow(R_CONTACT_LIN_DAMP, dt);
+       }
+       // Contact-generated spin that grows in one direction is a real topple.
+       // A structure-scale body pivoting directly on terrain also keeps its spin
+@@ -1624,7 +1665,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+           || std::fabs(b->omega) * b->maxR
+             < R_CONTACT_ANG_DAMP_POINT_SPEED);
+       if (frictionalContact && !spinGrowing && spinInsideRestBand) {
+-        b->omega *= R_CONTACT_ANG_DAMP;
++        b->omega *= std::pow(R_CONTACT_ANG_DAMP, dt);
+         int shortSide = imin(b->w, b->h);
+         int longSide = imax(b->w, b->h);
+         // A small angular velocity can still move a structure-scale body's
+@@ -1646,9 +1687,9 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+           && b->vx * b->vx + b->vy * b->vy
+                < R_BOUNCE_MIN_SPEED * R_BOUNCE_MIN_SPEED
+           && std::fabs(b->omega) < R_SETTLE_ANG * 2) {
+-        b->vx *= 0.25;
+-        b->vy *= 0.25;
+-        b->omega *= 0.25;
++        b->vx *= std::pow(0.25, dt);
++        b->vy *= std::pow(0.25, dt);
++        b->omega *= std::pow(0.25, dt);
+       }
+       // Dissipate residual vertical surface waves once the body is already
+       // inside the ordinary settling band; translation and spin stay physical
+@@ -1656,15 +1697,15 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+       if (fluidOnlyContact && fluidRestContact
+           && std::fabs(b->vy) < R_SETTLE_LIN
+           && b->maxDepth <= R_REST_DEPTH) {
+-        b->vy *= R_FLUID_REST_DAMP;
++        b->vy *= std::pow(R_FLUID_REST_DAMP, dt);
+         int shortSide = imin(b->w, b->h);
+         int longSide = imax(b->w, b->h);
+         if (shortSide > 0 && longSide >= shortSide * 8
+             && std::fabs(b->vx) < R_SETTLE_LIN
+             && std::fabs(b->omega) < R_SETTLE_ANG) {
+-          b->vx *= R_FLUID_SLENDER_REST_DAMP;
+-          b->vy *= R_FLUID_SLENDER_REST_DAMP;
+-          b->omega *= R_FLUID_REST_DAMP;
++          b->vx *= std::pow(R_FLUID_SLENDER_REST_DAMP, dt);
++          b->vy *= std::pow(R_FLUID_SLENDER_REST_DAMP, dt);
++          b->omega *= std::pow(R_FLUID_REST_DAMP, dt);
+         }
+       }
+       double sleepLinear = liquidContact[bi]

@@ -114,6 +114,11 @@ fixture. The original freeze-fix baseline produces identical non-timing
 diagnostics. Its sleep assertion remains enabled; this is separate from the
 replay test's corrected assumption about world-tick progress.
 
+`rigid-world-raster-island` writes a `motion.json` report for its selected body,
+separating solver bias, position projection, and raster repair travel, including
+rotation at the body's perimeter. See [the rigid evaluation record](../src/sand/RIGID_EVALUATION.md)
+for measured experiments, rejected patches, and known shipping-mode failures.
+
 ## Game authoring workbench
 
 `npm run game:scenario -- --list` lists authored scenes. Use

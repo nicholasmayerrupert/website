@@ -1,0 +1,120 @@
+diff --git a/src/sand/cpp/engine/rigid_step_substeps.inc b/src/sand/cpp/engine/rigid_step_substeps.inc
+index f895caa..113711e 100644
+--- a/src/sand/cpp/engine/rigid_step_substeps.inc
++++ b/src/sand/cpp/engine/rigid_step_substeps.inc
+@@ -45,6 +45,10 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+ #include "rigid_step_contacts.inc"
+   rigidContactSetupMs += emscripten_get_now() - contactSetupStart;
+   for (int sub = 0; sub < substeps; sub++) {
++    std::vector<MovePose> substepStart(n);
++    for (int bi = 0; bi < n; bi++)
++      substepStart[bi] = {solverBodies[bi]->px, solverBodies[bi]->py,
++                          solverBodies[bi]->angle};
+     double motionPrepStart = emscripten_get_now();
+     for (int bi = 0; bi < n; bi++) {
+       int cadence = bodySubsteps[bi];
+@@ -1979,6 +1983,104 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+         if (B->jointRole == 1) syncJointFollower(B);
+       }
+     }
++    // Accept each contacting island along its proposed trajectory. Exact
++    // raster checks preserve terrain clearance and the one-cell pair allowance.
++    std::vector<MovePose> proposed(n);
++    for (int bi = 0; bi < n; bi++)
++      proposed[bi] = {solverBodies[bi]->px, solverBodies[bi]->py,
++                      solverBodies[bi]->angle};
++    std::vector<int> checkedRoots;
++    std::vector<int> owners((size_t)E.cols * E.rows, -1), touched;
++    for (int seed = 0; seed < n; seed++) {
++      if (!activeBody[seed] || !solverBodies[seed]->awake
++          || !solverBodies[seed]->hadContact) continue;
++      int root = ufFind(stepIslandParent, seed);
++      if (std::find(checkedRoots.begin(), checkedRoots.end(), root)
++          != checkedRoots.end()) continue;
++      checkedRoots.push_back(root);
++      std::vector<int> members;
++      double travel = 0;
++      for (int bi = 0; bi < n; bi++) {
++        if (ufFind(stepIslandParent, bi) != root) continue;
++        members.push_back(bi);
++        travel = std::fmax(travel,
++          std::hypot(proposed[bi].px - substepStart[bi].px,
++                     proposed[bi].py - substepStart[bi].py)
++          + std::fabs(proposed[bi].angle - substepStart[bi].angle)
++            * solverBodies[bi]->maxR);
++      }
++      if (travel < 1e-9) continue;
++      auto place = [&](double fraction) {
++        for (int bi : members) {
++          Body* body = solverBodies[bi];
++          const MovePose& start = substepStart[bi];
++          const MovePose& end = proposed[bi];
++          body->px = start.px + (end.px - start.px) * fraction;
++          body->py = start.py + (end.py - start.py) * fraction;
++          body->angle = start.angle + (end.angle - start.angle) * fraction;
++          body->cs = std::cos(body->angle);
++          body->sn = std::sin(body->angle);
++          if (body->jointRole == 1) syncJointFollower(body);
++        }
++      };
++      auto valid = [&]() {
++        for (int bi : members) {
++          Body* body = solverBodies[bi];
++          if (bodyTerrainBlocked(body) > 0) return false;
++          if (body->jointRole == 1 && body->jointPeer) {
++            Engine::ActiveLayerScope background(E, &E.bg);
++            if (bodyTerrainBlocked(body->jointPeer) > 0) return false;
++          }
++        }
++        for (int k : touched) owners[k] = -1;
++        touched.clear();
++        std::unordered_map<uint64_t, int> overlaps;
++        for (int bi = 0; bi < n; bi++) {
++          Body* body = solverBodies[bi];
++          ensureBodyRaster(body);
++          for (const BodyRasterCell& cell : body->rasterFootprint) {
++            if (bodyMaterialAt(body, cell.local) == EMPTY) continue;
++            int k = cell.y * E.cols + cell.x;
++            int other = owners[k];
++            if (other < 0) { owners[k] = bi; touched.push_back(k); continue; }
++            if (ufFind(stepIslandParent, bi) != root
++                && ufFind(stepIslandParent, other) != root) continue;
++            uint64_t pair = ((uint64_t)(uint32_t)other << 32) | (uint32_t)bi;
++            if (++overlaps[pair] > R_STRUCTURE_RASTER_ALIAS_CELLS) return false;
++          }
++        }
++        return true;
++      };
++      place(0);
++      if (!valid()) { place(1); continue; }
++      double accepted = 0;
++      int samples = imin(32, imax(1, (int)std::ceil(travel / 0.25)));
++      for (int sample = 1; sample <= samples; sample++) {
++        double candidate = (double)sample / samples;
++        place(candidate);
++        if (valid()) { accepted = candidate; continue; }
++        double blocked = candidate;
++        for (int search = 0; search < 6; search++) {
++          double middle = (accepted + blocked) * 0.5;
++          place(middle);
++          if (valid()) accepted = middle;
++          else blocked = middle;
++        }
++        break;
++      }
++      place(accepted);
++      if (accepted < 1) {
++        rigidPositionCorrections++;
++        for (int bi : members) {
++          Body* body = solverBodies[bi];
++          if (rigidTraceLayer == activeLayer && body->id == rigidTraceBodyId) {
++            rigidTraceProjectionMotion[0] += body->px - proposed[bi].px;
++            rigidTraceProjectionMotion[1] += body->py - proposed[bi].py;
++            rigidTraceProjectionMotion[2] += body->angle - proposed[bi].angle;
++          }
++        }
++      }
++    }
+     rigidIntegrateMs += emscripten_get_now() - integrateStart;
+   }
+ }

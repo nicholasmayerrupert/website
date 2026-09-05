@@ -1,0 +1,57 @@
+diff --git a/src/sand/cpp/engine/rigid_step_substeps.inc b/src/sand/cpp/engine/rigid_step_substeps.inc
+index f895caa..b79543e 100644
+--- a/src/sand/cpp/engine/rigid_step_substeps.inc
++++ b/src/sand/cpp/engine/rigid_step_substeps.inc
+@@ -1608,8 +1608,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+       bool frictionalContact = solidContact[bi] || looseContact;
+       if (frictionalContact
+           && b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) {
+-        b->vx *= R_CONTACT_LIN_DAMP;
+-        b->vy *= R_CONTACT_LIN_DAMP;
++        b->vx *= std::pow(R_CONTACT_LIN_DAMP, dt);
++        b->vy *= std::pow(R_CONTACT_LIN_DAMP, dt);
+       }
+       // Contact-generated spin that grows in one direction is a real topple.
+       // A structure-scale body pivoting directly on terrain also keeps its spin
+@@ -1624,7 +1624,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+           || std::fabs(b->omega) * b->maxR
+             < R_CONTACT_ANG_DAMP_POINT_SPEED);
+       if (frictionalContact && !spinGrowing && spinInsideRestBand) {
+-        b->omega *= R_CONTACT_ANG_DAMP;
++        b->omega *= std::pow(R_CONTACT_ANG_DAMP, dt);
+         int shortSide = imin(b->w, b->h);
+         int longSide = imax(b->w, b->h);
+         // A small angular velocity can still move a structure-scale body's
+@@ -1646,9 +1646,9 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+           && b->vx * b->vx + b->vy * b->vy
+                < R_BOUNCE_MIN_SPEED * R_BOUNCE_MIN_SPEED
+           && std::fabs(b->omega) < R_SETTLE_ANG * 2) {
+-        b->vx *= 0.25;
+-        b->vy *= 0.25;
+-        b->omega *= 0.25;
++        b->vx *= std::pow(0.25, dt);
++        b->vy *= std::pow(0.25, dt);
++        b->omega *= std::pow(0.25, dt);
+       }
+       // Dissipate residual vertical surface waves once the body is already
+       // inside the ordinary settling band; translation and spin stay physical
+@@ -1656,15 +1656,15 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
+       if (fluidOnlyContact && fluidRestContact
+           && std::fabs(b->vy) < R_SETTLE_LIN
+           && b->maxDepth <= R_REST_DEPTH) {
+-        b->vy *= R_FLUID_REST_DAMP;
++        b->vy *= std::pow(R_FLUID_REST_DAMP, dt);
+         int shortSide = imin(b->w, b->h);
+         int longSide = imax(b->w, b->h);
+         if (shortSide > 0 && longSide >= shortSide * 8
+             && std::fabs(b->vx) < R_SETTLE_LIN
+             && std::fabs(b->omega) < R_SETTLE_ANG) {
+-          b->vx *= R_FLUID_SLENDER_REST_DAMP;
+-          b->vy *= R_FLUID_SLENDER_REST_DAMP;
+-          b->omega *= R_FLUID_REST_DAMP;
++          b->vx *= std::pow(R_FLUID_SLENDER_REST_DAMP, dt);
++          b->vy *= std::pow(R_FLUID_SLENDER_REST_DAMP, dt);
++          b->omega *= std::pow(R_FLUID_REST_DAMP, dt);
+         }
+       }
+       double sleepLinear = liquidContact[bi]

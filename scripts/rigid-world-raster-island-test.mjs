@@ -9,6 +9,9 @@ import {
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { makeComplexStackScenario } from './rigid-complex-stack-scenario.mjs';
+import { trackRigidMotion } from './rigid-motion-metrics.mjs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 await initSandWasm();
 
@@ -112,8 +115,10 @@ const bodySnapshot = () => {
   return snapshot;
 };
 let previousBodies = bodySnapshot();
+const motion = trackRigidMotion(engine, 0, engine._bodyIdLayer(0, 0));
 for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
+  motion.sample(tick);
   const solver = engine.getRigidSolverDebug();
   const currentBodies = bodySnapshot();
   if (solver.rasterCorrections > 0) {
@@ -188,5 +193,17 @@ check(`raster recovery preserves active motion `
 check(`island settles with unique committed ownership (${settledAt}/${finalBlocked})`,
   settledAt >= 0 && finalAwake === 0 && finalBlocked === 0);
 
+const motionSummary = motion.summary();
+check('motion trace observes the body and finite correction stages',
+  motionSummary.samples > 0 && Number.isFinite(motionSummary.maxCorrection));
+check(`tracked correction perimeter travel stays bounded `
+    + `(${motionSummary.maxCorrection.toFixed(4)} at `
+    + `${motionSummary.maxCorrectionTick})`, motionSummary.maxCorrection <= 2.2);
+console.log(`motion corrections: ${JSON.stringify(motionSummary)}`);
+if (process.env.SAND_TEST_ARTIFACTS) {
+  mkdirSync(process.env.SAND_TEST_ARTIFACTS, { recursive: true });
+  writeFileSync(join(process.env.SAND_TEST_ARTIFACTS, 'motion.json'),
+    `${JSON.stringify(motionSummary, null, 2)}\n`);
+}
 engine.destroy();
 process.exitCode = done();

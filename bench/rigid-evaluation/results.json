@@ -1114,7 +1114,7 @@
   },
   "decisions": {
     "earlierRasterAcceptance": "reject tested prototype",
-    "unifiedLayerSolve": "reject production rewrite after architecture review; not prototyped",
+    "unifiedLayerSolve": "unevaluated: architecture reviewed, not prototyped; scope does not establish rejection",
     "terrainContactPersistence": "reject alone and tested combinations",
     "timeScaledDamping": "reject tested rates and combinations",
     "correctionDiagnostics": "keep"

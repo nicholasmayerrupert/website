@@ -9,7 +9,7 @@ continued sliding/toppling, stable rest, and affordable step time are required.
 | Proposal | Status | Evidence |
 | --- | --- | --- |
 | 1. Accept raster-valid motion earlier | Reject tested prototype | Beam collision regression, slower crowded case, no peak-correction improvement. |
-| 2. Unified foreground/background contact solve | Reject as a production change in this evaluation | Architecture review below; no full solver rewrite tested. |
+| 2. Unified foreground/background contact solve | Unevaluated; still a candidate | Architecture reviewed, but no unified solver was prototyped. Scope alone does not establish rejection. |
 | 3. Stable terrain contact directions | Reject tested variants | Unrestricted persistence suppresses real pivots. Large-body-only persistence is neutral alone; the combined improvement does not generalize. |
 | 4. Time-scaled settling damping | Reject tested rates | One-tick rate misses the crowded settling deadline; combined rate increases large-stack repair jumps; double contact rate prevents toppling. |
 | 5. Measure correction motion by stage | Keep | Baseline trace isolates corrections and exposes different outcomes despite passing clipping checks. |
@@ -95,14 +95,14 @@ changing terrain normals. No combined trial is justified by that failure.
 This does not disprove a future contact-generating transactional integrator.
 Logs: `early-raster-tests/`; patch: `early-raster.patch`.
 
-### Unified foreground/background solve: architecture decision
+### Unified foreground/background solve: untested architecture proposal
 
 The starting implementation already gives a joint object a canonical foreground
 leader, combined mass/inertia, and a synchronized background follower. Contact
 normal/friction impulses already update both participating bodies, including
-peer-layer bodies. A second physical identity would duplicate existing machinery.
-The remaining proposal is specifically to synchronize integration and contact
-generation across layers.
+peer-layer bodies. A unified solver can reuse that identity and geometry. The
+proposal is specifically to synchronize integration and contact generation
+across layers; existing shared identity does not make that proposal redundant.
 
 That requires splitting `moveBodies`' clearing, solving, erosion/recovery,
 displacement and stamping around a world-level scheduler, and moving rigid work
@@ -113,11 +113,24 @@ collisions between unrelated foreground/background objects. A valid rewrite is
 possible, but it is not a demonstrated smoothness fix, and does not eliminate the
 nonlinear integer-raster acceptance problem.
 
-Reject the broad rewrite for this change rather than ship an unvalidated
-approximation. This is a scope/architecture judgment, not experimental evidence
-that a properly implemented world solver would fail. Earlier raster acceptance
-can be evaluated locally with the final world guard retained; it does not require
-this rewrite first.
+The original evaluation classified this as rejected based on scope. That was
+not supported by an implementation experiment and did not fulfill the requested
+keep/reject evaluation for this proposal. Its corrected status is unevaluated.
+The integration concerns above are work to address, not evidence that a unified
+solver would be worse.
+
+A bounded prototype can reuse canonical bodies, attach explicit layer identity
+to each collision shape and terrain query, gather contacts at a common pose
+time, and advance each connected island together. Prepare both layers before
+the rigid solve and commit both rasters afterward; keep topology mutations out
+of that interval. Existing exact raster validation remains a safety guard.
+Start with dry static terrain, a joint body resting on an independent background
+body, and an unrelated foreground/background pair that must not collide. Then
+test mixed stacks, actors, fluids, erosion, and streaming before judging it.
+The separate world relaxation must not duplicate constraints already solved by
+the unified path. Earlier raster acceptance may be worth retesting in that
+architecture, but the failed single-layer beam prototype remains a distinct
+failure and is not evidence for or against this unimplemented solver.
 
 ### Restricted persistence, alone and combined with damping
 

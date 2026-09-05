@@ -62,6 +62,7 @@ export const UNIT_SUITES = [
   ['rigid-jitter', 'rigid-jitter-test.mjs', exclusive(120_000)],
   ['rigid-massive-stack', 'rigid-massive-stack-test.mjs', exclusive(240_000)],
   ['rigid-world-raster', 'rigid-world-raster-test.mjs', exclusive(120_000)],
+  ['rigid-rollback-cache', 'rigid-rollback-cache-test.mjs', exclusive(120_000)],
   ['rigid-world-raster-island', 'rigid-world-raster-island-test.mjs', exclusive(120_000)],
   ['rigid-tnt-rubble', 'rigid-tnt-rubble-test.mjs', exclusive(300_000)],
   ['rigid-joint-erase-scale', 'rigid-joint-erase-scale-test.mjs', exclusive(120_000)],

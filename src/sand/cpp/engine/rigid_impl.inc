@@ -842,6 +842,9 @@ void RigidBodySystem::relaxWorldContacts() {
     // remains responsible for impulses, while this pass only chooses a unique
     // sand-cell assignment.
     auto loadWorldProjectionRollback = [&](int layer, Layer& source) {
+      // Rollback repurposes movement scratch; invalidate its cached roster so
+      // the next movement pass rebuilds the matching slots and pose storage.
+      moveBodyIds.clear();
       moveBodySlotById.clear();
       movePreviousPoses.clear();
       for (Body* body : source.bodies) {

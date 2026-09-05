@@ -1,6 +1,7 @@
 // The continuous Earth expedition: physical jobs, persistent terrain, and scoped repairs.
 import { initSandWasm, createEngineWasm, MAT, PLANET } from '../src/sand/wasmBridge/engineFactory.js';
-import { MISSION, MISSION_PHASE, OBJECTIVE_STATE } from '../src/sand/wasmBridge/abi.generated.js';
+import { GAME_WORLD } from '../src/sand/content/catalog.js';
+import { MISSION, MISSION_PHASE, OBJECTIVE_STATE, CREATURE, ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const { check, done } = makeChecker('frontier');
@@ -24,9 +25,40 @@ const move = (x, y) => {
   e.setPlayerState(player, { ...e.getPlayer(player), x: x - e.getWorldOffsetX(), y: y - e.getWorldOffsetY(), vx: 0, vy: 0 });
 };
 const tick = () => { for (let i = 0; i < 12; i++) e.stepActors(); };
-check('frontier starts with three independent jobs and a homecoming', e.startMission(MISSION.FRONTIER, player)
-  && e.getMission().objectives.slice(0, 3).every(o => o.state === OBJECTIVE_STATE.ACTIVE)
-  && e.getMission().objectives[3].state === OBJECTIVE_STATE.LOCKED);
+const id = key => GAME_WORLD.quests.findIndex(q => q.key === key);
+const objective = key => e.getMission().objectives[id(key)];
+check('frontier starts with four independent branches and authored dependencies', e.startMission(MISSION.FRONTIER, player)
+  && e.getMission().objectives.filter(o => o.state === OBJECTIVE_STATE.ACTIVE).length === 4
+  && objective('homecoming').state === OBJECTIVE_STATE.LOCKED);
+const clearBox = actor => {
+  const wx = actor.x + e.getWorldOffsetX(), wy = actor.y + e.getWorldOffsetY();
+  for (let y = Math.floor(wy); y < Math.ceil(wy + actor.h - 1e-6); y++)
+    for (let x = Math.floor(wx); x < Math.ceil(wx + actor.w - 1e-6); x++)
+      if (at(x, y) !== MAT.EMPTY) return false;
+  return true;
+};
+check('player starts entirely above the authored floor', clearBox(e.getPlayer(player)));
+check('all authored residents spawn with clear body boxes', e.getCreatures().length === 3 && e.getCreatures().every(clearBox));
+const crewStart = e.getCreatures().filter(c => c.species !== CREATURE.SURVEYOR);
+for (let i = 0; i < 240; i++) e.stepActors();
+check('residents can walk around their homes', crewStart.length === 2 && crewStart.every(before => Math.abs(e.getCreatures().find(c => c.id === before.id).x - before.x) > .5));
+check('resident walking does not embed them in floors', e.getCreatures().every(clearBox));
+const count = material => e.getInventory(player).slots.reduce((n, slot) => n + (slot.itemKind === ITEM_KIND.MATERIAL && slot.material === material ? slot.count : 0), 0);
+move(96, 5); tick();
+check('an empty-handed delivery fails', !e.interactFrontier(player, id('mill-supplies')));
+e.addToInventory(player, MAT.IRON_ORE, 31);
+move(-64, 5);
+check('delivery is rejected away from its recipient', !e.interactFrontier(player, id('mill-supplies')));
+move(96, 5); tick();
+check('carrying supplies updates progress without silently consuming them', objective('mill-supplies').current === 24 && count(MAT.IRON_ORE) === 31);
+check('explicit handoff consumes exactly the request and awards timber', e.interactFrontier(player, id('mill-supplies')) && count(MAT.IRON_ORE) === 7 && count(MAT.PINE_WOOD) === 192);
+check('completed handoffs cannot award twice', !e.interactFrontier(player, id('mill-supplies')));
+move(400, 3); tick();
+check('background guide planks do not complete the bridge', objective('mill-bridge').state === OBJECTIVE_STATE.ACTIVE && objective('mill-bridge').current === 0);
+for (let x = 373; x <= 427; x++) e.paintDisc(x - e.getWorldOffsetX(), 15 - e.getWorldOffsetY(), 1, MAT.PINE_WOOD);
+e.syncComponents(); tick();
+check('a connected timber deck completes construction', objective('mill-bridge').state === OBJECTIVE_STATE.COMPLETE);
+move(0, 6);
 check('lodge has an open ground floor and a solid foundation', at(-64, 8) === MAT.EMPTY && at(-64, 17) !== MAT.EMPTY);
 check('cellar foreground stays clear while background carries masonry', at(-90, 45) === MAT.EMPTY && at(-90, 45, true) !== MAT.EMPTY);
 check('station surface is a dry terrace, eastern summit has real verticality', e.worldSurfaceAbsAt(0) === 16 && e.worldSurfaceAbsAt(900) < -180);
@@ -34,23 +66,39 @@ move(0, 8);
 for (let i = 0; i < 120; i++) e.stepWorld();
 check('lodge foundation stays attached under simulation', at(-16, 17) === MAT.SANDSTONE);
 check('maintenance restores the authored lodge', e.repairFrontierBase(player));
+check('repair places the player above the floor', clearBox(e.getPlayer(player)));
+check('repair preserves safe resident placement', e.getCreatures().filter(c => [CREATURE.IRIS_COMMANDER, CREATURE.IRIS_ENGINEER, CREATURE.SURVEYOR].includes(c.species)).every(clearBox));
 const initial = e.getMission().objectives;
-move(initial[2].worldX, initial[2].worldY - 3);
+move(initial[id('windward')].worldX, initial[id('windward')].worldY - 3);
 tick();
-check('summit survey can complete before the other jobs', e.getMission().objectives[2].state === OBJECTIVE_STATE.COMPLETE && e.getMission().objectives[0].state === OBJECTIVE_STATE.ACTIVE);
+check('summit survey can complete before the other jobs', objective('windward').state === OBJECTIVE_STATE.COMPLETE && objective('buried-pass').state === OBJECTIVE_STATE.ACTIVE);
 move(-480, 378); tick();
-check('entering the flooded archive does not complete the drainage job', e.getMission().objectives[1].state === OBJECTIVE_STATE.ACTIVE);
+check('entering the flooded archive does not complete the drainage job', objective('drowned-archive').state === OBJECTIVE_STATE.ACTIVE);
 // Cut a drain through the floor and let the real fluid simulation empty it.
 e.eraseDisc(-480 - e.getWorldOffsetX(), 400 - e.getWorldOffsetY(), 15);
 for (let turn = 0; turn < 3000; turn++) e.stepWorld();
 tick();
-check('drained archive console completes the job', e.getMission().objectives[1].state === OBJECTIVE_STATE.COMPLETE);
+check('drained archive console completes the job', objective('drowned-archive').state === OBJECTIVE_STATE.COMPLETE);
 const passFloor = e.worldSurfaceAbsAt(-790) + 36;
 move(-860, passFloor - 10); tick();
-check('going around the railway rockfall alone does not open the pass', e.getMission().objectives[0].state === OBJECTIVE_STATE.ACTIVE);
+check('going around the railway rockfall alone does not open the pass', objective('buried-pass').state === OBJECTIVE_STATE.ACTIVE);
 e.eraseDisc(-800 - e.getWorldOffsetX(), passFloor - 10 - e.getWorldOffsetY(), 19);
 tick();
-check('a person-sized cut opens the railway and unlocks homecoming', e.getMission().objectives[0].state === OBJECTIVE_STATE.COMPLETE && e.getMission().objectives[3].state === OBJECTIVE_STATE.ACTIVE);
+check('a person-sized cut opens the railway and unlocks the cutting yard', objective('buried-pass').state === OBJECTIVE_STATE.COMPLETE && objective('last-shift').state === OBJECTIVE_STATE.ACTIVE);
+const encounter = objective('last-shift');
+move(encounter.worldX + 55, encounter.worldY - 8); tick();
+let foreman = e.getCreatures().find(c => c.id === objective('last-shift').targetActorId);
+check('approaching an unlocked encounter spawns its named boss safely', !!foreman && clearBox(foreman) && foreman.species === CREATURE.QUARRY_FOREMAN);
+check('reaching the yard does not count as defeating its boss', objective('last-shift').state === OBJECTIVE_STATE.ACTIVE);
+if (foreman) {
+  const actorId = foreman.id;
+  move(0, 6); tick();
+  move(encounter.worldX + 55, encounter.worldY - 8); tick();
+  check('streaming away and back preserves the boss identity', e.getCreatures().filter(c => c.id === actorId).length === 1 && objective('last-shift').targetActorId === actorId);
+  foreman = e.getCreatures().find(c => c.id === actorId);
+  e.damageCreatures(foreman.x + foreman.w / 2, foreman.y + foreman.h / 2, 12, 10000); tick();
+}
+check('defeating the named boss awards its cache and unlocks homecoming', objective('last-shift').state === OBJECTIVE_STATE.COMPLETE && objective('homecoming').state === OBJECTIVE_STATE.ACTIVE);
 check('maintenance cannot reset terrain from the field', !e.repairFrontierBase(player));
 move(-64, 8); tick();
 check('homecoming completes without extraction or swapping the world', e.getMission().phase === MISSION_PHASE.COMPLETE);

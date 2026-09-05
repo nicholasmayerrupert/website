@@ -62,7 +62,7 @@ layer. Named anchors connect residents, signs, quests, and development scenes.
 Component-aware repair restores the authored lodge within its declared repair
 bounds. Natural hostile spawns exclude those bounds.
 
-`mission_frontier.inc` evaluates authored reach, passage, and drain conditions,
+`mission_frontier.inc` evaluates authored reach, passage, drain, build, delivery, and encounter conditions,
 prerequisites, and rewards. The railway needs an actor-height opening; the archive
 needs a drainage route into its cistern; the mountain instrument requires a climb.
 Returning to Vale completes the expedition after all three. Rewards are awarded

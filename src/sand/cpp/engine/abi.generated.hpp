@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 37;
+static const int ABI_VERSION = 38;
 
-static const uint64_t ABI_FINGERPRINT = 0x0dddfeaa585eULL;
+static const uint64_t ABI_FINGERPRINT = 0xd700db442189ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
@@ -1172,6 +1172,9 @@ enum ObjectiveKind : uint8_t {
   OK_PASSAGE = 6,
   OK_DRAIN = 7,
   OK_SURVEY = 8,
+  OK_BUILD = 9,
+  OK_DELIVER = 10,
+  OK_DEFEAT = 11,
 };
 
 static constexpr bool isObjectiveKindValue(int value) {
@@ -1185,6 +1188,9 @@ static constexpr bool isObjectiveKindValue(int value) {
     case OK_PASSAGE:
     case OK_DRAIN:
     case OK_SURVEY:
+    case OK_BUILD:
+    case OK_DELIVER:
+    case OK_DEFEAT:
       return true;
     default: return false;
   }

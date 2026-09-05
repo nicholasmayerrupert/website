@@ -259,6 +259,8 @@ void PlayerSystem::playerSurfaceSpawn(int col, double* out) {
 int PlayerSystem::spawnPlayerAtSurface(int col) {
   double out[2];
   playerSurfaceSpawn(col, out);
+  if (E.planetId == PL_FRONTIER)
+    findSafeSpawnNearWorld(E.content.spawn[0], E.content.spawn[1], out, nullptr);
   return spawnPlayer(out[0], out[1]);
 }
 bool PlayerSystem::respawnPlayer(Player& p) {

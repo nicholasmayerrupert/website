@@ -938,8 +938,10 @@ EMSCRIPTEN_KEEPALIVE int engine_spawn_creature(
     ? e->creatures.spawnCreature((uint8_t)species, worldX, worldY) : 0;
 }
 EMSCRIPTEN_KEEPALIVE int engine_spawn_scripted_creature(Engine* e, int species, double worldX, double worldY) {
-  return isCreatureSpeciesAbiValue(species)
-    ? e->creatures.spawnCreature((uint8_t)species, worldX, worldY, false) : 0;
+  if (!isCreatureSpeciesAbiValue(species)) return 0;
+  if (e->storageRole != ESR_PRESENTATION && CREATURE_SPECIES[species].humanNpc &&
+      !e->creatures.findGroundSpawn((uint8_t)species, worldX, worldY, worldX, worldY)) return 0;
+  return e->creatures.spawnCreature((uint8_t)species, worldX, worldY, false);
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_near_focus(Engine* e, int species, int salt) {
   if (!isCreatureSpeciesAbiValue(species)) return 0;
@@ -1217,5 +1219,8 @@ EMSCRIPTEN_KEEPALIVE int engine_pointer_draft_at_aim(Engine* e) { return e->poin
 EMSCRIPTEN_KEEPALIVE int engine_pointer_down_at_aim(Engine* e, int button) { return e->pointerDownAtAim(button); }
 EMSCRIPTEN_KEEPALIVE int engine_repair_frontier_base(Engine* e, int id) {
   return e->repairFrontierBase(id) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_interact_frontier(Engine* e, int playerId, int objectiveId) {
+  return e->missions.interactFrontier(playerId, objectiveId) ? 1 : 0;
 }
 } // extern "C"

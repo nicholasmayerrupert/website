@@ -75,6 +75,8 @@ struct Creature {
   int scanCooldown = 0, attackCooldown = 0, hurtCooldown = 0;
   int deathTicks = 0;
   int wanderDir = 0, wanderTicks = 0;
+  double homeX = 0;
+  int roamRadius = 0;
   int habitatScanCooldown = 0;
   double habitatX = 0, habitatY = 0;
   bool hasHabitatGoal = false;
@@ -154,6 +156,9 @@ class CreatureSystem {
   void updateSpawnTelegraphs();
   int encounterCost(uint8_t speciesId) const;
   int addCreature(uint8_t speciesId, double wx, double wy, int id);
+  bool safeGroundSpawnAt(uint8_t species, int x, int y, const Creature* ignore = nullptr) const;
+  bool findGroundSpawn(uint8_t species, double worldX, double worldY, double& x, double& y,
+                       int rangeX = 32, int rangeY = 48, const Creature* ignore = nullptr) const;
   int spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat = true);
   int spawnCreatureNatural(uint8_t speciesId, double wx, double wy);
   void maintainPopulation();

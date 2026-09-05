@@ -57,3 +57,13 @@ Visual direction confirmed by the user: preserve the original world palette,
 cell style, and lighting; use pixel text everywhere in the game. The full creature
 roster now shares the updated character art style, including hostile wildlife,
 armed enemies, bosses, and devices. Preserve this direction in subsequent stages.
+
+## Playable expansion: the mill and the last shift
+
+Seven jobs connect Osei’s iron delivery, the Willow Mill bridge, the railway
+rockfall, the drowned archive, the quarry foreman, the summit signal, and the
+homecoming. Build, delivery, and named-encounter conditions share the content
+compiler and engine authority. Resident roaming, grounded placement, progress
+snapshots, replayable handoffs, and quest-conditioned dialogue support these jobs.
+Both new locations have workbench scenes. Durable saves, branching choices,
+escorts, and a dedicated encounter editor remain future work.

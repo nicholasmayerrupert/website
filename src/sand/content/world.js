@@ -1,6 +1,6 @@
 // Authored game content. Validated by content/compile.js.
 export default {
-  "version": 1,
+  "version": 2,
   "id": "aster-valley",
   "title": "Aster",
   "subtitle": "The waking valley",
@@ -13,7 +13,7 @@ export default {
   ],
   "spawn": [
     -16,
-    8
+    6
   ],
   "prefabs": {
     "lantern": [
@@ -459,7 +459,7 @@ export default {
         ],
         "spawn": [
           -16,
-          8
+          6
         ],
         "cellar": [
           -100,
@@ -469,9 +469,9 @@ export default {
       "preview": {
         "at": [
           -16,
-          8
+          6
         ],
-        "dayPhase": 0.20,
+        "dayPhase": 0.2,
         "zoomSteps": 0
       },
       "operations": [
@@ -1893,7 +1893,7 @@ export default {
           -480,
           298
         ],
-        "dayPhase": 0.20,
+        "dayPhase": 0.2,
         "zoomSteps": -1
       },
       "operations": [
@@ -4605,15 +4605,502 @@ export default {
           ]
         }
       ]
+    },
+    {
+      "id": "mill",
+      "name": "Willow Mill",
+      "description": "A washed-out crossing, a working watercourse, and ore on the far bank.",
+      "origin": [
+        400,
+        0
+      ],
+      "anchors": {
+        "bridge": [
+          0,
+          8
+        ],
+        "ore": [
+          57,
+          7
+        ]
+      },
+      "preview": {
+        "at": [
+          350,
+          5
+        ],
+        "dayPhase": 0.22,
+        "zoomSteps": -1
+      },
+      "operations": [
+        {
+          "layer": "both",
+          "material": "STONE",
+          "rect": [
+            -82,
+            16,
+            100,
+            106
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "DIRT",
+          "rect": [
+            -82,
+            14,
+            100,
+            15
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "EMPTY",
+          "rect": [
+            -82,
+            -45,
+            100,
+            13
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "EMPTY",
+          "rect": [
+            -26,
+            12,
+            26,
+            75
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "WATER",
+          "rect": [
+            -22,
+            35,
+            22,
+            73
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -26,
+            14,
+            26,
+            16
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "PINE_WOOD",
+          "rect": [
+            -42,
+            14,
+            -27,
+            16
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "PINE_WOOD",
+          "rect": [
+            27,
+            14,
+            43,
+            16
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "STONE",
+          "rect": [
+            -33,
+            17,
+            -27,
+            75
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "STONE",
+          "rect": [
+            27,
+            17,
+            33,
+            75
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -37,
+            -7,
+            -35,
+            13
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            35,
+            -7,
+            37,
+            13
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            -37,
+            14
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            35,
+            14
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "SANDSTONE",
+          "rect": [
+            45,
+            11,
+            78,
+            13
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "IRON_ORE",
+          "rect": [
+            49,
+            7,
+            62,
+            10
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            65,
+            -19,
+            85,
+            10
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "GLASS",
+          "rect": [
+            69,
+            -15,
+            81,
+            -4
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "MOSS",
+          "polygon": [
+            [
+              61,
+              -19
+            ],
+            [
+              75,
+              -34
+            ],
+            [
+              89,
+              -19
+            ]
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            86,
+            -6,
+            97,
+            -4
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            91,
+            -10,
+            93,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "foundry",
+      "name": "The Last Shift",
+      "description": "An abandoned cutting yard. Its foreman never received the evacuation order.",
+      "origin": [
+        -1060,
+        0
+      ],
+      "surfaceAt": -1060,
+      "anchors": {
+        "foreman": [
+          -30,
+          -1
+        ]
+      },
+      "preview": {
+        "at": [
+          -995,
+          -9
+        ],
+        "dayPhase": 0.24,
+        "zoomSteps": -1
+      },
+      "operations": [
+        {
+          "layer": "both",
+          "material": "STONE",
+          "rect": [
+            -115,
+            0,
+            115,
+            85
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "EMPTY",
+          "rect": [
+            -112,
+            -66,
+            112,
+            -1
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "BRICK",
+          "rect": [
+            -104,
+            -52,
+            80,
+            -1
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -92,
+            -58,
+            -88,
+            -1
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            60,
+            -58,
+            64,
+            -1
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -96,
+            -58,
+            68,
+            -54
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "GLASS",
+          "rect": [
+            -70,
+            -43,
+            -40,
+            -26
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "GLASS",
+          "rect": [
+            0,
+            -43,
+            30,
+            -26
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "STONE",
+          "rect": [
+            -70,
+            -8,
+            -60,
+            -1
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "STONE",
+          "rect": [
+            15,
+            -8,
+            25,
+            -1
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -88,
+            -24,
+            -70,
+            -22
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            58,
+            -24,
+            78,
+            -22
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "IRON_ORE",
+          "rect": [
+            -50,
+            1,
+            -20,
+            3
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            -87,
+            -52
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            58,
+            -52
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "IRON_ORE",
+          "rect": [
+            42,
+            -52,
+            44,
+            -22
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "IRON_ORE",
+          "rect": [
+            37,
+            -23,
+            49,
+            -20
+          ]
+        }
+      ]
     }
   ],
   "quests": [
+    {
+      "key": "mill-supplies",
+      "title": "Sparks for the mill",
+      "place": "Home · Osei’s workshop",
+      "summary": "Bring Osei 24 iron ore to repair the mill tools.",
+      "description": "The flood took the footbridge and bent every saw in the workshop. Osei can turn salvaged iron into tools and cut a fresh load of bridge timber for you.",
+      "hint": "Mine the exposed ore beside Willow Mill, just east of the lodge. Return to Osei and choose “Hand over iron ore”. Only the requested ore is consumed.",
+      "target": "hearth.osei",
+      "condition": {
+        "kind": "deliver",
+        "material": "IRON_ORE",
+        "count": 24
+      },
+      "radius": 38,
+      "reward": {
+        "material": "PINE_WOOD",
+        "count": 192,
+        "name": "Bridge timber"
+      },
+      "color": "#dfac73",
+      "mapX": 392,
+      "mapY": 177,
+      "symbol": "01"
+    },
+    {
+      "key": "mill-bridge",
+      "title": "A bridge worth crossing",
+      "place": "East · Willow Mill",
+      "summary": "Build a timber deck across the washed-out millrace.",
+      "description": "The current has swallowed the crossing. Join the two surviving wooden abutments with a continuous, supported deck. The millrace should keep flowing underneath.",
+      "hint": "Use the timber from Osei. The faded background planks mark the missing deck. Connect one level row across the entire gap, with room to walk above it. Loose piles and background walls do not count.",
+      "target": "mill.bridge",
+      "radius": 90,
+      "condition": {
+        "kind": "build",
+        "material": "PINE_WOOD",
+        "bounds": [
+          374,
+          14,
+          426,
+          16
+        ]
+      },
+      "after": [
+        "mill-supplies"
+      ],
+      "reward": {
+        "item": "BORE_CANNON",
+        "count": 30,
+        "name": "Bore cannon"
+      },
+      "color": "#78cbb7",
+      "mapX": 457,
+      "mapY": 180,
+      "symbol": "02"
+    },
     {
       "key": "buried-pass",
       "title": "The buried pass",
       "place": "West · Old railway",
       "summary": "Open a route through the rockfall.",
-      "description": "The western trail ends in a collapsed railway. Find a way through, then recover the survey reading beyond it.",
+      "description": "The old rail line is buried under a rockfall. Cut a walkable tunnel and recover the survey instrument on the far side. Beyond the station, something is still running the night shift.",
       "hint": "Make room to walk. A careful tunnel or a well-placed blast will both do.",
       "target": "railway.instrument",
       "condition": {
@@ -4627,12 +5114,12 @@ export default {
         "surfaceAt": -790
       },
       "reward": {
-        "item": "BORE_CANNON",
-        "count": 30,
-        "name": "Bore cannon"
+        "material": "TNT",
+        "count": 48,
+        "name": "Demolition charges"
       },
       "color": "#dfac73",
-      "symbol": "01",
+      "symbol": "03",
       "mapX": 110,
       "mapY": 190
     },
@@ -4655,20 +5142,46 @@ export default {
       },
       "reward": {
         "material": "BRICK",
-        "count": 960,
+        "count": 240,
         "name": "Building stone"
       },
       "color": "#78cbb7",
-      "symbol": "02",
+      "symbol": "04",
       "mapX": 230,
       "mapY": 310
+    },
+    {
+      "key": "last-shift",
+      "title": "Clock out, Foreman",
+      "place": "Far west · The cutting yard",
+      "summary": "Shut down the quarry foreman.",
+      "description": "The rail survey led to a cutting yard whose machinery never stopped. Its armored foreman treats every visitor as a trespasser. Break its last shift and recover the weapon cache.",
+      "hint": "The yard is west of the railway. Use the stone cover between attacks. Hold F to block a burst, then release and fire. The foreman’s telegraphs give you time to move.",
+      "target": "foundry.foreman",
+      "radius": 100,
+      "condition": {
+        "kind": "defeat",
+        "species": "QUARRY_FOREMAN"
+      },
+      "after": [
+        "buried-pass"
+      ],
+      "reward": {
+        "item": "MINIGUN",
+        "count": 240,
+        "name": "Salvaged minigun"
+      },
+      "color": "#dc8270",
+      "mapX": 43,
+      "mapY": 201,
+      "symbol": "05"
     },
     {
       "key": "windward",
       "title": "A light on the mountain",
       "place": "East · Windward Observatory",
       "summary": "Reach the beacon above the clouds.",
-      "description": "Something is answering from the old observatory. Climb the eastern ridge and read the instrument beneath its antenna.",
+      "description": "A signal repeats from Windward: six notes, then silence. Climb the broken landings to the receiver beneath the antenna. Bring the recording home when the other work is done.",
       "hint": "Rest on the tower’s timber landings, or build your own route up the mountainside.",
       "target": "observatory.instrument",
       "condition": {
@@ -4680,7 +5193,7 @@ export default {
         "name": "Dynamite satchel"
       },
       "color": "#d7dbaa",
-      "symbol": "03",
+      "symbol": "06",
       "mapX": 545,
       "mapY": 65
     },
@@ -4689,15 +5202,18 @@ export default {
       "title": "Bring the valley home",
       "place": "Home · Hearthwood Lodge",
       "summary": "Return to Vale.",
-      "description": "Bring your discoveries back to the lodge. The paths you opened and the places you changed are yours to keep exploring.",
+      "description": "A working mill crossing. An open railway. A quiet cutting yard. A dry archive. And the mountain’s strange recording. Return to Vale with a valley that is beginning to feel like home.",
       "hint": "Look for the moss-covered roof and the light in the windows.",
       "target": "hearth.vale",
       "condition": {
         "kind": "reach"
       },
       "after": [
+        "mill-supplies",
+        "mill-bridge",
         "buried-pass",
         "drowned-archive",
+        "last-shift",
         "windward"
       ],
       "color": "#edca7b",
@@ -4710,21 +5226,52 @@ export default {
     "IRIS_COMMANDER": {
       "name": "Vale",
       "role": "Keeper of the valley",
-      "text": "The railway is buried. The archive is drowning. And last night, the mountain lit up. Choose a trail. See what the valley has been hiding.",
+      "text": "Osei needs iron for the mill tools. The western rail line leads to a cutting yard that still thinks the war is on. Down below, our history is drowning. Pick a problem and leave this place better than you found it.",
       "action": "Field journal",
-      "intent": "mission-console"
+      "intent": "mission-console",
+      "variants": [
+        {
+          "quest": "homecoming",
+          "state": "complete",
+          "text": "Listen. The cutting yard has gone quiet. People can cross the millrace again. Even the archive smells like paper instead of pond water. Welcome home."
+        },
+        {
+          "quest": "last-shift",
+          "state": "complete",
+          "text": "No more night shift. Good. There is a recording waiting on the mountain, and I would rather you reached it in one piece."
+        }
+      ]
     },
     "IRIS_ENGINEER": {
       "name": "Osei",
       "role": "Maker & mender",
-      "text": "Everything here can be broken. Most things can be put back together. If the lodge takes a beating, I can rebuild it.",
+      "text": "Bring me 24 iron ore. There is a vein by Willow Mill, east of here. I’ll cut enough timber for the crossing. Keep the water flowing underneath; we still need the mill.",
       "action": "Restore the lodge",
-      "intent": "repair-base"
+      "intent": "repair-base",
+      "variants": [
+        {
+          "quest": "mill-bridge",
+          "state": "complete",
+          "text": "A bridge you can actually walk across. I could get used to that. If the lodge gets battered, I can still put it back together."
+        },
+        {
+          "quest": "mill-supplies",
+          "state": "complete",
+          "text": "The timber is yours. Lay a level deck between the mill’s wooden abutments, following the faded planks. Connect it to the bank so it holds."
+        }
+      ]
     },
     "SURVEYOR": {
       "name": "The archivist",
       "role": "A very patient reader",
-      "text": "Water follows the openings you give it. There is a hollow beneath the archive. That might be all you need."
+      "text": "Water follows the openings you give it. There is a hollow beneath the archive. That might be all you need.",
+      "variants": [
+        {
+          "quest": "drowned-archive",
+          "state": "complete",
+          "text": "The pages are drying. The oldest map calls the mountain a listening post, not an observatory. I wonder who is on the other end."
+        }
+      ]
     }
   },
   "signs": [
@@ -4743,20 +5290,31 @@ export default {
         11,
         -36
       ]
+    },
+    {
+      "anchor": "mill.bridge",
+      "text": "WILLOW MILL",
+      "offset": [
+        0,
+        -33
+      ]
     }
   ],
   "residents": [
     {
       "species": "IRIS_COMMANDER",
-      "anchor": "hearth.vale"
+      "anchor": "hearth.vale",
+      "roamRadius": 12
     },
     {
       "species": "IRIS_ENGINEER",
-      "anchor": "hearth.osei"
+      "anchor": "hearth.osei",
+      "roamRadius": 12
     },
     {
       "species": "SURVEYOR",
-      "anchor": "hearth.cellar"
+      "anchor": "hearth.cellar",
+      "roamRadius": 8
     }
   ],
   "presentation": {

@@ -1,9 +1,9 @@
 bool ContentSystem::load(const int32_t* data, int length) {
-  if (!data || length < 22 || length > 1000000 || data[0] != 0x41535452 || data[1] != 1) return false;
+  if (!data || length < 22 || length > 1000000 || data[0] != 0x41535452 || data[1] != 2) return false;
   int nr = data[3], nq = data[4], w = data[5], h = data[6], nf = data[7], np = data[8];
   if (nr < 0 || nr > 20000 || nq < 1 || nq > 16 || w < 1 || w > 64 || h < 1 || h > 64 ||
       nf < 7 || nf > 112 || np < 2 || np > 32 || data[9] < 100 || data[9] > 2000) return false;
-  int textureStart = 21 + nr * 7 + nq * 14 + 21 + np + nf * w * h;
+  int textureStart = 21 + nr * 7 + nq * 17 + 21 + np + nf * w * h;
   if (textureStart >= length || data[textureStart] < 0 || data[textureStart] > 256 ||
       textureStart + 1 + data[textureStart] * 65 >= length || data[20] < 100 || data[20] > 1000) return false;
   auto coordinate = [](int v) { return v >= -100000 && v <= 100000; };
@@ -22,16 +22,19 @@ bool ContentSystem::load(const int32_t* data, int length) {
     nextRects.push_back({d[0], d[1], d[2], d[3], d[4], d[5], d[6]});
   }
   std::vector<ContentQuest> nextQuests;
-  for (int i = 0; i < nq; i++, at += 14) {
+  for (int i = 0; i < nq; i++, at += 17) {
     const int32_t* d = data + at;
-    if ((d[0] != OK_PASSAGE && d[0] != OK_DRAIN && d[0] != OK_SURVEY) ||
+    if ((d[0] != OK_PASSAGE && d[0] != OK_DRAIN && d[0] != OK_SURVEY && d[0] != OK_BUILD && d[0] != OK_DELIVER && d[0] != OK_DEFEAT) ||
         d[1] < 0 || d[1] >= (1 << i) || !surface(d[4]) || !surface(d[9]) ||
         d[5] > d[7] || d[6] > d[8] || d[10] < 1 || d[10] > 100 ||
         d[11] < 0 || d[11] > 2 || d[13] < 0 || d[13] > 10000) return false;
     for (int j : {2, 3, 5, 6, 7, 8}) if (!coordinate(d[j])) return false;
     if ((d[11] == 1 && !isMaterialId(d[12])) ||
         (d[11] == 2 && (d[12] < IK_BLAST_GUN || d[12] > IK_RESCUE_BEAM))) return false;
-    nextQuests.push_back({d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13]});
+    if (!isMaterialId(d[14]) || d[15] < 1 || d[15] > 10000 || d[16] < 0 || d[16] >= CS_COUNT) return false;
+    if ((d[0] == OK_BUILD || d[0] == OK_DELIVER) && d[14] == EMPTY) return false;
+    if (d[0] == OK_BUILD && (d[7] - d[5] > 128 || d[8] - d[6] > 64 || d[15] != d[7] - d[5] + 1)) return false;
+    nextQuests.push_back({d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15],d[16]});
   }
   std::array<ContentClip, 7> nextClips;
   for (auto& clip : nextClips) {
@@ -85,6 +88,20 @@ bool ContentSystem::load(const int32_t* data, int length) {
       if (color < 0 || color >= colors) return false;
       art.pixels.push_back((uint8_t)color);
     }
+  }
+  if (at >= length) return false;
+  int residentCount = data[at++];
+  if (residentCount < 0 || residentCount > 32 || at + residentCount * 5 + 4 != length) return false;
+  residents.clear();
+  for (int i = 0; i < residentCount; i++, at += 5) {
+    const int32_t* d = data + at;
+    if (d[0] < 0 || d[0] >= CS_COUNT || !coordinate(d[1]) || !coordinate(d[2]) ||
+        !surface(d[3]) || d[4] < 0 || d[4] > 48) return false;
+    residents.push_back({d[0],d[1],d[2],d[3],d[4]});
+  }
+  for (int& color : limbColors) {
+    color = data[at++];
+    if (color < 1 || color >= np) return false;
   }
   if (at != length) return false;
   return true;

@@ -43,7 +43,7 @@ const HUD_CSS = `
 .sg-mission-objective.complete .state { color:#75d39a; }
 .sg-mission-progress { color:#f0d465; font-variant-numeric:tabular-nums; }
 .sg-mission-markers { position:absolute; inset:0; z-index:70; overflow:hidden; pointer-events:none; }
-.sg-mission-marker { position:absolute; left:0; top:0; display:grid; justify-items:center; min-width:48px;
+.sg-mission-marker { position:absolute; left:0; top:0; display:grid; grid-template-columns:48px; justify-items:center; width:48px;
   color:#f0d465; filter:drop-shadow(2px 2px 0 #080a0c); will-change:transform; }
 .sg-mission-marker[hidden], .sg-mission-hud[hidden] { display:none; }
 .sg-mission-marker .arrow { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent;
@@ -60,7 +60,7 @@ const HUD_CSS = `
 .sg-mission-stage { font:16px/1.3 'Sand Pixel',monospace; text-transform:none; letter-spacing:0; color:#f6df78; margin:0; }
 .sg-mission-list { display:none; }
 .sg-mission-threat { padding:6px; margin-top:8px; font:13px/1.3 'Sand Pixel',monospace; text-transform:none; letter-spacing:0; }
-.sg-mission-marker .range { font:12px/1.2 'Sand Pixel',monospace; padding:4px; }
+.sg-mission-marker .range { font:12px/1.2 'Sand Pixel',monospace; padding:4px; width:max-content; max-width:min(260px,calc(100vw - 32px)); white-space:normal; text-align:center; }
 @media(max-height:500px) { .sg-mission-hud { width:210px; top:60px; } }
 
 `;
@@ -186,6 +186,7 @@ export function createMissionHud(root, game) {
       node.marker.classList.toggle('onscreen', onscreen);
       node.marker.style.transform = `translate(${Math.round(x - 24)}px,${Math.round(y - 12)}px)`;
       node.arrow.style.transform = `rotate(${angle}rad)`;
+      node.range.style.justifySelf = x < width / 3 ? 'start' : x > width * 2 / 3 ? 'end' : 'center';
       const dx = Number.isFinite(view.playerWorldX)
         ? objective.worldX - view.playerWorldX
         : objective.worldX - (view.cameraWorldX + view.viewCols * 0.5);

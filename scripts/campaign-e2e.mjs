@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runBrowserCases } from './browser-harness.mjs';
 import { CREATURE, MISSION, PLANET } from '../src/sand/wasmBridge/abi.generated.js';
+import { GAME_WORLD } from '../src/sand/content/catalog.js';
 import { MAT } from '../src/sand/materials.js';
 const artifacts = resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts/frontier-browser');
 mkdirSync(artifacts, { recursive: true });
@@ -32,10 +33,10 @@ process.exitCode = await runBrowserCases({
       const canvas = document.querySelector('sand-game').shadowRoot.querySelector('canvas');
       return heading?.textContent.includes('ASTER') && canvas.getBoundingClientRect().height > 300;
     }));
-    check('arrive in the continuous Earth expedition with three open jobs', await page.evaluate(({ mission, planet }) => {
+    check('arrive in the continuous Earth expedition with four open jobs', await page.evaluate(({ mission, planet }) => {
       const game = document.querySelector('sand-game')._game;
       return game.getMission().missionId === mission && game.getPlanetState().id === planet
-        && game.getMission().objectives.filter(o => o.state === 1).length === 3;
+        && game.getMission().objectives.filter(o => o.state === 1).length === 4;
     }, { mission: MISSION.FRONTIER, planet: PLANET.FRONTIER }));
     await page.waitForTimeout(450);
     await page.screenshot({ path: resolve(artifacts, 'hearthwood-lodge.png') });
@@ -64,9 +65,9 @@ process.exitCode = await runBrowserCases({
       && !(await page.locator('main').innerText()).includes('world worth getting lost'));
     check('commander opens the new field journal', !(await page.locator('main').innerText()).includes('Greenfall'));
     await page.screenshot({ path: resolve(artifacts, 'field-journal.png') });
-    await page.getByRole('button', { name: /02 The drowned archive/ }).click();
+    await page.getByRole('button', { name: /04 The drowned archive/ }).click();
     await page.getByRole('button', { name: 'Track this destination' }).click();
-    check('tracking keeps the same expedition active', await page.locator('sand-game').getAttribute('data-tracked-objective') === '1');
+    check('tracking keeps the same expedition active', await page.locator('sand-game').getAttribute('data-tracked-objective') === String(GAME_WORLD.quests.findIndex(q => q.key === 'drowned-archive')));
     await page.keyboard.press('j');
     for (const [width, height] of [[1440, 900], [900, 650], [768, 384], [390, 844]]) {
       await page.setViewportSize({ width, height });
@@ -83,17 +84,49 @@ process.exitCode = await runBrowserCases({
     await page.getByRole('button', { name: 'Call Osei' }).click();
     await page.getByRole('button', { name: 'Restore Hearthwood Lodge' }).click();
     await page.waitForTimeout(1200);
-    check('repair leaves the same mission and all open jobs intact', await page.evaluate(() => document.querySelector('sand-game')._game.getMission().objectives.filter(o => o.state === 1).length === 3));
+    check('repair leaves the same mission and all open jobs intact', await page.evaluate(() => document.querySelector('sand-game')._game.getMission().objectives.filter(o => o.state === 1).length === 4));
     check('no browser runtime errors', errors.length === 0, errors.join('; '));
     await page.screenshot({ path: resolve(artifacts, 'lodge-repaired.png') });
+    // Exercise a real handoff through the conversation. Only the carried ore is a fixture.
+    for (let i = 0; i < 100; i++) {
+      const dx = await page.evaluate(species => {
+        const p = window.__sandTest.getPlayer();
+        const c = window.__sandTest.getCreatures().find(c => c.species === species);
+        return c ? c.x - p.x : null;
+      }, CREATURE.IRIS_ENGINEER);
+      if (dx === null) throw new Error('Osei not present');
+      if (Math.abs(dx) < 14) break;
+      const direction = dx < 0 ? 'a' : 'd';
+      await page.keyboard.down(direction); await page.waitForTimeout(100); await page.keyboard.up(direction);
+    }
+    await page.keyboard.press('t');
+    const handoff = page.getByRole('button', { name: /Hand over iron ore/ });
+    await handoff.waitFor();
+    check('conversation explains the required supplies before handoff', await handoff.isDisabled());
+    await page.getByRole('dialog', { name: 'Conversation' }).getByRole('button', { name: 'Close', exact: true }).click();
+    await page.evaluate(ore => window.__sandTest.addInventory(ore, 24), MAT.IRON_ORE);
+    await page.waitForFunction(() => document.querySelector('sand-game')._game.getMission().objectives[0].current === 24);
+    await page.keyboard.press('t');
+    await handoff.waitFor();
+    check('carried ore enables the explicit handoff', await handoff.isEnabled());
+    await page.screenshot({ path: resolve(artifacts, 'osei-handoff.png') });
+    await handoff.click();
+    await page.waitForFunction(() => document.querySelector('sand-game')._game.getMission().objectives[0].state === 2);
+    check('handoff awards bridge timber in the authority inventory', await page.evaluate(wood =>
+      document.querySelector('sand-game')._game.getInventory().slots.some(s => s.material === wood && s.count === 192), MAT.PINE_WOOD));
+    await page.keyboard.press('t');
+    await page.getByRole('dialog', { name: 'Conversation' }).waitFor();
+    check('Osei responds to completed work', (await page.getByRole('dialog', { name: 'Conversation' }).innerText()).includes('The timber is yours'));
+    await page.getByRole('dialog', { name: 'Conversation' }).getByRole('button', { name: 'Close', exact: true }).click();
     const missionBeforeDeath = await page.evaluate(() => document.querySelector('sand-game')._game.getMission());
     for (const method of ['button', 'keyboard']) {
       // Real authority damage drives the death UI; the world stays paused while
       // actor turns advance so the lava fixture cannot drain between assertions.
+      await page.evaluate(() => window.__sandTest.stepAuthorityActors(120));
       await page.evaluate(lava => {
         const test = window.__sandTest, offset = test.worldOffset();
-        test.setPlayerState({ x: -260 - offset.x, y: -offset.y, vx: 0, vy: 0 });
-        test.paintWorker(lava, -258 - offset.x, 5 - offset.y, 12);
+        test.setPlayerState({ x: -150 - offset.x, y: -offset.y, vx: 0, vy: 0 });
+        test.paintWorker(lava, -148 - offset.x, 5 - offset.y, 12);
         test.stepAuthorityActors(240);
       }, MAT.LAVA);
       await page.waitForFunction(() => window.__sandTest.getPlayer()?.alive === false, null, { timeout: 10000 });

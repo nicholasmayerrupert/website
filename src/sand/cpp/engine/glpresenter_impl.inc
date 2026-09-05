@@ -579,7 +579,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     static const double WALK_BOB[4] = {0.0, -0.10, 0.0, -0.06};
     static const double RUN_BOB[4] = {-0.14, 0.0, -0.11, 0.0};
     static const double SWIM_BOB[4] = {-0.08, 0.02, 0.08, 0.0};
-    if (animState == AS_IDLE) bodyBob = std::sin(E.actorTick * .055) * .07;
+    if (animState == AS_IDLE) bodyBob = -std::fabs(std::sin(E.actorTick * .055)) * .07;
     else if (animState == AS_WALK) bodyBob = WALK_BOB[animFrame % 4];
     else if (animState == AS_RUN) bodyBob = RUN_BOB[animFrame % 4];
     else if (animState == AS_WADE) bodyBob = animFrame ? -0.045 : 0.0;
@@ -610,13 +610,15 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   auto articulatedArm = [&](double sx, double sy, double ex, double ey,
                             double hx, double hy, bool rear) {
     float shade = rear ? .78f : 1.0f;
-    // A dark edge unifies the sampled squares into a readable jointed limb.
-    segment(sx, sy, ex, ey, .72, 20/255.f, 18/255.f, 26/255.f);
-    segment(ex, ey, hx, hy, .64, 20/255.f, 18/255.f, 26/255.f);
-    segment(sx, sy, ex, ey, .53, 48/255.f * shade, 108/255.f * shade, 170/255.f * shade);
-    segment(ex, ey, hx, hy, .46, 184/255.f * shade, 118/255.f * shade, 88/255.f * shade);
-    worldSquare(hx, hy, .57, rear ? 184/255.f : 236/255.f,
-                rear ? 118/255.f : 184/255.f, rear ? 88/255.f : 142/255.f);
+    const auto& outline = art.palette[art.limbColors[0]];
+    const auto& sleeve = art.palette[art.limbColors[1]];
+    const auto& skin = art.palette[art.limbColors[2]];
+    const auto& hand = art.palette[art.limbColors[3]];
+    segment(sx, sy, ex, ey, .72, outline[0], outline[1], outline[2]);
+    segment(ex, ey, hx, hy, .64, outline[0], outline[1], outline[2]);
+    segment(sx, sy, ex, ey, .53, sleeve[0] * shade, sleeve[1] * shade, sleeve[2] * shade);
+    segment(ex, ey, hx, hy, .46, skin[0] * shade, skin[1] * shade, skin[2] * shade);
+    worldSquare(hx, hy, .57, hand[0] * shade, hand[1] * shade, hand[2] * shade);
   };
 
   // A relaxed/stroke pose is rendered as two independently articulated arms.

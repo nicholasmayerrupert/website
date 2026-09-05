@@ -1,4 +1,3 @@
-import { GAME_CONTENT, GAME_WORLD } from '../content/catalog.js';
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
   ABI_FINGERPRINT,
@@ -1139,13 +1138,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       if (localPlayerId && planetHasGameplayFlag(
         activePlanetId, PLANET_GAMEPLAY_FLAG.SCRIPTED_CREW,
       )) {
-        if (activePlanetId === PLANET.FRONTIER) {
-          for (const resident of GAME_WORLD.residents) {
-            const at = GAME_CONTENT.anchors[resident.anchor];
-            const y = at.y + (at.surface === -2147483648 ? 0 : engine.worldSurfaceAbsAt(at.surface));
-            engine.spawnScriptedCreature(CREATURE[resident.species], at.x, y);
-          }
-        } else {
+        if (activePlanetId !== PLANET.FRONTIER) {
           engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
           engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
           engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
@@ -1240,6 +1233,7 @@ function applyRuntimeMessage(data) {
       case 'pick': engine.inventoryCursorPick(localPlayerId, data.slot | 0, !!data.half); break;
       case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
       case 'craft': engine.craft(localPlayerId, data.recipe | 0, !!data.max); break;
+      case 'quest-interact': engine.interactFrontier(localPlayerId, data.objectiveId | 0); break;
       case 'respawn': engine.respawnPlayer(localPlayerId); break;
       case 'repair-base':
         if (engine.repairFrontierBase(localPlayerId)) fullResyncRequested = true;
@@ -1250,7 +1244,18 @@ function applyRuntimeMessage(data) {
         if (!Number.isFinite(wx) || !Number.isFinite(wy) || Math.abs(wx) > 100000 || Math.abs(wy) > 100000) break;
         const dx = Math.round((wx - engine.getWorldOffsetX() - engine.cols / 2) / 32) * 32;
         const dy = Math.round((wy - engine.getWorldOffsetY() - engine.rows / 2) / 32) * 32;
-        engine.shiftWorldXY(dx, dy);
+        // The engine streams one bounded, chunk-aligned axis per shift.
+        const limitX = Math.floor((engine.cols - 1) / 32) * 32;
+        const limitY = Math.floor((engine.rows - 1) / 32) * 32;
+        if (limitX < 32 || limitY < 32) break;
+        for (let remaining = dx; remaining;) {
+          const shift = Math.sign(remaining) * Math.min(Math.abs(remaining), limitX);
+          engine.shiftWorldXY(shift, 0); remaining -= shift;
+        }
+        for (let remaining = dy; remaining;) {
+          const shift = Math.sign(remaining) * Math.min(Math.abs(remaining), limitY);
+          engine.shiftWorldXY(0, shift); remaining -= shift;
+        }
         const player = engine.getPlayer(localPlayerId);
         if (player) engine.setPlayerState(localPlayerId, { ...player,
           x: wx - engine.getWorldOffsetX(), y: wy - engine.getWorldOffsetY(), vx: 0, vy: 0 });

@@ -31,92 +31,23 @@ Creature* MissionSystem::findCreature(int actorId) {
   return nullptr;
 }
 
-bool MissionSystem::safeMissionSpawnAt(uint8_t species, int localX,
-                                       int localY) const {
-  static constexpr int HAZARD_MARGIN = 4;
-  const CreatureSpecies& policy = CREATURE_SPECIES[species];
-  int x0 = localX, x1 = localX + policy.w - 1;
-  int y0 = localY, y1 = localY + policy.h - 1;
-  if (x0 - HAZARD_MARGIN < 1 || x1 + HAZARD_MARGIN >= E.cols - 1 ||
-      y0 - HAZARD_MARGIN < 1 || y1 + HAZARD_MARGIN + 1 >= E.rows - 1)
-    return false;
-  auto dangerous = [&](uint8_t material) {
-    return E.isSpawnHazard(material);
-  };
-  for (int y = y0 - HAZARD_MARGIN; y <= y1 + HAZARD_MARGIN; y++)
-    for (int x = x0 - HAZARD_MARGIN; x <= x1 + HAZARD_MARGIN; x++)
-      if (dangerous(E.fg.grid[E.I(x, y)])) return false;
-  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
-    uint8_t material = E.fg.grid[E.I(x, y)];
-    if (E.isBlockingForActor(material) || E.isLiquidMaterial(material))
-      return false;
-  }
-  int support = 0;
-  for (int x = x0; x <= x1; x++) {
-    int k = E.I(x, y1 + 1);
-    uint8_t material = E.fg.grid[k];
-    if (E.isBlockingForActor(material) && !dangerous(material) &&
-        E.fg.bodyOwner[k] < 0 && E.fg.groundedCell[k])
-      support++;
-  }
-  if (support < imax(2, (policy.w + 1) / 2)) return false;
-
-  double worldX = E.fg.worldOffsetX + localX;
-  double worldY = E.fg.worldOffsetY + localY;
-  for (const Creature& creature : E.creatures.creatures) {
-    if (!creature.alive) continue;
-    const CreatureSpecies& other = E.creatures.species(creature);
-    if (worldX < creature.wx + other.w && worldX + policy.w > creature.wx &&
-        worldY < creature.wy + other.h && worldY + policy.h > creature.wy)
-      return false;
-  }
-  for (const Player& player : E.psys.players) {
-    if (!player.active || !player.alive) continue;
-    if (localX < player.px + player.w && localX + policy.w > player.px &&
-        localY < player.py + player.h && localY + policy.h > player.py)
-      return false;
-  }
-  return true;
-}
-
-bool MissionSystem::findSafeMissionSpawn(uint8_t species, int worldX,
-                                         int worldY, double& spawnWorldX,
-                                         double& spawnWorldY) const {
-  const CreatureSpecies& policy = CREATURE_SPECIES[species];
-  int baseX = (int)std::lround(worldX - E.fg.worldOffsetX - policy.w * .5);
-  int baseY = (int)std::lround(worldY - E.fg.worldOffsetY - policy.h);
-  int bestDistance2 = INT_MAX, bestX = 0, bestY = 0;
-  auto consider = [&](int x, int y) {
-    int dx = x - baseX, dy = y - baseY;
-    int distance2 = dx * dx + dy * dy;
-    if (distance2 >= bestDistance2 || !safeMissionSpawnAt(species, x, y))
-      return;
-    bestDistance2 = distance2;
-    bestX = x;
-    bestY = y;
-  };
-  const int NEAR_X = missionId == MI_GREENFALL_RECOVERY ? 6 : 96;
-  const int NEAR_Y = missionId == MI_GREENFALL_RECOVERY ? 8 : 72;
-  for (int ax = 0; ax <= NEAR_X; ax++) {
-    for (int xs = 0; xs < (ax == 0 ? 1 : 2); xs++) {
-      int x = baseX + (ax == 0 ? 0 : (xs == 0 ? -ax : ax));
-      for (int ay = 0; ay <= NEAR_Y; ay++) {
-        int distance2 = ax * ax + ay * ay;
-        if (distance2 >= bestDistance2) continue;
-        for (int ys = 0; ys < (ay == 0 ? 1 : 2); ys++)
-          consider(x, baseY + (ay == 0 ? 0 : (ys == 0 ? -ay : ay)));
-      }
+bool MissionSystem::findSafeMissionSpawn(uint8_t species, int worldX, int worldY,
+                                          double& spawnWorldX, double& spawnWorldY) const {
+  const auto& policy = CREATURE_SPECIES[species];
+  if (E.creatures.findGroundSpawn(species, worldX - policy.w * .5, worldY - policy.h,
+    spawnWorldX, spawnWorldY, missionId == MI_GREENFALL_RECOVERY ? 6 : 96,
+    missionId == MI_GREENFALL_RECOVERY ? 8 : 72)) return true;
+  if (missionId == MI_FRONTIER || missionId == MI_GREENFALL_RECOVERY) return false;
+  int best = INT_MAX;
+  for (int y = 5; y + policy.h + 5 < E.rows; y++)
+    for (int x = 5; x + policy.w + 5 < E.cols; x++) {
+      int dx = x - (int)std::lround(worldX - E.fg.worldOffsetX - policy.w * .5);
+      int dy = y - (worldY - E.fg.worldOffsetY - policy.h);
+      int distance = dx * dx + dy * dy;
+      if (distance >= best || !E.creatures.safeGroundSpawnAt(species, x, y)) continue;
+      best = distance; spawnWorldX = E.fg.worldOffsetX + x; spawnWorldY = E.fg.worldOffsetY + y;
     }
-  }
-  if (bestDistance2 == INT_MAX && missionId != MI_GREENFALL_RECOVERY) {
-    for (int y = 5; y + policy.h + 5 < E.rows; y++)
-      for (int x = 5; x + policy.w + 5 < E.cols; x++)
-        consider(x, y);
-  }
-  if (bestDistance2 == INT_MAX) return false;
-  spawnWorldX = E.fg.worldOffsetX + bestX;
-  spawnWorldY = E.fg.worldOffsetY + bestY;
-  return true;
+  return best != INT_MAX;
 }
 
 int MissionSystem::spawnMissionCreature(uint8_t species, int worldX, int worldY,
@@ -334,6 +265,12 @@ void MissionSystem::onCreatureKilled(Creature& creature) {
   if (!active() || !creature.missionActor) return;
   MissionObjective* objective = findObjective(creature.missionObjective);
   if (!objective || objective->state != OS_ACTIVE) return;
+  if (missionId == MI_FRONTIER) {
+    if (objective->type == OK_DEFEAT && objective->targetActorId == creature.id) {
+      objective->current = objective->required; revision++;
+    }
+    return;
+  }
   if (creature.species == CS_SURVEYOR) {
     fail();
     return;

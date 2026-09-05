@@ -394,6 +394,89 @@ bool CreatureSystem::spawnVisibleBreachNearFocus(uint8_t speciesId,
   return queueSpawnTelegraph(speciesId, wx, wy, salt);
 }
 
+bool CreatureSystem::safeGroundSpawnAt(uint8_t species, int localX,
+                                       int localY, const Creature* ignore) const {
+  static constexpr int HAZARD_MARGIN = 4;
+  const CreatureSpecies& policy = CREATURE_SPECIES[species];
+  int x0 = localX, x1 = localX + policy.w - 1;
+  int y0 = localY, y1 = localY + policy.h - 1;
+  if (x0 - HAZARD_MARGIN < 1 || x1 + HAZARD_MARGIN >= E.cols - 1 ||
+      y0 - HAZARD_MARGIN < 1 || y1 + HAZARD_MARGIN + 1 >= E.rows - 1)
+    return false;
+  auto dangerous = [&](uint8_t material) {
+    return E.isSpawnHazard(material);
+  };
+  for (int y = y0 - HAZARD_MARGIN; y <= y1 + HAZARD_MARGIN; y++)
+    for (int x = x0 - HAZARD_MARGIN; x <= x1 + HAZARD_MARGIN; x++)
+      if (dangerous(E.fg.grid[E.I(x, y)])) return false;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    uint8_t material = E.fg.grid[E.I(x, y)];
+    if (E.isBlockingForActor(material) || E.isLiquidMaterial(material))
+      return false;
+  }
+  int support = 0;
+  for (int x = x0; x <= x1; x++) {
+    int k = E.I(x, y1 + 1);
+    uint8_t material = E.fg.grid[k];
+    if (E.isBlockingForActor(material) && !dangerous(material) &&
+        E.fg.bodyOwner[k] < 0 && E.fg.groundedCell[k])
+      support++;
+  }
+  if (support < imax(2, (policy.w + 1) / 2)) return false;
+
+  double worldX = E.fg.worldOffsetX + localX;
+  double worldY = E.fg.worldOffsetY + localY;
+  for (const Creature& creature : E.creatures.creatures) {
+    if (!creature.alive || &creature == ignore) continue;
+    const CreatureSpecies& other = E.creatures.species(creature);
+    if (worldX < creature.wx + other.w && worldX + policy.w > creature.wx &&
+        worldY < creature.wy + other.h && worldY + policy.h > creature.wy)
+      return false;
+  }
+  for (const Player& player : E.psys.players) {
+    if (!player.active || !player.alive) continue;
+    if (localX < player.px + player.w && localX + policy.w > player.px &&
+        localY < player.py + player.h && localY + policy.h > player.py)
+      return false;
+  }
+  return true;
+}
+
+bool CreatureSystem::findGroundSpawn(uint8_t species, double worldX,
+                                         double worldY, double& spawnWorldX,
+                                         double& spawnWorldY, int rangeX, int rangeY, const Creature* ignore) const {
+  Engine::ActiveLayerScope active(E, &E.fg);
+  E.comps.ensureGroundedSingleLayer();
+  int baseX = (int)std::lround(worldX - E.fg.worldOffsetX);
+  int baseY = (int)std::lround(worldY - E.fg.worldOffsetY);
+  int bestDistance2 = INT_MAX, bestX = 0, bestY = 0;
+  auto consider = [&](int x, int y) {
+    int dx = x - baseX, dy = y - baseY;
+    int distance2 = dx * dx + dy * dy;
+    if (distance2 >= bestDistance2 || !safeGroundSpawnAt(species, x, y, ignore))
+      return;
+    bestDistance2 = distance2;
+    bestX = x;
+    bestY = y;
+  };
+  const int NEAR_X = rangeX, NEAR_Y = rangeY;
+  for (int ax = 0; ax <= NEAR_X; ax++) {
+    for (int xs = 0; xs < (ax == 0 ? 1 : 2); xs++) {
+      int x = baseX + (ax == 0 ? 0 : (xs == 0 ? -ax : ax));
+      for (int ay = 0; ay <= NEAR_Y; ay++) {
+        int distance2 = ax * ax + ay * ay;
+        if (distance2 >= bestDistance2) continue;
+        for (int ys = 0; ys < (ay == 0 ? 1 : 2); ys++)
+          consider(x, baseY + (ay == 0 ? 0 : (ys == 0 ? -ay : ay)));
+      }
+    }
+  }
+  if (bestDistance2 == INT_MAX) return false;
+  spawnWorldX = E.fg.worldOffsetX + bestX;
+  spawnWorldY = E.fg.worldOffsetY + bestY;
+  return true;
+}
+
 int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
   if (speciesId >= CS_COUNT || !hasRecordCapacity()
       || (requireHabitat && !boxFitsHabitat(speciesId, wx, wy))) return 0;
@@ -836,7 +919,11 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
 }
 
 void CreatureSystem::moveAmphibious(Creature& c) {
-  const CreatureSpecies& s = species(c);
+  CreatureSpecies s = species(c);
+  if (c.roamRadius) {
+    s.walkSpeed = .10; s.swimSpeed = .18; s.accel = .025;
+    s.gravity = .065; s.jumpSpeed = .7; s.fluidThreshold = .35;
+  }
   double wet = fluidCoverage(c.wx, c.wy, s.w, s.h);
   double tx = 0, ty = 0; bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (wet >= s.fluidThreshold) {
@@ -881,6 +968,22 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
                        : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
                        : c.wanderDir * s.walkSpeed * 0.62;
+    }
+    if (c.roamRadius) {
+      // Residents pause near visitors and turn before an unsupported edge.
+      if (c.wx < c.homeX - c.roamRadius) c.wanderDir = 1;
+      if (c.wx > c.homeX + c.roamRadius) c.wanderDir = -1;
+      bool visitor = false;
+      for (const Player& p : E.psys.players) {
+        if (!p.active || !p.alive) continue;
+        double dx = E.fg.worldOffsetX + p.px - c.wx, dy = E.fg.worldOffsetY + p.py - c.wy;
+        if (dx * dx + dy * dy < 24 * 24) { visitor = true; c.facing = dx > 0 ? 1 : -1; }
+      }
+      double ahead = c.wx + c.wanderDir * 3;
+      if (c.grounded && !boxHitsSolid(ahead, c.wy + 1, s.w, s.h)) {
+        c.wanderDir = -c.wanderDir; c.wanderTicks = 90;
+      }
+      wish = visitor || c.wanderTicks < 45 ? 0 : c.wanderDir * s.walkSpeed;
     }
     // Released researchers wait for extraction instead of fleeing their rescuer.
     if (c.missionActor && c.species == CS_SURVEYOR &&
@@ -1448,7 +1551,7 @@ void CreatureSystem::updateCreatures() {
       } else moveBeachedAquatic(c);
     }
     else if (species(c).locomotion == CL_FLYING) moveFlying(c);
-    else if (species(c).locomotion == CL_AMPHIBIOUS) moveAmphibious(c);
+    else if (species(c).locomotion == CL_AMPHIBIOUS || c.roamRadius) moveAmphibious(c);
     else { c.vx = 0; c.vy = 0; c.grounded = true; }
     // Terrain can settle or be placed through an entity after movement. Mere
     // floor contact is outside the AABB and harmless; sustained burial over at

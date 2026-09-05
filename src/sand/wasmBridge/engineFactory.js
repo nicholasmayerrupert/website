@@ -133,6 +133,7 @@ export function initSandWasm() {
         buildDirtyRects: c('engine_build_dirty_rects', null, ['number']),
         dirtyRectCount: c('engine_dirty_rect_count', 'number', ['number']),
         dirtyRects: c('engine_dirty_rects', 'number', ['number']),
+        interactFrontier: c('engine_interact_frontier', 'number', ['number', 'number', 'number']),
         repairFrontierBase: c('engine_repair_frontier_base', 'number', ['number', 'number']),
         clearDirty: c('engine_clear_dirty', null, ['number']),
         renderFull: c('engine_render_full', null, ['number']),
@@ -953,6 +954,7 @@ const renderStrides = Object.freeze({
     // (wasmBridge/testHooks.js).
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
     itemCount() { return M.itemCount(ptr); },
+    interactFrontier(id, objectiveId) { return !!M.interactFrontier(ptr, id | 0, objectiveId | 0); },
     repairFrontierBase(id) { return !!M.repairFrontierBase(ptr, id | 0); },
     spawnCreature(species, worldX, worldY) { return M.spawnCreature(ptr, species | 0, worldX, worldY); },
     spawnScriptedCreature(species, worldX, worldY) {

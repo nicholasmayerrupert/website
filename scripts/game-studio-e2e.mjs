@@ -49,6 +49,14 @@ process.exitCode = await runBrowserCases({
     await page.getByRole('button', { name: 'Reset world' }).click();
     await page.waitForFunction(() => window.__gameStudio?.inspect().scene === 'railway', null, { timeout: 60000 });
     check('reset preserves the chosen scene', await page.getByLabel('Jump to a scene').inputValue() === 'railway');
+    await page.evaluate(() => window.__gameStudio.load('foundry'));
+    await page.waitForTimeout(500);
+    check('long diagonal scene jumps load the terrain before placing the player', await page.evaluate(() => {
+      const test = window.__sandTest, p = test.getPlayer(), offset = test.worldOffset(), size = test.info();
+      return Math.abs(p.x + offset.x + 995) < 8 && p.x > 8 && p.x + p.w < size.cols - 8
+        && p.y > 8 && p.y + p.h < size.rows - 8
+        && test.solidCount(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.x + p.w - 1e-6), Math.ceil(p.y + p.h - 1e-6)) === 0;
+    }));
     check('workbench has no browser errors', errors.length === 0, errors.join('; '));
     await page.screenshot({ path: resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts', 'workbench.png') });
   },

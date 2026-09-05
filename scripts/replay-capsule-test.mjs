@@ -325,3 +325,8 @@ assert.throws(() => validateReplayCapsule({ ...capsule, init: { ...capsule.init,
 const sceneCapsule = { ...capsule, events: [{ tick: 1, message: { type: 'intent', intent: 'preview-scene', worldX: -480, worldY: 298 } }] };
 assert.deepEqual((await decodeReplayCapsule(await encodeReplayCapsule(sceneCapsule))).events, sceneCapsule.events);
 assert.throws(() => validateReplayCapsule({ ...sceneCapsule, events: [{ tick: 1, message: { type: 'intent', intent: 'preview-scene', worldX: NaN, worldY: 298 } }] }), /invalid authority event/);
+
+const questCapsule = { ...capsule, events: [{ tick: 1, message: { type: 'intent', intent: 'quest-interact', objectiveId: 3 } }] };
+assert.deepEqual((await decodeReplayCapsule(await encodeReplayCapsule(questCapsule))).events, questCapsule.events);
+assert.equal(normalizeReplayMessage({ type: 'intent', intent: 'quest-interact', objectiveId: -1 }), null);
+assert.equal(normalizeReplayMessage({ type: 'intent', intent: 'quest-interact' }), null);

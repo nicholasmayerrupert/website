@@ -68,3 +68,39 @@ palette. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes
 and four poses. Land creatures anchor artwork at their physical feet; swimmers
 and flyers center it around their body. Combat dimensions remain in the species
 schema. The workbench's **Creature artwork** drawer previews the complete roster.
+
+## Quest and resident definitions
+
+Each quest uses a named `target`, optional earlier quest keys in `after`, a
+condition, a proximity radius, and a material/item reward. Progress and rewards
+belong to the engine; the UI reads objective snapshots. Supported conditions:
+
+- `reach`: enter the target radius.
+- `passage`: clear a walkable passage through `bounds`.
+- `drain`: empty the liquid from `bounds` and reach the target.
+- `build`: join a continuous row of `material` across `bounds`. The deck must be
+  grounded, free of moving bodies, and have player-height clearance. Progress is
+  the longest usable span. `surfaceAt` can place the area relative to terrain.
+- `deliver`: carry `count` of `material` to the target and explicitly hand it over
+  in the resident conversation. Consumption and rewards are atomic: no reward
+  space means no materials lost. The action is recorded in replays.
+- `defeat`: approach the target to spawn the named `species` on safe ground.
+  The quest tracks that actor’s identity through world streaming; only its death
+  completes the objective. Existing species combat and attack phases are reused.
+
+Residents use `species`, `anchor`, and optional `roamRadius` (0–48 cells).
+Anchors are approximate body positions, resolved to clear, supported foreground
+terrain before spawning. Residents outside the loaded window spawn when reached;
+existing actors hibernate and retain their identities. Roaming residents pause
+near visitors and turn at ledges. Repair rechecks crew and player clearance.
+
+Dialogue can supply ordered `variants` with `quest`, `state` (`locked`, `active`,
+`complete`), and `text`. The first matching variant is shown. Delivery actions
+are derived from active quests targeting that resident. New jobs do not need
+species-specific JavaScript handlers.
+
+Player `limbs` maps `outline`, `sleeve`, `skin`, and `hand` to opaque palette
+symbols, so articulated arms share the authored sprite colors.
+
+Long scene jumps load bounded, chunk-aligned bands on each axis before moving
+the player. Scene coordinates therefore refer to already loaded terrain.

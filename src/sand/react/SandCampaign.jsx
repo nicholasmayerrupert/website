@@ -139,7 +139,7 @@ export function SandCampaign({ onRuntimeReady, preview = false }) {
         <aside className="frontier-arrival">
           <span className="frontier-kicker">A LIGHT IN THE WILDERNESS</span>
           <h1>Hearthwood Lodge</h1>
-          <p>A forgotten railway. A drowned library. A light on the mountain. Take a trail and see where it leads.</p>
+          <p>Mend a crossing. Silence the cutting yard. Uncover the drowned archive. This valley needs more than an explorer.</p>
           <div><button onClick={() => { setWelcome(false); setMenu('journal'); }}>Open field journal ↗</button>
             <button className="frontier-quiet" onClick={() => { setWelcome(false); focusGame(); }}>Start exploring</button></div>
         </aside>
@@ -162,6 +162,8 @@ export function SandCampaign({ onRuntimeReady, preview = false }) {
               <article className="frontier-job-detail" style={{ '--job-color': job.color }}>
                 <span className="frontier-kicker">{job.place}</span><h3>{job.title}</h3><p className="frontier-job-summary">{job.summary}</p><p>{job.description}</p>
                 <div className="frontier-field-note"><span>FIELD NOTE</span><p>{job.hint}</p></div>
+                {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.LOCKED && <p className="frontier-prerequisites">First: {job.after.map(key => FRONTIER_JOBS.find(q => q.key === key)?.title).join(' · ')}</p>}
+                {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.ACTIVE && <p className="frontier-progress">{job.condition.kind === 'deliver' ? 'Supplies carried' : job.condition.kind === 'build' ? 'Connected deck' : job.condition.kind === 'defeat' ? 'Encounter cleared' : 'Field task'}: {snapshot.objectives[selected].current} / {snapshot.objectives[selected].required}</p>}
                 <div className="frontier-reward"><small>REWARD</small><p>{job.reward}</p></div>
                 {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.COMPLETE ? <p className="frontier-finished">✓ Complete</p> :
                   <button className="frontier-primary" disabled={snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.LOCKED} onClick={() => { setTracked(selected); setWelcome(false); close(); }}>Track this destination ↗</button>}

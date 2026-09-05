@@ -73,8 +73,19 @@
       double x = fg.worldOffsetX + shot.px, y = fg.worldOffsetY + shot.py;
       return x >= content.repairBounds[0] && x <= content.repairBounds[2] && y >= content.repairBounds[1] && y <= content.repairBounds[3];
     }), shots.end());
-    player->px = content.spawn[0] - fg.worldOffsetX;
-    player->py = content.spawn[1] - fg.worldOffsetY;
+    double spawn[2];
+    if (psys.findSafeSpawnNearWorld(content.spawn[0], content.spawn[1], spawn, player)) {
+      player->px = spawn[0]; player->py = spawn[1];
+    }
+    for (Creature& resident : creatures.creatures) {
+      if (!resident.alive || !CREATURE_SPECIES[resident.species].humanNpc ||
+          resident.wx < content.repairBounds[0] || resident.wx > content.repairBounds[2] ||
+          resident.wy < content.repairBounds[1] || resident.wy > content.repairBounds[3]) continue;
+      double x, y;
+      if (creatures.findGroundSpawn(resident.species, resident.wx, resident.wy, x, y, 32, 48, &resident)) {
+        resident.wx = x; resident.wy = y; resident.vx = resident.vy = 0;
+      }
+    }
     player->vx = player->vy = 0;
     return true;
   }

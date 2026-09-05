@@ -3,7 +3,7 @@ import { MAT } from '../materials.js';
 import { CREATURE, ITEM_KIND, OBJECTIVE_KIND } from '../wasmBridge/abi.generated.js';
 import creatureArt from './creatureArt.js';
 
-export const CONTENT_VERSION = 1;
+export const CONTENT_VERSION = 2;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = ['idle', 'walk', 'run', 'rise', 'fall', 'wade', 'swim'];
 const fail = (path, message) => { throw new Error(`${path}: ${message}`); };
@@ -91,10 +91,14 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
       scenes.push({ id: site.id, name: site.name, description: site.description, ...site.preview, surface });
     }
   }
-  for (const resident of world.residents || []) {
+  const residents = (world.residents || []).map(resident => {
     if (!Object.hasOwn(CREATURE, resident.species)) fail('residents', `unknown creature ${resident.species}`);
     if (!anchors[resident.anchor]) fail('residents', `missing anchor ${resident.anchor}`);
-  }
+    const at = anchors[resident.anchor];
+    return [CREATURE[resident.species], at.x, at.y, at.surface,
+      integer(resident.roamRadius ?? 0, 'resident.roamRadius', 0, 48)];
+  });
+  if (residents.length > 32) fail('residents', 'at most 32 residents');
   for (const sign of world.signs || []) {
     if (!anchors[sign.anchor]) fail('signs', `missing anchor ${sign.anchor}`);
     if (sign.offset) point(sign.offset, 'sign.offset');
@@ -103,7 +107,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     if (!job.key || world.quests.findIndex(q => q.key === job.key) !== index) fail('quests', `duplicate key ${job.key}`);
     const target = anchors[job.target];
     if (!target) fail(job.key, `missing target ${job.target}`);
-    const types = { reach: OBJECTIVE_KIND.SURVEY, passage: OBJECTIVE_KIND.PASSAGE, drain: OBJECTIVE_KIND.DRAIN };
+    const types = { reach: OBJECTIVE_KIND.SURVEY, passage: OBJECTIVE_KIND.PASSAGE, drain: OBJECTIVE_KIND.DRAIN, build: OBJECTIVE_KIND.BUILD, deliver: OBJECTIVE_KIND.DELIVER, defeat: OBJECTIVE_KIND.DEFEAT };
     const type = types[job.condition.kind];
     if (type === undefined) fail(job.key, `unknown condition ${job.condition.kind}`);
     const area = job.condition.bounds || [0, 0, 0, 0];
@@ -114,6 +118,21 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
       if (i < 0 || i >= index) fail(job.key, `prerequisite ${key} must precede this quest`);
       prerequisites |= 1 << i;
     }
+    let material = 0, species = 0, count = 1;
+    if (['build', 'deliver'].includes(job.condition.kind)) {
+      material = MAT[job.condition.material];
+      if (material === undefined || material === MAT.EMPTY) fail(job.key, 'expected condition material');
+    }
+    if (job.condition.kind === 'build') {
+      if (!job.condition.bounds || area[2] - area[0] > 128 || area[3] - area[1] > 64)
+        fail(job.key, 'build needs a bounded construction area');
+      count = area[2] - area[0] + 1;
+    }
+    if (job.condition.kind === 'deliver') count = integer(job.condition.count, job.key, 1, 10000);
+    if (job.condition.kind === 'defeat') {
+      species = CREATURE[job.condition.species];
+      if (species === undefined) fail(job.key, 'unknown encounter species');
+    }
     const reward = job.reward;
     let rewardKind = 0, rewardId = 0;
     if (reward?.material) { rewardKind = 1; rewardId = MAT[reward.material]; }
@@ -121,8 +140,15 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     if (reward && (!rewardKind || rewardId === undefined)) fail(job.key, 'unknown reward');
     return [type, prerequisites, target.x, target.y, target.surface, ...area,
       job.condition.surfaceAt === undefined ? ABSOLUTE : integer(job.condition.surfaceAt, job.key), integer(job.radius ?? 23, job.key, 1, 100),
-      rewardKind, rewardId, integer(reward?.count ?? 0, job.key, 0, 10000)];
+      rewardKind, rewardId, integer(reward?.count ?? 0, job.key, 0, 10000), material, count, species];
   });
+  for (const [speaker, dialogue] of Object.entries(world.dialogue || {})) {
+    if (!Object.hasOwn(CREATURE, speaker)) fail('dialogue', `unknown speaker ${speaker}`);
+    for (const variant of dialogue.variants || []) {
+      if (!world.quests.some(q => q.key === variant.quest)) fail(speaker, `unknown dialogue quest ${variant.quest}`);
+      if (!['locked', 'active', 'complete'].includes(variant.state) || typeof variant.text !== 'string') fail(speaker, 'invalid dialogue variant');
+    }
+  }
   if (jobs.length < 1 || jobs.length > 16) fail('quests', 'expected 1…16 quests');
   const width = integer(sprite.width, 'sprite.width', 1, 64), height = integer(sprite.height, 'sprite.height', 1, 64);
   if (!Number.isFinite(sprite.pixelScale) || sprite.pixelScale < .1 || sprite.pixelScale > 2) fail('sprite.pixelScale', 'expected .1…2');
@@ -132,6 +158,11 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     const hex = sprite.palette[key];
     if (!/^#[0-9a-f]{6}$/i.test(hex)) fail(`sprite.palette.${key}`, 'expected #rrggbb');
     return i === 0 ? 0 : (parseInt(hex.slice(1), 16) | 0xff000000);
+  });
+  const limbColors = ['outline', 'sleeve', 'skin', 'hand'].map(role => {
+    const index = symbols.indexOf(sprite.limbs?.[role]);
+    if (index < 1) fail(`sprite.limbs.${role}`, 'expected an opaque palette symbol');
+    return index;
   });
   const clips = [], pixels = [];
   let frameCount = 0;
@@ -192,6 +223,6 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     integer(world.presentation.fadeTop, 'fadeTop'), integer(world.presentation.fadeBottom, 'fadeBottom'),
     Math.round(world.presentation.backgroundTint * 1000),
     ...rects.flat(), ...jobs.flat(), ...clips, ...palette, ...pixels, textures.length, ...textures.flat(),
-    creatures.length, ...creatures.flat()]);
+    creatures.length, ...creatures.flat(), residents.length, ...residents.flat(), ...limbColors]);
   return { packed, hash, anchors, scenes, rectangles: rects, world, sprite };
 }

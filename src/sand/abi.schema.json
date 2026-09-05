@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 37,
+  "abiVersion": 38,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -778,7 +778,7 @@
       "cType": "uint8_t",
       "jsName": "OBJECTIVE_KIND",
       "jsPrefix": "OK",
-      "values": { "OK_CLEAR": 0, "OK_RESCUE": 1, "OK_ANCHOR": 2, "OK_BOSS": 3, "OK_CORE": 4, "OK_EXTRACT": 5, "OK_PASSAGE": 6, "OK_DRAIN": 7, "OK_SURVEY": 8 }
+      "values": { "OK_CLEAR": 0, "OK_RESCUE": 1, "OK_ANCHOR": 2, "OK_BOSS": 3, "OK_CORE": 4, "OK_EXTRACT": 5, "OK_PASSAGE": 6, "OK_DRAIN": 7, "OK_SURVEY": 8, "OK_BUILD": 9, "OK_DELIVER": 10, "OK_DEFEAT": 11 }
     },
     "ObjectiveState": {
       "$comment": "Locked objectives are revealed when their prerequisites complete.",

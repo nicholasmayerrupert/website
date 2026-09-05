@@ -564,6 +564,7 @@ export function createSandGame(container, opts = {}) {
     clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
     // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
+    interactQuest(objectiveId) { ctx.worldWorker?.intent('quest-interact', { objectiveId }); },
     repairBase() { ctx.worldWorker?.intent('repair-base'); },
     setWeatherOverride(id) { loop.setWeatherOverride(id); loop.render(false); },
     getWeatherState() { return loop.getWeatherState(); },

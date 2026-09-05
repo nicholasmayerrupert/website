@@ -43,6 +43,8 @@ class MissionSystem {
   std::vector<int32_t> missionSnapshot;
   std::vector<int32_t> objectiveSnapshot;
 
+  std::vector<int> residentIds;
+  bool interactFrontier(int ownerPlayerId, int objectiveId);
   bool start(int id, int ownerPlayerId);
   void update();
   void onCreatureKilled(Creature& creature);
@@ -58,6 +60,8 @@ class MissionSystem {
   void buildGreenfall(int centerX, int surfaceY);
   bool startFrontier(int ownerPlayerId);
   void updateFrontier();
+  void updateFrontierResidents();
+  bool rewardFrontier(MissionObjective& objective, Player& player);
 
   MissionObjective& addObjective(uint8_t type, uint8_t state, int required,
                                  int worldX, int worldY, int flags = 0);
@@ -66,7 +70,6 @@ class MissionSystem {
   int spawnMissionCreature(uint8_t species, int worldX, int worldY,
                            int objectiveId, int offsetX = 0);
   int spawnMissionResident(uint8_t species, int worldX, int worldY);
-  bool safeMissionSpawnAt(uint8_t species, int localX, int localY) const;
   bool findSafeMissionSpawn(uint8_t species, int worldX, int worldY,
                             double& spawnWorldX, double& spawnWorldY) const;
   void activateObjective(int objectiveId);

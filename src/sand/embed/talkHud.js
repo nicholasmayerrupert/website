@@ -1,6 +1,7 @@
 import { GAME_CONTENT, GAME_WORLD } from '../content/catalog.js';
 import {
   CREATURE,
+  OBJECTIVE_STATE,
   PLANET,
   PLANET_GAMEPLAY_FLAG,
   planetHasGameplayFlag,
@@ -62,10 +63,11 @@ const STYLE = `
 .sg-dialogue[hidden] { display:none; }
 .sg-dialogue-name { margin:-10px -10px 12px; padding:8px 10px; background:#71312f; color:#fff; font-size:18px; line-height:1; }
 .sg-dialogue-copy { margin:9px 0 0; color:#d4d9de; font-size:17px; line-height:1.4; }
-.sg-dialogue-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.sg-dialogue-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .sg-dialogue-actions button { border:2px solid #080a0c; padding:8px 11px; cursor:pointer;
   background:#252b31; color:#fff; box-shadow:inset 0 0 0 1px #59636c,3px 3px 0 #080a0c;
   font:16px/1 'Sand Pixel',monospace; }
+.sg-dialogue-actions button:disabled { opacity:.45; cursor:default; }
 .sg-dialogue-actions .primary { background:#4c7131; color:#fff; box-shadow:inset 1px 1px #94b35d,inset -1px -1px #293e1a; }
 .sg-ship-recovery-beam { position:absolute; left:0; top:0; width:42px; height:150px; opacity:0;
   transform:translate(-50%,-44%); background:linear-gradient(90deg,transparent,rgba(91,241,255,.38),#f6ffff,rgba(91,241,255,.38),transparent);
@@ -131,6 +133,7 @@ export function createTalkHud(root, game, onAction) {
   const buttons = new Map();
   let activeActor = null;
   let activeIntent = null;
+  let deliveryButtons = [];
   let nearestActor = null;
   let actors = [];
   let lastActorRead = -Infinity;
@@ -160,6 +163,29 @@ export function createTalkHud(root, game, onAction) {
         policy = { name: authored.name, dialogue: authored.text, action: authored.action };
         activeIntent = authored.intent;
       }
+    }
+    for (const button of deliveryButtons) button.remove();
+    deliveryButtons = [];
+    if (game.getPlanetState?.().id === PLANET.FRONTIER) {
+      const mission = game.getMission?.();
+      const key = Object.keys(GAME_WORLD.dialogue).find(key => CREATURE[key] === actor.species);
+      const authored = GAME_WORLD.dialogue[key];
+      const variant = authored?.variants?.find(v => {
+        const index = GAME_WORLD.quests.findIndex(q => q.key === v.quest);
+        return mission?.objectives[index]?.state === OBJECTIVE_STATE[v.state.toUpperCase()];
+      });
+      if (variant) policy = { ...policy, dialogue: variant.text };
+      GAME_WORLD.quests.forEach((quest, index) => {
+        if (quest.condition.kind !== 'deliver' || mission?.objectives[index]?.state !== OBJECTIVE_STATE.ACTIVE) return;
+        if (!GAME_WORLD.residents.some(r => CREATURE[r.species] === actor.species && r.anchor === quest.target)) return;
+        const progress = mission.objectives[index];
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'primary';
+        button.textContent = `Hand over ${quest.condition.material.toLowerCase().replaceAll('_', ' ')} (${progress.current}/${progress.required})`;
+        button.disabled = progress.current < progress.required;
+        button.addEventListener('click', () => { game.interactQuest(index); closeDialogue(); });
+        actions.prepend(button); deliveryButtons.push(button);
+      });
     }
     activeActor = actor;
     name.textContent = policy.name;

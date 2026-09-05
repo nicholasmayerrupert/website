@@ -6,7 +6,9 @@ struct ContentQuest {
   int type, prerequisites, x, y, surface;
   int left, top, right, bottom, areaSurface, radius;
   int rewardKind, rewardId, rewardCount;
+  int material, count, species;
 };
+struct ContentResident { int species, x, y, surface, roamRadius; };
 struct ContentClip { int count = 1, ticks = 8, offset = 0; };
 struct ContentCreatureArt {
   int width = 0, height = 0;
@@ -30,8 +32,10 @@ class ContentSystem {
   std::array<int, 2> spawn{};
   std::array<int, 4> ambient{};
   std::array<ContentClip, 7> clips{};
+  std::array<int, 4> limbColors{};
   std::vector<ContentRect> rectangles;
   std::vector<ContentQuest> quests;
+  std::vector<ContentResident> residents;
   std::vector<std::array<float, 4>> palette;
   std::vector<uint8_t> pixels;
   std::array<ContentCreatureArt, CS_COUNT> creatureArt;

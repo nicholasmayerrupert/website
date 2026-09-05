@@ -14,6 +14,19 @@ process.exitCode = await runBrowserCases({
     await page.goto(`${baseURL}/game`);
     await page.waitForFunction(() => document.querySelector('sand-game')?._ready && window.__sandTest?.getPlayer(), null, { timeout: 60000 });
     await page.getByRole('button', { name: 'Start exploring' }).click();
+    await page.evaluate(() => document.fonts.load('18px "Sand Pixel"'));
+    const checkPixelFonts = async (screen) => {
+      const missing = await page.evaluate(() => {
+        const roots = [document.querySelector('main'), document.querySelector('sand-game').shadowRoot];
+        return roots.flatMap(root => [...root.querySelectorAll('*')]).filter(node =>
+          node.getBoundingClientRect().width && [...node.childNodes].some(child =>
+            child.nodeType === Node.TEXT_NODE && child.textContent.trim())
+          && !getComputedStyle(node).fontFamily.includes('Sand Pixel')).map(node => node.className || node.tagName);
+      });
+      check(`${screen} uses pixel text throughout`, missing.length === 0, missing.join(', '));
+    };
+    await checkPixelFonts('Game HUD');
+
     check('expedition has a readable title and an unobstructed canvas', await page.evaluate(() => {
       const heading = document.querySelector('.frontier-header');
       const canvas = document.querySelector('sand-game').shadowRoot.querySelector('canvas');
@@ -43,8 +56,10 @@ process.exitCode = await runBrowserCases({
     }
     await page.keyboard.press('t');
     await page.getByRole('dialog', { name: 'Conversation' }).waitFor();
+    await checkPixelFonts('Conversation');
     await page.getByRole('dialog', { name: 'Conversation' }).getByRole('button', { name: 'Field journal' }).click();
     await page.getByRole('dialog', { name: 'Field journal' }).waitFor();
+    await checkPixelFonts('Journal');
     check('journal uses plain headings and job instructions', await page.getByRole('heading', { name: 'Field journal', exact: true }).count() === 1
       && !(await page.locator('main').innerText()).includes('world worth getting lost'));
     check('commander opens the new field journal', !(await page.locator('main').innerText()).includes('Greenfall'));
@@ -83,6 +98,7 @@ process.exitCode = await runBrowserCases({
       }, MAT.LAVA);
       await page.waitForFunction(() => window.__sandTest.getPlayer()?.alive === false, null, { timeout: 10000 });
       const respawn = page.getByRole('button', { name: 'RESPAWN', exact: true });
+      await checkPixelFonts('Death dialog');
       check(`death exposes a visible respawn button (${method})`, await respawn.isVisible());
       check('death does not label the expedition as failed', await page.locator('sand-game').evaluate(host =>
         getComputedStyle(host.shadowRoot.querySelector('.survival-death-card'), '::before').content !== '"MISSION FAILED"'));

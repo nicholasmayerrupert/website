@@ -16,14 +16,14 @@ const DIRECT_SANDBOX = GAME_QUERY.has('sandbox') || PERF_GAME;
 function ControlChip({ keys, children, accent = false }) {
   return (
     <span className="flex items-center gap-1.5 whitespace-nowrap">
-      <kbd className={`border px-1.5 py-1 font-mono text-[8px] font-black leading-none shadow-[2px_2px_0_#080a0c] ${
+      <kbd className={`border px-1.5 py-1 font-mono text-[14px] font-black leading-none shadow-[2px_2px_0_#080a0c] ${
         accent
           ? 'border-[#e7ca5c] bg-[#4a4020] text-[#ffe783]'
           : 'border-[#65717b] bg-[#13171b] text-white'
       }`}>
         {keys}
       </kbd>
-      <span className="text-[8px] font-bold tracking-[.1em] text-[#b9c1c8]">{children}</span>
+      <span className="text-[14px] font-bold tracking-[.1em] text-[#b9c1c8]">{children}</span>
     </span>
   );
 }
@@ -44,7 +44,7 @@ export default function GamePage() {
 
   if (isMobile) {
     return (
-      <div className="relative flex min-h-[100svh] w-full items-center justify-center bg-dark px-6 py-6 text-center">
+      <div className="sandbox-experience relative flex min-h-[100svh] w-full items-center justify-center bg-dark px-6 py-6 text-center">
         <div className="max-w-sm">
           <div className="mb-4 text-5xl">🖥️</div>
           <h1 className="mb-3 text-xl font-semibold text-white">
@@ -65,13 +65,13 @@ export default function GamePage() {
   }
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-dark">
+    <div className="sandbox-experience relative h-screen w-full overflow-hidden bg-dark">
       <SandGame mode="survival" perfHud={PERF_GAME} />
 
       {/* Back to the portfolio */}
       <a
         href="/"
-        className="group pointer-events-auto absolute left-3 top-3 z-[80] flex items-center border-[3px] border-[#080a0c] bg-[#252b31] p-1 font-mono text-[10px] font-black uppercase tracking-[.12em] text-white shadow-[inset_0_0_0_2px_#59636c,5px_5px_0_rgba(0,0,0,.45)]"
+        className="group pointer-events-auto absolute left-3 top-3 z-[80] flex items-center border-[3px] border-[#080a0c] bg-[#252b31] p-1 font-mono text-[14px] font-black uppercase tracking-[.12em] text-white shadow-[inset_0_0_0_2px_#59636c,5px_5px_0_rgba(0,0,0,.45)]"
       >
         <span className="mr-2 grid h-7 w-7 place-items-center bg-[#f0d465] text-base text-[#17140a] shadow-[inset_-2px_-2px_0_#b89d3f] transition-colors group-hover:bg-[#ffe783]">←</span>
         <span className="pr-2 transition-colors group-hover:text-[#f0d465]">Portfolio</span>

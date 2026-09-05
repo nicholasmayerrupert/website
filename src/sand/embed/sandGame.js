@@ -18,6 +18,7 @@ const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent; }
+:host(:not([mode="creative"])),:host(:not([mode="creative"])) * { font-family:'Sand Pixel',monospace!important; letter-spacing:0; }
 /* Keep text-entry controls selectable/editable. */
 input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }

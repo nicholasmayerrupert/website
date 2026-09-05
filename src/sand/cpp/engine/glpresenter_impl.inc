@@ -1614,7 +1614,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     }
   }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
-  double sy = humanNpc
+  double sy = (humanNpc || speciesDef.locomotion == CL_AMPHIBIOUS || speciesDef.locomotion == CL_STATIONARY)
     ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
@@ -1689,12 +1689,14 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   }
   double pixelH = (alive || departing) ? cell : cell * 0.42;
   double corpseBase = sy + sh * cell;
-  for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width; c++) {
+  for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width;) {
     int idx = art.pixels[(frame * art.height + r) * art.width + c];
-    if (idx <= 0 || idx >= (int)art.palette.size()) continue;
-    int cc = facing >= 0 ? c : art.width - 1 - c;
+    if (idx <= 0 || idx >= (int)art.palette.size()) { c++; continue; }
+    int run = 1;
+    if (!departing) while (c + run < art.width && art.pixels[(frame * art.height + r) * art.width + c + run] == idx) run++;
+    int cc = facing >= 0 ? c : art.width - c - run;
     const float* col = art.palette[(size_t)idx].data();
-    if (departing && ((r * 7 + c * 13) % 23) / 23.0 < departure) continue;
+    if (departing && ((r * 7 + c * 13) % 23) / 23.0 < departure) { c++; continue; }
     float fade = (alive || departing) ? 1.0f : 0.55f;
     float flash = hurtCooldown > 0 && alive ? .6f : 0;
     float beamTint = (float)std::min(1.0, rescueProgress) * .65f;
@@ -1704,7 +1706,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       col[2] * fade * light * (1 - flash - beamTint * .5f) + flash + beamTint * .5f,
       col[3] * (float)(1 - departure));
     double drawY = (alive || departing) ? sy + r * cell * art.scale : corpseBase - (art.height - r) * pixelH * art.scale;
-    glSolidDev(sx + cc * cell * art.scale, drawY, cell * art.scale, pixelH * art.scale);
+    glSolidDev(sx + cc * cell * art.scale, drawY, run * cell * art.scale, pixelH * art.scale);
+    c += run;
   }
   if (alive && behavior.weaponOverlay == CWO_MINIGUN) {
     // Draw the active weapon over the body sprite so its grip remains attached

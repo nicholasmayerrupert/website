@@ -4,6 +4,7 @@ import { GAME_SCENES, PLAYER_ART } from '../content/catalog.js';
 import { ANIMATION_STATES } from '../content/compile.js';
 import { createStudioRuntime } from './runtime.js';
 import './studio.css';
+import { CreatureGallery } from './CreatureGallery.jsx';
 import { BlueprintEditor, PixelEditor } from './ContentEditors.jsx';
 
 function SpritePreview() {
@@ -38,6 +39,7 @@ export default function GameStudio() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
+  const [showCreatures, setShowCreatures] = useState(false);
   const load = useCallback(async (id) => {
     setLoading(true); setError('');
     try {
@@ -70,6 +72,7 @@ export default function GameStudio() {
       <SpritePreview />
       <details><summary>Edit blueprint</summary><BlueprintEditor key={scene} scene={scene} /></details>
       <details><summary>Edit player pixels</summary><PixelEditor /></details>
+      <details onToggle={e => setShowCreatures(e.currentTarget.open)}><summary>Creature artwork</summary>{showCreatures && <CreatureGallery />}</details>
       <h2>Player</h2><dl><dt>Position</dt><dd>{state?.player ? `${state.player.worldX.toFixed(1)}, ${state.player.worldY.toFixed(1)}` : '—'}</dd><dt>Animation</dt><dd>{ANIMATION_STATES[state?.player?.animState]} / {state?.player?.animFrame}</dd><dt>Health</dt><dd>{state?.player?.health}</dd><dt>Grounded</dt><dd>{state?.player?.grounded ? 'yes' : 'no'}</dd></dl>
       <h2>Objectives</h2><ol className="studio-objectives">{state?.mission?.objectives.map(o => <li key={o.id}><span>{['locked', 'active', 'complete', 'failed'][o.state]}</span>Objective {o.id + 1}<small>{o.worldX}, {o.worldY}</small></li>)}</ol>
       <h2>Runtime</h2><dl><dt>Content</dt><dd>{state?.contentHash}</dd><dt>Actor tick</dt><dd>{state?.perf?.actorTick}</dd><dt>World tick</dt><dd>{state?.perf?.worldTick}</dd><dt>Frame p95</dt><dd>{state?.perf?.p95FrameMs} ms</dd><dt>Authority</dt><dd>{state?.perf?.workerStatus}</dd></dl>

@@ -10,7 +10,7 @@ bool ContentSystem::load(const int32_t* data, int length) {
   auto surface = [&](int v) { return v == INT_MIN || coordinate(v); };
   for (int i = 10; i < 16; i++) if (!coordinate(data[i])) return false;
   if (data[10] > data[12] || data[11] > data[13]) return false;
-  if (data[16] < 20 || data[16] > 255 || data[17] < 20 || data[17] > 255 ||
+  if (data[16] < 0 || data[16] > 255 || data[17] < 0 || data[17] > 255 ||
       !coordinate(data[18]) || !coordinate(data[19]) || data[18] >= data[19]) return false;
   int at = 21;
   std::vector<ContentRect> nextRects;

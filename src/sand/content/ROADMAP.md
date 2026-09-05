@@ -51,3 +51,9 @@ Next: named persistent entities and shared interactions, followed by authored
 quest transitions and encounters. Every stage should add a playable example,
 ordinary-input acceptance checks, and an isolated development scene. Art and
 map changes now use the content pipeline rather than C++ edits.
+
+
+Visual direction confirmed by the user: preserve the original world palette,
+cell style, and lighting; use pixel text everywhere in the game. The full creature
+roster now shares the updated character art style, including hostile wildlife,
+armed enemies, bosses, and devices. Preserve this direction in subsequent stages.

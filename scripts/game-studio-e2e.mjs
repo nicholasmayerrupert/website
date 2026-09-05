@@ -42,6 +42,8 @@ process.exitCode = await runBrowserCases({
       return response.status;
     });
     check('content writer rejects unknown sources', rejected === 400);
+    await page.getByText('Creature artwork', { exact: true }).click();
+    check('art drawer previews the complete creature roster', await page.getByRole('region', { name: 'Creature artwork' }).locator('canvas').count() === 20);
     await page.getByLabel('Jump to a scene').selectOption('railway');
     await page.waitForFunction(() => window.__gameStudio.inspect().scene === 'railway' && Math.abs(window.__gameStudio.inspect().player.worldX + 690) < 8);
     await page.getByRole('button', { name: 'Reset world' }).click();

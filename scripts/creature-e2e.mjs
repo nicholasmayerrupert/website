@@ -110,6 +110,14 @@ try {
   check(`survival keeps ambient wildlife within its reserved cap (${survival.ambient}/3)`,
     survival.ambient <= 3);
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);
+  check('sandbox text and embedded HUD both use the pixel font', await page.evaluate(() => {
+    const roots = [document.querySelector('.sandbox-experience'), document.querySelector('sand-game').shadowRoot];
+    return roots.flatMap(root => [...root.querySelectorAll('*')]).filter(node =>
+      node.getBoundingClientRect().width && [...node.childNodes].some(child =>
+        child.nodeType === Node.TEXT_NODE && child.textContent.trim()))
+      .every(node => getComputedStyle(node).fontFamily.includes('Sand Pixel'));
+  }));
+
 
   // Force the director's habitat-valid visible fallback through its DEV-only
   // test hook, then inspect the replicated warning and its portal pixels.

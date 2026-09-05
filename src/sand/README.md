@@ -2,7 +2,7 @@
 
 The site uses the same falling-sand runtime for the creative home-page hero and
 the continuous **Aster** Earth expedition at `/game`. The player starts inside
-Aster Station, with wilderness, mountains, and caves in the same streaming
+Hearthwood Lodge, with wilderness, mountains, and caves in the same streaming
 world. `/game?sandbox` opens the direct survival sandbox.
 
 The simulation, WebGL2 renderer, camera, input policy, tools, actors, authored

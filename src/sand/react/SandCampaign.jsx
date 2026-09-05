@@ -106,7 +106,7 @@ export function SandCampaign({ onRuntimeReady, preview = false }) {
     return () => window.removeEventListener('keydown', key, true);
   }, [close, focusGame, menu]);
   const onReady = useCallback(() => {
-    setReady(true); host.current?._game?.setDayPhase(0.32);
+    setReady(true); host.current?._game?.setDayPhase(0.20);
 
     focusGame();
     setMuted(host.current?._game?.getAudioState().muted ?? false);

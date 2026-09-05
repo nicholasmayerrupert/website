@@ -54,3 +54,17 @@ checks the package, physical objectives, animations/replays, editor controls, an
 ordinary player interactions. Browser suites require Playwright Chromium.
 Procedural world generation has its own versioned golden; editable blueprint
 revisions use the content fingerprint and content integration checks.
+
+## Visual direction
+
+The world uses the material schema's original colors and noise shading, darker
+background layers, cell gutters, and simulated lighting. `world.textures` is empty;
+zero surface/depth ambient overrides leave the normal light field in control.
+Keep this world style when adding locations. Game text uses **Sand Pixel**,
+including menus, dialogue, the journal, prompts, and HUDs.
+
+All twenty creature sprite sets use half-cell source pixels and a shared outline
+palette. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes
+and four poses. Land creatures anchor artwork at their physical feet; swimmers
+and flyers center it around their body. Combat dimensions remain in the species
+schema. The workbench's **Creature artwork** drawer previews the complete roster.

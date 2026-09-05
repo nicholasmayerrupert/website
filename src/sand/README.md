@@ -2,8 +2,7 @@
 
 The site uses the same falling-sand runtime for the creative home-page hero and
 the IRIS campaign at `/game`. The campaign begins aboard the field ship Kestrel
-and mounts a survival deployment only after the player selects a mission and
-loadout. `/game?sandbox` bypasses the campaign shell and opens the direct
+with the ship visible and playable, and mounts a survival deployment after acceptance. `/game?sandbox` bypasses the campaign shell and opens the direct
 survival sandbox.
 
 The simulation, WebGL2 renderer, camera, input policy, tools, actors, authored
@@ -49,20 +48,36 @@ actor snapshots.
 
 ## IRIS campaign
 
-`/game` is the mission deck for IRIS — Interstellar Rescue & Intervention
-Service. The player deploys from Kestrel with the bound blast gun, an iron
-mining tool, bounded material packs, and one unlocked enemy weapon recovered
-from an operation. Completing an operation unlocks the next planet. Aborting
-returns to the mission deck and failure opens a debrief; neither commits terrain
-progress.
+`/game` presents **Greenfall Relay**, one Earth rescue expedition for IRIS
+(Interstellar Rescue & Intervention Service). The player arrives aboard Kestrel
+with no overlay. A beveled pixel mission panel opens from the header or
+Commander Vale. J opens the quest journal with active objectives and saved completions. The prepared kit contains the blast gun on 1, mining tool
+on 2, rescue beam on 3, 320 building blocks, 24 TNT, and 180 water.
 
-The campaign contains three sequential operations:
+The authored Greenfall site in `cpp/engine/mission_greenfall.inc` contains an
+overgrown surface relay, descending access galleries, a furnished refuge, and a
+lit service shaft with jetpack rest ledges for the return.
+Both simulated layers are authored once before the mission's first tick; the
+site thereafter uses normal component physics, destruction, and chunk storage.
+A dynamiteer, minigunner, and bore sentinel guard the descent. The mission
+guards engage within the player's gallery and keep a one-second reaction
+window while they have no target. The relay minigunner telegraphs for one second,
+fires for 48 ticks, then recovers for two seconds. Guards are optional obstacles. The jammer and
+three researchers exist from deployment; powered shelter fields protect the crew.
+Destroying the jammer equips the rescue beam and opens those fields over 45 actor
+ticks, releasing the same occupants. Researchers wait in the refuge for rescue. Rescuing
+all three opens extraction at the original landing beacon. Each rescue needs a
+one-second beam hold; breaking contact decays the channel after a short grace
+period. Crew scan, then dissolve upward. The pad shows a rising transport field
+and requires two uninterrupted seconds inside; leaving resets it. At most three
+reinforcement waves pursue the return. Warnings begin at least 48 cells away and
+last two seconds; materialization rechecks habitat and a 36-cell player exclusion.
+Unsafe arrivals are canceled and retried. The landing pad has its own 32-cell
+spawn exclusion. Disabling the jammer restores 30 health, capped at 100. The return sequence ends aboard the real ship with a
+rescue report and persisted completion time.
 
-| Order | Planet | Mission | Authoritative objective sequence |
-| --- | --- | --- | --- |
-| 1 | Earth, 1.00 G | Greenfall Recovery (`greenfall-recovery`; tracker: Operation Greenfall) | Clear three demolition crew members; tag three surveyors with the rescue beam; reach the surface beacon. |
-| 2 | Moon, 0.33 G | Silent Quarry (`silent-quarry`; tracker: Operation Silent Quarry) | Disable two shield anchors in separate mine branches; defeat the Quarry Foreman; reach the emergency pickup point. |
-| 3 | Mars, 0.76 G | Red Furnace (`red-furnace`; tracker: Operation Red Furnace) | Disable three reactor anchors; defeat the Reactor Warden; breach the reactor core; escape to the surface pickup point. |
+Moon and Mars mission definitions remain available to direct engine consumers
+and existing saves; the player-facing campaign offers only Earth.
 
 `MissionSystem` in `cpp/engine/missions.hpp` and
 `cpp/engine/missions_impl.inc` owns live objective state, scripted actors,
@@ -87,11 +102,14 @@ local-storage record. It persists completed mission IDs, preferred loadouts,
 unlocked weapons, and best times. An interrupted run stores only its mission,
 seed, and normalized loadout; it does not serialize terrain.
 
-The Kestrel remains fully walkable while its mission console is closed. Nearby
-crew have world-space `TALK` controls, and Commander Vale's conversation is the
-only route to the mission selector. The viewport-bounded console keeps
-deployment controls visible above its scrolling briefing/loadout body. The
-tapered hull contains non-blocking background-layer engineering, medbay,
+The Kestrel is walkable while its briefing is closed. Nearby crew have
+world-space `TALK` controls and T opens the nearest conversation; Commander Vale
+and the header button both open the
+briefing. Mission selection, pause, and report overlays pause the authority
+through the element's `setPaused()` method, independently of viewport visibility.
+Escape resumes a paused expedition. Sound uses the existing persistent mute
+setting; a quiet original motif shares the audio renderer's bounded voice budget
+and lifecycle. The tapered hull contains non-blocking background-layer engineering, medbay,
 transport, armory, command, hydroponics, galley, and archive stations while the
 foreground main-deck route stays clear. Falling below the hull triggers a short
 automatic transporter recovery. The ship runs the same two-layer cellular and
@@ -792,10 +810,16 @@ node scripts/run-tests.mjs --browser --only campaign-e2e
 The campaign test covers mission order, sequential unlocks, bounded loadouts,
 persistence validation, debrief rewards, and interrupted-run configuration. The
 mission test exercises authoritative objective progression, rescue-beam
-interaction, mission/planet validation, extraction, and recovered equipment.
+channel interruption and departure, mission/planet validation, extraction
+dwell/reset, and recovered equipment.
 The planet-gravity test covers deterministic planet terrain and the Earth >
-Mars > Moon fall ordering. The campaign browser suite covers Kestrel and all
-three deployment configurations.
+Mars > Moon fall ordering. The campaign browser suite covers the Earth briefing
+at desktop and high-zoom sizes, ship movement, pause across visibility changes,
+real blast-gun combat, rescue-beam interaction, extraction, and failure/retry
+presentation. It positions the player near encounters to shorten travel;
+objective completion comes from the worker. Mission tests also step world
+physics to catch unstable site foundations before combat, then traverse the
+entire descent and return using movement and jetpack inputs without teleporting.
 
 `scripts/test-manifest.mjs` is the source of truth for executable test entries.
 See [`scripts/README.md`](../../scripts/README.md) for combined selection,

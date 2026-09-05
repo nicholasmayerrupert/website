@@ -711,6 +711,7 @@ struct Player {
   double jetpackFuel = 1.0; // normalized [0,1]
   bool jetpackActive = false;
   double landingImpact = 0;
+  double weaponKick = 0; // authoritative shot impulse, decays on the actor clock
   int toolCooldown = 0; // steps remaining before this player can act again
   // When an automatic weapon spends its final round while PRIMARY stays held,
   // suppress the now-empty slot's bare-hand mining until PRIMARY is released.

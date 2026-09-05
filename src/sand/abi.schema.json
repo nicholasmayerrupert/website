@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 34,
+  "abiVersion": 36,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -32,7 +32,9 @@
         { "name": "jetpackFuel", "kind": "number", "snapshotMember": "jetpackFuel" },
         { "name": "jetpackActive", "kind": "boolean", "snapshotMember": "jetpackActive" },
         { "name": "shieldHealth", "kind": "i32", "snapshotMember": "shieldHealth" },
-        { "name": "shieldActive", "kind": "boolean", "snapshotMember": "shieldActive" }
+        { "name": "shieldActive", "kind": "boolean", "snapshotMember": "shieldActive" },
+        {"name": "weaponKick", "kind": "number", "snapshotMember": "weaponKick"},
+        {"name": "hurtCooldown", "kind": "i32", "snapshotMember": "hurtCooldown"}
       ],
       "snapshotStorage": "float",
       "snapshotWriters": [{ "name": "writePlayerSnapshot" }]
@@ -79,7 +81,10 @@
         { "name": "aimX", "kind": "number", "snapshotParameter": true },
         { "name": "aimY", "kind": "number", "snapshotParameter": true },
         { "name": "spawnProgress", "kind": "number", "snapshotMember": "spawnProgress" },
-        { "name": "attackPattern", "kind": "i32", "snapshotMember": "attackPattern" }
+        { "name": "attackPattern", "kind": "i32", "snapshotMember": "attackPattern" },
+        { "name": "rescueProgress", "kind": "number", "snapshotMember": "rescueProgress" },
+        { "name": "hurtCooldown", "kind": "i32", "snapshotMember": "hurtCooldown" },
+        {"name": "shelterCharge", "kind": "number", "snapshotMember": "shelterCharge"}
       ],
       "snapshotStorage": "float",
       "snapshotWriters": [
@@ -98,7 +103,10 @@
             "aimX": { "literal": 0 },
             "aimY": { "literal": 0 },
             "spawnProgress": { "parameter": true },
-            "attackPattern": { "literal": 0 }
+            "attackPattern": { "literal": 0 },
+            "rescueProgress": { "literal": 0 },
+            "hurtCooldown": { "literal": 0 },
+            "shelterCharge": { "literal": 0 }
           }
         }
       ]
@@ -197,7 +205,9 @@
         { "name": "jetpackFuel", "kind": "number", "snapshotParameter": true },
         { "name": "jetpackActive", "kind": "boolean", "snapshotParameter": true },
         { "name": "shieldHealth", "kind": "i32", "snapshotParameter": true },
-        { "name": "shieldActive", "kind": "boolean", "snapshotParameter": true }
+        { "name": "shieldActive", "kind": "boolean", "snapshotParameter": true },
+        {"name": "weaponKick", "kind": "number", "snapshotParameter": true},
+        {"name": "hurtCooldown", "kind": "i32", "snapshotParameter": true}
       ],
       "snapshotStorage": "float",
       "snapshotWriters": [{ "name": "writeGlPlayerExtSnapshot", "language": "js" }]
@@ -430,7 +440,8 @@
         "PK_CLUSTER_BOMB": 4,
         "PK_MINIGUN_ROUND": 5,
         "PK_BORE_BEAM": 6,
-        "PK_RESCUE_BEAM": 7
+        "PK_RESCUE_BEAM": 7,
+        "PK_EXTRACTION_BEAM": 8
       }
     },
     "CraftIngredientKind": {

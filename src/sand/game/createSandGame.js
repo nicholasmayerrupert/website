@@ -15,7 +15,7 @@ import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
 import { createReplayPanel } from './replayPanel.js';
 import {
-  CREATIVE_KIND, CREATURE, MISSION, WEATHER,
+  CREATIVE_KIND, CREATURE, MISSION, PLANET, WEATHER,
 } from '../wasmBridge/abi.generated.js';
 import { MAT } from '../materials.js';
 import { resolvePlanetId } from './planetSelection.js';
@@ -85,7 +85,9 @@ export function createSandGame(container, opts = {}) {
 
   // Host canvas; the WASM engine owns its WebGL2 context and compositing.
   const parallax = createParallaxBackground(container, { planetId });
-  const audio = createSandAudio();
+  const audio = createSandAudio({
+    expeditionScore: survival && (planetId === PLANET.SHIP || missionId === MISSION.GREENFALL_RECOVERY),
+  });
 
   const canvas = document.createElement('canvas');
   canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench

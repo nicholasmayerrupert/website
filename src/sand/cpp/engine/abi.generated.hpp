@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 34;
+static const int ABI_VERSION = 36;
 
-static const uint64_t ABI_FINGERPRINT = 0x78c2c6c1d9a3ULL;
+static const uint64_t ABI_FINGERPRINT = 0xe24a6e5bb601ULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -36,8 +36,10 @@ enum PlayerSnapshotField : int {
   PS_JETPACK_ACTIVE = 24,
   PS_SHIELD_HEALTH = 25,
   PS_SHIELD_ACTIVE = 26,
+  PS_WEAPON_KICK = 27,
+  PS_HURT_COOLDOWN = 28,
 };
-static const int PS_STRIDE = 27;
+static const int PS_STRIDE = 29;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -88,6 +90,8 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_JETPACK_ACTIVE] = (record.jetpackActive ? 1.0f : 0.0f);
   out[PS_SHIELD_HEALTH] = static_cast<float>(record.shieldHealth);
   out[PS_SHIELD_ACTIVE] = (record.shieldActive ? 1.0f : 0.0f);
+  out[PS_WEAPON_KICK] = static_cast<float>(record.weaponKick);
+  out[PS_HURT_COOLDOWN] = static_cast<float>(record.hurtCooldown);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier
@@ -123,7 +127,7 @@ inline void writeItemSnapshot(float* out, const Record& record) {
   out[IS_TOOL_TIER] = static_cast<float>(record.toolTier);
 }
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -144,8 +148,11 @@ enum CreatureSnapshotField : int {
   CSN_AIM_Y = 16,
   CSN_SPAWN_PROGRESS = 17,
   CSN_ATTACK_PATTERN = 18,
+  CSN_RESCUE_PROGRESS = 19,
+  CSN_HURT_COOLDOWN = 20,
+  CSN_SHELTER_CHARGE = 21,
 };
-static const int CSN_STRIDE = 19;
+static const int CSN_STRIDE = 22;
 
 struct WriteCreatureSnapshotX {
   float value;
@@ -212,6 +219,9 @@ inline void writeCreatureSnapshot(float* out, const Record& record, const WriteC
   out[CSN_AIM_Y] = static_cast<float>(values.aimY.value);
   out[CSN_SPAWN_PROGRESS] = static_cast<float>(record.spawnProgress);
   out[CSN_ATTACK_PATTERN] = static_cast<float>(record.attackPattern);
+  out[CSN_RESCUE_PROGRESS] = static_cast<float>(record.rescueProgress);
+  out[CSN_HURT_COOLDOWN] = static_cast<float>(record.hurtCooldown);
+  out[CSN_SHELTER_CHARGE] = static_cast<float>(record.shelterCharge);
 }
 
 struct WriteCreatureTelegraphSnapshotX {
@@ -273,6 +283,9 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_AIM_Y] = static_cast<float>(0);
   out[CSN_SPAWN_PROGRESS] = static_cast<float>(values.spawnProgress.value);
   out[CSN_ATTACK_PATTERN] = static_cast<float>(0);
+  out[CSN_RESCUE_PROGRESS] = static_cast<float>(0);
+  out[CSN_HURT_COOLDOWN] = static_cast<float>(0);
+  out[CSN_SHELTER_CHARGE] = static_cast<float>(0);
 }
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
@@ -418,7 +431,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -437,8 +450,10 @@ enum GlPlayerExtField : int {
   GLP_JETPACK_ACTIVE = 14,
   GLP_SHIELD_HEALTH = 15,
   GLP_SHIELD_ACTIVE = 16,
+  GLP_WEAPON_KICK = 17,
+  GLP_HURT_COOLDOWN = 18,
 };
-static const int GLP_STRIDE = 17;
+static const int GLP_STRIDE = 19;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -787,6 +802,7 @@ enum ProjectileKind : uint8_t {
   PK_MINIGUN_ROUND = 5,
   PK_BORE_BEAM = 6,
   PK_RESCUE_BEAM = 7,
+  PK_EXTRACTION_BEAM = 8,
 };
 
 static constexpr bool isProjectileKindValue(int value) {
@@ -799,6 +815,7 @@ static constexpr bool isProjectileKindValue(int value) {
     case PK_MINIGUN_ROUND:
     case PK_BORE_BEAM:
     case PK_RESCUE_BEAM:
+    case PK_EXTRACTION_BEAM:
       return true;
     default: return false;
   }

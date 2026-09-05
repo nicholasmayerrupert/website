@@ -1,3 +1,5 @@
+import pixelFontUrl from '../assets/fonts/PixelifySans.ttf?url';
+import { CAMPAIGN_HUD_STYLE } from './campaignHudStyle';
 // Framework-free <sand-game> Web Component. The standalone build embeds WASM;
 // see embed/README.md for attributes, layout, and events.
 
@@ -550,6 +552,12 @@ class SandGameElement extends HTMLElement {
     const planet = this.getAttribute('planet') || 'earth';
     const weather = this.getAttribute('weather') || undefined;
     const mission = this.getAttribute('mission') || null;
+    if ((mission || planet === 'ship') && !root.querySelector('[data-campaign-style]')) {
+      const campaignStyle = document.createElement('style');
+      campaignStyle.dataset.campaignStyle = '';
+      campaignStyle.textContent = CAMPAIGN_HUD_STYLE;
+      root.appendChild(campaignStyle);
+    }
     const seedAttribute = this.getAttribute('world-seed');
     const seedValue = seedAttribute === null ? NaN : Number(seedAttribute);
     const worldSeed = Number.isFinite(seedValue) ? seedValue >>> 0 : undefined;
@@ -729,7 +737,9 @@ class SandGameElement extends HTMLElement {
         // outside the viewport. Resume from the current tick with a reset fixed
         // clock, so time away never turns into catch-up simulation debt.
         let onScreen = true;
-        const syncViewportActivity = () => game.setViewportActive(onScreen && !document.hidden);
+        const syncViewportActivity = () => game.setViewportActive(
+          onScreen && !document.hidden && !this._paused);
+        this._syncViewportActivity = syncViewportActivity;
         if (typeof IntersectionObserver !== 'undefined') {
           this._visibilityObserver = new IntersectionObserver(([entry]) => {
             onScreen = !!entry?.isIntersecting;
@@ -802,7 +812,7 @@ class SandGameElement extends HTMLElement {
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
     this._game = this._palette = this._hud = this._status = this._sizeMenu = this._missionHud = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
-    this._visibilityObserver = this._onDocumentVisibility = null;
+    this._visibilityObserver = this._onDocumentVisibility = this._syncViewportActivity = null;
     this._cancel = null;
     this._lastMissionTerminal = 0;
     this._mounted = false;
@@ -814,6 +824,11 @@ class SandGameElement extends HTMLElement {
       this._palette?.setTool?.(value);
     }
   }
+
+  setPaused(paused) {
+    this._paused = !!paused;
+    this._syncViewportActivity?.();
+  }
 }
 
 if (typeof customElements !== 'undefined' && !customElements.get('sand-game')) {
@@ -821,3 +836,9 @@ if (typeof customElements !== 'undefined' && !customElements.get('sand-game')) {
 }
 
 export { SandGameElement };
+
+if (![...document.fonts].some(font => font.family === 'Sand Pixel')) {
+  const font = new FontFace('Sand Pixel', `url(${pixelFontUrl})`, { weight: '400 700', display: 'swap' });
+  document.fonts.add(font);
+  font.load().catch(() => {});
+}

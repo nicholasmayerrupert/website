@@ -35,11 +35,20 @@ export default function GamePage() {
     const prev = document.title;
     document.title = DIRECT_SANDBOX
       ? 'Explosive Survival — Nicholas Mayer-Rupert'
-      : 'IRIS Field Operations — Nicholas Mayer-Rupert';
+      : 'Greenfall Relay — IRIS';
     return () => { document.title = prev; };
   }, []);
 
   if (isMobile) {
+    if (!DIRECT_SANDBOX) return (
+      <main className="iris-experience iris-mobile-entry">
+        <section>
+          <h1>Greenfall Relay</h1>
+          <p>Requires a larger screen, keyboard, and mouse.</p>
+          <a className="iris-button iris-secondary" href="/">Return to the site <span>↗</span></a>
+        </section>
+      </main>
+    );
     return (
       <div className="relative flex min-h-[100svh] w-full items-center justify-center bg-dark px-6 py-6 text-center">
         <div className="max-w-sm">

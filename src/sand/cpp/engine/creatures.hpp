@@ -87,6 +87,9 @@ struct Creature {
   // Presentation mirrors also store pending-breach records in this compact
   // actor shape. Authority-side materialized creatures always keep this at 0.
   double spawnProgress = 0;
+  double shelterCharge = 0; // powered rescue shelter, fades as its jammer shuts down
+  double rescueProgress = 0; // 0..1 channel, 1..2 departure animation
+  int rescueLastTick = -1;
   int missionObjective = -1;
   bool missionActor = false;
 };

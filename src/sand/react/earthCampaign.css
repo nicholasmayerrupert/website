@@ -1,0 +1,418 @@
+.iris-experience {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: #101014;
+  color: #eee;
+  font:
+    16px/1.35 'Sand Pixel',
+    monospace;
+  --edge: #08090b;
+  --panel: #252629;
+  --highlight: #797a7e;
+}
+.iris-experience button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.iris-experience button:focus-visible,
+.iris-experience a:focus-visible {
+  outline: 2px solid #f6df78;
+  outline-offset: 3px;
+}
+.iris-experience button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.iris-experience h1,
+.iris-experience h2,
+.iris-experience p {
+  margin: 0;
+}
+.iris-experience h2 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.iris-button,
+.iris-icon-button,
+.iris-tabs button {
+  border: 2px solid var(--edge);
+  border-radius: 0;
+  background: #494a50;
+  box-shadow:
+    inset 2px 2px #85868b,
+    inset -2px -2px #28292e,
+    0 2px #0008;
+  padding: 9px 16px;
+  text-shadow: 1px 2px #0008;
+}
+.iris-button:hover,
+.iris-icon-button:hover,
+.iris-tabs button:hover {
+  background: #606169;
+}
+.iris-button:active,
+.iris-icon-button:active {
+  box-shadow: inset 2px 2px #28292e;
+  transform: translateY(1px);
+}
+.iris-primary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #4c7131;
+  box-shadow:
+    inset 2px 2px #94b35d,
+    inset -2px -2px #293e1a,
+    0 2px #0008;
+}
+.iris-primary:hover {
+  background: #608c3a;
+}
+.iris-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.iris-text-button {
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: #e7ab9e !important;
+}
+.iris-ship-header,
+.iris-field-header {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  right: 18px;
+  z-index: 81;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.iris-ship-header button,
+.iris-field-header button {
+  pointer-events: auto;
+}
+.iris-location {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-shadow: 2px 2px #000;
+}
+.iris-location i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: 24px;
+  font-style: normal;
+  color: #f4d77b;
+  background: #232429;
+  border: 2px solid #08090b;
+  box-shadow: inset 1px 1px #777;
+}
+.iris-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #0005;
+}
+.iris-modal > section {
+  width: min(380px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 18px;
+  border: 3px solid #090a0c;
+  border-radius: 0;
+  background: #252629;
+  box-shadow:
+    inset 2px 2px #7c7d83,
+    inset -2px -2px #111216,
+    6px 6px #0007;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.iris-modal p {
+  color: #cccdd1;
+}
+.iris-briefing {
+  place-items: center end;
+  padding-right: 4vw;
+}
+.iris-briefing > section,
+.iris-journal > section {
+  width: min(620px, 100%);
+  padding: 6px;
+  gap: 6px;
+}
+.iris-console-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 12px;
+  background: linear-gradient(#8e3c3b 50%, #783332 50%);
+  border: 2px solid #141518;
+  box-shadow:
+    inset 1px 1px #c77a68,
+    inset -1px -1px #442225;
+  text-shadow: 2px 2px #0008;
+}
+.iris-console-head .iris-icon-button {
+  background: #783331;
+  box-shadow:
+    inset 1px 1px #c57967,
+    inset -1px -1px #421f21;
+}
+.iris-quest-layout {
+  display: grid;
+  grid-template-columns: 185px minmax(0, 1fr);
+  gap: 6px;
+  min-height: 270px;
+}
+.iris-quest-list,
+.iris-quest-detail {
+  border: 2px solid #101113;
+  box-shadow:
+    inset 1px 1px #08090b,
+    1px 1px #64656a;
+  background: #191a1e;
+}
+.iris-quest-list {
+  background: repeating-linear-gradient(
+    135deg,
+    #1e1f23 0 25px,
+    #202125 25px 50px
+  );
+}
+.iris-list-heading {
+  padding: 8px 10px;
+  background: #3c3d43;
+  border-bottom: 2px solid #111;
+  color: #ddd;
+}
+.iris-quest-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 5px;
+  padding: 12px 8px;
+  background: #54545b;
+  box-shadow:
+    inset 1px 1px #97979c,
+    inset -1px -1px #333;
+  color: #f6df78;
+}
+.iris-quest-selected small {
+  display: block;
+  margin-top: 4px;
+  color: #d4d4d9;
+  font-size: 13px;
+}
+.iris-quest-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 27px;
+  height: 34px;
+  background: #24252b;
+  border: 2px solid #111;
+  box-shadow: inset 1px 1px #777;
+  font-size: 28px;
+}
+.iris-quest-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+.iris-quest-detail > h2 {
+  padding: 6px 10px;
+  background: #38393f;
+  color: #f6df78;
+}
+.iris-quest-detail > .iris-primary {
+  margin-top: auto;
+}
+.iris-quest-note {
+  font-size: 14px;
+  color: #a9aab1 !important;
+}
+.iris-tabs {
+  display: flex;
+}
+.iris-tabs button {
+  flex: 1;
+  padding: 8px 3px;
+  font-size: 13px;
+}
+.iris-tabs button[aria-selected='true'] {
+  color: #f6df78;
+  background: #67666b;
+}
+.iris-objectives {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 9px;
+  color: #dfdfe2;
+}
+.iris-objectives li {
+  display: flex;
+  gap: 9px;
+}
+.iris-briefing .iris-objectives li::before {
+  content: '›';
+  color: #efcf68;
+}
+.iris-objectives .active {
+  color: #f6df78;
+}
+.iris-objectives .complete {
+  color: #a5d971;
+}
+.iris-orbit-art {
+  position: relative;
+  height: 106px;
+  overflow: hidden;
+  margin: -16px -16px 0;
+  background: #0f1420;
+  border-bottom: 2px solid #08090b;
+}
+.iris-orbit-art svg {
+  width: 100%;
+  height: 100%;
+}
+.iris-orbit-art > span {
+  position: absolute;
+  left: 16px;
+  bottom: 14px;
+  color: #e6dfaa;
+}
+.iris-site-pulse {
+  transform-origin: 163px 67px;
+  animation: iris-site-pulse 3s ease-out infinite;
+}
+@keyframes iris-site-pulse {
+  from {
+    opacity: 0.8;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+.iris-control-strip {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  z-index: 81;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  color: #d1d2d8;
+  font-size: 13px;
+  text-shadow: 2px 2px #000;
+}
+.iris-control-strip > span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.iris-control-strip kbd {
+  font:
+    12px 'Sand Pixel',
+    monospace;
+  padding: 3px 5px;
+  background: #2c2d32;
+  border: 1px solid #090a0c;
+  box-shadow:
+    inset 1px 1px #777,
+    0 2px #090a0c;
+}
+.iris-loading {
+  position: absolute;
+  bottom: 35%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 97;
+  background: #252629;
+  padding: 12px 20px;
+  border: 2px solid #08090b;
+  box-shadow: inset 1px 1px #777;
+}
+.iris-mobile-entry {
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+.iris-mobile-entry > section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.iris-mobile-entry h1 {
+  font-size: 26px;
+  font-weight: 500;
+}
+.iris-mobile-entry a {
+  text-decoration: none;
+}
+@media (max-height: 500px) {
+  .iris-modal {
+    padding: 12px;
+  }
+  .iris-modal > section {
+    max-height: calc(100dvh - 24px);
+  }
+  .iris-quest-detail {
+    gap: 10px;
+    padding: 12px;
+  }
+  .iris-orbit-art {
+    height: 60px;
+    margin: -12px -12px 0;
+  }
+  .iris-quest-layout {
+    min-height: 0;
+  }
+}
+@media (max-width: 900px) {
+  .iris-control-strip {
+    gap: 9px;
+    font-size: 11px;
+  }
+}
+@media (max-width: 600px) {
+  .iris-quest-layout {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+  .iris-experience {
+    font-size: 14px;
+  }
+  .iris-quest-selected {
+    padding: 8px 4px;
+    gap: 5px;
+  }
+  .iris-quest-icon {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iris-site-pulse {
+    animation: none;
+  }
+}

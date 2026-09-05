@@ -272,6 +272,7 @@ export function createGameLoop(ctx, {
           own ? liveAim.y : (p.aimY ?? p.y + p.h * .42),
           p.jetpackFuel ?? 1, !!p.jetpackActive,
           p.shieldHealth ?? 200, !!p.shieldActive,
+          p.weaponKick || 0, p.hurtCooldown || 0,
         );
       }
       engine.glSetPlayers(true, packed, ownId);

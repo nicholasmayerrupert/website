@@ -166,6 +166,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       parallax.draw(parallaxCamera());
       ctx.forceFullRender = true;
       ctx.previewDirty = false;
+      // Resizing clears the drawing buffer even while a modal pauses RAF.
+      ctx.fns.render?.(true);
     };
 
     // Live engine, same desired buffer: pure view update.

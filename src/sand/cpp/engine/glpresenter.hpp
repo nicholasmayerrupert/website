@@ -140,7 +140,7 @@ class GLPresenter {
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
-                     bool shieldActive, bool own, float light, int camCol, int camRow);
+                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
                      int camCol, int camRow);
@@ -149,7 +149,8 @@ class GLPresenter {
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
                          int alive, int animFrame, int attackState, int attackPattern,
                          double attackProgress,
-                         double aimX, double aimY, double spawnProgress, float light,
+                         double aimX, double aimY, double spawnProgress,
+                    double rescueProgress, int hurtCooldown, double shelterCharge, float light,
                          int camCol, int camRow);
   void glDrawCreatures();
   void glDrawPreview();

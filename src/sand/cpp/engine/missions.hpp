@@ -37,6 +37,7 @@ class MissionSystem {
   int pendingObjective = -1;
   int nextThreatActorTick = 0;
   int extractionThreatWave = 0;
+  int extractionTicks = 0;
   bool coreDestabilized = false;
   std::vector<MissionObjective> objectives;
   std::vector<int32_t> missionSnapshot;
@@ -54,6 +55,7 @@ class MissionSystem {
 
  private:
   Engine& E;
+  void buildGreenfall(int centerX, int surfaceY);
 
   MissionObjective& addObjective(uint8_t type, uint8_t state, int required,
                                  int worldX, int worldY, int flags = 0);

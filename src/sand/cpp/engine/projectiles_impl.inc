@@ -27,7 +27,6 @@ static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
 static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
 static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
 static constexpr int MINIGUN_BLAST_RADIUS_LOCAL = 2;
-static constexpr int RESCUE_BEAM_COOLDOWN_LOCAL = 18;
 static constexpr double RESCUE_BEAM_RANGE_LOCAL = 112.0;
 // Radius, not a weak visual-only puff, is what keeps these explosions tiny.
 // Thirteen power lets a direct hit chip durability-13 terrain while the
@@ -49,6 +48,7 @@ void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
     double charge = std::max(0.0, std::min(1.0, p.bowChargeTicks / (double)BOW_CHARGE_MAX));
     if (--p.inv[ammo].count <= 0) p.inv[ammo] = InvSlot();
     spawnArrow(p, charge);
+    p.weaponKick = 1;
   }
   p.bowChargeTicks = 0;
 }
@@ -57,6 +57,7 @@ void ProjectileSystem::applyBlastGunInput(Player& p) {
   E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   spawnBlastRound(p);
+  p.weaponKick = 1;
   p.toolCooldown = BLAST_GUN_COOLDOWN;
   E.playerActionCount++;
 }
@@ -68,6 +69,7 @@ void ProjectileSystem::applyDynamiteSatchelInput(Player& p, int previousInput) {
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnDynamite(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_DYNAMITE_SATCHEL);
+  p.weaponKick = 1;
   p.toolCooldown = DYNAMITE_SATCHEL_COOLDOWN;
   E.playerActionCount++;
 }
@@ -82,6 +84,7 @@ void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
   E.creatures.fireBore(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_BORE_CANNON);
   p.bowChargeTicks = 0;
+  p.weaponKick = 1;
   p.toolCooldown = BORE_CANNON_COOLDOWN;
   E.playerActionCount++;
 }
@@ -93,6 +96,7 @@ void ProjectileSystem::applyAcidMortarInput(Player& p, int previousInput) {
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnAcidShell(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_ACID_MORTAR);
+  p.weaponKick = 1;
   p.toolCooldown = ACID_MORTAR_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -104,6 +108,7 @@ void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnClusterBomb(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_CLUSTER_LAUNCHER);
+  p.weaponKick = 1;
   p.toolCooldown = CLUSTER_LAUNCHER_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -113,6 +118,7 @@ void ProjectileSystem::applyMinigunInput(Player& p) {
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   spawnMinigunRound(p);
   E.inv.consumeSelectedWeaponAmmo(p, IK_MINIGUN);
+  p.weaponKick = 1;
   p.toolCooldown = MINIGUN_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -121,7 +127,7 @@ void ProjectileSystem::applyRescueBeamInput(Player& p) {
   E.psys.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   fireRescueBeam(p);
-  p.toolCooldown = RESCUE_BEAM_COOLDOWN_LOCAL;
+  p.toolCooldown = 1;
   E.playerActionCount++;
 }
 
@@ -390,7 +396,7 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
   for (double t = .5; t <= RESCUE_BEAM_RANGE_LOCAL; t += .5) {
     double px = ox + dx * t, py = oy + dy * t;
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
-    bool rescued = false;
+    bool linked = false;
     for (Creature& creature : E.creatures.creatures) {
       if (!creature.alive || creature.species != CS_SURVEYOR) continue;
       const CreatureSpecies& species = E.creatures.species(creature);
@@ -398,10 +404,10 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
       double ny = std::max(creature.wy, std::min(wy, creature.wy + species.h));
       double ex = wx - nx, ey = wy - ny;
       if (ex * ex + ey * ey > 1.15 * 1.15) continue;
-      rescued = E.missions.rescueCreature(creature);
-      if (rescued) break;
+      linked = creature.shelterCharge > 0 || E.missions.rescueCreature(creature);
+      if (linked) break;
     }
-    if (rescued) {
+    if (linked) {
       distance = t;
       break;
     }
@@ -416,19 +422,25 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
       break;
     }
   }
-  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
   Projectile beam;
-  beam.id = nextId++;
   beam.owner = player.id;
   beam.kind = PK_RESCUE_BEAM;
   beam.px = ox;
   beam.py = oy;
   beam.vx = dx;
   beam.vy = dy;
-  beam.life = 7;
-  beam.fuse = 7;
+  beam.life = 3;
+  beam.fuse = 3;
   beam.charge = distance;
   beam.rotation = std::atan2(dy, dx);
+  for (Projectile& existing : projectiles) {
+    if (existing.kind != PK_RESCUE_BEAM || existing.owner != player.id) continue;
+    beam.id = existing.id;
+    existing = beam;
+    return;
+  }
+  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
+  beam.id = nextId++;
   projectiles.push_back(beam);
 }
 
@@ -624,7 +636,7 @@ void ProjectileSystem::updateProjectiles() {
   size_t write = 0;
   for (size_t i = 0; i < projectiles.size(); i++) {
     Projectile p = projectiles[i];
-    if (p.kind == PK_BORE_BEAM || p.kind == PK_RESCUE_BEAM) {
+    if (p.kind == PK_BORE_BEAM || p.kind == PK_RESCUE_BEAM || p.kind == PK_EXTRACTION_BEAM) {
       if (--p.life <= 0) continue;
       p.fuse = imax(0, p.fuse - 1);
       projectiles[write++] = p;

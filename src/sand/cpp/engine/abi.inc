@@ -1017,6 +1017,9 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.attackPattern = (uint8_t)in[CSN_ATTACK_PATTERN];
     c.attackAimX = sourceOffsetX + in[CSN_AIM_X]; c.attackAimY = sourceOffsetY + in[CSN_AIM_Y];
     c.spawnProgress = in[CSN_SPAWN_PROGRESS];
+    c.rescueProgress = in[CSN_RESCUE_PROGRESS];
+    c.hurtCooldown = (int)in[CSN_HURT_COOLDOWN];
+    c.shelterCharge = in[CSN_SHELTER_CHARGE];
     e->creatures.creatures.push_back(c);
   }
 }

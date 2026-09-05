@@ -7,7 +7,7 @@ import {
 } from '../wasmBridge/abi.generated.js';
 
 const MISSION_NAMES = Object.freeze({
-  [MISSION.GREENFALL_RECOVERY]: 'Operation Greenfall',
+  [MISSION.GREENFALL_RECOVERY]: 'Greenfall Relay',
   [MISSION.SILENT_QUARRY]: 'Operation Silent Quarry',
   [MISSION.RED_FURNACE]: 'Operation Red Furnace',
 });
@@ -52,26 +52,40 @@ const HUD_CSS = `
   background:rgba(240,212,101,.2); transform:rotate(45deg)!important; }
 .sg-mission-announcer { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-@media (max-width:640px) {
-  .sg-mission-hud { top:54px; width:min(250px,calc(100% - 24px)); padding:8px 10px; }
-  .sg-mission-list { gap:3px; }
-  .sg-mission-objective { font-size:7px; }
-}
+.sg-mission-hud { left:auto; right:18px; top:66px; width:250px; border:3px solid #0b0c0f; padding:10px 12px; background:#292a30ee; box-shadow:inset 2px 2px #73757c,inset -2px -2px #141519,3px 3px #0007; font-family:'Sand Pixel',monospace; }
+.sg-mission-kicker { margin:-7px -9px 9px; padding:6px 8px; background:#71312f; color:#fff; font-size:15px; font-weight:400; letter-spacing:0; text-transform:none; border-bottom:2px solid #101115; }
+.sg-mission-stage { font:16px/1.3 'Sand Pixel',monospace; text-transform:none; letter-spacing:0; color:#f6df78; margin:0; }
+.sg-mission-list { display:none; }
+.sg-mission-threat { padding:6px; margin-top:8px; font:13px/1.3 'Sand Pixel',monospace; text-transform:none; letter-spacing:0; }
+.sg-mission-marker .range { font:12px/1.2 'Sand Pixel',monospace; padding:4px; }
+@media(max-height:500px) { .sg-mission-hud { width:210px; top:60px; } }
+
 `;
 
-function objectiveLabel(objective) {
+const GREENFALL_LABELS = [
+  'Disable the signal jammer',
+  'Rescue the three researchers',
+  'Return to the landing beacon',
+];
+function objectiveLabel(objective, missionId) {
+  if (missionId === MISSION.GREENFALL_RECOVERY)
+    return GREENFALL_LABELS[objective.id] || 'Follow the signal';
   return OBJECTIVE_LABELS[objective.type] || 'Complete the objective';
 }
 
 function activeObjective(snapshot) {
-  return snapshot.objectives.find(({ state }) => state === OBJECTIVE_STATE.ACTIVE) || null;
+  return (
+    snapshot.objectives.find(({ state }) => state === OBJECTIVE_STATE.ACTIVE) ||
+    null
+  );
 }
 
 export function presentMissionSnapshot(snapshot) {
   const objective = activeObjective(snapshot);
-  const progress = objective && objective.required > 1
-    ? ` ${objective.current}/${objective.required}`
-    : '';
+  const progress =
+    objective && objective.required > 1
+      ? ` ${objective.current}/${objective.required}`
+      : '';
   const recoveredWeaponKinds = [];
   for (let bit = 0; bit < 5; bit++) {
     if (snapshot.recoveredWeaponMask & (1 << bit)) {
@@ -81,7 +95,14 @@ export function presentMissionSnapshot(snapshot) {
   return {
     ...snapshot,
     missionName: MISSION_NAMES[snapshot.missionId] || 'IRIS Field Operation',
-    stageLabel: objective ? `${objectiveLabel(objective)}${progress}` : 'Awaiting extraction',
+    stageLabel:
+      snapshot.phase === MISSION_PHASE.FAILED
+        ? 'Mission failed'
+        : snapshot.phase === MISSION_PHASE.COMPLETE
+          ? 'Mission complete'
+          : objective
+            ? `${objectiveLabel(objective, snapshot.missionId)}${progress}`
+            : 'Awaiting extraction',
     recoveredWeaponKinds,
   };
 }
@@ -147,12 +168,14 @@ export function createMissionHud(root, game) {
     for (const objective of snapshot.objectives) {
       const node = markerNodes.get(objective.id);
       if (!node) continue;
-      const rawX = (objective.worldX - view.cameraWorldX) / view.viewCols * width;
-      const rawY = (objective.worldY - view.cameraWorldY) / view.viewRows * height;
+      const rawX =
+        ((objective.worldX - view.cameraWorldX) / view.viewCols) * width;
+      const rawY =
+        ((objective.worldY - view.cameraWorldY) / view.viewRows) * height;
       const x = Math.max(26, Math.min(width - 26, rawX));
       const y = Math.max(54, Math.min(height - 64, rawY));
-      const onscreen = rawX >= 26 && rawX <= width - 26 &&
-        rawY >= 54 && rawY <= height - 64;
+      const onscreen =
+        rawX >= 26 && rawX <= width - 26 && rawY >= 54 && rawY <= height - 64;
       const angle = Math.atan2(rawY - height * 0.5, rawX - width * 0.5);
       node.marker.classList.toggle('onscreen', onscreen);
       node.marker.style.transform = `translate(${Math.round(x - 24)}px,${Math.round(y - 12)}px)`;
@@ -163,52 +186,62 @@ export function createMissionHud(root, game) {
       const dy = Number.isFinite(view.playerWorldY)
         ? objective.worldY - view.playerWorldY
         : objective.worldY - (view.cameraWorldY + view.viewRows * 0.5);
-      node.range.textContent = `${Math.round(Math.hypot(dx, dy))}m`;
+      node.range.textContent = `${objective.type === OBJECTIVE_KIND.EXTRACT ? 'KESTREL' : objective.type === OBJECTIVE_KIND.RESCUE ? 'RESEARCHER' : objective.type === OBJECTIVE_KIND.ANCHOR ? 'JAMMER' : 'SENTRY'} · ${Math.round(Math.hypot(dx, dy))}m`;
     }
   };
 
   const update = (next) => {
     snapshot = next;
-    const nextPanelSignature = `${next.missionName}:${next.phase}:${next.threatLevel}:` +
+    const nextPanelSignature =
+      `${next.missionName}:${next.phase}:${next.threatLevel}:` +
       `${next.stageLabel}:` +
-      next.objectives.map(({ id, state, current, required }) =>
-        `${id},${state},${current},${required}`).join('|');
+      next.objectives
+        .map(
+          ({ id, state, current, required }) =>
+            `${id},${state},${current},${required}`,
+        )
+        .join('|');
     if (nextPanelSignature === panelSignature) {
       syncMarkers();
       return;
     }
     panelSignature = nextPanelSignature;
-    kicker.textContent = next.missionName;
+    kicker.textContent = `${next.missionName} · J`;
     stage.textContent = next.stageLabel;
     threat.classList.toggle('on', next.phase === MISSION_PHASE.EXTRACTION);
     threat.textContent = next.threatLevel
-      ? `Threat spike ${next.threatLevel} · ${
-        next.missionId === MISSION.RED_FURNACE
-          ? 'terrain unstable'
-          : 'hostile reinforcements inbound'
-      }`
+      ? 'Reinforcements inbound · keep moving'
       : '';
     list.replaceChildren();
     for (const objective of next.objectives) {
       const row = document.createElement('li');
-      const stateName = objective.state === OBJECTIVE_STATE.COMPLETE
-        ? 'complete'
-        : objective.state === OBJECTIVE_STATE.FAILED
-          ? 'failed'
-          : objective.state === OBJECTIVE_STATE.ACTIVE ? 'active' : 'locked';
+      const stateName =
+        objective.state === OBJECTIVE_STATE.COMPLETE
+          ? 'complete'
+          : objective.state === OBJECTIVE_STATE.FAILED
+            ? 'failed'
+            : objective.state === OBJECTIVE_STATE.ACTIVE
+              ? 'active'
+              : 'locked';
       row.className = `sg-mission-objective ${stateName}`;
       const icon = document.createElement('span');
       icon.className = 'state';
-      icon.textContent = objective.state === OBJECTIVE_STATE.COMPLETE
-        ? '✓'
-        : objective.state === OBJECTIVE_STATE.FAILED ? '×' : objective.state === OBJECTIVE_STATE.ACTIVE ? '◆' : '·';
+      icon.textContent =
+        objective.state === OBJECTIVE_STATE.COMPLETE
+          ? '✓'
+          : objective.state === OBJECTIVE_STATE.FAILED
+            ? '×'
+            : objective.state === OBJECTIVE_STATE.ACTIVE
+              ? '◆'
+              : '·';
       const label = document.createElement('span');
-      label.textContent = objectiveLabel(objective);
+      label.textContent = objectiveLabel(objective, next.missionId);
       const progress = document.createElement('span');
       progress.className = 'sg-mission-progress';
-      progress.textContent = objective.required > 1
-        ? `${objective.current}/${objective.required}`
-        : '';
+      progress.textContent =
+        objective.required > 1
+          ? `${objective.current}/${objective.required}`
+          : '';
       row.append(icon, label, progress);
       list.appendChild(row);
     }

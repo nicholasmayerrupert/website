@@ -1,3 +1,5 @@
+#include "mission_greenfall.inc"
+
 MissionObjective& MissionSystem::addObjective(uint8_t type, uint8_t state,
                                                int required, int worldX,
                                                int worldY, int flags) {
@@ -92,8 +94,8 @@ bool MissionSystem::findSafeMissionSpawn(uint8_t species, int worldX,
     bestX = x;
     bestY = y;
   };
-  static constexpr int NEAR_X = 96;
-  static constexpr int NEAR_Y = 72;
+  const int NEAR_X = missionId == MI_GREENFALL_RECOVERY ? 6 : 96;
+  const int NEAR_Y = missionId == MI_GREENFALL_RECOVERY ? 8 : 72;
   for (int ax = 0; ax <= NEAR_X; ax++) {
     for (int xs = 0; xs < (ax == 0 ? 1 : 2); xs++) {
       int x = baseX + (ax == 0 ? 0 : (xs == 0 ? -ax : ax));
@@ -105,7 +107,7 @@ bool MissionSystem::findSafeMissionSpawn(uint8_t species, int worldX,
       }
     }
   }
-  if (bestDistance2 == INT_MAX) {
+  if (bestDistance2 == INT_MAX && missionId != MI_GREENFALL_RECOVERY) {
     for (int y = 5; y + policy.h + 5 < E.rows; y++)
       for (int x = 5; x + policy.w + 5 < E.cols; x++)
         consider(x, y);
@@ -156,6 +158,7 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   pendingObjective = -1;
   nextThreatActorTick = 0;
   extractionThreatWave = 0;
+  extractionTicks = 0;
   coreDestabilized = false;
   objectives.clear();
   objectives.reserve(4);
@@ -178,20 +181,8 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   };
 
   if (missionId == MI_GREENFALL_RECOVERY) {
-    int crewX = centerX + side * 2 / 3, crewY = depth(.40);
-    int rescueX = centerX - side * 2 / 3, rescueY = depth(.72);
-    MissionObjective& clear = addObjective(
-      OK_CLEAR, OS_ACTIVE, 3, crewX, crewY, MISSION_FLAG_PRIMARY_MARKER);
-    MissionObjective& rescue = addObjective(
-      OK_RESCUE, OS_LOCKED, 3, rescueX, rescueY, MISSION_FLAG_PRIMARY_MARKER);
-    addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
-                 MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    clear.targetActorId = spawnMissionCreature(
-      CS_DYNAMITEER, crewX, crewY, clear.id, -8);
-    spawnMissionCreature(CS_CAUSTIC_MORTARMAN, crewX, crewY, clear.id, 0);
-    spawnMissionCreature(CS_DYNAMITEER, crewX, crewY, clear.id, 8);
-    refreshObjectiveMarker(clear);
-    rescue.targetActorId = 0;
+    buildGreenfall(centerX, surfaceY);
+    if (phase == MP_FAILED) return false;
   } else if (missionId == MI_SILENT_QUARRY) {
     int anchorY = depth(.48);
     MissionObjective& anchors = addObjective(
@@ -239,6 +230,13 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   rescueBeam.itemKind = IK_RESCUE_BEAM;
   rescueBeam.count = 1;
   E.inv.addStack(*player, rescueBeam);
+  if (missionId == MI_GREENFALL_RECOVERY) {
+    for (int slot = 0; slot < INV_SLOTS; slot++)
+      if (player->inv[slot].itemKind == IK_RESCUE_BEAM) {
+        std::swap(player->inv[2], player->inv[slot]);
+        break;
+      }
+  }
   return true;
 }
 
@@ -250,13 +248,26 @@ void MissionSystem::activateObjective(int objectiveId) {
   objective->state = OS_ACTIVE;
   revision++;
   if (objective->type == OK_RESCUE) {
+    if (missionId == MI_GREENFALL_RECOVERY) {
+      if (Player* player = E.psys.findPlayer(playerId))
+        for (int slot = 0; slot < INV_SLOTS; slot++)
+          if (player->inv[slot].itemKind == IK_RESCUE_BEAM) {
+            E.inv.setSelectedSlot(*player, slot);
+            break;
+          }
+    }
+    if (missionId != MI_GREENFALL_RECOVERY) {
+      objective->targetActorId = spawnMissionCreature(
+        CS_SURVEYOR, objective->worldX, objective->worldY,
+        objective->id, -8);
+      spawnMissionCreature(CS_SURVEYOR, objective->worldX,
+                           objective->worldY, objective->id, 0);
+      spawnMissionCreature(CS_SURVEYOR, objective->worldX,
+                           objective->worldY, objective->id, 8);
+    }
+  } else if (objective->type == OK_ANCHOR) {
     objective->targetActorId = spawnMissionCreature(
-      CS_SURVEYOR, objective->worldX, objective->worldY,
-      objective->id, -8);
-    spawnMissionCreature(CS_SURVEYOR, objective->worldX,
-                         objective->worldY, objective->id, 0);
-    spawnMissionCreature(CS_SURVEYOR, objective->worldX,
-                         objective->worldY, objective->id, 8);
+      CS_SHIELD_ANCHOR, objective->worldX, objective->worldY, objective->id);
   } else if (objective->type == OK_BOSS) {
     uint8_t species = missionId == MI_SILENT_QUARRY
       ? CS_QUARRY_FOREMAN : CS_REACTOR_WARDEN;
@@ -311,6 +322,10 @@ void MissionSystem::completeObjective(MissionObjective& objective) {
     return;
   }
   pendingObjective = next;
+  if (missionId == MI_GREENFALL_RECOVERY) {
+    if (Player* player = E.psys.findPlayer(playerId))
+      player->health = imin(100, player->health + 30);
+  }
 }
 
 void MissionSystem::onCreatureKilled(Creature& creature) {
@@ -330,14 +345,19 @@ void MissionSystem::onCreatureKilled(Creature& creature) {
 }
 
 bool MissionSystem::rescueCreature(Creature& creature) {
-  if (!active() || creature.species != CS_SURVEYOR || !creature.alive)
+  if (!active() || creature.species != CS_SURVEYOR || !creature.alive ||
+      creature.shelterCharge > 0)
     return false;
   MissionObjective* objective = findObjective(creature.missionObjective);
   if (!objective || objective->state != OS_ACTIVE ||
       objective->type != OK_RESCUE) return false;
-  creature.health = 0;
+  if (creature.rescueLastTick == E.actorTick) return true;
+  creature.rescueLastTick = E.actorTick;
+  creature.rescueProgress = std::min(1.0, creature.rescueProgress + 1.0 / 60.0);
+  if (creature.rescueProgress < 1.0 - 1e-6) return true;
+  creature.rescueProgress = 1;
   creature.alive = false;
-  creature.deathTicks = 0;
+  creature.deathTicks = 30;
   objective->current = imin(objective->required, objective->current + 1);
   if (objective->current >= objective->required) completeObjective(*objective);
   else {
@@ -366,6 +386,7 @@ void MissionSystem::beginExtraction() {
               : missionId == MI_SILENT_QUARRY ? 2 : 1;
   nextThreatActorTick = E.actorTick;
   extractionThreatWave = 0;
+  extractionTicks = 0;
   revision++;
   if (missionId == MI_RED_FURNACE && !coreDestabilized) {
     coreDestabilized = true;
@@ -401,11 +422,12 @@ void MissionSystem::fail() {
 
 void MissionSystem::updateThreat() {
   if (phase != MP_EXTRACTION) return;
+  if (missionId == MI_GREENFALL_RECOVERY && extractionThreatWave >= 3) return;
   if (E.actorTick < nextThreatActorTick) return;
   int cadence = missionId == MI_RED_FURNACE ? 150
-              : missionId == MI_SILENT_QUARRY ? 210 : 260;
+              : missionId == MI_SILENT_QUARRY ? 210 : 600;
   static const uint8_t GREENFALL_ROSTER[] = {
-    CS_CRAWLER, CS_BORE_SENTINEL, CS_DYNAMITEER, CS_CLUSTER_WASP
+    CS_CRAWLER, CS_DYNAMITEER, CS_CRAWLER, CS_CLUSTER_WASP
   };
   static const uint8_t QUARRY_ROSTER[] = {
     CS_BORE_SENTINEL, CS_MINIGUNNER, CS_DYNAMITEER, CS_CLUSTER_WASP
@@ -456,7 +478,29 @@ void MissionSystem::update() {
   double worldX = E.fg.worldOffsetX + player->px + player->w * .5;
   double worldY = E.fg.worldOffsetY + player->py + player->h * .5;
   double dx = worldX - extractionX, dy = worldY - extractionY;
-  if (dx * dx + dy * dy > 8.0 * 8.0) return;
+  bool atBeacon = dx * dx + dy * dy <=
+    (missionId == MI_GREENFALL_RECOVERY ? 14.0 * 14.0 : 8.0 * 8.0);
+  if (missionId == MI_GREENFALL_RECOVERY) {
+    extractionTicks = atBeacon ? extractionTicks + 1 : 0;
+    // A single replicated cosmetic latch keeps the pad visible throughout escape.
+    Projectile* effect = nullptr;
+    for (Projectile& p : E.projectiles.projectiles)
+      if (p.kind == PK_EXTRACTION_BEAM) { effect = &p; break; }
+    if (!effect && (int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
+      Projectile beam;
+      beam.id = E.projectiles.nextId++;
+      beam.kind = PK_EXTRACTION_BEAM;
+      E.projectiles.projectiles.push_back(beam);
+      effect = &E.projectiles.projectiles.back();
+    }
+    if (effect) {
+      effect->px = extractionX - E.fg.worldOffsetX;
+      effect->py = extractionY - E.fg.worldOffsetY + 6;
+      effect->charge = std::min(1.0, extractionTicks / 120.0);
+      effect->life = effect->fuse = 3;
+    }
+    if (extractionTicks < 120) return;
+  } else if (!atBeacon) return;
   for (MissionObjective& objective : objectives)
     if (objective.type == OK_EXTRACT) completeObjective(objective);
   collectRecoveredWeapons();

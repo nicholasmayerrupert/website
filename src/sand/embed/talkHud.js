@@ -1,5 +1,6 @@
 import {
   CREATURE,
+  PLANET,
   PLANET_GAMEPLAY_FLAG,
   planetHasGameplayFlag,
 } from '../wasmBridge/abi.generated.js';
@@ -7,16 +8,17 @@ import {
 const TALKABLES = Object.freeze({
   [CREATURE.SURVEYOR]: {
     name: 'IRIS Surveyor',
-    dialogue: 'The structure is stable enough to shelter in, but the surrounding terrain is not. Stay inside the marked rooms when the ground starts moving.',
+    dialogue: 'Hold the rescue beam (3) on me.',
+    shipDialogue: 'Three researchers are trapped at Greenfall Relay.',
   },
   [CREATURE.IRIS_COMMANDER]: {
     name: 'Commander Vale',
-    dialogue: 'Agent, I have three live operation files ready for review. We can select your destination and field loadout when you are ready.',
-    action: 'Review missions',
+    dialogue: 'Earth: extract three researchers from Greenfall Relay.',
+    action: 'Earth mission',
   },
   [CREATURE.IRIS_ENGINEER]: {
     name: 'Engineer Osei',
-    dialogue: 'I keep the transporter, armory, and hull systems running. The central deck is clear—nothing aboard should obstruct your movement.',
+    dialogue: 'Hold F to block; release to fire. Hold Space to thrust.',
   },
 });
 
@@ -25,13 +27,16 @@ export function recoveryBeamIsActive(
   playerWorldY,
   hasGameplayFlag = planetHasGameplayFlag,
 ) {
-  return Number.isFinite(playerWorldY) && playerWorldY > 48
-    && hasGameplayFlag(planetId, PLANET_GAMEPLAY_FLAG.VOID_RECOVERY);
+  return (
+    Number.isFinite(playerWorldY) &&
+    playerWorldY > 48 &&
+    hasGameplayFlag(planetId, PLANET_GAMEPLAY_FLAG.VOID_RECOVERY)
+  );
 }
 
 const STYLE = `
 .sg-talk-layer { position:absolute; inset:0; z-index:78; overflow:hidden; pointer-events:none;
-  font-family:ui-monospace,"SFMono-Regular","Cascadia Mono","Roboto Mono","Courier New",monospace; }
+  font-family:'Sand Pixel',monospace; }
 .sg-talk-button { position:absolute; left:0; top:0; pointer-events:auto; transform:translate(-50%,-100%);
   min-width:46px; border:2px solid #080a0c; padding:5px 8px; cursor:pointer; background:#f0d465; color:#17140a;
   box-shadow:inset 0 0 0 1px #fff1a0,3px 3px 0 #080a0c; font:900 8px/1 inherit;
@@ -52,13 +57,13 @@ const STYLE = `
   pointer-events:auto; background:rgba(17,23,29,.97); color:#fff;
   box-shadow:inset 0 0 0 2px #4b555e,6px 6px 0 rgba(0,0,0,.55); }
 .sg-dialogue[hidden] { display:none; }
-.sg-dialogue-name { color:#f0d465; font-size:9px; line-height:1; font-weight:900; letter-spacing:.18em; text-transform:uppercase; }
-.sg-dialogue-copy { margin:9px 0 0; color:#d4d9de; font-size:11px; line-height:1.65; }
+.sg-dialogue-name { margin:-10px -10px 12px; padding:8px 10px; background:#71312f; color:#fff; font-size:18px; line-height:1; }
+.sg-dialogue-copy { margin:9px 0 0; color:#d4d9de; font-size:17px; line-height:1.4; }
 .sg-dialogue-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
 .sg-dialogue-actions button { border:2px solid #080a0c; padding:8px 11px; cursor:pointer;
   background:#252b31; color:#fff; box-shadow:inset 0 0 0 1px #59636c,3px 3px 0 #080a0c;
-  font:900 8px/1 inherit; letter-spacing:.12em; text-transform:uppercase; }
-.sg-dialogue-actions .primary { background:#d4b94d; color:#17140a; box-shadow:inset 0 0 0 1px #fff1a0,3px 3px 0 #080a0c; }
+  font:16px/1 'Sand Pixel',monospace; }
+.sg-dialogue-actions .primary { background:#4c7131; color:#fff; box-shadow:inset 1px 1px #94b35d,inset -1px -1px #293e1a; }
 .sg-ship-recovery-beam { position:absolute; left:0; top:0; width:42px; height:150px; opacity:0;
   transform:translate(-50%,-44%); background:linear-gradient(90deg,transparent,rgba(91,241,255,.38),#f6ffff,rgba(91,241,255,.38),transparent);
   filter:drop-shadow(0 0 12px #62ecff); transition:opacity .16s ease; }
@@ -105,7 +110,7 @@ export function createTalkHud(root, game, onAction) {
   actions.className = 'sg-dialogue-actions';
   const close = document.createElement('button');
   close.type = 'button';
-  close.textContent = 'End conversation';
+  close.textContent = 'Close';
   const primary = document.createElement('button');
   primary.type = 'button';
   primary.className = 'primary';
@@ -115,6 +120,7 @@ export function createTalkHud(root, game, onAction) {
 
   const buttons = new Map();
   let activeActor = null;
+  let nearestActor = null;
   let actors = [];
   let lastActorRead = -Infinity;
   let raf = 0;
@@ -122,7 +128,8 @@ export function createTalkHud(root, game, onAction) {
   const closeDialogue = (restoreFocus = true) => {
     dialogue.hidden = true;
     activeActor = null;
-    if (restoreFocus) root.querySelector('.sg-sim')?.focus({ preventScroll: true });
+    if (restoreFocus)
+      root.querySelector('.sg-sim')?.focus({ preventScroll: true });
   };
   close.addEventListener('click', () => closeDialogue());
   primary.addEventListener('click', () => {
@@ -136,11 +143,14 @@ export function createTalkHud(root, game, onAction) {
     if (!policy) return;
     activeActor = actor;
     name.textContent = policy.name;
-    copy.textContent = policy.dialogue;
+    copy.textContent =
+      game.getPlanetState?.().id === PLANET.SHIP
+        ? policy.shipDialogue || policy.dialogue
+        : actor.shelterCharge > 0 ? 'The jammer has us locked in. Shut it down.' : policy.dialogue;
     primary.hidden = !policy.action;
     primary.textContent = policy.action || '';
     dialogue.hidden = false;
-    close.focus({ preventScroll: true });
+    (policy.action ? primary : close).focus({ preventScroll: true });
   };
 
   const sync = (now) => {
@@ -155,15 +165,30 @@ export function createTalkHud(root, game, onAction) {
     if (!view || !width || !height || !view.viewCols || !view.viewRows) return;
 
     const activeIds = new Set();
+    nearestActor = null;
+    let nearestDistance = Infinity;
     for (const actor of actors) {
-      const rawX = (actor.worldX - view.cameraWorldX) / view.viewCols * width;
-      const rawY = (actor.worldY - view.cameraWorldY) / view.viewRows * height;
+      const rawX = ((actor.worldX - view.cameraWorldX) / view.viewCols) * width;
+      const rawY =
+        ((actor.worldY - view.cameraWorldY) / view.viewRows) * height;
       const distance = Number.isFinite(view.playerWorldX)
-        ? Math.hypot(actor.worldX - view.playerWorldX, actor.worldY - view.playerWorldY)
+        ? Math.hypot(
+            actor.worldX - view.playerWorldX,
+            actor.worldY - view.playerWorldY,
+          )
         : Infinity;
-      const visible = actor.alive && distance <= 28 &&
-        rawX >= 24 && rawX <= width - 24 && rawY >= 30 && rawY <= height - 24;
+      const visible =
+        actor.alive &&
+        distance <= 28 &&
+        rawX >= 24 &&
+        rawX <= width - 24 &&
+        rawY >= 30 &&
+        rawY <= height - 24;
       if (!visible) continue;
+      if (distance < nearestDistance) {
+        nearestActor = actor;
+        nearestDistance = distance;
+      }
       activeIds.add(actor.id);
       let button = buttons.get(actor.id);
       if (!button) {
@@ -171,7 +196,10 @@ export function createTalkHud(root, game, onAction) {
         button.type = 'button';
         button.className = 'sg-talk-button';
         button.textContent = 'Talk';
-        button.setAttribute('aria-label', `Talk to ${TALKABLES[actor.species].name}`);
+        button.setAttribute(
+          'aria-label',
+          `Talk to ${TALKABLES[actor.species].name}`,
+        );
         button.addEventListener('click', () => openDialogue(actor));
         layer.appendChild(button);
         buttons.set(actor.id, button);
@@ -179,37 +207,45 @@ export function createTalkHud(root, game, onAction) {
       button.style.transform = `translate(${Math.round(rawX)}px,${Math.round(rawY - 8)}px) translate(-50%,-100%)`;
     }
     for (const [id, button] of buttons) {
+      button.hidden = id !== nearestActor?.id;
+      button.textContent = id === nearestActor?.id ? 'T · Talk' : 'Talk';
       if (activeIds.has(id)) continue;
       button.remove();
       buttons.delete(id);
       if (activeActor?.id === id) closeDialogue();
     }
 
-    const commander = actors.find(({ species, alive }) =>
-      species === CREATURE.IRIS_COMMANDER && alive);
+    const commander = actors.find(
+      ({ species, alive }) => species === CREATURE.IRIS_COMMANDER && alive,
+    );
     if (!commander) {
       questMarker.hidden = true;
     } else {
-      const rawX = (commander.worldX - view.cameraWorldX) / view.viewCols * width;
-      const rawY = (commander.worldY - view.cameraWorldY) / view.viewRows * height;
+      const rawX =
+        ((commander.worldX - view.cameraWorldX) / view.viewCols) * width;
+      const rawY =
+        ((commander.worldY - view.cameraWorldY) / view.viewRows) * height;
       const distance = Number.isFinite(view.playerWorldX)
         ? Math.hypot(
-          commander.worldX - view.playerWorldX,
-          commander.worldY - view.playerWorldY,
-        )
+            commander.worldX - view.playerWorldX,
+            commander.worldY - view.playerWorldY,
+          )
         : Infinity;
-      const talkVisible = distance <= 28 &&
-        rawX >= 24 && rawX <= width - 24 && rawY >= 30 && rawY <= height - 24;
+      const talkVisible =
+        distance <= 28 &&
+        rawX >= 24 &&
+        rawX <= width - 24 &&
+        rawY >= 30 &&
+        rawY <= height - 24;
       questMarker.hidden = talkVisible;
       if (!talkVisible) {
         const x = Math.max(26, Math.min(width - 26, rawX));
         const y = Math.max(54, Math.min(height - 64, rawY));
-        const onscreen = rawX >= 26 && rawX <= width - 26 &&
-          rawY >= 54 && rawY <= height - 64;
+        const onscreen =
+          rawX >= 26 && rawX <= width - 26 && rawY >= 54 && rawY <= height - 64;
         const angle = Math.atan2(rawY - height * 0.5, rawX - width * 0.5);
         questMarker.classList.toggle('onscreen', onscreen);
-        questMarker.style.transform =
-          `translate(${Math.round(x)}px,${Math.round(y - 12)}px) translate(-50%,-100%)`;
+        questMarker.style.transform = `translate(${Math.round(x)}px,${Math.round(y - 12)}px) translate(-50%,-100%)`;
         questMarkerIcon.style.transform = `rotate(${angle}rad)`;
       }
     }
@@ -218,21 +254,40 @@ export function createTalkHud(root, game, onAction) {
       game.getPlanetState?.().id,
       view.playerWorldY,
     );
-    const playerX = (view.playerWorldX - view.cameraWorldX) / view.viewCols * width;
-    const playerY = (view.playerWorldY - view.cameraWorldY) / view.viewRows * height;
+    const playerX =
+      ((view.playerWorldX - view.cameraWorldX) / view.viewCols) * width;
+    const playerY =
+      ((view.playerWorldY - view.cameraWorldY) / view.viewRows) * height;
     recoveryBeam.classList.toggle('on', recovering);
     if (recovering) {
-      recoveryBeam.style.transform =
-        `translate(${Math.round(playerX)}px,${Math.round(playerY)}px) translate(-50%,-44%)`;
+      recoveryBeam.style.transform = `translate(${Math.round(playerX)}px,${Math.round(playerY)}px) translate(-50%,-44%)`;
     }
   };
 
+  const onKey = (event) => {
+    if (event.repeat) return;
+    if (!dialogue.hidden && (event.key === 'Escape' || event.code === 'KeyT')) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDialogue();
+    } else if (
+      event.code === 'KeyT' &&
+      nearestActor &&
+      root.activeElement?.classList.contains('sg-sim')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      openDialogue(nearestActor);
+    }
+  };
+  root.addEventListener('keydown', onKey, true);
   root.append(style, layer);
   raf = requestAnimationFrame(sync);
 
   return {
     destroy() {
       cancelAnimationFrame(raf);
+      root.removeEventListener('keydown', onKey, true);
       layer.remove();
       style.remove();
     },

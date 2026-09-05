@@ -416,7 +416,7 @@ const glRecord = { x: 1, y: 2, w: 3, h: 4, facing: -1 };
 const glPacked = new Float32Array(STRIDES.glPlayerExt);
 writeGlPlayerExtSnapshot(
   glPacked, 0, glRecord, true, 5, 6, true, 7, 0.8, 9, 10,
-  0.7, true, 123, false,
+  0.7, true, 123, false, 0.5, 12,
 );
 check('generated JS writer follows generated field order',
   glPacked[OFF.glPlayerExt.x] === 1
@@ -424,7 +424,9 @@ check('generated JS writer follows generated field order',
     && glPacked[OFF.glPlayerExt.animState] === 5
     && glPacked[OFF.glPlayerExt.aimY] === 10
     && glPacked[OFF.glPlayerExt.shieldHealth] === 123
-    && glPacked[OFF.glPlayerExt.shieldActive] === 0);
+    && glPacked[OFF.glPlayerExt.shieldActive] === 0
+    && glPacked[OFF.glPlayerExt.weaponKick] === 0.5
+    && glPacked[OFF.glPlayerExt.hurtCooldown] === 12);
 
 const bodyCodec = SNAPSHOT_CODECS.testBodyState;
 const bodyPacked = new Float64Array(STRIDES.testBodyState);
@@ -455,7 +457,7 @@ let reorderedRejected = false;
 try {
   writeGlPlayerExtSnapshot(
     glPacked, 0, glRecord, 5, true, 6, true, 7, 0.8, 9, 10,
-    0.7, true, 123, false,
+    0.7, true, 123, false, 0.5, 12,
   );
 } catch (error) {
   reorderedRejected = error instanceof TypeError;

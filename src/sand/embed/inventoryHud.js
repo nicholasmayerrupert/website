@@ -21,9 +21,8 @@ const TOOL_NAME = { 1: 'Mining Tool', 2: 'Mining Tool', 3: 'Mining Tool', 5: 'Mi
 const TIER = ['', 'W', 'S', 'I', 'G'];
 const TIER_NAME = ['', 'Wood', 'Stone', 'Iron', 'Gold'];
 
-// Tool icons as simple 12x12 pixel art. 'H' = wooden handle, 'M' = metal head
-// (tinted by tier), '.' = empty. Rendered as crisp SVG so it scales without blur.
-// Dig (and pickaxe): diagonal pick — solid head top-right, wood shaft bottom-left.
+// Tool icons use tier-tinted metal, handle, dark casing, and cyan emitters.
+// Crisp SVG pixels keep silhouettes legible at hotbar size.
 const PICKAXE_ART = [
   '............',
   '..MMMMMM....',
@@ -68,7 +67,20 @@ const TOOL_ART = {
     '....MMMM....',
     '............',
   ],
-  5: PICKAXE_ART, // dig — universal dig tool, pickaxe look
+  5: [ // mining emitter with paired rails and a pistol grip
+    '............',
+    '..DDDD......',
+    '.DMMMMDDCCC.',
+    '.DMMMMMDD.CC',
+    '.DMMMMMDD.CC',
+    '..DDDDDDCCC.',
+    '...DDDD.....',
+    '...DDD......',
+    '...DDD......',
+    '....DD......',
+    '............',
+    '............',
+  ],
 };
 const TOOL_HANDLE = '#9b6a39'; // wood
 // Metal-head tint indexed by toolTier (0 = generic, 1 wood, 2 stone, 3 iron, 4 gold).
@@ -90,14 +102,14 @@ function buildToolIcon(toolClass, toolTier, sizePx) {
     const row = grid[r];
     for (let c = 0; c < row.length; c++) {
       const ch = row[c];
-      if (ch !== 'H' && ch !== 'M') continue;
+      if (!'HMDC'.includes(ch)) continue;
       const rect = document.createElementNS(SVG_NS, 'rect');
       rect.setAttribute('x', String(c));
       rect.setAttribute('y', String(r));
       // Bleed each cell by a hair so crisp-edges scaling never leaves seams.
       rect.setAttribute('width', '1.02');
       rect.setAttribute('height', '1.02');
-      rect.setAttribute('fill', ch === 'H' ? TOOL_HANDLE : head);
+      rect.setAttribute('fill', ch === 'H' ? TOOL_HANDLE : ch === 'D' ? '#263b48' : ch === 'C' ? '#78eeee' : head);
       svg.appendChild(rect);
     }
   }
@@ -662,7 +674,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = `Acid Mortar — ${s.count} shells remaining`;
         else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = `Cluster Launcher — ${s.count} carriers remaining`;
         else if (s.itemKind === ITEM_KIND.MINIGUN) el.title = `Minigun — ${s.count} rounds remaining`;
-        else if (s.itemKind === ITEM_KIND.RESCUE_BEAM) el.title = 'Rescue Beam — tag stranded personnel for orbital recovery';
+        else if (s.itemKind === ITEM_KIND.RESCUE_BEAM) el.title = 'Rescue Beam — hold on a researcher to transport them';
         else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
         else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
         else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;

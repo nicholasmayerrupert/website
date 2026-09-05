@@ -1,6 +1,6 @@
 bool CreatureSystem::isProtectedNpc(const Creature& c) const {
   const CreatureSpecies& definition = species(c);
-  return definition.protection == CPROT_ALWAYS
+  return c.shelterCharge > 0 || definition.protection == CPROT_ALWAYS
     || (definition.protection == CPROT_PROTECTED_CREW
         && planetHasGameplayFlag(E.planetId, PGF_PROTECTED_CREW));
 }
@@ -265,7 +265,10 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
       : std::cos(angle);
     double uy = sideEntry ? 0.0 : std::sin(angle);
     double minDist = r.minPlayerDistance;
-    double maxDist = r.maxPlayerDistance;
+    if (E.missions.missionId == MI_GREENFALL_RECOVERY && E.missions.active())
+      minDist = std::max(48.0, minDist);
+    double maxDist = E.missions.missionId == MI_GREENFALL_RECOVERY && E.missions.active()
+      ? std::max(minDist + 24, (double)r.maxPlayerDistance) : r.maxPlayerDistance;
     double dist = minDist + whash2(seed ^ 0x22u, (int)salt, attempt) * (maxDist - minDist);
     double wx = fx + ux * dist - s.w * 0.5;
     double wy = fy + uy * dist - s.h * 0.5;
@@ -299,7 +302,7 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     // Surface/cave/air habitat snapping can substantially change Y after the
     // radial candidate was chosen. Recheck the actual final pose so enemies do
     // not materialize on top of a player despite their spawn safety radius.
-    if (!farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
+    if (!farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, (int)minDist)) continue;
     if (requireOffscreen) {
       if (sideEntry && intersectsVisibleColumns(wx, SPAWN_VIEW_MARGIN)) continue;
       if (intersectsVisibleViews(wx, wy, SPAWN_VIEW_MARGIN)) continue;
@@ -353,6 +356,14 @@ bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy
           SPAWN_TELEGRAPH_TICK_SPAN);
   duration = imin(SPAWN_TELEGRAPH_MIN_TICKS + SPAWN_TELEGRAPH_TICK_SPAN - 1,
                   imax(SPAWN_TELEGRAPH_MIN_TICKS, duration));
+  if (E.missions.missionId == MI_GREENFALL_RECOVERY && E.missions.active()) {
+    const CreatureSpecies& s = CREATURE_SPECIES[speciesId];
+    if (!farEnoughFromPlayers(wx + s.w * .5, wy + s.h * .5, 48)) return false;
+    double dx = wx + s.w * .5 - E.missions.extractionX;
+    double dy = wy + s.h * .5 - E.missions.extractionY;
+    if (dx * dx + dy * dy < 32 * 32) return false;
+    duration = imax(duration, 120);
+  }
   pendingSpawns.push_back({nextCreatureId++, speciesId, wx, wy, duration, duration});
   E.audio.emit(SE_SPAWN_BREACH, wx - E.fg.worldOffsetX + CREATURE_SPECIES[speciesId].w * 0.5,
                wy - E.fg.worldOffsetY + CREATURE_SPECIES[speciesId].h * 0.5,
@@ -457,11 +468,18 @@ void CreatureSystem::updateSpawnTelegraphs() {
     if (--pending.ticksRemaining > 0) { i++; continue; }
     CreatureSpawnTelegraph ready = pending;
     pendingSpawns.erase(pendingSpawns.begin() + i);
-    // Placement, habitat, safety, and population policy are all accepted before
-    // a breach becomes visible. From that point its id is a real reservation:
-    // player movement or later population changes cannot turn the warning into
-    // an empty animation.
-    addCreature(ready.species, ready.wx, ready.wy, ready.id);
+    if (E.missions.missionId == MI_GREENFALL_RECOVERY && E.missions.active()) {
+      const CreatureSpecies& s = CREATURE_SPECIES[ready.species];
+      if (!boxFitsHabitat(ready.species, ready.wx, ready.wy) ||
+          !farEnoughFromPlayers(ready.wx + s.w * .5, ready.wy + s.h * .5, 36)) {
+        E.missions.extractionThreatWave = imax(0, E.missions.extractionThreatWave - 1);
+        E.missions.nextThreatActorTick = E.actorTick + 120;
+        continue;
+      }
+    }
+    int id = addCreature(ready.species, ready.wx, ready.wy, ready.id);
+    if (id && E.missions.missionId == MI_GREENFALL_RECOVERY && E.missions.active())
+      creatures.back().attackCooldown = 90;
   }
 }
 
@@ -859,6 +877,9 @@ void CreatureSystem::moveAmphibious(Creature& c) {
                        : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
                        : c.wanderDir * s.walkSpeed * 0.62;
     }
+    // Released researchers wait for extraction instead of fleeing their rescuer.
+    if (c.missionActor && c.species == CS_SURVEYOR &&
+        E.missions.missionId == MI_GREENFALL_RECOVERY) wish = 0;
     c.vx = accelerateToward(c.vx, wish, s.accel);
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += E.scaledGravity(s.gravity); if (c.vy > 2.4) c.vy = 2.4;
@@ -1018,9 +1039,11 @@ void CreatureSystem::updateChargedProjectileAttack(
 
 void CreatureSystem::updateMinigunnerAttack(Creature& c) {
   const CreatureSpecies& s = species(c);
+  bool relayGuard = c.missionActor && E.missions.missionId == MI_GREENFALL_RECOVERY;
+  int chargeTicks = relayGuard ? 60 : MINIGUNNER_CHARGE_TICKS;
+  int burstTicks = relayGuard ? 48 : MINIGUNNER_BURST_TICKS;
   if (c.attackState == CAS_FIRING) {
-    // Commit to the charged line for the entire burst. The long stream remains
-    // threatening, but moving out of that line is now a reliable counterplay.
+    // The burst commits to its charged line, allowing a block or sidestep.
     c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
     if ((c.attackTicks % MINIGUNNER_SHOT_INTERVAL) == 0) {
       E.projectiles.spawnMinigunRound(c,
@@ -1029,8 +1052,9 @@ void CreatureSystem::updateMinigunnerAttack(Creature& c) {
     }
     c.attackTicks++;
     c.attackProgress = std::max(0.0,
-      1.0 - c.attackTicks / (double)MINIGUNNER_BURST_TICKS);
-    if (c.attackTicks >= MINIGUNNER_BURST_TICKS) {
+      1.0 - c.attackTicks / (double)burstTicks);
+    if (c.attackTicks >= burstTicks) {
+      if (relayGuard) c.attackCooldown = 120;
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
     }
     return;
@@ -1042,8 +1066,8 @@ void CreatureSystem::updateMinigunnerAttack(Creature& c) {
     if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
     c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
     c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)MINIGUNNER_CHARGE_TICKS);
-    if (c.attackTicks >= MINIGUNNER_CHARGE_TICKS) {
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
+    if (c.attackTicks >= chargeTicks) {
       c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
       c.attackCooldown = s.attackCooldown;
     }
@@ -1365,13 +1389,48 @@ void CreatureSystem::updateCreatures() {
   updateSpawnTelegraphs();
   if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
-    if (!c.alive) { c.deathTicks--; continue; }
+    if (!c.alive) {
+      c.deathTicks--;
+      if (c.rescueProgress >= 1) c.rescueProgress = 2.0 - std::max(0, c.deathTicks) / 30.0;
+      continue;
+    }
+    if (c.rescueProgress > 0 && E.actorTick - c.rescueLastTick > 6)
+      c.rescueProgress = std::max(0.0, c.rescueProgress - 1.0 / 36.0);
+    if (c.shelterCharge > 0) {
+      if (E.missions.missionId == MI_GREENFALL_RECOVERY &&
+          !E.missions.objectives.empty() && E.missions.objectives[0].state == OS_COMPLETE)
+        c.shelterCharge = std::max(0.0, c.shelterCharge - 1.0 / 45.0);
+      c.health = species(c).maxHealth;
+      c.vx = c.vy = 0;
+      c.animFrame = 0;
+      continue;
+    }
     if (isProtectedNpc(c)) c.health = species(c).maxHealth;
     if (c.health <= 0) {
       killCreature(c);
       continue;
     }
+    bool encounterEngaged = true;
+    if (c.missionActor && species(c).hostile &&
+        E.missions.missionId == MI_GREENFALL_RECOVERY) {
+      const Player* player = E.psys.findPlayer(E.missions.playerId);
+      encounterEngaged = player &&
+        std::fabs(E.fg.worldOffsetX + player->px + player->w * .5 -
+                  c.wx - species(c).w * .5) <= 80 &&
+        std::fabs(E.fg.worldOffsetY + player->py + player->h * .5 -
+                  c.wy - species(c).h * .5) <= 24;
+      // Relay guards engage within the player's gallery, including through rubble.
+      if (!encounterEngaged) {
+        c.attackState = CAS_IDLE;
+        c.attackTicks = 0;
+        c.attackProgress = 0;
+        c.attackCooldown = imax(c.attackCooldown, 60);
+      }
+    }
     if (c.scanCooldown > 0) c.scanCooldown--; else acquireTarget(c);
+    if (c.missionActor && E.missions.missionId == MI_GREENFALL_RECOVERY &&
+        c.targetKind == CT_NONE)
+      c.attackCooldown = imax(c.attackCooldown, 60);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
     if (species(c).locomotion == CL_AQUATIC) {
@@ -1395,7 +1454,7 @@ void CreatureSystem::updateCreatures() {
       c.wx, c.wy, species(c).w, species(c).h, E.actorTick + c.id * 7);
     if (contactHazard != CHP_NONE)
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
-    attackTarget(c);
+    if (encounterEngaged) attackTarget(c);
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement
     // instead of every creature sharing the same two-frame global blink.

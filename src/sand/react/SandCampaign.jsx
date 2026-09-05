@@ -1,1117 +1,597 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SandGame } from './SandGame';
 import {
-  AGENCY,
-  CAMPAIGN_MISSIONS,
-  LOADOUT_SUPPLIES,
-  RECOVERABLE_WEAPONS,
-  SHIP_NAME,
   buildMissionLoadout,
-  getCampaignMission,
-  getNextCampaignMission,
-  getRecoverableWeapon,
-  loadoutSelectionCost,
+  defaultLoadoutSelection,
 } from '../campaign/missions.js';
 import {
-  CAMPAIGN_STORAGE_KEY,
   abandonCampaignRun,
   beginCampaignRun,
   completeCampaignMission,
-  firstIncompleteMission,
-  isCampaignMissionUnlocked,
-  loadoutForCampaignMission,
   readCampaignSave,
-  setCampaignLoadout,
   updateCampaignSave,
 } from '../campaign/campaignSave.js';
+import './earthCampaign.css';
+import { OBJECTIVE_STATE } from '../wasmBridge/abi.generated.js';
 
-const PANEL = 'border-[3px] border-[#080a0c] bg-[#171c21]/95 shadow-[inset_0_0_0_2px_#4b555e,7px_7px_0_rgba(0,0,0,.5)]';
-const BUTTON = 'border-[3px] border-[#080a0c] font-mono text-[10px] font-black uppercase tracking-[.14em] shadow-[inset_0_0_0_2px_rgba(255,255,255,.18),4px_4px_0_#080a0c] transition enabled:hover:-translate-x-px enabled:hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-40';
-
-function randomSeed() {
-  const values = new Uint32Array(1);
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(values);
-    return values[0];
-  }
-  return (Math.random() * 0x100000000) >>> 0;
-}
-
-function formatMissionTime(ticks) {
-  if (!(ticks > 0)) return '—';
-  const seconds = Math.floor(ticks / 60);
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-function ViewportFit({ children, className }) {
-  const frameRef = useRef(null);
-  const contentRef = useRef(null);
-
-  useLayoutEffect(() => {
-    const frame = frameRef.current;
-    const content = contentRef.current;
-    if (!frame || !content) return undefined;
-    const fit = () => {
-      const frameStyle = window.getComputedStyle(frame);
-      const horizontalPadding = parseFloat(frameStyle.paddingLeft) +
-        parseFloat(frameStyle.paddingRight);
-      const verticalPadding = parseFloat(frameStyle.paddingTop) +
-        parseFloat(frameStyle.paddingBottom);
-      const viewport = window.visualViewport;
-      const frameWidth = Math.min(frame.clientWidth, viewport?.width || Infinity);
-      const frameHeight = Math.min(frame.clientHeight, viewport?.height || Infinity);
-      const availableWidth = Math.max(1, frameWidth - horizontalPadding);
-      const availableHeight = Math.max(1, frameHeight - verticalPadding);
-      const scale = Math.min(
-        1,
-        availableWidth / Math.max(1, content.offsetWidth),
-        availableHeight / Math.max(1, content.offsetHeight),
-      );
-      content.style.setProperty('--viewport-fit-scale', String(scale));
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(frame);
-    observer.observe(content);
-    window.addEventListener('resize', fit);
-    window.visualViewport?.addEventListener('resize', fit);
-    fit();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', fit);
-      window.visualViewport?.removeEventListener('resize', fit);
-    };
-  }, []);
-
-  return (
-    <div ref={frameRef} className={className}>
-      <div
-        ref={contentRef}
-        className="absolute left-1/2 top-1/2 w-[calc(100%-3rem)] max-w-2xl origin-center"
-        style={{ transform: 'translate(-50%,-50%) scale(var(--viewport-fit-scale, 1))' }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function MissionConsoleViewport({ children }) {
-  const frameRef = useRef(null);
-  const contentRef = useRef(null);
-
-  useLayoutEffect(() => {
-    const frame = frameRef.current;
-    const content = contentRef.current;
-    if (!frame || !content) return undefined;
-    const fit = () => {
-      const style = window.getComputedStyle(frame);
-      const horizontalPadding = parseFloat(style.paddingLeft) +
-        parseFloat(style.paddingRight);
-      const verticalPadding = parseFloat(style.paddingTop) +
-        parseFloat(style.paddingBottom);
-      const viewport = window.visualViewport;
-      const availableWidth = Math.max(
-        1,
-        Math.min(frame.clientWidth, viewport?.width || Infinity) - horizontalPadding,
-      );
-      const availableHeight = Math.max(
-        1,
-        Math.min(frame.clientHeight, viewport?.height || Infinity) - verticalPadding,
-      );
-      const scale = Math.min(1, availableWidth / 320, availableHeight / 600);
-      content.style.width = `${availableWidth / scale}px`;
-      content.style.height = `${availableHeight / scale}px`;
-      content.style.right = style.paddingRight;
-      content.style.top = style.paddingTop;
-      content.style.setProperty('--mission-console-scale', String(scale));
-      content.dataset.viewportScale = String(scale);
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(frame);
-    window.addEventListener('resize', fit);
-    window.visualViewport?.addEventListener('resize', fit);
-    fit();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', fit);
-      window.visualViewport?.removeEventListener('resize', fit);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={frameRef}
-      className="fixed inset-0 z-[85] box-border h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#02040a]/48 p-2 backdrop-blur-[1px] md:p-4"
-    >
-      <div
-        ref={contentRef}
-        data-mission-console-viewport
-        className="pointer-events-none absolute origin-top-right"
-        style={{ transform: 'scale(var(--mission-console-scale, 1))' }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function PlanetBadge({ mission, locked, completed, selected, onSelect }) {
-  return (
-    <button
-      type="button"
-      disabled={locked}
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={`group relative min-w-0 flex-1 border-[3px] px-3 py-3 text-left font-mono transition ${
-        selected
-          ? 'border-[#f0d465] bg-[#2b2b25] shadow-[inset_0_0_0_2px_#736a3f,5px_5px_0_#080a0c]'
-          : 'border-[#080a0c] bg-[#20262b] shadow-[inset_0_0_0_2px_#4b555e,4px_4px_0_rgba(0,0,0,.45)] enabled:hover:bg-[#293138]'
-      } disabled:cursor-not-allowed disabled:saturate-0`}
-    >
-      <span
-        className="mb-2 block h-1.5 w-10"
-        style={{ background: locked ? '#59616a' : mission.accent }}
-      />
-      <span className="block text-[8px] font-black uppercase tracking-[.18em] text-[#8f9aa4]">
-        {locked ? 'Locked' : completed ? 'Complete' : `Mission ${mission.order + 1}`}
-      </span>
-      <span className="mt-1 block truncate text-[12px] font-black uppercase tracking-[.08em] text-white">
-        {mission.planetName}
-      </span>
-      <span className="mt-1 block truncate text-[8px] font-bold uppercase tracking-[.08em] text-[#b7c0c8]">
-        {locked ? 'Awaiting clearance' : mission.title}
-      </span>
-      {completed && (
-        <span className="absolute right-2 top-2 text-[12px] text-[#75d39a]" aria-label="Complete">✓</span>
-      )}
-    </button>
-  );
-}
-
-function SupplyControl({ supply, packs, budgetLeft, onChange }) {
-  const canAdd = packs < supply.maxPacks && budgetLeft >= supply.packCost;
-  return (
-    <div className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-2 border-[#0a0c0f] bg-[#20262b] p-2 shadow-[inset_2px_2px_0_#3e474f]">
-      <span
-        className="h-8 w-8 border-2 border-[#090b0d] shadow-[inset_3px_3px_0_rgba(255,255,255,.2),inset_-3px_-3px_0_rgba(0,0,0,.25)]"
-        style={{ background: supply.color }}
-        aria-hidden="true"
-      />
-      <span className="min-w-0">
-        <span className="block font-mono text-[10px] font-black uppercase tracking-[.08em] text-white">
-          {supply.name}
-        </span>
-        <span className="mt-0.5 block truncate font-mono text-[8px] text-[#8f9aa4]">
-          {supply.packSize} units · {supply.packCost} capacity
-        </span>
-      </span>
-      <span className="flex items-center gap-1">
-        <button
-          type="button"
-          disabled={packs <= 0}
-          onClick={() => onChange(packs - 1)}
-          className="grid h-7 w-7 place-items-center border-2 border-[#080a0c] bg-[#303840] font-mono text-sm font-black text-white shadow-[inset_0_0_0_1px_#59636c] disabled:opacity-30"
-          aria-label={`Remove one ${supply.name} pack`}
-        >
-          −
-        </button>
-        <output className="w-5 text-center font-mono text-[11px] font-black text-[#f0d465]">
-          {packs}
-        </output>
-        <button
-          type="button"
-          disabled={!canAdd}
-          onClick={() => onChange(packs + 1)}
-          className="grid h-7 w-7 place-items-center border-2 border-[#080a0c] bg-[#4d6041] font-mono text-sm font-black text-white shadow-[inset_0_0_0_1px_#788d65] disabled:opacity-30"
-          aria-label={`Add one ${supply.name} pack`}
-        >
-          +
-        </button>
-      </span>
-    </div>
-  );
-}
-
-function ShipHub({
-  focusRef,
-  gameHostRef,
-  onGameReady,
-  onRestoreGameFocus,
-  save,
-  mission,
-  selection,
-  onSelectMission,
-  onChangeSelection,
-  onDeploy,
-  onRetryInterrupted,
-}) {
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const cost = loadoutSelectionCost(selection);
-  const budgetLeft = mission.loadoutBudget - cost;
-  const unlockedWeapons = RECOVERABLE_WEAPONS.filter(({ itemKind }) =>
-    save.unlockedWeapons.includes(itemKind));
-  const best = save.bestTimes[mission.id];
-
-  const closeTerminal = useCallback(() => {
-    setTerminalOpen(false);
-    requestAnimationFrame(onRestoreGameFocus);
-  }, [onRestoreGameFocus]);
-
+const MISSION_ID = 'greenfall-recovery';
+const EARTH_SEED = 0x1a15beef;
+const formatTime = (ticks) =>
+  `${Math.floor((ticks || 0) / 3600)}:${String(Math.floor((ticks || 0) / 60) % 60).padStart(2, '0')}`;
+function Modal({ children, label, onClose, className = '' }) {
+  const ref = useRef(null);
   useEffect(() => {
-    if (!terminalOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      closeTerminal();
+    const prior = document.activeElement;
+    const node = ref.current;
+    node?.querySelector('button')?.focus();
+    const key = (event) => {
+      if (event.key === 'Escape' && onClose) {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }
+      if (event.key !== 'Tab') return;
+      const controls = [
+        ...node.querySelectorAll('button:not(:disabled),a[href],input'),
+      ];
+      const first = controls[0],
+        last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closeTerminal, terminalOpen]);
-
-  const updatePacks = (id, packs) => {
-    onChangeSelection({
-      ...selection,
-      packs: { ...selection.packs, [id]: packs },
-    });
-  };
-
+    node?.addEventListener('keydown', key);
+    return () => {
+      node?.removeEventListener('keydown', key);
+      if (prior?.isConnected) prior.focus();
+    };
+  }, [onClose]);
   return (
-    <main
-      ref={focusRef}
-      tabIndex={-1}
-      aria-label={`${SHIP_NAME} mission deck`}
-      className="relative h-[100dvh] min-h-[100svh] overflow-hidden bg-[#02040a] px-4 py-4 text-white"
-    >
-      <SandGame
-        mode="survival"
-        planet="ship"
-        worldSeed={0x4b455354}
-        hostRef={gameHostRef}
-        onReady={onGameReady}
-        onTalkAction={({ action }) => {
-          if (action === 'mission-console') setTerminalOpen(true);
-        }}
-      />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-2 bg-[#b5573f] shadow-[0_3px_0_#080a0c,0_6px_0_#283039]" />
-      <div className="pointer-events-none absolute bottom-20 left-5 z-[79] hidden max-w-xs border-l-4 border-[#f0d465] bg-[#0a0d12]/72 p-3 font-mono md:block">
-        <p className="text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">
-          Walkable ship
-        </p>
-        <p className="mt-1 text-[9px] leading-4 text-[#d4d9de]">
-          Move through the Kestrel with WASD. Commander Vale, Engineer Osei,
-          the transporter, armory, and observation deck are physically aboard.
-          Walk to Commander Vale and select TALK when you are ready to review
-          missions.
-        </p>
-      </div>
-      <div className="absolute right-4 top-4 z-[80] flex items-stretch gap-2 font-mono">
-        <div className={`${PANEL} hidden px-3 py-2 text-right sm:block`}>
-          <span className="block text-[7px] font-black uppercase tracking-[.18em] text-[#f0d465]">
-            Field Ship {SHIP_NAME}
-          </span>
-          <span className="mt-1 block text-[8px] font-bold uppercase tracking-[.1em] text-white">
-            Talk to Commander Vale
-          </span>
-        </div>
-        <a
-          href="/"
-          className={`${BUTTON} grid place-items-center bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
+    <div className={`iris-modal ${className}`}>
+      <section ref={ref} role="dialog" aria-modal="true" aria-label={label}>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function Briefing({ ready, onClose, onDeploy }) {
+  return (
+    <Modal label="Earth mission" onClose={onClose} className="iris-briefing">
+      <header className="iris-console-head">
+        <h2>! Missions</h2>
+        <button
+          className="iris-icon-button"
+          onClick={onClose}
+          aria-label="Close mission"
         >
-          ← Portfolio
-        </a>
-      </div>
-      {terminalOpen && (
-      <MissionConsoleViewport>
-      <section
-        id="kestrel-mission-console"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${SHIP_NAME} mission console`}
-        className="pointer-events-none ml-auto flex max-h-full min-h-0 w-full max-w-[1200px] flex-col overflow-hidden"
-      >
-        <header className="pointer-events-auto mb-2 flex shrink-0 flex-col gap-2 border-[3px] border-[#080a0c] bg-[#11171d]/92 p-2 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)] sm:flex-row sm:items-center sm:justify-between sm:p-3">
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center border-[3px] border-[#080a0c] bg-[#f0d465] text-[13px] font-black tracking-[-.05em] text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]">
-              IRIS
+          ×
+        </button>
+      </header>
+      <div className="iris-quest-layout">
+        <aside className="iris-quest-list">
+          <div className="iris-list-heading">Available</div>
+          <div className="iris-quest-selected">
+            <span className="iris-quest-icon">!</span>
+            <span>
+              Greenfall Relay<small>Earth · Rescue</small>
             </span>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[.2em] text-[#f0d465]">{AGENCY.name}</p>
-              <h1 className="mt-1 text-[14px] font-black uppercase tracking-[.12em] sm:text-[17px]">Field Ship {SHIP_NAME}</h1>
-            </div>
           </div>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              autoFocus
-              onClick={closeTerminal}
-              aria-label="Close mission console"
-              className={`${BUTTON} bg-[#252b31] px-3 py-3 text-white hover:text-[#f0d465]`}
-            >
-              × Close
-            </button>
-          </div>
-        </header>
-
-        <div
-          data-mission-console-scroll
-          className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2"
-        >
-        {save.interruptedRun && (
-          <section className={`${PANEL} mb-3 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[.16em] text-[#dca071]">Interrupted deployment</p>
-              <p className="mt-1 text-[9px] text-[#b7c0c8]">
-                Terrain progress was not saved. Kestrel can rebuild the same mission and loadout.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onRetryInterrupted}
-              className={`${BUTTON} shrink-0 bg-[#815436] px-4 py-2 text-white`}
-            >
-              Retry
-            </button>
-          </section>
-        )}
-
-        <nav className="mb-3 grid grid-cols-3 gap-2" aria-label="Campaign missions">
-          {CAMPAIGN_MISSIONS.map((entry, order) => (
-            <PlanetBadge
-              key={entry.id}
-              mission={{ ...entry, order }}
-              locked={!isCampaignMissionUnlocked(save, entry.id)}
-              completed={save.completedMissionIds.includes(entry.id)}
-              selected={mission.id === entry.id}
-              onSelect={() => onSelectMission(entry.id)}
-            />
-          ))}
-        </nav>
-
-        <div
-          data-mission-console-panels
-          className="grid min-h-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,3fr)_minmax(250px,2fr)]"
-        >
-          <section className={`${PANEL} relative overflow-hidden p-5`}>
-            <div
-              className="absolute inset-x-0 top-0 h-28 opacity-45"
-              style={{ background: mission.sky }}
-            />
-            <div className="relative">
-              <div className="mb-5 flex items-start justify-between gap-4">
-                <div>
-                  <p className="font-mono text-[9px] font-black uppercase tracking-[.2em]" style={{ color: mission.accent }}>
-                    {mission.operation}
-                  </p>
-                  <h2 className="mt-2 font-mono text-3xl font-black uppercase tracking-[.06em] text-white">
-                    {mission.title}
-                  </h2>
-                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[.12em] text-[#c0c8cf]">
-                    {mission.coordinates}
-                  </p>
-                </div>
-                <div className="grid shrink-0 grid-cols-2 gap-px border-2 border-[#080a0c] bg-[#080a0c] text-center font-mono">
-                  <span className="bg-[#252b31] px-3 py-2">
-                    <small className="block text-[7px] uppercase tracking-[.14em] text-[#87919a]">Gravity</small>
-                    <strong className="mt-1 block text-[11px] text-white">{mission.gravityLabel}</strong>
-                  </span>
-                  <span className="bg-[#252b31] px-3 py-2">
-                    <small className="block text-[7px] uppercase tracking-[.14em] text-[#87919a]">Window</small>
-                    <strong className="mt-1 block text-[11px] text-white">{mission.duration}</strong>
-                  </span>
-                </div>
-              </div>
-
-              <div className="border-l-4 border-[#f0d465] bg-[#101419]/90 p-4">
-                <p className="font-mono text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">
-                  Commander&apos;s briefing
-                </p>
-                <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[#d4d9de]">{mission.briefing}</p>
-              </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
-                <div>
-                  <h3 className="font-mono text-[9px] font-black uppercase tracking-[.18em] text-[#9fa8b0]">Mission sequence</h3>
-                  <ol className="mt-3 space-y-2">
-                    {mission.objectives.map((objective, index) => (
-                      <li key={objective} className="flex gap-3 border-2 border-[#0a0c0f] bg-[#20262b] p-3">
-                        <span className="grid h-6 w-6 shrink-0 place-items-center bg-[#f0d465] font-mono text-[10px] font-black text-[#17140a]">
-                          {index + 1}
-                        </span>
-                        <span className="text-[11px] leading-5 text-[#d4d9de]">{objective}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-                <aside className="min-w-40 border-2 border-[#0a0c0f] bg-[#20262b] p-3 font-mono">
-                  <h3 className="text-[8px] font-black uppercase tracking-[.18em] text-[#d48755]">Hazards</h3>
-                  <ul className="mt-2 space-y-2 text-[8px] font-bold uppercase tracking-[.08em] text-[#b7c0c8]">
-                    {mission.hazards.map((hazard) => <li key={hazard}>▸ {hazard}</li>)}
-                  </ul>
-                  <p className="mt-4 border-t border-[#4b555e] pt-3 text-[8px] uppercase tracking-[.1em] text-[#87919a]">
-                    Best extraction<br />
-                    <strong className="mt-1 block text-[12px] text-white">{formatMissionTime(best)}</strong>
-                  </p>
-                </aside>
-              </div>
-            </div>
-          </section>
-
-          <section className={`${PANEL} flex min-h-0 flex-col p-4`}>
-            <div className="mb-3 flex items-end justify-between gap-3 border-b-2 border-[#4b555e] pb-3 font-mono">
-              <div>
-                <p className="text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">Kestrel armory</p>
-                <h2 className="mt-1 text-[15px] font-black uppercase tracking-[.1em]">Field loadout</h2>
-              </div>
-              <div className="text-right">
-                <p className="text-[7px] uppercase tracking-[.13em] text-[#87919a]">Capacity</p>
-                <p className={`mt-1 text-[13px] font-black ${budgetLeft ? 'text-white' : 'text-[#f0d465]'}`}>
-                  {cost}/{mission.loadoutBudget}
-                </p>
-              </div>
-            </div>
-
-            <p className="mb-3 font-mono text-[8px] leading-4 text-[#9fa8b0]">
-              Blast gun and IRIS mining manipulator are standard issue. Choose bounded mission supplies below.
-            </p>
-
-            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
-              {LOADOUT_SUPPLIES.map((supply) => (
-                <SupplyControl
-                  key={supply.id}
-                  supply={supply}
-                  packs={selection.packs[supply.id] || 0}
-                  budgetLeft={budgetLeft}
-                  onChange={(packs) => updatePacks(supply.id, packs)}
+        </aside>
+        <div className="iris-quest-detail">
+          <div className="iris-orbit-art" aria-hidden="true">
+            <svg viewBox="0 0 340 130" fill="none">
+              <defs>
+                <radialGradient id="earth-ocean" cx="30%" cy="25%">
+                  <stop stopColor="#679fa8" />
+                  <stop offset=".55" stopColor="#224a60" />
+                  <stop offset="1" stopColor="#0b192b" />
+                </radialGradient>
+                <clipPath id="earth-disc">
+                  <circle cx="200" cy="73" r="68" />
+                </clipPath>
+              </defs>
+              <ellipse
+                cx="200"
+                cy="73"
+                rx="112"
+                ry="36"
+                stroke="#80bbb9"
+                strokeOpacity=".24"
+                transform="rotate(-20 200 73)"
+              />
+              <circle
+                cx="200"
+                cy="73"
+                r="72"
+                stroke="#8fddd0"
+                strokeOpacity=".13"
+              />
+              <circle cx="200" cy="73" r="68" fill="url(#earth-ocean)" />
+              <g clipPath="url(#earth-disc)" fill="#699d83" opacity=".8">
+                <path d="m140 25 25-12 25 8 5 17-15 6-2 17-15 4-6-13-20-8zM181 62l16 5 8 20-10 26-9-16 2-14-13-13zM223 10l31 12 9 29-19 10-12-15-15-3-5-15zM216 54l16-5 13 17-5 19-15 16-8-16-6-13z" />
+                <path
+                  d="M136 51q42-23 72-10t58-4M148 94q25-10 47 0t58-2"
+                  fill="none"
+                  stroke="#def2e3"
+                  strokeWidth="4"
+                  opacity=".3"
                 />
-              ))}
-            </div>
+              </g>
+              <circle cx="163" cy="67" r="3" fill="#f0d29b" />
+              <circle
+                className="iris-site-pulse"
+                cx="163"
+                cy="67"
+                r="8"
+                stroke="#f0d29b"
+              />
+              <path
+                d="M156 67H65l-12 12H25"
+                stroke="#f0d29b"
+                strokeOpacity=".55"
+              />
+              <path
+                d="M23 75v8m-4-4h8M302 23v8m-4-4h8M94 24h2m203 77h2M36 33h2"
+                stroke="#b4d5d5"
+                strokeOpacity=".65"
+              />
+            </svg>
+            <span>EARTH</span>
+          </div>
+          <p>
+            Three researchers are trapped in powered shelters. Destroy the
+            jammer to release them.
+          </p>
+          <ol className="iris-objectives">
+            <li>Disable the jammer</li>
+            <li>Beam out 3 researchers</li>
+            <li>Return to the landing beacon</li>
+          </ol>
+          <p className="iris-quest-note">
+            Guards patrol the relay. Fight or find a way past.
+          </p>
+          <button
+            className="iris-button iris-primary"
+            disabled={!ready}
+            onClick={onDeploy}
+          >
+            {ready ? (
+              <>
+                Deploy <span aria-hidden="true">↗</span>
+              </>
+            ) : (
+              'Loading…'
+            )}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
-            <div className="mt-3 border-2 border-[#0a0c0f] bg-[#20262b] p-3 font-mono">
-              <label htmlFor="campaign-weapon" className="block text-[8px] font-black uppercase tracking-[.16em] text-[#9fa8b0]">
-                Recovered weapon
-              </label>
-              <select
-                id="campaign-weapon"
-                value={selection.weaponItemKind ?? ''}
-                onChange={(event) => onChangeSelection({
-                  ...selection,
-                  weaponItemKind: event.target.value === '' ? null : Number(event.target.value),
-                })}
-                className="mt-2 w-full border-2 border-[#080a0c] bg-[#101419] px-3 py-2 font-mono text-[10px] font-bold text-white outline-none focus:border-[#f0d465]"
+function Journal({ snapshot, save, onClose }) {
+  const [tab, setTab] = useState('Active');
+  const completed = save.completedMissionIds.includes(MISSION_ID);
+  const visible = tab === 'Active' ? !!snapshot : completed;
+  return (
+    <Modal label="Quest journal" onClose={onClose} className="iris-journal">
+      <header className="iris-console-head">
+        <h2>Quest journal</h2>
+        <button
+          className="iris-icon-button"
+          onClick={onClose}
+          aria-label="Close journal"
+        >
+          ×
+        </button>
+      </header>
+      <div className="iris-quest-layout">
+        <aside className="iris-quest-list">
+          <div className="iris-tabs" role="tablist" aria-label="Quests">
+            {['Active', 'Completed'].map((t) => (
+              <button
+                key={t}
+                role="tab"
+                aria-selected={tab === t}
+                onClick={() => setTab(t)}
               >
-                <option value="">Standard blast gun only</option>
-                {unlockedWeapons.map((weapon) => (
-                  <option key={weapon.itemKind} value={weapon.itemKind}>
-                    {weapon.name} · {weapon.ammo} ammo
-                  </option>
-                ))}
-              </select>
-              {!unlockedWeapons.length && (
-                <p className="mt-2 text-[8px] leading-4 text-[#78838c]">
-                  Extract enemy equipment to register it with the Kestrel armory.
+                {t}
+              </button>
+            ))}
+          </div>
+          {visible && (
+            <div className="iris-quest-selected">
+              <span className="iris-quest-icon">
+                {tab === 'Completed' ? '✓' : '!'}
+              </span>
+              <span>
+                Greenfall Relay<small>Earth · Rescue</small>
+              </span>
+            </div>
+          )}
+        </aside>
+        <div className="iris-quest-detail" role="tabpanel" aria-label={tab}>
+          {visible ? (
+            <>
+              <h2>Greenfall Relay</h2>
+              <p>
+                {tab === 'Completed'
+                  ? 'All three researchers are aboard Kestrel.'
+                  : 'Disable the jammer to open the shelters, then hold the rescue beam on each researcher.'}
+              </p>
+              <ol className="iris-objectives">
+                {[
+                  'Disable the jammer',
+                  'Rescue the researchers',
+                  'Return to the beacon',
+                ].map((label, i) => {
+                  const o = snapshot?.objectives[i];
+                  const done =
+                    tab === 'Completed' ||
+                    o?.state === OBJECTIVE_STATE.COMPLETE;
+                  return (
+                    <li
+                      key={label}
+                      className={
+                        done
+                          ? 'complete'
+                          : o?.state === OBJECTIVE_STATE.ACTIVE
+                            ? 'active'
+                            : ''
+                      }
+                    >
+                      <span>{done ? '✓' : '□'}</span>
+                      {label}
+                      {i === 1 && tab === 'Active'
+                        ? ` · ${o?.current || 0}/3`
+                        : ''}
+                    </li>
+                  );
+                })}
+              </ol>
+              {tab === 'Completed' ? (
+                <p className="iris-quest-note">
+                  Best time · {formatTime(save.bestTimes[MISSION_ID])}
+                </p>
+              ) : (
+                <p className="iris-quest-note">
+                  1 Gun · 2 Mining tool · 3 Rescue beam
                 </p>
               )}
-            </div>
-
-          </section>
-        </div>
-        </div>
-
-        <footer
-          data-mission-console-footer
-          className="pointer-events-auto mt-2 flex shrink-0 justify-end border-[3px] border-[#080a0c] bg-[#11171d]/92 p-2 shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)]"
-        >
-          <button
-            type="button"
-            onClick={onDeploy}
-            className={`${BUTTON} w-full bg-[#d4b94d] px-5 py-3 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]`}
-          >
-            Beam down to {mission.planetName}
-          </button>
-        </footer>
-      </section>
-      </MissionConsoleViewport>
-      )}
-    </main>
-  );
-}
-
-function DeploymentOverlay({ mission }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-[95] grid place-items-center bg-[#080b10] font-mono text-white">
-      <style>{`
-        @keyframes iris-calibration-scan {
-          0% { opacity: .15; transform: translateY(-54px) scaleX(.35); }
-          50% { opacity: 1; transform: translateY(0) scaleX(1); }
-          100% { opacity: .15; transform: translateY(54px) scaleX(.35); }
-        }
-        @keyframes iris-calibration-ring {
-          from { opacity: .8; transform: scale(.35); }
-          to { opacity: 0; transform: scale(2.4); }
-        }
-      `}</style>
-      <div className="text-center">
-        <div className="relative mx-auto mb-7 h-28 w-28">
-          {[0, 1, 2].map((ring) => (
-            <span
-              key={ring}
-              className="absolute inset-7 rounded-full border-2 border-[#f0d465]"
-              style={{ animation: `iris-calibration-ring 1.1s ${ring * .28}s ease-out infinite` }}
-            />
-          ))}
-          <span className="absolute left-4 right-4 top-1/2 h-1 bg-[#f0d465] shadow-[0_0_18px_5px_rgba(240,212,101,.55)] animate-[iris-calibration-scan_1.15s_ease-in-out_infinite]" />
-        </div>
-        <p className="text-[9px] font-black uppercase tracking-[.26em] text-[#f0d465]">Kestrel transporter locked</p>
-        <h2 className="mt-3 text-xl font-black uppercase tracking-[.12em]">{mission.operation}</h2>
-        <p className="mt-2 text-[9px] uppercase tracking-[.14em] text-[#8f9aa4]">Calibrating destination field…</p>
-      </div>
-    </div>
-  );
-}
-
-function DeploymentFailure({ mission, onRetry, onReturn }) {
-  return (
-    <div className="absolute inset-0 z-[96] grid place-items-center bg-[#080b10]/95 p-6 font-mono text-white" role="alert">
-      <section className={`${PANEL} w-full max-w-lg p-7 text-center`}>
-        <p className="text-[9px] font-black uppercase tracking-[.22em] text-[#dc7657]">
-          Transporter link failed
-        </p>
-        <h2 className="mt-3 text-xl font-black uppercase tracking-[.1em]">{mission.operation}</h2>
-        <p className="mt-3 text-[10px] leading-5 text-[#b7c0c8]">
-          Kestrel could not initialize the field simulation. Retry the beam sequence or return to the mission deck.
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          <button type="button" onClick={onReturn} className={`${BUTTON} bg-[#252b31] px-5 py-3 text-white`}>
-            Return to {SHIP_NAME}
-          </button>
-          <button type="button" onClick={onRetry} autoFocus className={`${BUTTON} bg-[#815436] px-5 py-3 text-white`}>
-            Retry deployment
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Debrief({ mission, result, newlyRecovered, failed, onContinue, onRetry }) {
-  const next = getNextCampaignMission(mission.id);
-  const report = (
-      <section className={`${PANEL} w-full max-w-2xl p-7 font-mono ${
-        failed ? 'bg-[#171c21]/78 backdrop-blur-[2px]' : ''
-      }`}>
-        <div className={`mb-5 inline-block px-3 py-2 text-[9px] font-black uppercase tracking-[.2em] text-[#111] ${
-          failed ? 'bg-[#dc7657]' : 'bg-[#75d39a]'
-        }`}>
-          {failed ? 'Mission interrupted' : 'Extraction confirmed'}
-        </div>
-        <p className="text-[8px] font-black uppercase tracking-[.2em] text-[#8f9aa4]">{mission.operation}</p>
-        <h1 className="mt-2 text-3xl font-black uppercase tracking-[.07em]">
-          {failed ? 'Agent signal lost' : 'Welcome back aboard'}
-        </h1>
-        <p className="mt-3 text-[11px] leading-6 text-[#c3cbd2]">
-          {failed
-            ? 'No field progress was committed. Kestrel can rebuild the deployment from its original seed and loadout.'
-            : `${mission.title} is complete. IRIS has archived the mission report and cleared recovered equipment for future deployments.`}
-        </p>
-
-        {!failed && (
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="border-2 border-[#080a0c] bg-[#20262b] p-4 shadow-[inset_2px_2px_0_#46515a]">
-              <span className="text-[8px] uppercase tracking-[.16em] text-[#8f9aa4]">Mission time</span>
-              <strong className="mt-2 block text-xl text-white">{formatMissionTime(result?.elapsedTicks)}</strong>
-            </div>
-            <div className="border-2 border-[#080a0c] bg-[#20262b] p-4 shadow-[inset_2px_2px_0_#46515a]">
-              <span className="text-[8px] uppercase tracking-[.16em] text-[#8f9aa4]">New armory records</span>
-              <strong className="mt-2 block text-xl text-white">{newlyRecovered.length}</strong>
-            </div>
-          </div>
-        )}
-
-        {!!newlyRecovered.length && (
-          <div className="mt-4 border-l-4 border-[#f0d465] bg-[#20262b] p-4">
-            <p className="text-[8px] font-black uppercase tracking-[.16em] text-[#f0d465]">Recovered equipment</p>
-            <p className="mt-2 text-[10px] text-white">
-              {newlyRecovered.map((kind) => getRecoverableWeapon(kind)?.name).filter(Boolean).join(' · ')}
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 flex justify-end gap-3">
-          {failed && (
-            <button type="button" onClick={onRetry} className={`${BUTTON} bg-[#815436] px-5 py-3 text-white`}>
-              Retry mission
-            </button>
+            </>
+          ) : (
+            <p>No {tab.toLowerCase()} quests.</p>
           )}
-          <button type="button" onClick={onContinue} className={`${BUTTON} bg-[#d4b94d] px-5 py-3 text-[#17140a]`}>
-            {failed ? `Return to ${SHIP_NAME}` : next ? `Brief ${next.planetName}` : 'Return to mission deck'}
-          </button>
         </div>
-      </section>
-  );
-  if (failed) {
-    return (
-      <ViewportFit className="absolute inset-0 z-[98] overflow-hidden bg-transparent p-6 text-white">
-        {report}
-      </ViewportFit>
-    );
-  }
-  return (
-    <main className="relative h-screen overflow-hidden bg-[#02040a] text-white">
-      <SandGame mode="survival" planet="ship" worldSeed={0x4b455354} />
-      <ViewportFit className="absolute inset-0 z-[90] overflow-hidden bg-[#02040a]/28 p-6 backdrop-blur-[1px]">
-        {report}
-      </ViewportFit>
-    </main>
-  );
-}
-
-function BeamTransitionOverlay({
-  mission,
-  gameHostRef,
-  direction = 'departure',
-  destination,
-}) {
-  const effectRef = useRef(null);
-  useEffect(() => {
-    let raf = 0;
-    const align = () => {
-      raf = requestAnimationFrame(align);
-      const host = gameHostRef?.current;
-      const view = host?._game?.getMissionView?.();
-      const effect = effectRef.current;
-      const width = host?.clientWidth || 0;
-      const height = host?.clientHeight || 0;
-      if (!effect || !view || !width || !height ||
-          !Number.isFinite(view.playerWorldX) || !Number.isFinite(view.playerWorldY)) return;
-      const x = (view.playerWorldX - view.cameraWorldX) / view.viewCols * width;
-      const y = (view.playerWorldY - view.cameraWorldY) / view.viewRows * height;
-      effect.style.setProperty('--beam-x', `${Math.round(x)}px`);
-      effect.style.setProperty('--beam-y', `${Math.round(y)}px`);
-    };
-    raf = requestAnimationFrame(align);
-    return () => cancelAnimationFrame(raf);
-  }, [gameHostRef]);
-
-  return (
-    <div
-      ref={effectRef}
-      className={`pointer-events-none absolute inset-0 z-[97] overflow-hidden font-mono text-white ${direction}`}
-      style={{ '--beam-x': '50%', '--beam-y': '50%' }}
-    >
-      <style>{`
-        @keyframes iris-beam-column {
-          0% { opacity: 0; transform: translateX(-50%) scaleX(.08); }
-          16% { opacity: .96; transform: translateX(-50%) scaleX(1); }
-          72% { opacity: .94; transform: translateX(-50%) scaleX(.72); }
-          100% { opacity: 0; transform: translateX(-50%) scaleX(.03); }
-        }
-        @keyframes iris-beam-rings {
-          from { opacity: .95; transform: translate(-50%,-50%) scale(.15); }
-          to { opacity: 0; transform: translate(-50%,-50%) scale(2.65); }
-        }
-        @keyframes iris-beam-core {
-          0%, 100% { opacity: 0; transform: translate(-50%,-50%) scaleY(.45); }
-          22%, 68% { opacity: 1; transform: translate(-50%,-50%) scaleY(1); }
-        }
-        @keyframes iris-beam-particle {
-          from { opacity: 0; transform: translate(-50%,28px); }
-          18% { opacity: 1; }
-          to { opacity: 0; transform: translate(-50%,-95px); }
-        }
-      `}</style>
-      <div
-        className="absolute inset-y-0 w-24 animate-[iris-beam-column_1.4s_ease-in-out_forwards] bg-[linear-gradient(90deg,transparent,rgba(91,241,255,.38),rgba(246,255,255,.96),rgba(91,241,255,.38),transparent)] shadow-[0_0_45px_18px_rgba(86,229,255,.44)]"
-        style={{ left: 'var(--beam-x)' }}
-      />
-      <div
-        className="absolute h-32 w-5 animate-[iris-beam-core_1.4s_ease-in-out_forwards] bg-white shadow-[0_0_22px_8px_#62ecff]"
-        style={{ left: 'var(--beam-x)', top: 'var(--beam-y)' }}
-      />
-      {[0, 1, 2, 3, 4].map((ring) => (
-        <span
-          key={ring}
-          className="absolute h-14 w-14 rounded-full border-4 border-[#a8fbff] shadow-[0_0_18px_#62ecff]"
-          style={{
-            left: 'var(--beam-x)',
-            top: 'var(--beam-y)',
-            animation: `iris-beam-rings .72s ${ring * .15}s ease-out both`,
-          }}
-        />
-      ))}
-      {[0, 1, 2, 3, 4, 5].map((particle) => (
-        <span
-          key={particle}
-          className="absolute h-1 w-1 bg-white shadow-[0_0_7px_2px_#62ecff]"
-          style={{
-            left: `calc(var(--beam-x) + ${(particle - 2.5) * 7}px)`,
-            top: `calc(var(--beam-y) + ${(particle % 2) * 14 - 2}px)`,
-            animation: `iris-beam-particle .72s ${particle * .1}s ease-out both`,
-          }}
-        />
-      ))}
-      <div className="absolute inset-x-0 top-8 text-center">
-        <p className="text-[9px] font-black uppercase tracking-[.28em] text-[#a8fbff]">
-          {direction === 'arrival' ? 'Destination lock confirmed' : 'Extraction lock confirmed'}
-        </p>
-        <h2 className="mt-2 text-lg font-black uppercase tracking-[.12em]">
-          {direction === 'arrival' ? 'Materializing' : 'Dematerializing'} · {destination} · {mission.operation}
-        </h2>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 export function SandCampaign() {
-  const [save, setSave] = useState(() => readCampaignSave());
-  const saveRef = useRef(save);
-  const shipFocusRef = useRef(null);
-  const shipGameRef = useRef(null);
-  const fieldGameRef = useRef(null);
-  const arrivalRafRef = useRef(0);
-  const focusShipOnMountRef = useRef(false);
-  const [selectedMissionId, setSelectedMissionId] = useState(() =>
-    readCampaignSave().selectedMissionId);
-  const [selection, setSelection] = useState(() => {
-    const initial = readCampaignSave();
-    return loadoutForCampaignMission(initial, initial.selectedMissionId);
-  });
-  const [run, setRun] = useState(null);
+  const [save, setSave] = useState(readCampaignSave);
   const [phase, setPhase] = useState('ship');
-  const [debrief, setDebrief] = useState(null);
-  const [missionUpdate, setMissionUpdate] = useState(null);
-  const [pendingDeployment, setPendingDeployment] = useState(null);
-  const mission = getCampaignMission(run?.missionId || selectedMissionId);
-
-  useEffect(() => {
-    const game = phase === 'beam-down'
-      ? shipGameRef.current?._game
-      : (phase === 'beam-up' || phase === 'beam-return')
-          ? fieldGameRef.current?._game
-          : null;
-    game?.playBeamSound?.();
-  }, [phase]);
-
-  const commitSave = useCallback((update) => {
-    const stored = updateCampaignSave(saveRef.current, update);
-    saveRef.current = stored;
-    setSave(stored);
-    return stored;
+  const [briefing, setBriefing] = useState(false);
+  const [shipReady, setShipReady] = useState(false);
+  const [run, setRun] = useState(null);
+  const [report, setReport] = useState(null);
+  const [menu, setMenu] = useState(false);
+  const [journal, setJournal] = useState(false);
+  const [missionState, setMissionState] = useState(null);
+  const [muted, setMuted] = useState(() => {
+    try {
+      return localStorage.getItem('sand-audio-muted') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const host = useRef(null);
+  const finishRef = useRef(false);
+  const attempt = useRef(0);
+  const timers = useRef(new Set());
+  const schedule = useCallback((fn, ms) => {
+    const id = setTimeout(() => {
+      timers.current.delete(id);
+      fn();
+    }, ms);
+    timers.current.add(id);
   }, []);
+  useEffect(
+    () => () => {
+      for (const id of timers.current) clearTimeout(id);
+    },
+    [],
+  );
+  const store = useCallback(
+    (update) => setSave((current) => updateCampaignSave(current, update)),
+    [],
+  );
+  const focusGame = useCallback(
+    () =>
+      requestAnimationFrame(() =>
+        host.current?.shadowRoot?.querySelector('.sg-sim')?.focus(),
+      ),
+    [],
+  );
+  const closeBriefing = useCallback(() => {
+    setBriefing(false);
+    focusGame();
+  }, [focusGame]);
+  const closeMenu = useCallback(() => {
+    setMenu(false);
+    focusGame();
+  }, [focusGame]);
 
-  const focusShipGame = useCallback(() => {
-    const surface = shipGameRef.current?.shadowRoot?.querySelector('.sg-sim');
-    (surface || shipFocusRef.current)?.focus({ preventScroll: true });
-  }, []);
-
-  const restoreShipFocusWhenReady = useCallback(() => {
-    if (!focusShipOnMountRef.current) return;
-    focusShipOnMountRef.current = false;
-    focusShipGame();
-  }, [focusShipGame]);
-
+  const closeJournal = useCallback(() => {
+    setJournal(false);
+    focusGame();
+  }, [focusGame]);
   useEffect(() => {
-    const syncExternalSave = (event) => {
-      if (event.key !== CAMPAIGN_STORAGE_KEY) return;
-      const next = readCampaignSave();
-      saveRef.current = next;
-      setSave(next);
-      if (phase !== 'ship') return;
-      setSelectedMissionId((current) => {
-        const missionId = isCampaignMissionUnlocked(next, current)
-          ? current
-          : next.selectedMissionId;
-        setSelection(loadoutForCampaignMission(next, missionId));
-        return missionId;
-      });
-    };
-    window.addEventListener('storage', syncExternalSave);
-    return () => window.removeEventListener('storage', syncExternalSave);
-  }, [phase]);
-
-  const selectMission = useCallback((missionId) => {
-    const nextSave = commitSave((current) => isCampaignMissionUnlocked(current, missionId)
-      ? { ...current, selectedMissionId: missionId }
-      : current);
-    if (nextSave.selectedMissionId !== missionId) return;
-    setSelectedMissionId(missionId);
-    setSelection(loadoutForCampaignMission(nextSave, missionId));
-  }, [commitSave]);
-
-  const changeSelection = useCallback((nextSelection) => {
-    const nextSave = commitSave((current) =>
-      setCampaignLoadout(current, selectedMissionId, nextSelection));
-    setSelection(loadoutForCampaignMission(nextSave, selectedMissionId));
-  }, [commitSave, selectedMissionId]);
-
-  const deploy = useCallback((missionId, worldSeed, selectedLoadout) => {
-    const nextSave = commitSave((current) =>
-      beginCampaignRun(current, missionId, worldSeed, selectedLoadout));
-    const normalized = loadoutForCampaignMission(nextSave, missionId);
-    setSelection(normalized);
-    setMissionUpdate(null);
-    setRun((current) => ({
-      missionId,
-      planet: getCampaignMission(missionId).planet,
-      worldSeed: worldSeed >>> 0,
-      loadout: buildMissionLoadout(missionId, normalized, nextSave.unlockedWeapons),
-      attempt: (current?.attempt ?? -1) + 1,
-    }));
-    setPhase('deploying');
-  }, [commitSave]);
-
-  const beginDeployment = useCallback(() => {
-    setPendingDeployment({
-      missionId: selectedMissionId,
-      worldSeed: randomSeed(),
-      selection,
-    });
-    setPhase('beam-down');
-  }, [selectedMissionId, selection]);
-
+    host.current?.setPaused?.(
+      briefing || menu || journal || !['ship', 'field'].includes(phase),
+    );
+  }, [briefing, menu, journal, phase, shipReady]);
   useEffect(() => {
-    if (phase !== 'beam-down' || !pendingDeployment) return undefined;
-    const timer = window.setTimeout(() => {
-      const next = pendingDeployment;
-      setPendingDeployment(null);
-      deploy(next.missionId, next.worldSeed, next.selection);
-    }, 1400);
-    return () => window.clearTimeout(timer);
-  }, [deploy, pendingDeployment, phase]);
-
+    host.current?._game?.setAudioMuted(muted);
+  }, [muted]);
   useEffect(() => {
-    if (phase !== 'beam-arrival') return undefined;
-    const timer = window.setTimeout(() => setPhase('mission'), 1250);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
-  const retryInterrupted = useCallback(() => {
-    const interrupted = save.interruptedRun;
-    if (!interrupted) return;
-    setSelectedMissionId(interrupted.missionId);
-    setSelection(interrupted.loadout);
-    setPendingDeployment({
-      missionId: interrupted.missionId,
-      worldSeed: interrupted.worldSeed,
-      selection: interrupted.loadout,
-    });
-    setPhase('beam-down');
-  }, [save.interruptedRun]);
-
-  const finishMission = useCallback((result = {}) => {
-    if (!run) return;
-    let priorWeapons = new Set();
-    const nextSave = commitSave((current) => {
-      priorWeapons = new Set(current.unlockedWeapons);
-      return completeCampaignMission(current, run.missionId, result);
-    });
-    setDebrief({
-      missionId: run.missionId,
-      result,
-      newlyRecovered: nextSave.unlockedWeapons.filter((kind) => !priorWeapons.has(kind)),
-      failed: false,
-    });
-    setPhase('beam-up');
-  }, [commitSave, run]);
-
-  const beginArrival = useCallback(() => {
-    cancelAnimationFrame(arrivalRafRef.current);
-    const started = performance.now();
-    const waitForPlayer = () => {
-      const view = fieldGameRef.current?._game?.getMissionView?.();
-      if ((Number.isFinite(view?.playerWorldX) &&
-           Number.isFinite(view?.playerWorldY)) ||
-          performance.now() - started > 1500) {
-        setPhase('beam-arrival');
+    if (!['ship', 'field'].includes(phase)) return undefined;
+    const key = (event) => {
+      if (event.repeat || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
         return;
+      if (
+        event.code === 'KeyJ' &&
+        !briefing &&
+        !menu &&
+        !host.current?._hud?.isOpen?.()
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setJournal((value) => !value);
+        if (journal) focusGame();
+      } else if (
+        event.key === 'Escape' &&
+        !journal &&
+        !briefing &&
+        phase === 'field'
+      ) {
+        if (host.current?._hud?.isOpen?.()) return;
+        event.preventDefault();
+        setMuted(host.current?._game?.getAudioState().muted ?? false);
+        setMenu((value) => !value);
       }
-      arrivalRafRef.current = requestAnimationFrame(waitForPlayer);
     };
-    waitForPlayer();
-  }, []);
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [phase, journal, briefing, menu, focusGame]);
 
-  useEffect(() => () => cancelAnimationFrame(arrivalRafRef.current), []);
-
-  const failMission = useCallback((result = {}) => {
-    if (!run) return;
-    setDebrief({
-      missionId: run.missionId,
-      result,
-      newlyRecovered: [],
-      failed: true,
-      retryRun: run,
+  const launch = useCallback(() => {
+    for (const id of timers.current) clearTimeout(id);
+    timers.current.clear();
+    setMenu(false);
+    setBriefing(false);
+    setReport(null);
+    setJournal(false);
+    setMissionState(null);
+    finishRef.current = false;
+    const selection = defaultLoadoutSelection(MISSION_ID);
+    store((current) =>
+      beginCampaignRun(current, MISSION_ID, EARTH_SEED, selection),
+    );
+    setRun({
+      seed: EARTH_SEED,
+      loadout: buildMissionLoadout(MISSION_ID, selection),
+      attempt: ++attempt.current,
     });
+    setPhase('descent');
+  }, [store]);
+
+  const ready = useCallback(() => {
+    host.current?._game?.setDayPhase(0.2);
+    if (!run) {
+      setShipReady(true);
+      host.current?.setPaused?.(briefing || phase !== 'ship');
+      if (!briefing && phase === 'ship') focusGame();
+      return;
+    }
+    host.current?.setPaused?.(true);
+    setPhase('field');
+    host.current?.setPaused?.(false);
+    host.current?._game?.playBeamSound?.();
+    focusGame();
+  }, [briefing, focusGame, phase, run]);
+
+  const finish = useCallback(
+    (result) => {
+      if (finishRef.current) return;
+      finishRef.current = true;
+      setReport(result);
+      setPhase('extraction');
+      host.current?._game?.playBeamSound?.();
+      store((current) => completeCampaignMission(current, MISSION_ID, result));
+      schedule(() => {
+        setRun(null);
+        setShipReady(false);
+        setPhase('report');
+      }, 500);
+    },
+    [schedule, store],
+  );
+  const fail = useCallback((result) => {
+    if (finishRef.current) return;
+    finishRef.current = true;
+    for (const id of timers.current) clearTimeout(id);
+    timers.current.clear();
+    setReport(result);
     setPhase('failed');
-  }, [run]);
-
-  useEffect(() => {
-    if (phase !== 'beam-up') return undefined;
-    const timer = window.setTimeout(() => {
-      setRun(null);
-      setPhase('debrief');
-    }, 1600);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
+  }, []);
   const returnToShip = useCallback(() => {
-    const nextSave = commitSave((current) => abandonCampaignRun(current));
-    const nextMission = firstIncompleteMission(nextSave);
-    setSelectedMissionId(nextMission.id);
-    setSelection(loadoutForCampaignMission(nextSave, nextMission.id));
+    for (const id of timers.current) clearTimeout(id);
+    timers.current.clear();
+    store(abandonCampaignRun);
     setRun(null);
-    setDebrief(null);
-    setMissionUpdate(null);
-    focusShipOnMountRef.current = true;
+    setReport(null);
+    setJournal(false);
+    setMissionState(null);
+    setMenu(false);
+    setBriefing(false);
+    if (run) setShipReady(false);
     setPhase('ship');
-  }, [commitSave]);
-
-  const beamBackToShip = useCallback(() => {
-    setPhase('beam-return');
-  }, []);
-
-  useEffect(() => {
-    if (phase !== 'beam-return') return undefined;
-    const timer = window.setTimeout(returnToShip, 1400);
-    return () => window.clearTimeout(timer);
-  }, [phase, returnToShip]);
-
-  const retryFailed = useCallback(() => {
-    const retryRun = debrief?.retryRun;
-    if (!retryRun) return;
-    setDebrief(null);
-    deploy(
-      retryRun.missionId,
-      retryRun.worldSeed,
-      retryRun.loadout,
-    );
-  }, [debrief, deploy]);
-
-  const retryInitialization = useCallback(() => {
-    setRun((current) => current ? { ...current, attempt: current.attempt + 1 } : current);
-    setPhase('deploying');
-  }, []);
-
-  const missionLoadout = useMemo(() => run?.loadout || [], [run]);
-
-  if (phase === 'debrief' && debrief) {
-    return (
-      <Debrief
-        mission={getCampaignMission(debrief.missionId)}
-        result={debrief.result}
-        newlyRecovered={debrief.newlyRecovered}
-        failed={debrief.failed}
-        onContinue={returnToShip}
-        onRetry={retryFailed}
-      />
-    );
-  }
-
-  if (run) {
-    return (
-      <main className="relative h-screen w-full overflow-hidden bg-[#080b10]">
-        <SandGame
-          key={`${run.missionId}-${run.worldSeed}-${run.attempt}`}
-          mode="survival"
-          hostRef={fieldGameRef}
-          planet={run.planet}
-          mission={run.missionId}
-          worldSeed={run.worldSeed}
-          loadout={missionLoadout}
-          onReady={beginArrival}
-          onMissionUpdate={setMissionUpdate}
-          onMissionComplete={finishMission}
-          onMissionFailed={failMission}
-          onError={() => setPhase('deployment-error')}
-        />
-        {phase === 'deploying' && <DeploymentOverlay mission={mission} />}
-        {phase === 'beam-arrival' && (
-          <BeamTransitionOverlay
-            mission={mission}
-            gameHostRef={fieldGameRef}
-            direction="arrival"
-            destination={mission.planetName}
-          />
-        )}
-        {phase === 'deployment-error' && (
-          <DeploymentFailure
-            mission={mission}
-            onRetry={retryInitialization}
-            onReturn={returnToShip}
-          />
-        )}
-        {phase === 'beam-up' && (
-          <BeamTransitionOverlay
-            mission={mission}
-            gameHostRef={fieldGameRef}
-            destination={SHIP_NAME}
-          />
-        )}
-        {phase === 'beam-return' && (
-          <BeamTransitionOverlay
-            mission={mission}
-            gameHostRef={fieldGameRef}
-            destination={SHIP_NAME}
-          />
-        )}
-        {phase === 'failed' && debrief && (
-          <Debrief
-            mission={mission}
-            result={debrief.result}
-            newlyRecovered={[]}
-            failed
-            onContinue={returnToShip}
-            onRetry={retryFailed}
-          />
-        )}
-        {phase === 'mission' && (
-          <div className="pointer-events-none absolute left-3 top-3 z-[82] flex items-center gap-2 font-mono">
-            <button
-              type="button"
-              onClick={beamBackToShip}
-              className={`${BUTTON} pointer-events-auto bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
-            >
-              ↑ Abort to {SHIP_NAME}
-            </button>
-            {missionUpdate?.stageLabel && (
-              <span className="border-2 border-[#080a0c] bg-[#171c21]/90 px-3 py-2 text-[8px] font-black uppercase tracking-[.12em] text-[#d4d9de] shadow-[inset_0_0_0_1px_#4b555e]">
-                {missionUpdate.stageLabel}
-              </span>
-            )}
-          </div>
-        )}
-      </main>
-    );
-  }
-
+    focusGame();
+  }, [focusGame, run, store]);
   return (
-    <>
-      <ShipHub
-        focusRef={shipFocusRef}
-        gameHostRef={shipGameRef}
-        onGameReady={restoreShipFocusWhenReady}
-        onRestoreGameFocus={focusShipGame}
-        save={save}
-        mission={mission}
-        selection={selection}
-        onSelectMission={selectMission}
-        onChangeSelection={changeSelection}
-        onDeploy={beginDeployment}
-        onRetryInterrupted={retryInterrupted}
+    <main className={`iris-experience iris-phase-${phase}`}>
+      <SandGame
+        key={run ? `earth-${run.attempt}` : 'kestrel'}
+        mode="survival"
+        planet={run ? 'earth' : 'ship'}
+        mission={run ? MISSION_ID : undefined}
+        worldSeed={run?.seed ?? 0x4b455354}
+        loadout={run?.loadout}
+        hostRef={host}
+        onReady={ready}
+        onMissionUpdate={setMissionState}
+        onMissionComplete={finish}
+        onMissionFailed={fail}
+        onTalkAction={({ action }) => {
+          if (action === 'mission-console') setBriefing(true);
+        }}
+        onError={() => setPhase('error')}
       />
-      {phase === 'beam-down' && (
-        <BeamTransitionOverlay
-          mission={mission}
-          gameHostRef={shipGameRef}
-          destination={mission.planetName}
+      {!run && (
+        <header className="iris-ship-header">
+          <span className="iris-location">
+            <i aria-hidden="true">◇</i> Kestrel
+          </span>
+          <button
+            className="iris-button iris-secondary"
+            onClick={() => setBriefing(true)}
+          >
+            Earth mission
+          </button>
+        </header>
+      )}
+      {briefing && !run && (
+        <Briefing ready={shipReady} onClose={closeBriefing} onDeploy={launch} />
+      )}
+      {phase === 'field' && (
+        <header className="iris-field-header">
+          <span className="iris-location">
+            <i aria-hidden="true">◌</i> Earth
+          </span>
+          <button
+            className="iris-icon-button"
+            aria-label="Pause expedition"
+            onClick={() => {
+              setMuted(host.current?._game?.getAudioState().muted ?? false);
+              setMenu(true);
+            }}
+          >
+            Ⅱ
+          </button>
+        </header>
+      )}
+      {['ship', 'field'].includes(phase) && (
+        <div className="iris-control-strip">
+          <span>
+            <kbd>A D</kbd> Move
+          </span>
+          <span>
+            <kbd>SPACE</kbd> Jump / thrust
+          </span>
+          {run && (
+            <>
+              <span>
+                <kbd>F</kbd> Block
+              </span>
+              <span>
+                <kbd>1 / 2 / 3</kbd> Gun / mine / rescue
+              </span>
+            </>
+          )}
+          {!run && (
+            <span>
+              <kbd>T</kbd> Talk
+            </span>
+          )}
+          <span>
+            <kbd>J</kbd> Quests
+          </span>
+          <span>
+            <kbd>E</kbd> Inventory
+          </span>
+        </div>
+      )}
+      {['descent', 'extraction'].includes(phase) && (
+        <div className="iris-loading" role="status">
+          {phase === 'descent' ? 'Loading Earth…' : 'Returning to ship…'}
+        </div>
+      )}
+      {journal && (
+        <Journal
+          snapshot={run ? missionState : null}
+          save={save}
+          onClose={closeJournal}
         />
       )}
-    </>
+      {menu && (
+        <Modal
+          label="Expedition paused"
+          onClose={closeMenu}
+          className="iris-small-modal"
+        >
+          <h2>Paused</h2>
+          <button className="iris-button iris-primary" onClick={closeMenu}>
+            Resume
+          </button>
+          <button
+            className="iris-button iris-secondary"
+            onClick={() => setMuted((v) => !v)}
+          >
+            Sound {muted ? 'off' : 'on'}
+          </button>
+          <button className="iris-text-button" onClick={returnToShip}>
+            Abandon mission
+          </button>
+        </Modal>
+      )}
+      {['report', 'failed', 'error'].includes(phase) && (
+        <Modal
+          label={
+            phase === 'report'
+              ? 'Expedition complete'
+              : 'Expedition interrupted'
+          }
+          className="iris-report iris-small-modal"
+        >
+          <h2>
+            {phase === 'report'
+              ? 'Mission complete'
+              : phase === 'error'
+                ? 'Game unavailable'
+                : 'Mission failed'}
+          </h2>
+          {phase === 'report' && (
+            <p>3 rescued · {formatTime(report?.elapsedTicks)}</p>
+          )}
+          <button
+            className="iris-button iris-primary"
+            onClick={phase === 'report' ? returnToShip : launch}
+          >
+            {phase === 'report' ? 'Continue' : 'Retry'}
+          </button>
+          {phase !== 'report' && (
+            <button className="iris-text-button" onClick={returnToShip}>
+              Return to ship
+            </button>
+          )}
+        </Modal>
+      )}
+    </main>
   );
 }

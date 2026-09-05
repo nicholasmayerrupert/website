@@ -188,7 +188,7 @@ function writeStoredMuted(muted) {
   catch { /* storage may be unavailable in third-party/private embeds */ }
 }
 
-export function createSandAudio() {
+export function createSandAudio({ expeditionScore = false } = {}) {
   let context = null;
   let master = null;
   let effectsBus = null;
@@ -204,6 +204,8 @@ export function createSandAudio() {
   let ambienceVoices = null;
   let recordedAssets = null;
   let movementVoices = null;
+  let scoreTimer = null;
+  let scoreBar = 0;
   let playerEffects = { id: 0, jetpack: false, shield: false };
   const lastEventAt = new Map();
   const lastRecordedWeaponAt = new Map();
@@ -416,6 +418,10 @@ export function createSandAudio() {
       // session interruption. It needs the same resume attempt as `suspended`.
       if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
       applyMaster();
+      if (expeditionScore && !scoreTimer && ctx.state === 'running') {
+        playScoreBar();
+        scoreTimer = setInterval(playScoreBar, 4000);
+      }
       return ctx.state === 'running';
     } catch { return false; }
   };
@@ -469,6 +475,24 @@ export function createSandAudio() {
     osc.connect(envelope); connectSpatial(envelope, effectsBus, pan);
     trackVoice(osc, weaponExplosion);
     osc.start(now); osc.stop(now + duration + 0.01);
+  };
+
+  // An original, quiet four-chord motif shares the sound-effects voice budget,
+  // gesture unlock, mute, visibility, and teardown lifecycle.
+  const playScoreBar = () => {
+    if (!audible() || context?.state !== 'running' || activeVoices > MAX_VOICES - 8) return;
+    const root = [48, 53, 57, 55][Math.floor(scoreBar / 2) % 4];
+    for (const [index, interval] of [0, 7, 14].entries()) {
+      playTone({
+        from: 440 * 2 ** ((root + interval - 69) / 12),
+        duration: 5.8, gain: .016, attack: .9,
+        pan: (index - 1) * .35, delay: index * .09,
+      });
+    }
+    const melody = [76, 79, 81, 79, 76, 74, 72, 74][scoreBar % 8];
+    playTone({ from: 440 * 2 ** ((melody - 69) / 12),
+      duration: 3.2, gain: .019, pan: .2, delay: 1.1, attack: .025 });
+    scoreBar++;
   };
 
   const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
@@ -888,6 +912,7 @@ export function createSandAudio() {
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    clearInterval(scoreTimer);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
     if (ambienceVoices) for (const voice of ambienceVoices) { try { voice.source.stop(); } catch { /* already stopped */ } }
     if (movementVoices) for (const voice of Object.values(movementVoices)) { try { voice.source.stop(); } catch { /* already stopped */ } }

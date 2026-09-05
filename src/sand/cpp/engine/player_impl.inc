@@ -792,6 +792,7 @@ void PlayerSystem::applyPlayerTools() {
     if (E.survivalInventory) { E.inv.applyInventoryPlayer(p); continue; }
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
+    p.weaponKick = std::max(0.0, p.weaponKick - 1.0 / 10.0);
     int prev = p.prevInput;
     bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
     bool primaryRising = primary && !(prev & PI_PRIMARY);

@@ -39,8 +39,8 @@ const STYLE = `
   font-family:'Sand Pixel',monospace; }
 .sg-talk-button { position:absolute; left:0; top:0; pointer-events:auto; transform:translate(-50%,-100%);
   min-width:46px; border:2px solid #080a0c; padding:5px 8px; cursor:pointer; background:#f0d465; color:#17140a;
-  box-shadow:inset 0 0 0 1px #fff1a0,3px 3px 0 #080a0c; font:900 8px/1 inherit;
-  letter-spacing:.16em; text-transform:uppercase; white-space:nowrap; }
+  box-shadow:inset 0 0 0 1px #fff1a0,3px 3px 0 #080a0c; font:16px/1 'Sand Pixel',monospace;
+  letter-spacing:0; text-transform:uppercase; white-space:nowrap; }
 .sg-talk-button::after { content:""; position:absolute; left:50%; bottom:-7px; width:8px; height:8px;
   border-right:2px solid #080a0c; border-bottom:2px solid #080a0c; background:#f0d465;
   transform:translateX(-50%) rotate(45deg); }
@@ -52,7 +52,7 @@ const STYLE = `
   border-left:9px solid currentColor; transform-origin:center; }
 .sg-quest-marker.onscreen .sg-quest-marker-icon { width:9px; height:9px; box-sizing:border-box;
   border:2px solid currentColor; background:rgba(240,212,101,.2); transform:rotate(45deg)!important; }
-.sg-place-sign { position:absolute; transform:translate(-50%,-50%); color:#d8e5cf; opacity:.72; white-space:nowrap; font:10px/1.2 ui-monospace,monospace; letter-spacing:.14em; text-shadow:0 1px 3px #000; }
+.sg-place-sign { position:absolute; transform:translate(-50%,-50%); color:#d8e5cf; opacity:.72; white-space:nowrap; font:14px/1.2 'Sand Pixel',monospace; letter-spacing:0; text-shadow:0 1px 3px #000; }
 .sg-place-sign[hidden] { display:none; }
 .sg-dialogue { position:absolute; left:50%; bottom:58px; z-index:79; width:min(560px,calc(100% - 24px));
   box-sizing:border-box; transform:translateX(-50%); border:3px solid #080a0c; padding:14px;
@@ -76,7 +76,7 @@ const STYLE = `
 }
 @media (max-width:640px) {
   .sg-dialogue { bottom:122px; padding:12px; }
-  .sg-dialogue-copy { font-size:10px; }
+  .sg-dialogue-copy { font-size:16px; }
 }
 `;
 
@@ -121,11 +121,11 @@ export function createTalkHud(root, game, onAction) {
   layer.appendChild(dialogue);
 
   const signs = game.getPlanetState?.().id === PLANET.FRONTIER ? [
-    [-116, -55, 'OBSERVATION'], [104, -55, 'CREW QUARTERS'],
-    [-150, -18, 'COMMAND / FIELD OPERATIONS'], [182, -18, 'WORKSHOP / STORES'],
-    [-145, 30, 'MEDBAY'], [154, 30, 'HYDROPONICS'],
-    [-144, 83, 'RESEARCH ARCHIVE'], [158, 83, 'TOOL RANGE'],
-    [-142, 133, 'ENGINEERING'], [133, 133, 'POWER / COOLANT'],
+    [4, -131, 'OBSERVATION'], [-96, -90, 'CREW QUARTERS'],
+    [-93, -37, 'COMMAND'], [88, -24, 'WORKSHOP'], [232, -30, 'HYDROPONICS'],
+    [-129, 34, 'MEDBAY'], [115, 40, 'MESS'],
+    [-104, 92, 'RESEARCH'], [146, 94, 'TOOL RANGE'],
+    [-136, 144, 'ENGINEERING'], [110, 144, 'COOLANT'],
     [-248, 165, '← CAVE ACCESS'],
   ].map(([x, y, label]) => {
     const node = document.createElement('span');
@@ -156,8 +156,8 @@ export function createTalkHud(root, game, onAction) {
     let policy = TALKABLES[actor.species];
     if (!policy) return;
     if (game.getPlanetState?.().id === PLANET.FRONTIER) {
-      if (actor.species === CREATURE.IRIS_COMMANDER) policy = { ...policy, dialogue: 'Welcome to Aster. The railway is buried, the archive is underwater, and Windward is above the clouds. Pick a direction. Make your own way there.', action: 'Field journal' };
-      if (actor.species === CREATURE.IRIS_ENGINEER) policy = { ...policy, dialogue: 'This whole station can be rebuilt. Try your tools, move a wall, make a mess. Come back to me when you want the original plans restored.', action: 'Repair the station' };
+      if (actor.species === CREATURE.IRIS_COMMANDER) policy = { ...policy, dialogue: 'There are three open jobs: clear the western railway, drain the archive, and survey Windward Observatory. The details are in your journal.', action: 'Field journal' };
+      if (actor.species === CREATURE.IRIS_ENGINEER) policy = { ...policy, dialogue: 'I can restore the station from its plans. The rebuild clears rubble and anything you built inside the station grounds.', action: 'Repair the station' };
       if (actor.species === CREATURE.SURVEYOR) policy = { ...policy, dialogue: 'There is a dry cavern under the flooded archive. If you can give that water somewhere to go, the records might still be recoverable.' };
     }
     activeActor = actor;

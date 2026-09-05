@@ -1374,8 +1374,19 @@ bool ForceSystem::sampleLoose(
     forceX = forceY = 0;
     return false;
   }
-  LooseForceCache& cache = looseForceCaches[layerIndex(layer)];
   int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
+  // Neutronium has one field for both layers: powders and liquids are pulled,
+  // gases receive its opposite. Share these identical cell samples.
+  bool sharedNeutronium = !states[0].hasOrdinaryEmitters
+    && !states[1].hasOrdinaryEmitters;
+  int cacheLayer = layerIndex(layer);
+  if (sharedNeutronium && bin >= 0
+      && bin < (int)looseForceCaches[0].binOffsets.size()
+      && looseForceCaches[0].binOffsets[bin] >= 0)
+    cacheLayer = 0;
+  LooseForceCache& cache = looseForceCaches[cacheLayer];
+  uint8_t sampleTarget = sharedNeutronium ? FORCE_LIQUID : target;
+  double direction = sharedNeutronium && target == FORCE_GAS ? -1.0 : 1.0;
   int offset = bin >= 0 && bin < (int)cache.binOffsets.size()
     ? cache.binOffsets[bin] : -1;
   if (offset < 0) {
@@ -1388,17 +1399,17 @@ bool ForceSystem::sampleLoose(
   int localY = y - ((y >> CHUNK_SHIFT) << CHUNK_SHIFT);
   CachedLooseForce& entry = cache.cells[
     offset + localY * CHUNK_SIZE + localX];
-  if (entry.serial == looseCacheSerial && entry.target == target) {
-    forceX = entry.x;
-    forceY = entry.y;
+  if (entry.serial == looseCacheSerial && entry.target == sampleTarget) {
+    forceX = entry.x * direction;
+    forceY = entry.y * direction;
     return entry.active;
   }
-  entry.active = sampleLayer(layer, x + 0.5, y + 0.5, target, -1,
+  entry.active = sampleLayer(layer, x + 0.5, y + 0.5, sampleTarget, -1,
                              entry.x, entry.y);
   entry.serial = looseCacheSerial;
-  entry.target = target;
-  forceX = entry.x;
-  forceY = entry.y;
+  entry.target = sampleTarget;
+  forceX = entry.x * direction;
+  forceY = entry.y * direction;
   return entry.active;
 }
 

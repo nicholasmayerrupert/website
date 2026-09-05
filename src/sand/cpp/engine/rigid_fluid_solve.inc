@@ -229,6 +229,15 @@
       fluidSolveDirection[i] = fluidSolvePreconditioned[i];
       rz += fluidSolveResidual[i] * fluidSolvePreconditioned[i];
     }
+    // Ordinary domains stop once the residual is small relative to the
+    // initial error and below a per-cell velocity error budget. Ice retains
+    // the strict pressure tolerance needed for broad floating surfaces.
+    double residualTarget = rhsNorm * R_FLUID_PRESSURE_REL_RESIDUAL2;
+    if (!iceCoupling) {
+      double velocityError = 0.0025 * dt;
+      residualTarget = std::fmax(residualTarget,
+        std::fmin(rhsNorm * 1e-4, nodeCount * velocityError * velocityError));
+    }
     for (int iteration = 0; iteration < R_FLUID_PRESSURE_ITERS && rz > 1e-18; iteration++) {
       fluidPressureIterations++;
       double denom = applyPressureMatrix(true);
@@ -252,15 +261,12 @@
           residualNorm += fluidSolveResidual[i] * fluidSolveResidual[i];
         }
       }
+      if (residualNorm <= residualTarget) break;
       applyPreconditioner();
       double nextRz = 0;
       for (int i = 0; i < nodeCount; i++)
         if (!hasPinned || !fluidSolvePinned[i])
           nextRz += fluidSolveResidual[i] * fluidSolvePreconditioned[i];
-      if (residualNorm <= rhsNorm * R_FLUID_PRESSURE_REL_RESIDUAL2) {
-        rz = nextRz;
-        break;
-      }
       double beta = nextRz / rz;
       if (hasPinned) {
         for (int i = 0; i < nodeCount; i++)

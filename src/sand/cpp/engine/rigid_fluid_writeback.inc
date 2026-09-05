@@ -120,7 +120,9 @@
     node.layer->liquidVel.current[node.cell] = currentVelocity;
     node.layer->liquidVel.next[node.cell] = nextVelocity;
     int layer = node.layer == &E.bg ? 1 : 0;
-    fluidPressureCache[layer][node.cell] = (float)node.pressure;
+    // Cache pressure per unit time so different island substep cadences can
+    // reuse the same hydrostatic estimate.
+    if (dt > 0) fluidPressureCache[layer][node.cell] = (float)(node.pressure / dt);
   }
   fluidWritebackMs += emscripten_get_now() - writebackStart;
   return true;

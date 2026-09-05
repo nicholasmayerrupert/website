@@ -53,11 +53,12 @@ fixed Aster Valley seed. Frontier uses Earth's terrain and presentation profiles
 its additional authored landmarks are streamed in absolute world coordinates.
 There is no deployment, extraction, or world replacement between jobs.
 
-`worldgen_frontier.inc` stamps Aster Station at x=-320..319, y=-96..191, with an
-observation deck, command concourse, workshop, medbay, hydroponics, archives,
-firing range, engineering hall, and a cave access adit. Rooms use clear foreground
-routes and furnished background walls. The central atrium has staggered rest
-landings; the concourse has a continuous arrival bridge. Ordinary components and
+`worldgen_frontier.inc` stamps Aster Station at x=-320..319, y=-160..191, with an
+an observation tower, bunkhouse and solar roof, covered cargo porch, command
+concourse, workshop, glass conservatory, medbay, mess, research room, firing range,
+engineering hall, and a cave access adit. Beveled modules use clear foreground
+routes and furnished background walls. The central stairwell has staggered rest
+landings; side hatches connect the concourse to the lower decks. Ordinary components and
 rigid-body physics make the station destructible. Natural hostile spawns exclude
 the station and its immediate perimeter; the surrounding world retains its
 natural population.
@@ -148,7 +149,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 5 is canonical in absolute coordinates: viewport size changes
+World generation version 6 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select surface biomes; narrow deterministic ecotones blend

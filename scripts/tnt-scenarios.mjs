@@ -122,6 +122,10 @@ export async function aftermath({ steps = 92, seed = 1401181199, report }) {
           role: engine._bodyJointRoleLayer(layer, body),
           ...engine._bodyStateLayer(layer, body),
         })));
+      for (const bodies of bodyStates) for (const body of bodies)
+        for (const key of ['px', 'py', 'angle', 'vx', 'vy', 'omega'])
+          if (!Number.isFinite(body[key]))
+            throw new Error(`Non-finite body ${body.id} ${key} at aftermath tick ${tick}`);
       report({ tick, worldMs: ms, peakWorldMs: peakWorld.ms,
         gridHash: engine.gridHash(), bodyStates });
     }

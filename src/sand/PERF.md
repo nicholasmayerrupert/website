@@ -210,14 +210,21 @@ component registration, and restoration. Browser presentation exposes
 - Stable-slot cuts that leave component identities intact validate existing
   adjacency edges through a surviving contact on the smaller component. Real
   splits rebuild incident edges; connectivity floods retain their exact order.
-- Cross-layer raster validation uses conservative 16x16 body/terrain bins to
-  restrict large sparse footprints to possible conflicts. Small or densely
-  overlapping footprints use the full scan. Invariant builds compare both the
-  validity result and violating-body set against the full reference validator.
+- Cross-layer raster validation caches nonempty 64-cell occupancy words in
+  scenes containing large footprints. Disjoint claims retain the first canonical
+  owner and the per-pair alias allowance. Small scenes use the cell scan. Invariant builds
+  compare validity and violating-body sets against the full reference validator.
+  Rollback checks the accepted endpoint before searching intermediate poses.
 - Ordinary force sampling skips neutronium-only emitter lists; nearest-source
   attraction retains its own indexed query and target/body eligibility rules.
+  Neutronium-only loose-force samples are shared across layers and target kinds;
+  gas receives the opposite of the cached attraction vector.
 - Final fluid-pressure writeback evaluates the body-boundary operator directly
   to compute impulses. Krylov iterations retain the complete pressure operator.
+  Cached pressure is stored per unit time and scaled to each substep. Zero-time
+  velocity correctors leave that cache intact. Ordinary pressure solves use a
+  relative residual and per-cell divergence budget; ice and zero-time correctors
+  retain the strict tolerance. Converged iterations skip further preconditioning.
 - A conservative tick-level candidate graph gives disconnected rigid islands
   independent substep cadences. Contact islands receive size-based solver
   budgets, bottom-up stack ordering, and coupled two-point solves for long

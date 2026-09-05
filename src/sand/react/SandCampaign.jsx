@@ -112,7 +112,7 @@ export function SandCampaign() {
   }, [focusGame]);
   const repairView = host.current?._game?.getMissionView?.();
   const canRepair = repairView && repairView.playerWorldX >= -320 && repairView.playerWorldX <= 319
-    && repairView.playerWorldY >= -96 && repairView.playerWorldY <= 191;
+    && repairView.playerWorldY >= -160 && repairView.playerWorldY <= 191;
   const job = FRONTIER_JOBS[selected];
   const done = snapshot?.objectives?.filter((o) => o.state === OBJECTIVE_STATE.COMPLETE).length || 0;
   const complete = snapshot?.phase === MISSION_PHASE.COMPLETE;
@@ -134,45 +134,45 @@ export function SandCampaign() {
       </header>
       {ready && welcome && !menu && (
         <aside className="frontier-arrival">
-          <span className="frontier-kicker">YOUR HOME IN THE WILDERNESS</span>
+          <span className="frontier-kicker">STATION 01</span>
           <h1>Aster Station</h1>
-          <p>The valley is open. Head west into the old railway, climb the eastern highlands, or follow engineering down into the caves.</p>
+          <p>West: old railway. East: Windward Observatory. The cave entrance is below engineering.</p>
           <div><button onClick={() => { setWelcome(false); setMenu('journal'); }}>Open field journal ↗</button>
-            <button className="frontier-quiet" onClick={() => { setWelcome(false); focusGame(); }}>Explore first</button></div>
+            <button className="frontier-quiet" onClick={() => { setWelcome(false); focusGame(); }}>Start exploring</button></div>
         </aside>
       )}
       {notice && !menu && <aside className="frontier-notice" role="status"><span className="frontier-kicker">FIELD JOB COMPLETE</span><strong>{notice.title}</strong><span>{notice.reward}</span></aside>}
-      {complete && !menu && <div className="frontier-complete">Expedition logged. The valley is still yours.</div>}
+      {complete && !menu && <div className="frontier-complete">All field jobs complete.</div>}
       <footer className="frontier-controls"><span><kbd>A D</kbd> Move</span><span><kbd>SPACE</kbd> Jump / jetpack</span><span><kbd>1 2</kbd> Blast / mine</span><span><kbd>T</kbd> Talk</span><span><kbd>E</kbd> Inventory</span></footer>
       {!ready && <div className="frontier-loading" role="status">{error ? 'Unable to open the expedition. Reload to try again.' : 'Opening Aster Valley…'}</div>}
       {menu && <div className="frontier-overlay">
         <section className={`frontier-panel ${menu === 'journal' ? 'frontier-journal' : 'frontier-small'}`} ref={panel}
           role="dialog" aria-modal="true" aria-label={menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Station repair' : 'Expedition paused'}>
-          <header><div><span className="frontier-kicker">ASTER / FIELD OPERATIONS</span><h2>{menu === 'journal' ? 'A world worth getting lost in.' : menu === 'repair' ? '“We can rebuild it.”' : 'Take a breath.'}</h2></div>
+          <header><div><span className="frontier-kicker">ASTER / FIELD OPERATIONS</span><h2>{menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Station repair' : 'Paused'}</h2></div>
             <button className="frontier-close" onClick={close} aria-label="Close panel">×</button></header>
           {menu === 'journal' ? <>
             <div className="frontier-journal-grid"><div className="frontier-chart"><FieldMap selected={selected} onSelect={setSelected} objectives={snapshot?.objectives} />
-              <p>Choose your own route. Terrain, structures, and water respond to your tools.</p>
+              <p>Select a destination to view the job and track its location.</p>
               <div className="frontier-jobs">{FRONTIER_JOBS.map((entry) => <button key={entry.id} onClick={() => setSelected(entry.id)} aria-pressed={selected === entry.id}>
                 <span style={{ color: entry.color }}>{snapshot?.objectives?.[entry.id]?.state === OBJECTIVE_STATE.COMPLETE ? '✓' : entry.symbol}</span>
                 <span>{entry.title}<small>{entry.place}</small></span></button>)}</div></div>
               <article className="frontier-job-detail" style={{ '--job-color': job.color }}>
                 <span className="frontier-kicker">{job.place}</span><h3>{job.title}</h3><p className="frontier-job-summary">{job.summary}</p><p>{job.description}</p>
                 <div className="frontier-field-note"><span>FIELD NOTE</span><p>{job.hint}</p></div>
-                <div className="frontier-reward"><small>RECOVER / UNLOCK</small><p>{job.reward}</p></div>
-                {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.COMPLETE ? <p className="frontier-finished">✓ Logged in the field</p> :
+                <div className="frontier-reward"><small>REWARD</small><p>{job.reward}</p></div>
+                {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.COMPLETE ? <p className="frontier-finished">✓ Complete</p> :
                   <button className="frontier-primary" disabled={selected === 3 && done < 3} onClick={() => { setTracked(selected); setWelcome(false); close(); }}>Track this destination ↗</button>}
               </article></div>
-            <footer>Walk out, find your route, come home.</footer>
+
           </> : menu === 'repair' ? <>
             <p className="frontier-speaker">ENGINEER OSEI · STATION MAINTENANCE</p>
-            <p>“Walls, floors, labs, the whole station. I have the plans. Give me the word.”</p>
+
             <p>Rebuilds the station grounds and removes rubble and anything you placed there. Your field discoveries and changes beyond the station remain.</p>
             <button className="frontier-primary" disabled={!canRepair} onClick={() => { host.current?._game?.repairBase(); close(); }}>Rebuild Aster Station</button>
             {!canRepair && <p>Return to the station grounds before the rebuild begins.</p>}
             <button className="frontier-quiet" onClick={close}>Leave it as it is</button>
           </> : <>
-            <button className="frontier-primary" onClick={close}>Return to the valley</button>
+            <button className="frontier-primary" onClick={close}>Resume</button>
             <button onClick={() => setMenu('journal')}>Field journal</button>
             <button onClick={() => setMenu('repair')}>Call station maintenance</button>
             <button onClick={() => { host.current?._game?.setAudioMuted(!muted); setMuted(!muted); }}>Sound {muted ? 'off' : 'on'}</button>

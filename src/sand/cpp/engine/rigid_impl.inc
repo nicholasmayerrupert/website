@@ -1185,26 +1185,19 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
     rasterProjectionTouched.clear();
   };
-  bool sparseWorldValidation = false;
+  bool packedWorldValidation = false;
   for (WorldRasterNode& node : worldRasterNodes) {
     for (Body* member : {node.foreground, node.background}) {
       if (!member) continue;
       ensureBodyRaster(member);
-      sparseWorldValidation |= member->rasterFootprint.size() >= 4096;
+      packedWorldValidation |= member->rasterFootprint.size() >= 4096;
     }
   }
-  // A bin can reject claims only when no second node or static terrain can
-  // occupy it. Joint members contribute one node to each layer's broadphase.
-  constexpr int validationBinShift = 4;
-  constexpr int validationBinSize = 1 << validationBinShift;
-  const int validationCols = (E.cols + validationBinSize - 1) >> validationBinShift;
-  const int validationRows = (E.rows + validationBinSize - 1) >> validationBinShift;
-  const int validationBinCount = validationCols * validationRows;
-  std::array<std::vector<uint8_t>, 2> terrainBins, validationBins;
-  std::vector<int> validationOwners(validationBinCount, -1);
-  for (int layerIndex = 0; sparseWorldValidation && layerIndex < 2; layerIndex++) {
+  const size_t wordCount = (gridSize + 63) / 64;
+  std::array<std::vector<uint64_t>, 2> terrainWords;
+  for (int layerIndex = 0; packedWorldValidation && layerIndex < 2; layerIndex++) {
     Layer& layer = layerIndex ? E.bg : E.fg;
-    terrainBins[layerIndex].assign(validationBinCount, 0);
+    terrainWords[layerIndex].assign(wordCount, 0);
     for (int y = 0; y < E.rows; y++) for (int x = 0; x < E.cols; x++) {
       if (layer.infinite && (x == 0 || x == E.cols - 1)) continue;
       int k = y * E.cols + x;
@@ -1212,72 +1205,10 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       uint8_t material = layer.grid[k];
       if (material != EMPTY && !E.isGasMaterial(material)
           && !E.isBuoyantMedium(material))
-        terrainBins[layerIndex][(y >> validationBinShift) * validationCols
-          + (x >> validationBinShift)] = 1;
+        terrainWords[layerIndex][k >> 6] |= uint64_t(1) << (k & 63);
     }
   }
-  auto prepareValidationBins = [&]() {
-    for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
-      validationBins[layerIndex] = terrainBins[layerIndex];
-      std::fill(validationOwners.begin(), validationOwners.end(), -1);
-      for (int nodeIndex = 0; nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
-        WorldRasterNode& node = worldRasterNodes[nodeIndex];
-        auto addMember = [&](Body* member) {
-          if (!member) return;
-          ensureBodyRaster(member);
-          if (member->rasterFootprint.empty()) return;
-          const auto& bounds = member->rasterBounds;
-          for (int by = bounds[1] >> validationBinShift;
-               by <= (bounds[3] >> validationBinShift); by++) {
-            for (int bx = bounds[0] >> validationBinShift;
-                 bx <= (bounds[2] >> validationBinShift); bx++) {
-              int bin = by * validationCols + bx;
-              int& owner = validationOwners[bin];
-              if (owner < 0) owner = nodeIndex;
-              else if (owner != nodeIndex) validationBins[layerIndex][bin] = 1;
-            }
-          }
-        };
-        if (node.body->jointRole == 1) {
-          addMember(node.foreground);
-          addMember(node.background);
-        } else addMember(layerIndex ? node.background : node.foreground);
-      }
-    }
-  };
-  auto visitValidationCells = [&](Body* member, int layerIndex, bool sparse, auto&& visit) {
-    const auto& cells = member->rasterFootprint;
-    if (cells.empty()) return;
-    const auto& bounds = member->rasterBounds;
-    int bx0 = bounds[0] >> validationBinShift, bx1 = bounds[2] >> validationBinShift;
-    int by0 = bounds[1] >> validationBinShift, by1 = bounds[3] >> validationBinShift;
-    int riskBins = 0;
-    if (sparse && cells.size() >= 4096)
-      for (int by = by0; by <= by1; by++)
-        for (int bx = bx0; bx <= bx1; bx++)
-          riskBins += validationBins[layerIndex][by * validationCols + bx];
-    if (!sparse || cells.size() < 4096
-        || riskBins * 2 >= (bx1 - bx0 + 1) * (by1 - by0 + 1)) {
-      for (const BodyRasterCell& cell : cells) visit(cell);
-      return;
-    }
-    auto cursor = cells.begin();
-    for (int y = bounds[1]; y <= bounds[3]; y++) {
-      int binRow = (y >> validationBinShift) * validationCols;
-      for (int bx = bx0; bx <= bx1;) {
-        if (!validationBins[layerIndex][binRow + bx]) { bx++; continue; }
-        int x0 = bx * validationBinSize;
-        while (bx <= bx1 && validationBins[layerIndex][binRow + bx]) bx++;
-        int x1 = bx * validationBinSize;
-        int first = y * E.cols + x0;
-        cursor = std::lower_bound(cursor, cells.end(), first,
-          [&](const BodyRasterCell& cell, int key) { return cell.y * E.cols + cell.x < key; });
-        while (cursor != cells.end() && cursor->y == y && cursor->x < x1)
-          visit(*cursor++);
-      }
-    }
-  };
-  auto assignmentValidImpl = [&](std::vector<uint8_t>* violating, bool sparse) {
+  auto assignmentValidReference = [&](std::vector<uint8_t>* violating) {
     if (violating)
       violating->assign(worldRasterNodes.size(), 0);
     bool valid = true;
@@ -1305,7 +1236,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
           Body* member = members[memberIndex];
           ensureBodyRaster(member);
-          visitValidationCells(member, layerIndex, sparse, [&](const BodyRasterCell& cell) {
+          for (const BodyRasterCell& cell : member->rasterFootprint) {
             int k = cell.y * E.cols + cell.x;
             int previous = rasterProjectionOwner[k];
             if (previous < 0) {
@@ -1317,7 +1248,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
                 rasterOverlapCount[previous] = 0;
               }
               if (++rasterOverlapCount[previous] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
-                return;
+                continue;
               valid = false;
               if (violating) {
                 (*violating)[previous] = 1;
@@ -1326,15 +1257,15 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
             }
             if (layer.infinite
                 && (cell.x == 0 || cell.x == E.cols - 1))
-              return;
-            if (layer.bodyOwner[k] >= 0) return;
+              continue;
+            if (layer.bodyOwner[k] >= 0) continue;
             uint8_t material = layer.grid[k];
             if (material != EMPTY && !E.isGasMaterial(material)
                 && !E.isBuoyantMedium(material)) {
               valid = false;
               if (violating) (*violating)[nodeIndex] = 1;
             }
-          });
+          }
         }
       }
     }
@@ -1342,14 +1273,94 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     return valid;
   };
 
+  struct PackedClaim { uint64_t mask; int node, next; };
+  std::vector<uint64_t> occupiedWords;
+  std::vector<int> claimHeads;
+  std::vector<PackedClaim> claims;
+  auto assignmentValidPacked = [&](std::vector<uint8_t>* violating) {
+    if (violating) violating->assign(worldRasterNodes.size(), 0);
+    bool valid = true;
+    for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+      occupiedWords.assign(wordCount, 0);
+      claimHeads.assign(wordCount, -1);
+      claims.clear();
+      rasterOverlapNode.assign(worldRasterNodes.size(), -1);
+      rasterOverlapCount.resize(worldRasterNodes.size());
+      for (int nodeIndex = 0; nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
+        WorldRasterNode& node = worldRasterNodes[nodeIndex];
+        auto visitMember = [&](Body* member) {
+          if (!member) return;
+          ensureBodyRaster(member);
+          if (!member->rasterWordsValid) {
+            member->rasterWords.clear();
+            for (const BodyRasterCell& cell : member->rasterFootprint) {
+              int k = cell.y * E.cols + cell.x, word = k >> 6;
+              if (member->rasterWords.empty() || member->rasterWords.back().word != word)
+                member->rasterWords.push_back({0, word});
+              member->rasterWords.back().mask |= uint64_t(1) << (k & 63);
+            }
+            member->rasterWordsValid = true;
+          }
+          for (const BodyRasterWord& word : member->rasterWords) {
+            uint64_t overlaps = word.mask & occupiedWords[word.word];
+            uint64_t allowedAliases = 0;
+            for (int link = claimHeads[word.word]; link >= 0 && overlaps;
+                 link = claims[link].next) {
+              const PackedClaim& claim = claims[link];
+              uint64_t hit = overlaps & claim.mask;
+              overlaps &= ~hit;
+              if (!hit || claim.node == nodeIndex) continue;
+              int previous = claim.node;
+              if (rasterOverlapNode[previous] != nodeIndex) {
+                rasterOverlapNode[previous] = nodeIndex;
+                rasterOverlapCount[previous] = 0;
+              }
+              int& count = rasterOverlapCount[previous];
+              int allowance = imax(0, R_STRUCTURE_RASTER_ALIAS_CELLS - count);
+              uint64_t pending = hit;
+              while (allowance-- > 0 && pending) {
+                uint64_t first = pending & (~pending + 1);
+                allowedAliases |= first;
+                pending &= ~first;
+              }
+              count += __builtin_popcountll(hit);
+              if (count > R_STRUCTURE_RASTER_ALIAS_CELLS) {
+                valid = false;
+                if (violating) {
+                  (*violating)[previous] = 1;
+                  (*violating)[nodeIndex] = 1;
+                }
+              }
+            }
+            if (word.mask & terrainWords[layerIndex][word.word] & ~allowedAliases) {
+              valid = false;
+              if (violating) (*violating)[nodeIndex] = 1;
+            }
+            uint64_t fresh = word.mask & ~occupiedWords[word.word];
+            if (fresh) {
+              claims.push_back({fresh, nodeIndex, claimHeads[word.word]});
+              claimHeads[word.word] = (int)claims.size() - 1;
+              occupiedWords[word.word] |= fresh;
+            }
+          }
+        };
+        if (node.body->jointRole == 1) {
+          visitMember(node.foreground);
+          visitMember(node.background);
+        } else visitMember(layerIndex ? node.background : node.foreground);
+      }
+    }
+    return valid;
+  };
+
   auto assignmentValid = [&](std::vector<uint8_t>* violating) {
-    if (sparseWorldValidation) prepareValidationBins();
-    bool valid = assignmentValidImpl(violating, sparseWorldValidation);
+    bool valid = packedWorldValidation
+      ? assignmentValidPacked(violating) : assignmentValidReference(violating);
 #ifdef SAND_INVARIANT_CHECKS
     std::vector<uint8_t> reference;
-    bool referenceValid = assignmentValidImpl(violating ? &reference : nullptr, false);
+    bool referenceValid = assignmentValidReference(violating ? &reference : nullptr);
     if (valid != referenceValid || (violating && *violating != reference)) {
-      emscripten_console_error("SPARSE WORLD RASTER VALIDATION MISMATCH");
+      emscripten_console_error("PACKED WORLD RASTER VALIDATION MISMATCH");
       abort();
     }
 #endif
@@ -1778,8 +1789,11 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     int samples = imin(64, imax(
       1, (int)std::ceil(maxRollbackTravel / 0.25)));
     double lower = 0, upper = -1;
+    setRollbackFraction(1);
+    remainingRollbackValidations--;
+    if (assignmentValid(&worldRasterViolating)) upper = 1;
     for (int sample = 1;
-         sample <= samples && remainingRollbackValidations > 7; sample++) {
+         upper < 0 && sample <= samples && remainingRollbackValidations > 7; sample++) {
       double fraction = (double)sample / samples;
       setRollbackFraction(fraction);
       remainingRollbackValidations--;
@@ -3309,6 +3323,7 @@ void RigidBodySystem::ensureBodyRaster(Body* b) {
     && b->rasterGeometryRevision == b->geometryRevision
     && b->rasterCols == E.cols && b->rasterRows == E.rows;
   if (!sameCells) {
+    b->rasterWordsValid = false;
     b->rasterFootprint.clear();
     b->rasterBoundaryFootprint.clear();
     if (aligned) {

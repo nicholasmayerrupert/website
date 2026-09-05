@@ -228,6 +228,10 @@ struct BodyBoundarySampleBlock {
   double maxRadius = 0;
 };
 
+struct BodyRasterWord {
+  uint64_t mask = 0;
+  int word = 0;
+};
 struct BodyRasterCell {
   int x = 0, y = 0, local = -1;
 };
@@ -328,6 +332,8 @@ struct Body {
   // Near-axis poses can share the footprint when their rounded cell mapping
   // is identical throughout the clipped bounds.
   std::vector<BodyRasterCell> rasterFootprint;
+  std::vector<BodyRasterWord> rasterWords;
+  bool rasterWordsValid = false;
   // Exact erosion candidates for the cached raster. A world-raster boundary
   // can only map to a local cell whose eight-neighbourhood is not fully solid.
   std::vector<BodyRasterCell> rasterBoundaryFootprint;

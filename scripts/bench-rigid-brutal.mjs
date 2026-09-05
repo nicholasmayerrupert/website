@@ -165,6 +165,16 @@ for (let repeat = 0; repeat < repeats; repeat++) {
 
     const foregroundBodies = engine._bodyCountLayer(0);
     const backgroundBodies = engine._bodyCountLayer(1);
+    // Invalid bodies must fail the benchmark rather than appear as a speedup.
+    for (let layer = 0; layer < 2; layer++) {
+      const count = layer ? backgroundBodies : foregroundBodies;
+      for (let body = 0; body < count; body++) {
+        const state = engine._bodyStateLayer(layer, body);
+        for (const key of ['px', 'py', 'angle', 'vx', 'vy', 'omega'])
+          if (!Number.isFinite(state?.[key]))
+            throw new Error(`Non-finite body ${layer}:${body} ${key} at mixed tick ${tick}`);
+      }
+    }
     let jointPrimaries = 0;
     for (let body = 0; body < foregroundBodies; body++)
       if (engine._bodyJointRoleLayer(0, body) === 1) jointPrimaries++;

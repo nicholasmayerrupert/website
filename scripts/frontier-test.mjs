@@ -30,6 +30,10 @@ check('frontier starts with three independent jobs and a homecoming', e.startMis
 check('station has open concourse and a solid floor', at(-64, 8) === MAT.EMPTY && at(-64, 17) !== MAT.EMPTY);
 check('foreground laboratories stay clear while background carries furnishing', at(-100, 45) === MAT.EMPTY && at(-100, 45, true) !== MAT.EMPTY);
 check('station surface is a dry terrace, eastern summit has real verticality', e.worldSurfaceAbsAt(0) === 16 && e.worldSurfaceAbsAt(900) < -180);
+move(0, -125);
+for (let i = 0; i < 120; i++) e.stepWorld();
+check('solar mounting stays attached under simulation', at(-136, -110) === MAT.IRON_ORE);
+check('maintenance covers the upper observation deck', e.repairFrontierBase(player));
 const initial = e.getMission().objectives;
 move(initial[2].worldX, initial[2].worldY - 3);
 tick();

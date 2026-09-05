@@ -110,7 +110,7 @@
   }
   fluidReferenceMs += emscripten_get_now() - referenceStart;
   auto referencePressureAt = [&](int sourceBody, int layer, int cell) {
-    double cached = std::fmax(0.0f, fluidPressureCache[layer][cell]);
+    double cached = std::fmax(0.0f, fluidPressureCache[layer][cell]) * dt;
     if (sourceBody < 0 || sourceBody >= (int)bodies.size()) return cached;
     const FluidReference& reference =
       fluidReferences[sourceBody * 2 + layer];
@@ -166,7 +166,7 @@
     uint32_t packedVelocity = lay->liquidVel.current ? lay->liquidVel.current[k] : 0;
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
-    double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
+    double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]) * dt;
     fluidNodes.push_back({lay, k, -1, sourceBody, material, vx, vy + E.scaledGravity(R_GRAVITY) * dt,
                           pressure});
     fluidNodeDepth.push_back(depth);

@@ -116,6 +116,7 @@ export const UNIT_SUITES = [
   ['render', 'render-noise-test.mjs'],
   ['viewport-sizing', 'viewport-sizing-test.mjs'],
   ['day-night', 'day-night-test.mjs'],
+  ['biome-background', 'biome-background-test.mjs'],
   ['weather', 'weather-test.mjs'],
   ['pan-compare', 'bench-pan-compare-test.mjs', exclusive(180_000)],
   ['sand-bench-env', 'bench-sand-environment-test.mjs'],

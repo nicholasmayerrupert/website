@@ -151,11 +151,16 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 7 is canonical in absolute coordinates: viewport size changes
+World generation version 9 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
-ruggedness fields select surface biomes; narrow deterministic ecotones blend
-their soil and vegetation instead of creating hard seams.
+ruggedness fields select stable 384-cell climate districts. Adjacent districts
+may share a biome; narrow deterministic ecotones blend soil and vegetation.
+Biome-specific relief, rolling or craggy detail, and elevation offsets blend
+continuously across 64-cell surface knots. Plains have low rolling relief,
+deserts have sandy dunes and cacti, rocky highlands expose stone, tundra carries
+a snow mantle, jungles grow dense broadleaf vegetation, and swamps form low muddy
+wetlands. Climate reads the base elevation independently of biome-shaped relief.
 
 Foreground caves combine noise caverns with a player-clear macro-region
 backbone from the surface into an infinite deep-cavern graph. The normal cave
@@ -757,6 +762,18 @@ simulation checksum.
 Bare hands, mining tools, and placeable blocks show the selected square footprint
 at the pointer. Equipping a weapon hides both the footprint and the legacy
 diamond tool preview so the weapon aim remains visually unambiguous.
+
+Earth and Frontier's decorative Canvas2D backdrop samples the engine's surface
+biomes in a 192-cell band around the survival player or creative camera center.
+`game/biomeBackground.js` blends sky and ridge colors, terrain contours, snowcaps,
+and vegetation coverage. Each depth layer draws one opaque contour, with its
+height interpolated between biome silhouettes before rasterization. Vegetation
+occupies stable world-space patches; the backdrop has no decorative houses. A
+180 ms exponential easing time smooths ordinary travel, while teleports, paused
+views, reduced motion, and replay playback sample the destination immediately.
+Biome selection stays in the engine; the bounded presentation cache uses absolute
+coordinates and resets when the engine changes. Weather and day/night compose
+with the biome palette. Simulated background walls retain their material opacity.
 
 The render-only day/night cycle drives the sky and base skylight but not
 authority simulation state. Creative mode can scrub and hold the cycle; those

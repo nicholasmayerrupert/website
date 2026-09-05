@@ -507,7 +507,10 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 {
   const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 0xBED, sinksOn: false, infinite: true });
   const woods = new Set(); let willowLeaves = 0;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 80; i++) {
+    const targetY = Math.floor((e.worldSurfaceAbsAt(e.getWorldOffsetX() + 110) - 80) / 32) * 32;
+    while (Math.abs(targetY - e.getWorldOffsetY()) >= 32)
+      e.shiftWorldXY(0, Math.max(-96, Math.min(96, targetY - e.getWorldOffsetY())));
     const g = e.getGridBg();
     for (const v of g) {
       if (v === MAT.OAK_WOOD || v === MAT.PINE_WOOD || v === MAT.CACTUS) woods.add(v);

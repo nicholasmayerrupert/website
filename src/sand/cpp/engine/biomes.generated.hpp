@@ -124,6 +124,7 @@ struct SurfaceBiomeDef {
   int selectionPriority;
   uint16_t climateClauseOffset;
   uint8_t climateClauseCount;
+  double surfaceReliefScale, surfaceDetailAmplitude, surfaceRidgeMix, surfaceOffset;
   int soilScale, soilAdd;
   uint8_t flatSkin, steepSkin, soilTop, soilBase;
   int soilBaseNumerator, soilBaseDenominator;
@@ -138,7 +139,7 @@ struct SurfaceBiomeDef {
 inline constexpr std::array<SurfaceClimateTerm, 15>
     SURFACE_CLIMATE_TERMS = {{
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.51},
-  {SCV_MOISTURE, SCC_LESS_THAN, 0.31},
+  {SCV_MOISTURE, SCC_LESS_THAN, 0.36},
   {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.43},
   {SCV_ALTITUDE, SCC_GREATER_THAN, 0.28},
   {SCV_RUGGED, SCC_GREATER_THAN, 0.58},
@@ -147,9 +148,9 @@ inline constexpr std::array<SurfaceClimateTerm, 15>
   {SCV_TEMPERATURE, SCC_LESS_THAN, 0.29},
   {SCV_ALTITUDE, SCC_GREATER_THAN, 0.34},
   {SCV_TEMPERATURE, SCC_LESS_THAN, 0.45},
-  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.62},
-  {SCV_MOISTURE, SCC_GREATER_THAN, 0.57},
-  {SCV_MOISTURE, SCC_GREATER_THAN, 0.72},
+  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.56},
+  {SCV_MOISTURE, SCC_GREATER_THAN, 0.55},
+  {SCV_MOISTURE, SCC_GREATER_THAN, 0.62},
   {SCV_SURFACE_MINUS_SEA, SCC_GREATER_THAN, -20},
   {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.38},
 }};
@@ -169,39 +170,46 @@ inline constexpr std::array<SurfaceClimateClause, 9>
 
 inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES = {{
   {BIOME_PLAINS, "plains", 6, 0, 1,
+   0.48, 3, 0, -5,
    1, 2, GRASS, SAND, DIRT, DIRT,
-   0, 1, 1,
-   PT_BUSH, PT_OAK, PT_OAK, 0.25, 1,
+   0, 1, 0.45,
+   PT_BUSH, PT_OAK, PT_OAK, 0.75, 1,
    BRICK, BRICK, false, true},
   {BIOME_FOREST, "forest", 5, 1, 1,
+   0.85, 5, 0.15, -4,
    1, 2, GRASS, SAND, DIRT, DIRT,
-   0, 1, 3.2,
-   PT_PINE, PT_OAK, PT_OAK, 0.5, 1,
+   0, 1, 3.8,
+   PT_PINE, PT_OAK, PT_OAK, 0.85, 1,
    BRICK, BRICK, false, true},
   {BIOME_DESERT, "desert", 2, 2, 1,
-   3, 0, SAND, SAND, SAND, SANDSTONE,
-   2, 3, 0.7,
+   0.3, 16, 0, -12,
+   4, 0, SAND, SAND, SAND, SANDSTONE,
+   2, 3, 0.8,
    PT_CACTUS, PT_CACTUS, PT_CACTUS, 1, 1,
    SANDSTONE, SANDSTONE, true, true},
   {BIOME_ROCKY, "rocky", 0, 3, 2,
+   1.25, 12, 1, -8,
    0, 0, STONE, STONE, STONE, STONE,
    0, 1, 0,
    PT_OAK, PT_OAK, PT_OAK, 1, 1,
    BRICK, BRICK, false, false},
   {BIOME_TUNDRA, "tundra", 1, 5, 2,
-   1, 2, SNOW, SNOW, DIRT, DIRT,
-   0, 1, 1.5,
+   0.65, 4, 0, -8,
+   1, 4, SNOW, SNOW, SNOW, DIRT,
+   1, 2, 0.65,
    PT_PINE, PT_PINE, PT_PINE, 1, 1,
    BRICK, BRICK, false, true},
   {BIOME_JUNGLE, "jungle", 4, 7, 1,
+   0.85, 8, 0.2, -10,
    1, 3, GRASS, SAND, DIRT, DIRT,
-   0, 1, 4,
-   PT_BUSH, PT_OAK, PT_OAK, 0.35, 1,
+   0, 1, 5.2,
+   PT_BUSH, PT_OAK, PT_OAK, 0.15, 1,
    BRICK, BRICK, true, true},
   {BIOME_SWAMP, "swamp", 3, 8, 1,
-   1, 2, GRASS, MUD, MUD, MUD,
+   0.12, 5, 0, 0,
+   2, 2, MUD, MUD, MUD, MUD,
    0, 1, 2,
-   PT_WILLOW, PT_OAK, PT_BUSH, 0.48, 0.82,
+   PT_WILLOW, PT_OAK, PT_BUSH, 0.85, 0.95,
    BRICK, BRICK, false, true},
 }};
 

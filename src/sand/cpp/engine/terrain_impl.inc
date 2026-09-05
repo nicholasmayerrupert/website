@@ -7,29 +7,42 @@ int TerrainGen::floorDiv(int value, int divisor) {
 double TerrainGen::genTemperatureAt(int worldX) {
   double broad = wfbm2(E.L->worldSeed ^ 0x7A11D2u, worldX * BIOME_FREQ, 5.5, 4, 0.52);
   double local = wfbm2(E.L->worldSeed ^ 0x7A11D3u, worldX * BIOME_FREQ * 3.1, 1.7, 2, 0.5);
-  double altitude = std::fmax(0.0, (double)(SEA_LEVEL - genSurfaceAbs(worldX)) / 92.0);
-  return std::fmax(0.0, std::fmin(1.0, broad * 0.78 + local * 0.22 - altitude * 0.24));
+  double altitude = std::fmax(0.0, (double)(SEA_LEVEL - genBaseSurfaceAbs(worldX)) / 92.0);
+  return std::fmax(0.0, std::fmin(1.0, broad * 0.88 + local * 0.12 - altitude * 0.24));
 }
 
 double TerrainGen::genMoistureAt(int worldX) {
   double broad = wfbm2(E.L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ * 0.82, 2.5, 4, 0.52);
   double pockets = wfbm2(E.L->worldSeed ^ 0xB10B11u, worldX * BIOME_FREQ * 3.7, 9.5, 2, 0.5);
-  double coast = 1.0 - std::fmin(1.0, std::fabs((double)(genSurfaceAbs(worldX) - SEA_LEVEL)) / 54.0);
-  return std::fmax(0.0, std::fmin(1.0, broad * 0.72 + pockets * 0.18 + coast * 0.10));
+  double coast = 1.0 - std::fmin(1.0, std::fabs((double)(genBaseSurfaceAbs(worldX) - SEA_LEVEL)) / 54.0);
+  return std::fmax(0.0, std::fmin(1.0, broad * 0.80 + pockets * 0.10 + coast * 0.10));
 }
 
 int TerrainGen::classifyBiomeAt(int worldX) {
+  // Each climate district has a stable biome core. Ecotones and surface-shape
+  // interpolation soften the border without introducing tiny interior patches.
+  constexpr int CLIMATE_DISTRICT_WIDTH = 384;
+  constexpr int CLIMATE_SAMPLE_WIDTH = 256;
+  worldX = floorDiv(worldX, CLIMATE_DISTRICT_WIDTH) * CLIMATE_SAMPLE_WIDTH
+    + CLIMATE_SAMPLE_WIDTH / 2;
+  uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
+  BiomeCacheEntry& cached = climateBiomeCache[key & (BIOME_CACHE_SIZE - 1)];
+  if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
   double temperature = genTemperatureAt(worldX);
   double moisture = genMoistureAt(worldX);
-  int surface = genSurfaceAbs(worldX);
+  int surface = genBaseSurfaceAbs(worldX);
   double altitude = std::fmax(0.0, (double)(SEA_LEVEL - surface) / 92.0);
   double rugged = wridged2(E.L->worldSeed ^ 0xB10B12u, worldX * BIOME_FREQ * 2.2, 4.0, 3, 0.52);
 
   for (Biome biome : SURFACE_BIOME_SELECTION_ORDER) {
     const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
     if (surfaceBiomeClimateMatches(def, temperature, moisture, altitude, rugged,
-                                   surface - SEA_LEVEL))
+                                   surface - SEA_LEVEL)) {
+      cached.seed = E.L->worldSeed;
+      cached.x = worldX;
+      cached.value = biome;
       return biome;
+    }
   }
   __builtin_unreachable();
 }
@@ -71,14 +84,14 @@ int TerrainGen::genBiomeAt(int worldX) {
 }
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
-int TerrainGen::genSurfaceAbs(int worldX) {
+int TerrainGen::genBaseSurfaceAbs(int worldX) {
   const PlanetDef& planet = planetDef(E.planetId);
   if (planet.generationProfile == PGP_SHIP) return 16;
   if (planet.generationProfile == PGP_MOON
       || planet.generationProfile == PGP_MARS) {
     uint32_t planetSeed = E.L->worldSeed ^ planet.worldSeedSalt;
     uint32_t key = planetSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
-    SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
+    SurfaceCacheEntry& cached = baseSurfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
     if (cached.seed == planetSeed && cached.x == worldX) return cached.value;
 
     double surface = 0;
@@ -122,7 +135,7 @@ int TerrainGen::genSurfaceAbs(int worldX) {
   }
   if (planet.generationProfile != PGP_EARTH) __builtin_unreachable();
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
-  SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
+  SurfaceCacheEntry& cached = baseSurfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
 
   // A very-low-frequency continental silhouette gives the world long mountain
@@ -141,6 +154,36 @@ int TerrainGen::genSurfaceAbs(int worldX) {
   double peaks = -highland * ridges * SURFACE_AMPLITUDE * 1.65;
   int value = (int)std::lround(macro - (n - 0.5) * 2 * amp + peaks
                              + (cuts - 0.45) * SURFACE_AMPLITUDE * 0.18);
+  cached.seed = E.L->worldSeed;
+  cached.x = worldX;
+  cached.value = value;
+  return value;
+}
+
+int TerrainGen::genSurfaceAbs(int worldX) {
+  if (planetDef(E.planetId).generationProfile != PGP_EARTH)
+    return genBaseSurfaceAbs(worldX);
+  uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
+  SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
+  if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
+
+  // Climate reads the base elevation. The final surface blends biome profiles
+  // across fixed world-space knots, keeping slopes continuous at region borders.
+  constexpr int SHAPE_STEP = 64;
+  int left = floorDiv(worldX, SHAPE_STEP) * SHAPE_STEP;
+  double mix = (double)(worldX - left) / SHAPE_STEP;
+  mix = mix * mix * (3.0 - 2.0 * mix);
+  const SurfaceBiomeDef& a = surfaceBiomeDef(classifyBiomeAt(left));
+  const SurfaceBiomeDef& b = surfaceBiomeDef(classifyBiomeAt(left + SHAPE_STEP));
+  auto interpolate = [mix](double av, double bv) { return av + (bv - av) * mix; };
+  double relief = interpolate(a.surfaceReliefScale, b.surfaceReliefScale);
+  double detail = interpolate(a.surfaceDetailAmplitude, b.surfaceDetailAmplitude);
+  double ridgeMix = interpolate(a.surfaceRidgeMix, b.surfaceRidgeMix);
+  double rolling = wfbm2(E.L->worldSeed ^ 0xB10D01u, worldX * 0.009, 2.5, 2, 0.5) - 0.5;
+  double crags = wridged2(E.L->worldSeed ^ 0xB10D02u, worldX * 0.016, 7.2, 3, 0.5) - 0.5;
+  int value = (int)std::lround(SEA_LEVEL + (genBaseSurfaceAbs(worldX) - SEA_LEVEL) * relief
+    + interpolate(a.surfaceOffset, b.surfaceOffset)
+    + (rolling + (crags - rolling) * ridgeMix) * detail * 2.0);
   if (E.planetId == PL_FRONTIER) {
     // The expedition starts on a dry terrace beneath the western highlands.
     double distance = std::abs(worldX);
@@ -258,7 +301,7 @@ TerrainGen::CaveRegionPlan TerrainGen::cavePlan(int region) {
   }
   plan.entryY = genSurfaceAbs(plan.entryX);
   plan.mouthX = plan.entryX + inward * (14 + (int)(roll(0x103u) * 8));
-  plan.mouthY = imax(plan.entryY + 5, genSurfaceAbs(plan.mouthX) + 5);
+  plan.mouthY = imax(plan.entryY + 14, genSurfaceAbs(plan.mouthX) + 14);
   plan.upperX = imax(base + 24, imin(base + CAVE_REGION_WIDTH - 24,
                     plan.mouthX + inward * (12 + (int)(roll(0x104u) * 20))));
   plan.upperY = imax(plan.mouthY + 24, plan.entryY + 48 + (int)(roll(0x105u) * 30));

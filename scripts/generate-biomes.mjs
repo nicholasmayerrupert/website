@@ -204,6 +204,7 @@ if (selectionSurface.length === 0
   throw new Error('surface selection must end in exactly one explicit fallback clause');
 
 const surfaceFields = [
+  'surfaceReliefScale', 'surfaceDetailAmplitude', 'surfaceRidgeMix', 'surfaceOffset',
   'soilScale', 'soilAdd', 'soilBaseNumerator', 'soilBaseDenominator',
   'treeProbabilityScale', 'treeFirstCut', 'treeSecondCut', 'copperRich',
   'allowsSurfaceStructures',
@@ -246,6 +247,11 @@ for (const record of sortedSurface) {
     throw new Error(`${record.symbol}.atlasColor must be a six-digit hex color`);
   for (const field of surfaceFields)
     if (record[field] === undefined) throw new Error(`${record.symbol} is missing ${field}`);
+  for (const field of ['surfaceReliefScale', 'surfaceDetailAmplitude', 'surfaceRidgeMix', 'surfaceOffset'])
+    if (!Number.isFinite(record[field])) throw new Error(`${record.symbol}.${field} must be numeric`);
+  if (record.surfaceReliefScale < 0 || record.surfaceDetailAmplitude < 0
+      || record.surfaceRidgeMix < 0 || record.surfaceRidgeMix > 1)
+    throw new Error(`${record.symbol} has invalid surface-shape proportions`);
   for (const field of [
     'soilScale', 'soilAdd', 'soilBaseNumerator', 'soilBaseDenominator',
   ]) if (!Number.isInteger(record[field]))
@@ -455,6 +461,7 @@ const offworldCpp = (profile) => [
 const surfaceRows = sortedSurface.map((record) => {
   const climate = climateRanges.get(record.symbol);
   return `  {${record.symbol}, ${JSON.stringify(record.name)}, ${record.selectionPriority}, ${climate.clauseOffset}, ${climate.clauseCount},\n`
+  + `   ${n(record.surfaceReliefScale)}, ${n(record.surfaceDetailAmplitude)}, ${n(record.surfaceRidgeMix)}, ${n(record.surfaceOffset)},\n`
   + `   ${record.soilScale}, ${record.soilAdd}, ${record.flatSkin}, ${record.steepSkin}, ${record.soilTop}, ${record.soilBase},\n`
   + `   ${record.soilBaseNumerator}, ${record.soilBaseDenominator}, ${n(record.treeProbabilityScale)},\n`
   + `   ${record.treeFirst}, ${record.treeSecond}, ${record.treeThird}, ${n(record.treeFirstCut)}, ${n(record.treeSecondCut)},\n`
@@ -574,6 +581,7 @@ struct SurfaceBiomeDef {
   int selectionPriority;
   uint16_t climateClauseOffset;
   uint8_t climateClauseCount;
+  double surfaceReliefScale, surfaceDetailAmplitude, surfaceRidgeMix, surfaceOffset;
   int soilScale, soilAdd;
   uint8_t flatSkin, steepSkin, soilTop, soilBase;
   int soilBaseNumerator, soilBaseDenominator;

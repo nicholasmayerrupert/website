@@ -112,15 +112,21 @@ const PROBE = ({ subSteps, noSnap, axis }) => {
 
 const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
   const T = window.__sandTest;
+  // Hold one scenery profile so this probe measures camera rigidity through
+  // terrain boundaries independently of the biome crossfade.
+  T.setBackgroundBiome(1);
   const canvas = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const stride = 4;
   const grab = () => ctx.getImageData(0, 0, W, H).data;
   const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
-  // Exact noon ridge fills isolate the four scenery layers from clouds, facets,
+  // Exact biome ridge fills isolate the four scenery layers from clouds, facets,
   // and lighting so the comparison measures shape changes rather than motion.
-  const target = [rgb('#718d9a'), rgb('#527264'), rgb('#35634f'), rgb('#222b29')];
+  const ridgeColors = () => {
+    const palette = T.backgroundPalette();
+    return ['ridgeFar', 'ridgeMid', 'ridgeNear', 'ridgeDeep'].map((key) => rgb(palette[key]));
+  };
   const matches = (pixels, index, color) =>
     ((pixels[index] << 16) | (pixels[index + 1] << 8) | pixels[index + 2]) === color;
 
@@ -137,11 +143,13 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
   }
   const probeCam = T.getCam();
   const before = grab();
+  const target = ridgeColors();
   T.setCam(probeCam.x + (axis === 'x' ? 2 : 0),
            probeCam.y + (axis === 'y' ? 2 : 0));
   const after = grab();
+  const afterTarget = ridgeColors();
 
-  const layers = target.map((color) => {
+  const layers = target.map((color, layer) => {
     let best = Infinity, bestShift = 0;
     for (let shift = -12; shift <= 12; shift++) {
       let changed = 0, covered = 0;
@@ -150,7 +158,7 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
         const ay = axis === 'y' ? y + shift : y;
         if (ax < 0 || ax >= W || ay < 0 || ay >= H) continue;
         const a = matches(before, (ay * W + ax) * 4, color);
-        const b = matches(after, (y * W + x) * 4, color);
+        const b = matches(after, (y * W + x) * 4, afterTarget[layer]);
         if (!a && !b) continue;
         covered++;
         if (a !== b) changed++;
@@ -163,6 +171,7 @@ const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
 
   T.setCam(cam0.x, cam0.y);
   T.clearDayPhase();
+  T.setBackgroundBiome(null);
   T.setPaused(false);
   return {
     axis,

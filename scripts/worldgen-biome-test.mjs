@@ -1,5 +1,5 @@
-// Biomes vary surface and soil materials without affecting terrain height, and
-// the generated loose mantle must settle without churn.
+// Biomes shape continuous surface relief, distinct soil, and vegetation. The
+// generated loose mantle must settle without churn.
 
 import {
   initSandWasm, createEngineWasm, BIOME, CAVE_BIOME,
@@ -79,11 +79,27 @@ check('every authored cave biome is reachable through descriptor selection',
   CAVE_BIOME_DEFS.every((def) => reachedCaves.has(def.id)));
 const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
-// Surface height is a pure function of worldX (no biome term), so it must be
-// smooth — adjacent columns differ by ~1 cell, never a biome-seam cliff.
+// Blended relief stays continuous across biome seams.
 let maxJump = 0;
 for (let wx = -3000; wx < 3000; wx++) maxJump = Math.max(maxJump, Math.abs(e.worldSurfaceAt(wx) - e.worldSurfaceAt(wx + 1)));
 check(`surface height is continuous across biome seams (max adjacent jump ${maxJump})`, maxJump <= 4);
+
+const regionRuns = [];
+let previousBiome = -1, runLength = 0;
+for (let x = -30_000; x <= 30_000; x += 32) {
+  const votes = Array(SURFACE_BIOME_COUNT).fill(0);
+  for (let dx = -48; dx <= 48; dx += 16) votes[e.worldBiomeAt(x + dx)]++;
+  const biome = votes.indexOf(Math.max(...votes));
+  if (biome === previousBiome) runLength += 32;
+  else {
+    if (runLength) regionRuns.push(runLength);
+    previousBiome = biome;
+    runLength = 32;
+  }
+}
+regionRuns.sort((a, b) => a - b);
+const medianRegion = regionRuns[Math.floor(regionRuns.length / 2)];
+check(`surface biomes have substantial continuous cores (median ${medianRegion} cells)`, medianRegion >= 384);
 
 // Scan the surface skin + the mantle just under it, panning across many biomes.
 const skins = new Set();

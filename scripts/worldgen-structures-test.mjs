@@ -98,7 +98,7 @@ function surfaceMasonryComponents(g, engine) {
     mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
     decoratedMineRows: 0, surfaceFurnishings: 0, undergroundFurnishings: 0, alignedBrick: 0,
     surfaceShells: 0, groundedSurfaceShells: 0, surfaceGroundContacts: 0,
-    streetLamps: 0, looseStreetApproaches: 0, collidingStreetLamps: 0,
+    streetLamps: 0, looseStreetApproaches: 0, pavedStreetApproaches: 0, collidingStreetLamps: 0,
   };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
   const furnishingIds = new Set([
@@ -111,7 +111,12 @@ function surfaceMasonryComponents(g, engine) {
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 50; i++) {
+      if (depth === 0) {
+        const targetY = Math.floor((e.worldSurfaceAbsAt(e.getWorldOffsetX() + COLS / 2) - 96) / 32) * 32;
+        while (Math.abs(targetY - e.getWorldOffsetY()) >= 32)
+          e.shiftWorldXY(0, Math.max(-96, Math.min(96, targetY - e.getWorldOffsetY())));
+      }
       const g = e.getGrid(), bg = e.getGridBg();
       const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
       for (let k = 0; k < g.length; k++) {
@@ -184,12 +189,18 @@ function surfaceMasonryComponents(g, engine) {
         if (!lamp) continue;
         tally.streetLamps++;
         let looseStreet = false;
+        let pavedStreet = false;
         for (let dx = -5; dx <= 5; dx++) {
           const surface = e.worldSurfaceAbsAt(offX + x + dx) - offY;
           looseStreet ||= surface >= 0 && surface < ROWS
             && g[surface * COLS + x + dx] === MAT.SAND;
+          // Building foundations and their stairs occupy the street where a
+          // raised terrace meets the natural grade.
+          pavedStreet ||= surface >= 0 && surface < ROWS
+            && [MAT.BRICK, MAT.SANDSTONE].includes(g[surface * COLS + x + dx]);
         }
         tally.looseStreetApproaches += looseStreet;
+        tally.pavedStreetApproaches += looseStreet || pavedStreet;
         // A duplicated fixture contributes a run of foreground cells. An
         // isolated roof-edge cell is not a foreground lamp post.
         let foregroundFixtureCells = 0;
@@ -225,8 +236,9 @@ function surfaceMasonryComponents(g, engine) {
   check(`surface structures are masonry-connected to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
     tally.surfaceShells > 10 && tally.groundedSurfaceShells === tally.surfaceShells
       && tally.surfaceGroundContacts > tally.surfaceShells * 3);
-  check(`village streets use loose sand (${tally.looseStreetApproaches}/${tally.streetLamps} lamp approaches)`,
-    tally.streetLamps > 10 && tally.looseStreetApproaches === tally.streetLamps);
+  check(`village streets use sand with masonry terrace approaches (${tally.looseStreetApproaches} sandy, ${tally.pavedStreetApproaches}/${tally.streetLamps} accessible)`,
+    tally.streetLamps > 10 && tally.looseStreetApproaches > tally.streetLamps * 0.75
+      && tally.pavedStreetApproaches === tally.streetLamps);
   check(`streetlamps remain visible but non-colliding (${tally.streetLamps} lamps, ${tally.collidingStreetLamps} foreground fixtures)`,
     tally.streetLamps > 10 && tally.collidingStreetLamps === 0);
   check(`underground structures contain visible furnishings (${tally.undergroundFurnishings} cells)`, tally.undergroundFurnishings > 200);

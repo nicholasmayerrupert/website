@@ -9,7 +9,7 @@ struct Engine;
 
 // Terrain, feature plans, and semantic identities are one compatibility unit.
 // Bump this when deterministic generation or feature containment changes.
-inline constexpr int WORLD_GENERATION_VERSION = 7;
+inline constexpr int WORLD_GENERATION_VERSION = 9;
 
 class TerrainGen {
  public:
@@ -39,10 +39,10 @@ class TerrainGen {
     DEEP_CAVERN_MIN_RADIUS_X + DEEP_CAVERN_RADIUS_X_VARIATION - 1;
   static constexpr int DEEP_CAVERN_MAX_RADIUS_Y =
     DEEP_CAVERN_MIN_RADIUS_Y + DEEP_CAVERN_RADIUS_Y_VARIATION - 1;
-  static constexpr double SURFACE_FREQ = 0.008;
+  static constexpr double SURFACE_FREQ = 0.005;
   static constexpr double CAVE_FREQ = 0.01;    // lower frequency produces larger features
   static constexpr double TREE_PROB = 0.05;
-  static constexpr double BIOME_FREQ = 0.0018; // broad climate regions with smaller moisture pockets
+  static constexpr double BIOME_FREQ = 0.0009; // broad climate regions with smaller moisture pockets
   static constexpr double ORE_FREQ = 0.11;     // ore-vein noise wavelength (small clusters)
   static constexpr double ORE_THRESH = 0.80;   // ridged-noise cutoff -> sparse veins
   static constexpr int SURFACE_OCT = 5;
@@ -121,13 +121,16 @@ class TerrainGen {
 
   Engine& E;
   std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> surfaceCache{};
+  std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> baseSurfaceCache{};
   std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> biomeCache{};
+  std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> climateBiomeCache{};
   std::array<CaveCacheEntry, CAVE_CACHE_SIZE> caveCache{};
   std::array<CavePlanCacheEntry, CAVE_PLAN_CACHE_SIZE> cavePlanCache{};
   std::array<DeepPlanCacheEntry, DEEP_PLAN_CACHE_SIZE> deepPlanCache{};
 
   static int floorDiv(int value, int divisor);
   int classifyBiomeAt(int worldX);
+  int genBaseSurfaceAbs(int worldX);
   CaveRegionPlan cavePlan(int region);
   bool taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
                               double startRadius, double endRadius, uint32_t salt);

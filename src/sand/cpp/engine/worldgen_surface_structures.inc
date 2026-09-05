@@ -700,15 +700,15 @@
         put(ax + ox, ay + oy, border ? BRICK : EMPTY);
       }
       int fy = ay + h - 2;
-      int rewardDepth = fy - terrain.genSurfaceAbs(ax + w / 2);
-      bool ironDepth = rewardDepth > 105, goldDepth = rewardDepth > 300;
       for (int ox = 2; ox < w - 2; ox++) {
+        int rewardDepth = fy - terrain.genSurfaceAbs(ax + ox);
+        bool ironDepth = rewardDepth > 105, goldDepth = rewardDepth > 300;
         double r = h2(0x7000u, ax + ox, ay);
         uint8_t ore = goldDepth && r < 0.14 ? GOLD_ORE
                     : ironDepth && r < 0.42 ? IRON_ORE
                     : r < 0.72 ? COPPER_ORE : EMPTY;
         if (ore != EMPTY) put(ax + ox, fy, ore);
-        if (goldDepth && r < 0.06) put(ax + ox, fy - 1, GOLD_ORE); // taller deep-vault heaps
+        if (rewardDepth > 301 && r < 0.06) put(ax + ox, fy - 1, GOLD_ORE); // taller deep-vault heaps
       }
       put(ax + 2, fy, CRYSTAL); put(ax + w - 3, fy, CRYSTAL);
     };
@@ -794,7 +794,7 @@
       put(cx - 3, fy, STONE); put(cx - 3, fy - 1, STONE); // stone hearth fully contains the lava
       put(cx + 3, fy, STONE); put(cx + 3, fy - 1, STONE);
       for (int x = ax + 3; x <= ax + 8; x++) put(x, fy - 2, WOOD);
-      uint8_t toolMetal = fy - terrain.genSurfaceAbs(ax + w - 6) > 105 ? IRON_ORE : COPPER_ORE;
+      uint8_t toolMetal = fy - 3 - terrain.genSurfaceAbs(ax + w - 6) > 105 ? IRON_ORE : COPPER_ORE;
       put(ax + w - 6, fy - 2, toolMetal); put(ax + w - 6, fy - 3, toolMetal);
     };
     // A lost archive with tall book bays, reading tables, maps, and balconies.

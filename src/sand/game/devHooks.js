@@ -4,7 +4,7 @@
 // import.meta.env.DEV; every dependency is passed in explicitly so the hooks
 // can't silently reach into shell closures.
 
-import { STRIDES } from '../wasmBridge/abi.generated.js';
+import { STRIDES, SURFACE_BIOME_COUNT } from '../wasmBridge/abi.generated.js';
 import { TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createReplayMicroscopeDev } from './replayMicroscopeDev.js';
@@ -111,6 +111,13 @@ export function installDevHooks(ctx, {
   window.__sandTest = {
     setCam(x, y) { engine()?.cameraSet(x, y); render(false); },
     getCam() { return engine() ? engine().getCam() : { x: 0, y: 0 }; },
+    backgroundPalette() { return ctx.parallax.getPalette(); },
+    setBackgroundBiome(id) {
+      ctx.backgroundBiomeWeights = Number.isInteger(id) && id >= 0 && id < SURFACE_BIOME_COUNT
+        ? Array.from({ length: SURFACE_BIOME_COUNT }, (_, biome) => biome === id ? 1 : 0)
+        : null;
+      render(false);
+    },
     render(full = false) { render(full); },
     // vertical-streaming hooks (browser test): trigger a stream pass + read the
     // 2D world offset, to verify a world shift is seamless on screen.

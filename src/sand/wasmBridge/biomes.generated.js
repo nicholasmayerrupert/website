@@ -55,7 +55,7 @@ export const SURFACE_BIOME_DEFS = Object.freeze([
         {
           "variable": "moisture",
           "comparison": "<",
-          "value": 0.31
+          "value": 0.36
         },
         {
           "variable": "temperature",
@@ -177,12 +177,12 @@ export const SURFACE_BIOME_DEFS = Object.freeze([
         {
           "variable": "temperature",
           "comparison": ">",
-          "value": 0.62
+          "value": 0.56
         },
         {
           "variable": "moisture",
           "comparison": ">",
-          "value": 0.57
+          "value": 0.55
         }
       ]
     ],
@@ -210,7 +210,7 @@ export const SURFACE_BIOME_DEFS = Object.freeze([
         {
           "variable": "moisture",
           "comparison": ">",
-          "value": 0.72
+          "value": 0.62
         },
         {
           "variable": "surfaceMinusSea",

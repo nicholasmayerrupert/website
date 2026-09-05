@@ -66,6 +66,12 @@ run('offworld-only biome reuses profile defaults in one record', (schema) => {
 run('zero soil denominator is rejected', (schema) => {
   schema.surfaceBiomes[0].soilBaseDenominator = 0;
 }, false);
+run('negative biome relief is rejected', (schema) => {
+  schema.surfaceBiomes[0].surfaceReliefScale = -1;
+}, false);
+run('biome ridge mix must be a proportion', (schema) => {
+  schema.surfaceBiomes[0].surfaceRidgeMix = 2;
+}, false);
 run('string biome booleans are rejected', (schema) => {
   schema.surfaceBiomes[0].copperRich = 'false';
 }, false);

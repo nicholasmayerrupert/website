@@ -111,7 +111,8 @@ function surfaceMasonryComponents(g, engine) {
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
-    for (let i = 0; i < 50; i++) {
+    // Separate settlements and mine entrances require a broad exploration sample.
+    for (let i = 0; i < (depth === 0 ? 50 : 80); i++) {
       if (depth === 0) {
         const targetY = Math.floor((e.worldSurfaceAbsAt(e.getWorldOffsetX() + COLS / 2) - 96) / 32) * 32;
         while (Math.abs(targetY - e.getWorldOffsetY()) >= 32)

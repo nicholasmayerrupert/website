@@ -224,6 +224,33 @@ check('a mine planning box cannot claim untouched sky above an overlapping settl
       && has(overlapSky, WORLD_AREA.SETTLEMENT)));
 overlapRegression.destroy();
 
+// Discover reservations independently through public semantic queries. Exercise
+// both sides of the origin and different biome/structure combinations.
+for (const seed of [0xBED, 0xBEEF, 7]) {
+  const e = make({ worldSeed: seed });
+  const villages = new Map(), headhouses = new Map();
+  for (let x = -6000; x <= 6000; x += 12) {
+    const surface = e.worldSurfaceAbsAt(x);
+    for (let depth = -72; depth <= 48; depth += 12) {
+      const context = e.worldContextAt(x, surface + depth);
+      if (context.featureKind === WORLD_FEATURE.VILLAGE)
+        villages.set(context.featureId, context.bounds);
+      if (context.siteRole === WORLD_SITE_ROLE.MINE_HEADHOUSE)
+        headhouses.set(context.featureId, context.bounds);
+    }
+  }
+  const streets = [...villages.values()].sort((a, b) => a.left - b.left);
+  check(`seed ${seed}: settlements and standalone mine buildings remain discoverable`,
+    streets.length >= 5 && headhouses.size >= 2);
+  check(`seed ${seed}: neighboring settlements reserve separate streets`,
+    streets.every((street, i) => i === 0 || street.left > streets[i - 1].right + 12));
+  check(`seed ${seed}: mine roofs and entrances do not intersect settlements`,
+    [...headhouses.values()].every((house) => streets.every((street) =>
+      house.right + 2 < street.left || house.left - 2 > street.right
+      || house.bottom < street.top || house.top > street.bottom)));
+  e.destroy();
+}
+
 const moon = make({ planetId: PLANET.MOON });
 const outcrop = findContext(moon,
   (context) => context.featureKind === WORLD_FEATURE.OUTCROP,

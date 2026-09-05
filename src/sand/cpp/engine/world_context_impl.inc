@@ -30,6 +30,23 @@ bool WorldContextSystem::candidateAccepted(
 }
 
 bool WorldContextSystem::villagePlan(int latticeX, VillagePlan& out) const {
+  if (!villageCandidate(latticeX, out)) return false;
+  // Reserve the whole street, including roofs, stairs, market, and well.
+  // Lower lattice coordinates win conflicts against raw candidates, so the
+  // decision is bounded and independent of streaming order or active layer.
+  constexpr int CLEARANCE = 12;
+  const GeneratedFeatureDef& def = featureDef(GFF_VILLAGE);
+  int first = floorDiv(out.left - CLEARANCE - def.overscanX,
+                       def.latticeWidth);
+  for (int q = first; q < latticeX; q++) {
+    VillagePlan neighbor;
+    if (villageCandidate(q, neighbor)
+        && neighbor.right + CLEARANCE >= out.left) return false;
+  }
+  return candidateAccepted(def, {out.left, out.top, out.right, out.bottom});
+}
+
+bool WorldContextSystem::villageCandidate(int latticeX, VillagePlan& out) const {
   if (!featureApplies(GFF_VILLAGE)) return false;
   uint32_t seed = E.L->worldSeed ^ 0x57121314u;
   if (whash1(seed ^ 0xA11A6Eu, latticeX) > VILLAGE_CHANCE) return false;
@@ -47,8 +64,7 @@ bool WorldContextSystem::villagePlan(int latticeX, VillagePlan& out) const {
   out.top = surface - 96;
   out.bottom = surface + 48;
   out.id = featureId(0x711A6E00u, latticeX, 0);
-  return candidateAccepted(featureDef(GFF_VILLAGE),
-                           {out.left, out.top, out.right, out.bottom});
+  return true;
 }
 
 bool WorldContextSystem::villageBuildingPlan(
@@ -177,8 +193,11 @@ bool WorldContextSystem::minePlan(int latticeX, MinePlan& out) const {
     lp.roomBottom = lp.ceiling - 1;
   }
   out.id = featureId(0xD16DCA7Au, latticeX, 0);
+  // The entrance, its stairs, and the access shaft reserve surface space.
+  // Deep galleries can run beneath settlements without consuming their street.
   return candidateAccepted(featureDef(GFF_MINE),
-                           {out.left, out.top, out.right, out.bottom});
+    {houseLeft - 12, imin(out.top, out.headhouseTop - 9),
+     houseLeft + HOUSE_WIDTH + 12, out.connectorBottom});
 }
 
 bool WorldContextSystem::offworldFacilityPlan(

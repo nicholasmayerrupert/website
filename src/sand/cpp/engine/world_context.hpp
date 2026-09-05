@@ -815,6 +815,7 @@ class WorldContextSystem {
 
   static int floorDiv(int value, int divisor);
   bool featureApplies(GeneratedFeatureFamily family) const;
+  bool villageCandidate(int latticeX, VillagePlan& out) const;
   uint32_t featureId(uint32_t salt, int x, int y) const;
   bool candidateAccepted(const GeneratedFeatureDef&,
                          const WorldBounds&) const;

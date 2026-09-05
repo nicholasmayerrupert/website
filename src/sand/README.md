@@ -151,7 +151,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 9 is canonical in absolute coordinates: viewport size changes
+World generation version 10 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select stable 384-cell climate districts. Adjacent districts
@@ -181,7 +181,10 @@ foreground while aligned timber frames, station walls, furnished workrooms,
 carts, and rail beds remain solid in the background. Surface settlements contain
 five to seven large role-specific buildings with distinct rooflines, terraced
 foundations, broad masonry supports, slope stairs, a market, lantern-lit streets,
-and a roofed well. Ruins and homes keep player-clear foreground routes while
+and a roofed well. Villages reserve their whole street with a gap between neighboring
+settlements. Mine entrances exclude settlements, and ruin plans exclude both settlements
+and mines; both simulated layers share these deterministic placement decisions.
+Ruins and homes keep player-clear foreground routes while
 their coordinated background walls carry furniture, murals, storage, machinery,
 and plant life; underground archetypes include lost archives with book bays,
 reading desks, maps, balconies, and lecterns. Deep caverns add furnace citadels,

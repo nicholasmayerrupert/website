@@ -14,6 +14,11 @@ struct RigidBodySystem::StepState {
     Player* player = nullptr;
     Creature* creature = nullptr;
     double crushImpulse = 0;
+    Body* support = nullptr;
+    double supportX = 0, supportY = 0;
+    double supportWorldX = 0, supportWorldY = 0;
+    double supportVx = 0, supportVy = 0;
+    bool blocked = false;
   };
   std::vector<Body*> solverBodies{};
   bool hasWorldJointBody{};
@@ -32,7 +37,6 @@ struct RigidBodySystem::StepState {
   std::vector<int> bodySubsteps{};
   int worldStructureScaleBodyCount{};
   int substeps{};
-  std::vector<uint8_t> actorContact{};
   std::unordered_map<int, Body*> peerJointLeaders{};
 };
 
@@ -319,15 +323,47 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
         body.boundarySampleRadii.push_back(
           std::hypot(sample[0], sample[1]));
       }
-      body.kinematic = true;
-      body.kinematicVx = vx;
-      body.kinematicVy = vy;
-      body.kinematicOmega = 0;
-      body.awake = false;
+      body.actorProxy = true;
+      body.actorVx = vx;
+      body.actorVy = vy;
+      body.invMass = 1.0 / (w * h);
+      body.invInertia = 0;
+      body.awake = true;
       body.stillTicks = 0;
       body.idx = -1;
       body.cs = 1;
       body.sn = 0;
+      bool canRide = vy >= -0.05 && (!creature
+        || E.creatures.species(*creature).locomotion != CL_FLYING);
+      if (canRide) for (Body* candidate : solverBodies) {
+        if (x + w < candidate->px - candidate->maxR - 2
+            || x > candidate->px + candidate->maxR + 2
+            || y + h < candidate->py - candidate->maxR - 2
+            || y + h > candidate->py + candidate->maxR + 2) continue;
+        bool footing = false;
+        for (int foot = 0; foot < w && !footing; foot++) {
+          for (int row = 0; row <= 1 && !footing; row++) {
+            double fx = std::floor(x + foot) + 0.5;
+            double fy = std::floor(y + h + 1e-6) + row + 0.5;
+            int local = localCellAt(candidate, fx, fy);
+            footing = local >= 0 && bodyMaterialAt(candidate, local) != EMPTY;
+          }
+        }
+        if (!footing) continue;
+        proxy.support = candidate;
+        proxy.supportWorldX = x + w * 0.5;
+        proxy.supportWorldY = y + h;
+        double rx = proxy.supportWorldX - candidate->px;
+        double ry = proxy.supportWorldY - candidate->py;
+        double cs = std::cos(candidate->angle), sn = std::sin(candidate->angle);
+        proxy.supportX = rx * cs + ry * sn;
+        proxy.supportY = -rx * sn + ry * cs;
+        proxy.supportVx = candidate->vx - candidate->omega * ry;
+        proxy.supportVy = candidate->vy + candidate->omega * rx;
+        body.actorVx += proxy.supportVx;
+        body.actorVy += proxy.supportVy;
+        break;
+      }
       rigidBodyBounds(&body, R_CONTACT_SKIN + 0.5,
                  body.aabbX0, body.aabbY0, body.aabbX1, body.aabbY1);
     };
@@ -340,7 +376,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     }
     for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
       Creature& creature = E.creatures.creatures[i];
-      if (!creature.alive) continue;
+      if (!creature.alive || !E.creatures.inLoadedWindow(creature, 0)) continue;
       const CreatureSpecies& species = E.creatures.species(creature);
       addProxy(creature.wx - E.fg.worldOffsetX,
                creature.wy - E.fg.worldOffsetY,
@@ -626,6 +662,29 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     substeps = imax(substeps, 8);
     for (int bi = 0; bi < n; bi++)
       bodySubsteps[bi] = imax(bodySubsteps[bi], 8);
+  }
+  // Bodies within an actor's swept reach share its substep cadence. Distant
+  // islands retain their own cadence even when the world contains actors.
+  if (!actorProxies.empty()) {
+    std::vector<uint8_t> actorIslands(n, 0);
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      double reach = (std::hypot(body->vx, body->vy)
+        + std::fabs(body->omega) * body->maxR) * tickDt + R_MAX_SPEED + 2;
+      double x0, y0, x1, y1;
+      rigidBodyBounds(body, reach, x0, y0, x1, y1);
+      for (const ActorProxy& proxy : actorProxies) {
+        const Body& actor = proxy.body;
+        double actorReach = std::hypot(actor.actorVx, actor.actorVy) * tickDt;
+        if (actor.aabbX1 + actorReach < x0 || actor.aabbX0 - actorReach > x1
+            || actor.aabbY1 + actorReach < y0 || actor.aabbY0 - actorReach > y1)
+          continue;
+        actorIslands[ufFind(stepIslandParent, bi)] = 1;
+        break;
+      }
+    }
+    for (int bi = 0; bi < n; bi++)
+      if (actorIslands[ufFind(stepIslandParent, bi)]) bodySubsteps[bi] = substeps;
   }
   rigidSubsteps = substeps;
   rigidCadenceMs += emscripten_get_now() - cadenceStart;

@@ -1,14 +1,11 @@
 void RigidBodySystem::finalizeRigidStep(StepState& step) {
   using LoadedWindowFreezeState = StepState::LoadedWindowFreezeState;
-  using ActorProxy = StepState::ActorProxy;
   auto& solverBodies = step.solverBodies;
   auto& n = step.n;
   auto& liquidContact = step.liquidContact;
   auto& fluidOnlySleep = step.fluidOnlySleep;
   auto& fluidStartPose = step.fluidStartPose;
   auto& loadedWindowFreeze = step.loadedWindowFreeze;
-  auto& actorProxies = step.actorProxies;
-  auto& actorContact = step.actorContact;
   auto& contacts = solverContactScratch;
   int nc = (int)contacts.size();
   int activeLayer = E.L == &E.fg ? 0 : 1;
@@ -73,21 +70,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
       }
     }
   }
-  for (ActorProxy& proxy : actorProxies) {
-    if (proxy.crushImpulse < ACTOR_CRUSH_IMPULSE) continue;
-    if (proxy.player) {
-      Player& player = *proxy.player;
-      if (E.psys.playerBoxHits(
-            player.px, player.py + 0.25, player.w, player.h))
-        E.psys.crushPlayer(player);
-      continue;
-    }
-    Creature& creature = *proxy.creature;
-    const CreatureSpecies& species = E.creatures.species(creature);
-    if (E.creatures.boxHitsSolid(
-          creature.wx, creature.wy + 0.25, species.w, species.h))
-      E.creatures.crushCreature(creature);
-  }
+  finalizeActorStep(step);
   std::vector<int>& savedBroadphaseIds = broadphaseBodyIds[activeLayer];
   savedBroadphaseIds.resize(broadphaseOrder.size());
   for (size_t i = 0; i < broadphaseOrder.size(); i++)
@@ -139,7 +122,6 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
     // should not restart its entire timer when its contact anchors change cell.
     bool eligible = (body->hadContact || body->restProbeTicks > 0)
       && !fluidOnlySleep[bi]
-      && !actorContact[bi]
       && !body->spatialForceApplied
       && pointSpeed < R_REST_PROBE_MAX_POINT_SPEED;
     if (eligible) updateRestProbe(body);
@@ -206,6 +188,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
     }
     for (int i = sleepContactOffsets[bi]; i < sleepContactOffsets[bi + 1]; i++) {
       const Contact& contact = contacts[sleepContactIndices[i]];
+      if (contact.b && contact.b->actorProxy) continue;
       double impulseY = contact.accJn * contact.ny
                       + contact.accJt * contact.nx;
       bool unloadedTerrainSide = !contact.b && std::fabs(contact.ny) < 0.1
@@ -217,7 +200,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
       if (contact.a == b && impulseY < -1e-8
           && !unloadedTerrainSide) {
         int layer = contact.b && !contact.bIntegrated
-          && !contact.b->kinematic ? 1 - currentLayer : currentLayer;
+          && !contact.b->actorProxy ? 1 - currentLayer : currentLayer;
         addSupport(b->px + contact.rax, b->py + contact.ray,
                    contact.b ? contact.b->id : -1, layer);
       }

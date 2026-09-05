@@ -1,3 +1,4 @@
+import { GAME_CONTENT } from '../content/catalog.js';
 // The falling-sand engine, backed by the C++ core in cpp/sand.cpp (compiled to
 // wasm/sandEngine.{js,wasm}). createEngineWasm() returns the simulation handle the game
 // runtime drives.
@@ -89,7 +90,7 @@ export function initSandWasm() {
       }
       M = {
         mod,
-        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         worldGenerationVersion: c('engine_world_generation_version', 'number', []),
         getPlanet: c('engine_get_planet', 'number', ['number']),
         getGravityScale: c('engine_get_gravity_scale', 'number', ['number']),
@@ -313,6 +314,7 @@ export function createEngineWasm({
   initialViewRows = 0,
   planetId = PLANET.EARTH,
   gravityScale,
+  content = GAME_CONTENT,
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
@@ -326,10 +328,17 @@ export function createEngineWasm({
   }
   const { mod } = M;
   const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
-  const ptr = M.create(
-    cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role, planetId,
-    initialViewCols | 0, initialViewRows | 0,
-  );
+  const packedContent = content.packed;
+  const contentPtr = mod._malloc(packedContent.byteLength);
+  if (!contentPtr) throw new Error('game content allocation failed');
+  let ptr;
+  try {
+    mod.HEAP32.set(packedContent, contentPtr >>> 2);
+    ptr = M.create(
+      cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role, planetId,
+      initialViewCols | 0, initialViewRows | 0, contentPtr, packedContent.length,
+    );
+  } finally { mod._free(contentPtr); }
   if (!ptr) throw new Error('sand engine allocation failed');
   if (gravityScale !== undefined) M.setGravityScale(ptr, gravityScale);
   // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).

@@ -1,3 +1,4 @@
+import { GAME_CONTENT, GAME_WORLD } from '../content/catalog.js';
 import {
   CREATURE,
   PLANET,
@@ -120,20 +121,16 @@ export function createTalkHud(root, game, onAction) {
   dialogue.append(name, copy, actions);
   layer.appendChild(dialogue);
 
-  const signs = game.getPlanetState?.().id === PLANET.FRONTIER ? [
-    [4, -131, 'OBSERVATION'], [-96, -90, 'CREW QUARTERS'],
-    [-93, -37, 'COMMAND'], [88, -24, 'WORKSHOP'], [232, -30, 'HYDROPONICS'],
-    [-129, 34, 'MEDBAY'], [115, 40, 'MESS'],
-    [-104, 92, 'RESEARCH'], [146, 94, 'TOOL RANGE'],
-    [-136, 144, 'ENGINEERING'], [110, 144, 'COOLANT'],
-    [-248, 165, '← CAVE ACCESS'],
-  ].map(([x, y, label]) => {
+  const signs = game.getPlanetState?.().id === PLANET.FRONTIER ? GAME_WORLD.signs.map(sign => {
+    const anchor = GAME_CONTENT.anchors[sign.anchor];
     const node = document.createElement('span');
-    node.className = 'sg-place-sign'; node.textContent = label;
-    layer.appendChild(node); return { x, y, node };
+    node.className = 'sg-place-sign'; node.textContent = sign.text;
+    layer.appendChild(node);
+    return { x: anchor.x + sign.offset[0], y: anchor.y + sign.offset[1], node };
   }) : [];
   const buttons = new Map();
   let activeActor = null;
+  let activeIntent = null;
   let nearestActor = null;
   let actors = [];
   let lastActorRead = -Infinity;
@@ -148,17 +145,21 @@ export function createTalkHud(root, game, onAction) {
   close.addEventListener('click', () => closeDialogue());
   primary.addEventListener('click', () => {
     if (!activeActor) return;
-    onAction?.({ action: activeActor.species === CREATURE.IRIS_ENGINEER ? 'repair-base' : 'mission-console', actor: activeActor });
+    onAction?.({ action: activeIntent || 'mission-console', actor: activeActor });
     closeDialogue(false);
   });
 
   const openDialogue = (actor) => {
     let policy = TALKABLES[actor.species];
     if (!policy) return;
+    activeIntent = null;
     if (game.getPlanetState?.().id === PLANET.FRONTIER) {
-      if (actor.species === CREATURE.IRIS_COMMANDER) policy = { ...policy, dialogue: 'There are three open jobs: clear the western railway, drain the archive, and survey Windward Observatory. The details are in your journal.', action: 'Field journal' };
-      if (actor.species === CREATURE.IRIS_ENGINEER) policy = { ...policy, dialogue: 'I can restore the station from its plans. The rebuild clears rubble and anything you built inside the station grounds.', action: 'Repair the station' };
-      if (actor.species === CREATURE.SURVEYOR) policy = { ...policy, dialogue: 'There is a dry cavern under the flooded archive. If you can give that water somewhere to go, the records might still be recoverable.' };
+      const key = Object.keys(GAME_WORLD.dialogue).find(key => CREATURE[key] === actor.species);
+      const authored = GAME_WORLD.dialogue[key];
+      if (authored) {
+        policy = { name: authored.name, dialogue: authored.text, action: authored.action };
+        activeIntent = authored.intent;
+      }
     }
     activeActor = actor;
     name.textContent = policy.name;

@@ -158,7 +158,7 @@ bool ReactionTransaction::commit() {
       if (found == bodies.end()) continue;
       Body* body = found->second->jointRole == 2
         ? found->second->jointPeer : found->second;
-      if (!body || body->kinematic) continue;
+      if (!body || body->actorProxy) continue;
       body->vx += impulse.x * body->invMass;
       body->vy += impulse.y * body->invMass;
       E.rigid.wakeBody(body);

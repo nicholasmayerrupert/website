@@ -476,6 +476,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
 
   // horizontal accel / friction
+  double previousVx = p.vx;
   if (moveStrength < 1e-6) {
     p.vx *= (p.grounded ? P_GROUND_FRICTION : P_AIR_FRICTION);
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
@@ -484,6 +485,9 @@ void PlayerSystem::integratePlayer(Player& p) {
   }
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
+  // Locomotion brakes collision momentum with bounded acceleration.
+  p.vx = std::max(previousVx - P_MOVE_ACCEL,
+                  std::min(previousVx + P_MOVE_ACCEL, p.vx));
   if (inLiquid) {
     p.vx *= P_LIQUID_DRAG_X;
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
@@ -567,7 +571,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   else if (spd >= AS_MOVE_EPS) as = AS_WALK;
   else as = AS_IDLE;
   p.animState = as;
-  p.animFrame = (uint8_t)(((uint32_t)E.actorTick / ANIM_T[as]) % ANIM_N[as]);
+  p.animFrame = (uint8_t)(((uint32_t)E.actorTick / E.content.clips[as].ticks) % E.content.clips[as].count);
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----

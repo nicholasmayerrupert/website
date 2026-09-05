@@ -1,3 +1,4 @@
+import { GAME_CONTENT, GAME_WORLD } from '../content/catalog.js';
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
   ABI_FINGERPRINT,
@@ -1138,9 +1139,17 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       if (localPlayerId && planetHasGameplayFlag(
         activePlanetId, PLANET_GAMEPLAY_FLAG.SCRIPTED_CREW,
       )) {
-        engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
-        engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
-        engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
+        if (activePlanetId === PLANET.FRONTIER) {
+          for (const resident of GAME_WORLD.residents) {
+            const at = GAME_CONTENT.anchors[resident.anchor];
+            const y = at.y + (at.surface === -2147483648 ? 0 : engine.worldSurfaceAbsAt(at.surface));
+            engine.spawnScriptedCreature(CREATURE[resident.species], at.x, y);
+          }
+        } else {
+          engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
+          engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
+          engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
+        }
       }
       if (localPlayerId && Array.isArray(data.loadout)) {
         for (const stack of data.loadout.slice(0, 16)) {
@@ -1236,6 +1245,20 @@ function applyRuntimeMessage(data) {
         if (engine.repairFrontierBase(localPlayerId)) fullResyncRequested = true;
         break;
       case 'add': engine.addToInventory(localPlayerId, data.material | 0, data.count | 0); break;
+      case 'preview-scene': {
+        const wx = Math.round(data.worldX), wy = Math.round(data.worldY);
+        if (!Number.isFinite(wx) || !Number.isFinite(wy) || Math.abs(wx) > 100000 || Math.abs(wy) > 100000) break;
+        const dx = Math.round((wx - engine.getWorldOffsetX() - engine.cols / 2) / 32) * 32;
+        const dy = Math.round((wy - engine.getWorldOffsetY() - engine.rows / 2) / 32) * 32;
+        engine.shiftWorldXY(dx, dy);
+        const player = engine.getPlayer(localPlayerId);
+        if (player) engine.setPlayerState(localPlayerId, { ...player,
+          x: wx - engine.getWorldOffsetX(), y: wy - engine.getWorldOffsetY(), vx: 0, vy: 0 });
+        survivalSpawnViewReady = true;
+        engine.setCreatureRuntime(true, false);
+        fullResyncRequested = true;
+        break;
+      }
       case 'set-player-state': {
         const player = engine.getPlayer(localPlayerId);
         if (player) engine.setPlayerState(localPlayerId, { ...player, ...(data.state || {}) });

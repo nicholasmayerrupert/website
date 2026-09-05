@@ -53,41 +53,42 @@ fixed Aster Valley seed. Frontier uses Earth's terrain and presentation profiles
 its additional authored landmarks are streamed in absolute world coordinates.
 There is no deployment, extraction, or world replacement between jobs.
 
-`worldgen_frontier.inc` stamps Aster Station at x=-320..319, y=-160..191, with an
-an observation tower, bunkhouse and solar roof, covered cargo porch, command
-concourse, workshop, glass conservatory, medbay, mess, research room, firing range,
-engineering hall, and a cave access adit. Beveled modules use clear foreground
-routes and furnished background walls. The central stairwell has staggered rest
-landings; side hatches connect the concourse to the lower decks. Ordinary components and
-rigid-body physics make the station destructible. Natural hostile spawns exclude
-the station and its immediate perimeter; the surrounding world retains its
-natural population.
+`content/world.js` authors Hearthwood Lodge, its greenhouse and cellar, the
+western railway, the flooded archive, and Windward Observatory. Material
+blueprints use rectangles, polygons, and reusable prefabs in either simulated
+layer. Named anchors connect residents, signs, quests, and development scenes.
+`ContentSystem` consumes a validated per-engine package before terrain generation;
+`worldgen_frontier.inc` clips and stamps that content as the world streams.
+Component-aware repair restores the authored lodge within its declared repair
+bounds. Natural hostile spawns exclude those bounds.
 
-`mission_frontier.inc` owns three independent jobs and a homecoming objective:
+`mission_frontier.inc` evaluates authored reach, passage, and drain conditions,
+prerequisites, and rewards. The railway needs an actor-height opening; the archive
+needs a drainage route into its cistern; the mountain instrument requires a climb.
+Returning to Vale completes the expedition after all three. Rewards are awarded
+before completion is recorded, so a full inventory cannot silently lose them.
 
-- The buried railway pass requires an actor-height opening through the rockfall
-  and reaching its geological instrument; it rewards a bore cannon.
-- The drowned archive requires draining most of the archive chamber and reaching
-  its console. An excavatable floor separates it from a dry karst sump. It
-  rewards construction supplies.
-- Windward Observatory requires reaching the instrument above the eastern
-  mountain summit; it rewards a dynamite satchel. The tower has rest landings.
-- Returning to Commander Vale after all three jobs completes the expedition
-  without unloading the world. Death does not erase completed jobs.
+Vale opens the field journal. Osei and the pause menu offer lodge repairs.
+`repairFrontierBase()` rebuilds loaded cells through `CellMutationBatch` and
+invalidates the repair region's saved tiles, component fragments, and bodies.
+Repairs preserve field terrain, inventory, and quest progress. The journaled
+`repair-base` intent follows the worker authority and full-resync path.
 
-Commander Vale opens the field journal. Engineer Osei offers station repair;
-a maintenance radio in the pause menu provides access if rubble blocks him.
-`repairFrontierBase()` validates that the player is alive and inside the station,
-rebuilds loaded cells through `CellMutationBatch`, and invalidates only the
-station's saved tiles, component fragments, and stored bodies. The same blueprint
-restores unloaded station tiles when they stream in. Repairs preserve field
-terrain, inventory, and job progress. The journaled `repair-base` intent follows
-the ordinary worker authority and full-resync path.
+`content/player.js` owns the player palette, seven animation clips, frame timing,
+and source pixels. `content/creatureArt.js` owns all creature sprites and palettes.
+Authored material tiles and ambient-light presentation live in `world.js`.
+The WebGL presenter reads this data; character pixels are not embedded in C++.
 
-`campaign/frontier.js` owns job text and field-map labels. `react/SandCampaign.jsx`
-presents the journal, tracked destination, pause menu, and maintenance dialogue.
-`J` opens the journal; `T` talks to nearby crew. The map is a field sketch, not a
-terrain snapshot. Mobile layouts keep the same runtime mounted through resizes.
+`react/SandCampaign.jsx` presents the journal, tracked destination, pause menu,
+and maintenance dialogue. `J` opens the journal; `T` talks to nearby residents.
+The field sketch is illustrative. Mobile layouts keep the runtime through resizes.
+
+Development-only `/game?studio=hearth` opens the world workbench: scene selection,
+authoritative pause/actor stepping, runtime inspection, a blueprint brush, and
+player pixel/frame editing. Local saves validate all content and reload the real
+game without a WASM rebuild. `npm run game:capture -- archive` produces a browser
+screenshot and state JSON. See [content/README.md](content/README.md) for authoring
+and [content/ROADMAP.md](content/ROADMAP.md) for the remaining rebuild stages.
 
 World changes and job progress persist through streaming during the session.
 Durable world saves are not implemented: reloading starts a fresh valley, as the
@@ -149,7 +150,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 6 is canonical in absolute coordinates: viewport size changes
+World generation version 7 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select surface biomes; narrow deterministic ecotones blend
@@ -339,7 +340,8 @@ body bounds faintly visible for context.
   live in the prepare/substeps/finalize includes. Their per-tick `StepState`
   contains only data shared across phases; contact helpers and solver scratch
   stay inside the solve phase. Liquid coupling uses domain/projection/solve/
-  writeback includes.
+  writeback includes. `rigid_actors.inc` owns finite-mass actor response, moving
+  support, and final actor/raster clearance.
 - `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world
   structure stamping under `worldgen_generation.inc`; loaded-window persistence,
   prefetch, shifting, and resize live separately in `world_streaming.inc`.
@@ -838,7 +840,7 @@ bounded crushing are covered by `npm run test:actor-rigid`.
 Use the engine benchmark for simulation/render-fill/streaming changes and the pan
 benchmark for WebGL presentation, pointer mapping, two-axis cell stability, and
 parallax rigidity. Use the actor/rigid benchmark for dense actor cadence and
-kinematic body contacts through player/creature populations. Pure refactors must
+finite-mass body contacts through player/creature populations. Pure refactors must
 preserve deterministic checksums. See `PERF.md` for metric ownership and focused
 commands.
 

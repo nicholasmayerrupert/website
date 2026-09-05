@@ -11,6 +11,7 @@
 #include "engine/world_context.hpp"
 #include "engine/renderer.hpp"
 #include "engine/creatures.hpp"
+#include "engine/content.hpp"
 #include "engine/missions.hpp"
 #include "engine/glpresenter.hpp"
 #include "engine/items.hpp"
@@ -29,6 +30,7 @@
 #include "engine/audio.hpp"
 
 struct Engine {
+  ContentSystem content{*this};
 #include "engine/members.inc"
 #include "engine/forces.inc"
 #include "engine/weather.inc"
@@ -61,6 +63,7 @@ const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
 // Subsystem method bodies require the complete Engine definition.
+#include "engine/content_impl.inc"
 #include "engine/replication_impl.inc"
 #include "engine/forces_impl.inc"
 #include "engine/terrain_impl.inc"

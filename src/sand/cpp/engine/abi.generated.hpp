@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 36;
+static const int ABI_VERSION = 37;
 
-static const uint64_t ABI_FINGERPRINT = 0x6d6795dc5f15ULL;
+static const uint64_t ABI_FINGERPRINT = 0x0dddfeaa585eULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {

@@ -18,6 +18,8 @@ class RigidBodySystem {
   static constexpr size_t SPILL_GENERATION_BUDGET =
     (size_t)(MATERIAL_COUNT + 4) * MATERIAL_COUNT + 2;
 
+  void resolveActorRasterContacts();
+
   int solverMode = 45;
   double solverResidualTolerance = 1e-4;
   int solverMinIterations = 4;
@@ -134,8 +136,8 @@ class RigidBodySystem {
                            Layer& targetLayer, const std::vector<int>& cells);
   uint8_t bodyMaterialAt(Body* b, int localIndex);
   void terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy);
-  int insideBodyIndex(Body* b, double wx, double wy);
-  void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy);
+  int insideBodyIndex(Body* b, double wx, double wy, bool foregroundOnly = false);
+  void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy, bool foregroundOnly = false);
   // Return the total |impulse| applied, so the solver loops can early-exit the
   // moment an iteration is a provable no-op (all-zero applied impulses leave
   // every velocity bitwise unchanged, so every later iteration recomputes the
@@ -217,6 +219,11 @@ class RigidBodySystem {
   void prepareRigidStep(StepState& step, double tickDt);
   void solveRigidStep(StepState& step, double tickDt);
   void finalizeRigidStep(StepState& step);
+  void prepareActorSubstep(StepState& step, double dt);
+  void integrateActorSubstep(StepState& step, double dt);
+  void finalizeActorStep(StepState& step);
+  bool actorBoxBlocked(double x, double y, int w, int h, bool bodies) const;
+  bool moveActorBox(double& x, double& y, int w, int h, double dx, double dy);
   static constexpr int TERRAIN_RIGID_BIN_SHIFT = 3;
   static constexpr int TERRAIN_RIGID_BIN_SIZE = 1 << TERRAIN_RIGID_BIN_SHIFT;
 

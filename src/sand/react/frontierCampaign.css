@@ -1,65 +1,15 @@
-.frontier-experience { position:relative; width:100%; height:100dvh; overflow:hidden; background:#14231f; color:#edf0df; font:18px/1.4 'Sand Pixel',monospace; }
-.frontier-experience sand-game { display:block; width:100%; height:100%; }
-.frontier-experience button { cursor:pointer; color:inherit; font:inherit; background:#343c45; border:2px solid #0c1015; box-shadow:inset 1px 1px #71808c,inset -1px -1px #1c2229; padding:10px 15px; border-radius:0; }
-.frontier-experience button:hover { background:#c7d6af1a; border-color:#c6d5ab70; }
-.frontier-experience button:focus-visible,.frontier-map-pin:focus-visible { outline:2px solid #edca7b; outline-offset:4px; }
-.frontier-experience button:disabled { opacity:.4; cursor:default; }
-.frontier-header { position:absolute; inset:0 0 auto; z-index:85; display:flex; justify-content:space-between; align-items:center; padding:16px 22px; pointer-events:none; background:linear-gradient(#101e1bc9,transparent); }
-.frontier-header>div { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:0; font-size:18px; text-shadow:0 2px 5px #000; }
-.frontier-emblem { color:#edca7b; font-size:37px; }
-.frontier-subtitle { display:block; font:14px/1.3 'Sand Pixel',monospace; letter-spacing:0; color:#b9c9ba; }
-.frontier-header nav { display:flex; gap:8px; pointer-events:auto; }
-.frontier-header nav button { background:#252d38f0; padding:8px 12px; }
-.frontier-header small { margin-left:12px; color:#edca7b; }
-.frontier-experience kbd { font:14px 'Sand Pixel',monospace; border:1px solid #c6d5ab55; border-radius:0; padding:2px 4px; margin:0 3px; color:#e4e9d8; }
-.frontier-arrival { position:absolute; z-index:80; bottom:85px; left:26px; width:min(350px,calc(100% - 72px)); background:#252b32f5; border:3px solid #0b1015; padding:24px; box-shadow:inset 1px 1px #65727b,4px 4px #0008; }
-.frontier-kicker { color:#b4c5a1; letter-spacing:0; font:14px/1.3 'Sand Pixel',monospace; text-transform:uppercase; }
-.frontier-arrival h1 { margin:7px 0 10px; font-size:32px; font-weight:500; letter-spacing:0; }
-.frontier-arrival p { color:#c2cebd; margin:0 0 20px; font-size:16px; }
-.frontier-arrival>div { display:flex; gap:6px; flex-wrap:wrap; }
-.frontier-arrival button { padding:8px 10px; font-size:16px; }
-.frontier-experience .frontier-quiet { background:none; border-color:transparent; color:#acbba4; }
-.frontier-controls { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); z-index:81; display:flex; gap:16px; padding:6px 12px; white-space:nowrap; color:#d4deca; background:#12241ce0; pointer-events:none; font-size:16px; }
-.frontier-overlay { position:absolute; inset:0; z-index:100; background:#080b12c9; display:grid; place-items:center; padding:20px; }
-.frontier-panel { width:min(1040px,100%); max-height:calc(100dvh - 40px); overflow:auto; background:#252b32; border:3px solid #080a0d; box-shadow:inset 2px 2px #67717a,inset -2px -2px #13171c,6px 6px #0008; }
-.frontier-panel>header { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:25px 30px; border-bottom:1px solid #b7c4ac25; }
-.frontier-panel h2 { font-size:27px; font-weight:500; letter-spacing:0; margin:5px 0 0; }
-.frontier-panel .frontier-close { border:0; font-size:27px; padding:2px 10px; }
-.frontier-journal-grid { display:grid; grid-template-columns:1.25fr 1fr; }
-.frontier-chart { border-right:1px solid #b7c4ac25; padding:22px; }
-.frontier-map { display:block; width:100%; border:1px solid #849d772e; }
-.frontier-map text { fill:#b8c9ac; font:14px 'Sand Pixel',monospace; letter-spacing:0; }
-.frontier-map-pin { cursor:pointer; }
-.frontier-map-pin.selected circle { stroke-width:4px; fill:#405643; }
-.frontier-chart>p { font:16px/1.3 'Sand Pixel',monospace; color:#8da189; }
-.frontier-jobs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:20px; }
-.frontier-jobs button { text-align:left; display:flex; align-items:center; gap:12px; padding:11px; font-size:16px; }
-.frontier-jobs button[aria-pressed=true] { background:#bfce9e14; border-color:#b3c59c88; }
-.frontier-jobs small { display:block; color:#8fa58e; font-size:16px; }
-.frontier-job-detail { padding:30px; }
-.frontier-job-detail h3 { margin:12px 0; font-size:34px; font-weight:500; letter-spacing:0; line-height:1.1; }
-.frontier-job-detail>p { color:#b8c8b6; }
-.frontier-job-detail .frontier-job-summary { color:var(--job-color); font-size:16px; }
-.frontier-field-note { border-left:2px solid var(--job-color); margin:25px 0; padding:0 0 0 15px; color:#9db29c; font-size:16px; }
-.frontier-field-note span,.frontier-reward small { font:14px 'Sand Pixel',monospace; letter-spacing:0; color:var(--job-color); }
-.frontier-field-note p { margin:8px 0 0; }
-.frontier-reward { border-top:1px solid #b7c4ac25; padding-top:18px; margin-bottom:22px; }
-.frontier-reward p { margin:5px 0; font-size:16px; }
-.frontier-experience .frontier-primary { background:#486239; color:#f0efda; border-color:#11180d; box-shadow:inset 1px 1px #91aa62,inset -1px -1px #24351b; font-weight:600; }
-.frontier-experience .frontier-primary:hover { background:#597946; }
-.frontier-journal>footer { border-top:1px solid #b7c4ac25; padding:14px 30px; font:14px 'Sand Pixel',monospace; color:#819a82; }
-.frontier-small { width:min(480px,100%); padding:24px; box-sizing:border-box; }
-.frontier-small>header { padding:0 0 20px; margin-bottom:20px; }
-.frontier-small h2 { font-size:27px; }
-.frontier-small>button { display:block; width:100%; margin-top:10px; }
-.frontier-small>p { color:#b4c4ae; }
-.frontier-small .frontier-speaker,.frontier-save-note { font:16px/1.4 'Sand Pixel',monospace; color:#92a58a; }
-.frontier-loading { position:absolute; inset:0; display:grid; place-items:center; background:#14231f; z-index:86; color:#c2d1ad; font:14px 'Sand Pixel',monospace; }
-.frontier-complete { position:absolute; top:90px; left:22px; padding:12px 18px; background:#14251ee8; color:#d5e6b8; z-index:82; }
-.frontier-finished { color:#acd18c!important; }
-@media(max-width:720px) { .frontier-header { padding:10px 12px; } .frontier-header nav button { font-size:16px; } .frontier-subtitle { font-size:16px; } .frontier-header kbd { display:none; } .frontier-header>div { font-size:15px; } .frontier-overlay { padding:10px; } .frontier-panel { max-height:calc(100dvh - 20px); } .frontier-journal-grid { grid-template-columns:1fr; } .frontier-panel>header { padding:18px; } .frontier-panel h2 { font-size:21px; } .frontier-chart { border-right:0; border-bottom:1px solid #b7c4ac25; padding:16px; } .frontier-job-detail { padding:22px; } .frontier-map { max-height:240px; } .frontier-controls { display:none; } .frontier-arrival { bottom:145px; left:16px; padding:18px; } .frontier-small { padding:20px; } }
-@media(max-height:550px) { .frontier-arrival { bottom:45px; padding:15px; width:300px; } .frontier-arrival h1 { font-size:24px; } .frontier-arrival p { font-size:16px; margin-bottom:10px; } }
-
-.frontier-notice { position:absolute; top:88px; left:22px; z-index:84; display:grid; gap:5px; padding:17px 22px; border:1px solid #aecb8c70; background:#14251ef5; box-shadow:0 8px 30px #0004; }
-.frontier-notice strong { font-weight:500; font-size:18px; }
-.frontier-notice>span:last-child { font-size:16px; color:#ccdcb6; }
+.frontier-experience{--ink:#142c2c;--cream:#f0e6c7;--gold:#d6b77b;--muted:#b5c5ae;position:relative;width:100%;height:100dvh;overflow:hidden;background:#142c2c;color:var(--cream);font:15px/1.55 system-ui,-apple-system,sans-serif}
+.frontier-experience sand-game{display:block;width:100%;height:100%}
+.frontier-experience button{cursor:pointer;color:inherit;font:inherit;background:#203b34;border:1px solid #63785c;padding:10px 16px;border-radius:4px;transition:background .15s,border-color .15s}
+.frontier-experience button:hover{background:#3f5841;border-color:#b4bd85}.frontier-experience button:focus-visible,.frontier-map-pin:focus-visible{outline:2px solid #ebcf8b;outline-offset:4px}.frontier-experience button:disabled{opacity:.4;cursor:default}
+.frontier-header{position:absolute;inset:0 0 auto;z-index:85;display:flex;justify-content:space-between;align-items:center;padding:22px 28px;pointer-events:none;background:linear-gradient(#102b2b90,transparent)}
+.frontier-header>div{display:flex;align-items:center;gap:12px;font:25px/1 Georgia,serif;letter-spacing:.14em;text-shadow:0 2px 10px #071d1d}
+.frontier-emblem{color:#e1c78a;font-size:34px;line-height:1}.frontier-subtitle{display:block;font:9px/1.6 system-ui,sans-serif;letter-spacing:.24em;color:#c2d1b4;margin-top:6px}.frontier-header nav{display:flex;gap:8px;pointer-events:auto}.frontier-header nav button{background:#15322edb;border-color:#80926c66;padding:9px 13px;font-size:12px;backdrop-filter:blur(8px)}.frontier-header small{margin-left:12px;color:var(--gold)}
+.frontier-experience kbd{font:10px system-ui,sans-serif;border:1px solid #b9c8a34d;border-radius:3px;padding:2px 4px;margin:0 3px;color:#e6eacb}
+.frontier-arrival{position:absolute;z-index:80;bottom:154px;left:28px;width:min(315px,calc(100% - 56px));padding:22px 24px;background:linear-gradient(130deg,#173930ed,#172e2ce8);border:1px solid #b6b57a70;border-radius:5px;box-shadow:0 10px 40px #071b1c35;backdrop-filter:blur(10px)}
+.frontier-kicker{color:#d4be89;letter-spacing:.16em;font:9px/1.5 system-ui,sans-serif;text-transform:uppercase}.frontier-arrival h1{margin:9px 0 11px;font:30px/1.1 Georgia,serif;letter-spacing:-.02em}.frontier-arrival p{color:#bacab1;margin:0 0 20px;font-size:13px;line-height:1.75}.frontier-arrival>div{display:flex;gap:6px;flex-wrap:wrap}.frontier-arrival button{padding:8px 10px;font-size:11px}.frontier-experience .frontier-quiet{background:none;border-color:transparent;color:#b4c5aa}
+.frontier-controls{position:absolute;bottom:13px;left:50%;transform:translateX(-50%);z-index:81;display:flex;gap:16px;white-space:nowrap;color:#d1dec1;pointer-events:none;font-size:10px;text-shadow:0 1px 5px #001e1e}.frontier-controls kbd{background:#13332acc}
+.frontier-overlay{position:absolute;inset:0;z-index:100;background:#081d20ba;display:grid;place-items:center;padding:28px;backdrop-filter:blur(8px)}.frontier-panel{width:min(980px,100%);max-height:calc(100dvh - 56px);overflow:auto;background:#193830;border:1px solid #9aab7777;border-radius:7px;box-shadow:0 24px 100px #03171788}.frontier-panel>header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:24px 28px;border-bottom:1px solid #b7c4ac25}.frontier-panel h2{font:29px/1.2 Georgia,serif;margin:6px 0 0}.frontier-panel .frontier-close{border:0;font-size:27px;padding:2px 10px;background:transparent}.frontier-journal-grid{display:grid;grid-template-columns:1.18fr 1fr}.frontier-chart{border-right:1px solid #b7c4ac25;padding:24px}.frontier-map{display:block;width:100%;border:1px solid #849d774d;border-radius:3px}.frontier-map text{fill:#b8c9ac;font:10px system-ui,sans-serif;letter-spacing:.08em}.frontier-map-pin{cursor:pointer}.frontier-map-pin.selected circle{stroke-width:4px;fill:#405643}.frontier-chart>p{font-size:11px;color:#94ac91}.frontier-jobs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:20px}.frontier-jobs button{text-align:left;display:flex;align-items:center;gap:12px;padding:11px;font-size:12px;border-color:#5e78574d;background:#1e3c30}.frontier-jobs button[aria-pressed=true]{background:#bfce9e14;border-color:#b3c59c88}.frontier-jobs small{display:block;color:#91aa8b;font-size:10px}.frontier-job-detail{padding:30px}.frontier-job-detail h3{margin:13px 0;font:36px/1.05 Georgia,serif;letter-spacing:-.025em}.frontier-job-detail>p{color:#b8c8ae;font-size:14px}.frontier-job-detail .frontier-job-summary{color:var(--job-color);font-size:12px}.frontier-field-note{border-left:2px solid var(--job-color);margin:24px 0;padding:0 0 0 15px;color:#a8bea1;font-size:12px}.frontier-field-note span,.frontier-reward small{font:9px system-ui,sans-serif;letter-spacing:.14em;color:var(--job-color)}.frontier-field-note p{margin:8px 0 0}.frontier-reward{border-top:1px solid #b7c4ac25;padding-top:18px;margin-bottom:22px}.frontier-reward p{margin:5px 0;font-size:13px}.frontier-experience .frontier-primary{background:#b6bf83;color:#19352c;border-color:#d1d6a0;font-weight:600}.frontier-experience .frontier-primary:hover{background:#ced5a0}.frontier-small{width:min(440px,100%);padding:26px;box-sizing:border-box}.frontier-small>header{padding:0 0 20px;margin-bottom:20px}.frontier-small>button{display:block;width:100%;margin-top:10px}.frontier-small>p{color:#b4c4ae;font-size:13px}.frontier-small .frontier-speaker,.frontier-save-note{font-size:11px;color:#92a58a}.frontier-loading{position:absolute;inset:0;display:grid;place-items:center;background:#142c2c;z-index:86;color:#c2d1ad;font:16px Georgia,serif;letter-spacing:.04em}.frontier-complete{position:absolute;top:90px;left:28px;padding:12px 18px;background:#193830e8;color:#d5e6b8;z-index:82;border:1px solid #c1be8680;border-radius:4px}.frontier-finished{color:#acd18c!important}.frontier-notice{position:absolute;top:90px;left:28px;z-index:84;display:grid;gap:5px;padding:17px 22px;border:1px solid #aecb8c70;background:#193830f5;box-shadow:0 8px 30px #0004;border-radius:4px}.frontier-notice strong{font:23px Georgia,serif}.frontier-notice>span:last-child{font-size:12px;color:#ccdcb6}
+@media(max-width:720px){.frontier-header{padding:14px 16px}.frontier-header nav button{font-size:11px;padding:8px}.frontier-header kbd{display:none}.frontier-header>div{font-size:21px}.frontier-overlay{padding:10px}.frontier-panel{max-height:calc(100dvh - 20px)}.frontier-journal-grid{grid-template-columns:1fr}.frontier-panel>header{padding:18px}.frontier-panel h2{font-size:25px}.frontier-chart{border-right:0;border-bottom:1px solid #b7c4ac25;padding:16px}.frontier-job-detail{padding:22px}.frontier-map{max-height:200px}.frontier-controls{display:none}.frontier-arrival{bottom:150px;left:16px;padding:18px;width:min(310px,calc(100% - 68px))}.frontier-small{padding:20px}}
+@media(max-height:550px){.frontier-arrival{bottom:115px;padding:15px;width:285px}.frontier-arrival h1{font-size:24px}.frontier-arrival p{font-size:12px;margin-bottom:10px}}
+@media(prefers-reduced-motion:reduce){.frontier-experience button{transition:none}}

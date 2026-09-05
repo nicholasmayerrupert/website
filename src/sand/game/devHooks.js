@@ -131,6 +131,10 @@ export function installDevHooks(ctx, {
     // player hooks for the headless gameplay test (scripts / Playwright)
     setPlayMode(v) { ctx.playMode = !!v; engine()?.setPlayMode(ctx.playMode); },
     getPlayMode() { return ctx.playMode; },
+    previewScene(worldX, worldY) {
+      ctx.worldWorker?.intent('preview-scene', { worldX, worldY });
+    },
+    surfaceAt(worldX) { return engine()?.worldSurfaceAbsAt(worldX); },
     getPlayer() { return localPlayer(); },
     getPlayers() { return playersForRender(); },
     setPlayerState(state) {

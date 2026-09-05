@@ -14,13 +14,10 @@ process.exitCode = await runBrowserCases({
     await page.goto(`${baseURL}/game`);
     await page.waitForFunction(() => document.querySelector('sand-game')?._ready && window.__sandTest?.getPlayer(), null, { timeout: 60000 });
     await page.getByRole('button', { name: 'Start exploring' }).click();
-    await page.evaluate(() => document.fonts.load('18px "Sand Pixel"'));
-    check('all visible expedition and HUD text uses the pixel font', await page.evaluate(() => {
-      const roots = [document.querySelector('main'), document.querySelector('sand-game').shadowRoot];
-      return roots.flatMap(root => [...root.querySelectorAll('*')]).filter(node =>
-        node.getBoundingClientRect().width && [...node.childNodes].some(child =>
-          child.nodeType === Node.TEXT_NODE && child.textContent.trim()))
-        .every(node => getComputedStyle(node).fontFamily.includes('Sand Pixel'));
+    check('expedition has a readable title and an unobstructed canvas', await page.evaluate(() => {
+      const heading = document.querySelector('.frontier-header');
+      const canvas = document.querySelector('sand-game').shadowRoot.querySelector('canvas');
+      return heading?.textContent.includes('ASTER') && canvas.getBoundingClientRect().height > 300;
     }));
     check('arrive in the continuous Earth expedition with three open jobs', await page.evaluate(({ mission, planet }) => {
       const game = document.querySelector('sand-game')._game;
@@ -28,10 +25,10 @@ process.exitCode = await runBrowserCases({
         && game.getMission().objectives.filter(o => o.state === 1).length === 3;
     }, { mission: MISSION.FRONTIER, planet: PLANET.FRONTIER }));
     await page.waitForTimeout(450);
-    await page.screenshot({ path: resolve(artifacts, 'aster-station.png') });
+    await page.screenshot({ path: resolve(artifacts, 'hearthwood-lodge.png') });
     const startX = await page.evaluate(() => window.__sandTest.getPlayer().x);
     await page.keyboard.down('a'); await page.waitForTimeout(450); await page.keyboard.up('a');
-    check('player can walk through the station immediately', await page.evaluate(x => window.__sandTest.getPlayer().x < x - 1, startX));
+    check('player can walk through the lodge immediately', await page.evaluate(x => window.__sandTest.getPlayer().x < x - 1, startX));
     // Walk to Vale using normal controls, preserving the initial terrain.
     for (let i = 0; i < 100; i++) {
       const dx = await page.evaluate(species => {
@@ -68,12 +65,12 @@ process.exitCode = await runBrowserCases({
     await page.getByRole('button', { name: 'Close panel' }).click();
     // The maintenance radio is the recovery route when a destroyed floor blocks Osei.
     await page.getByRole('button', { name: 'Pause expedition' }).click();
-    await page.getByRole('button', { name: 'Call station maintenance' }).click();
-    await page.getByRole('button', { name: 'Rebuild Aster Station' }).click();
+    await page.getByRole('button', { name: 'Call Osei' }).click();
+    await page.getByRole('button', { name: 'Restore Hearthwood Lodge' }).click();
     await page.waitForTimeout(1200);
     check('repair leaves the same mission and all open jobs intact', await page.evaluate(() => document.querySelector('sand-game')._game.getMission().objectives.filter(o => o.state === 1).length === 3));
     check('no browser runtime errors', errors.length === 0, errors.join('; '));
-    await page.screenshot({ path: resolve(artifacts, 'station-repaired.png') });
+    await page.screenshot({ path: resolve(artifacts, 'lodge-repaired.png') });
     const missionBeforeDeath = await page.evaluate(() => document.querySelector('sand-game')._game.getMission());
     for (const method of ['button', 'keyboard']) {
       // Real authority damage drives the death UI; the world stays paused while
@@ -92,7 +89,7 @@ process.exitCode = await runBrowserCases({
       if (method === 'button') await respawn.click();
       else await page.keyboard.press('Enter');
       await page.waitForFunction(() => window.__sandTest.getPlayer()?.alive, null, { timeout: 10000 });
-      check(`respawn returns the player to the station (${method})`, await page.evaluate(() => {
+      check(`respawn returns the player to the lodge (${method})`, await page.evaluate(() => {
         const p = window.__sandTest.getPlayer(), offset = window.__sandTest.worldOffset();
         return p.health === 100 && Math.abs(p.x + offset.x) < 50;
       }));

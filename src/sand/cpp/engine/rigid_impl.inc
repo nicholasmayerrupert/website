@@ -46,15 +46,15 @@ static double rigidContactSlop(const Contact& contact) {
 }
 
 static double rigidContactVx(const Body* body) {
-  return body->kinematic ? body->kinematicVx : body->vx;
+  return body->vx + (body->actorProxy ? body->actorVx : 0);
 }
 
 static double rigidContactVy(const Body* body) {
-  return body->kinematic ? body->kinematicVy : body->vy;
+  return body->vy + (body->actorProxy ? body->actorVy : 0);
 }
 
 static double rigidContactOmega(const Body* body) {
-  return body->kinematic ? body->kinematicOmega : body->omega;
+  return body->omega;
 }
 
 bool RigidBodySystem::occupancyInsideLoadedWindow(
@@ -1871,7 +1871,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     recoveryMomentumY[root] += mass * body->vy;
     recoveryBodyCount[root]++;
     recoveryStatic[root] = recoveryStatic[root]
-      || body->kinematic || worldRasterTerrainViolating[index];
+      || body->actorProxy || worldRasterTerrainViolating[index];
   }
   for (const WorldContact& contact : worldContacts) {
     if (contact.bLayer >= 0) continue;
@@ -2863,16 +2863,21 @@ void RigidBodySystem::terrainNormalAt(Body* b, int cx, int cy, double bodyDensit
   }
   double inv = 1 / std::sqrt(nx * nx + ny * ny); ox = nx * inv; oy = ny * inv;
 }
-int RigidBodySystem::insideBodyIndex(Body* b, double wx, double wy) {
+int RigidBodySystem::insideBodyIndex(Body* b, double wx, double wy, bool foregroundOnly) {
   double dx = wx - b->px, dy = wy - b->py;
   double lx = dx * b->cs + dy * b->sn, ly = -dx * b->sn + dy * b->cs;
   int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
   if (i < 0 || i >= b->w || j < 0 || j >= b->h) return -1;
-  int k = j * b->w + i; return b->occ[k] ? k : -1;
+  int k = j * b->w + i;
+  return b->occ[k] && (!foregroundOnly || bodyMaterialAt(b, k) != EMPTY) ? k : -1;
 }
-void RigidBodySystem::bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy) {
+void RigidBodySystem::bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy, bool foregroundOnly) {
   int i = idx % b->w, j = idx / b->w; int w = b->w, h = b->h;
-  auto at = [&](int ii, int jj) { return (ii < 0 || ii >= w || jj < 0 || jj >= h) ? 0 : (int)b->occ[jj * w + ii]; };
+  auto at = [&](int ii, int jj) {
+    if (ii < 0 || ii >= w || jj < 0 || jj >= h) return 0;
+    int local = jj * w + ii;
+    return foregroundOnly ? (int)(bodyMaterialAt(b, local) != EMPTY) : (int)b->occ[local];
+  };
   int nlx = at(i - 1, j) - at(i + 1, j), nly = at(i, j - 1) - at(i, j + 1);
   if (nlx == 0 && nly == 0) {
     double dx = wx - b->px, dy = wy - b->py;
@@ -3082,7 +3087,7 @@ double RigidBodySystem::resolveContactRolling(
     Contact& first, Contact* second) {
   Body* A = first.a;
   Body* B = first.b;
-  if (solverMode != 3 || (B && B->kinematic)) return 0;
+  if (solverMode != 3 || (B && B->actorProxy)) return 0;
   double inverseInertia = first.aInvI + first.bInvI;
   if (inverseInertia <= 0) return 0;
   double relativeOmega = A->omega - (B ? rigidContactOmega(B) : 0);
@@ -3112,12 +3117,12 @@ void RigidBodySystem::applyWarmStart(Contact& c) {
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
   if ((solverMode == 32 || solverMode == 40 || solverMode == 46)
-      && B && !c.bIntegrated) return 0;
+      && B && !c.bIntegrated && !B->actorProxy) return 0;
   double slop = rigidContactSlop(c);
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
-  if (B && c.bIntegrated) {
+  if (B && (c.bIntegrated || B->actorProxy)) {
     rvx -= B->pvx - B->pw * c.rby;
     rvy -= B->pvy + B->pw * c.rbx;
   }
@@ -3135,7 +3140,7 @@ double RigidBodySystem::resolveBias(Contact& c) {
     rigidTraceBiasByKind[traceKind][2] += c.aInvI
       * (c.rax * jy - c.ray * jx) * c.dt;
   }
-  if (B && c.bIntegrated && rigidTraceLayer == traceLayer
+  if (B && (c.bIntegrated || B->actorProxy) && rigidTraceLayer == traceLayer
       && B->id == rigidTraceBodyId) {
     rigidTraceBiasByKind[traceKind][0] -= jx * c.bInvM * c.dt;
     rigidTraceBiasByKind[traceKind][1] -= jy * c.bInvM * c.dt;
@@ -3143,7 +3148,7 @@ double RigidBodySystem::resolveBias(Contact& c) {
       * (c.rbx * jy - c.rby * jx) * c.dt;
   }
   A->pvx += jx * c.aInvM; A->pvy += jy * c.aInvM; A->pw += c.aInvI * (c.rax * jy - c.ray * jx);
-  if (B && c.bIntegrated) {
+  if (B && (c.bIntegrated || B->actorProxy)) {
     B->pvx -= jx * c.bInvM;
     B->pvy -= jy * c.bInvM;
     B->pw -= c.bInvI * (c.rbx * jy - c.rby * jx);
@@ -3229,6 +3234,7 @@ void RigidBodySystem::breakJointBody(Body* member) {
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
 #include "rigid_step_prepare.inc"
+#include "rigid_actors.inc"
 #include "rigid_step_substeps.inc"
 #include "rigid_step_finalize.inc"
 
@@ -3257,7 +3263,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   if (E.reactions.acceptsRigidContacts()) {
     for (const Contact& contact : solverContactScratch) {
       if (!contact.b || !contact.bIntegrated
-          || contact.a->kinematic || contact.b->kinematic) continue;
+          || contact.a->actorProxy || contact.b->actorProxy) continue;
       double ax = contact.a->px + contact.rax;
       double ay = contact.a->py + contact.ray;
       double bx = contact.b->px + contact.rbx;

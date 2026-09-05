@@ -412,6 +412,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * E.cols;
     int wy = woY + y;
+    int authoredAmbient = E.planetId == PL_FRONTIER ? E.content.ambientAt(wy) : 0;
     const uint8_t* noiseRow = &renderNoise[(wy & 63) << 6];
     int wx = woX + x0;
     for (int x = x0; x <= x1; x++, wx++) {
@@ -427,6 +428,8 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       else if (animKind == RA_OIL) shade = (uint8_t)(((int)shade * 3 + shimmer) / 4);
       else if (animKind == RA_ACID) shade = (uint8_t)(((int)shade + shimmer) / 2);
       uint32_t c = renderVariants[((int)m << 3) + shade];
+      if (E.planetId == PL_FRONTIER && E.content.hasTexture[m])
+        c = E.content.textures[m][((wy & 7) << 3) | (wx & 7)];
       uint32_t alphaMask = renderAlphaMask[m];
       if (dmg) {
         uint32_t rem = dmg[k];
@@ -476,7 +479,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           highlighted = myceliumNoduleAt(wx, wy);
         if (highlighted) c = RENDER_DETAIL_COLOR[detail];
       }
-      if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
+      if (light) c = applyLight(c, (uint8_t)imax(authoredAmbient, renderLightForCell(light, k, x, y, m)));
       c = (c & 0x00ffffffu) | alphaMask;
       p[k] = c;
     }

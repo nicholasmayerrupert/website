@@ -139,7 +139,7 @@
   }
   auto cacheKey = [&](const Contact& contact, int normalBucket) {
     bool peerLayer = contact.b && !contact.bIntegrated
-      && !contact.b->kinematic;
+      && !contact.b->actorProxy;
     return ContactCacheKey{
       contact.a->id,
       contact.b ? contact.b->id : -1,
@@ -278,7 +278,8 @@
     wx = body->px + body->vx * t + lx * cs - ly * sn;
     wy = body->py + body->vy * t + lx * sn + ly * cs;
   };
-  auto insideBodyAt = [](Body* body, double wx, double wy, double t) {
+  auto insideBodyAt = [&](Body* body, double wx, double wy, double t,
+                          bool foregroundOnly = false) {
     double angle = body->angle + body->omega * t;
     double cs = std::cos(angle), sn = std::sin(angle);
     double dx = wx - body->px - body->vx * t;
@@ -288,14 +289,18 @@
     int j = (int)std::lround(ly - body->offsetY);
     if (i < 0 || i >= body->w || j < 0 || j >= body->h) return -1;
     int local = j * body->w + i;
-    return body->occ[local] ? local : -1;
+    return body->occ[local] && (!foregroundOnly
+      || bodyMaterialAt(body, local) != EMPTY) ? local : -1;
   };
-  auto bodyNormalAtTime = [](Body* body, int idx, double wx, double wy,
-                             double t, double& ox, double& oy) {
+  auto bodyNormalAtTime = [&](Body* body, int idx, double wx, double wy,
+                             double t, double& ox, double& oy,
+                             bool foregroundOnly = false) {
     int i = idx % body->w, j = idx / body->w;
     auto at = [&](int ii, int jj) {
-      return ii < 0 || ii >= body->w || jj < 0 || jj >= body->h
-        ? 0 : (int)body->occ[jj * body->w + ii];
+      if (ii < 0 || ii >= body->w || jj < 0 || jj >= body->h) return 0;
+      int local = jj * body->w + ii;
+      return foregroundOnly ? (int)(bodyMaterialAt(body, local) != EMPTY)
+                            : (int)body->occ[local];
     };
     int nlx = at(i - 1, j) - at(i + 1, j);
     int nly = at(i, j - 1) - at(i, j + 1);

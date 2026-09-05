@@ -280,6 +280,7 @@
     rigid.relaxWorldContacts();
     rigid.resolveWorldRasterAssignment();
     double tBake = emscripten_get_now();
+    rigid.resolveActorRasterContacts();
     rigid.bakeWorldBodies(fgA, bgA);
     rigid.captureTracePose(5);
     perfBodyMs += emscripten_get_now() - tBake;

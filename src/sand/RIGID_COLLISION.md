@@ -122,7 +122,7 @@ lives in `rigid_impl.inc`.
   their last jointly clear poses. An active body restored to an exact clear pose
   keeps its angular and tangential velocity. Dynamic contact islands remove
   only linear velocity relative to the island that points back through the
-  rejected correction; terrain-contact and kinematic islands use the static
+  rejected correction; terrain-contact islands use the static
   world as that reference. Bodies already in the world rest
   band park there, as does the final whole-stamp fallback for a body with no
   representable proposed cells. Tiny seeds (`nPts <= 4`) sleep on that locked
@@ -148,8 +148,8 @@ streaming persists bodies through the chunk store.
 The ordinary sleep path uses tight instantaneous linear and angular velocity
 thresholds. A cold fallback also tracks the centre of mass and two shape-scale
 world-space probes. A contact island with frictional support sleeps when every
-member remains inside the two-cell pose envelope for 180 world ticks. Actor
-contact, spatial forces, fluid-only support, fast point motion, geometry changes,
+member remains inside the two-cell pose envelope for 180 world ticks. Spatial
+forces, fluid-only support, fast point motion, geometry changes,
 and explicit wakes reset the envelope. Brief raster-manifold gaps retain an
 already established probe; actual free fall leaves the speed band or pose
 envelope before the sleep interval. The whole island sleeps together only when a
@@ -167,14 +167,29 @@ through the same stable-raster and support checks before baking.
 
 The exact inverse-raster footprint is cached for one pose and geometry revision.
 Systems that query an unchanged pose reuse the same ordered world/local cells.
-Actor pushing first rejects the complete swept center-line capsule when no live
-actor AABB can intersect it. Contact uses the body's actual translation plus the
-local angular sweep, so rotating tips push actors without a center translation.
-Actor-owned collision queries test every other body's finalized raster directly
-while body stamps are absent; a push blocked by terrain or another body applies
-the actor's crush lifecycle when the body's occupied footprint is large enough
-relative to the actor. Smaller trapped rubble stays pinned without becoming a
-lethal slab. Actor resolution never changes either body's pose or velocity.
+Actors enter the foreground contact solver as upright finite-mass rectangles,
+with unit density and locked rotation. Cross-layer bodies expose only their
+foreground material footprint to actors. Contact impulses and position bias are
+shared with the body using inverse mass. Actor contacts cannot provide grounding,
+sleep anchors, or terrain-contact damping. A flyer can be pushed by a large
+landmass without holding it aloft or stopping its rotation.
+
+`rigid_actors.inc` integrates only the collision-induced displacement because the
+actor phase already advances ordinary movement. It sweeps that displacement
+against static terrain and writes impulses back to player/creature velocities.
+Riders follow the translation and rotation of their local support point; flight
+and jumps do not attach to a support. Player locomotion brakes excess horizontal
+momentum with bounded acceleration. Nearby body islands share the actor substep
+cadence, while distant islands retain their own cadence.
+
+After both layers finish raster reconciliation, remaining actor overlap is
+resolved against the stamped foreground. Sub-cell corrections keep upright
+actors clear of rotating cell edges. Trapped actors receive the existing bounded,
+nonlethal crush damage (protected NPCs retain protection), then search for a
+clear AABB within four actor sizes. If no clear position exists within that
+bounded search, the actor remains trapped; it never becomes a terrain anchor.
+Raster recovery changes only actor positions.
+
 Fluid coupling performs a boundary-only liquid preflight before stamping body
 footprints into its pressure domain.
 

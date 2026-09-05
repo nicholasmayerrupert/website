@@ -113,3 +113,17 @@ retention and reconstruction count alongside timing measurements.
 fixture. The original freeze-fix baseline produces identical non-timing
 diagnostics. Its sleep assertion remains enabled; this is separate from the
 replay test's corrected assumption about world-tick progress.
+
+## Game authoring workbench
+
+`npm run game:scenario -- --list` lists authored scenes. Use
+`npm run game:scenario -- hearth --open` for the live workbench, or
+`npm run game:capture -- archive` to save a screenshot and authority-state JSON
+under `.sand-artifacts/scenes/`. These commands run the real worker and renderer.
+The development route is `/game?studio=hearth`; add `&capture` to hide the tools.
+
+`npm run content:check` validates maps, references, quest dependencies, palettes,
+and animation frames without launching a browser or compiling WASM. The
+`game-content` suite verifies the packet against real WASM. `game-studio-e2e`
+checks local brush/frame edits, undo, pause/step, and scene reset; it does not save
+changes to the content files. `campaign-e2e` exercises ordinary player controls.

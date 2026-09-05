@@ -10,7 +10,7 @@
     "generate:abi": "node scripts/generate-abi.mjs",
     "generate:biomes": "node scripts/generate-biomes.mjs",
     "generate:check": "node scripts/generate-materials.mjs --check && node scripts/generate-reactions.mjs --check && node scripts/generate-abi.mjs --check && node scripts/generate-biomes.mjs --check",
-    "build": "npm run generate:check && npm run check:sand-contracts && npm run check:life-wasm && npm run check:sand-wasm && vite build && node scripts/compress-wasm.mjs",
+    "build": "npm run generate:check && npm run check:sand-contracts && npm run check:life-wasm && npm run check:sand-wasm && npm run content:check && vite build && node scripts/compress-wasm.mjs",
     "build:full": "npm run build:life && npm run build:sand && npm run build",
     "build:life": "node wasm/build-life.mjs",
     "build:sand": "node wasm/build.mjs",
@@ -156,7 +156,10 @@
     "bench:zoom": "node scripts/bench-zoomed-out.mjs",
     "worldgen:atlas": "node scripts/worldgen-atlas.mjs",
     "worldgen:structure-atlas": "node scripts/structure-atlas.mjs",
-    "check:embed": "node scripts/check-embed-boundary.mjs"
+    "check:embed": "node scripts/check-embed-boundary.mjs",
+    "content:check": "node scripts/game-content.mjs",
+    "game:scenario": "node scripts/game-scenario.mjs",
+    "game:capture": "node scripts/game-scenario.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",

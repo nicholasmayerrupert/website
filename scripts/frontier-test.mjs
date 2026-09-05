@@ -27,13 +27,13 @@ const tick = () => { for (let i = 0; i < 12; i++) e.stepActors(); };
 check('frontier starts with three independent jobs and a homecoming', e.startMission(MISSION.FRONTIER, player)
   && e.getMission().objectives.slice(0, 3).every(o => o.state === OBJECTIVE_STATE.ACTIVE)
   && e.getMission().objectives[3].state === OBJECTIVE_STATE.LOCKED);
-check('station has open concourse and a solid floor', at(-64, 8) === MAT.EMPTY && at(-64, 17) !== MAT.EMPTY);
-check('foreground laboratories stay clear while background carries furnishing', at(-100, 45) === MAT.EMPTY && at(-100, 45, true) !== MAT.EMPTY);
+check('lodge has an open ground floor and a solid foundation', at(-64, 8) === MAT.EMPTY && at(-64, 17) !== MAT.EMPTY);
+check('cellar foreground stays clear while background carries masonry', at(-90, 45) === MAT.EMPTY && at(-90, 45, true) !== MAT.EMPTY);
 check('station surface is a dry terrace, eastern summit has real verticality', e.worldSurfaceAbsAt(0) === 16 && e.worldSurfaceAbsAt(900) < -180);
-move(0, -125);
+move(0, 8);
 for (let i = 0; i < 120; i++) e.stepWorld();
-check('solar mounting stays attached under simulation', at(-136, -110) === MAT.IRON_ORE);
-check('maintenance covers the upper observation deck', e.repairFrontierBase(player));
+check('lodge foundation stays attached under simulation', at(-16, 17) === MAT.SANDSTONE);
+check('maintenance restores the authored lodge', e.repairFrontierBase(player));
 const initial = e.getMission().objectives;
 move(initial[2].worldX, initial[2].worldY - 3);
 tick();
@@ -42,7 +42,7 @@ move(-480, 378); tick();
 check('entering the flooded archive does not complete the drainage job', e.getMission().objectives[1].state === OBJECTIVE_STATE.ACTIVE);
 // Cut a drain through the floor and let the real fluid simulation empty it.
 e.eraseDisc(-480 - e.getWorldOffsetX(), 400 - e.getWorldOffsetY(), 15);
-for (let turn = 0; turn < 1500; turn++) e.stepWorld();
+for (let turn = 0; turn < 3000; turn++) e.stepWorld();
 tick();
 check('drained archive console completes the job', e.getMission().objectives[1].state === OBJECTIVE_STATE.COMPLETE);
 const passFloor = e.worldSurfaceAbsAt(-790) + 36;

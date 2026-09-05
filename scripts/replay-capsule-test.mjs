@@ -320,3 +320,8 @@ assert.equal(
 await assert.rejects(() => decodeReplayCapsule('SAND-REPLAY-1:{}'), /SAND-REPLAY-3/);
 
 console.log(`replay capsule v3 compact round trip: ok (${busyText.length} bytes / busy minute)`);
+
+assert.throws(() => validateReplayCapsule({ ...capsule, init: { ...capsule.init, contentHash: (capsule.init.contentHash ^ 1) >>> 0 } }), /different authored game content/);
+const sceneCapsule = { ...capsule, events: [{ tick: 1, message: { type: 'intent', intent: 'preview-scene', worldX: -480, worldY: 298 } }] };
+assert.deepEqual((await decodeReplayCapsule(await encodeReplayCapsule(sceneCapsule))).events, sceneCapsule.events);
+assert.throws(() => validateReplayCapsule({ ...sceneCapsule, events: [{ tick: 1, message: { type: 'intent', intent: 'preview-scene', worldX: NaN, worldY: 298 } }] }), /invalid authority event/);

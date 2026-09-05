@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SandGame } from './SandGame';
 import { FRONTIER_JOBS } from '../campaign/frontier.js';
+import { GAME_WORLD } from '../content/catalog.js';
 import { OBJECTIVE_STATE, MISSION_PHASE } from '../wasmBridge/abi.generated.js';
 import './frontierCampaign.css';
 
@@ -37,7 +38,7 @@ function FieldMap({ selected, onSelect, objectives }) {
   );
 }
 
-export function SandCampaign() {
+export function SandCampaign({ onRuntimeReady, preview = false }) {
   const host = useRef(null);
   const panel = useRef(null);
   const [ready, setReady] = useState(false);
@@ -46,7 +47,7 @@ export function SandCampaign() {
   const [snapshot, setSnapshot] = useState(null);
   const [selected, setSelected] = useState(0);
   const [tracked, setTracked] = useState(0);
-  const [welcome, setWelcome] = useState(true);
+  const [welcome, setWelcome] = useState(!preview);
   const [muted, setMuted] = useState(false);
   const [notice, setNotice] = useState(null);
   const completedRef = useRef(new Set());
@@ -105,20 +106,22 @@ export function SandCampaign() {
     return () => window.removeEventListener('keydown', key, true);
   }, [close, focusGame, menu]);
   const onReady = useCallback(() => {
-    setReady(true); host.current?._game?.setDayPhase(0.20);
-    for (let i = 0; i < 4; i++) host.current?._game?.zoomOut();
+    setReady(true); host.current?._game?.setDayPhase(0.32);
+
     focusGame();
     setMuted(host.current?._game?.getAudioState().muted ?? false);
-  }, [focusGame]);
+    onRuntimeReady?.(host.current);
+  }, [focusGame, onRuntimeReady]);
   const repairView = host.current?._game?.getMissionView?.();
-  const canRepair = repairView && repairView.playerWorldX >= -320 && repairView.playerWorldX <= 319
-    && repairView.playerWorldY >= -160 && repairView.playerWorldY <= 191;
+  const [left, top, right, bottom] = GAME_WORLD.repairBounds;
+  const canRepair = repairView && repairView.playerWorldX >= left && repairView.playerWorldX <= right
+    && repairView.playerWorldY >= top && repairView.playerWorldY <= bottom;
   const job = FRONTIER_JOBS[selected];
   const done = snapshot?.objectives?.filter((o) => o.state === OBJECTIVE_STATE.COMPLETE).length || 0;
   const complete = snapshot?.phase === MISSION_PHASE.COMPLETE;
   return (
     <main className="frontier-experience">
-      <SandGame mode="survival" planet="frontier" mission="frontier" worldSeed={0x41535452}
+      <SandGame mode="survival" planet="frontier" mission="frontier" worldSeed={GAME_WORLD.seed}
         hostRef={host} onReady={onReady} onMissionUpdate={setSnapshot}
         onError={() => setError(true)}
         onTalkAction={({ action }) => {
@@ -126,29 +129,29 @@ export function SandCampaign() {
           if (action === 'repair-base') setMenu('repair');
         }} />
       <header className="frontier-header">
-        <div><span className="frontier-emblem">✳</span><span>ASTER<span className="frontier-subtitle">EARTH EXPEDITION</span></span></div>
+        <div><span className="frontier-emblem">✳</span><span>ASTER<span className="frontier-subtitle">THE WAKING VALLEY</span></span></div>
         <nav aria-label="Expedition controls">
-          <button onClick={() => setMenu('journal')}>Field journal <kbd>J</kbd><small>{done}/4</small></button>
+          <button onClick={() => setMenu('journal')}>Field journal <kbd>J</kbd><small>{done}/{FRONTIER_JOBS.length}</small></button>
           <button aria-label="Pause expedition" onClick={() => setMenu('pause')}>Ⅱ</button>
         </nav>
       </header>
       {ready && welcome && !menu && (
         <aside className="frontier-arrival">
-          <span className="frontier-kicker">STATION 01</span>
-          <h1>Aster Station</h1>
-          <p>West: old railway. East: Windward Observatory. The cave entrance is below engineering.</p>
+          <span className="frontier-kicker">A LIGHT IN THE WILDERNESS</span>
+          <h1>Hearthwood Lodge</h1>
+          <p>A forgotten railway. A drowned library. A light on the mountain. Take a trail and see where it leads.</p>
           <div><button onClick={() => { setWelcome(false); setMenu('journal'); }}>Open field journal ↗</button>
             <button className="frontier-quiet" onClick={() => { setWelcome(false); focusGame(); }}>Start exploring</button></div>
         </aside>
       )}
       {notice && !menu && <aside className="frontier-notice" role="status"><span className="frontier-kicker">FIELD JOB COMPLETE</span><strong>{notice.title}</strong><span>{notice.reward}</span></aside>}
-      {complete && !menu && <div className="frontier-complete">All field jobs complete.</div>}
+      {complete && !menu && <div className="frontier-complete">You brought the valley back to life.</div>}
       <footer className="frontier-controls"><span><kbd>A D</kbd> Move</span><span><kbd>SPACE</kbd> Jump / jetpack</span><span><kbd>1 2</kbd> Blast / mine</span><span><kbd>T</kbd> Talk</span><span><kbd>E</kbd> Inventory</span></footer>
       {!ready && <div className="frontier-loading" role="status">{error ? 'Unable to open the expedition. Reload to try again.' : 'Opening Aster Valley…'}</div>}
       {menu && <div className="frontier-overlay">
         <section className={`frontier-panel ${menu === 'journal' ? 'frontier-journal' : 'frontier-small'}`} ref={panel}
-          role="dialog" aria-modal="true" aria-label={menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Station repair' : 'Expedition paused'}>
-          <header><div><span className="frontier-kicker">ASTER / FIELD OPERATIONS</span><h2>{menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Station repair' : 'Paused'}</h2></div>
+          role="dialog" aria-modal="true" aria-label={menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Lodge repair' : 'Expedition paused'}>
+          <header><div><span className="frontier-kicker">ASTER / FIELD OPERATIONS</span><h2>{menu === 'journal' ? 'Field journal' : menu === 'repair' ? 'Lodge repair' : 'Paused'}</h2></div>
             <button className="frontier-close" onClick={close} aria-label="Close panel">×</button></header>
           {menu === 'journal' ? <>
             <div className="frontier-journal-grid"><div className="frontier-chart"><FieldMap selected={selected} onSelect={setSelected} objectives={snapshot?.objectives} />
@@ -161,20 +164,20 @@ export function SandCampaign() {
                 <div className="frontier-field-note"><span>FIELD NOTE</span><p>{job.hint}</p></div>
                 <div className="frontier-reward"><small>REWARD</small><p>{job.reward}</p></div>
                 {snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.COMPLETE ? <p className="frontier-finished">✓ Complete</p> :
-                  <button className="frontier-primary" disabled={selected === 3 && done < 3} onClick={() => { setTracked(selected); setWelcome(false); close(); }}>Track this destination ↗</button>}
+                  <button className="frontier-primary" disabled={snapshot?.objectives?.[selected]?.state === OBJECTIVE_STATE.LOCKED} onClick={() => { setTracked(selected); setWelcome(false); close(); }}>Track this destination ↗</button>}
               </article></div>
 
           </> : menu === 'repair' ? <>
-            <p className="frontier-speaker">ENGINEER OSEI · STATION MAINTENANCE</p>
+            <p className="frontier-speaker">OSEI · MAKER & MENDER</p>
 
-            <p>Rebuilds the station grounds and removes rubble and anything you placed there. Your field discoveries and changes beyond the station remain.</p>
-            <button className="frontier-primary" disabled={!canRepair} onClick={() => { host.current?._game?.repairBase(); close(); }}>Rebuild Aster Station</button>
-            {!canRepair && <p>Return to the station grounds before the rebuild begins.</p>}
+            <p>Rebuilds the lodge grounds and removes rubble and anything you placed there. Your field discoveries and changes beyond the lodge remain.</p>
+            <button className="frontier-primary" disabled={!canRepair} onClick={() => { host.current?._game?.repairBase(); close(); }}>Restore Hearthwood Lodge</button>
+            {!canRepair && <p>Return to the lodge grounds before the rebuild begins.</p>}
             <button className="frontier-quiet" onClick={close}>Leave it as it is</button>
           </> : <>
             <button className="frontier-primary" onClick={close}>Resume</button>
             <button onClick={() => setMenu('journal')}>Field journal</button>
-            <button onClick={() => setMenu('repair')}>Call station maintenance</button>
+            <button onClick={() => setMenu('repair')}>Call Osei</button>
             <button onClick={() => { host.current?._game?.setAudioMuted(!muted); setMuted(!muted); }}>Sound {muted ? 'off' : 'on'}</button>
             <p className="frontier-save-note">Prototype: world changes last for this session. Reloading starts a fresh valley.</p>
           </>}

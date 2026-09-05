@@ -14,13 +14,11 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
   auto& bodySubsteps = step.bodySubsteps;
   auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
   auto& substeps = step.substeps;
-  auto& actorContact = step.actorContact;
   auto& peerJointLeaders = step.peerJointLeaders;
   double contactSetupStart = emscripten_get_now();
   std::vector<Contact>& contacts = solverContactScratch;
   contacts.clear();
   int nc = 0;
-  actorContact.assign(n, 0);
   std::vector<uint8_t> solidContact(n, 0);
   std::vector<uint8_t> upwardContact(n, 0);
   std::vector<uint8_t> bodyContact(n, 0);
@@ -56,6 +54,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       bodyDt[bi] = activeBody[bi] ? tickDt / cadence : 0;
       if (activeBody[bi]) rigidIslandBodySteps++;
     }
+    prepareActorSubstep(step, tickDt / substeps);
     std::fill(solidContact.begin(), solidContact.end(), 0);
     auto bodyMayTouchGranular = [&](Body* body) {
       if (!terrainOccupancyReady) return true;
@@ -163,13 +162,13 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     // Penetration depth of a point that is already inside target T, measured by
     // marching outward along T's surface normal until it exits the mask.
     auto penDepth = [&](Body* target, double wx, double wy,
-                        double nx, double ny, bool precise) {
+                        double nx, double ny, bool precise, bool foregroundOnly = false) {
       if (!precise) {
         double depth = 0.5, mx = wx, my = wy;
         for (int step = 0; step < 4; step++) {
           mx += nx;
           my += ny;
-          if (insideBodyIndex(target, mx, my) < 0) break;
+          if (insideBodyIndex(target, mx, my, foregroundOnly) < 0) break;
           depth += 1;
         }
         return depth;
@@ -177,14 +176,14 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       double inside = 0, outside = 0.25;
       while (outside <= 4.5
              && insideBodyIndex(target, wx + nx * outside,
-                                wy + ny * outside) >= 0) {
+                                wy + ny * outside, foregroundOnly) >= 0) {
         inside = outside;
         outside += 0.25;
       }
       if (outside > 4.5) return 4.5;
       for (int iteration = 0; iteration < 6; iteration++) {
         double mid = (inside + outside) * 0.5;
-        if (insideBodyIndex(target, wx + nx * mid, wy + ny * mid) >= 0)
+        if (insideBodyIndex(target, wx + nx * mid, wy + ny * mid, foregroundOnly) >= 0)
           inside = mid;
         else
           outside = mid;
@@ -198,9 +197,22 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     // from T's mask surface (bodyNormalAt), oriented from B toward A via `sign`,
     // never a centre-to-centre direction. This stops a sample crossing from one
     // side of a thin body to the other without generating a contact.
-    auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
-      const std::vector<float>& S = P->boundarySamples; double pm = P->sweepMargin;
-      const std::vector<double>& radii = P->boundarySampleRadii;
+    auto collectSweep = [&](Body* P, Body* T, double sign, double dt, bool foregroundOnly = false) {
+      // A joint's foreground can lie inside its union outline. Sample the
+      // small actor footprint to find those surfaces without scanning the land.
+      std::vector<float> foregroundSamples;
+      std::vector<double> foregroundRadii;
+      if (foregroundOnly) {
+        for (int y = 0; y <= P->h * 2; y++) for (int x = 0; x <= P->w * 2; x++) {
+          double lx = (x - P->w) * 0.5, ly = (y - P->h) * 0.5;
+          foregroundSamples.push_back((float)lx);
+          foregroundSamples.push_back((float)ly);
+          foregroundRadii.push_back(std::hypot(lx, ly));
+        }
+      }
+      const std::vector<float>& S = foregroundOnly ? foregroundSamples : P->boundarySamples;
+      const std::vector<double>& radii = foregroundOnly ? foregroundRadii : P->boundarySampleRadii;
+      double pm = P->sweepMargin;
       bool preciseDepth =
         P->maxR >= R_SOLVER_HUGE_BODY_RADIUS
         && T->maxR >= R_SOLVER_HUGE_BODY_RADIUS;
@@ -214,12 +226,12 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         double lx = S[si], ly = S[si + 1];
         double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
         if (sx < T->aabbX0 - pm || sx > T->aabbX1 + pm || sy < T->aabbY0 - pm || sy > T->aabbY1 + pm) continue;
-        int idx0 = insideBodyIndex(T, sx, sy);
+        int idx0 = insideBodyIndex(T, sx, sy, foregroundOnly);
         if (idx0 >= 0) {
-          bodyNormalAt(T, idx0, sx, sy, nx_, ny_);
+          bodyNormalAt(T, idx0, sx, sy, nx_, ny_, foregroundOnly);
           penAcc.push_back({
             sx, sy, nx_ * sign, ny_ * sign,
-            penDepth(T, sx, sy, nx_, ny_, preciseDepth), 0,
+            penDepth(T, sx, sy, nx_, ny_, preciseDepth, foregroundOnly), 0,
           });
           continue;
         }
@@ -241,25 +253,25 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           if (steps < 1) steps = 1;
           for (int k = 1; k <= steps; k++) {
             double dk = total * (double)k / steps;
-            if (insideBodyIndex(T, sx + dirx * dk, sy + diry * dk) < 0)
+            if (insideBodyIndex(T, sx + dirx * dk, sy + diry * dk, foregroundOnly) < 0)
               continue;
             double miss = total * (double)(k - 1) / steps, hit = dk;
             for (int it = 0; it < 6; it++) {
               double mid = (miss + hit) * 0.5;
-              if (insideBodyIndex(T, sx + dirx * mid, sy + diry * mid) >= 0)
+              if (insideBodyIndex(T, sx + dirx * mid, sy + diry * mid, foregroundOnly) >= 0)
                 hit = mid;
               else
                 miss = mid;
             }
             double hx = sx + dirx * hit, hy = sy + diry * hit;
-            int hidx = insideBodyIndex(T, hx, hy);
+            int hidx = insideBodyIndex(T, hx, hy, foregroundOnly);
             if (hidx < 0) {
               hx = sx + dirx * dk;
               hy = sy + diry * dk;
-              hidx = insideBodyIndex(T, hx, hy);
+              hidx = insideBodyIndex(T, hx, hy, foregroundOnly);
             }
             if (hidx < 0) break;
-            bodyNormalAt(T, hidx, hx, hy, nx_, ny_);
+            bodyNormalAt(T, hidx, hx, hy, nx_, ny_, foregroundOnly);
             penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
             break;
           }
@@ -278,24 +290,24 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           double hitTime = timeEnd * (double)k / steps;
           double hx, hy;
           sweptPoint(P, lx, ly, hitTime, hx, hy);
-          if (insideBodyAt(T, hx, hy, hitTime) < 0) continue;
+          if (insideBodyAt(T, hx, hy, hitTime, foregroundOnly) < 0) continue;
           double missTime = timeEnd * (double)(k - 1) / steps;
           for (int it = 0; it < 7; it++) {
             double midTime = (missTime + hitTime) * 0.5;
             double mx, my;
             sweptPoint(P, lx, ly, midTime, mx, my);
-            if (insideBodyAt(T, mx, my, midTime) >= 0) hitTime = midTime;
+            if (insideBodyAt(T, mx, my, midTime, foregroundOnly) >= 0) hitTime = midTime;
             else missTime = midTime;
           }
           sweptPoint(P, lx, ly, hitTime, hx, hy);
-          int hidx = insideBodyAt(T, hx, hy, hitTime);
+          int hidx = insideBodyAt(T, hx, hy, hitTime, foregroundOnly);
           if (hidx < 0) {
             hitTime = timeEnd * (double)k / steps;
             sweptPoint(P, lx, ly, hitTime, hx, hy);
-            hidx = insideBodyAt(T, hx, hy, hitTime);
+            hidx = insideBodyAt(T, hx, hy, hitTime, foregroundOnly);
           }
           if (hidx < 0) break;
-          bodyNormalAtTime(T, hidx, hx, hy, hitTime, nx_, ny_);
+          bodyNormalAtTime(T, hidx, hx, hy, hitTime, nx_, ny_, foregroundOnly);
           penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
           break;
         }
@@ -684,7 +696,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         if (B)
           B->recentImpactSpeed = std::fmax(
             B->recentImpactSpeed, impactSpeed);
-        bool softImpact = B && B->kinematic;
+        bool softImpact = B && B->actorProxy;
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
         auto materialAtContact = [&](Body* body) {
@@ -730,12 +742,12 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         contacts[first].blockMate = second;
         contacts[second].blockMate = first;
       }
+      if (B && B->actorProxy) return;
       A->hadContact = true;
       if (!B) A->rasterMayOverlapSolid = true;
       solidContact[A->idx] = 1;
       if (B) {
         B->hadContact = true;
-        if (B->kinematic) actorContact[A->idx] = 1;
         if (bIndex >= 0) solidContact[bIndex] = 1;
       }
     };
@@ -889,6 +901,12 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
             || B->aabbY1 < A->aabbY0)
           continue;
         double pairDt = bodyDt[ai];
+        if (A->jointRole == 1) {
+          penAcc.clear();
+          collectSweep(B, A, -1, pairDt, true);
+          reduceManifold(penAcc, A, B, 0, -1, pairDt);
+          continue;
+        }
         ChildContactState childContactState =
           collectChildContacts(A, B, pairDt, ai, -1);
         if (childContactState == CCS_SEPARATED) continue;
@@ -929,7 +947,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           }
           if (childContactState == CCS_NONE) continue;
         }
-        if (!A->awake) wakeBody(A);
         penAcc.clear();
         for (const ChildManifold& manifold : childManifoldScratch)
           for (int pi = 0; pi < manifold.count; pi++)
@@ -1031,6 +1048,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     std::fill(terrainSideContactDirections.begin(),
               terrainSideContactDirections.end(), 0);
     for (const Contact& contact : contacts) {
+      if (contact.b && contact.b->actorProxy) continue;
       if (contact.ny < -0.1) upwardContact[contact.a->idx] = 1;
       if (contact.b) bodyContact[contact.a->idx] = 1;
       if (!contact.b && std::fabs(contact.ny) < 0.1)
@@ -1106,7 +1124,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         + aInvI * rtA * rtA + bInvI * rtB * rtB;
       double aBiasK = aInvM + aInvI * rnA * rnA;
       double bBiasK = bInvM + bInvI * rnB * rnB;
-      bool peerContact = contact.b && !contact.bIntegrated;
+      bool peerContact = contact.b && !contact.bIntegrated
+        && !contact.b->actorProxy;
       bool sharePeerBias = peerContact && (solverMode == 35
         || solverMode == 43
         || (solverMode == 44
@@ -1121,7 +1140,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         || ((solverMode == 36 || solverMode == 37 || solverMode == 38)
           && aBiasK > 0 && bBiasK > 0
           && (aBiasK > 8 * bBiasK || bBiasK > 8 * aBiasK)));
-      if (!contact.bIntegrated && !sharePeerBias) {
+      if (!contact.bIntegrated && !sharePeerBias
+          && !(B && B->actorProxy)) {
         bInvM = 0;
         bInvI = 0;
       }
@@ -1343,7 +1363,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         bias = std::fmin(bias, R_MAX_BIAS_VEL);
         double rvx = contact.a->pvx - contact.a->pw * contact.ray;
         double rvy = contact.a->pvy + contact.a->pw * contact.rax;
-        if (contact.b && contact.bIntegrated) {
+        if (contact.b && (contact.bIntegrated || contact.b->actorProxy)) {
           rvx -= contact.b->pvx - contact.b->pw * contact.rby;
           rvy -= contact.b->pvy + contact.b->pw * contact.rbx;
         }
@@ -1461,7 +1481,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       for (int contactIndex = 0;
            contactIndex < (int)contacts.size(); contactIndex++) {
         const Contact& contact = contacts[contactIndex];
-        if (contact.b && contact.b->kinematic) continue;
+        if (contact.b && contact.b->actorProxy) continue;
         bool peerLayer = contact.b && !contact.bIntegrated;
         if (peerLayer && activeLayer != 0) continue;
         worldHasPeerContact = worldHasPeerContact || peerLayer;
@@ -1652,7 +1672,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
                      && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
                      && b->maxDepth <= R_REST_DEPTH;
-      if (actorContact[bi]) sleepQuiet = false;
       if (fluidOnlyContact && !fluidRestContact) sleepQuiet = false;
       // Sleep age is a per-tick counter. Structure islands run every substep,
       // so incrementing here would put them to sleep cadence times too fast.
@@ -1671,6 +1690,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         }
       }
     }
+    integrateActorSubstep(step, tickDt / substeps);
     // Project residual overlap at the final integrated pose for sustained-force
     // islands and pairs of structure-scale bodies. A body supported by terrain
     // stays fixed while the load above it moves clear.

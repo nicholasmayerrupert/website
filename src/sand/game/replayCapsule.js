@@ -1,4 +1,5 @@
 import { ABI_FINGERPRINT, ABI_VERSION } from '../wasmBridge/abi.generated.js';
+import { GAME_CONTENT } from '../content/catalog.js';
 import { ENGINE_MAX_CELLS, ENGINE_MAX_DIMENSION } from '../engineLimits.js';
 import { DEFAULT_DAY_PHASE, normalizeDayPhase } from './dayNightCycle.js';
 import {
@@ -54,6 +55,7 @@ const INTENT = Object.freeze({
   add: 7,
   'set-player-state': 8,
   'repair-base': 9,
+  'preview-scene': 10,
 });
 const INTENT_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(INTENT).map(([name, code]) => [code, name]),
@@ -95,6 +97,7 @@ export function normalizeReplayInit(data) {
     cols: data.cols | 0,
     rows: data.rows | 0,
     worldSeed: data.worldSeed >>> 0,
+    contentHash: data.contentHash === undefined ? GAME_CONTENT.hash : data.contentHash >>> 0,
     initialViewCols: Math.max(0, Math.min(data.cols | 0, data.initialViewCols | 0)),
     initialViewRows: Math.max(0, Math.min(data.rows | 0, data.initialViewRows | 0)),
     survival: !!data.survival,
@@ -171,6 +174,7 @@ export function normalizeReplayMessage(data, survival = false) {
         case 'respawn': break;
         case 'add': intent.material = data.material | 0; intent.count = data.count | 0; break;
         case 'set-player-state': intent.state = copyReplayValue(data.state || {}); break;
+        case 'preview-scene': intent.worldX = Number(data.worldX); intent.worldY = Number(data.worldY); break;
         default: return null;
       }
       return intent;
@@ -258,6 +262,9 @@ function validateReplayMessage(message, survival, version) {
   }
   if (message.type === 'weather') return isWeatherId(normalized.weatherId);
   if (message.type === 'day-phase') return Number.isFinite(normalized.phase);
+  if (message.type === 'intent' && normalized.intent === 'preview-scene')
+    return Number.isFinite(normalized.worldX) && Math.abs(normalized.worldX) <= 100000
+      && Number.isFinite(normalized.worldY) && Math.abs(normalized.worldY) <= 100000;
   return true;
 }
 
@@ -279,6 +286,8 @@ export function validateReplayCapsule(value, options = {}) {
 
   const init = value.init;
   if (!init || typeof init !== 'object') throw new Error('Replay initialization is missing.');
+  if (requireCompatibleAbi && init.contentHash !== undefined && init.contentHash !== GAME_CONTENT.hash)
+    throw new Error('This replay uses different authored game content. Restore that content revision to play it.');
   if (!finiteInteger(init.cols, 1, ENGINE_MAX_DIMENSION)
       || !finiteInteger(init.rows, 1, ENGINE_MAX_DIMENSION)
       || init.cols * init.rows > ENGINE_MAX_CELLS)
@@ -393,6 +402,7 @@ function packIntent(message) {
     case 'respawn': return [code];
     case 'add': return [code, message.material, message.count];
     case 'set-player-state': return [code, message.state || {}];
+    case 'preview-scene': return [code, message.worldX, message.worldY];
     default: throw new Error('Replay contains an unknown intent.');
   }
 }
@@ -411,6 +421,7 @@ function unpackIntent(row) {
     case 'respawn': return { type: 'intent', intent: name };
     case 'add': return { type: 'intent', intent: name, material: row[3], count: row[4] };
     case 'set-player-state': return { type: 'intent', intent: name, state: row[3] || {} };
+    case 'preview-scene': return { type: 'intent', intent: name, worldX: row[3], worldY: row[4] };
     default: throw new Error('Replay contains an unknown intent.');
   }
 }

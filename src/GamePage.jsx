@@ -1,6 +1,7 @@
 // Fullscreen Earth expedition and direct survival sandbox entry.
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+const GameStudio = import.meta.env.DEV ? lazy(() => import('./sand/studio/GameStudio.jsx')) : null;
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { SandGame } from './sand/react/SandGame';
 import { SandCampaign } from './sand/react/SandCampaign';
@@ -38,6 +39,7 @@ export default function GamePage() {
     return () => { document.title = prev; };
   }, []);
 
+  if (import.meta.env.DEV && GAME_QUERY.has('studio')) return <Suspense fallback={null}><GameStudio /></Suspense>;
   if (!DIRECT_SANDBOX) return <SandCampaign />;
 
   if (isMobile) {

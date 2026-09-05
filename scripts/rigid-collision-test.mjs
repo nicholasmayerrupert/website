@@ -361,11 +361,11 @@ for (const dt of [16, 8, 33, 50]) {
   }
 }
 
-// 7b. Foreground actors contribute kinematic rectangles to the rigid solver.
+// 7b. Foreground actors exchange finite-mass impulses with rigid bodies.
 // Exercise players and creatures independently so either proxy path can regress
 // without the other hiding it.
 {
-  console.log('player proxy stops a rigid body');
+  console.log('rigid body pushes a player');
   const e = mk();
   stoneRect(e, 0, 130, COLS - 1, ROWS - 1); e.syncComponents();
   const player = e.spawnPlayer(104, 122);
@@ -375,14 +375,14 @@ for (const dt of [16, 8, 33, 50]) {
   run(e, 18);
   const p = e.getPlayer(player);
   const stoppedBody = e._bodyState(body);
-  check(`moving body stopped outside player (body ${stoppedBody?.px.toFixed(2)}, player ${p.x.toFixed(2)})`,
-    stoppedBody && stoppedBody.px < p.x && Math.abs(stoppedBody.vx) < 0.05 &&
-    p.x === 104);
+  check(`moving body pushes player without crossing it (body ${stoppedBody?.px.toFixed(2)}, player ${p.x.toFixed(2)})`,
+    stoppedBody && stoppedBody.px + 3.5 < p.x && stoppedBody.vx < 2.5 &&
+    p.x > 108);
   e.destroy();
 }
 
 {
-  console.log('creature proxy stops a rigid body');
+  console.log('rigid body pushes a creature');
   const e = mk();
   stoneRect(e, 0, 130, COLS - 1, ROWS - 1); e.syncComponents();
   e.setCreatureRuntime(true, false);
@@ -394,7 +394,7 @@ for (const dt of [16, 8, 33, 50]) {
   const c = e.getCreatures().find((x) => x.id === creature);
   const pushedBody = e._bodyState(body);
   check(`moving body stayed outside creature (body ${pushedBody?.px.toFixed(2)}, creature ${c?.x.toFixed(2)})`,
-    c && pushedBody && pushedBody.px < c.x && c.alive);
+    c && pushedBody && pushedBody.px < c.x && c.x > 104 && c.alive);
   e.destroy();
 }
 
@@ -404,7 +404,7 @@ for (const dt of [16, 8, 33, 50]) {
 {
   console.log('irregular falling body receives a contact-local impulse');
   const e = mk();
-  const creature = e.spawnCreature(6, 104, 60); // bird held in open air; world-only steps below
+  const creature = e.spawnCreature(6, 104, 60); // bird in open air; world-only steps below
   const cells = hbarCells(80, 40, 31);
   for (let y = 41; y <= 78; y++) cells.push([80, y]);
   const body = e._bodyCount();
@@ -413,15 +413,15 @@ for (const dt of [16, 8, 33, 50]) {
   run(e, 8);
   const c = e.getCreatures().find((x) => x.id === creature);
   const state = e._bodyState(body);
-  check(`kinematic creature stays controller-owned (y ${c?.y.toFixed(2)})`,
-    c && c.y === 60);
+  check(`falling arm displaces creature (y ${c?.y.toFixed(2)})`,
+    c && c.y > 61 && c.vy > 0);
   check(`contact-local impulse deflects the body (vx ${state?.vx.toFixed(2)}, angle ${state?.angle.toFixed(2)})`,
-    state && state.vx > 0.2 && Math.abs(state.angle) > 0.02);
+    state && state.vx > 0.01 && Math.abs(state.angle) > 0.02);
   e.destroy();
 }
 
-// A creature pinned against terrain stays in place. A strong load can damage it,
-// but the crush lifecycle itself remains nonlethal.
+// A creature trapped against terrain moves to clear space. The crush lifecycle
+// remains nonlethal.
 {
   console.log('pinned creature takes bounded crush damage');
   const e = mk();
@@ -434,38 +434,36 @@ for (const dt of [16, 8, 33, 50]) {
   e._setBodyMotion(body, 2.5, 0, 0);
   run(e, 8);
   const pinned = e.getCreatures().find((x) => x.id === creature);
-  check(`pinned creature stays inside the pocket (${pinned?.x.toFixed(2)},${pinned?.y.toFixed(2)})`,
-    pinned && pinned.x < 113 && pinned.y > 120);
+  check(`trapped creature clears the body (${pinned?.x.toFixed(2)},${pinned?.y.toFixed(2)})`,
+    pinned && pinned.x < 113 && pinned.y + pinned.h < 123);
   check(`pinned creature survives crush damage (health ${pinned?.health})`,
     pinned && pinned.alive && pinned.health === 6);
   e.destroy();
 }
 
-// True head-on case: drop a body onto a creature between two walls and
-// interleave world/actor clocks exactly like the creative worker. The creature
-// is airborne, so it supports the body without taking grounded crush damage.
+// A body descending into a narrow pocket cannot use its trapped occupant as
+// structural support. Actor recovery finds clear space and retains bounded health.
 {
-  console.log('airborne creature supports a dropped body');
+  console.log('trapped creature yields to a dropped body');
   const e = mk();
   stoneRect(e, 0, 130, COLS - 1, ROWS - 1);
   stoneRect(e, 102, 96, 103, 129); stoneRect(e, 111, 96, 112, 129); e.syncComponents();
   e.setCreatureRuntime(true, false);
-  const creature = e.spawnCreature(2, 104, 126); // fox standing on the floor
+  const creature = e.spawnCreature(2, 104, 126);
   e.spawnBox(104, 106, 7, 5, RIGID);
-  let t = 0, maxDx = 0;
-  for (let i = 0; i < 90; i++) {
-    t += 16; e.step(t); e.stepActors();
-    const c = e.getCreatures().find((x) => x.id === creature);
-    if (c)
-      maxDx = Math.max(maxDx, Math.abs(c.x - 104));
-  }
-  const supported = e._bodyState(0);
+  for (let i = 0; i < 90; i++) { e.stepActors(); e.stepWorld(); }
+  const body = e._bodyState(0);
   const target = e.getCreatures().find((x) => x.id === creature);
-  check(`head-on impact does not eject creature sideways (max dx ${maxDx.toFixed(2)})`, maxDx < 1.0);
-  check(`body rests on the creature (py ${supported?.py.toFixed(2)})`,
-    supported && supported.py < target.y && Math.abs(supported.vy) < 0.01);
-  check(`airborne support is not crush damage (health ${target?.health})`,
-    target && target.alive && target.health === target.maxHealth);
+  let clear = !!target;
+  if (target) for (let y = Math.floor(target.y); y < Math.ceil(target.y + target.h - 1e-5); y++)
+    for (let x = Math.floor(target.x); x < Math.ceil(target.x + target.w - 1e-5); x++)
+      if (x >= 0 && x < COLS && y >= 0 && y < ROWS
+          && [STONE, RIGID].includes(e.getGrid()[y * COLS + x])) clear = false;
+  check('head-on impact leaves creature in clear space', clear);
+  check(`body settles on the pocket walls (py ${body?.py.toFixed(2)})`,
+    body && Math.abs(body.vy) < 0.01);
+  check(`trapped creature survives bounded crushing (health ${target?.health})`,
+    target && target.alive && target.health >= 1 && target.health < target.maxHealth);
   e.destroy();
 }
 

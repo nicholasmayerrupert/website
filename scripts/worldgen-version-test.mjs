@@ -1,4 +1,5 @@
-// A worldgen compatibility version names both raster output and semantic plans.
+// A worldgen compatibility version names procedural raster and semantic plans.
+// Authored blueprints have their own content fingerprint and integration suite.
 // Any intentional change updates the C++ version and the corresponding golden;
 // an unversioned output change or a version bump without a golden fails loudly.
 
@@ -6,11 +7,18 @@ import {
   initSandWasm, createEngineWasm, PLANET_COUNT,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { GAME_WORLD, PLAYER_ART } from '../src/sand/content/catalog.js';
+import { compileContent } from '../src/sand/content/compile.js';
+
+const proceduralContent = compileContent({
+  ...GAME_WORLD, sites: GAME_WORLD.sites.map(site => ({ ...site, operations: [] })),
+}, PLAYER_ART);
 
 const GOLDEN_BY_VERSION = Object.freeze({
   4: 0x713a6ff7,
   5: 0x01bda828,
   6: 0x905a5a5f,
+  7: 0x28406aa8,
 });
 const SEEDS = [0, 0xBED, 0xC0FFEE];
 const WINDOWS = [
@@ -69,6 +77,7 @@ for (let planetId = 0; planetId < PLANET_COUNT; planetId++) {
       planetId,
       sinksOn: false,
       infinite: true,
+      content: proceduralContent,
     });
     try {
       const engineVersion = engine.getWorldGenerationVersion();

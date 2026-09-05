@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { gameContentPlugin } from './scripts/game-content-vite.mjs'
 import { fileURLToPath } from 'node:url'
 
 const entryRoutes = new Map([
@@ -26,7 +27,7 @@ const rewriteEntryRoute = (req, _res, next) => {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [entryRoutePlugin(), react()],
+  plugins: [entryRoutePlugin(), gameContentPlugin(), react()],
   base: '/',
   worker: { format: 'es' },
   build: {

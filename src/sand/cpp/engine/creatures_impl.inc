@@ -130,8 +130,8 @@ bool CreatureSystem::worldRuleAllows(
     uint8_t speciesId, double wx, double wy) const {
   if (E.planetId == PL_FRONTIER && speciesId < CS_COUNT
       && CREATURE_SPECIES[speciesId].hostile
-      && wx >= Engine::FRONTIER_LEFT - 64 && wx <= Engine::FRONTIER_RIGHT + 64
-      && wy >= Engine::FRONTIER_TOP - 48 && wy <= Engine::FRONTIER_BOTTOM + 32)
+      && wx >= E.content.repairBounds[0] - 64 && wx <= E.content.repairBounds[2] + 64
+      && wy >= E.content.repairBounds[1] - 48 && wy <= E.content.repairBounds[3] + 32)
     return false;
   return speciesId < CS_COUNT
     && worldRuleAllows(

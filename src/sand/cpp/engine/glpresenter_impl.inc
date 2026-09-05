@@ -492,7 +492,8 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
   if (x1 < x0 || y1 < y0) return Renderer::LIGHT_AMBIENT / 255.0f;
   int sum = 0, count = 0;
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) { sum += E.fg.light[E.I(x, y)]; count++; }
-  return count ? (float)sum / (255.0f * count) : Renderer::LIGHT_AMBIENT / 255.0f;
+  float measured = count ? (float)sum / (255.0f * count) : Renderer::LIGHT_AMBIENT / 255.0f;
+  return E.planetId == PL_FRONTIER ? std::max(measured, E.content.ambientAt((int)py + E.fg.worldOffsetY) / 255.f) : measured;
 }
 
 void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
@@ -559,9 +560,12 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
                      bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
-  if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
+  const auto& art = E.content;
+  const int spriteWidth = art.spriteWidth, spriteHeight = art.spriteHeight;
+  if (!spriteWidth || !spriteHeight) return;
+  if (animFrame < 0 || animFrame >= art.clips[animState].count) animFrame = 0;
   double cell = (double)glCellDev;
-  double pixel = cell * SPR_PIXEL_SCALE;
+  double pixel = cell * art.pixelScale;
   bool aimedWeapon = heldItemKind == IK_MINING_TOOL ||
                      heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
                      heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
@@ -576,13 +580,13 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     static const double RUN_BOB[4] = {-0.14, 0.0, -0.11, 0.0};
     static const double SWIM_BOB[4] = {-0.08, 0.02, 0.08, 0.0};
     if (animState == AS_IDLE) bodyBob = std::sin(E.actorTick * .055) * .07;
-    else if (animState == AS_WALK) bodyBob = WALK_BOB[animFrame];
-    else if (animState == AS_RUN) bodyBob = RUN_BOB[animFrame];
+    else if (animState == AS_WALK) bodyBob = WALK_BOB[animFrame % 4];
+    else if (animState == AS_RUN) bodyBob = RUN_BOB[animFrame % 4];
     else if (animState == AS_WADE) bodyBob = animFrame ? -0.045 : 0.0;
-    else if (animState == AS_SWIM) bodyBob = SWIM_BOB[animFrame];
+    else if (animState == AS_SWIM) bodyBob = SWIM_BOB[animFrame % 4];
   }
-  double sprX = (pxc - camCol) * cell + glOffX - cell;
-  double sprY = (pyc - camRow - 1.0 + bodyBob) * cell + glOffY;
+  double sprX = (pxc + PLAYER_W * .5 - camCol) * cell + glOffX - spriteWidth * pixel * .5;
+  double sprY = (pyc + PLAYER_H - camRow + bodyBob) * cell + glOffY - spriteHeight * pixel;
   if (alive) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
 
   auto worldSquare = [&](double wx, double wy, double size,
@@ -727,23 +731,23 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     articulatedArm(rearSX, rearSY, rearEX, rearEY, rearHX, rearHY, true);
   }
 
-  for (int r = 0; r < SPR_H; r++) {
-    const char* row = SPR_GRID[animState][animFrame][r];
+  for (int r = 0; r < spriteHeight; r++) {
+    const uint8_t* row = art.spriteRow(animState, animFrame, r);
     // Merge adjacent authored pixels of the same color into one quad.
-    for (int c = 0; c < SPR_W;) {
-      int source = facing >= 0 ? c : (SPR_W - 1 - c);
-      int idx = row[source] - '0';
+    for (int c = 0; c < spriteWidth;) {
+      int source = facing >= 0 ? c : (spriteWidth - 1 - c);
+      int idx = row[source];
       int run = 1;
-      while (c + run < SPR_W) {
-        int nextSource = facing >= 0 ? c + run : (SPR_W - 1 - c - run);
-        if (row[nextSource] - '0' != idx) break;
+      while (c + run < spriteWidth) {
+        int nextSource = facing >= 0 ? c + run : (spriteWidth - 1 - c - run);
+        if (row[nextSource] != idx) break;
         run++;
       }
-      if (idx <= 0 || idx > 9) {
+      if (idx <= 0 || idx >= (int)art.palette.size()) {
         c += run;
         continue;
       }
-      const float* col = SPR_PAL[idx];
+      const float* col = art.palette[(size_t)idx].data();
       float tr = col[0], tg = col[1], tb = col[2];
       if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
       float flash = alive && hurtCooldown > 0 && hurtCooldown <= 30 && (hurtCooldown % 6 < 3) ? .65f : 0;
@@ -751,7 +755,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                   tg * light * (1 - flash) + flash * .65f,
                   tb * light * (1 - flash) + flash * .65f, col[3]);
       double drawY = alive ? sprY + r * pixel
-                           : sprY + (SPR_H - 2) * pixel + (r / 4) * pixel * .45;
+                           : sprY + (spriteHeight - 2) * pixel + (r / 4) * pixel * .45;
       glSolidDev(sprX + c * pixel, drawY, run * pixel, alive ? pixel : pixel * .45);
       c += run;
     }
@@ -770,7 +774,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     }
   }
   if (alive && heldItemKind == IK_BOW) {
-    double physicalSpriteW = SPR_W * SPR_PIXEL_SCALE;
+    double physicalSpriteW = spriteWidth * art.pixelScale;
     double bx = sprX + (facing > 0 ? physicalSpriteW + .3 : -1.3) * cell;
     double by = sprY + 3.2 * cell;
     glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
@@ -1415,159 +1419,13 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtCooldown, double shelterCharge, float light,
                     int camCol, int camRow) {
-  static_assert(CRA_COUNT == 20
-                && CRA_MINNOW == 0 && CRA_PIKE == 1 && CRA_FOX == 2
-                && CRA_HARE == 3 && CRA_CRAWLER == 4 && CRA_MOLE == 5
-                && CRA_BIRD == 6 && CRA_DYNAMITEER == 7
-                && CRA_BORE_SENTINEL == 8 && CRA_CAUSTIC_MORTARMAN == 9
-                && CRA_CLUSTER_WASP == 10 && CRA_MINIGUNNER == 11
-                && CRA_SURVEYOR == 12 && CRA_SHIELD_ANCHOR == 13
-                && CRA_QUARRY_FOREMAN == 14 && CRA_REACTOR_WARDEN == 15
-                && CRA_REACTOR_CORE == 16 && CRA_IRIS_COMMANDER == 17
-                && CRA_IRIS_ENGINEER == 18 && CRA_VILLAGER == 19,
-                "Creature render asset order must match palette and sprite rows");
-  static const float pal[CRA_COUNT][6][4] = {
-    {{0,0,0,0},{12/255.f,31/255.f,43/255.f,1},{37/255.f,111/255.f,137/255.f,1},{74/255.f,174/255.f,180/255.f,1},{157/255.f,226/255.f,201/255.f,1},{244/255.f,218/255.f,104/255.f,1}},
-    {{0,0,0,0},{20/255.f,29/255.f,27/255.f,1},{46/255.f,91/255.f,58/255.f,1},{80/255.f,139/255.f,72/255.f,1},{151/255.f,188/255.f,92/255.f,1},{238/255.f,199/255.f,72/255.f,1}},
-    {{0,0,0,0},{39/255.f,25/255.f,23/255.f,1},{123/255.f,52/255.f,32/255.f,1},{204/255.f,89/255.f,42/255.f,1},{244/255.f,154/255.f,70/255.f,1},{244/255.f,225/255.f,184/255.f,1}},
-    {{0,0,0,0},{40/255.f,29/255.f,31/255.f,1},{131/255.f,94/255.f,72/255.f,1},{194/255.f,151/255.f,112/255.f,1},{237/255.f,207/255.f,166/255.f,1},{241/255.f,125/255.f,133/255.f,1}},
-    {{0,0,0,0},{22/255.f,20/255.f,28/255.f,1},{61/255.f,43/255.f,76/255.f,1},{105/255.f,70/255.f,124/255.f,1},{159/255.f,110/255.f,169/255.f,1},{100/255.f,224/255.f,184/255.f,1}},
-    {{0,0,0,0},{29/255.f,25/255.f,28/255.f,1},{75/255.f,59/255.f,58/255.f,1},{126/255.f,99/255.f,88/255.f,1},{186/255.f,153/255.f,126/255.f,1},{238/255.f,183/255.f,185/255.f,1}},
-    {{0,0,0,0},{24/255.f,28/255.f,42/255.f,1},{54/255.f,99/255.f,160/255.f,1},{91/255.f,157/255.f,211/255.f,1},{174/255.f,218/255.f,239/255.f,1},{247/255.f,179/255.f,69/255.f,1}},
-    {{0,0,0,0},{28/255.f,24/255.f,22/255.f,1},{76/255.f,54/255.f,43/255.f,1},{139/255.f,91/255.f,51/255.f,1},{240/255.f,174/255.f,61/255.f,1},{194/255.f,47/255.f,39/255.f,1}},
-    {{0,0,0,0},{17/255.f,23/255.f,29/255.f,1},{48/255.f,62/255.f,72/255.f,1},{80/255.f,108/255.f,116/255.f,1},{57/255.f,211/255.f,201/255.f,1},{228/255.f,255/255.f,222/255.f,1}},
-    {{0,0,0,0},{17/255.f,27/255.f,18/255.f,1},{43/255.f,67/255.f,37/255.f,1},{91/255.f,111/255.f,49/255.f,1},{139/255.f,201/255.f,45/255.f,1},{218/255.f,248/255.f,113/255.f,1}},
-    {{0,0,0,0},{29/255.f,22/255.f,18/255.f,1},{86/255.f,53/255.f,24/255.f,1},{211/255.f,125/255.f,28/255.f,1},{248/255.f,199/255.f,55/255.f,1},{126/255.f,213/255.f,231/255.f,1}},
-    {{0,0,0,0},{16/255.f,24/255.f,32/255.f,1},{49/255.f,66/255.f,79/255.f,1},{99/255.f,120/255.f,135/255.f,1},{214/255.f,173/255.f,68/255.f,1},{255/255.f,93/255.f,34/255.f,1}},
-    {{0,0,0,0},{14/255.f,24/255.f,29/255.f,1},{27/255.f,76/255.f,76/255.f,1},{44/255.f,141/255.f,132/255.f,1},{101/255.f,220/255.f,197/255.f,1},{237/255.f,180/255.f,134/255.f,1}},
-    {{0,0,0,0},{10/255.f,18/255.f,25/255.f,1},{43/255.f,58/255.f,68/255.f,1},{85/255.f,110/255.f,120/255.f,1},{75/255.f,228/255.f,236/255.f,1},{218/255.f,252/255.f,255/255.f,1}},
-    {{0,0,0,0},{18/255.f,21/255.f,25/255.f,1},{80/255.f,86/255.f,91/255.f,1},{186/255.f,194/255.f,190/255.f,1},{245/255.f,244/255.f,225/255.f,1},{255/255.f,116/255.f,35/255.f,1}},
-    {{0,0,0,0},{16/255.f,15/255.f,20/255.f,1},{74/255.f,27/255.f,31/255.f,1},{165/255.f,51/255.f,49/255.f,1},{69/255.f,222/255.f,229/255.f,1},{225/255.f,244/255.f,241/255.f,1}},
-    {{0,0,0,0},{11/255.f,17/255.f,22/255.f,1},{39/255.f,53/255.f,61/255.f,1},{76/255.f,102/255.f,108/255.f,1},{70/255.f,224/255.f,235/255.f,1},{255/255.f,116/255.f,29/255.f,1}},
-    {{0,0,0,0},{13/255.f,21/255.f,33/255.f,1},{23/255.f,54/255.f,99/255.f,1},{41/255.f,91/255.f,151/255.f,1},{233/255.f,190/255.f,68/255.f,1},{230/255.f,172/255.f,127/255.f,1}},
-    {{0,0,0,0},{22/255.f,19/255.f,18/255.f,1},{113/255.f,48/255.f,24/255.f,1},{205/255.f,89/255.f,32/255.f,1},{74/255.f,211/255.f,205/255.f,1},{224/255.f,160/255.f,113/255.f,1}},
-    {{0,0,0,0},{38/255.f,27/255.f,22/255.f,1},{74/255.f,55/255.f,43/255.f,1},{91/255.f,132/255.f,69/255.f,1},{213/255.f,157/255.f,63/255.f,1},{226/255.f,171/255.f,128/255.f,1}},
-  };
-  static const char* const humanGrids[4][10] = {
-    {"000111000","001555100","001545100","000353000","001333100",
-     "010343010","000222000","000202000","002202200","022000220"},
-    {"000111000","001555100","001545100","000353000","001333100",
-     "010343001","000222000","000220000","002002000","022000220"},
-    {"000111000","001555100","001545100","000353000","001333100",
-     "100343010","000222000","000022000","000200200","022000220"},
-    {"000111000","001555100","001545100","000353010","001333010",
-     "001343110","000222000","000202000","002202200","022000220"},
-  };
-  static const char* const grids[CRA_COUNT][4][7] = {
-    {// minnow: a forked tail and alternating body bend
-     {"0000000000000","0000003000000","0100333332100","0112233444510","0100333332100","0000003000000","0000000000000"},
-     {"0100000000000","0110033000000","0011333332100","0002233444510","0000333332100","0000003000000","0000000000000"},
-     {"0000000000000","0000003000000","0000333332100","0112233444510","0100333332100","0100003000000","0000000000000"},
-     {"0000000000000","0000003000000","0000333332100","0002233444510","0011333332100","0110033000000","0100000000000"}},
-    {// pike: long-backed predator with swept fins and a bright eye
-     {"0000033000000","0100333332210","0112233334441","0012333444551","0112233334441","0100333332210","0000033000000"},
-     {"0100003300000","0110033332210","0012233334441","0002333444551","0012233334441","0000333332210","0000003300000"},
-     {"0000003300000","0000333332210","0012233334441","0102333444551","0112233334441","0100033332210","0000003300000"},
-     {"0000003300000","0000333332210","0012233334441","0002333444551","0012233334441","0110033332210","0100003300000"}},
-    {// fox: pointed muzzle, ears, white throat, brush tail, four-beat trot
-     {"0000000003030","0000000034340","5500023333451","4555223333351","0343333333500","0001200120000","0011000011000"},
-     {"0000000003030","0000000034340","0550023333451","4555223333351","0343333333500","0000121200000","0001100110000"},
-     {"0000000003030","0000000034340","0000023333451","0555223333351","4433333333500","0012000012000","0110000001100"},
-     {"0000000003030","0000000034340","0550023333451","4555223333351","0343333333500","0000210210000","0000110011000"}},
-    {// hare: tall ears and distinct crouch, launch, tuck, and landing poses
-     {"0000000400400","0000000450450","0000000450450","0042333334510","0442333333451","0002233332100","0011100011100"},
-     {"0000004004000","0000004504500","0000004504500","0042333334510","0442333333451","0022333322100","1111000001100"},
-     {"0000040040000","0000450450000","0000450450000","0004233334510","0042333333451","0001222111000","0000000000000"},
-     {"0000000400400","0000000450450","0000000450450","0042333334510","0442333333451","0002233301200","0001100001100"}},
-    {// cave crawler: armored segments, feelers, and an eight-leg ripple
-     {"0100000000010","0010000000100","0011222221100","0123454343210","0012233322100","0101010101010","1000100010001"},
-     {"0010000000100","0001000001000","0011222221100","0123454343210","0012233322100","0010101010100","0100010001001"},
-     {"0001000010000","0010000000100","0011222221100","0123454343210","0012233322100","1000100010001","0101010101010"},
-     {"0010000000100","0100000000010","0011222221100","0123454343210","0012233322100","0100010001001","0010101010100"}},
-    {// mole: velvet back, shovel paws, pink snout, and low digging gait
-     {"0000012221000","0001233333210","0012333333451","5123333444551","0122333333210","0005500055500","0001100001100"},
-     {"0000012221000","0001233333210","0012333333451","0512333444551","0122333333210","0055000550000","0011001100000"},
-     {"0000012221000","0001233333210","0012333333451","0051233444551","0122333333210","0550000055000","1100000001100"},
-     {"0000012221000","0001233333210","0012333333451","0512333444551","0122333333210","0005500550000","0011000011000"}},
-    {// bird: tucked body with a full upstroke-to-downstroke wing cycle
-     {"0100000000010","0120000000210","0012000002100","0001223451000","0000123210000","0000012100000","0000001000000"},
-     {"0000000000000","0011000011000","0012100121000","0001233451000","0000123210000","0000012100000","0000001000000"},
-     {"0000000000000","0000000000000","0000111110000","0001233451000","0012233321100","0122100122100","1100000000110"},
-     {"0000000000000","0000000000000","0001233451000","0012233321100","0122100122100","0110000001100","0000000000000"}},
-    {// dynamiteer: soot mask, heavy coat, and a visibly raised red bundle
-     {"0000011100000","0000123210000","0001233321000","0051233321550","0055222255000","0001122110000","0011000011000"},
-     {"0000011100000","0000123210000","0001233321000","0051233321550","0055222255000","0000112200000","0001100110000"},
-     {"0000555500000","0000544500000","0000011100000","0000123210000","0001233321000","0001122110000","0011000011000"},
-     {"0000000005550","0000011054450","0000123211100","0001233321000","0001122210000","0011000110000","0110000011000"}},
-    {// bore sentinel: plated walker whose cyan barrel blooms during charge/fire
-     {"0000222200000","0002333320000","0012333444111","0012223332111","0001222222100","0011000011000","0110000001100"},
-     {"0000222200000","0002333320000","0012333444111","0012223332111","0001222222100","0000110110000","0011000001100"},
-     {"0000222200000","0002333320000","0012334555111","0012223444111","0001222222100","0000110110000","0011000001100"},
-     {"0000222200005","0002333320055","0012334555555","0012223444055","0001222222005","0011000011000","0110000001100"}},
-    {// caustic mortarman: hunched chem-trooper, tank, and lime mortar tube
-     {"0000011110000","0000122221100","0001233332450","0012233344550","0012223332100","0011000011000","0110000001100"},
-     {"0000011110000","0000122221100","0001233332450","0012233344550","0012223332100","0000110110000","0011000001100"},
-     {"0000001144500","0000012244550","0000123332450","0012233332100","0012222222100","0000110110000","0011000001100"},
-     {"0000001144555","0000012244555","0000123332450","0012233332100","0012222222100","0011000011000","0110000001100"}},
-    {// cluster wasp: striped armored abdomen, glassy wings, bomb carriage
-     {"0100000000010","0150000000510","0011223221100","0002334434500","0001223221100","0000101010000","0000000000000"},
-     {"0000000000000","0011500511000","0001522510000","0002334434500","0001223221100","0000101010000","0000000000000"},
-     {"0000000000000","0000111100000","0015223225100","0152334434550","0101223220100","0000134310000","0000011100000"},
-     {"0000000000000","0011500511000","0001522510000","0002334434555","0001223221100","0000101010000","0000000000000"}},
-    {// minigunner: armored gunner, brass feed, rotary cage, and firing bloom
-     {"0000011100000","0000123210000","0001233321000","0012333441000","0012222341000","0011000011000","0110000001100"},
-     {"0000011100000","0000123210000","0001233321000","0012333441000","0012222341000","0000110110000","0011000001100"},
-     {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0000110110000","0011000001100"},
-     {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0011000011000","0110000001100"}},
-    {// surveyor: exposed human face, teal pressure suit, backpack, and walking cycle
-     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0001200210000","0011000011000"},
-     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0000121200000","0001100110000"},
-     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0012000012000","0110000001100"},
-     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334445100","0011000110000","0110000011000"}},
-    {// shield anchor: tripod generator with animated containment rings
-     {"0000004000000","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
-     {"0000444444000","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
-     {"0044444444400","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
-     {"0444400044440","0004445444000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"}},
-    {// lunar foreman: white industrial exosuit, orange visor, gravity shoulder pod
-     {"0022200000000","0233322222000","0234455443200","0123444432210","0012333332100","0112000021100","1100000000110"},
-     {"0022500000000","0234522222000","0234455443200","0123444432210","0012333332100","0011200211000","0110000011000"},
-     {"0002520000000","0023432222000","0234455443200","1234444432210","0012333332100","0001122110000","0011000011000"},
-     {"0022555555000","0234455555500","0234455443200","0123444432210","0012333332100","0112000021100","1100000000110"}},
-    {// reactor warden: asymmetrical crimson exosuit and luminous chest core
-     {"0002211122000","0023322233200","0233444433210","1233444443321","1233333333321","0112000021100","1100000000110"},
-     {"0002211122000","0023322433200","0233444433210","1233444443321","1233333333321","0011200211000","0110000011000"},
-     {"0002211122000","0023344433200","0233444433210","1233444444321","1233333333321","0001122110000","0011000011000"},
-     {"0002255522000","0023455433200","0233444433210","1233444444321","1233333333321","0112000021100","1100000000110"}},
-    {// reactor core: containment column, side coils, and increasingly unstable plasma
-     {"0012222222100","0123333333210","1234444444321","1234455444321","1234444444321","0123333333210","0012222222100"},
-     {"0012222222100","0123334333210","1234455444321","1234555544321","1234455444321","0123334333210","0012222222100"},
-     {"0012222222100","0123344433210","1234555544321","1234555544321","1234555544321","0123344433210","0012222222100"},
-     {"0512222222150","0153344433510","1234555544321","1234555544321","1234555544321","0153344433510","0512222222150"}},
-    {// Kestrel commander: human face, silver hair, navy uniform, gold rank trim
-     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0001200210000","0011000011000"},
-     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0000121200000","0001100110000"},
-     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0012000012000","0110000001100"},
-     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344445100","0011000110000","0110000011000"}},
-    {// Kestrel engineer: human face, orange coveralls, cyan wrist display, tool belt
-     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0001200210000","0011000011000"},
-     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0000121200000","0001100110000"},
-     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0012000012000","0110000001100"},
-     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344445100","0011000110000","0110000011000"}},
-    {// villager fallback; human NPCs render through the upright grid
-     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0001200210000","0011000011000"},
-     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0000121200000","0001100110000"},
-     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0012000012000","0110000001100"},
-     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334445100","0011000110000","0110000011000"}},
-  };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
   const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
-  int spriteId = creatureRenderProfile(speciesDef).asset;
-  int paletteId = spriteId;
+  const auto& art = E.content.creatureArt[(size_t)speciesId];
+  if (!art.width || !art.height) return;
   bool humanNpc = speciesDef.humanNpc;
-  const int sw = humanNpc ? 9 : 13;
-  const int sh = humanNpc ? 10 : 7;
+  const double sw = art.width * art.scale, sh = art.height * art.scale;
   double cell = glCellDev;
   if (spawnProgress > 0) {
     // A deterministic pixel breach: two counter-rotating broken rings tighten
@@ -1831,11 +1689,11 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   }
   double pixelH = (alive || departing) ? cell : cell * 0.42;
   double corpseBase = sy + sh * cell;
-  for (int r = 0; r < sh; r++) for (int c = 0; c < sw; c++) {
-    int idx = (humanNpc ? humanGrids[frame][r][c]
-                        : grids[spriteId][frame][r][c]) - '0';
-    if (idx <= 0 || idx >= 6) continue;
-    int cc = facing >= 0 ? c : sw - 1 - c; const float* col = pal[paletteId][idx];
+  for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width; c++) {
+    int idx = art.pixels[(frame * art.height + r) * art.width + c];
+    if (idx <= 0 || idx >= (int)art.palette.size()) continue;
+    int cc = facing >= 0 ? c : art.width - 1 - c;
+    const float* col = art.palette[(size_t)idx].data();
     if (departing && ((r * 7 + c * 13) % 23) / 23.0 < departure) continue;
     float fade = (alive || departing) ? 1.0f : 0.55f;
     float flash = hurtCooldown > 0 && alive ? .6f : 0;
@@ -1845,8 +1703,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       col[1] * fade * light * (1 - flash - beamTint * .5f) + flash + beamTint * .5f,
       col[2] * fade * light * (1 - flash - beamTint * .5f) + flash + beamTint * .5f,
       col[3] * (float)(1 - departure));
-    double drawY = (alive || departing) ? sy + r * cell : corpseBase - (sh - r) * pixelH;
-    glSolidDev(sx + cc * cell, drawY, cell, pixelH);
+    double drawY = (alive || departing) ? sy + r * cell * art.scale : corpseBase - (art.height - r) * pixelH * art.scale;
+    glSolidDev(sx + cc * cell * art.scale, drawY, cell * art.scale, pixelH * art.scale);
   }
   if (alive && behavior.weaponOverlay == CWO_MINIGUN) {
     // Draw the active weapon over the body sprite so its grip remains attached
@@ -2443,7 +2301,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   glBindVertexArray(glc->vao);
   glActiveTexture(GL_TEXTURE0);
   glUniform1i(glc->uTex, 0);
-  glDrawCells(glTexBg, GL_BG_TINT, 0, 1);                  // background first (darker, opaque cells)
+  glDrawCells(glTexBg, E.planetId == PL_FRONTIER ? E.content.backgroundTint : GL_BG_TINT, 0, 1);
   // Hide the 1px gutter when cells are tiny — a solid grid would wash out the scene.
   int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
   glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg

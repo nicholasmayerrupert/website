@@ -207,6 +207,17 @@ component registration, and restoration. Browser presentation exposes
   pass entirely. Connectivity and ownership repair use dense generation stamps.
   Damage to joint foreground/background bodies batches geometry reconstruction
   until all erasures for the tick are known.
+- Stable-slot cuts that leave component identities intact validate existing
+  adjacency edges through a surviving contact on the smaller component. Real
+  splits rebuild incident edges; connectivity floods retain their exact order.
+- Cross-layer raster validation uses conservative 16x16 body/terrain bins to
+  restrict large sparse footprints to possible conflicts. Small or densely
+  overlapping footprints use the full scan. Invariant builds compare both the
+  validity result and violating-body set against the full reference validator.
+- Ordinary force sampling skips neutronium-only emitter lists; nearest-source
+  attraction retains its own indexed query and target/body eligibility rules.
+- Final fluid-pressure writeback evaluates the body-boundary operator directly
+  to compute impulses. Krylov iterations retain the complete pressure operator.
 - A conservative tick-level candidate graph gives disconnected rigid islands
   independent substep cadences. Contact islands receive size-based solver
   budgets, bottom-up stack ordering, and coupled two-point solves for long

@@ -1527,7 +1527,7 @@ void ComponentSystem::trimTrailingComponentTombstones(Layer& lay) {
 // Remove only incident graph edges, discover the changed slots' new contacts,
 // and leave every untouched component index intact.
 void ComponentSystem::patchStableComponentTopology(
-    Layer& lay, const std::vector<int>& changedSlots) {
+    Layer& lay, const std::vector<int>& changedSlots, bool removalOnly) {
   std::vector<uint8_t>& changed = cgChangedComponents;
   changed.assign(lay.components.size(), 0);
   for (int slot : changedSlots)
@@ -1536,8 +1536,28 @@ void ComponentSystem::patchStableComponentTopology(
     std::remove_if(lay.compAdjPairs.begin(), lay.compAdjPairs.end(),
       [&](uint64_t packed) {
         int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
-        return (a >= 0 && a < (int)changed.size() && changed[a])
+        bool touched = (a >= 0 && a < (int)changed.size() && changed[a])
           || (b >= 0 && b < (int)changed.size() && changed[b]);
+        if (!touched || !removalOnly) return touched;
+        // Removing cells without splitting slots can only remove graph edges.
+        // One surviving contact proves an old edge; search the smaller side.
+        if (lay.components[a].cells.size() > lay.components[b].cells.size())
+          std::swap(a, b);
+        cgPatchEdges.clear();
+        for (int k : lay.components[a].cells) {
+          int y = k / E.cols, x = k - y * E.cols;
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            int nx = x + ox, ny = y + oy;
+            if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+            int nk = ny * E.cols + nx;
+            if (lay.cellComp[nk] != b) continue;
+            appendComponentAdjacencyEdge(lay, k, x, nk, nx, a, cgPatchEdges,
+                                         (int)lay.components.size());
+            if (!cgPatchEdges.empty()) return false;
+          }
+        }
+        return true;
       }),
     lay.compAdjPairs.end());
 
@@ -1547,7 +1567,7 @@ void ComponentSystem::patchStableComponentTopology(
 
   cgPatchEdges.clear();
   const int32_t* const cc = lay.cellComp.data();
-  for (int slot : changedSlots) {
+  if (!removalOnly) for (int slot : changedSlots) {
     if (slot < 0 || slot >= (int)lay.components.size()) continue;
     for (int k : lay.components[slot].cells) {
       int y = k / E.cols, x = k - y * E.cols;
@@ -1583,6 +1603,16 @@ void ComponentSystem::patchStableComponentTopology(
   }
   lay.componentIndexExact = true;
   lay.compsReshaped = false;
+#ifdef SAND_INVARIANT_CHECKS
+  if (removalOnly) {
+    const auto patchedEdges = lay.compAdjPairs;
+    patchStableComponentTopology(lay, changedSlots, false);
+    if (patchedEdges != lay.compAdjPairs) {
+      emscripten_console_error("REMOVAL-ONLY COMPONENT ADJACENCY MISMATCH");
+      abort();
+    }
+  }
+#endif
 }
 
 // Repair an exact pre-cut component index in place. Each touched slot is rebuilt
@@ -1722,7 +1752,8 @@ bool ComponentSystem::splitRigidAfterStableErase(
     }
   }
 
-  patchStableComponentTopology(lay, changedSlots);
+  patchStableComponentTopology(lay, changedSlots,
+                               changedSlots.size() == touchedSlots.size());
   lay.groundDirty = !groundingPreserved;
   lay.groundContentDirty = false;
   lay.blastSparseCarryReady = !lay.componentCarryDirty;

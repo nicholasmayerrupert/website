@@ -6,7 +6,7 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const COLS = 220, ROWS = 160, SEED = 0xBED;
+const COLS = 256, ROWS = 256, SEED = 0xBED;
 const PLAYER_CLEAR = 11;
 await initSandWasm();
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
@@ -190,12 +190,14 @@ function surfaceMasonryComponents(g, engine) {
             && g[surface * COLS + x + dx] === MAT.SAND;
         }
         tally.looseStreetApproaches += looseStreet;
-        let colliding = false;
+        // A duplicated fixture contributes a run of foreground cells. An
+        // isolated roof-edge cell is not a foreground lamp post.
+        let foregroundFixtureCells = 0;
         for (let dx = -3; dx <= 3; dx++)
-          colliding ||= g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.CRYSTAL;
+          foregroundFixtureCells += g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.CRYSTAL ? 1 : 0;
         for (let dy = 1; dy <= 9; dy++)
-          colliding ||= g[(y + dy) * COLS + x] === MAT.PINE_WOOD || g[(y + dy) * COLS + x] === MAT.CRYSTAL;
-        tally.collidingStreetLamps += colliding;
+          foregroundFixtureCells += g[(y + dy) * COLS + x] === MAT.PINE_WOOD || g[(y + dy) * COLS + x] === MAT.CRYSTAL ? 1 : 0;
+        tally.collidingStreetLamps += foregroundFixtureCells >= 4;
       }
       e.shiftWorldXY(128, 0);
     }
@@ -390,9 +392,16 @@ function surfaceMasonryComponents(g, engine) {
 // --- a ruin region is byte-identical across streaming (seam determinism) ---
 {
   const e = mk();
-  // locate a ruin in the current buffer
+  // Find an actual underground structure independently of the spawn window.
+  e.shiftWorldXY(0, 96);
   let bx = -1, by = -1;
-  { const g = e.getGrid(); for (let i = 0; i < g.length; i++) if (g[i] === MAT.BRICK) { bx = i % COLS; by = (i / COLS) | 0; break; } }
+  for (let band = 0; band < 30 && bx < 0; band++) {
+    const g = e.getGrid();
+    for (let y = 9; y < ROWS - 16 && bx < 0; y++) for (let x = 13; x < COLS - 17; x++) {
+      if (g[y * COLS + x] === MAT.BRICK) { bx = x; by = y; break; }
+    }
+    if (bx < 0) e.shiftWorldXY(128, 0);
+  }
   check('found a ruin to test', bx >= 0);
   const wx0 = e.getWorldOffsetX() + bx - 12, wy0 = e.getWorldOffsetY() + by - 8, W = 28, H = 24;
   const snap = (en) => {

@@ -1,3 +1,4 @@
+import { FRONTIER_JOBS } from '../campaign/frontier.js';
 import {
   ITEM_KIND,
   MISSION,
@@ -7,6 +8,7 @@ import {
 } from '../wasmBridge/abi.generated.js';
 
 const MISSION_NAMES = Object.freeze({
+  [MISSION.FRONTIER]: 'Aster Valley',
   [MISSION.GREENFALL_RECOVERY]: 'Greenfall Relay',
   [MISSION.SILENT_QUARRY]: 'Operation Silent Quarry',
   [MISSION.RED_FURNACE]: 'Operation Red Furnace',
@@ -43,6 +45,7 @@ const HUD_CSS = `
 .sg-mission-markers { position:absolute; inset:0; z-index:70; overflow:hidden; pointer-events:none; }
 .sg-mission-marker { position:absolute; left:0; top:0; display:grid; justify-items:center; min-width:48px;
   color:#f0d465; filter:drop-shadow(2px 2px 0 #080a0c); will-change:transform; }
+.sg-mission-marker[hidden], .sg-mission-hud[hidden] { display:none; }
 .sg-mission-marker .arrow { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent;
   border-left:9px solid currentColor; transform-origin:center; }
 .sg-mission-marker .range { margin-top:3px; padding:2px 4px; background:rgba(8,10,12,.78);
@@ -68,6 +71,7 @@ const GREENFALL_LABELS = [
   'Return to the landing beacon',
 ];
 function objectiveLabel(objective, missionId) {
+  if (missionId === MISSION.FRONTIER) return FRONTIER_JOBS[objective.id]?.title || 'Explore the valley';
   if (missionId === MISSION.GREENFALL_RECOVERY)
     return GREENFALL_LABELS[objective.id] || 'Follow the signal';
   return OBJECTIVE_LABELS[objective.type] || 'Complete the objective';
@@ -168,6 +172,8 @@ export function createMissionHud(root, game) {
     for (const objective of snapshot.objectives) {
       const node = markerNodes.get(objective.id);
       if (!node) continue;
+      const tracked = Number(root.host?.dataset.trackedObjective ?? 0);
+      node.marker.hidden = snapshot.missionId === MISSION.FRONTIER && objective.id !== tracked;
       const rawX =
         ((objective.worldX - view.cameraWorldX) / view.viewCols) * width;
       const rawY =
@@ -186,7 +192,7 @@ export function createMissionHud(root, game) {
       const dy = Number.isFinite(view.playerWorldY)
         ? objective.worldY - view.playerWorldY
         : objective.worldY - (view.cameraWorldY + view.viewRows * 0.5);
-      node.range.textContent = `${objective.type === OBJECTIVE_KIND.EXTRACT ? 'KESTREL' : objective.type === OBJECTIVE_KIND.RESCUE ? 'RESEARCHER' : objective.type === OBJECTIVE_KIND.ANCHOR ? 'JAMMER' : 'SENTRY'} · ${Math.round(Math.hypot(dx, dy))}m`;
+      node.range.textContent = `${snapshot.missionId === MISSION.FRONTIER ? objectiveLabel(objective, snapshot.missionId) : objective.type === OBJECTIVE_KIND.EXTRACT ? 'KESTREL' : objective.type === OBJECTIVE_KIND.RESCUE ? 'RESEARCHER' : objective.type === OBJECTIVE_KIND.ANCHOR ? 'JAMMER' : 'SENTRY'} · ${Math.round(Math.hypot(dx, dy))}m`;
     }
   };
 
@@ -212,6 +218,7 @@ export function createMissionHud(root, game) {
     threat.textContent = next.threatLevel
       ? 'Reinforcements inbound · keep moving'
       : '';
+    panel.hidden = next.missionId === MISSION.FRONTIER;
     list.replaceChildren();
     for (const objective of next.objectives) {
       const row = document.createElement('li');

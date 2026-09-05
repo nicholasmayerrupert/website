@@ -50,6 +50,8 @@ assert.equal(normalizeReplayInit({
   weatherId: WEATHER.RAIN,
 }).weatherId, WEATHER.CLEAR);
 
+assert.deepEqual(normalizeReplayMessage({ type: 'intent', intent: 'repair-base' }), { type: 'intent', intent: 'repair-base' });
+
 const events = [
   {
     tick: 12,

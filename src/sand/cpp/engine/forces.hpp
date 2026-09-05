@@ -72,6 +72,7 @@ class ForceSystem {
   struct BinLink { int emitter = -1, next = -1; };
   struct GeometryPoint { float x = 0, y = 0; int emitter = -1; };
   struct LayerState {
+    bool hasOrdinaryEmitters = false;
     std::vector<ForceEmitter> emitters;
     std::vector<GeometryPoint> neutroniumPoints;
     std::vector<int> binHeads;

@@ -87,12 +87,20 @@
     fluidSolvePinned[componentFirst[c]] = 1;
     hasPinned = true;
   }
-  auto applyPressureOperator = [&](const double* value,
-                                   std::vector<double>& output) {
-    std::fill(output.begin(), output.end(), 0);
+  auto applyBodyPressure = [&](const double* value) {
     std::fill(fluidBodyDVX.begin(), fluidBodyDVX.end(), 0);
     std::fill(fluidBodyDVY.begin(), fluidBodyDVY.end(), 0);
     std::fill(fluidBodyDW.begin(), fluidBodyDW.end(), 0);
+    for (const FluidBodyOperatorFace& face : fluidBodyOperatorFaces) {
+      double impulse = value[face.a];
+      fluidBodyDVX[face.body] += impulse * face.nx * face.inverseMass;
+      fluidBodyDVY[face.body] += impulse * face.ny * face.inverseMass;
+      fluidBodyDW[face.body] += impulse * face.cross * face.inverseInertia;
+    }
+  };
+  auto applyPressureOperator = [&](const double* value,
+                                   std::vector<double>& output) {
+    std::fill(output.begin(), output.end(), 0);
     for (const FluidOperatorFace& face : fluidOperatorFaces) {
       if (face.b >= 0) {
         double delta =
@@ -103,12 +111,7 @@
         output[face.a] += value[face.a] * face.inverseDensity;
       }
     }
-    for (const FluidBodyOperatorFace& face : fluidBodyOperatorFaces) {
-      double impulse = value[face.a];
-      fluidBodyDVX[face.body] += impulse * face.nx * face.inverseMass;
-      fluidBodyDVY[face.body] += impulse * face.ny * face.inverseMass;
-      fluidBodyDW[face.body] += impulse * face.cross * face.inverseInertia;
-    }
+    applyBodyPressure(value);
     for (const FluidBodyOperatorFace& face : fluidBodyOperatorFaces) {
       output[face.a] += fluidBodyDVX[face.body] * face.nx
                       + fluidBodyDVY[face.body] * face.ny
@@ -286,7 +289,8 @@
   double writebackStart = emscripten_get_now();
   for (int i = 0; i < nodeCount; i++)
     fluidNodes[i].pressure = fluidSolvePressure[i];
-  applyPressureMatrix(false);
+  // Final impulses need only the body faces; no fluid matrix result is consumed.
+  applyBodyPressure(fluidSolvePressure.data());
   for (int i = 0; i < (int)bodies.size(); i++) {
     Body* body = bodies[i];
     if (fluidBodyDVX[i] == 0 && fluidBodyDVY[i] == 0 && fluidBodyDW[i] == 0) continue;

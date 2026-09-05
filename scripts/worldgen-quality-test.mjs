@@ -199,6 +199,49 @@ function caveReach(e, region) {
     oversizedMouths === 0 && straightMouths === 0);
 }
 
+// Connectivity must carry the player's whole body, not just a one-cell flood.
+{
+  const width = 512, height = 820, x0 = -128, y0 = -300, stride = width + 1;
+  let failures = 0;
+  for (const seed of [0, 0xBED, 0xBEEF]) {
+    const e = mk(128, 128, seed);
+    const blocked = new Int32Array((height + 1) * stride);
+    const surfaces = Array.from({ length: width }, (_, x) => e.worldSurfaceAbsAt(x0 + x));
+    for (let y = 0; y < height; y++) {
+      let row = 0;
+      for (let x = 0; x < width; x++) {
+        const wy = y0 + y;
+        row += wy >= surfaces[x] && !e.worldIsCaveAt(0, x0 + x, wy) ? 1 : 0;
+        blocked[(y + 1) * stride + x + 1] = blocked[y * stride + x + 1] + row;
+      }
+    }
+    const fits = new Uint8Array(width * height), seen = new Uint8Array(fits.length);
+    for (let y = 9; y < height; y++) for (let x = 2; x < width - 3; x++) {
+      const x1 = x - 2, x2 = x + 3, top = y - 9;
+      const walls = blocked[y * stride + x2] - blocked[top * stride + x2]
+        - blocked[y * stride + x1] + blocked[top * stride + x1];
+      fits[y * width + x] = walls === 0 ? 1 : 0;
+    }
+    const queue = new Int32Array(fits.length);
+    let head = 0, tail = 0, deepest = y0;
+    for (let x = 2; x < width - 3; x++) {
+      const i = 9 * width + x;
+      if (fits[i]) { seen[i] = 1; queue[tail++] = i; }
+    }
+    while (head < tail) {
+      const i = queue[head++], x = i % width, y = Math.floor(i / width);
+      deepest = Math.max(deepest, y0 + y);
+      for (const next of [x ? i - 1 : -1, x + 1 < width ? i + 1 : -1,
+        y ? i - width : -1, y + 1 < height ? i + width : -1]) {
+        if (next >= 0 && fits[next] && !seen[next]) { seen[next] = 1; queue[tail++] = next; }
+      }
+    }
+    if (deepest < 440) failures++;
+    e.destroy();
+  }
+  check(`cave routes fit a 5x9 player envelope from sky to depth 440 (${failures} failures)`, failures === 0);
+}
+
 // The background is a solid visual/support layer. Rare bounded recesses are
 // allowed, but they must not merge into broad cuts or form long thin lines.
 {

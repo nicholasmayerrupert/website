@@ -9,7 +9,7 @@ struct Engine;
 
 // Terrain, feature plans, and semantic identities are one compatibility unit.
 // Bump this when deterministic generation or feature containment changes.
-inline constexpr int WORLD_GENERATION_VERSION = 4;
+inline constexpr int WORLD_GENERATION_VERSION = 5;
 
 class TerrainGen {
  public:
@@ -19,7 +19,7 @@ class TerrainGen {
   // the loaded buffer: a seed names one canonical world at every viewport size.
   // The constants define one canonical world independent of viewport height.
   static constexpr int WORLDGEN_VERSION = WORLD_GENERATION_VERSION;
-  static constexpr int SURFACE_AMPLITUDE = 54;
+  static constexpr int SURFACE_AMPLITUDE = 88;
   static constexpr int SEA_LEVEL = 18;
   static constexpr int BASE_SOIL_DEPTH = 3;
   static constexpr int CAVE_SURFACE_BUFFER = 12;
@@ -131,4 +131,5 @@ class TerrainGen {
   CaveRegionPlan cavePlan(int region);
   bool taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
                               double startRadius, double endRadius, uint32_t salt);
+  bool descentContains(int x, int y, int ax, int ay, int bx, int by, uint32_t salt);
 };

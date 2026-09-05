@@ -9,6 +9,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const GOLDEN_BY_VERSION = Object.freeze({
   4: 0x713a6ff7,
+  5: 0x01bda828,
 });
 const SEEDS = [0, 0xBED, 0xC0FFEE];
 const WINDOWS = [

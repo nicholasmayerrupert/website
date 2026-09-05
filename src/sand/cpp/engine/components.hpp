@@ -117,7 +117,8 @@ class ComponentSystem {
   void detachComponentGroups(Layer& lay, const std::vector<std::vector<int>>& groups);
   void detachCrossLayerComponentGroups(
     const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups);
-  void patchStableComponentTopology(Layer& lay, const std::vector<int>& changedSlots);
+  void patchStableComponentTopology(Layer& lay, const std::vector<int>& changedSlots,
+                                    bool removalOnly = false);
   void trimTrailingComponentTombstones(Layer& lay);
   bool splitRigidAfterStableErase(const std::vector<int>& erased,
                                   bool deferJointRefresh);

@@ -53,6 +53,7 @@ const INTENT = Object.freeze({
   respawn: 6,
   add: 7,
   'set-player-state': 8,
+  'repair-base': 9,
 });
 const INTENT_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(INTENT).map(([name, code]) => [code, name]),
@@ -164,6 +165,7 @@ export function normalizeReplayMessage(data, survival = false) {
         case 'pick': intent.slot = data.slot | 0; intent.half = !!data.half; break;
         case 'throw': intent.whole = !!data.whole; break;
         case 'craft': intent.recipe = data.recipe | 0; intent.max = !!data.max; break;
+        case 'repair-base':
         case 'respawn': break;
         case 'add': intent.material = data.material | 0; intent.count = data.count | 0; break;
         case 'set-player-state': intent.state = copyReplayValue(data.state || {}); break;
@@ -385,6 +387,7 @@ function packIntent(message) {
     case 'pick': return [code, message.slot, message.half ? 1 : 0];
     case 'throw': return [code, message.whole ? 1 : 0];
     case 'craft': return [code, message.recipe, message.max ? 1 : 0];
+    case 'repair-base':
     case 'respawn': return [code];
     case 'add': return [code, message.material, message.count];
     case 'set-player-state': return [code, message.state || {}];
@@ -402,6 +405,7 @@ function unpackIntent(row) {
     case 'pick': return { type: 'intent', intent: name, slot: row[3], half: !!row[4] };
     case 'throw': return { type: 'intent', intent: name, whole: !!row[3] };
     case 'craft': return { type: 'intent', intent: name, recipe: row[3], max: !!row[4] };
+    case 'repair-base':
     case 'respawn': return { type: 'intent', intent: name };
     case 'add': return { type: 'intent', intent: name, material: row[3], count: row[4] };
     case 'set-player-state': return { type: 'intent', intent: name, state: row[3] || {} };

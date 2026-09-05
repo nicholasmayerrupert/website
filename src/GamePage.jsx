@@ -1,5 +1,4 @@
-// Fullscreen survival entry. Small screens do not mount the heavy engine because
-// the survival UI needs room for its mission, inventory, and movement controls.
+// Fullscreen Earth expedition and direct survival sandbox entry.
 
 import { useEffect } from 'react';
 import { useMediaQuery } from './hooks/useMediaQuery';
@@ -35,33 +34,22 @@ export default function GamePage() {
     const prev = document.title;
     document.title = DIRECT_SANDBOX
       ? 'Explosive Survival — Nicholas Mayer-Rupert'
-      : 'Greenfall Relay — IRIS';
+      : 'Aster — Earth Expedition';
     return () => { document.title = prev; };
   }, []);
 
+  if (!DIRECT_SANDBOX) return <SandCampaign />;
+
   if (isMobile) {
-    if (!DIRECT_SANDBOX) return (
-      <main className="iris-experience iris-mobile-entry">
-        <section>
-          <h1>Greenfall Relay</h1>
-          <p>Requires a larger screen, keyboard, and mouse.</p>
-          <a className="iris-button iris-secondary" href="/">Return to the site <span>↗</span></a>
-        </section>
-      </main>
-    );
     return (
       <div className="relative flex min-h-[100svh] w-full items-center justify-center bg-dark px-6 py-6 text-center">
         <div className="max-w-sm">
           <div className="mb-4 text-5xl">🖥️</div>
           <h1 className="mb-3 text-xl font-semibold text-white">
-            {DIRECT_SANDBOX
-              ? 'Explosive Survival is desktop-only for now'
-              : 'IRIS field operations are desktop-only for now'}
+            Explosive Survival is desktop-only for now
           </h1>
           <p className="text-sm leading-relaxed text-white/70">
-            {DIRECT_SANDBOX
-              ? 'Open this page on a larger screen with a mouse and keyboard to mine, build, fight, and tear through the simulated world.'
-              : 'Visit the Kestrel on a larger screen with a mouse and keyboard to deploy, mine, build, fight, and tear through simulated worlds.'}
+            Open this page on a larger screen with a mouse and keyboard to mine, build, fight, and tear through the simulated world.
           </p>
           <a
             href="/"
@@ -73,8 +61,6 @@ export default function GamePage() {
       </div>
     );
   }
-
-  if (!DIRECT_SANDBOX) return <SandCampaign />;
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">

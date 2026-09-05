@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 36;
 
-static const uint64_t ABI_FINGERPRINT = 0xe24a6e5bb601ULL;
+static const uint64_t ABI_FINGERPRINT = 0xc9a6fe8af069ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
@@ -960,6 +960,7 @@ enum PlanetId : uint8_t {
   PL_MOON = 1,
   PL_MARS = 2,
   PL_SHIP = 3,
+  PL_FRONTIER = 4,
 };
 
 static constexpr bool isPlanetIdValue(int value) {
@@ -968,13 +969,14 @@ static constexpr bool isPlanetIdValue(int value) {
     case PL_MOON:
     case PL_MARS:
     case PL_SHIP:
+    case PL_FRONTIER:
       return true;
     default: return false;
   }
 }
 
-static const int PLANET_COUNT = 4;
-static const uint32_t PLANET_ALL_MASK = 0xfu;
+static const int PLANET_COUNT = 5;
+static const uint32_t PLANET_ALL_MASK = 0x1fu;
 
 enum Biome : int {
   BIOME_PLAINS = 0,
@@ -1125,6 +1127,7 @@ enum MissionId : uint8_t {
   MI_GREENFALL_RECOVERY = 1,
   MI_SILENT_QUARRY = 2,
   MI_RED_FURNACE = 3,
+  MI_FRONTIER = 4,
 };
 
 static constexpr bool isMissionIdValue(int value) {
@@ -1133,6 +1136,7 @@ static constexpr bool isMissionIdValue(int value) {
     case MI_GREENFALL_RECOVERY:
     case MI_SILENT_QUARRY:
     case MI_RED_FURNACE:
+    case MI_FRONTIER:
       return true;
     default: return false;
   }
@@ -1165,6 +1169,9 @@ enum ObjectiveKind : uint8_t {
   OK_BOSS = 3,
   OK_CORE = 4,
   OK_EXTRACT = 5,
+  OK_PASSAGE = 6,
+  OK_DRAIN = 7,
+  OK_SURVEY = 8,
 };
 
 static constexpr bool isObjectiveKindValue(int value) {
@@ -1175,6 +1182,9 @@ static constexpr bool isObjectiveKindValue(int value) {
     case OK_BOSS:
     case OK_CORE:
     case OK_EXTRACT:
+    case OK_PASSAGE:
+    case OK_DRAIN:
+    case OK_SURVEY:
       return true;
     default: return false;
   }
@@ -1326,6 +1336,9 @@ inline constexpr std::array<PlanetDef, PLANET_COUNT> PLANETS = {{
   {PL_SHIP, "Ship", PGP_SHIP, OWMP_NONE, PPP_SHIP, 1, 0x1eu,
    1397246288u, 0u, 0u, 0u,
    IRON_ORE, IRON_ORE, LIGHT},
+  {PL_FRONTIER, "Frontier", PGP_EARTH, OWMP_NONE, PPP_EARTH, 1, 0x33u,
+   0u, 0u, 0u, 0u,
+   BRICK, STONE, LIGHT},
 }};
 
 constexpr bool planetTableIsComplete() {

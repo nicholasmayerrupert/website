@@ -1,26 +1,18 @@
-# IRIS campaign shell
+# Aster expedition presentation
 
-`/game` begins aboard the physical IRIS ship *Kestrel*. The ship is its own
-walkable `<sand-game planet="ship">` world with a protected authored hull,
-decks, rooms, transporter, and crew. React layers the mission terminal,
-briefing/loadout selection, deployment transition, and debrief over that world.
-A planetary deployment replaces the ship runtime with the mission runtime, so
-each transition tears down the prior worker, RAF, audio graph, and WebGL target.
-The terminal is closed by default and opens only from Commander Vale's
-world-space `TALK` conversation. It is a viewport-bounded console with its
-deploy action fixed in the header, leaving the Kestrel unobstructed between
-briefings.
+`/game` opens Aster Station inside one continuous Earth world. `frontier.js`
+contains the field jobs and sketch-map labels; `react/SandCampaign.jsx` owns
+presentation, pause, tracking, and the repair conversation. The engine owns
+physical objectives, rewards, terrain, and station repairs. Read
+[`../README.md`](../README.md#aster-continuous-earth-expedition) for the runtime map.
 
-`missions.js` contains display metadata and the bounded field-supply catalog.
-Simulation policy still belongs to C++: the mission id selects world generation,
-gravity, actors, objectives, extraction, and marker behavior.
+The station, western railway, drowned archive, and eastern observatory share
+normal world streaming and destruction. No mission transition recreates the
+world. The station repair intent preserves changes beyond station grounds.
 
-`campaignSave.js` persists small, versioned progression data under
-`sand-campaign-v1`. It stores completed missions, unlocked recovered weapons,
-preferred loadouts, and best times. An interrupted deployment stores only its
-mission configuration and seed; terrain and actor state are not a resumable save.
-Progress and recovered equipment commit only after an authoritative mission
-completion event.
+The current expedition lasts for one browser session. Reloading starts a fresh
+valley. The pause menu states this limitation.
 
-`/game?sandbox` keeps the direct survival entry for focused engine and browser
-diagnostics.
+`missions.js` and `campaignSave.js` serve the legacy operation catalogue and
+its small progression records. The Aster expedition does not read or write those
+records. `/game?sandbox` retains the direct survival entry for diagnostics.

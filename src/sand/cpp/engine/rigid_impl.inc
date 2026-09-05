@@ -1185,7 +1185,99 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     for (int k : rasterProjectionTouched) rasterProjectionOwner[k] = -1;
     rasterProjectionTouched.clear();
   };
-  auto assignmentValid = [&](std::vector<uint8_t>* violating) {
+  bool sparseWorldValidation = false;
+  for (WorldRasterNode& node : worldRasterNodes) {
+    for (Body* member : {node.foreground, node.background}) {
+      if (!member) continue;
+      ensureBodyRaster(member);
+      sparseWorldValidation |= member->rasterFootprint.size() >= 4096;
+    }
+  }
+  // A bin can reject claims only when no second node or static terrain can
+  // occupy it. Joint members contribute one node to each layer's broadphase.
+  constexpr int validationBinShift = 4;
+  constexpr int validationBinSize = 1 << validationBinShift;
+  const int validationCols = (E.cols + validationBinSize - 1) >> validationBinShift;
+  const int validationRows = (E.rows + validationBinSize - 1) >> validationBinShift;
+  const int validationBinCount = validationCols * validationRows;
+  std::array<std::vector<uint8_t>, 2> terrainBins, validationBins;
+  std::vector<int> validationOwners(validationBinCount, -1);
+  for (int layerIndex = 0; sparseWorldValidation && layerIndex < 2; layerIndex++) {
+    Layer& layer = layerIndex ? E.bg : E.fg;
+    terrainBins[layerIndex].assign(validationBinCount, 0);
+    for (int y = 0; y < E.rows; y++) for (int x = 0; x < E.cols; x++) {
+      if (layer.infinite && (x == 0 || x == E.cols - 1)) continue;
+      int k = y * E.cols + x;
+      if (layer.bodyOwner[k] >= 0) continue;
+      uint8_t material = layer.grid[k];
+      if (material != EMPTY && !E.isGasMaterial(material)
+          && !E.isBuoyantMedium(material))
+        terrainBins[layerIndex][(y >> validationBinShift) * validationCols
+          + (x >> validationBinShift)] = 1;
+    }
+  }
+  auto prepareValidationBins = [&]() {
+    for (int layerIndex = 0; layerIndex < 2; layerIndex++) {
+      validationBins[layerIndex] = terrainBins[layerIndex];
+      std::fill(validationOwners.begin(), validationOwners.end(), -1);
+      for (int nodeIndex = 0; nodeIndex < (int)worldRasterNodes.size(); nodeIndex++) {
+        WorldRasterNode& node = worldRasterNodes[nodeIndex];
+        auto addMember = [&](Body* member) {
+          if (!member) return;
+          ensureBodyRaster(member);
+          if (member->rasterFootprint.empty()) return;
+          const auto& bounds = member->rasterBounds;
+          for (int by = bounds[1] >> validationBinShift;
+               by <= (bounds[3] >> validationBinShift); by++) {
+            for (int bx = bounds[0] >> validationBinShift;
+                 bx <= (bounds[2] >> validationBinShift); bx++) {
+              int bin = by * validationCols + bx;
+              int& owner = validationOwners[bin];
+              if (owner < 0) owner = nodeIndex;
+              else if (owner != nodeIndex) validationBins[layerIndex][bin] = 1;
+            }
+          }
+        };
+        if (node.body->jointRole == 1) {
+          addMember(node.foreground);
+          addMember(node.background);
+        } else addMember(layerIndex ? node.background : node.foreground);
+      }
+    }
+  };
+  auto visitValidationCells = [&](Body* member, int layerIndex, bool sparse, auto&& visit) {
+    const auto& cells = member->rasterFootprint;
+    if (cells.empty()) return;
+    const auto& bounds = member->rasterBounds;
+    int bx0 = bounds[0] >> validationBinShift, bx1 = bounds[2] >> validationBinShift;
+    int by0 = bounds[1] >> validationBinShift, by1 = bounds[3] >> validationBinShift;
+    int riskBins = 0;
+    if (sparse && cells.size() >= 4096)
+      for (int by = by0; by <= by1; by++)
+        for (int bx = bx0; bx <= bx1; bx++)
+          riskBins += validationBins[layerIndex][by * validationCols + bx];
+    if (!sparse || cells.size() < 4096
+        || riskBins * 2 >= (bx1 - bx0 + 1) * (by1 - by0 + 1)) {
+      for (const BodyRasterCell& cell : cells) visit(cell);
+      return;
+    }
+    auto cursor = cells.begin();
+    for (int y = bounds[1]; y <= bounds[3]; y++) {
+      int binRow = (y >> validationBinShift) * validationCols;
+      for (int bx = bx0; bx <= bx1;) {
+        if (!validationBins[layerIndex][binRow + bx]) { bx++; continue; }
+        int x0 = bx * validationBinSize;
+        while (bx <= bx1 && validationBins[layerIndex][binRow + bx]) bx++;
+        int x1 = bx * validationBinSize;
+        int first = y * E.cols + x0;
+        cursor = std::lower_bound(cursor, cells.end(), first,
+          [&](const BodyRasterCell& cell, int key) { return cell.y * E.cols + cell.x < key; });
+        while (cursor != cells.end() && cursor->y == y && cursor->x < x1)
+          visit(*cursor++);
+      }
+    }
+  };
+  auto assignmentValidImpl = [&](std::vector<uint8_t>* violating, bool sparse) {
     if (violating)
       violating->assign(worldRasterNodes.size(), 0);
     bool valid = true;
@@ -1213,7 +1305,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         for (int memberIndex = 0; memberIndex < memberCount; memberIndex++) {
           Body* member = members[memberIndex];
           ensureBodyRaster(member);
-          for (const BodyRasterCell& cell : member->rasterFootprint) {
+          visitValidationCells(member, layerIndex, sparse, [&](const BodyRasterCell& cell) {
             int k = cell.y * E.cols + cell.x;
             int previous = rasterProjectionOwner[k];
             if (previous < 0) {
@@ -1225,7 +1317,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
                 rasterOverlapCount[previous] = 0;
               }
               if (++rasterOverlapCount[previous] <= R_STRUCTURE_RASTER_ALIAS_CELLS)
-                continue;
+                return;
               valid = false;
               if (violating) {
                 (*violating)[previous] = 1;
@@ -1234,19 +1326,33 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
             }
             if (layer.infinite
                 && (cell.x == 0 || cell.x == E.cols - 1))
-              continue;
-            if (layer.bodyOwner[k] >= 0) continue;
+              return;
+            if (layer.bodyOwner[k] >= 0) return;
             uint8_t material = layer.grid[k];
             if (material != EMPTY && !E.isGasMaterial(material)
                 && !E.isBuoyantMedium(material)) {
               valid = false;
               if (violating) (*violating)[nodeIndex] = 1;
             }
-          }
+          });
         }
       }
     }
     clearOwners();
+    return valid;
+  };
+
+  auto assignmentValid = [&](std::vector<uint8_t>* violating) {
+    if (sparseWorldValidation) prepareValidationBins();
+    bool valid = assignmentValidImpl(violating, sparseWorldValidation);
+#ifdef SAND_INVARIANT_CHECKS
+    std::vector<uint8_t> reference;
+    bool referenceValid = assignmentValidImpl(violating ? &reference : nullptr, false);
+    if (valid != referenceValid || (violating && *violating != reference)) {
+      emscripten_console_error("SPARSE WORLD RASTER VALIDATION MISMATCH");
+      abort();
+    }
+#endif
     return valid;
   };
 

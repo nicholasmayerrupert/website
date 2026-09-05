@@ -673,6 +673,12 @@
           "gameplayFlags": ["protectedCrew", "frameAnchor", "voidRecovery", "scriptedCrew"],
           "worldSeedSalt": 1397246288, "caveBiomeSalt": 0, "facilitySalt": 0, "outcropSalt": 0,
           "facilityShell": "IRON_ORE", "facilityWall": "IRON_ORE", "facilityTrim": "LIGHT"
+        },
+        {
+          "key": "PL_FRONTIER", "id": 4, "name": "Frontier", "generationProfile": "PGP_EARTH", "offworldMaterialProfile": "OWMP_NONE", "presentationProfile": "PPP_EARTH", "gravity": 1.0,
+          "gameplayFlags": ["villageResidents", "protectedCrew", "scriptedCrew", "naturalSpawns"],
+          "worldSeedSalt": 0, "caveBiomeSalt": 0, "facilitySalt": 0, "outcropSalt": 0,
+          "facilityShell": "BRICK", "facilityWall": "STONE", "facilityTrim": "LIGHT"
         }
       ]
     },
@@ -751,12 +757,12 @@
       }
     },
     "MissionId": {
-      "$comment": "The first three ordered IRIS campaign operations.",
+      "$comment": "Authored operations and continuous Earth expeditions.",
       "cName": "MissionId",
       "cType": "uint8_t",
       "jsName": "MISSION",
       "jsPrefix": "MI",
-      "values": { "MI_NONE": 0, "MI_GREENFALL_RECOVERY": 1, "MI_SILENT_QUARRY": 2, "MI_RED_FURNACE": 3 }
+      "values": { "MI_NONE": 0, "MI_GREENFALL_RECOVERY": 1, "MI_SILENT_QUARRY": 2, "MI_RED_FURNACE": 3, "MI_FRONTIER": 4 }
     },
     "MissionPhase": {
       "$comment": "Authoritative lifecycle for a deployed mission.",
@@ -772,7 +778,7 @@
       "cType": "uint8_t",
       "jsName": "OBJECTIVE_KIND",
       "jsPrefix": "OK",
-      "values": { "OK_CLEAR": 0, "OK_RESCUE": 1, "OK_ANCHOR": 2, "OK_BOSS": 3, "OK_CORE": 4, "OK_EXTRACT": 5 }
+      "values": { "OK_CLEAR": 0, "OK_RESCUE": 1, "OK_ANCHOR": 2, "OK_BOSS": 3, "OK_CORE": 4, "OK_EXTRACT": 5, "OK_PASSAGE": 6, "OK_DRAIN": 7, "OK_SURVEY": 8 }
     },
     "ObjectiveState": {
       "$comment": "Locked objectives are revealed when their prerequisites complete.",

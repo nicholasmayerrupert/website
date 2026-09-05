@@ -233,6 +233,7 @@
     }
   }
   void putCaveFeatureCell(int colStart, int colEnd, int rowStart, int rowEnd, int wx, int wy, uint8_t m, bool requireEmpty = true) {
+    if (requireEmpty && !L->isBackground && terrain.genIsBackboneCave(wx, wy)) return;
     int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
     if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
     int k = y * cols + lx;

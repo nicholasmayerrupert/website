@@ -16,32 +16,31 @@ That emits one self-contained ES module:
 The bundle embeds the WASM engine, so host pages do not need a separate `.wasm`
 asset or React/Tailwind runtime.
 
-## IRIS campaign and direct survival
+## Aster expedition and direct survival
 
-On this site, `/game` opens the mission deck for IRIS — Interstellar Rescue &
-Intervention Service — aboard the field ship Kestrel. The React campaign shell
-owns briefing, sequential unlocks, bounded loadout selection, deployment,
-persistence, and debrief. It creates `<sand-game>` only for an active operation.
-`/game?sandbox` bypasses that shell and mounts direct survival.
+On this site, `/game` opens Aster Station in a continuous Earth valley. The
+React shell presents the field journal, free-choice expeditions, and station
+maintenance. The same `<sand-game>` stays mounted while exploring, completing
+jobs, returning home, and repairing the base. World changes and progress last
+for the browser session; reloading starts a fresh valley.
+`/game?sandbox` mounts direct survival.
 
-The standalone component contains the authoritative mission runtime, tracker,
-and world-space objective markers, but it does not contain the Kestrel menus or
-campaign save. A host starts an authored operation by supplying a matching
-planet and mission:
+The standalone component contains the authoritative expedition runtime,
+conversations, and world-space objective markers. A host starts Aster with:
 
 ```html
 <sand-game
   mode="survival"
-  planet="moon"
-  mission="silent-quarry"
-  world-seed="437632751"
-  loadout="[]"
+  planet="frontier"
+  mission="frontier"
+  world-seed="1095980114"
 ></sand-game>
 ```
 
-The authored pairs are `earth` + `greenfall-recovery`, `moon` +
-`silent-quarry`, and `mars` + `red-furnace`. A mismatched mission and planet
-fails closed during authority-worker initialization.
+The engine also accepts the legacy authored pairs `earth` +
+`greenfall-recovery`, `moon` + `silent-quarry`, and `mars` + `red-furnace` for
+existing embeds. A mismatched mission and planet fails closed during
+initialization.
 
 ## Host layout
 
@@ -72,9 +71,9 @@ that shadow root for benchmark tooling.
 | `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows inventory, crafting, hotbar, and health UI. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 | `auto-start` | presence | absent | Coarse-pointer creative mode starts with drawing active instead of showing its internal `START` button. |
-| `planet` | `earth`, `moon`, `mars`, `ship` | `earth` | Selects immutable world identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.33`, `0.76`, or shipboard `1.0`. |
+| `planet` | `earth`, `moon`, `mars`, `ship`, `frontier` | `earth` | Selects immutable world identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.33`, `0.76`, or shipboard/frontier `1.0`. |
 | `weather` | `auto`, `clear`, `rain` | `clear` | Pinned by default. `auto` runs the deterministic clear/rain cycle with gradual sky, cloud, and precipitation fades; explicit values pin the session. The palette's time control includes a Rain toggle that pins/unpins rain at runtime. |
-| `mission` | `greenfall-recovery`, `silent-quarry`, `red-furnace` | absent | Starts the matching authoritative survival operation and enables the mission tracker and markers. |
+| `mission` | `frontier`, `greenfall-recovery`, `silent-quarry`, `red-furnace` | absent | Starts the matching authoritative survival operation and enables the mission tracker and markers. |
 | `world-seed` | unsigned 32-bit decimal | random per mount | Selects the deterministic world for this mount. Values are normalized with unsigned 32-bit semantics. |
 | `loadout` | JSON array of inventory stacks | `[]` | Adds material or recovered-weapon stacks before the mission starts. Malformed JSON becomes an empty loadout. |
 
@@ -88,9 +87,7 @@ Earth, Moon, and Mars use `1.0`, `0.33`, and `0.76` gravity respectively.
 
 Loadout entries use the generated ABI inventory-stack fields. The authority
 accepts at most 16 entries, clamps each count to `0`–`5000`, and accepts material
-stacks plus the recoverable enemy-weapon item kinds. The site campaign constructs
-these arrays through `campaign/missions.js` rather than accepting raw player
-input.
+stacks plus the recoverable enemy-weapon item kinds. Aster supplies its starting equipment through the engine expedition runtime.
 
 ## Events
 

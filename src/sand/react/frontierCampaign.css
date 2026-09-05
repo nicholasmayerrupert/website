@@ -1,0 +1,65 @@
+.frontier-experience { position:relative; width:100%; height:100dvh; overflow:hidden; background:#14231f; color:#edf0df; font:14px/1.55 ui-sans-serif,system-ui,sans-serif; }
+.frontier-experience sand-game { display:block; width:100%; height:100%; }
+.frontier-experience button { cursor:pointer; color:inherit; font:inherit; background:#ffffff08; border:1px solid #b7c4ac30; padding:10px 15px; border-radius:3px; }
+.frontier-experience button:hover { background:#c7d6af1a; border-color:#c6d5ab70; }
+.frontier-experience button:focus-visible,.frontier-map-pin:focus-visible { outline:2px solid #edca7b; outline-offset:4px; }
+.frontier-experience button:disabled { opacity:.4; cursor:default; }
+.frontier-header { position:absolute; inset:0 0 auto; z-index:85; display:flex; justify-content:space-between; align-items:center; padding:16px 22px; pointer-events:none; background:linear-gradient(#101e1bc9,transparent); }
+.frontier-header>div { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2em; font-size:18px; text-shadow:0 2px 5px #000; }
+.frontier-emblem { color:#edca7b; font-size:37px; }
+.frontier-subtitle { display:block; font:9px/1.5 ui-monospace,monospace; letter-spacing:.2em; color:#b9c9ba; }
+.frontier-header nav { display:flex; gap:8px; pointer-events:auto; }
+.frontier-header nav button { background:#152820da; padding:8px 12px; }
+.frontier-header small { margin-left:12px; color:#edca7b; }
+.frontier-experience kbd { font:10px ui-monospace,monospace; border:1px solid #c6d5ab55; border-radius:2px; padding:2px 4px; margin:0 3px; color:#e4e9d8; }
+.frontier-arrival { position:absolute; z-index:80; bottom:85px; left:26px; width:min(350px,calc(100% - 72px)); background:#13251ee8; border:1px solid #a9bd9340; padding:24px; box-shadow:0 12px 40px #0003; }
+.frontier-kicker { color:#b4c5a1; letter-spacing:.16em; font:10px/1.5 ui-monospace,monospace; text-transform:uppercase; }
+.frontier-arrival h1 { margin:7px 0 10px; font-size:32px; font-weight:500; letter-spacing:-.04em; }
+.frontier-arrival p { color:#c2cebd; margin:0 0 20px; font-size:13px; }
+.frontier-arrival>div { display:flex; gap:6px; flex-wrap:wrap; }
+.frontier-arrival button { padding:8px 10px; font-size:12px; }
+.frontier-experience .frontier-quiet { background:none; border-color:transparent; color:#acbba4; }
+.frontier-controls { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); z-index:81; display:flex; gap:16px; padding:6px 12px; white-space:nowrap; color:#d4deca; background:#12241ce0; pointer-events:none; font-size:10px; }
+.frontier-overlay { position:absolute; inset:0; z-index:100; background:#07140ecc; backdrop-filter:blur(8px); display:grid; place-items:center; padding:20px; }
+.frontier-panel { width:min(1040px,100%); max-height:calc(100dvh - 40px); overflow:auto; background:#14251f; border:1px solid #849d7750; box-shadow:0 30px 100px #0008; }
+.frontier-panel>header { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:25px 30px; border-bottom:1px solid #b7c4ac25; }
+.frontier-panel h2 { font-size:27px; font-weight:450; letter-spacing:-.025em; margin:5px 0 0; }
+.frontier-panel .frontier-close { border:0; font-size:27px; padding:2px 10px; }
+.frontier-journal-grid { display:grid; grid-template-columns:1.25fr 1fr; }
+.frontier-chart { border-right:1px solid #b7c4ac25; padding:22px; }
+.frontier-map { display:block; width:100%; border:1px solid #849d772e; }
+.frontier-map text { fill:#b8c9ac; font:10px ui-monospace,monospace; letter-spacing:.06em; }
+.frontier-map-pin { cursor:pointer; }
+.frontier-map-pin.selected circle { stroke-width:4px; fill:#405643; }
+.frontier-chart>p { font:11px/1.5 ui-monospace,monospace; color:#8da189; }
+.frontier-jobs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:20px; }
+.frontier-jobs button { text-align:left; display:flex; align-items:center; gap:12px; padding:11px; font-size:12px; }
+.frontier-jobs button[aria-pressed=true] { background:#bfce9e14; border-color:#b3c59c88; }
+.frontier-jobs small { display:block; color:#8fa58e; font-size:10px; }
+.frontier-job-detail { padding:30px; }
+.frontier-job-detail h3 { margin:12px 0; font-size:34px; font-weight:450; letter-spacing:-.04em; line-height:1.1; }
+.frontier-job-detail>p { color:#b8c8b6; }
+.frontier-job-detail .frontier-job-summary { color:var(--job-color); font-size:16px; }
+.frontier-field-note { border-left:2px solid var(--job-color); margin:25px 0; padding:0 0 0 15px; color:#9db29c; font-size:12px; }
+.frontier-field-note span,.frontier-reward small { font:9px ui-monospace,monospace; letter-spacing:.14em; color:var(--job-color); }
+.frontier-field-note p { margin:8px 0 0; }
+.frontier-reward { border-top:1px solid #b7c4ac25; padding-top:18px; margin-bottom:22px; }
+.frontier-reward p { margin:5px 0; font-size:13px; }
+.frontier-experience .frontier-primary { background:#d0dcb0; color:#1b2b22; border-color:#d0dcb0; font-weight:600; }
+.frontier-experience .frontier-primary:hover { background:#e0eac7; }
+.frontier-journal>footer { border-top:1px solid #b7c4ac25; padding:14px 30px; font:11px ui-monospace,monospace; color:#819a82; }
+.frontier-small { width:min(480px,100%); padding:24px; box-sizing:border-box; }
+.frontier-small>header { padding:0 0 20px; margin-bottom:20px; }
+.frontier-small h2 { font-size:27px; }
+.frontier-small>button { display:block; width:100%; margin-top:10px; }
+.frontier-small>p { color:#b4c4ae; }
+.frontier-small .frontier-speaker,.frontier-save-note { font:11px/1.6 ui-monospace,monospace; color:#92a58a; }
+.frontier-loading { position:absolute; inset:0; display:grid; place-items:center; background:#14231f; z-index:86; color:#c2d1ad; font:14px ui-monospace,monospace; }
+.frontier-complete { position:absolute; top:90px; left:22px; padding:12px 18px; background:#14251ee8; color:#d5e6b8; z-index:82; }
+.frontier-finished { color:#acd18c!important; }
+@media(max-width:720px) { .frontier-header { padding:10px 12px; } .frontier-header nav button { font-size:11px; } .frontier-subtitle { font-size:8px; } .frontier-header kbd { display:none; } .frontier-header>div { font-size:15px; } .frontier-overlay { padding:10px; } .frontier-panel { max-height:calc(100dvh - 20px); } .frontier-journal-grid { grid-template-columns:1fr; } .frontier-panel>header { padding:18px; } .frontier-panel h2 { font-size:21px; } .frontier-chart { border-right:0; border-bottom:1px solid #b7c4ac25; padding:16px; } .frontier-job-detail { padding:22px; } .frontier-map { max-height:240px; } .frontier-controls { display:none; } .frontier-arrival { bottom:145px; left:16px; padding:18px; } .frontier-small { padding:20px; } }
+@media(max-height:550px) { .frontier-arrival { bottom:45px; padding:15px; width:300px; } .frontier-arrival h1 { font-size:24px; } .frontier-arrival p { font-size:11px; margin-bottom:10px; } }
+
+.frontier-notice { position:absolute; top:88px; left:22px; z-index:84; display:grid; gap:5px; padding:17px 22px; border:1px solid #aecb8c70; background:#14251ef5; box-shadow:0 8px 30px #0004; }
+.frontier-notice strong { font-weight:500; font-size:18px; }
+.frontier-notice>span:last-child { font-size:12px; color:#ccdcb6; }

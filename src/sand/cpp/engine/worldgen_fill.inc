@@ -12,6 +12,7 @@
       if ((stage.generationProfileMask & profileBit) == 0) continue;
       stage.run(*this, stage, colStart, colEnd, rowStart, rowEnd);
     }
+    fillFrontier(colStart, colEnd, rowStart, rowEnd);
     if (copyToNext)
       copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }

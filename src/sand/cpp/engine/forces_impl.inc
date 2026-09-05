@@ -678,6 +678,7 @@ void ForceSystem::wakeAffectedTargets(
 }
 
 void ForceSystem::buildBins(LayerState& state) {
+  state.hasOrdinaryEmitters = false;
   if (state.emitters.empty()) {
     state.binHeads.clear();
     state.binLinks.clear();
@@ -687,6 +688,7 @@ void ForceSystem::buildBins(LayerState& state) {
   state.binLinks.clear();
   for (int i = 0; i < (int)state.emitters.size(); i++) {
     const ForceEmitter& emitter = state.emitters[i];
+    state.hasOrdinaryEmitters |= !emitter.nearestNeutronium;
     double sourceMinX = emitter.nearestNeutronium
       ? emitter.geometryMinX : emitter.x;
     double sourceMaxX = emitter.nearestNeutronium
@@ -1229,7 +1231,7 @@ bool ForceSystem::sampleState(
     double& forceX, double& forceY) const {
   forceX = forceY = 0;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
-  if (state.emitters.empty() || state.binHeads.empty()) return false;
+  if (!state.hasOrdinaryEmitters || state.emitters.empty() || state.binHeads.empty()) return false;
   int chunkX = ((int)x) >> CHUNK_SHIFT;
   int chunkY = ((int)y) >> CHUNK_SHIFT;
   if (chunkX < 0 || chunkX >= E.chunkCols

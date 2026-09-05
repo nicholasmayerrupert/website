@@ -138,9 +138,18 @@ int TerrainGen::genSurfaceAbs(int worldX) {
   if (highland > 1.0) highland = 1.0;
   double amp = SURFACE_AMPLITUDE * (0.68 + hills * 0.55 + highland * 0.42);
   double macro = -(continental - 0.5) * SURFACE_AMPLITUDE * 1.55;
-  double peaks = -highland * ridges * SURFACE_AMPLITUDE * 0.70;
+  double peaks = -highland * ridges * SURFACE_AMPLITUDE * 1.65;
   int value = (int)std::lround(macro - (n - 0.5) * 2 * amp + peaks
                              + (cuts - 0.45) * SURFACE_AMPLITUDE * 0.18);
+  if (E.planetId == PL_FRONTIER) {
+    // The expedition starts on a dry terrace beneath the western highlands.
+    double distance = std::abs(worldX);
+    double blend = std::clamp((distance - 336.0) / 160.0, 0.0, 1.0);
+    blend = blend * blend * (3.0 - 2.0 * blend);
+    value = (int)std::lround(16.0 + (value - 16.0) * blend);
+    double mountain = std::fmax(0.0, 1.0 - std::abs(worldX - 900) / 400.0);
+    value -= (int)std::lround(230.0 * mountain * mountain * (3.0 - 2.0 * mountain));
+  }
   cached.seed = E.L->worldSeed;
   cached.x = worldX;
   cached.value = value;
@@ -318,25 +327,53 @@ bool TerrainGen::taperedSegmentContains(int x, int y, int ax, int ay, int bx, in
 // the deep cave band, plus horizontal links to its neighbours. Noise caves add
 // local variety around this connected graph. Background terrain omits the route
 // graph and contains only rare enclosed chambers.
+bool TerrainGen::descentContains(int x, int y, int ax, int ay, int bx, int by,
+                                 uint32_t salt) {
+  if (y < ay - 24 || y > by + 24
+      || x < std::min(ax, bx) - 82 || x > std::max(ax, bx) + 82) return false;
+  int steps = imax(1, (by - ay + 47) / 48);
+  auto nodeX = [&](int i) {
+    int xAtNode = (int)std::lround(ax + (bx - ax) * ((double)i / steps));
+    if (i > 0 && i < steps) xAtNode += (i & 1 ? 1 : -1) *
+      (38 + (int)(whash1(E.L->gCaveSeed ^ salt, i) * 20));
+    return xAtNode;
+  };
+  // Only nearby segments can cover this row. The margin includes turning rooms
+  // and the full rough tunnel radius, preserving the exact geometric union.
+  int first = imax(1, (int)std::floor((y - ay - 24.0) * steps / (by - ay)));
+  int last = imin(steps, (int)std::ceil((y - ay + 24.0) * steps / (by - ay)) + 1);
+  int previousX = nodeX(first - 1), previousY = ay + (by - ay) * (first - 1) / steps;
+  for (int i = first; i <= last; i++) {
+    int nextX = nodeX(i);
+    int nextY = ay + (by - ay) * i / steps;
+    if (taperedSegmentContains(x, y, previousX, previousY, nextX, nextY,
+                               10.5, 11.5, salt + i)) return true;
+    // Wide turning chambers provide room to land, build, and change direction.
+    double dx = (x - nextX) / 23.0, dy = (y - nextY) / 16.0;
+    if (dx * dx + dy * dy < 1.0) return true;
+    previousX = nextX; previousY = nextY;
+  }
+  return false;
+}
+
 bool TerrainGen::genIsBackboneCave(int worldX, int worldY) {
   if (E.L->isBackground || worldY >= DEEP_BLEND_BOTTOM) return false;
   int region = floorDiv(worldX, CAVE_REGION_WIDTH);
-  for (int r = region - 1; r <= region; r++) {
+  for (int r = region - 1; r <= region + 1; r++) {
     CaveRegionPlan p = cavePlan(r);
     if (taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
-                               p.mouthX, p.mouthY, 4.8, 5.8, 0xE101u)) return true;
+                               p.mouthX, p.mouthY, 6.5, 7.0, 0xE101u)) return true;
     if (taperedSegmentContains(worldX, worldY, p.mouthX, p.mouthY,
-                               p.upperX, p.upperY, 5.8, 6.6, 0xE102u)) return true;
-    if (taperedSegmentContains(worldX, worldY, p.upperX, p.upperY,
-                               p.middleX, p.middleY, 6.6, 5.8, 0xE103u)) return true;
-    if (taperedSegmentContains(worldX, worldY, p.middleX, p.middleY,
-                               p.deepX, p.deepY, 5.8, 6.4, 0xE104u)) return true;
+                               p.upperX, p.upperY, 7.0, 9.5, 0xE102u)) return true;
+    if (descentContains(worldX, worldY, p.upperX, p.upperY,
+                         p.middleX, p.middleY, 0xE103u)) return true;
+    if (descentContains(worldX, worldY, p.middleX, p.middleY,
+                         p.deepX, p.deepY, 0xE104u)) return true;
     CaveRegionPlan next = cavePlan(r + 1);
     if (taperedSegmentContains(worldX, worldY, p.middleX, p.middleY,
-                               next.middleX, next.middleY, 5.6, 5.6, 0xE105u)) return true;
-    if ((r & 1) == 0 &&
-        taperedSegmentContains(worldX, worldY, p.deepX, p.deepY,
-                               next.deepX, next.deepY, 6.0, 6.0, 0xE106u)) return true;
+                               next.middleX, next.middleY, 10.5, 10.5, 0xE105u)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.deepX, p.deepY,
+                               next.deepX, next.deepY, 10.5, 10.5, 0xE106u)) return true;
   }
   return false;
 }
@@ -442,12 +479,12 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
     CaveRegionPlan p = cavePlan(r);
     if (worldY < p.entryY - 1 || worldY > p.entryY + 22) continue;
     bool outer = taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
-                                         p.mouthX, p.mouthY, 6.5, 7.2, 0xE101u);
+                                         p.mouthX, p.mouthY, 8.5, 9.0, 0xE101u);
     bool inner = taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
-                                         p.mouthX, p.mouthY, 4.8, 5.8, 0xE101u);
+                                         p.mouthX, p.mouthY, 6.5, 7.0, 0xE101u);
     // The stone sleeve occupies only solid terrain, leaving junctions with the
     // adjoining backbone segment fully open.
-    if (outer && !inner && !genIsBackboneCave(worldX, worldY)) return true;
+    if (outer && !inner && !genOpenCaveAt(worldX, worldY)) return true;
   }
   return false;
 }
@@ -543,19 +580,13 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
     if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
     double cheese = wfbm2(E.L->gCaveSeed ^ 0x55u, sx * CAVE_FREQ * 0.52, sy * CAVE_FREQ * 0.42, 3, 0.5);
     double spaghetti = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A6Eu, sx * CAVE_FREQ * 1.55, sy * CAVE_FREQ * 0.82, 2, 0.5) - 0.5);
-    double noodle = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
-    double shaft = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
-    double chamberThresh = 0.755 - depthFrac * 0.075;
-    double spaghettiWidth = 0.075 + depthFrac * 0.026;
-    double noodleWidth = 0.044 + depthFrac * 0.014;
-    double shaftWidth = 0.052 + depthFrac * 0.012;
+    double chamberThresh = 0.710 - depthFrac * 0.025;
+    double spaghettiWidth = 0.048 + depthFrac * 0.012;
     double deepFade = std::fmax(0.0, std::fmin(1.0,
       (double)(worldY - DEEP_BLEND_TOP) / (double)(UPPER_CAVE_FADE_BOTTOM - DEEP_BLEND_TOP)));
     chamberThresh += deepFade * 0.13;
     spaghettiWidth *= 1.0 - deepFade * 0.78;
-    noodleWidth *= 1.0 - deepFade * 0.78;
-    shaftWidth *= 1.0 - deepFade * 0.78;
-    result = cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
+    result = cheese > chamberThresh || spaghetti < spaghettiWidth;
   }
   if (!result && worldY >= DEEP_BLEND_TOP) result = genIsDeepCave(worldX, worldY);
   cached.seed = seed;

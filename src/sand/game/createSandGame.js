@@ -77,6 +77,7 @@ export function createSandGame(container, opts = {}) {
   const missionId = typeof mission === 'number'
     ? mission
     : ({
+      'frontier': MISSION.FRONTIER,
       'greenfall-recovery': MISSION.GREENFALL_RECOVERY,
       'silent-quarry': MISSION.SILENT_QUARRY,
       'red-furnace': MISSION.RED_FURNACE,
@@ -563,6 +564,7 @@ export function createSandGame(container, opts = {}) {
     clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
     // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
+    repairBase() { ctx.worldWorker?.intent('repair-base'); },
     setWeatherOverride(id) { loop.setWeatherOverride(id); loop.render(false); },
     getWeatherState() { return loop.getWeatherState(); },
     setViewportActive(active) {

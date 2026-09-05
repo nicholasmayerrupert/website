@@ -1,4 +1,5 @@
 #include "mission_greenfall.inc"
+#include "mission_frontier.inc"
 
 MissionObjective& MissionSystem::addObjective(uint8_t type, uint8_t state,
                                                int required, int worldX,
@@ -141,6 +142,7 @@ int MissionSystem::spawnMissionResident(uint8_t species, int worldX,
 }
 
 bool MissionSystem::start(int id, int ownerPlayerId) {
+  if (id == MI_FRONTIER) return startFrontier(ownerPlayerId);
   if (id < MI_GREENFALL_RECOVERY || id > MI_RED_FURNACE ||
       missionId != MI_NONE || !E.psys.findPlayer(ownerPlayerId)) return false;
   uint8_t expectedPlanet = id == MI_SILENT_QUARRY ? PL_MOON
@@ -457,6 +459,7 @@ void MissionSystem::updateThreat() {
 
 void MissionSystem::update() {
   if (!active()) return;
+  if (missionId == MI_FRONTIER) { updateFrontier(); return; }
   if (pendingObjective >= 0) {
     int next = pendingObjective;
     pendingObjective = -1;

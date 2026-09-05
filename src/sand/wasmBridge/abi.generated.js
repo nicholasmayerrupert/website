@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 36;
 
-export const ABI_FINGERPRINT = 0xe24a6e5bb601;
+export const ABI_FINGERPRINT = 0xc9a6fe8af069;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -106,11 +106,11 @@ export const TOOL = Object.freeze({ CUBE: 0, SAND: 1, WATER: 2, STONE: 3, OIL: 4
 export const CREATIVE_KIND = Object.freeze({ MATERIAL: 0, SEED: 1, ERASER: 2, CUBE: 3, CREATURE: 4 });
 export const CREATURE = Object.freeze({ MINNOW: 0, PIKE: 1, FOX: 2, HARE: 3, CRAWLER: 4, MOLE: 5, BIRD: 6, DYNAMITEER: 7, BORE_SENTINEL: 8, CAUSTIC_MORTARMAN: 9, CLUSTER_WASP: 10, MINIGUNNER: 11, SURVEYOR: 12, SHIELD_ANCHOR: 13, QUARRY_FOREMAN: 14, REACTOR_WARDEN: 15, REACTOR_CORE: 16, IRIS_COMMANDER: 17, IRIS_ENGINEER: 18, VILLAGER: 19 });
 export const CREATURE_ATTACK_STATE = Object.freeze({ IDLE: 0, CHARGING: 1, FIRING: 2 });
-export const PLANET = Object.freeze({ EARTH: 0, MOON: 1, MARS: 2, SHIP: 3 });
-export const PLANET_COUNT = 4;
-export const PLANET_ALL_MASK = 0xf;
-export const PLANET_NAMES = Object.freeze(['earth', 'moon', 'mars', 'ship']);
-export const PLANET_BY_NAME = Object.freeze({ earth: 0, moon: 1, mars: 2, ship: 3 });
+export const PLANET = Object.freeze({ EARTH: 0, MOON: 1, MARS: 2, SHIP: 3, FRONTIER: 4 });
+export const PLANET_COUNT = 5;
+export const PLANET_ALL_MASK = 0x1f;
+export const PLANET_NAMES = Object.freeze(['earth', 'moon', 'mars', 'ship', 'frontier']);
+export const PLANET_BY_NAME = Object.freeze({ earth: 0, moon: 1, mars: 2, ship: 3, frontier: 4 });
 export const BIOME = Object.freeze({ PLAINS: 0, FOREST: 1, DESERT: 2, ROCKY: 3, TUNDRA: 4, JUNGLE: 5, SWAMP: 6 });
 export const SURFACE_BIOME_COUNT = 7;
 export const SURFACE_BIOME_ALL_MASK = 0x7f;
@@ -120,9 +120,9 @@ export const CAVE_BIOME_ALL_MASK = 0xff;
 export const WORLD_AREA = Object.freeze({ SURFACE: 1, UNDERGROUND: 2, DEEP: 4, STRUCTURE: 8, SETTLEMENT: 16, BUILDING: 32, INDOOR: 64, MINE: 128, FACILITY: 256 });
 export const WORLD_FEATURE = Object.freeze({ NONE: 0, VILLAGE: 1, VILLAGE_BUILDING: 2, MINE: 3, OFFWORLD_FACILITY: 4, RUIN: 5, DEEP_STRUCTURE: 6, OUTCROP: 7 });
 export const WORLD_SITE_ROLE = Object.freeze({ NONE: 0, HOME: 1, WORKSHOP: 2, APOTHECARY: 3, STOREHOUSE: 4, MEETING_HALL: 5, MINE_HEADHOUSE: 6, MINE_GALLERY: 7, FACILITY: 8, RUIN: 9, DEEP_STRUCTURE: 10, OUTCROP: 11 });
-export const MISSION = Object.freeze({ NONE: 0, GREENFALL_RECOVERY: 1, SILENT_QUARRY: 2, RED_FURNACE: 3 });
+export const MISSION = Object.freeze({ NONE: 0, GREENFALL_RECOVERY: 1, SILENT_QUARRY: 2, RED_FURNACE: 3, FRONTIER: 4 });
 export const MISSION_PHASE = Object.freeze({ INACTIVE: 0, ACTIVE: 1, EXTRACTION: 2, COMPLETE: 3, FAILED: 4 });
-export const OBJECTIVE_KIND = Object.freeze({ CLEAR: 0, RESCUE: 1, ANCHOR: 2, BOSS: 3, CORE: 4, EXTRACT: 5 });
+export const OBJECTIVE_KIND = Object.freeze({ CLEAR: 0, RESCUE: 1, ANCHOR: 2, BOSS: 3, CORE: 4, EXTRACT: 5, PASSAGE: 6, DRAIN: 7, SURVEY: 8 });
 export const OBJECTIVE_STATE = Object.freeze({ LOCKED: 0, ACTIVE: 1, COMPLETE: 2, FAILED: 3 });
 export const SOUND_EVENT = Object.freeze({ EXPLOSION: 0, FUSE: 1, IMPACT: 2, JUMP: 3, LAND: 4, PLACE: 5, BREAK: 6, PICKUP: 7, HURT: 8, CREATURE: 9, FLUID_FALL: 10, POWDER_MOVE: 11, SOLID_LAND: 12, ACID_DISSOLVE: 13, CRAFT: 14, BOW: 15, ARROW_HIT: 16, DEATH: 17, RESPAWN: 18, BLAST_GUN: 19, BORE_CHARGE: 20, BORE_FIRE: 21, ACID_MORTAR: 22, CLUSTER_LAUNCH: 23, MINIGUN: 24, SHIELD_HIT: 25, SHIELD_BREAK: 26, SPAWN_BREACH: 27, WEAPON_EXPLOSION: 28, BEAM: 29 });
 export const CREATURE_BEHAVIOR_PROFILE = Object.freeze({"GENERIC":0,"DYNAMITEER":1,"BORE_SENTINEL":2,"CAUSTIC_MORTARMAN":3,"CLUSTER_WASP":4,"MINIGUNNER":5,"QUARRY_FOREMAN":6,"REACTOR_WARDEN":7});
@@ -493,9 +493,9 @@ export const CREATURE_CREATIVE_ENTRIES = Object.freeze([
 ]);
 export const PLANET_PRESENTATION = Object.freeze({ EARTH: 0, MOON: 1, MARS: 2, SHIP: 3 });
 export const PLANET_PRESENTATION_PROFILE_COUNT = 4;
-export const PLANET_PRESENTATION_BY_ID = Object.freeze([0, 1, 2, 3]);
+export const PLANET_PRESENTATION_BY_ID = Object.freeze([0, 1, 2, 3, 0]);
 export const PLANET_GAMEPLAY_FLAG = Object.freeze({ VILLAGE_RESIDENTS: 1, PROTECTED_CREW: 2, FRAME_ANCHOR: 4, VOID_RECOVERY: 8, SCRIPTED_CREW: 16, NATURAL_SPAWNS: 32 });
-export const PLANET_GAMEPLAY_FLAGS_BY_ID = Object.freeze([33, 32, 32, 30]);
+export const PLANET_GAMEPLAY_FLAGS_BY_ID = Object.freeze([33, 32, 32, 30, 51]);
 export const planetHasGameplayFlag = (planetId, flag) =>
   ((PLANET_GAMEPLAY_FLAGS_BY_ID[Number.isInteger(planetId)
     && planetId >= 0 && planetId < PLANET_GAMEPLAY_FLAGS_BY_ID.length

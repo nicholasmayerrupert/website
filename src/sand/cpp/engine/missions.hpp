@@ -56,6 +56,8 @@ class MissionSystem {
  private:
   Engine& E;
   void buildGreenfall(int centerX, int surfaceY);
+  bool startFrontier(int ownerPlayerId);
+  void updateFrontier();
 
   MissionObjective& addObjective(uint8_t type, uint8_t state, int required,
                                  int worldX, int worldY, int flags = 0);

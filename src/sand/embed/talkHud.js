@@ -52,6 +52,8 @@ const STYLE = `
   border-left:9px solid currentColor; transform-origin:center; }
 .sg-quest-marker.onscreen .sg-quest-marker-icon { width:9px; height:9px; box-sizing:border-box;
   border:2px solid currentColor; background:rgba(240,212,101,.2); transform:rotate(45deg)!important; }
+.sg-place-sign { position:absolute; transform:translate(-50%,-50%); color:#d8e5cf; opacity:.72; white-space:nowrap; font:10px/1.2 ui-monospace,monospace; letter-spacing:.14em; text-shadow:0 1px 3px #000; }
+.sg-place-sign[hidden] { display:none; }
 .sg-dialogue { position:absolute; left:50%; bottom:58px; z-index:79; width:min(560px,calc(100% - 24px));
   box-sizing:border-box; transform:translateX(-50%); border:3px solid #080a0c; padding:14px;
   pointer-events:auto; background:rgba(17,23,29,.97); color:#fff;
@@ -118,6 +120,18 @@ export function createTalkHud(root, game, onAction) {
   dialogue.append(name, copy, actions);
   layer.appendChild(dialogue);
 
+  const signs = game.getPlanetState?.().id === PLANET.FRONTIER ? [
+    [-116, -55, 'OBSERVATION'], [104, -55, 'CREW QUARTERS'],
+    [-150, -18, 'COMMAND / FIELD OPERATIONS'], [182, -18, 'WORKSHOP / STORES'],
+    [-145, 30, 'MEDBAY'], [154, 30, 'HYDROPONICS'],
+    [-144, 83, 'RESEARCH ARCHIVE'], [158, 83, 'TOOL RANGE'],
+    [-142, 133, 'ENGINEERING'], [133, 133, 'POWER / COOLANT'],
+    [-248, 165, '← CAVE ACCESS'],
+  ].map(([x, y, label]) => {
+    const node = document.createElement('span');
+    node.className = 'sg-place-sign'; node.textContent = label;
+    layer.appendChild(node); return { x, y, node };
+  }) : [];
   const buttons = new Map();
   let activeActor = null;
   let nearestActor = null;
@@ -134,13 +148,18 @@ export function createTalkHud(root, game, onAction) {
   close.addEventListener('click', () => closeDialogue());
   primary.addEventListener('click', () => {
     if (!activeActor) return;
-    onAction?.({ action: 'mission-console', actor: activeActor });
+    onAction?.({ action: activeActor.species === CREATURE.IRIS_ENGINEER ? 'repair-base' : 'mission-console', actor: activeActor });
     closeDialogue(false);
   });
 
   const openDialogue = (actor) => {
-    const policy = TALKABLES[actor.species];
+    let policy = TALKABLES[actor.species];
     if (!policy) return;
+    if (game.getPlanetState?.().id === PLANET.FRONTIER) {
+      if (actor.species === CREATURE.IRIS_COMMANDER) policy = { ...policy, dialogue: 'Welcome to Aster. The railway is buried, the archive is underwater, and Windward is above the clouds. Pick a direction. Make your own way there.', action: 'Field journal' };
+      if (actor.species === CREATURE.IRIS_ENGINEER) policy = { ...policy, dialogue: 'This whole station can be rebuilt. Try your tools, move a wall, make a mess. Come back to me when you want the original plans restored.', action: 'Repair the station' };
+      if (actor.species === CREATURE.SURVEYOR) policy = { ...policy, dialogue: 'There is a dry cavern under the flooded archive. If you can give that water somewhere to go, the records might still be recoverable.' };
+    }
     activeActor = actor;
     name.textContent = policy.name;
     copy.textContent =
@@ -164,6 +183,12 @@ export function createTalkHud(root, game, onAction) {
     const height = root.host?.clientHeight || 0;
     if (!view || !width || !height || !view.viewCols || !view.viewRows) return;
 
+    for (const sign of signs) {
+      const x = (sign.x - view.cameraWorldX) / view.viewCols * width;
+      const y = (sign.y - view.cameraWorldY) / view.viewRows * height;
+      sign.node.hidden = x < 50 || x > width - 50 || y < 80 || y > height - 80;
+      sign.node.style.left = `${x}px`; sign.node.style.top = `${y}px`;
+    }
     const activeIds = new Set();
     nearestActor = null;
     let nearestDistance = Infinity;

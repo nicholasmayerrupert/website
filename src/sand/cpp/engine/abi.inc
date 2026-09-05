@@ -1211,4 +1211,7 @@ EMSCRIPTEN_KEEPALIVE void engine_aim_cell(Engine* e, double* out) { out[0] = e->
 EMSCRIPTEN_KEEPALIVE int engine_apply_local_input(Engine* e, int playerId, double now, int seq) { return e->applyLocalInput(playerId, now, (uint32_t)seq); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_draft_at_aim(Engine* e) { return e->pointerDraftAtAim(); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_down_at_aim(Engine* e, int button) { return e->pointerDownAtAim(button); }
+EMSCRIPTEN_KEEPALIVE int engine_repair_frontier_base(Engine* e, int id) {
+  return e->repairFrontierBase(id) ? 1 : 0;
+}
 } // extern "C"

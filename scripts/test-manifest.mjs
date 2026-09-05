@@ -9,6 +9,7 @@ export const UNIT_SUITES = [
   ['test-runner', 'run-tests-test.mjs'],
   ['scenario-runner', 'scenario-runner-test.mjs'],
   ['campaign', 'campaign-test.mjs'],
+  ['frontier', 'frontier-test.mjs', exclusive(240_000)],
   ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],
   ['life-search', 'life-search-test.mjs'],

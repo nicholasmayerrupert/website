@@ -1214,7 +1214,7 @@ function applyRuntimeMessage(data) {
       survivalSpawnViewReady = true;
       engine.setCreatureRuntime(
         true,
-        !missionId && planetHasGameplayFlag(
+        (missionId === MISSION.NONE || missionId === MISSION.FRONTIER) && planetHasGameplayFlag(
           activePlanetId, PLANET_GAMEPLAY_FLAG.NATURAL_SPAWNS,
         ),
       );
@@ -1230,6 +1230,9 @@ function applyRuntimeMessage(data) {
       case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
       case 'craft': engine.craft(localPlayerId, data.recipe | 0, !!data.max); break;
       case 'respawn': engine.respawnPlayer(localPlayerId); break;
+      case 'repair-base':
+        if (engine.repairFrontierBase(localPlayerId)) fullResyncRequested = true;
+        break;
       case 'add': engine.addToInventory(localPlayerId, data.material | 0, data.count | 0); break;
       case 'set-player-state': {
         const player = engine.getPlayer(localPlayerId);

@@ -1,9 +1,9 @@
 # Sand engine
 
 The site uses the same falling-sand runtime for the creative home-page hero and
-the IRIS campaign at `/game`. The campaign begins aboard the field ship Kestrel
-with the ship visible and playable, and mounts a survival deployment after acceptance. `/game?sandbox` bypasses the campaign shell and opens the direct
-survival sandbox.
+the continuous **Aster** Earth expedition at `/game`. The player starts inside
+Aster Station, with wilderness, mountains, and caves in the same streaming
+world. `/game?sandbox` opens the direct survival sandbox.
 
 The simulation, WebGL2 renderer, camera, input policy, tools, actors, authored
 missions, and world streaming run in C++ compiled to WebAssembly. JavaScript
@@ -46,77 +46,53 @@ Local items and projectiles cross the worker boundary as packed transferable
 buffers, and unchanged render buffers are not recopied into WebAssembly between
 actor snapshots.
 
-## IRIS campaign
+## Aster: continuous Earth expedition
 
-`/game` presents **Greenfall Relay**, one Earth rescue expedition for IRIS
-(Interstellar Rescue & Intervention Service). The player arrives aboard Kestrel
-with no overlay. A beveled pixel mission panel opens from the header or
-Commander Vale. J opens the quest journal with active objectives and saved completions. The prepared kit contains the blast gun on 1, mining tool
-on 2, rescue beam on 3, 320 building blocks, 24 TNT, and 180 water.
+`/game` mounts one `<sand-game planet="frontier" mission="frontier">` with a
+fixed Aster Valley seed. Frontier uses Earth's terrain and presentation profiles;
+its additional authored landmarks are streamed in absolute world coordinates.
+There is no deployment, extraction, or world replacement between jobs.
 
-The authored Greenfall site in `cpp/engine/mission_greenfall.inc` contains an
-overgrown surface relay, descending access galleries, a furnished refuge, and a
-lit service shaft with jetpack rest ledges for the return.
-Both simulated layers are authored once before the mission's first tick; the
-site thereafter uses normal component physics, destruction, and chunk storage.
-A dynamiteer, minigunner, and bore sentinel guard the descent. The mission
-guards engage within the player's gallery and keep a one-second reaction
-window while they have no target. The relay minigunner telegraphs for one second,
-fires for 48 ticks, then recovers for two seconds. Guards are optional obstacles. The jammer and
-three researchers exist from deployment; powered shelter fields protect the crew.
-Destroying the jammer equips the rescue beam and opens those fields over 45 actor
-ticks, releasing the same occupants. Researchers wait in the refuge for rescue. Rescuing
-all three opens extraction at the original landing beacon. Each rescue needs a
-one-second beam hold; breaking contact decays the channel after a short grace
-period. Crew scan, then dissolve upward. The pad shows a rising transport field
-and requires two uninterrupted seconds inside; leaving resets it. At most three
-reinforcement waves pursue the return. Warnings begin at least 48 cells away and
-last two seconds; materialization rechecks habitat and a 36-cell player exclusion.
-Unsafe arrivals are canceled and retried. The landing pad has its own 32-cell
-spawn exclusion. Disabling the jammer restores 30 health, capped at 100. The return sequence ends aboard the real ship with a
-rescue report and persisted completion time.
+`worldgen_frontier.inc` stamps Aster Station at x=-320..319, y=-96..191, with an
+observation deck, command concourse, workshop, medbay, hydroponics, archives,
+firing range, engineering hall, and a cave access adit. Rooms use clear foreground
+routes and furnished background walls. The central atrium has staggered rest
+landings; the concourse has a continuous arrival bridge. Ordinary components and
+rigid-body physics make the station destructible. Natural hostile spawns exclude
+the station and its immediate perimeter; the surrounding world retains its
+natural population.
 
-Moon and Mars mission definitions remain available to direct engine consumers
-and existing saves; the player-facing campaign offers only Earth.
+`mission_frontier.inc` owns three independent jobs and a homecoming objective:
 
-`MissionSystem` in `cpp/engine/missions.hpp` and
-`cpp/engine/missions_impl.inc` owns live objective state, scripted actors,
-safe actor placement, stage transitions, failure, extraction threat, completion,
-and recovered-weapon reporting. Objective and extraction positions use absolute
-world coordinates and remain stable across streaming. A mission starts only when
-its required planet matches the engine planet. Player death fails every operation;
-killing a Greenfall surveyor also fails that operation. Extraction immediately
-opens a visible reinforcement breach and schedules additional habitat-valid
-waves while the player returns; breaching the Red Furnace core also destabilizes
-its surrounding terrain.
+- The buried railway pass requires an actor-height opening through the rockfall
+  and reaching its geological instrument; it rewards a bore cannon.
+- The drowned archive requires draining most of the archive chamber and reaching
+  its console. An excavatable floor separates it from a dry karst sump. It
+  rewards construction supplies.
+- Windward Observatory requires reaching the instrument above the eastern
+  mountain summit; it rewards a dynamite satchel. The tower has rest landings.
+- Returning to Commander Vale after all three jobs completes the expedition
+  without unloading the world. Death does not erase completed jobs.
 
-The worker sends packed mission and objective snapshots to the main thread. The
-embed presents those snapshots as the mission tracker and world-space markers,
-then emits lifecycle events for the React campaign shell. JavaScript never
-duplicates objective progression.
+Commander Vale opens the field journal. Engineer Osei offers station repair;
+a maintenance radio in the pause menu provides access if rubble blocks him.
+`repairFrontierBase()` validates that the player is alive and inside the station,
+rebuilds loaded cells through `CellMutationBatch`, and invalidates only the
+station's saved tiles, component fragments, and stored bodies. The same blueprint
+restores unloaded station tiles when they stream in. Repairs preserve field
+terrain, inventory, and job progress. The journaled `repair-base` intent follows
+the ordinary worker authority and full-resync path.
 
-`campaign/missions.js` owns ship-facing briefing text, mission order, loadout
-budgets, and the mapping from recovered weapons to deployment stacks.
-`campaign/campaignSave.js` validates the versioned `sand-campaign-v1`
-local-storage record. It persists completed mission IDs, preferred loadouts,
-unlocked weapons, and best times. An interrupted run stores only its mission,
-seed, and normalized loadout; it does not serialize terrain.
+`campaign/frontier.js` owns job text and field-map labels. `react/SandCampaign.jsx`
+presents the journal, tracked destination, pause menu, and maintenance dialogue.
+`J` opens the journal; `T` talks to nearby crew. The map is a field sketch, not a
+terrain snapshot. Mobile layouts keep the same runtime mounted through resizes.
 
-The Kestrel is walkable while its briefing is closed. Nearby crew have
-world-space `TALK` controls and T opens the nearest conversation; Commander Vale
-and the header button both open the
-briefing. Mission selection, pause, and report overlays pause the authority
-through the element's `setPaused()` method, independently of viewport visibility.
-Escape resumes a paused expedition. Sound uses the existing persistent mute
-setting; a quiet original motif shares the audio renderer's bounded voice budget
-and lifecycle. The tapered hull contains non-blocking background-layer engineering, medbay,
-transport, armory, command, hydroponics, galley, and archive stations while the
-foreground main-deck route stays clear. Falling below the hull triggers a short
-automatic transporter recovery. The ship runs the same two-layer cellular and
-rigid-body physics as planetary deployments. Explosive weapons, TNT, reactions,
-and bore cuts can all alter its foreground and background. A compact central
-frame anchors the connected vessel; severed pieces enter the rigid-body system.
-Maximum-emission `LIGHT` component panels illuminate both authored decks.
+World changes and job progress persist through streaming during the session.
+Durable world saves are not implemented: reloading starts a fresh valley, as the
+pause menu states. The legacy campaign metadata and mission definitions remain
+available to direct engine consumers and old replay recipes; the Aster UI does
+not use their progression, briefings, loadouts, or extraction flow.
 
 ## Planets and gravity
 
@@ -172,7 +148,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 4 is canonical in absolute coordinates: viewport size changes
+World generation version 5 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select surface biomes; narrow deterministic ecotones blend

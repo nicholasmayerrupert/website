@@ -271,6 +271,7 @@ for (const role of ['full', 'authority', 'presentation']) {
 
 // Opening terrain framing must survive the real viewport clamp at every aspect ratio.
 let sawOffCenterPeak = false;
+let sawClippedSkyline = false;
 for (const [width, height] of [[1440, 900], [390, 844], [2030, 700]]) {
   const size = computeViewportSizing(width, height, 1);
   for (let seed = 1; seed <= 12; seed++) {
@@ -284,11 +285,15 @@ for (const [width, height] of [[1440, 900], [390, 844], [2030, 700]]) {
     const left = mirror.getWorldOffsetX() + cam.x;
     const top = mirror.getWorldOffsetY() + cam.y;
     const heights = Array.from({ length: Math.ceil(size.viewCols) }, (_, x) =>
-      mirror.worldSurfaceAbsAt(Math.floor(left) + x));
+      Math.min(18, mirror.worldSurfaceAbsAt(Math.floor(left) + x)));
     const highest = Math.min(...heights);
     sawOffCenterPeak ||= highest < heights[Math.floor(heights.length / 2)] - 20;
-    check(`opening ${width}x${height} seed ${seed} keeps every terrain peak below halfway`,
-      (highest - top) / size.viewRows >= 0.60 - 1e-9);
+    const skyFraction = heights.reduce((sum, y) =>
+      sum + Math.max(0, Math.min(size.viewRows, y - top)), 0)
+      / (heights.length * size.viewRows);
+    sawClippedSkyline ||= heights.some(y => y < top || y > top + size.viewRows);
+    check(`opening ${width}x${height} seed ${seed} balances sky and terrain (${skyFraction.toFixed(3)})`,
+      Math.abs(skyFraction - 0.60) < 0.001);
     check(`opening ${width}x${height} seed ${seed} keeps streaming runway above and below`,
       cam.y >= 40 && cam.y + size.viewRows <= size.worldRows - 40);
     if (seed === 1) {
@@ -302,6 +307,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [2030, 700]]) {
   }
 }
 check('opening fixtures include a peak well above the center-column surface', sawOffCenterPeak);
+check('opening fixtures exercise clipping peaks or valleys outside the view', sawClippedSkyline);
 
 const failures = done();
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

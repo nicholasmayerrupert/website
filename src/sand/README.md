@@ -151,7 +151,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 17 is canonical in absolute coordinates: viewport size changes
+World generation version 18 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
@@ -170,7 +170,7 @@ Bone highlands retain steep mountain relief and contain component-backed skulls,
 rib arches, vertebral columns, and lashed timber stakes with bone tips. Their shared solid
 mask preserves hollow sockets and rib gaps across both layers and streaming;
 individual rib feet and buried roots anchor them beneath the pale crust. Distant fossil silhouettes
-share the ivory-and-umber palette without snow or vegetation.
+share the ivory-and-umber palette with rust, ochre, and teal underbrush accents.
 A broad anomaly field selects Watchwood pockets: rounded plum-soil hills,
 pale stone strata, and static ivory-eyed trees on branching burgundy trunks.
 Their component-backed wood, sclera, iris, and pupil remain destructible; generated
@@ -179,6 +179,13 @@ grow varied single crowns, asymmetric forks, and clustered eyes on leaning trunk
 leaf harvesting yields their species' seeds. The parallax grove varies stalk
 height, lean, crown shape, branching, and spacing. Climate reads the base elevation
 independently of biome-shaped relief.
+Small background undergrowth fills wilderness between structures: bone highlands
+mix ivory feathered scrub, rust brambles, ochre seed reeds, and teal curled lichen;
+Watchwood mixes violet fans, forked eye shrubs, coiled fronds, and watching buds.
+Four static flora materials provide distinct colors and remain destructible.
+Absolute, jittered slots and a patch-density field vary spacing; roots reach the
+solid stratum, and construction footprints, flooded ground, and cave mouths stay
+clear. The parallax layers carry matching low vegetation in the same palettes.
 
 Foreground caves combine noise caverns with a player-clear macro-region
 backbone from the surface into an infinite deep-cavern graph. The normal cave
@@ -263,8 +270,9 @@ writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders
 their actual composited cell grids to `bench/structure-atlas.png`.
 
-Creative worlds open with the highest generated terrain or sea surface across
-the visible width at 60% of the viewport height. The initial loaded window is
+Creative worlds open with roughly 60% sky and 40% terrain or water across the
+visible area. The camera solves against the full surface profile, clipping each
+column to the viewport so an isolated peak cannot dominate the framing. The initial loaded window is
 centered around that view so camera bounds cannot force the terrain upward.
 Authority and presentation use the same recorded opening viewport dimensions.
 Trees, structures, and decorative background ridges do not determine this framing;

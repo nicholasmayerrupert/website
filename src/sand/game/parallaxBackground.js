@@ -862,15 +862,50 @@ function drawBoneField(ctx, w, h, ridge) {
   }
 }
 
+function drawAlienUnderbrush(ctx, w, h, ridge, kind) {
+  const colors = kind === 'bones'
+    ? ['#b45d45', '#cca259', '#4e9e92', '#bd8664']
+    : ['#ad6caa', '#4e9e92', '#934e70', '#be829b'];
+  for (let band = 0; band < 2; band++) {
+    const spacing = 19 + band * 6;
+    const first = Math.floor((ridge.offX - 20) / spacing) * spacing;
+    for (let slot = first; slot < ridge.offX + w + 20; slot += spacing) {
+      const seed = slot * 13 + band * 1597;
+      const wx = slot + Math.floor(rand01(seed + 17) * 12);
+      const local = ridge.sceneryAt(wx);
+      if (rand01(seed + 31) >= (local.plants[kind] ?? 0) * (0.4 + local.grove * 0.5)) continue;
+      const y = ridge.surfaceWorldY(wx) + 4 + band * 20;
+      if (y < -20 || y > h + 20) continue;
+      const height = 5 + Math.floor(rand01(seed + 53) * 7);
+      const form = Math.floor(rand01(seed + 71) * colors.length);
+      ctx.fillStyle = mixColor(local.color, colors[form], 0.48 - band * 0.08);
+      ctx.save();
+      ctx.translate(wx - ridge.offX, y);
+      for (let stem = -1; stem <= 1; stem++) {
+        const up = height - Math.abs(stem) * 2;
+        for (let dy = 0; dy < up; dy++) {
+          const dx = stem * Math.floor(dy * 0.4);
+          ctx.fillRect(dx, -dy, 1, 1);
+          if (dy > 1 && dy % 3 === 0) ctx.fillRect(dx - 2, -dy, 5, 1);
+        }
+        if (form % 2) ctx.fillRect(stem * Math.floor(up * 0.4) - 1, -up, 3, 2);
+      }
+      ctx.restore();
+    }
+  }
+}
+
 function drawBiomePlants(ctx, w, h, ridge, kind) {
   ctx.globalAlpha = 1;
   if (kind === 'none') return;
   if (kind === 'eyes') {
     drawEyeGrove(ctx, w, h, ridge);
+    drawAlienUnderbrush(ctx, w, h, ridge, kind);
     return;
   }
   if (kind === 'bones') {
     drawBoneField(ctx, w, h, ridge);
+    drawAlienUnderbrush(ctx, w, h, ridge, kind);
     return;
   }
   const spacing = kind === 'jungle' ? 19 : kind === 'willow' ? 29 : 37;

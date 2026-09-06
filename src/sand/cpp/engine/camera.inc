@@ -4,14 +4,30 @@
   ViewCamera cam;
 
   // ---- cross-system drivers (Engine-level orchestration; NOT camera math) ----
-  // Frame the highest generated ground or sea surface across the full opening view.
+  // Frame the opening skyline by visible area, including the sea as a surface.
+  // Clipping each column to the viewport keeps an off-screen peak or valley from
+  // dominating the composition. This runs only when creating the initial view.
   double initialTerrainCameraWorldY(double cameraX, int viewCols, int viewRows) {
     int left = (int)std::floor(L->worldOffsetX + cameraX);
-    int right = (int)std::ceil(L->worldOffsetX + cameraX + viewCols);
-    int highest = L->gSeaRow;
-    for (int x = left; x < right; ++x)
-      highest = imin(highest, terrain.genSurfaceAbs(x));
-    return highest - viewRows * 0.60;
+    std::vector<int> skyline;
+    skyline.reserve(viewCols);
+    int highest = INT_MAX, lowest = INT_MIN;
+    for (int x = left; x < left + viewCols; ++x) {
+      int surface = imin(L->gSeaRow, terrain.genSurfaceAbs(x));
+      skyline.push_back(surface);
+      highest = imin(highest, surface);
+      lowest = imax(lowest, surface);
+    }
+    double above = highest - viewRows, below = lowest;
+    double target = viewCols * (double)viewRows * 0.60;
+    for (int iteration = 0; iteration < 24; ++iteration) {
+      double top = (above + below) * 0.5, sky = 0;
+      for (int surface : skyline)
+        sky += std::clamp(surface - top, 0.0, (double)viewRows);
+      if (sky > target) above = top;
+      else below = top;
+    }
+    return (above + below) * 0.5;
   }
 
   // Decide + apply a world-stream: slide the buffer (worldgen), the cell

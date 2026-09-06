@@ -29,7 +29,7 @@ profile, each curved rib terminates in its own buried foot, and broken limbs res
 on the slope. Small fossil rib formations also extend individual feet into soil.
 Support columns preserve natural cave voids rather than plugging entrances.
 
-The generation version is 17; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
+The generation version is 18; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
 The existing engine component-registration pass owns every rigid cell. No separate
 visual overlay or unsimulated collider represents these landmarks.
 
@@ -93,3 +93,18 @@ bank with a pale mineral rim, and unequal crystal growths at its edges. Pool
 widths fit nearby natural rock; sites without solid banks or a buried central
 anchor are rejected. Pools respect constructed-site reservations so they do not
 cut through ruins. The ordinary hazard-depth ramp still applies.
+
+## Wilderness undergrowth
+
+`worldgen_undergrowth.inc` stamps four small growth forms per alien surface biome
+in the simulated background, after trees. Bone scrub uses ivory branches with
+rust brambles, ochre heads, and teal lichen. Watchwood uses burgundy stalks, violet
+fronds, and turquoise eyes. The new materials are available in the Flora palette.
+Jittered 14-cell slots sample a broad density field; whole growth bounds exclude
+construction, root sites exclude cave mouths and water, and central roots cross
+loose Watchwood soil. A 12-cell horizontal and 40-cell vertical generation halo
+keeps silhouettes and buried roots independent of streaming bands.
+
+`node scripts/run-tests.mjs --only biome-undergrowth,watchwood,bone-highlands`
+checks wilderness coverage, distinct colors, clear foreground travel, grounding,
+viewport parity, and restoration on both streaming axes across three seeds.

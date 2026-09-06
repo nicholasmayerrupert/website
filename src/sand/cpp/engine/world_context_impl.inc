@@ -1178,3 +1178,10 @@ void runTreeGenerationStage(
   engine.fillTrees(colStart, colEnd, rowStart, rowEnd,
                    stage.overscanX, stage.overscanY);
 }
+
+void runSurfaceUndergrowthGenerationStage(
+    Engine& engine, const WorldGenerationStageDef& stage,
+    int colStart, int colEnd, int rowStart, int rowEnd) {
+  engine.fillSurfaceUndergrowth(colStart, colEnd, rowStart, rowEnd,
+                                stage.overscanX, stage.overscanY);
+}

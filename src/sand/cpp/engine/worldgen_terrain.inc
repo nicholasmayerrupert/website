@@ -42,6 +42,68 @@
       for (int y = rowStart; y < rowEnd; y++) L->grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
     }
   }
+  template<class Put>
+  static void stampEyeGlyph(Put&& put, int cx, int cy, int rx, int ry,
+                            int gaze = 0) {
+    for (int dy = -ry; dy <= ry; dy++) for (int dx = -rx; dx <= rx; dx++) {
+      if (dx * dx * ry * ry + dy * dy * rx * rx > rx * rx * ry * ry) continue;
+      int ix = imax(1, rx - 1), iy = imax(1, ry - 1);
+      bool rim = dx * dx * iy * iy + dy * dy * ix * ix > ix * ix * iy * iy;
+      int iris = imax(2, ry - 2), px = dx - gaze;
+      uint8_t mat = rim ? EYE_WOOD : EYE_SCLERA;
+      if (!rim && px * px + dy * dy <= iris * iris) {
+        mat = EYE_IRIS;
+        if (std::abs(px) <= imax(0, iris / 3) && std::abs(dy) < iris) mat = EYE_PUPIL;
+        if (px == -1 && dy == -iris + 1) mat = EYE_SCLERA;
+      } else if (!rim && std::abs(dx) > rx / 2
+                 && dy == (std::abs(dx) - rx / 2) / 2) mat = EYE_WOOD;
+      put(cx + dx, cy + dy, mat);
+    }
+  }
+
+  // A bounded silhouette shared by seeded growth and generated trees. Emitting
+  // final materials bottom-up lets living plants add only connected cells.
+  template<class Put>
+  static void stampEyeTree(Put&& put, int cx, int ground, int height,
+                           uint32_t seed, int worldX) {
+    constexpr int reach = 20, width = reach * 2 + 1, rise = 42;
+    uint8_t raster[width * rise] = {};
+    auto sketch = [&](int x, int y, uint8_t material) {
+      if (x < -reach || x > reach || y < -rise || y >= 0) return;
+      raster[(y + rise) * width + x + reach] = material;
+    };
+    int top = -height;
+    int ry = 5 + (int)(whash1(seed ^ 0xE7E53u, worldX) * 4);
+    int lean = (int)(whash1(seed ^ 0xE7E55u, worldX) * 7) - 3;
+    int rx = ry + 2 + (int)(whash1(seed ^ 0xE7E56u, worldX) * 3);
+    auto trunkX = [&](int y) { return lean * -y / height; };
+    for (int y = top + ry; y < 0; y++) {
+      sketch(trunkX(y), y, EYE_WOOD);
+      sketch(trunkX(y) + 1, y, EYE_WOOD);
+    }
+    double form = whash1(seed ^ 0xE7E57u, worldX);
+    int branches = form < 0.4 ? 0 : form < 0.75 ? 1 : 2;
+    int firstSide = whash1(seed ^ 0xE7E58u, worldX) < 0.5 ? -1 : 1;
+    for (int branch = 0; branch < branches; branch++) {
+      int side = branch ? -firstSide : firstSide;
+      int eyeY = imin(-9, top + 10 + (int)(whash2(seed ^ 0xE7E59u, worldX, branch) * 6));
+      int branchBase = imin(-2, eyeY + 8), baseX = trunkX(branchBase);
+      int arm = 8 + (int)(whash2(seed ^ 0xE7E5Au, worldX, branch) * 4);
+      for (int d = 0; d <= arm; d++) {
+        int y = branchBase - (branchBase - eyeY - 3) * d / arm;
+        sketch(baseX + side * d, y, EYE_WOOD);
+        sketch(baseX + side * d, y + 1, EYE_WOOD);
+      }
+      stampEyeGlyph(sketch, baseX + side * arm, eyeY, 5, 3, side);
+    }
+    stampEyeGlyph(sketch, lean, top, rx, ry,
+                  whash1(seed ^ 0xE7E54u, worldX) < 0.5 ? -1 : 1);
+    for (int y = -1; y >= -rise; y--) for (int x = -reach; x <= reach; x++) {
+      uint8_t material = raster[(y + rise) * width + x + reach];
+      if (material != EMPTY) put(cx + x, ground + y, material);
+    }
+  }
+
   // Trees are background silhouettes over already-generated terrain. The generated
   // profile reach overscans candidate trunks so canopies span band seams.
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd,
@@ -50,7 +112,7 @@
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (L->grid[y * cols + lx] == EMPTY) L->grid[y * cols + lx] = m; };
     for (int lx = colStart - reachX; lx < colEnd + reachX; lx++) {
       int worldX = L->worldOffsetX + lx; int surf = terrain.genSurfaceAt(worldX);
-      if (surf + 2 < rowStart
+      if (surf + reachY < rowStart
           || surf - reachY >= rowEnd) continue;
       // Leave a clean skyline around deterministic villages. Besides making the
       // settlement readable, this prevents background tree components from
@@ -76,6 +138,24 @@
       int h = plantProfile.heightBase
         + (int)(hr * plantProfile.heightVariation);
       int top = surf - h;
+      if (plantProfile.topology == PWGT_EYE) {
+        stampEyeTree(put, lx, surf, h, L->gTreeSeed, worldX);
+        for (int dx = -3; dx <= 3; dx++) {
+          int ground = terrain.genSurfaceAt(worldX + dx);
+          for (int y = surf - 4 + std::abs(dx); y < ground; y++) put(lx + dx, y, wood);
+        }
+        // Buried roots connect the heavy crown to the load-bearing pale stratum.
+        int rootDepth = TerrainGen::GEN_SKIN + terrain.genSoilDepthAt(worldX, biome);
+        for (int dx = 0; dx <= 1; dx++) {
+          int x = lx + dx;
+          if (x < colStart || x >= colEnd) continue;
+          for (int y = imax(surf, rowStart); y <= imin(surf + rootDepth, rowEnd - 1); y++) {
+            int k = y * cols + x;
+            if (L->grid[k] == VEIN_SOIL) L->grid[k] = wood;
+          }
+        }
+        continue;
+      }
       auto trunkXAtHeight = [&](int height) {
         if (plantProfile.topology != PWGT_PINE
             && plantProfile.topology != PWGT_WILLOW) return lx;

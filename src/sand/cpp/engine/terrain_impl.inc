@@ -33,11 +33,13 @@ int TerrainGen::classifyBiomeAt(int worldX) {
   int surface = genBaseSurfaceAbs(worldX);
   double altitude = std::fmax(0.0, (double)(SEA_LEVEL - surface) / 92.0);
   double rugged = wridged2(E.L->worldSeed ^ 0xB10B12u, worldX * BIOME_FREQ * 2.2, 4.0, 3, 0.52);
+  double anomaly = wfbm2(E.L->worldSeed ^ 0xE7E51u,
+                         worldX * BIOME_FREQ * 0.7, 7.0, 2, 0.5);
 
   for (Biome biome : SURFACE_BIOME_SELECTION_ORDER) {
     const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
     if (surfaceBiomeClimateMatches(def, temperature, moisture, altitude, rugged,
-                                   surface - SEA_LEVEL)) {
+                                   surface - SEA_LEVEL, anomaly)) {
       cached.seed = E.L->worldSeed;
       cached.x = worldX;
       cached.value = biome;
@@ -856,5 +858,12 @@ uint8_t TerrainGen::pickTreeType(int biome, int worldX) {
 }
 bool TerrainGen::genTreeAt(int worldX, int surf) {
   if (surf >= E.L->gSeaRow - E.L->worldOffsetY) return false;  // at/under water -> no trees
+  if (pickTreeType(genBiomeAt(worldX), worldX) == PT_EYE) {
+    // Wide crowns occupy stable, separated slots across streamed bands.
+    int slot = floorDiv(worldX, 40);
+    int anchor = slot * 40 + 16
+      + (int)(whash1(E.L->gTreeSeed ^ 0xE7E52u, slot) * 8);
+    return worldX == anchor;
+  }
   return whash1(E.L->gTreeSeed, worldX) < genTreeProb(genBiomeAt(worldX));
 }

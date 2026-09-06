@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 38;
 
-static const uint64_t ABI_FINGERPRINT = 0x4bfbcd0514bcULL;
+static const uint64_t ABI_FINGERPRINT = 0xbc9d588d8efaULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
@@ -986,6 +986,7 @@ enum Biome : int {
   BIOME_TUNDRA = 4,
   BIOME_JUNGLE = 5,
   BIOME_SWAMP = 6,
+  BIOME_WATCHWOOD = 7,
 };
 
 static constexpr bool isBiomeValue(int value) {
@@ -997,13 +998,14 @@ static constexpr bool isBiomeValue(int value) {
     case BIOME_TUNDRA:
     case BIOME_JUNGLE:
     case BIOME_SWAMP:
+    case BIOME_WATCHWOOD:
       return true;
     default: return false;
   }
 }
 
-static const int SURFACE_BIOME_COUNT = 7;
-static const uint32_t SURFACE_BIOME_ALL_MASK = 0x7fu;
+static const int SURFACE_BIOME_COUNT = 8;
+static const uint32_t SURFACE_BIOME_ALL_MASK = 0xffu;
 
 enum CaveBiome : int {
   CAVE_DEFAULT = 0,

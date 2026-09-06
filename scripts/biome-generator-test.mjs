@@ -81,6 +81,9 @@ run('surface structure policy must be boolean', (schema) => {
 run('surface structure walls must be load-bearing', (schema) => {
   schema.surfaceBiomes[0].structureWall = 'WATER';
 }, false);
+run('unknown surface architecture styles are rejected', (schema) => {
+  schema.surfaceBiomes[0].structureStyle = 'SSS_MISSING';
+}, false);
 run('cave monument walls must be load-bearing', (schema) => {
   schema.caveBiomes[0].monumentWall = 'FIRE';
 }, false);

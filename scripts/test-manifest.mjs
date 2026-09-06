@@ -40,6 +40,7 @@ export const UNIT_SUITES = [
   ['planet-gravity', 'planet-gravity-test.mjs'],
   ['planet-selection', 'planet-selection-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
+  ['watchwood', 'watchwood-test.mjs'],
   ['world-context', 'world-context-test.mjs'],
   ['worldgen-version', 'worldgen-version-test.mjs'],
   ['survival-spawn-context', 'survival-spawn-context-test.mjs'],
@@ -138,6 +139,7 @@ export const BROWSER_SUITES = [
   ['zoom-e2e', 'zoom-e2e.mjs', exclusive(240_000)],
   ['creatures-e2e', 'creature-e2e.mjs', exclusive(180_000)],
   ['day-night-e2e', 'day-night-e2e.mjs', exclusive(180_000)],
+  ['audio-playback-e2e', 'audio-playback-e2e.mjs', exclusive(120_000)],
   ['lighting-latency-e2e', 'lighting-latency-e2e.mjs', exclusive(180_000)],
   ['worker-e2e', 'worker-e2e.mjs', exclusive(300_000)],
   ['replay-microscope-e2e', 'replay-microscope-e2e.mjs', exclusive(180_000)],
@@ -174,6 +176,6 @@ export const TEST_GROUPS = {
   replay: [...matching(/replay|worker-capture/), 'worker-capture-e2e',
     'worker-seek-e2e', 'worker-playback-e2e', 'worker-restore-e2e'],
   worker: matching(/worker|replica|prediction|viewport-pause/),
-  generation: matching(/generator|worldgen|biome|world-context|deep-world/),
+  generation: matching(/generator|worldgen|biome|watchwood|world-context|deep-world/),
   harness: ['test-runner', 'scenario-runner', 'worker-capture', 'replay-capture'],
 };

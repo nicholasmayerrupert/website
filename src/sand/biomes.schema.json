@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "surfaceStructureStyles": { "SSS_VILLAGE": 0, "SSS_OBSERVATORY": 1 },
   "caveProfiles": {
     "CBP_DEFAULT": 0,
     "CBP_CRYSTAL": 1,
@@ -89,6 +90,7 @@
       "treeThird": "PT_OAK",
       "treeFirstCut": 0.75,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": false,
@@ -163,6 +165,7 @@
       "treeThird": "PT_OAK",
       "treeFirstCut": 0.85,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": false,
@@ -239,6 +242,7 @@
       "treeThird": "PT_CACTUS",
       "treeFirstCut": 1,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "SANDSTONE",
       "structureFoundation": "SANDSTONE",
       "copperRich": true,
@@ -322,6 +326,7 @@
       "treeThird": "PT_OAK",
       "treeFirstCut": 1,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": false,
@@ -403,6 +408,7 @@
       "treeThird": "PT_PINE",
       "treeFirstCut": 1,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": false,
@@ -479,6 +485,7 @@
       "treeThird": "PT_OAK",
       "treeFirstCut": 0.15,
       "treeSecondCut": 1,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": true,
@@ -556,6 +563,7 @@
       "treeThird": "PT_BUSH",
       "treeFirstCut": 0.85,
       "treeSecondCut": 0.95,
+      "structureStyle": "SSS_VILLAGE",
       "structureWall": "BRICK",
       "structureFoundation": "BRICK",
       "copperRich": false,
@@ -598,6 +606,57 @@
           "foundation": "CLAY"
         }
       }
+    },
+    {
+      "id": 7,
+      "key": "WATCHWOOD",
+      "symbol": "BIOME_WATCHWOOD",
+      "name": "watchwood",
+      "atlasColor": "#976a92",
+      "surfaceReliefScale": 0.38,
+      "surfaceDetailAmplitude": 8,
+      "surfaceRidgeMix": 0,
+      "surfaceOffset": -14,
+      "profileSelection": {},
+      "selectionPriority": -1,
+      "climate": [
+        [
+          {
+            "variable": "anomaly",
+            "comparison": ">",
+            "value": 0.64
+          },
+          {
+            "variable": "surfaceMinusSea",
+            "comparison": "<",
+            "value": -8
+          },
+          {
+            "variable": "altitude",
+            "comparison": "<",
+            "value": 0.4
+          }
+        ]
+      ],
+      "soilScale": 2,
+      "soilAdd": 4,
+      "flatSkin": "VEIN_SOIL",
+      "steepSkin": "PALESTONE",
+      "soilTop": "VEIN_SOIL",
+      "soilBase": "PALESTONE",
+      "soilBaseNumerator": 1,
+      "soilBaseDenominator": 2,
+      "treeProbabilityScale": 1,
+      "treeFirst": "PT_EYE",
+      "treeSecond": "PT_EYE",
+      "treeThird": "PT_EYE",
+      "treeFirstCut": 1,
+      "treeSecondCut": 1,
+      "structureStyle": "SSS_OBSERVATORY",
+      "structureWall": "PALESTONE",
+      "structureFoundation": "PALESTONE",
+      "copperRich": false,
+      "allowsSurfaceStructures": true
     }
   ],
   "caveBiomes": [

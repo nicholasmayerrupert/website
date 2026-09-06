@@ -235,6 +235,35 @@ export const SURFACE_BIOME_DEFS = Object.freeze([
       }
     },
     "allowsSurfaceStructures": true
+  },
+  {
+    "id": 7,
+    "key": "watchwood",
+    "name": "watchwood",
+    "symbol": "BIOME_WATCHWOOD",
+    "atlasColor": "#976a92",
+    "selectionPriority": -1,
+    "climate": [
+      [
+        {
+          "variable": "anomaly",
+          "comparison": ">",
+          "value": 0.64
+        },
+        {
+          "variable": "surfaceMinusSea",
+          "comparison": "<",
+          "value": -8
+        },
+        {
+          "variable": "altitude",
+          "comparison": "<",
+          "value": 0.4
+        }
+      ]
+    ],
+    "profileSelection": {},
+    "allowsSurfaceStructures": true
   }
 ]);
 export const CAVE_BIOME_DEFS = Object.freeze([
@@ -540,6 +569,6 @@ export const BIOME_GENERATION_PROFILE_SELECTION = Object.freeze([
     "requiresOffworldMaterialProfile": false
   }
 ]);
-export const SURFACE_BIOME_SELECTION_ORDER = Object.freeze([3,4,2,6,5,1,0]);
+export const SURFACE_BIOME_SELECTION_ORDER = Object.freeze([7,3,4,2,6,5,1,0]);
 export const SHALLOW_CAVE_BIOME_SELECTION_ORDER = Object.freeze([0,1,2,3]);
 export const DEEP_CAVE_BIOME_SELECTION_ORDER = Object.freeze([4,5,6,7]);

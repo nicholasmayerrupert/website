@@ -70,6 +70,7 @@ function sortedDenseEnum(label, values) {
 assertDenseRecords('surfaceBiomes', schema.surfaceBiomes);
 assertDenseRecords('caveBiomes', schema.caveBiomes);
 const caveProfiles = sortedDenseEnum('caveProfiles', schema.caveProfiles);
+const structureStyles = sortedDenseEnum('surfaceStructureStyles', schema.surfaceStructureStyles);
 const cavePolicySpecs = [
   { field: 'upper', macro: 'SAND_CAVE_UPPER_DRESSING_POLICY', prefix: 'CUDH_', enumName: 'CaveUpperDressingHandler', countName: 'CUDH_COUNT' },
   { field: 'deep', macro: 'SAND_CAVE_DEEP_DRESSING_POLICY', prefix: 'CDDH_', enumName: 'CaveDeepDressingHandler', countName: 'CDDH_COUNT' },
@@ -173,6 +174,7 @@ const climateVariables = new Map([
   ['altitude', 'SCV_ALTITUDE'],
   ['rugged', 'SCV_RUGGED'],
   ['surfaceMinusSea', 'SCV_SURFACE_MINUS_SEA'],
+  ['anomaly', 'SCV_ANOMALY'],
 ]);
 const climateComparisons = new Map([
   ['<', 'SCC_LESS_THAN'],
@@ -180,6 +182,8 @@ const climateComparisons = new Map([
 ]);
 let climateFallbackCount = 0;
 for (const record of sortedSurface) {
+  if (!structureStyles.some(([name]) => name === record.structureStyle))
+    throw new Error(`${record.symbol} has unknown surface structure style ${record.structureStyle}`);
   if (record.climate !== undefined && !Array.isArray(record.climate))
     throw new Error(`${record.symbol}.climate must be an OR-clause array when present`);
   if ((record.climate?.length ?? 0) > 0xff)
@@ -465,7 +469,7 @@ const surfaceRows = sortedSurface.map((record) => {
   + `   ${record.soilScale}, ${record.soilAdd}, ${record.flatSkin}, ${record.steepSkin}, ${record.soilTop}, ${record.soilBase},\n`
   + `   ${record.soilBaseNumerator}, ${record.soilBaseDenominator}, ${n(record.treeProbabilityScale)},\n`
   + `   ${record.treeFirst}, ${record.treeSecond}, ${record.treeThird}, ${n(record.treeFirstCut)}, ${n(record.treeSecondCut)},\n`
-  + `   ${record.structureWall}, ${record.structureFoundation}, ${b(record.copperRich)}, ${b(record.allowsSurfaceStructures)}},`;
+  + `   ${record.structureStyle}, ${record.structureWall}, ${record.structureFoundation}, ${b(record.copperRich)}, ${b(record.allowsSurfaceStructures)}},`;
 }).join('\n');
 const climateTermRows = climateTerms.map((term) =>
   `  {${climateVariables.get(term.variable)}, ${climateComparisons.get(term.comparison)}, ${n(term.value)}},`)
@@ -575,6 +579,10 @@ struct SurfaceClimateClause {
   uint8_t termCount;
 };
 
+enum SurfaceStructureStyle : uint8_t {
+${structureStyles.map(([name, id]) => `  ${name} = ${id},`).join('\n')}
+};
+
 struct SurfaceBiomeDef {
   Biome id;
   const char* name;
@@ -588,6 +596,7 @@ struct SurfaceBiomeDef {
   double treeProbabilityScale;
   uint8_t treeFirst, treeSecond, treeThird;
   double treeFirstCut, treeSecondCut;
+  SurfaceStructureStyle structureStyle;
   uint8_t structureWall, structureFoundation;
   bool copperRich;
   bool allowsSurfaceStructures;
@@ -722,9 +731,9 @@ static_assert(CAVE_BIOME_COUNT <= 32 && caveBiomeTableIsComplete(),
 
 inline bool surfaceBiomeClimateMatches(
     const SurfaceBiomeDef& biome, double temperature, double moisture,
-    double altitude, double rugged, double surfaceMinusSea) {
+    double altitude, double rugged, double surfaceMinusSea, double anomaly) {
   const std::array<double, SCV_COUNT> values = {{
-    temperature, moisture, altitude, rugged, surfaceMinusSea,
+    temperature, moisture, altitude, rugged, surfaceMinusSea, anomaly,
   }};
   for (uint16_t clauseIndex = 0; clauseIndex < biome.climateClauseCount;
        clauseIndex++) {

@@ -692,6 +692,27 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
   }
   return -1;
 }
+// Build each eye from its final material raster, so the iris and pupil grow
+// with the sclera and remain ordinary, connected plant cells.
+void GrowthSystem::growEye(Comp& comp,
+    std::vector<std::pair<int, uint8_t>>& growth,
+    std::unordered_set<int>& reserved) {
+  int seed = comp.cells.front();
+  for (int k : comp.cells) if (E.isSeedMaterial(E.L->grid[k])) { seed = k; break; }
+  int sx = seed % E.cols, sy = seed / E.cols;
+  uint32_t signature = plantGrowthSignature(comp);
+  int height = 20 + (int)(plantGrowthTrait(signature, 0) % 14u);
+  auto put = [&](int x, int y, uint8_t material) {
+    if (growth.size() >= 6 || !E.isInBounds(x, y)) return;
+    int k = E.I(x, y);
+    if (!plantTargetOpen(k, reserved)) return;
+    growth.push_back({k, material});
+    reserved.insert(k);
+  };
+  Engine::stampEyeTree(put, sx, sy, height, signature, 0);
+  if (growth.empty()) comp.growing = false;
+}
+
 void GrowthSystem::growPlantComponents() {
   E.ensureComponentRegistries();
   for (int componentIndex : E.L->growingPlantComponents) {
@@ -740,35 +761,38 @@ void GrowthSystem::growPlantComponents() {
     }
     if (E.rand() > GROWTH_P) continue;
     std::vector<std::pair<int, uint8_t>> growth; std::unordered_set<int> reserved;
-    bool shouldGrowWood = comp.woodCount < maxWood
-      && (gGrowth->finishStemFirst || comp.woodCount < leafStart
-          || E.rand() > gGrowth->woodLeafChance);
-    bool woodBlocked = false;
-    if (shouldGrowWood) {
-      int firstWood = tryGrowWood(comp, reserved);
-      woodBlocked = firstWood < 0;
-      if (firstWood >= 0 && addWoodIfOpen(firstWood, growth, reserved)) thickenTrunkAround(firstWood, comp, growth, reserved);
-      int extraWood = tryGrowWood(comp, reserved);
-      if (gGrowth->extraWood && extraWood >= 0 && E.rand() < 0.72)
-        addWoodIfOpen(extraWood, growth, reserved);
-    }
-    bool vineBerriesNow = gGrowth->vineBerriesChance > 0
-      && !growth.empty() && E.rand() < gGrowth->vineBerriesChance;
-    bool foliageAlongsideWood = gGrowth->foliageAlongsideWoodChance > 0
-      && !growth.empty()
-      && E.rand() < gGrowth->foliageAlongsideWoodChance;
-    bool leafBlocked = false;
-    if (leaves && (growth.empty() || vineBerriesNow || foliageAlongsideWood) && comp.woodCount >= leafStart && comp.leafCount < maxLeaf) {
-      int leafCount = 1;
-      switch (gGrowth->leafBurst) {
-        case PGB_SINGLE: leafCount = 1; break;
-        case PGB_PINE: leafCount = E.rand() < 0.45 ? 2 : 1; break;
-        case PGB_DEFAULT: leafCount = E.rand() < 0.35 ? 2 : 1; break;
+    bool woodBlocked = false, leafBlocked = false;
+    if (gGrowth->woodTopology == PGW_EYE) {
+      growEye(comp, growth, reserved);
+    } else {
+      bool shouldGrowWood = comp.woodCount < maxWood
+        && (gGrowth->finishStemFirst || comp.woodCount < leafStart
+            || E.rand() > gGrowth->woodLeafChance);
+      if (shouldGrowWood) {
+        int firstWood = tryGrowWood(comp, reserved);
+        woodBlocked = firstWood < 0;
+        if (firstWood >= 0 && addWoodIfOpen(firstWood, growth, reserved)) thickenTrunkAround(firstWood, comp, growth, reserved);
+        int extraWood = tryGrowWood(comp, reserved);
+        if (gGrowth->extraWood && extraWood >= 0 && E.rand() < 0.72)
+          addWoodIfOpen(extraWood, growth, reserved);
       }
-      leafCount = imin(leafCount, maxLeaf - comp.leafCount);
-      int leavesBefore = (int)growth.size();
-      for (int i = 0; i < leafCount; i++) { int leafK = tryGrowLeaf(comp, reserved); if (plantTargetOpen(leafK, reserved)) { growth.push_back({leafK, gLeafMat}); reserved.insert(leafK); } }
-      leafBlocked = (int)growth.size() == leavesBefore;
+      bool vineBerriesNow = gGrowth->vineBerriesChance > 0
+        && !growth.empty() && E.rand() < gGrowth->vineBerriesChance;
+      bool foliageAlongsideWood = gGrowth->foliageAlongsideWoodChance > 0
+        && !growth.empty()
+        && E.rand() < gGrowth->foliageAlongsideWoodChance;
+      if (leaves && (growth.empty() || vineBerriesNow || foliageAlongsideWood) && comp.woodCount >= leafStart && comp.leafCount < maxLeaf) {
+        int leafCount = 1;
+        switch (gGrowth->leafBurst) {
+          case PGB_SINGLE: leafCount = 1; break;
+          case PGB_PINE: leafCount = E.rand() < 0.45 ? 2 : 1; break;
+          case PGB_DEFAULT: leafCount = E.rand() < 0.35 ? 2 : 1; break;
+        }
+        leafCount = imin(leafCount, maxLeaf - comp.leafCount);
+        int leavesBefore = (int)growth.size();
+        for (int i = 0; i < leafCount; i++) { int leafK = tryGrowLeaf(comp, reserved); if (plantTargetOpen(leafK, reserved)) { growth.push_back({leafK, gLeafMat}); reserved.insert(leafK); } }
+        leafBlocked = (int)growth.size() == leavesBefore;
+      }
     }
     if (growth.empty()) {
       if ((woodBlocked || comp.woodCount >= maxWood) && (!leaves || leafBlocked || comp.leafCount >= maxLeaf)) comp.growing = false;

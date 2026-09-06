@@ -27,6 +27,8 @@ class GrowthSystem {
   bool addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);
   void thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);
   int tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved);
+  void growEye(Comp& comp, std::vector<std::pair<int, uint8_t>>& growth,
+               std::unordered_set<int>& reserved);
   void growPlantComponents();
   int myceliumNeighbourCount(int k);
   bool myceliumFindStoneTarget(Comp& comp, int& targetK);

@@ -10,7 +10,7 @@ import {
   AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
 } from '../src/sand/materials.generated.js';
 import {
-  buildTntExplosionBuffer, derivePlayerEffectState,
+  buildTntExplosionBuffer, createTerrainExplosionGate, derivePlayerEffectState, explosionVoiceSpec,
   sandMediaMetadata, semanticEventCooldownMs, spatializeSound,
 } from '../src/sand/audio/sandAudio.js';
 import {
@@ -49,8 +49,7 @@ check('ward, breach, explosion, and beam cues have distinct semantic ids',
     && SOUND_EVENT.BEAM === SOUND_EVENT.WEAPON_EXPLOSION + 1);
 check('weapon detonations bypass the terrain-TNT presentation cooldown',
   semanticEventCooldownMs(SOUND_EVENT.WEAPON_EXPLOSION) === 0
-    && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 0) === 190
-    && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 1) === 350);
+    && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION) === 85);
 check('beam cues have an explicit presentation cooldown',
   semanticEventCooldownMs(SOUND_EVENT.BEAM) === 120);
 
@@ -59,12 +58,13 @@ check('beam cues have an explicit presentation cooldown',
     layer.asset,
     {
       numberOfChannels: 1,
-      length: 4,
-      getChannelData: () => Float32Array.of(index + 1, 0, 0, 0),
+      length: 1000,
+      getChannelData: () => Float32Array.from({ length: 1000 }, (_, i) =>
+        Math.sin(i * 0.15) * (index + 1)),
     },
   ]));
   const context = {
-    sampleRate: 4,
+    sampleRate: 1000,
     createBuffer(channels, length) {
       const data = Array.from({ length: channels }, () => new Float32Array(length));
       return {
@@ -75,10 +75,41 @@ check('beam cues have an explicit presentation cooldown',
     },
   };
   const mixed = buildTntExplosionBuffer(context, assets);
-  check('the shared TNT effect runtime-mixes all three complete recorded layers',
-    TNT_EXPLOSION_LAYERS.length === 3
-      && mixed.length === 5
-      && mixed.getChannelData(0)[0] === 6);
+  const samples = mixed.getChannelData(0);
+  check('the shared TNT effect is finite, peak-normalized, and fades to silence',
+    samples.every(Number.isFinite)
+      && Math.abs(Math.max(...samples.map(Math.abs)) - 0.9) < 1e-6
+      && samples.at(-1) === 0);
+  check('missing recordings select the synthesized fallback',
+    buildTntExplosionBuffer(context, {}) === null);
+  for (const layer of TNT_EXPLOSION_LAYERS) {
+    const silent = { ...assets, [layer.asset]: {
+      ...assets[layer.asset], getChannelData: () => new Float32Array(1000),
+    } };
+    const withoutLayer = buildTntExplosionBuffer(context, silent).getChannelData(0);
+    check(`${layer.asset} contributes to the composite effect`,
+      samples.some((sample, i) => Math.abs(sample - withoutLayer[i]) > 0.01));
+  }
+}
+
+{
+  const admit = createTerrainExplosionGate();
+  check('nearby TNT cells and both layers share one blast onset',
+    admit(23, 10, 1000) && !admit(25, 10, 1000));
+  check('separate simultaneous blasts do not silence each other', admit(65, 10, 1000));
+  check('a local chain resumes promptly after the short cooldown',
+    !admit(23, 10, 1080) && admit(23, 10, 1085));
+  const spatial = { gain: 1, pan: -1, distance: 0 };
+  const small = explosionVoiceSpec(0.4, spatial);
+  const large = explosionVoiceSpec(4, spatial);
+  const distant = explosionVoiceSpec(4, { ...spatial, gain: 0.3, distance: 150 });
+  check('large blasts have a lower pitch and greater weight',
+    large.rate < small.rate && large.gain > small.gain);
+  check('distant blasts are quieter and lose high-frequency crack',
+    distant.gain < large.gain && distant.frequency < large.frequency);
+  check('explosion variation changes the pitch without changing position',
+    explosionVoiceSpec(1, spatial, 0).rate !== explosionVoiceSpec(1, spatial, 1).rate
+      && large.pan < 0 && large.pan > -1);
 }
 
 {

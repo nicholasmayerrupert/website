@@ -75,6 +75,39 @@
       // keep tall downhill foundations from reading as featureless rectangles.
       stampTerraceFoundation(left, left + w, floorY, foundation, true);
 
+      if (biomeDef.structureStyle == SSS_OBSERVATORY) {
+        // Pale domes and a large ocular instrument share the village footprint.
+        // The instrument and interior ribs stay behind the player-clear hall.
+        for (int x = left - 2; x <= left + w + 2; x++) {
+          double nx = (double)(x - cx) / (w / 2 + 2);
+          int rise = (int)std::lround(roofH * std::sqrt(std::fmax(0.0, 1.0 - nx * nx)));
+          for (int y = wallTop - rise; y <= wallTop; y++) put(x, y, wall);
+          if ((x - left) % 6 == 0) put(x, wallTop - rise, EYE_WOOD);
+        }
+        if (hall) {
+          for (int dx : {-3, 3})
+            for (int y = wallTop - roofH - 12; y <= wallTop - roofH; y++) put(cx + dx, y, wall);
+          stampEyeGlyph(put, cx, wallTop - roofH - 7, 6, 5);
+        }
+        if (L->isBackground) {
+          for (int x = left + 4; x < left + w; x += 8) {
+            for (int y = wallTop + 1; y < floorY; y++) put(x, y, EYE_WOOD);
+          }
+          int instrumentY = wallTop + 10;
+          for (int y = instrumentY; y < floorY; y++) {
+            put(cx - 1, y, EYE_WOOD); put(cx + 1, y, EYE_WOOD);
+          }
+          stampEyeGlyph(put, cx, instrumentY, hall ? 12 : 9, hall ? 8 : 6);
+          for (int side : {-1, 1}) {
+            int shelf = cx + side * (w / 2 - 8);
+            for (int dx = -3; dx <= 3; dx++) put(shelf + dx, floorY - 5, EYE_WOOD);
+            put(shelf, floorY - 6, CRYSTAL);
+            put(shelf + 2, floorY - 6, EYE_IRIS);
+          }
+        }
+        return;
+      }
+
       // The four occupations use genuinely different silhouettes: domestic
       // gable, workshop shed, glazed apothecary arch, warehouse parapet, and a
       // civic hall with a belfry. All roofs are solid in both layers.
@@ -261,12 +294,17 @@
       VillagePlan village;
       if (!worldContext.villagePlan(vx, village)) continue;
       int center = village.center, count = village.buildingCount;
+      bool watchwood = surfaceBiomeDef(terrain.genBiomeAt(center)).structureStyle == SSS_OBSERVATORY;
+      uint8_t masonry = watchwood ? PALESTONE : BRICK;
+      uint8_t stone = watchwood ? PALESTONE : SANDSTONE;
+      uint8_t timber = watchwood ? EYE_WOOD : PINE_WOOD;
+      uint8_t street = watchwood ? VEIN_SOIL : SAND;
       int wellX = center + count * 29 + 12, wellY;
 
-      // A continuous sand street and lanterns turn the individual facades into
+      // A continuous street and lanterns turn the individual facades into
       // one settlement. Everything follows the terrain instead of flattening it.
       int streetLeft = center - count * 29 - 30, streetRight = wellX + 12;
-      for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), SAND);
+      for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), street);
       // Facades and their masonry foundations remain embedded through the loose
       // street layer.
       for (int i = 0; i < count; i++) {
@@ -280,8 +318,8 @@
       if (L->isBackground) for (int i = 0; i + 1 < count; i++) {
         int lampX = center + (i - count / 2) * 58 + 29;
         int lampY = terrain.genSurfaceAbs(lampX) - 1;
-        for (int y = lampY - 9; y <= groundAnchorY(lampX); y++) put(lampX, y, PINE_WOOD);
-        for (int dx = -3; dx <= 3; dx++) put(lampX + dx, lampY - 9, PINE_WOOD);
+        for (int y = lampY - 9; y <= groundAnchorY(lampX); y++) put(lampX, y, timber);
+        for (int dx = -3; dx <= 3; dx++) put(lampX + dx, lampY - 9, timber);
         put(lampX - 3, lampY - 8, CRYSTAL); put(lampX + 3, lampY - 8, CRYSTAL);
       }
 
@@ -290,14 +328,14 @@
       int marketX = wellX - 20, marketSurfaceSum = 0;
       for (int x = marketX - 11; x <= marketX + 11; x++) marketSurfaceSum += terrain.genSurfaceAbs(x);
       int marketY = floorDiv(marketSurfaceSum, 23) - 1;
-      stampTerraceFoundation(marketX - 11, marketX + 11, marketY, SANDSTONE, true);
+      stampTerraceFoundation(marketX - 11, marketX + 11, marketY, stone, true);
       for (int x = marketX - 11; x <= marketX + 11; x++) {
-        put(x, marketY - 12, ((x - marketX) & 3) < 2 ? BRICK : SANDSTONE);
-        put(x, marketY - 11, ((x - marketX) & 3) < 2 ? BRICK : SANDSTONE);
+        put(x, marketY - 12, ((x - marketX) & 3) < 2 ? masonry : stone);
+        put(x, marketY - 11, ((x - marketX) & 3) < 2 ? masonry : stone);
       }
-      for (int side : {-1, 1}) for (int y = marketY - 10; y <= marketY; y++) put(marketX + side * 10, y, PINE_WOOD);
-      for (int x = marketX - 8; x <= marketX + 8; x++) put(x, marketY - 4, WOOD);
-      for (int x : {marketX - 7, marketX + 7}) for (int y = marketY - 3; y <= marketY; y++) put(x, y, PINE_WOOD);
+      for (int side : {-1, 1}) for (int y = marketY - 10; y <= marketY; y++) put(marketX + side * 10, y, timber);
+      for (int x = marketX - 8; x <= marketX + 8; x++) put(x, marketY - 4, watchwood ? EYE_WOOD : WOOD);
+      for (int x : {marketX - 7, marketX + 7}) for (int y = marketY - 3; y <= marketY; y++) put(x, y, timber);
       if (L->isBackground) {
         static const uint8_t wares[] = { CLAY, MUSH_CAP, MOSS, GLOWBERRY, GOLD_ORE, PLANT };
         for (int x = marketX - 7; x <= marketX + 7; x += 3)
@@ -311,17 +349,17 @@
       int wellSurfaceSum = 0;
       for (int x = wellX - 7; x <= wellX + 7; x++) wellSurfaceSum += terrain.genSurfaceAbs(x);
       wellY = floorDiv(wellSurfaceSum, 15) - 1;
-      stampTerraceFoundation(wellX - 7, wellX + 7, wellY, BRICK, true);
-      for (int dx = -4; dx <= 4; dx++) put(wellX + dx, wellY, BRICK);
-      for (int side : {-1, 1}) for (int y = wellY - 12; y < wellY; y++) put(wellX + side * 5, y, PINE_WOOD);
+      stampTerraceFoundation(wellX - 7, wellX + 7, wellY, masonry, true);
+      for (int dx = -4; dx <= 4; dx++) put(wellX + dx, wellY, masonry);
+      for (int side : {-1, 1}) for (int y = wellY - 12; y < wellY; y++) put(wellX + side * 5, y, timber);
       for (int ry = 0; ry <= 4; ry++)
-        for (int x = wellX - 7 + ry; x <= wellX + 7 - ry; x++) put(x, wellY - 12 - ry, BRICK);
-      for (int x = wellX - 5; x <= wellX + 5; x++) put(x, wellY - 8, WOOD);
+        for (int x = wellX - 7 + ry; x <= wellX + 7 - ry; x++) put(x, wellY - 12 - ry, masonry);
+      for (int x = wellX - 5; x <= wellX + 5; x++) put(x, wellY - 8, watchwood ? EYE_WOOD : WOOD);
       put(wellX, wellY - 11, STONE);
-      for (int y = wellY - 10; y <= wellY - 3; y++) put(wellX, y, WOOD);
+      for (int y = wellY - 10; y <= wellY - 3; y++) put(wellX, y, watchwood ? EYE_WOOD : WOOD);
       for (int dx = -2; dx <= 2; dx++) {
-        put(wellX + dx, wellY - 2, BRICK);
-        put(wellX + dx, wellY - 1, dx == 0 ? WATER : BRICK);
+        put(wellX + dx, wellY - 2, masonry);
+        put(wellX + dx, wellY - 1, dx == 0 ? WATER : masonry);
       }
       put(wellX, wellY - 3, CLAY); put(wellX - 4, wellY - 1, MOSS);
     }

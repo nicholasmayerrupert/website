@@ -466,7 +466,7 @@ const plantWorldgenProfileList = worldgenCatalogue.sorted;
 const plantGrowthProfileByName = growthCatalogue.byName;
 const plantWorldgenProfileByName = worldgenCatalogue.byName;
 const plantWoodTopologies = {
-  generic: 0, vine: 1, oak: 2, pine: 3, willow: 4, cactus: 5,
+  generic: 0, vine: 1, oak: 2, pine: 3, willow: 4, cactus: 5, eye: 6,
 };
 const plantLeafTopologies = {
   generic: 0, mushroom: 1, vine: 2, willow: 3, pine: 4, oak: 5,
@@ -474,7 +474,7 @@ const plantLeafTopologies = {
 const plantTrunkProfiles = { none: 0, generic: 1, tree: 2 };
 const plantLeafBurstProfiles = { default: 0, single: 1, pine: 2 };
 const plantWorldgenTopologies = {
-  broadleaf: 0, pine: 1, willow: 2, cactus: 3, bush: 4,
+  broadleaf: 0, pine: 1, willow: 2, cactus: 3, bush: 4, eye: 5,
 };
 const plantWorldgenMinimumReach = {
   broadleaf: { horizontal: 9, crownAboveTop: 7 },
@@ -482,6 +482,7 @@ const plantWorldgenMinimumReach = {
   willow: { horizontal: 14, crownAboveTop: 7 },
   cactus: { horizontal: 2, crownAboveTop: 0 },
   bush: { horizontal: 5, crownAboveTop: 7 },
+  eye: { horizontal: 20, crownAboveTop: 8 },
 };
 const probability = (owner, field) => {
   const value = owner[field];

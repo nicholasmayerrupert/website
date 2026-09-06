@@ -13,6 +13,7 @@ export const BIOME_BACKGROUND_PROFILES = {
   [BIOME.TUNDRA]: { sky: [0.94, 1.02, 1.05], ridges: ['#a0b2bc', '#879c9e', '#708b85', '#303b40'], forest: 0.2, snow: 1, shape: 'alpine', relief: [1.25, 0.85, 0.55], plants: 'pine' },
   [BIOME.JUNGLE]: { sky: [0.94, 1.02, 0.94], ridges: ['#779a91', '#4b806b', '#2c704d', '#1b3028'], forest: 1, snow: 0, shape: 'rolling', relief: [0.65, 0.6, 0.6], plants: 'jungle' },
   [BIOME.SWAMP]: { sky: [1.02, 1, 0.88], ridges: ['#939b83', '#707e60', '#526745', '#2b3025'], forest: 0.65, snow: 0, shape: 'rolling', relief: [0.22, 0.18, 0.15], plants: 'willow' },
+  [BIOME.WATCHWOOD]: { sky: [1.13, 0.85, 1.04], ridges: ['#a093aa', '#806880', '#68435e', '#302235'], forest: 0, snow: 0, shape: 'rolling', relief: [0.65, 0.5, 0.4], plants: 'eyes' },
 };
 
 export function createBiomeBackgroundBlend() {

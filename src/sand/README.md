@@ -151,7 +151,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 10 is canonical in absolute coordinates: viewport size changes
+World generation version 11 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select stable 384-cell climate districts. Adjacent districts
@@ -160,7 +160,14 @@ Biome-specific relief, rolling or craggy detail, and elevation offsets blend
 continuously across 64-cell surface knots. Plains have low rolling relief,
 deserts have sandy dunes and cacti, rocky highlands expose stone, tundra carries
 a snow mantle, jungles grow dense broadleaf vegetation, and swamps form low muddy
-wetlands. Climate reads the base elevation independently of biome-shaped relief.
+wetlands. A broad anomaly field selects Watchwood pockets: rounded plum-soil hills,
+pale stone strata, and static ivory-eyed trees on branching burgundy trunks.
+Their component-backed wood, sclera, iris, and pupil remain destructible; generated
+eye trees have no growth, blinking, or tracking behavior. Plantable eyeball seeds
+grow varied single crowns, asymmetric forks, and clustered eyes on leaning trunks;
+leaf harvesting yields their species' seeds. The parallax grove varies stalk
+height, lean, crown shape, branching, and spacing. Climate reads the base elevation
+independently of biome-shaped relief.
 
 Foreground caves combine noise caverns with a player-clear macro-region
 backbone from the surface into an infinite deep-cavern graph. The normal cave
@@ -184,6 +191,9 @@ foundations, broad masonry supports, slope stairs, a market, lantern-lit streets
 and a roofed well. Villages reserve their whole street with a gap between neighboring
 settlements. Mine entrances exclude settlements, and ruin plans exclude both settlements
 and mines; both simulated layers share these deterministic placement decisions.
+The biome catalogue selects the settlement architecture. Watchwood uses pale
+observation domes, ocular instruments, and burgundy ribs within the same reserved,
+player-clear building footprints, with matching communal roofs and streets.
 Ruins and homes keep player-clear foreground routes while
 their coordinated background walls carry furniture, murals, storage, machinery,
 and plant life; underground archetypes include lost archives with book bays,
@@ -794,10 +804,13 @@ so backpedaling preserves the aimed sprite and weapon direction. Jetpack thrust
 uses layered body/hiss loops with ignition and release, while the raised ward has
 an activation transient, sustained resonant bed, impact, and break cues. Weapon
 reports layer compact CC0 recordings with synthesized pressure cracks, body,
-reflections, and mechanical action. Every projectile detonation bypasses the
-terrain-TNT chain cooldown and plays the same complete effect, runtime-mixed from
-all three recorded TNT layers into one uncapped weapon voice; cluster volleys
-therefore sound like sixteen staggered TNT blasts without tripling source count.
+reflections, and mechanical action. Explosions combine a sharp report, delayed
+pressure body, and decaying rumble in one peak-normalized sample. Blast strength
+controls pitch and weight, distance filters the high end, and each onset varies
+slightly. Nearby terrain TNT cells share an 85 ms cooldown; separate locations
+remain independently audible. Every projectile detonation gets its own onset.
+Dense volleys fade the oldest explosion tails when their separate voice budget
+fills, preserving new impacts without crowding out other gameplay cues.
 Transporter transitions and successful rescue-beam tags share a distinct energy
 cue.
 Audio asset provenance is in

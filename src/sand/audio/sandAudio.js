@@ -114,12 +114,21 @@ function updateMediaSessionMetadata() {
   } catch { /* Media Session is optional browser chrome. */ }
 }
 
-export function semanticEventCooldownMs(type, variation = 0.5, continuousPlace = false) {
+export function semanticEventCooldownMs(type, continuousPlace = false) {
   // Projectile detonations are already discrete authority events. Unlike a TNT
   // chain or a dense brush, suppressing any one of them loses gameplay feedback.
   if (type === SOUND_EVENT.WEAPON_EXPLOSION) return 0;
-  if (type === SOUND_EVENT.EXPLOSION) return 190 + variation * 160;
   return continuousPlace ? 125 : (EVENT_COOLDOWN_MS[type] ?? 45);
+}
+
+export function createTerrainExplosionGate() {
+  let recent = [];
+  return (x, y, now) => {
+    recent = recent.filter((blast) => now - blast.at < EVENT_COOLDOWN_MS[SOUND_EVENT.EXPLOSION]);
+    if (recent.some((blast) => Math.hypot(x - blast.x, y - blast.y) < 18)) return false;
+    recent.push({ x, y, at: now });
+    return true;
+  };
 }
 
 export function derivePlayerEffectState(player) {
@@ -157,7 +166,7 @@ export function buildTntExplosionBuffer(context, assets) {
   if (layers.some((layer) => !layer.buffer)) return null;
   const channels = Math.max(...layers.map((layer) => layer.buffer.numberOfChannels));
   const length = Math.max(...layers.map((layer) =>
-    Math.ceil(layer.buffer.length / layer.rate)));
+    Math.ceil(layer.buffer.length / layer.rate) + Math.round(layer.delay * context.sampleRate)));
   const mixed = context.createBuffer(channels, length, context.sampleRate);
   for (const layer of layers) {
     for (let channel = 0; channel < channels; channel++) {
@@ -166,16 +175,40 @@ export function buildTntExplosionBuffer(context, assets) {
       );
       const output = mixed.getChannelData(channel);
       const layerLength = Math.ceil(input.length / layer.rate);
+      const offset = Math.round(layer.delay * context.sampleRate);
       for (let i = 0; i < layerLength; i++) {
         const sourceIndex = i * layer.rate;
         const lo = Math.floor(sourceIndex);
         const mix = sourceIndex - lo;
         const hi = Math.min(input.length - 1, lo + 1);
-        output[i] += input[lo] + (input[hi] - input[lo]) * mix;
+        const time = i / context.sampleRate;
+        const fade = Math.min(1, (layerLength - 1 - i) / (context.sampleRate * 0.04));
+        output[i + offset] += (input[lo] + (input[hi] - input[lo]) * mix)
+          * layer.gain * Math.exp(-time / layer.decay) * fade;
       }
     }
   }
+  // Normalize the complete effect once, retaining its transient and leaving
+  // headroom for overlapping detonations in the master compressor.
+  let peak = 0;
+  for (let channel = 0; channel < channels; channel++) {
+    for (const sample of mixed.getChannelData(channel)) peak = Math.max(peak, Math.abs(sample));
+  }
+  if (peak > 0) for (let channel = 0; channel < channels; channel++) {
+    const output = mixed.getChannelData(channel);
+    for (let i = 0; i < length; i++) output[i] *= 0.9 / peak;
+  }
   return mixed;
+}
+
+export function explosionVoiceSpec(strength, spatial, variation = 0.5) {
+  const size = clamp((strength - 0.4) / 3.6);
+  return {
+    gain: Math.min(1.05, Math.sqrt(clamp(strength, 0.08, 4)) * 0.65) * spatial.gain,
+    rate: 1.13 - size * 0.36 + (variation - 0.5) * 0.14,
+    frequency: 900 + 11000 * Math.exp(-spatial.distance / 100),
+    pan: spatial.pan * 0.88,
+  };
 }
 
 function readStoredMuted() {
@@ -209,6 +242,8 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   let playerEffects = { id: 0, jetpack: false, shield: false };
   const lastEventAt = new Map();
   const lastRecordedWeaponAt = new Map();
+  const admitTerrainExplosion = createTerrainExplosionGate();
+  const explosionVoices = [];
   const mobileVoiceBudget = typeof navigator !== 'undefined'
     && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const MAX_VOICES = mobileVoiceBudget ? 16 : 28;
@@ -347,7 +382,20 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     effectsBus.gain.value = 0.82;
     ambienceBus.gain.value = 0.6;
     effectsBus.connect(master); ambienceBus.connect(master);
-    master.connect(compressor); compressor.connect(context.destination);
+    // The compressor controls sustained loudness. A soft peak guard catches
+    // coincident blast transients, with a linear response below the knee.
+    const peakInput = context.createGain();
+    peakInput.gain.value = 0.25;
+    const peakGuard = context.createWaveShaper();
+    peakGuard.curve = Float32Array.from({ length: 4097 }, (_, i) => {
+      const x = (i / 4096 * 2 - 1) * 4;
+      const magnitude = Math.abs(x);
+      return Math.sign(x) * (magnitude <= 0.8 ? magnitude
+        : 0.8 + 0.18 * (1 - Math.exp(-(magnitude - 0.8) / 0.18)));
+    });
+    peakGuard.oversample = '2x';
+    master.connect(compressor); compressor.connect(peakInput);
+    peakInput.connect(peakGuard); peakGuard.connect(context.destination);
     noiseBuffer = makeNoise(2.1, 'white');
     brownBuffer = makeNoise(2.3, 'brown');
     crackleBuffer = makeNoise(2.7, 'crackle');
@@ -427,10 +475,7 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   };
 
   const trackVoice = (source, weaponExplosion = false) => {
-    // Weapon explosions are bounded by the authority event queue and must not
-    // lose an onset to presentation activity. Their complete three-layer effect
-    // is pre-mixed into one source, so it is safe to bypass the generic voice
-    // budget without tripling node count.
+    // Projectile fallback synthesis preserves every detonation onset.
     if (weaponExplosion) return;
     activeVoices++;
     source.onended = () => {
@@ -496,9 +541,9 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   };
 
   const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
-    attack = 0.004, weaponExplosion = false }) => {
+    attack = 0.004, frequency = 0, explosion = false, weaponExplosion = false }) => {
     if (!buffer || !audible() || !context
-        || (!weaponExplosion && activeVoices >= MAX_VOICES)
+        || (!explosion && !weaponExplosion && activeVoices >= MAX_VOICES)
         || gain <= 0.001) return false;
     const now = context.currentTime + delay;
     const source = context.createBufferSource();
@@ -510,8 +555,36 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     const duration = buffer.duration / rate;
     envelope.gain.setValueAtTime(gain, now + Math.max(0.01, duration - 0.04));
     envelope.gain.linearRampToValueAtTime(0.0001, now + duration);
-    source.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(source, weaponExplosion);
+    let filter = null;
+    if (frequency) {
+      filter = context.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = frequency; filter.Q.value = 0.5;
+      source.connect(filter); filter.connect(envelope);
+    } else source.connect(envelope);
+    connectSpatial(envelope, effectsBus, pan);
+    if (explosion) {
+      // Keep fresh impacts audible during volleys; retire the oldest tail with
+      // a short fade so stealing a voice never cuts its waveform abruptly.
+      if (explosionVoices.length >= (mobileVoiceBudget ? 12 : 20)) {
+        const oldest = explosionVoices.shift();
+        const fadeAt = Math.max(now, oldest.startedAt + 0.1);
+        const param = oldest.envelope.gain;
+        if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(fadeAt);
+        else {
+          param.cancelScheduledValues(fadeAt);
+          param.setValueAtTime(oldest.gain, fadeAt);
+        }
+        param.linearRampToValueAtTime(0, fadeAt + 0.045);
+        oldest.source.stop(fadeAt + 0.05);
+      }
+      const voice = { source, envelope, gain, startedAt: now };
+      explosionVoices.push(voice);
+      source.onended = () => {
+        const index = explosionVoices.indexOf(voice);
+        if (index >= 0) explosionVoices.splice(index, 1);
+        source.disconnect(); filter?.disconnect(); envelope.disconnect();
+      };
+    } else trackVoice(source, weaponExplosion);
     source.start(now);
     return true;
   };
@@ -529,24 +602,27 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     return true;
   };
 
-  const playTntExplosionEffect = (gain, pan, variation, weaponExplosion) => {
-    const sampleGain = Math.min(0.46, gain * 0.25);
+  const playTntExplosionEffect = (strength, spatial, variation, weaponExplosion) => {
+    const spec = explosionVoiceSpec(strength, spatial, variation);
+    const { gain, pan, rate, frequency } = spec;
     if (recordedAssets?.tntExplosion) {
       playSample({
         buffer: recordedAssets.tntExplosion,
-        gain: sampleGain,
-        pan,
-        rate: 1 + variation * 0.04,
-        weaponExplosion,
+        ...spec,
+        attack: 0.001,
+        explosion: true,
       });
       return;
     }
     // The first blast can land before recorded assets finish decoding, and a
     // failed request must not make the game's central effect silent.
-    playNoise({ duration: 0.46, gain: gain * 0.38, pan, frequency: 210,
-      type: 'lowpass', q: 0.6, rate: 0.78 + variation * 0.08,
+    playNoise({ duration: 0.09 / rate, gain: gain * 0.40, pan,
+      frequency: Math.min(4200, frequency), type: 'lowpass', q: 0.5,
+      rate, attack: 0.001, weaponExplosion });
+    playNoise({ duration: 0.85 / rate, gain: gain * 0.52, pan, frequency: 320 * rate,
+      type: 'lowpass', q: 0.6, rate,
       buffer: brownBuffer, attack: 0.003, weaponExplosion });
-    playTone({ from: 118, to: 38, duration: 0.48, gain: gain * 0.23, pan,
+    playTone({ from: 112 * rate, to: 36, duration: 0.58 / rate, gain: gain * 0.48, pan,
       wave: 'sine', delay: 0.006, attack: 0.003, weaponExplosion });
   };
 
@@ -646,9 +722,8 @@ export function createSandAudio({ expeditionScore = false } = {}) {
         gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
       });
     } else if (type === SOUND_EVENT.WEAPON_EXPLOSION) {
-      // Weapon and terrain blasts use the exact same complete TNT effect. Only
-      // this semantic class bypasses coalescing, cooldown, and generic voices.
-      playTntExplosionEffect(gain, pan, variation, true);
+      // Every projectile detonation gets the complete effect and a fresh onset.
+      playTntExplosionEffect(strength, spatial, variation, true);
     } else if (type === SOUND_EVENT.MINIGUN) {
       // The continuous crackle supplies the actual high cyclic rate; a quiet
       // real rifle burst periodically restores believable muzzle texture.
@@ -718,7 +793,7 @@ export function createSandAudio({ expeditionScore = false } = {}) {
       playTone({ from: 92, to: 42, duration: 0.50, gain: gain * 0.105, pan,
         wave: 'sine', delay: 0.015, attack: 0.006 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
-      playTntExplosionEffect(gain, pan, variation, false);
+      playTntExplosionEffect(strength, spatial, variation, false);
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {
@@ -819,13 +894,17 @@ export function createSandAudio({ expeditionScore = false } = {}) {
         || type === SOUND_EVENT.ACID_DISSOLVE;
       const cooldownKey = regional
         ? `${type}:${Math.round(spatial.pan * 2)}` : type;
-      const cooldown = semanticEventCooldownMs(type, variation, continuousPlace);
-      if (cooldown > 0) {
+      const cooldown = semanticEventCooldownMs(type, continuousPlace);
+      if (type === SOUND_EVENT.EXPLOSION) {
+        if (!admitTerrainExplosion(eventX, eventY, nowMs)) continue;
+      } else if (cooldown > 0) {
         const last = lastEventAt.get(cooldownKey) || -Infinity;
         if (nowMs - last < cooldown) continue;
         lastEventAt.set(cooldownKey, nowMs);
       }
-      renderEvent(type, packed[i + O.intensity], material, spatial, variation);
+      const explosion = type === SOUND_EVENT.EXPLOSION || type === SOUND_EVENT.WEAPON_EXPLOSION;
+      renderEvent(type, packed[i + O.intensity], material, spatial,
+        explosion ? Math.random() : variation);
     }
   };
 

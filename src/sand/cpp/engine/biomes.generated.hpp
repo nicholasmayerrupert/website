@@ -45,7 +45,8 @@ enum SurfaceClimateVariable : uint8_t {
   SCV_ALTITUDE = 2,
   SCV_RUGGED = 3,
   SCV_SURFACE_MINUS_SEA = 4,
-  SCV_COUNT = 5,
+  SCV_ANOMALY = 5,
+  SCV_COUNT = 6,
 };
 
 enum SurfaceClimateComparison : uint8_t {
@@ -118,6 +119,11 @@ struct SurfaceClimateClause {
   uint8_t termCount;
 };
 
+enum SurfaceStructureStyle : uint8_t {
+  SSS_VILLAGE = 0,
+  SSS_OBSERVATORY = 1,
+};
+
 struct SurfaceBiomeDef {
   Biome id;
   const char* name;
@@ -131,12 +137,13 @@ struct SurfaceBiomeDef {
   double treeProbabilityScale;
   uint8_t treeFirst, treeSecond, treeThird;
   double treeFirstCut, treeSecondCut;
+  SurfaceStructureStyle structureStyle;
   uint8_t structureWall, structureFoundation;
   bool copperRich;
   bool allowsSurfaceStructures;
 };
 
-inline constexpr std::array<SurfaceClimateTerm, 15>
+inline constexpr std::array<SurfaceClimateTerm, 18>
     SURFACE_CLIMATE_TERMS = {{
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.51},
   {SCV_MOISTURE, SCC_LESS_THAN, 0.36},
@@ -153,9 +160,12 @@ inline constexpr std::array<SurfaceClimateTerm, 15>
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.62},
   {SCV_SURFACE_MINUS_SEA, SCC_GREATER_THAN, -20},
   {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.38},
+  {SCV_ANOMALY, SCC_GREATER_THAN, 0.64},
+  {SCV_SURFACE_MINUS_SEA, SCC_LESS_THAN, -8},
+  {SCV_ALTITUDE, SCC_LESS_THAN, 0.4},
 }};
 
-inline constexpr std::array<SurfaceClimateClause, 9>
+inline constexpr std::array<SurfaceClimateClause, 10>
     SURFACE_CLIMATE_CLAUSES = {{
   {0, 0},
   {0, 1},
@@ -166,6 +176,7 @@ inline constexpr std::array<SurfaceClimateClause, 9>
   {8, 2},
   {10, 2},
   {12, 3},
+  {15, 3},
 }};
 
 inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES = {{
@@ -174,43 +185,49 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 0.45,
    PT_BUSH, PT_OAK, PT_OAK, 0.75, 1,
-   BRICK, BRICK, false, true},
+   SSS_VILLAGE, BRICK, BRICK, false, true},
   {BIOME_FOREST, "forest", 5, 1, 1,
    0.85, 5, 0.15, -4,
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 3.8,
    PT_PINE, PT_OAK, PT_OAK, 0.85, 1,
-   BRICK, BRICK, false, true},
+   SSS_VILLAGE, BRICK, BRICK, false, true},
   {BIOME_DESERT, "desert", 2, 2, 1,
    0.3, 16, 0, -12,
    4, 0, SAND, SAND, SAND, SANDSTONE,
    2, 3, 0.8,
    PT_CACTUS, PT_CACTUS, PT_CACTUS, 1, 1,
-   SANDSTONE, SANDSTONE, true, true},
+   SSS_VILLAGE, SANDSTONE, SANDSTONE, true, true},
   {BIOME_ROCKY, "rocky", 0, 3, 2,
    1.25, 12, 1, -8,
    0, 0, STONE, STONE, STONE, STONE,
    0, 1, 0,
    PT_OAK, PT_OAK, PT_OAK, 1, 1,
-   BRICK, BRICK, false, false},
+   SSS_VILLAGE, BRICK, BRICK, false, false},
   {BIOME_TUNDRA, "tundra", 1, 5, 2,
    0.65, 4, 0, -8,
    1, 4, SNOW, SNOW, SNOW, DIRT,
    1, 2, 0.65,
    PT_PINE, PT_PINE, PT_PINE, 1, 1,
-   BRICK, BRICK, false, true},
+   SSS_VILLAGE, BRICK, BRICK, false, true},
   {BIOME_JUNGLE, "jungle", 4, 7, 1,
    0.85, 8, 0.2, -10,
    1, 3, GRASS, SAND, DIRT, DIRT,
    0, 1, 5.2,
    PT_BUSH, PT_OAK, PT_OAK, 0.15, 1,
-   BRICK, BRICK, true, true},
+   SSS_VILLAGE, BRICK, BRICK, true, true},
   {BIOME_SWAMP, "swamp", 3, 8, 1,
    0.12, 5, 0, 0,
    2, 2, MUD, MUD, MUD, MUD,
    0, 1, 2,
    PT_WILLOW, PT_OAK, PT_BUSH, 0.85, 0.95,
-   BRICK, BRICK, false, true},
+   SSS_VILLAGE, BRICK, BRICK, false, true},
+  {BIOME_WATCHWOOD, "watchwood", -1, 9, 1,
+   0.38, 8, 0, -14,
+   2, 4, VEIN_SOIL, PALESTONE, VEIN_SOIL, PALESTONE,
+   1, 2, 1,
+   PT_EYE, PT_EYE, PT_EYE, 1, 1,
+   SSS_OBSERVATORY, PALESTONE, PALESTONE, false, true},
 }};
 
 static_assert(OFFWORLD_MATERIAL_PROFILE_COUNT == 3,
@@ -218,6 +235,7 @@ static_assert(OFFWORLD_MATERIAL_PROFILE_COUNT == 3,
 inline constexpr std::array<std::array<OffworldBiomeDef, SURFACE_BIOME_COUNT>,
                             OFFWORLD_MATERIAL_PROFILE_COUNT> OFFWORLD_BIOME_PROFILES = {{
   {{
+    {},
     {},
     {},
     {},
@@ -233,7 +251,8 @@ inline constexpr std::array<std::array<OffworldBiomeDef, SURFACE_BIOME_COUNT>,
     {SALT, DEBRIS, DEBRIS, STONE, EMPTY, EMPTY, EMPTY, DEEPSTONE, DEEPSTONE, CLAY, 0, 0, 0, 0, true, true},
     {SNOW, SNOW, DEBRIS, STONE, ICE, EMPTY, EMPTY, ICE, ICE, CLAY, 4, 0, 0, 0, true, true},
     {MYCELIUM, MYCELIUM, DEBRIS, STONE, EMPTY, MYCELIUM, EMPTY, MYCELIUM, MYCELIUM, CLAY, 0, 0, 0.72, 0, true, true},
-    {SALT, SALT, DEBRIS, STONE, EMPTY, EMPTY, BRINE, STONE, STONE, CLAY, 0, 24, 0, 0.012, true, false}
+    {SALT, SALT, DEBRIS, STONE, EMPTY, EMPTY, BRINE, STONE, STONE, CLAY, 0, 24, 0, 0.012, true, false},
+    {SALT, DEBRIS, DEBRIS, STONE, EMPTY, EMPTY, EMPTY, DEBRIS, DEBRIS, CLAY, 0, 0, 0, 0, true, true}
   }},
   {{
     {SAND, CLAY, CLAY, SANDSTONE, EMPTY, EMPTY, EMPTY, BRICK, BRICK, CLAY, 0, 0, 0, 0, true, true},
@@ -242,12 +261,13 @@ inline constexpr std::array<std::array<OffworldBiomeDef, SURFACE_BIOME_COUNT>,
     {DEBRIS, DEBRIS, CLAY, STONE, EMPTY, EMPTY, EMPTY, DEEPSTONE, DEEPSTONE, CLAY, 0, 0, 0, 0, true, true},
     {SNOW, SNOW, CLAY, SANDSTONE, ICE, EMPTY, EMPTY, ICE, ICE, CLAY, 3, 0, 0, 0, true, true},
     {GRASS, GRASS, CLAY, SANDSTONE, EMPTY, DIRT, MYCELIUM, MYCELIUM, MYCELIUM, CLAY, 0, 28, 0.42, 0.985, true, true},
-    {SALT, SALT, CLAY, SANDSTONE, EMPTY, EMPTY, ACID, CLAY, CLAY, CLAY, 0, 30, 0, 0.014, true, false}
+    {SALT, SALT, CLAY, SANDSTONE, EMPTY, EMPTY, ACID, CLAY, CLAY, CLAY, 0, 30, 0, 0.014, true, false},
+    {SAND, CLAY, CLAY, SANDSTONE, EMPTY, EMPTY, EMPTY, BRICK, BRICK, CLAY, 0, 0, 0, 0, true, true}
   }}
 }};
 
-inline constexpr std::array<Biome, 7> SURFACE_BIOME_SELECTION_ORDER = {{
-  BIOME_ROCKY, BIOME_TUNDRA, BIOME_DESERT, BIOME_SWAMP, BIOME_JUNGLE, BIOME_FOREST, BIOME_PLAINS
+inline constexpr std::array<Biome, 8> SURFACE_BIOME_SELECTION_ORDER = {{
+  BIOME_WATCHWOOD, BIOME_ROCKY, BIOME_TUNDRA, BIOME_DESERT, BIOME_SWAMP, BIOME_JUNGLE, BIOME_FOREST, BIOME_PLAINS
 }};
 inline constexpr Biome SURFACE_BIOME_FALLBACK = BIOME_PLAINS;
 
@@ -432,9 +452,9 @@ static_assert(CAVE_BIOME_COUNT <= 32 && caveBiomeTableIsComplete(),
 
 inline bool surfaceBiomeClimateMatches(
     const SurfaceBiomeDef& biome, double temperature, double moisture,
-    double altitude, double rugged, double surfaceMinusSea) {
+    double altitude, double rugged, double surfaceMinusSea, double anomaly) {
   const std::array<double, SCV_COUNT> values = {{
-    temperature, moisture, altitude, rugged, surfaceMinusSea,
+    temperature, moisture, altitude, rugged, surfaceMinusSea, anomaly,
   }};
   for (uint16_t clauseIndex = 0; clauseIndex < biome.climateClauseCount;
        clauseIndex++) {

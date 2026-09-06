@@ -641,8 +641,80 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverage = 1) {
   ctx.globalAlpha = opacity;
 }
 
+function drawEyeGrove(ctx, w, h, ridge, palette, coverage) {
+  for (let band = 0; band < 3; band++) {
+    const spacing = 51 + band * 9;
+    const dark = mixColor(palette.ridgeNear, '#321f32', 0.38 + band * 0.1);
+    const white = mixColor(palette.ridgeNear, palette.skyLow, 0.23 + band * 0.045);
+    const first = Math.floor((ridge.offX - 64) / spacing) * spacing;
+    for (let slot = first; slot < ridge.offX + w + 64; slot += spacing) {
+      const seed = slot * 7 + band * 1397;
+      if (rand01(seed + 801) >= coverage * 0.82) continue;
+      const wx = slot + Math.floor(rand01(seed + 17) * 29) + band * 13;
+      const x = wx - ridge.offX;
+      const y = ridge.surfaceWorldY(wx) + 9 + band * 17
+        + Math.floor(rand01(seed + 31) * 19);
+      const height = 15 + Math.floor(rand01(seed + 53) * 29);
+      if (y - height > h || y < -12) continue;
+      const lean = Math.floor(rand01(seed + 71) * 19) - 9;
+      const ry = 3 + Math.floor(rand01(seed + 93) * 5);
+      const rx = ry + 1 + Math.floor(rand01(seed + 113) * 5);
+      const crownX = x + lean, crownY = y - height;
+      const iris = mixColor(palette.ridgeNear,
+        rand01(seed + 129) < 0.7 ? '#74bcb1' : '#bf9b78', 0.35);
+      const limb = (ax, ay, bx, by, width = 2) => {
+        const steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay), 1);
+        ctx.fillStyle = dark;
+        for (let i = 0; i <= steps; i++) {
+          ctx.fillRect(Math.round(ax + (bx - ax) * i / steps),
+            Math.round(ay + (by - ay) * i / steps), width, 1);
+        }
+      };
+      const eye = (cx, cy, ex, ey, gaze) => {
+        for (let dy = -ey; dy <= ey; dy++) {
+          const span = Math.floor(ex * Math.sqrt(1 - (dy / ey) ** 2));
+          ctx.fillStyle = dark;
+          ctx.fillRect(cx - span, cy + dy, span * 2 + 1, 1);
+          if (span > 1 && Math.abs(dy) < ey) {
+            ctx.fillStyle = white;
+            ctx.fillRect(cx - span + 1, cy + dy, span * 2 - 1, 1);
+          }
+        }
+        ctx.fillStyle = iris;
+        ctx.fillRect(cx + gaze - 1, cy - ey + 2, 3, ey * 2 - 3);
+        ctx.fillStyle = dark;
+        ctx.fillRect(cx + gaze, cy - ey + 2, 1, ey * 2 - 3);
+      };
+      limb(x, y, x + Math.round(lean * 0.3), y - Math.floor(height * 0.45), 3);
+      limb(x + Math.round(lean * 0.3), y - Math.floor(height * 0.45),
+        crownX, crownY + ry, 2);
+      // Single stalks, asymmetric forks, and clusters share the same rooted silhouette.
+      const form = rand01(seed + 151);
+      const branches = form < 0.4 ? 0 : form < 0.76 ? 1 : 2;
+      for (let branch = 0; branch < branches; branch++) {
+        const side = (rand01(seed + 173) < 0.5 ? -1 : 1) * (branch ? -1 : 1);
+        const bx = crownX + side * (8 + Math.floor(rand01(seed + 191 + branch) * 9));
+        const by = crownY + 8 + Math.floor(rand01(seed + 213 + branch) * 11);
+        const br = 3 + Math.floor(rand01(seed + 239 + branch) * 2);
+        limb(x + Math.round(lean * 0.4), y - 5, bx, by + br);
+        eye(bx, by, br + 2, br, side);
+      }
+      eye(crownX, crownY, rx, ry, Math.floor(rand01(seed + 263) * 3) - 1);
+      if (form > 0.88) {
+        const bx = x - Math.sign(lean || 1) * 7;
+        limb(x, y, bx, y - 5, 1);
+        eye(bx, y - 7, 3, 2, 0);
+      }
+    }
+  }
+}
+
 function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverage = 1) {
   if (kind === 'none') return;
+  if (kind === 'eyes') {
+    drawEyeGrove(ctx, w, h, ridge, palette, coverage);
+    return;
+  }
   const dark = mixColor(palette.ridgeNear, '#061713', 0.6);
   const light = mixColor(palette.ridgeNear, palette.skyLow, 0.25);
   const spacing = kind === 'jungle' ? 19 : kind === 'willow' ? 29 : 37;

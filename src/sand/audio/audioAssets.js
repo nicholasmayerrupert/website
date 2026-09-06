@@ -14,12 +14,12 @@ export const AUDIO_ASSET_URLS = Object.freeze({
 });
 
 // These three recordings are one TNT effect, not interchangeable variants.
-// The mixer pre-combines them at their established layer rates so every caller
-// plays the complete effect with one AudioBufferSource.
+// The mixer stages the initial crack, pressure body, and trailing rumble into
+// one buffer so each detonation needs only one AudioBufferSource.
 export const TNT_EXPLOSION_LAYERS = Object.freeze([
-  Object.freeze({ asset: 'tntDeepExplosion', rate: 0.90 }),
-  Object.freeze({ asset: 'tntDeepBoom', rate: 0.88 }),
-  Object.freeze({ asset: 'tntLargeExplosion', rate: 0.91 }),
+  Object.freeze({ asset: 'tntDeepExplosion', rate: 0.94, gain: 0.65, delay: 0.012, decay: 1.1 }),
+  Object.freeze({ asset: 'tntDeepBoom', rate: 0.84, gain: 0.90, delay: 0.032, decay: 1.4 }),
+  Object.freeze({ asset: 'tntLargeExplosion', rate: 1.04, gain: 0.80, delay: 0, decay: 0.65 }),
 ]);
 
 export async function loadAudioAssets(context) {

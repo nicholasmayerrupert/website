@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 38;
 
-export const ABI_FINGERPRINT = 0x4bfbcd0514bc;
+export const ABI_FINGERPRINT = 0xbc9d588d8efa;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -111,9 +111,9 @@ export const PLANET_COUNT = 5;
 export const PLANET_ALL_MASK = 0x1f;
 export const PLANET_NAMES = Object.freeze(['earth', 'moon', 'mars', 'ship', 'frontier']);
 export const PLANET_BY_NAME = Object.freeze({ earth: 0, moon: 1, mars: 2, ship: 3, frontier: 4 });
-export const BIOME = Object.freeze({ PLAINS: 0, FOREST: 1, DESERT: 2, ROCKY: 3, TUNDRA: 4, JUNGLE: 5, SWAMP: 6 });
-export const SURFACE_BIOME_COUNT = 7;
-export const SURFACE_BIOME_ALL_MASK = 0x7f;
+export const BIOME = Object.freeze({ PLAINS: 0, FOREST: 1, DESERT: 2, ROCKY: 3, TUNDRA: 4, JUNGLE: 5, SWAMP: 6, WATCHWOOD: 7 });
+export const SURFACE_BIOME_COUNT = 8;
+export const SURFACE_BIOME_ALL_MASK = 0xff;
 export const CAVE_BIOME = Object.freeze({ DEFAULT: 0, CRYSTAL: 1, MUSHROOM: 2, LUSH: 3, DEEP_MAGMA: 4, DEEP_GEODE: 5, DEEP_FOSSIL: 6, DEEP_VOID: 7 });
 export const CAVE_BIOME_COUNT = 8;
 export const CAVE_BIOME_ALL_MASK = 0xff;

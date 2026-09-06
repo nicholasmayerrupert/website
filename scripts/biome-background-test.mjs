@@ -57,6 +57,12 @@ check('biomes use distinct silhouettes and vegetation',
   && BIOME_BACKGROUND_PROFILES[BIOME.ROCKY].shape === 'crags'
   && BIOME_BACKGROUND_PROFILES[BIOME.JUNGLE].plants === 'jungle'
   && BIOME_BACKGROUND_PROFILES[BIOME.SWAMP].plants === 'willow');
+const watchwood = biomeBackgroundStyle(noon, pure(BIOME.WATCHWOOD));
+check('Watchwood has its own eye silhouettes and a snow-free plum landscape',
+  BIOME_BACKGROUND_PROFILES[BIOME.WATCHWOOD].plants === 'eyes'
+  && watchwood.snow === 0 && watchwood.forest === 0
+  && watchwood.palette.ridgeNear !== desert.palette.ridgeNear
+  && watchwood.palette.ridgeNear !== noon.ridgeNear);
 check('tundra retains full snow coverage with sparse forest', tundra.snow === 1 && tundra.forest < 0.3);
 check('celestial and cloud palette colors remain shared', desert.palette.cloudLight === noon.cloudLight && desert.palette.cloudDark === noon.cloudDark);
 const night = biomeBackgroundStyle(paletteForPhase(0), pure(BIOME.DESERT));

@@ -51,11 +51,16 @@ function surfaceMasonryComponents(g, engine) {
   const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
   const surfaceY = new Int32Array(COLS);
   for (let x = 0; x < COLS; x++) surfaceY[x] = engine.worldSurfaceAbsAt(offX + x) - offY;
+  // Bearing background masonry supports the open foreground facade through
+  // the engine's cross-layer grounding contacts.
+  const bg = engine.getGridBg();
+  const bearing = m => (MAT_FLAGS[m] & MF.rigid) && (MAT_FLAGS[m] & MF.bearing)
+    && !(MAT_FLAGS[m] & MF.plantLeaf);
   const seen = new Uint8Array(g.length);
   const stack = [];
   const builtAt = (k) => {
     const x = k % COLS, y = (k / COLS) | 0, mat = g[k];
-    return (MAT_FLAGS[mat] & MF.rigid) && (MAT_FLAGS[mat] & MF.bearing) && !(MAT_FLAGS[mat] & MF.plantLeaf) && y <= surfaceY[x];
+    return (bearing(mat) || bearing(bg[k])) && y <= surfaceY[x];
   };
   const comps = [];
   for (let start = 0; start < g.length; start++) {

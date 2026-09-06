@@ -179,13 +179,23 @@ grow varied single crowns, asymmetric forks, and clustered eyes on leaning trunk
 leaf harvesting yields their species' seeds. The parallax grove varies stalk
 height, lean, crown shape, branching, and spacing. Climate reads the base elevation
 independently of biome-shaped relief.
+Generated trees form a tall canopy above the undergrowth, with species-specific
+trunks, broad crowns, buried roots and wider grove spacing. Seed-grown plants
+have matching larger mature forms and bounded growth budgets. Canopy reach
+is declared in the material profiles so crowns remain complete across streams.
 Small background undergrowth fills wilderness between structures: bone highlands
 mix ivory feathered scrub, rust brambles, ochre seed reeds, and teal curled lichen;
 Watchwood mixes violet fans, forked eye shrubs, coiled fronds, and watching buds.
-Four static flora materials provide distinct colors and remain destructible.
+The other surface biomes have four families each: desert agave, prickly pears,
+flowering barrels and dry scrub; tundra dwarf willow, branching lichen, heather
+and cotton grass; plains wildflowers, seed grasses and clover; forest ferns,
+mushroom clusters, mossy deadwood and berry shrubs; jungle split leaves,
+flowering bracts, fern fans and bromeliads; swamp cattails, irises, cypress knees
+and marsh ferns. Existing component-backed plant materials supply foliage,
+flowers and stems; the flora remains static, destructible and passable in front.
 Absolute, jittered slots and a patch-density field vary spacing; roots reach the
-solid stratum, and construction footprints, flooded ground, and cave mouths stay
-clear. The parallax layers carry matching low vegetation in the same palettes.
+solid stratum, and construction footprints and cave mouths stay clear. Marsh
+reeds can root in shallow water; other plants occupy dry ground. The parallax layers carry matching low vegetation in the same palettes.
 
 Foreground caves combine noise caverns with a player-clear macro-region
 backbone from the surface into an infinite deep-cavern graph. The normal cave
@@ -572,8 +582,9 @@ logical component across bake cycles, and rigid fractures preserve their species
 When a seed-bearing tree rebakes after rigid motion, resumed growth derives an
 upward leader and crown frame from the settled raster, so a fallen trunk bends
 back toward the sky instead of reusing its invalid pre-fall axis.
-The plain seed grows `WOOD`/`PLANT`, while oak uses distinct
-`OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live static TNT fuses remain
+The plain seed grows staggered spreading forks and a lobed `WOOD`/`PLANT` crown.
+Oak has a broad, asymmetric crown and a tapered trunk with thick buttress roots,
+using distinct `OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live static TNT fuses remain
 cell-addressed, while a body fuse retains its body-local ignition front through
 motion, splitting, welding, and baking.
 Mixed assemblies retain a per-cell material map, so ore, masonry, timber,

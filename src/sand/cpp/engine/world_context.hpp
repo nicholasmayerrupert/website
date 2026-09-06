@@ -192,7 +192,7 @@ struct LandmarkDef {
 };
 inline constexpr std::array<LandmarkDef, LM_COUNT> LANDMARKS = {{
   {"windmill grange", 82, 68, BRICK, SANDSTONE, OAK_WOOD},
-  {"broken aqueduct", 104, 48, STONE, MOSS, OAK_WOOD},
+  {"old stone aqueduct", 104, 48, STONE, MOSS, OAK_WOOD},
   {"woodland castle", 92, 78, STONE, SANDSTONE, PINE_WOOD},
   {"ruined abbey", 86, 74, STONE, MOSS, OAK_WOOD},
   {"sun pyramid", 104, 72, SANDSTONE, CLAY, PINE_WOOD},

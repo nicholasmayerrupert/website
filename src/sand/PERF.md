@@ -304,6 +304,10 @@ component registration, and restoration. Browser presentation exposes
 - Lighting propagates from brightest to dimmest through intensity buckets.
   Superseded queue entries are skipped, so overlapping sources settle each cell
   at its final light value before it propagates to its neighbours.
+- Infinite-world skylight enters vertically and spreads sideways with material
+  attenuation. Moving buffer edges do not emit horizontal skylight. Camera
+  caches track the exact repaired rectangle, including face-light neighbours;
+  terrain edits invalidate cached shadows outside the repaired viewport.
 - Static animated materials repaint only visible chunks that contain animation.
 - Direct-mapped terrain-query caches avoid repeating surface, climate, cave, and
   cave-plan noise within fills and diagnostic scans.

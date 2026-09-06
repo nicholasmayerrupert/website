@@ -66,14 +66,15 @@
   template<class Put>
   static void stampEyeTree(Put&& put, int cx, int ground, int height,
                            uint32_t seed, int worldX) {
-    constexpr int reach = 20, width = reach * 2 + 1, rise = 42;
+    constexpr int reach = PLANT_WORLDGEN_PROFILES[PWG_EYE].horizontalReach;
+    constexpr int width = reach * 2 + 1, rise = PLANT_WORLDGEN_PROFILES[PWG_EYE].upwardReach;
     uint8_t raster[width * rise] = {};
     auto sketch = [&](int x, int y, uint8_t material) {
       if (x < -reach || x > reach || y < -rise || y >= 0) return;
       raster[(y + rise) * width + x + reach] = material;
     };
     int top = -height;
-    int ry = 5 + (int)(whash1(seed ^ 0xE7E53u, worldX) * 4);
+    int ry = 8 + (int)(whash1(seed ^ 0xE7E53u, worldX) * 4);
     int lean = (int)(whash1(seed ^ 0xE7E55u, worldX) * 7) - 3;
     int rx = ry + 2 + (int)(whash1(seed ^ 0xE7E56u, worldX) * 3);
     auto trunkX = [&](int y) { return lean * -y / height; };
@@ -88,13 +89,13 @@
       int side = branch ? -firstSide : firstSide;
       int eyeY = imin(-9, top + 10 + (int)(whash2(seed ^ 0xE7E59u, worldX, branch) * 6));
       int branchBase = imin(-2, eyeY + 8), baseX = trunkX(branchBase);
-      int arm = 8 + (int)(whash2(seed ^ 0xE7E5Au, worldX, branch) * 4);
+      int arm = 14 + (int)(whash2(seed ^ 0xE7E5Au, worldX, branch) * 4);
       for (int d = 0; d <= arm; d++) {
         int y = branchBase - (branchBase - eyeY - 3) * d / arm;
         sketch(baseX + side * d, y, EYE_WOOD);
         sketch(baseX + side * d, y + 1, EYE_WOOD);
       }
-      stampEyeGlyph(sketch, baseX + side * arm, eyeY, 5, 3, side);
+      stampEyeGlyph(sketch, baseX + side * arm, eyeY, 7, 5, side);
     }
     stampEyeGlyph(sketch, lean, top, rx, ry,
                   whash1(seed ^ 0xE7E54u, worldX) < 0.5 ? -1 : 1);
@@ -179,20 +180,24 @@
       for (int y = top; y < surf; y++) {
         int height = surf - y, center = trunkXAtHeight(height), radius = 0;
         if (plantProfile.topology == PWGT_PINE)
-          radius = height <= 5 ? 2 : height <= 15 ? 1 : 0;
+          radius = height <= 10 ? 3 : height <= 30 ? 2 : 1;
         else if (plantProfile.topology == PWGT_WILLOW)
-          radius = height <= 6 ? 2 : height <= 14 ? 1 : 0;
+          radius = height <= 12 ? 3 : height <= 28 ? 2 : 1;
+        if (plantProfile.topology == PWGT_BROADLEAF || plantProfile.topology == PWGT_CACTUS) radius = height < h * 2 / 3 ? 1 : 0;
         for (int ox = -radius; ox <= radius; ox++) put(center + ox, y, wood);
       }
       if (plantProfile.topology == PWGT_CACTUS) {       // arms, no foliage
         int armY = top + 2 + (int)(whash1(L->gTreeSeed ^ 0x3a3au, worldX) * imax(1, h - 4));
-        put(lx - 1, armY, wood); put(lx - 2, armY, wood); put(lx - 2, armY - 1, wood);
-        put(lx + 1, armY + 2, wood); put(lx + 2, armY + 2, wood); put(lx + 2, armY + 1, wood);
+        for(int side:{-1,1}) {
+          int y=armY+(side>0?4:0),arm=5+(int)(hr*3);
+          for(int dx=1;dx<=arm;dx++)for(int dy=0;dy<2;dy++)put(lx+side*dx,y+dy,wood);
+          for(int dy=1;dy<6+(int)(hr*4);dy++)for(int dx=0;dx<2;dx++)put(lx+side*(arm-dx),y-dy,wood);
+        }
       } else if (plantProfile.topology == PWGT_PINE) {  // tapered, ragged evergreen crown
         int level = 4 + (int)(whash1(L->gTreeSeed ^ 0x91A0u, worldX) * 3);
-        for (int tier = 0; tier < 9 && level < h - 1; tier++) {
+        for (int tier = 0; tier < 14 && level < h - 1; tier++) {
           int baseX = trunkXAtHeight(level), baseY = surf - level;
-          int baseReach = 3 + (h - level) * 5 / h;
+          int baseReach = 5 + (h - level) * 8 / h;
           for (int side : {-1, 1}) {
             double shape = whash2(L->gTreeSeed ^ 0x91A1u, worldX + side, tier);
             int reach = imax(2, baseReach + (int)(shape * 4) - 2);
@@ -202,15 +207,15 @@
               put(baseX + side * i, baseY + droop, wood);
             }
           }
-          level += 3 + (int)(whash2(L->gTreeSeed ^ 0x91A2u, worldX, tier) * 3);
+          level += 4 + (int)(whash2(L->gTreeSeed ^ 0x91A2u, worldX, tier) * 3);
         }
         int crownH = h - 4;
         for (int oy = -2; oy < crownH; oy++) {
           int y = top + oy, crownX = trunkXAtHeight(surf - y);
           double t = (double)(oy + 2) / (double)imax(1, crownH + 1);
-          int rad = 1 + (int)std::floor(t * 7.0);
+          int rad = 1 + (int)std::floor(t * 12.0);
           // Subtle tiering breaks the cone edge without producing flat shelves.
-          if (oy > 2 && oy % 5 == 0) rad = imin(8, rad + 2);
+          if (oy > 2 && oy % 5 == 0) rad = imin(13, rad + 2);
           for (int ox = -rad; ox <= rad; ox++) {
             double edge = whash2(L->gTreeSeed ^ 0x91A3u, worldX + ox, oy);
             if (std::abs(ox) <= rad - 2 || edge > 0.28) put(crownX + ox, y, leaf);
@@ -224,19 +229,19 @@
           if (shape < 0.08) continue;
           int level = h - 3 - tier * 3 + (shape > 0.66 ? 1 : 0);
           int baseX = trunkXAtHeight(level), baseY = surf - level;
-          int len = 5 + (int)(whash2(L->gTreeSeed ^ 0x7715u, worldX + side, tier) * 5);
+          int len = 9 + (int)(whash2(L->gTreeSeed ^ 0x7715u, worldX + side, tier) * 7);
           for (int i = 1; i <= len; i++) {
             int lift = imin(2, (i + 1) / 3);
             int sag = i > len * 2 / 3 ? (i - len * 2 / 3 + 1) / 2 : 0;
             put(baseX + side * i, baseY - lift + sag, wood);
           }
         }
-        for (int cx : {-6, -3, 0, 3, 6}) {
+        for (int cx : {-12, -6, 0, 6, 12}) {
           int cy = -2 + (std::abs(cx) / 3) + (int)(whash2(L->gTreeSeed ^ 0x7711u, worldX, cx) * 3);
-          int rr = 4 + (std::abs(cx) < 4 ? 1 : 0);
+          int rr = 6 + (std::abs(cx) < 7 ? 2 : 0);
           for (int oy = -rr; oy <= rr; oy++) for (int ox = -rr; ox <= rr; ox++)
             if (ox * ox + oy * oy <= rr * rr + 2) put(crownX + cx + ox, top + cy + oy, leaf);
-          int drop = 2 + (int)(whash2(L->gTreeSeed ^ 0x7712u, worldX, cx) * 5);
+          int drop = 5 + (int)(whash2(L->gTreeSeed ^ 0x7712u, worldX, cx) * 5);
           int sway = whash2(L->gTreeSeed ^ 0x7713u, worldX, cx) < 0.5 ? -1 : 1;
           for (int i = 1; i <= drop; i++) { put(crownX + cx + (i > drop / 2 ? sway : 0), top + cy + rr + i, leaf); if (i < drop - 1) put(crownX + cx + 1, top + cy + rr + i, leaf); }
         }
@@ -244,15 +249,28 @@
                  || plantProfile.topology == PWGT_BUSH) {
         // Broadleaf and bush profiles use forked limbs and a cloud canopy.
         bool bush = plantProfile.topology == PWGT_BUSH;
-        int rad = bush ? 4 : 8;
+        int rad = bush ? 7 : 14;
         if (!bush) for (int side : {-1, 1}) {
-          int len = 4 + (int)(whash1(L->gTreeSeed ^ (side < 0 ? 0x81u : 0x82u), worldX) * 4);
+          int len = 7 + (int)(whash1(L->gTreeSeed ^ (side < 0 ? 0x81u : 0x82u), worldX) * 6);
           int by = top + 4 + (side < 0 ? 1 : 0);
           for (int i = 1; i <= len; i++) { put(lx + side * i, by - i / 3, wood); if (i > len / 2) put(lx + side * i, by - i / 3 - 1, leaf); }
         }
-        for (int cy = -4; cy <= 2; cy += 3) for (int cx = -rad + 2; cx <= rad - 2; cx += 4)
-          for (int oy = -3; oy <= 3; oy++) for (int ox = -3; ox <= 3; ox++) if (ox * ox + oy * oy <= 10) put(lx + cx + ox, top + cy + oy, leaf);
+        for (int cy = bush?-4:-7; cy <= (bush?2:5); cy += 3) for (int cx = -rad + 2; cx <= rad - 2; cx += 4) {
+          int contour=cx*cx*5/(rad*rad)+(int)(whash2(L->gTreeSeed^0x83u,worldX,cx)*3);
+          for (int oy = -3; oy <= 3; oy++) for (int ox = -3; ox <= 3; ox++)
+            if (ox * ox + oy * oy <= 10) put(lx + cx + ox, top + cy + contour + oy, leaf);
+        }
       } else __builtin_unreachable();
+      // Buried woody roots carry the crown through the loose surface mantle.
+      int rootDepth = TerrainGen::GEN_SKIN + terrain.genSoilDepthAt(worldX, biome);
+      for(int dx=0;dx<=1;dx++) {
+        int x=lx+dx;
+        if(x<colStart || x>=colEnd)continue;
+        for(int y=imax(surf,rowStart);y<=imin(surf+rootDepth,rowEnd-1);y++) {
+          uint8_t& m=L->grid[y*cols+x];
+          if(m==DIRT || m==GRASS || m==SAND || m==SNOW || m==MUD)m=wood;
+        }
+      }
     }
   }
   // ---- deterministic structure stamping (ruins) -----------------------------

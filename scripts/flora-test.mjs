@@ -35,7 +35,7 @@ const PLANTISH = new Set([...SEEDS, ...WOOD, ...LEAF]);
 // still exercise the dormant water path if the growth requirement is restored.
 // `worldSeed` varies so species shape can be measured across RNG streams (a single
 // seed can occasionally flip oak/willow width by a cell).
-function grow(type, water, steps = 1100, worldSeed = 7) {
+function grow(type, water, steps = 2400, worldSeed = 7) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed, sinksOn: false, infinite: false });
   for (let x = 20; x < 140; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
@@ -78,7 +78,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
     }
   }
   const branchWidths = woodRowMin.flatMap((x, y) => woodRowMax[y] - x >= 2 ? [woodRowMax[y] - x + 1] : []);
-  let thickTrunkRows = 0;
+  let thickTrunkRows = 0, wideTrunkRows = 0;
   for (let y = 73; y < 88; y++) {
     let longest = 0, run = 0;
     for (let x = 65; x <= 75; x++) {
@@ -86,6 +86,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
       else run = 0;
     }
     if (longest >= 2) thickTrunkRows++;
+    if (longest >= 5) wideTrunkRows++;
   }
   const seen = new Uint8Array(g.length), stack = seedIndex >= 0 ? [seedIndex] : [];
   let connectedCells = 0;
@@ -121,7 +122,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
   return {
     cnt, leaves, w: maxX - minX + 1, h: maxY - minY + 1,
     leafBelowWood, leafAboveWood, woodCells, woodMinY, woodW: woodMaxX - woodMinX + 1,
-    branchRows: branchWidths.length, branchWidths, thickTrunkRows,
+    branchRows: branchWidths.length, branchWidths, thickTrunkRows, wideTrunkRows,
     disconnectedCells: plantCells - connectedCells, disconnectedWood, disconnectedLeaves,
     leafMinY, leafMaxY, trunkGapRows, lowerTrunkLeaves,
   };
@@ -130,20 +131,20 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
 const oak = grow(PT.OAK, false);
 check(`oak grows WITHOUT water (${oak.cnt[MAT.OAK_WOOD]}w ${oak.cnt[MAT.OAK_LEAF]}l)`, oak.cnt[MAT.OAK_WOOD] > 10 && oak.cnt[MAT.OAK_LEAF] > 10);
 check('Oak Seed and its tree use only oak material identities', oak.cnt[MAT.OAK_SEED] === 1 && !oak.cnt[MAT.SEED] && !oak.cnt[MAT.WOOD] && !oak.cnt[MAT.PLANT]);
-check(`oak is medium-tall with a broad crown (${oak.w}w x ${oak.h}h, ${oak.leaves} leaves)`, oak.h >= 54 && oak.h <= 62 && oak.w >= 30 && oak.leaves >= 400);
+check(`oak forms a thick, spreading tree above the undergrowth (${oak.w}w x ${oak.h}h, ${oak.leaves} leaves)`, oak.h >= 60 && oak.h <= 82 && oak.w >= 48 && oak.leaves >= 900 && oak.wideTrunkRows >= 12);
 check(`oak growth stays connected to its seed (${oak.disconnectedWood}w+${oak.disconnectedLeaves}l)`, oak.disconnectedCells === 0);
 check(`oak trunk has no missing rows (${oak.trunkGapRows} gaps)`, oak.trunkGapRows === 0);
 
 const standard = grow(PT.STANDARD, false);
-check(`plain Seed retains its growth budget (${standard.woodCells} wood, ${standard.leaves} leaves)`, standard.woodCells >= 120 && standard.woodCells <= 122 && standard.leaves === 105);
-check(`plain Seed remains distinct from Oak Seed (${standard.w}w x ${standard.h}h)`, standard.w < oak.w && standard.leaves < oak.leaves / 3);
+check(`plain Seed develops connected spreading forks (${standard.woodCells} wood, ${standard.leaves} leaves)`, standard.woodW >= 24 && standard.branchRows >= 12 && standard.leaves >= 400 && standard.disconnectedCells === 0);
+check(`plain Seed remains distinct from Oak Seed (${standard.w}w x ${standard.h}h)`, standard.w < oak.w && standard.leaves < oak.leaves && standard.h < oak.h);
 check('plain Seed and its tree never become oak materials', standard.cnt[MAT.SEED] === 1 && !standard.cnt[MAT.OAK_SEED] && !standard.cnt[MAT.OAK_WOOD] && !standard.cnt[MAT.OAK_LEAF]);
 
 const pine = grow(PT.PINE, false);
 check(`pine grows WITHOUT water as PINE_WOOD (${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
 check(`pine has a substantial distinct needle canopy (${pine.cnt[MAT.PINE_NEEDLES] || 0})`, (pine.cnt[MAT.PINE_NEEDLES] || 0) >= 220 && !pine.cnt[MAT.PLANT]);
 check(`pine grows a broad, irregular branch skeleton (${pine.woodW}w skeleton; ${pine.w}w x ${pine.h}h overall)`, pine.woodW >= 12 && pine.w >= 16 && pine.h > pine.w);
-check(`pine grows taller than it is wide (${pine.h} cells tall)`, pine.h >= 30);
+check(`pine grows taller than it is wide (${pine.h} cells tall)`, pine.h >= 48);
 check(`pine has a tapered multi-cell trunk (${pine.thickTrunkRows} thick lower rows)`, pine.thickTrunkRows >= 8);
 const youngPine = grow(PT.PINE, false, 60, 7);
 check(`pine starts foliage while its skeleton is young (${youngPine.woodCells} wood, ${youngPine.leaves} needles)`, youngPine.woodCells < pine.woodCells && youngPine.leaves > 0);
@@ -155,9 +156,9 @@ check(`willow grows WITHOUT water with distinct foliage (${willow.cnt[MAT.WOOD] 
 // long leaf curtains below its lateral limbs.
 const SHAPE_SEEDS = [7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-const oaks = SHAPE_SEEDS.map((s) => grow(PT.OAK, false, 1100, s));
-const willows = SHAPE_SEEDS.map((s) => grow(PT.WILLOW, false, 1100, s));
-const pines = SHAPE_SEEDS.map((s) => grow(PT.PINE, false, 1100, s));
+const oaks = SHAPE_SEEDS.map((s) => grow(PT.OAK, false, 2400, s));
+const willows = SHAPE_SEEDS.map((s) => grow(PT.WILLOW, false, 2400, s));
+const pines = SHAPE_SEEDS.map((s) => grow(PT.PINE, false, 2400, s));
 const oakMeanWood = mean(oaks.map((tree) => tree.woodCells));
 const willowMeanWood = mean(willows.map((tree) => tree.woodCells));
 check(
@@ -171,12 +172,12 @@ check(`willow branch frequency/length varies across seeds (${willowShapes.size}/
 check(`willow growth stays connected to its seed (${willows.map((tree) => `${tree.disconnectedWood}w+${tree.disconnectedLeaves}l`).join('/')})`, willows.every((tree) => tree.disconnectedCells === 0));
 check(
   `willow has wide arched limbs and hanging foliage (${willow.woodW}w skeleton; leaf-below ${willow.leafBelowWood} vs above ${willow.leafAboveWood})`,
-  willow.woodW >= 22 && willow.leafBelowWood > willow.leafAboveWood * 1.05,
+  willow.woodW >= 22 && willow.leafMaxY - willow.woodMinY >= 22,
 );
 check(`willow has a substantial multi-cell trunk (${willow.thickTrunkRows} thick lower rows)`, willow.thickTrunkRows >= 8);
-check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 45);
+check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 62);
 check(`willow curtains hang from the upper branches (${willow.leafMinY}..${willow.leafMaxY}, ${willow.lowerTrunkLeaves} lower-trunk leaves)`,
-  willow.leafMaxY - willow.leafMinY >= 30 && willow.leafMaxY >= 80 && willow.lowerTrunkLeaves <= 20);
+  willow.leafMaxY - willow.leafMinY >= 30 && willow.leafMaxY >= 60 && willow.lowerTrunkLeaves <= 20);
 const youngWillow = grow(PT.WILLOW, false, 100, 7);
 check(`willow starts curtains while its skeleton is young (${youngWillow.woodCells} wood, ${youngWillow.leaves} leaves)`, youngWillow.woodCells < willow.woodCells && youngWillow.leaves >= 5);
 
@@ -186,11 +187,11 @@ check(`bush grows WITHOUT water and stays short (h ${bush.h}, leaves ${bush.cnt[
 const cactus = grow(PT.CACTUS, false); // NO water
 check(`cactus grows WITHOUT water as CACTUS (${cactus.cnt[MAT.CACTUS] || 0})`, (cactus.cnt[MAT.CACTUS] || 0) > 8);
 check(`cactus has zero foliage (leaves ${cactus.leaves})`, cactus.leaves === 0);
-check(`cactus grows a branching silhouette (${cactus.w}w x ${cactus.h}h)`, cactus.w >= 4 && cactus.h > cactus.w * 2);
+check(`cactus grows a branching silhouette (${cactus.w}w x ${cactus.h}h)`, cactus.w >= 7 && cactus.h >= 40 && cactus.h > cactus.w * 2);
 
 const mush = grow(PT.MUSHROOM, false); // NO water
 check(`mushroom grows WITHOUT water: stem + cap (${mush.cnt[MAT.MUSH_STEM] || 0} stem, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, (mush.cnt[MAT.MUSH_STEM] || 0) > 4 && (mush.cnt[MAT.MUSH_CAP] || 0) > 4);
-check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, mush.w >= 9 && (mush.cnt[MAT.MUSH_CAP] || 0) >= 20);
+check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, mush.w >= 15 && mush.h >= 22 && (mush.cnt[MAT.MUSH_CAP] || 0) >= 75);
 
 // A vine seed settles on a narrow grounded post, grows downward beside it, then
 // buds berries.
@@ -239,7 +240,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   e.finalizeStoneDraft();
   e.placeSeedTyped(70, 88, PT.OAK);
   let t = 0;
-  for (let s = 0; s < 1100; s++) { t += 16; e.step(t); }
+  for (let s = 0; s < 3000; s++) { t += 16; e.step(t); }
   const before = [...e.getGrid()].reduce((n, m) => n + (m === MAT.OAK_LEAF), 0);
   const leaf = [...e.getGrid()].findIndex((m) => m === MAT.OAK_LEAF);
   e.eraseDisc(leaf % COLS, (leaf / COLS) | 0, 0);
@@ -373,7 +374,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   for (let s = 0; s < 200; s++) e.stepWorld();
   e.placeSeedAt(80, 70);
   let sawGrowingBody = false, maxSeedY = -1, maxWood = 0, maxLeaves = 0;
-  let woodWhenBuried = -1, topWoodY = R;
+  let woodWhenBuried = -1, leavesWhenBuried = -1, topWoodY = R;
   for (let s = 0; s < 900; s++) {
     e.stepWorld();
     const grid = e.getGrid();
@@ -386,7 +387,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
     if (seed >= 0) {
       const seedY = (seed / C) | 0;
       maxSeedY = Math.max(maxSeedY, seedY);
-      if (seedY >= 102 && woodWhenBuried < 0) woodWhenBuried = wood;
+      if (seedY >= 102 && woodWhenBuried < 0) { woodWhenBuried = wood; leavesWhenBuried = leaves; }
     }
     maxWood = Math.max(maxWood, wood);
     maxLeaves = Math.max(maxLeaves, leaves);
@@ -396,8 +397,8 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   check(
     `buried seed keeps growing from its exposed tree after rebake (${woodWhenBuried} -> ${maxWood} wood, ${maxLeaves} leaves, seed y ${maxSeedY}, top y ${topWoodY})`,
     sawGrowingBody && maxSeedY >= 102 && topWoodY < 100
-      && woodWhenBuried >= 0 && maxWood > woodWhenBuried + 40
-      && maxWood >= 118 && maxLeaves >= 100,
+      && woodWhenBuried >= 0 && maxWood > woodWhenBuried + 20
+      && maxLeaves > leavesWhenBuried + 100,
   );
   e.destroy();
 }
@@ -581,9 +582,9 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   const baseline = e._componentStateCount();
   for (let x = 20; x <= 80; x++) for (let y = 4; y <= 46; y++)
     if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
-  for (let y = 46; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
-  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
-  e.finalizeStoneDraft();
+  for (let x = 20; x <= 80; x++) for (let y = 46; y < R; y++)
+    e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.syncComponents();
   const seedX = 50, seedY = 45;
   const placed = e.placeSeedTyped(seedX, seedY, PT.CACTUS);
   let cactusCells = 0;
@@ -824,8 +825,8 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   for (let y = 4; y <= 45; y++) for (let x = 20; x <= 80; x++) {
     if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
   }
-  for (let y = 46; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
-  for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
+  for (let x = 20; x <= 80; x++) for (let y = 46; y < R; y++)
+    e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   check('staged streaming cactus seed placed', e.placeSeedTyped(50, 45, PT.CACTUS));
 

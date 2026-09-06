@@ -86,7 +86,7 @@
         int y=a.floor+(int)std::lround((double)(b.floor-a.floor)*(sx-ax)/(bx-ax));
         if(!background)rect(x,y-PLAYER_H-8,x,y-1,EMPTY);
         // Existing room floors remain continuous at the branching junctions.
-        put(x,y,timber);put(x,y+1,timber);
+        put(x,y,timber);put(x,y+1,timber);put(x,y+2,masonry);
         if(site.galleries) {
           put(x,y,IRON_ORE);
           if(!site.interiorAt(x,y-PLAYER_H-7))put(x,y-PLAYER_H-9,timber);

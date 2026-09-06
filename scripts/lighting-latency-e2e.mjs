@@ -127,11 +127,41 @@ try {
     mirror.glRenderFrame(false);
     const flowingWaterLightMs = mirror.getPerf().lightMs;
 
+    // Repair a shadow within the viewport, then expose the row just beyond
+    // that repair. The offscreen lighting must not be treated as current.
+    for (let x = 56; x <= 71; x++) source.paintDisc(x, 48, 0, MAT.STONE, true);
+    for (let y = 113; y <= 150; y++) {
+      source.paintDisc(55, y, 0, MAT.STONE, true);
+      source.paintDisc(72, y, 0, MAT.STONE, true);
+    }
+    for (let x = 55; x <= 72; x++) source.paintDisc(x, 138, 0, MAT.STONE, true);
+    source.syncComponents();
+    mirror.applyDiffMirror(source.serializeDiff());
+    source.resetDirty();
+    mirror.glRenderFrame(true);
+    for (let x = 56; x <= 71; x++) {
+      source.eraseDisc(x, 48, 0);
+      source.eraseDisc(x, 112, 0);
+    }
+    source.syncComponents();
+    mirror.applyDiffMirror(source.serializeDiff());
+    source.resetDirty();
+    mirror.glRenderFrame(false);
+    mirror.cameraSet(0, 11);
+    mirror.glRenderFrame(false);
+    const editPanFrame = mirror.glReadPixels(0, 0, viewCols, viewRows);
+    mirror.glRenderFrame(true);
+    const editFullFrame = mirror.glReadPixels(0, 0, viewCols, viewRows);
+    let editPanMaxDelta = 0;
+    for (let i = 0; i < editPanFrame.length; i++) {
+      editPanMaxDelta = Math.max(editPanMaxDelta, Math.abs(editPanFrame[i] - editFullFrame[i]));
+    }
+
     source.destroy();
     mirror.destroy();
     canvas.remove();
     return {
-      open, blocked, reopened, blockLightMs, eraseLightMs,
+      open, blocked, reopened, blockLightMs, eraseLightMs, editPanMaxDelta,
       editedWaterLightMs, flowingWaterLightMs,
       panShadow, fullShadow, panFrameMaxDelta, panLightMs, panLightSolves, panLightOffsets,
     };
@@ -153,6 +183,8 @@ try {
     Math.abs(result.panShadow - result.fullShadow) < 1);
   check(`camera-patched viewport exactly matches a full-light frame (max byte delta ${result.panFrameMaxDelta})`,
     result.panFrameMaxDelta === 0);
+  check(`panning after a shadow repair matches full lighting (max byte delta ${result.editPanMaxDelta})`,
+    result.editPanMaxDelta === 0);
 } finally {
   await browser?.close();
   stopServer();

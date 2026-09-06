@@ -1639,57 +1639,7 @@ export default {
             -121,
             0,
             -108,
-            60
-          ]
-        },
-        {
-          "layer": "fg",
-          "material": "PINE_WOOD",
-          "rect": [
-            -120,
-            20,
-            -110,
-            22
-          ]
-        },
-        {
-          "layer": "fg",
-          "material": "PINE_WOOD",
-          "rect": [
-            -105,
-            33,
-            -95,
-            35
-          ]
-        },
-        {
-          "layer": "fg",
-          "material": "PINE_WOOD",
-          "rect": [
-            -90,
-            46,
-            -80,
-            48
-          ]
-        },
-        {
-          "layer": "fg",
-          "material": "PINE_WOOD",
-          "rect": [
-            -75,
-            59,
-            -65,
-            61
-          ]
-        },
-        {
-          "layer": "fg",
-          "material": "PINE_WOOD",
-          "rect": [
-            -60,
-            72,
-            -50,
-            74
+            87
           ]
         },
         {
@@ -1870,6 +1820,116 @@ export default {
             207,
             -415,
             310
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "EMPTY",
+          "rect": [
+            -45,
+            -45,
+            -32,
+            -30
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -45,
+            2,
+            -41,
+            3
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -36,
+            -10,
+            -32,
+            -9
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -45,
+            -22,
+            -41,
+            -21
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -36,
+            -34,
+            -32,
+            -33
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -121,
+            20,
+            -117,
+            21
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -112,
+            32,
+            -108,
+            33
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -121,
+            44,
+            -117,
+            45
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -112,
+            56,
+            -108,
+            57
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -121,
+            68,
+            -117,
+            69
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -112,
+            80,
+            -108,
+            81
           ]
         }
       ]

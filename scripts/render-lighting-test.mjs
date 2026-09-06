@@ -406,6 +406,8 @@ function sealedActorCave(e) {
 {
   const e = mkInfinite();
   for (let i = 0; i < 6; i++) e.shiftWorldXY(0, 32);
+  // Keep generated cave emitters out of this skylight-only measurement.
+  fillStoneLayer(e, 1, 0, 0, COLS - 1, ROWS - 1);
   fillStone(e, 8, 0, 87, 88);
   carve(e, 45, 0, 50, 78);
   e.renderFull();
@@ -413,6 +415,46 @@ function sealedActorCave(e) {
   const sealed = brightness(e, 20, 70);
   check(`underground buffer top is not fake sky (${shaftFace.toFixed(1)} ~= ${sealed.toFixed(1)})`, shaftFace < sealed + 20);
   e.destroy();
+}
+
+// A distant wall leaving a streamed buffer must not create a horizontal
+// skylight through an unchanged building. Only the loaded window moves here.
+{
+  const cols = 512, rows = 256, worldY = -192;
+  const source = createEngineWasm({ cols, rows, infinite: false, sinksOn: false });
+  const mirror = createEngineWasm({ cols, rows, infinite: true, sinksOn: false, storageRole: 'presentation' });
+  const frames = [];
+  for (const worldX of [-64, 0, -64]) {
+    // Render-only fixture: direct grid writes are never stepped as components.
+    const fg = source.getGrid(), bg = source.getGridBg();
+    fg.fill(MAT.EMPTY); bg.fill(MAT.EMPTY);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const wx = worldX + x, wy = worldY + y, cell = y * cols + x;
+      if (((wx >= -30 && wx <= -25) || (wx >= 420 && wx <= 425)) && wy >= -190 && wy <= 30)
+        fg[cell] = MAT.STONE;
+      if (wx >= 120 && wx <= 260 && wy >= -90 && wy <= -15) {
+        bg[cell] = MAT.WOOD;
+        if (wy <= -87 || wy >= -18 || ((wx <= 122 || wx >= 258) && wy < -33))
+          fg[cell] = MAT.WOOD;
+      }
+    }
+    mirror.applyWorldMirror(source.serializeWorld(), worldX, worldY);
+    mirror.renderFullLayer(1);
+    const pixels = mirror.getRenderPixelsLayer(1), frame = [];
+    for (let y = -90; y <= -15; y++) for (let x = 120; x <= 260; x++) {
+      const offset = ((y - worldY) * cols + x - worldX) * 4;
+      frame.push(...pixels.subarray(offset, offset + 4));
+    }
+    frames.push(frame);
+  }
+  const maxDelta = Math.max(...frames[0].map((v, i) => Math.max(
+    Math.abs(v - frames[1][i]), Math.abs(v - frames[2][i]))));
+  check(`streaming leaves building lighting unchanged (max byte delta ${maxDelta})`, maxDelta === 0);
+  const doorway = ((-23 + 90) * 141 + 140 - 120) * 4;
+  const interior = ((-23 + 90) * 141 + 190 - 120) * 4;
+  check('outdoor skylight still reaches the doorway and fades into the interior',
+    frames[0][doorway] > frames[0][interior] + 30);
+  source.destroy(); mirror.destroy();
 }
 
 // A real vertical shaft keeps direct skylight across vertical streaming.
@@ -438,6 +480,8 @@ function sealedActorCave(e) {
   for (let i = 0; i < 6; i++) {
     fillStone(source, 8, 0, 87, 95);
     carve(source, 45, 0, 50, 95);
+    // Day/night must measure the shaft, independently of generated cave lamps.
+    fillStoneLayer(source, 1, 0, 0, COLS - 1, ROWS - 1);
     mirror.applyWorldMirror(source.serializeWorld(), source.getWorldOffsetX(), source.getWorldOffsetY());
     mirror.renderFull();
     if (i < 5) source.shiftWorldXY(0, 32);

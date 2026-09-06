@@ -21,12 +21,6 @@ bool Renderer::topRayStartsInSky(Layer* lay, int x) {
   return topWorldY < E.terrain.genSurfaceAbs(worldX) && topWorldY < lay->gSeaRow;
 }
 
-bool Renderer::sideRayStartsInSky(Layer* lay, int x, int y) {
-  if (!lay->infinite) return true;
-  int worldX = lay->worldOffsetX + x, worldY = lay->worldOffsetY + y;
-  return worldY < E.terrain.genSurfaceAbs(worldX) && worldY < lay->gSeaRow;
-}
-
 void Renderer::remapSkyTopInput(Layer* lay) {
   if ((int)lay->skyTopInput.size() != E.cols) lay->skyTopInput.assign(E.cols, 0);
   if (!lay->infinite) {
@@ -88,12 +82,11 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
     if (v > lay->skyLight[k]) lay->skyLight[k] = v;
   };
 
-  // Directional skylight: cast straight rays from the top and from the visible
-  // side edges. This keeps open shafts and surface faces bright without making a
-  // whole winding cave bright just because it has one surface connection. Infinite
-  // worlds only start these rays from real outside-sky coordinates, so unloaded
-  // underground buffer edges do not become fake cave skylights. Rays always
-  // scan from the REAL buffer edge (transparency along the whole path matters);
+  // Directional skylight casts downward from real sky. Horizontal light in
+  // infinite worlds comes from the attenuated flood through outdoor air, not
+  // from moving buffer edges. Finite worlds also have fixed side skylights.
+  // Open shafts retain direct sky without lighting an entire winding cave.
+  // Rays scan from the real buffer edge, checking transparency along the path;
   // only the seeding is restricted to the solve region. Out-of-region columns
   // keep their previous skyDownDepth/Value/reach entries (they are only read by
   // the shift remap, and shifts force a full-region solve).
@@ -124,22 +117,18 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
   }
   uint8_t edge = edgeSkyLight();
   auto castSideRays = [&](int y) {
-    if (sideRayStartsInSky(lay, 0, y)) {
-      for (int x = 0; x < E.cols; x++) {
-        int k = y * E.cols + x;
-        if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
-        if (!transparentForLight(g[k])) break;
-      }
+    for (int x = 0; x < E.cols; x++) {
+      int k = y * E.cols + x;
+      if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
+      if (!transparentForLight(g[k])) break;
     }
-    if (sideRayStartsInSky(lay, E.cols - 1, y)) {
-      for (int x = E.cols - 1; x >= 0; x--) {
-        int k = y * E.cols + x;
-        if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
-        if (!transparentForLight(g[k])) break;
-      }
+    for (int x = E.cols - 1; x >= 0; x--) {
+      int k = y * E.cols + x;
+      if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
+      if (!transparentForLight(g[k])) break;
     }
   };
-  for (int y = ry0; y <= ry1; y++) castSideRays(y);
+  if (!lay->infinite) for (int y = ry0; y <= ry1; y++) castSideRays(y);
   lay->skyOffsetX = lay->worldOffsetX;
   lay->skyOffsetY = lay->worldOffsetY;
   lay->skyInputLevel = (int)renderSkyLight;

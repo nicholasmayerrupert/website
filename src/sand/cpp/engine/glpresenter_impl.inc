@@ -2012,10 +2012,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
       (E.storageRole == ESR_PRESENTATION
         ? nowMs - glLightWallMs >= GL_PRESENTATION_LIGHT_INTERVAL_MS
         : E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS);
-    int ex0 = glLightX0 <= 0 ? 0 : glLightX0 + GL_LIGHT_EXACT_SHRINK;
-    int ey0 = glLightY0 <= 0 ? 0 : glLightY0 + GL_LIGHT_EXACT_SHRINK;
-    int ex1 = glLightX1 >= E.cols - 1 ? E.cols - 1 : glLightX1 - GL_LIGHT_EXACT_SHRINK;
-    int ey1 = glLightY1 >= E.rows - 1 ? E.rows - 1 : glLightY1 - GL_LIGHT_EXACT_SHRINK;
+    int ex0 = glLightX0, ey0 = glLightY0, ex1 = glLightX1, ey1 = glLightY1;
     bool windowExposed = glLightX0 < 0 ||
                          imax(0, x0 - 1) < ex0 || imax(0, y0 - 1) < ey0 ||
                          imin(E.cols - 1, x1 + 1) > ex1 || imin(E.rows - 1, y1 + 1) > ey1;
@@ -2032,7 +2029,10 @@ void GLPresenter::glPresentWindow(int forceFull) {
         lx1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN); ly1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
       }
       E.renderer.computeLightingBoth(lx0, ly0, lx1, ly1);
-      glLightX0 = lx0; glLightY0 = ly0; glLightX1 = lx1; glLightY1 = ly1;
+      glLightX0 = lx0 == 0 ? 0 : lx0 + GL_LIGHT_EXACT_SHRINK;
+      glLightY0 = ly0 == 0 ? 0 : ly0 + GL_LIGHT_EXACT_SHRINK;
+      glLightX1 = lx1 == E.cols - 1 ? lx1 : lx1 - GL_LIGHT_EXACT_SHRINK;
+      glLightY1 = ly1 == E.rows - 1 ? ly1 : ly1 - GL_LIGHT_EXACT_SHRINK;
       glLightTick = E.tick;
       glLightWallMs = nowMs;
       E.perfLightMs = emscripten_get_now() - t0;
@@ -2043,10 +2043,18 @@ void GLPresenter::glPresentWindow(int forceFull) {
       glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
     } else if (E.storageRole == ESR_PRESENTATION) {
       double t0 = emscripten_get_now();
+      // Terrain repairs cover the sample window and its face-light neighbours.
+      // Cached shadows outside it may still reflect the previous terrain.
+      if (!glTerrainLightIntervals.empty()) {
+        glLightX0 = ex0 = imax(ex0, imax(0, x0 - 1));
+        glLightY0 = ey0 = imax(ey0, imax(0, y0 - 1));
+        glLightX1 = ex1 = imin(ex1, imin(E.cols - 1, x1 + 1));
+        glLightY1 = ey1 = imin(ey1, imin(E.rows - 1, y1 + 1));
+      }
       std::vector<std::pair<int, int>> intervals;
       for (const auto& changed : glTerrainLightIntervals) {
-        int ix0 = imax(x0, changed.first - GL_LIGHT_CHANGE_REACH);
-        int ix1 = imin(x1, changed.second + GL_LIGHT_CHANGE_REACH);
+        int ix0 = imax(imax(0, x0 - 1), changed.first - GL_LIGHT_CHANGE_REACH);
+        int ix1 = imin(imin(E.cols - 1, x1 + 1), changed.second + GL_LIGHT_CHANGE_REACH);
         if (ix0 <= ix1) intervals.push_back({ix0, ix1});
       }
       glTerrainLightIntervals.clear();
@@ -2125,8 +2133,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
         } else {
           exactY0 = imax(exactY0, viewY0); exactY1 = imin(exactY1, viewY1);
         }
-        // At a buffer edge there are no omitted sources beyond the solve. Match
-        // the validity encoding by repairing the short remainder to that edge.
+        // Repair the short remainder near a buffer edge in the same batch.
         if (exactX0 <= GL_LIGHT_EXACT_SHRINK) exactX0 = 0;
         if (exactY0 <= GL_LIGHT_EXACT_SHRINK) exactY0 = 0;
         if (exactX1 >= E.cols - 1 - GL_LIGHT_EXACT_SHRINK) exactX1 = E.cols - 1;
@@ -2159,19 +2166,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
         }
       }
       if (lightUpdated) {
-        if (cameraLightPatched) {
-          glLightX0 = exactX0 <= GL_LIGHT_EXACT_SHRINK ? 0 : exactX0 - GL_LIGHT_EXACT_SHRINK;
-          glLightY0 = exactY0 <= GL_LIGHT_EXACT_SHRINK ? 0 : exactY0 - GL_LIGHT_EXACT_SHRINK;
-          glLightX1 = exactX1 >= E.cols - 1 ? E.cols - 1 : exactX1 + GL_LIGHT_EXACT_SHRINK;
-          glLightY1 = exactY1 >= E.rows - 1 ? E.rows - 1 : exactY1 + GL_LIGHT_EXACT_SHRINK;
-        } else {
-          // The current sample window is exact. Constrain the validity region
-          // so the next whole-cell pan repairs newly exposed lighting.
-          glLightX0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN);
-          glLightY0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
-          glLightX1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN);
-          glLightY1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
-        }
+        glLightX0 = exactX0; glLightY0 = exactY0;
+        glLightX1 = exactX1; glLightY1 = exactY1;
         { Engine::ActiveLayerScope active(E, &E.fg); E.foldRowMarksToRender(); }
         { Engine::ActiveLayerScope active(E, &E.bg); E.foldRowMarksToRender(); }
         E.perfLightMs = emscripten_get_now() - t0;

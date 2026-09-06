@@ -127,12 +127,6 @@
         pad(cx - half, cx + half, floor, wall, false);
         for (int y = floor - 22; y > floor - height + 8; y -= 22) {
           rect(cx - half + 2, y, cx + half - 2, y + 1, wood);
-          // An open stairwell and diagonal treads connect the stacked rooms.
-          if (!backdrop) rect(cx - half + 2, y, cx - half + 11, y + 1, EMPTY);
-          for (int step = 0; step < 22; step++) {
-            int x = cx - half + 3 + step % imax(1, half * 2 - 5);
-            put(x, y + 21 - step, wood); put(x + 1, y + 21 - step, wood);
-          }
           window(cx, y - 9, 3, 6);
           lamp(cx + half - 5, y - 6);
         }
@@ -173,19 +167,59 @@
           break;
         }
         case LM_AQUEDUCT: {
-          for (int pier = -3; pier <= 3; pier++) {
-            int x = pier * 29, base = ground(x);
-            for (int dx = -4; dx <= 4; dx++) support(x + dx, -35, wall);
-            rect(x - 6, -38, x + 6, -35, trim);
-            if (backdrop) vines(x - 3, x + 4, -34);
-            if (pier == 3 || pier == (int)(p.id % 5) - 2) continue;
-            for (int dx = 0; dx <= 29; dx++) {
-              int arch = -14 - (int)std::lround(16 * std::sqrt(std::fmax(0.0, 1 - std::pow((dx - 14.5) / 14.5, 2))));
-              rect(x + dx, -36, x + dx, arch, wall);
-              put(x + dx, arch + 1, trim);
+          // Dressed arches carry a continuous channel. Wedge joints follow the
+          // curve, while broad plinths and stepped abutments meet the hillside.
+          for (int pier=-3;pier<=3;pier++) {
+            int x=pier*29,base=ground(x);
+            for(int dx=-4;dx<=4;dx++)support(x+dx,-37,wall);
+            for(int dx=-7;dx<=7;dx++)support(x+dx,base-3+std::abs(dx)/3,wall);
+            rect(x-6,base-3,x+6,base-2,SANDSTONE);
+            rect(x-6,-39,x+6,-36,PALESTONE);
+            rect(x-5,-35,x+5,-34,SANDSTONE);
+            if(backdrop) {
+              for(int y=-32;y<base-3;y+=6) {
+                rect(x-4,y,x+4,y,PALESTONE);
+                put(x+(y%12?-1:2),y+2,SANDSTONE);
+              }
+              rect(x-2,-32,x-1,base-5,SANDSTONE);
+              if(pier%2==0)vines(x+2,x+5,-34);
             }
-            if (base > -15) for (int chip = 0; chip < 4; chip++) {
-              int dx = 8 + chip * 4; support(x + dx, ground(x + dx) - chip % 3, wall);
+            if(pier==3)continue;
+            for(int dx=0;dx<=29;dx++) {
+              double nx=(dx-14.5)/14.5;
+              int soffit=-14-(int)std::lround(16*std::sqrt(std::fmax(0.,1-nx*nx)));
+              rect(x+dx,-40,x+dx,soffit+1,wall);
+              for(int y=-38;y<soffit-3;y++) {
+                bool course=(y+40)%5==0;
+                bool joint=(dx+((y+40)/5%2)*4)%9==0;
+                if(course || joint)put(x+dx,y,SANDSTONE);
+              }
+              int wedge=(int)((std::acos(std::clamp(nx,-1.,1.))/3.141592653589793)*13);
+              rect(x+dx,soffit-2,x+dx,soffit+1,wedge%2?PALESTONE:SANDSTONE);
+              if(dx>=13 && dx<=16)rect(x+dx,soffit-4,x+dx,soffit+2,PALESTONE);
+            }
+            if(backdrop) {
+              ellipse(x+14,-36,3,3,SANDSTONE,false);
+              put(x+14,-37,PALESTONE);put(x+14,-35,MOSS);
+            }
+          }
+          rect(-96,-44,96,-40,wall);
+          rect(-98,-45,98,-44,PALESTONE);
+          rect(-97,-41,97,-40,SANDSTONE);
+          if(backdrop)for(int x=-94;x<=94;x++) {
+            put(x,-43,x%11==0?PALESTONE:DEEPSTONE);
+            if(x%17<3)put(x,-40,MOSS);
+          }
+          for(int side:{-1,1})for(int step=0;step<10;step++) {
+            int x=side*(91+step),y=-39+step*3;
+            support(x,y,wall);put(x,y,PALESTONE);
+          }
+          for(int pier=-3;pier<=3;pier++) {
+            int x=pier*29;
+            if(!backdrop)rect(x-2,-32,x+2,-26,EMPTY);
+            else {
+              rect(x-3,-33,x+3,-25,SANDSTONE);
+              lamp(x,-29);
             }
           }
           break;
@@ -215,8 +249,6 @@
             line(-21, -49, -7, -35, 1, wall); line(-21, -35, -7, -49, 1, wall);
             for (int x = -61; x < 20; x += 19) rect(x, -6, x + 11, -4, wood);
           }
-          // A breached end and roof scar distinguish the ruin from a living keep.
-          for (int x = 25; x < 45; x++) rect(x, -52, x, -30 + (x % 4), EMPTY);
           vines(-67, 45, -29); vines(47, 72, -57);
           break;
         }
@@ -382,8 +414,10 @@
         case LM_ICEWATCH: {
           tower(-62, 18, -1, 55, true); tower(61, 20, 0, 61, true);
           rect(-44, -24, 41, -21, PINE_WOOD);
-          for (int x = -43; x <= 41; x += 7) rect(x, -34, x, -25, PINE_WOOD);
-          line(-44, -34, 41, -34, 2, PINE_WOOD);
+          if (backdrop) {
+            for (int x = -43; x <= 41; x += 7) rect(x, -34, x, -25, PINE_WOOD);
+            line(-44, -34, 41, -34, 2, PINE_WOOD);
+          }
           for (int side : {-1, 1}) line(side * 44, -21, side * 56, -8, 3, STONE);
           if (backdrop) {
             for (int x = -40; x < 40; x += 11) line(x, -21, x + 9, -14, 1, ICE);
@@ -404,11 +438,6 @@
             }
             vines(-half + 2, half, top + 2);
             lamp(-half + 9, top + 7); lamp(half - 9, top + 7);
-          }
-          for (int step = 0; step <= 60; step++) {
-            int x = step - 30;
-            if (!backdrop) rect(x, -step - 12, x + 2, -step - 1, EMPTY);
-            rect(x, -step, x + 2, -step + 1, CLAY);
           }
           room(-18, 18, -79, -60, wall); rect(-22, -82, 22, -79, CLAY);
           if (backdrop) {
@@ -484,7 +513,6 @@
           for (int x = -42; x <= 42; x += 21) {
             if (backdrop) rect(x - 2, -27, x + 2, floor, wall); window(x + 9, -14, 5, 8);
           }
-          rect(20, -52, 37, -30, EMPTY);
           for (int x = 58; x <= 78; x++) support(x, ground(x) - std::abs(x - 68) / 5, STONE);
           if (backdrop) {
             ellipse(0, -10, 13, 13, MOSS, true); rect(-6, -4, 6, floor - 2, STONE);
@@ -592,7 +620,7 @@
               rect(-5, floor, -5, ground(-5), PINE_WOOD); rect(5, floor, 5, ground(5), PINE_WOOD);
               banner(-22, floor + 4, 19, CLAY); banner(17, floor + 4, 15, CLAY);
             }
-            for (int side : {-1, 1}) {
+            if (backdrop) for (int side : {-1, 1}) {
               int x = side * 61, y = ground(x);
               for (int dx = -2; dx <= 2; dx++) support(x + dx, y - 25, PINE_WOOD);
               ellipse(x, y - 28, 7, 6, BONE, false);
@@ -622,12 +650,11 @@
               put(cx + dx, top - 1, SNOW);
             }
             // Low, roofed entrance tunnels open through the dome's side wall.
-            int side = house < 0 ? 1 : -1;
-            for (int dx = radius - 5; dx <= radius + 11; dx++) {
+            for (int side : {-1, 1}) for (int dx = radius - 5; dx <= radius + 11; dx++) {
               int x = cx + side * dx;
-              rect(x, floor - 13, x, floor + 1, backdrop ? ICE : EMPTY);
-              rect(x, floor - 13, x, floor - 11, ICE);
-              put(x, floor - 14, SNOW);
+              rect(x, floor - 16, x, floor + 1, backdrop ? ICE : EMPTY);
+              rect(x, floor - 16, x, floor - 14, ICE);
+              put(x, floor - 17, SNOW);
               support(x, floor, ICE);
             }
             if (backdrop) {
@@ -649,5 +676,115 @@
           for (int dx = -1; dx <= 1; dx++) support(x + dx, y - (i % 2), wall);
         }
       }
+      auto route = [&](int x0, int y0, int x1, int y1) {
+        stampStructureRoute(put, x0, y0, x1, y1, wood, backdrop);
+      };
+      auto well = [&](int cx, int half, int top, int floor) {
+        if (!backdrop) rect(cx - half, top, cx + half, floor - 1, EMPTY);
+        stampStructureLandings(put, cx, half, top, floor, wood);
+      };
+      // Entrances, buried galleries, and shared landings stay open after all
+      // roofs, foundations, columns, and furnishings have been composed.
+      switch (p.kind) {
+        case LM_WINDMILL:
+          route(-80, -1, 78, -1);
+          break;
+        case LM_CASTLE:
+          route(-112, ground(-112), -88, -1); route(-88, -1, 88, -1);
+          route(88, -1, 112, ground(112));
+          break;
+        case LM_ABBEY:
+          route(-78, -1, 79, -1);
+          break;
+        case LM_PYRAMID:
+          route(-102, 0, 102, 0);
+          route(86, 0, 56, -18); route(-56, -18, -28, -36);
+          route(-99, 0, -20, 19); route(-20, 19, 20, 19);
+          route(-43, 37, -20, 19); route(20, 19, 43, 37);
+          break;
+        case LM_TOMB:
+          route(-75, -1, 75, -1);
+          route(0, -1, 62, 36); route(-62, 36, 0, -1);
+          route(-63, 36, -20, 36); route(20, 36, 63, 36);
+          well(0, 6, -4, 55);
+          break;
+        case LM_OSSUARY:
+          route(-100, ground(-100), -55, -1); route(-55, -1, 55, -1);
+          route(55, -1, 100, ground(100)); well(0, 6, -4, 29);
+          break;
+        case LM_LONGHOUSE:
+          route(-82, -1, 82, -1);
+          break;
+        case LM_ICEWATCH:
+          route(-112, ground(-112), -81, -2); route(-81, -2, -43, -2);
+          route(40, -1, 82, -1); route(82, -1, 112, ground(112));
+          route(-49, -24, 47, -24);
+          break;
+        case LM_STEP_TEMPLE:
+          route(-100, 0, 100, 0);
+          route(-40, 0, 12, -61); well(20, 6, -59, 0);
+          route(-98, 0, -22, 18); route(-22, 18, 0, 21);
+          break;
+        case LM_AQUEDUCT:
+        case LM_SANCTUARY:
+          for (int x = -d.halfWidth; x < d.halfWidth; x++)
+            route(x, p.kind == LM_SANCTUARY ? -1 : ground(x),
+                  x + 1, p.kind == LM_SANCTUARY ? -1 : ground(x + 1));
+          break;
+        case LM_STILT_HAMLET:
+          route(-106, ground(-106), -89, -3);
+          route(-89, -3, -43, -3); route(-43, -3, -23, -8);
+          route(-23, -8, 23, -8); route(23, -8, 43, -3);
+          route(43, -3, 89, -3); route(89, -3, 106, ground(106));
+          break;
+        case LM_SUNKEN_ROTUNDA:
+          route(-73, ground(-73), -47, 8); route(-47, 8, 47, 8);
+          route(47, 8, 73, ground(73));
+          break;
+        case LM_IRIS_CATHEDRAL:
+          route(-112, ground(-112), -88, -1); route(-88, -1, 88, -1);
+          route(88, -1, 112, ground(112));
+          break;
+        case LM_STAR_OBSERVATORY:
+          route(-106, ground(-106), -82, -1); route(-82, -1, 77, -1);
+          route(77, -1, 106, ground(106));
+          break;
+        case LM_IGLOO_CLUSTER: {
+          const int xs[] = {-110, -95, -62, 0, 62, 95, 110};
+          const int ys[] = {ground(-110), ground(-62)-2, ground(-62)-2,
+            ground(0)-2, ground(62)-2, ground(62)-2, ground(110)};
+          for (int i = 1; i < 7; i++)
+            stampStructureRoute(put, xs[i-1], ys[i-1], xs[i], ys[i], ICE, backdrop);
+          break;
+        }
+        case LM_BONE_CAMP:
+          route(-74, ground(-49) - 2, -25, ground(-49) - 2);
+          route(-25, ground(-49) - 2, 25, ground(49) - 2);
+          route(25, ground(49) - 2, 74, ground(49) - 2);
+          break;
+        case LM_BONE_LOOKOUT:
+          for(int x=-100;x<100;x++)route(x,ground(x)-1,x+1,ground(x+1)-1);
+          well(0, 6, ground(0) - 45, ground(0));
+          break;
+        default: break;
+      }
+      // Open stairwells after composing adjoining roofs and aisles. Landings
+      // alternate sides, with room to jump past them and step onto every deck.
+      auto towerWell = [&](int cx, int floor, int height) {
+        well(cx, 6, floor - height + 3, floor - 1);
+      };
+      switch (p.kind) {
+        case LM_WINDMILL: towerWell(4, -1, 44); break;
+        case LM_CASTLE:
+          towerWell(-70, std::clamp(ground(-70), -8, 8), 59);
+          towerWell(70, std::clamp(ground(70), -8, 8), 65);
+          towerWell(-12, 0, 55); break;
+        case LM_ABBEY: towerWell(61, 0, 58); break;
+        case LM_ICEWATCH: towerWell(-62, -1, 55); towerWell(61, 0, 61); break;
+        case LM_IRIS_CATHEDRAL: towerWell(-72, 0, 61); towerWell(72, 0, 66); break;
+        case LM_STAR_OBSERVATORY: towerWell(40, 0, 40); break;
+        default: break;
+      }
+
     }
   }

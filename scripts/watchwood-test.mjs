@@ -106,9 +106,14 @@ for (let seed = 0; seed < 8; seed++) {
   else planted.placeMaterial(seedX, 88, 0, MAT.EYE_SEED);
   for (let i = 0; i < 60; i++) planted.step(i * 16);
   const youngCells = planted.getGrid().filter((mat) => eyeMats.has(mat)).length;
-  for (let i = 60; i < 100; i++) planted.step(i * 16);
+  let buddingTick = 60;
+  for (; buddingTick < 400; buddingTick++) {
+    planted.step(buddingTick * 16);
+    const eyeCells = planted.getGrid().filter(m => eyeMats.has(m) && m !== MAT.EYE_WOOD).length;
+    if (eyeCells >= 80) { buddingTick++; break; }
+  }
   const budding = planted.getGrid().slice();
-  for (let i = 100; i < 1100; i++) planted.step(i * 16);
+  for (let i = buddingTick; i < 1100; i++) planted.step(i * 16);
   const grown = planted.getGrid().slice();
   check(`${typed ? 'typed' : 'material'} eyeball seeds grow complete eyes on branching trunks`,
     grown.includes(MAT.EYE_SEED)

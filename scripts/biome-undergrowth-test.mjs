@@ -11,10 +11,11 @@ function move(e,x,y) {
   while(e.getWorldOffsetY()!==oy)e.shiftWorldXY(0,Math.max(32-e.rows,Math.min(e.rows-32,oy-e.getWorldOffsetY())));
 }
 const same=(a,b)=>a.length===b.length&&a.every((m,i)=>m===b[i]);
-for(const seed of [7,14,31])for(const biome of [BIOME.ROCKY,BIOME.WATCHWOOD]) {
+let marshWaterCells=0;
+for(const seed of [7,14,31])for(const biome of Object.values(BIOME)) {
   const e=make(seed);let center;
-  for(let d=0;d<24000 && center===undefined;d+=96)for(const x of [d,-d]) {
-    if(e.worldBiomeAt(x)!==biome)continue;
+  for(let d=0;d<96000 && center===undefined;d+=96)for(const x of [d,-d]) {
+    if(e.worldBiomeAt(x)!==biome || e.worldSurfaceAbsAt(x)>=16)continue;
     let wild=true;
     for(let dx=-128;dx<=128;dx+=16) {
       const c=e.worldContextAt(x+dx,e.worldSurfaceAbsAt(x+dx));
@@ -22,7 +23,7 @@ for(const seed of [7,14,31])for(const biome of [BIOME.ROCKY,BIOME.WATCHWOOD]) {
     }
     if(wild){center=x;break;}
   }
-  const label=`seed ${seed}, ${biome===BIOME.ROCKY?'bone':'eye'}`;
+  const label=`seed ${seed}, ${Object.keys(BIOME).find(k=>BIOME[k]===biome)}`;
   check(`${label}: continuous wilderness is available`,center!==undefined);
   if(center===undefined){e.destroy();continue;}
   move(e,center,e.worldSurfaceAbsAt(center));
@@ -36,14 +37,15 @@ for(const seed of [7,14,31])for(const biome of [BIOME.ROCKY,BIOME.WATCHWOOD]) {
   const before=capture(e),anchors=[],colors=new Set(),columns=new Set();
   for(let x=bounds.left;x<=bounds.right;x++)for(let y=bounds.top;y<bounds.bottom;y++) {
     const m=e.getGridBg()[(y-e.getWorldOffsetY())*e.cols+x-e.getWorldOffsetX()];
-    if(y<e.worldSurfaceAbsAt(x) && (foliage.has(m) || (biome===BIOME.WATCHWOOD && [MAT.EYE_IRIS,MAT.EYE_WOOD].includes(m))))colors.add(m);
+    if(y<e.worldSurfaceAbsAt(x) && (foliage.has(m) || (biome===BIOME.FOREST && [MAT.MUSH_CAP,MAT.MUSH_STEM].includes(m)) || (biome===BIOME.WATCHWOOD && [MAT.EYE_IRIS,MAT.EYE_WOOD].includes(m))))colors.add(m);
     if(foliage.has(m)) {
       anchors.push([x,y,m]);
+      if(biome===BIOME.SWAMP && y>=18 && y<e.worldSurfaceAbsAt(x))marshWaterCells++;
       if(y<e.worldSurfaceAbsAt(x)){colors.add(m);columns.add(x);}
     }
   }
   console.log('scene',JSON.stringify({seed,biome,x:center,y:e.worldSurfaceAbsAt(center),cells:anchors.length,colors:[...colors],columns:columns.size}));
-  check(`${label}: colored undergrowth fills the gaps`,anchors.length>120 && columns.size>45 && colors.size>=2);
+  check(`${label}: colored undergrowth fills the gaps`,anchors.length>([BIOME.ROCKY,BIOME.WATCHWOOD].includes(biome)?120:35) && columns.size>([BIOME.ROCKY,BIOME.WATCHWOOD].includes(biome)?45:20) && colors.size>=2);
   check(`${label}: foreground travel remains clear of undergrowth`,!e.getGrid().some(m=>foliage.has(m)));
   const wide=make(seed,512);move(wide,center,e.worldSurfaceAbsAt(center));
   check(`${label}: identical roots and foliage at another viewport width`,same(before,capture(wide)));wide.destroy();
@@ -57,4 +59,5 @@ for(const seed of [7,14,31])for(const biome of [BIOME.ROCKY,BIOME.WATCHWOOD]) {
   if(moved.length)console.log('moved',moved.slice(0,12));
   e.destroy();
 }
+check('marsh plants also occupy shallow water',marshWaterCells>10);
 process.exitCode=done()?1:0;

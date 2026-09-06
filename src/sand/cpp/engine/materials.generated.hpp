@@ -24,7 +24,7 @@ enum MaterialPlacement : uint8_t { MP_ERASE = 0, MP_PAINT = 1, MP_STRUCTURE = 2 
 enum PlantType : uint8_t { PT_OAK = 0, PT_PINE = 1, PT_WILLOW = 2, PT_CACTUS = 3, PT_MUSHROOM = 4, PT_BUSH = 5, PT_VINE = 6, PT_STANDARD = 7, PT_EYE = 8 };
 enum PlantGrowthProfile : uint8_t { PGR_OAK = 0, PGR_PINE = 1, PGR_WILLOW = 2, PGR_CACTUS = 3, PGR_MUSHROOM = 4, PGR_BUSH = 5, PGR_VINE = 6, PGR_STANDARD = 7, PGR_EYE = 8 };
 enum PlantWorldgenProfile : uint8_t { PWG_BROADLEAF = 0, PWG_PINE = 1, PWG_WILLOW = 2, PWG_CACTUS = 3, PWG_BUSH = 4, PWG_EYE = 5 };
-enum PlantWoodGrowthTopology : uint8_t { PGW_GENERIC = 0, PGW_VINE = 1, PGW_OAK = 2, PGW_PINE = 3, PGW_WILLOW = 4, PGW_CACTUS = 5, PGW_EYE = 6 };
+enum PlantWoodGrowthTopology : uint8_t { PGW_GENERIC = 0, PGW_VINE = 1, PGW_OAK = 2, PGW_PINE = 3, PGW_WILLOW = 4, PGW_CACTUS = 5, PGW_EYE = 6, PGW_BRANCHING = 7 };
 enum PlantLeafGrowthTopology : uint8_t { PGL_GENERIC = 0, PGL_MUSHROOM = 1, PGL_VINE = 2, PGL_WILLOW = 3, PGL_PINE = 4, PGL_OAK = 5 };
 enum PlantTrunkGrowthProfile : uint8_t { PGT_NONE = 0, PGT_GENERIC = 1, PGT_TREE = 2 };
 enum PlantLeafBurstProfile : uint8_t { PGB_DEFAULT = 0, PGB_SINGLE = 1, PGB_PINE = 2 };
@@ -136,9 +136,9 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_OAK, PGW_OAK,
   PGL_OAK, PGT_TREE,
   PGB_DEFAULT,
-  220, 31,
-  480, 71, 36,
-  23, 8,
+  560, 31,
+  1350, 71, 36,
+  38, 12,
   false, true,
   false, true,
   true, false,
@@ -151,9 +151,9 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_PINE, PGW_PINE,
   PGL_PINE, PGT_TREE,
   PGB_PINE,
-  104, 30,
-  230, 81, 5,
-  19, 5,
+  320, 30,
+  520, 81, 5,
+  32, 9,
   true, true,
   true, false,
   true, false,
@@ -166,9 +166,9 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_WILLOW, PGW_WILLOW,
   PGL_WILLOW, PGT_TREE,
   PGB_DEFAULT,
-  205, 31,
-  240, 61, 5,
-  24, 5,
+  360, 31,
+  580, 61, 5,
+  40, 10,
   true, true,
   true, false,
   true, true,
@@ -181,7 +181,7 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_CACTUS, PGW_CACTUS,
   PGL_GENERIC, PGT_NONE,
   PGB_DEFAULT,
-  34, 0,
+  110, 0,
   105, 0, 6,
   0, 0,
   true, false,
@@ -196,8 +196,8 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_MUSHROOM, PGW_GENERIC,
   PGL_MUSHROOM, PGT_NONE,
   PGB_DEFAULT,
-  13, 0,
-  28, 0, 11,
+  36, 0,
+  100, 0, 11,
   0, 0,
   true, true,
   false, true,
@@ -211,8 +211,8 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_BUSH, PGW_GENERIC,
   PGL_GENERIC, PGT_GENERIC,
   PGB_DEFAULT,
-  14, 0,
-  38, 0, 3,
+  26, 0,
+  90, 0, 3,
   0, 0,
   false, true,
   false, false,
@@ -226,8 +226,8 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   PGR_VINE, PGW_VINE,
   PGL_VINE, PGT_NONE,
   PGB_SINGLE,
-  40, 0,
-  9, 0, 8,
+  64, 0,
+  18, 0, 8,
   0, 0,
   true, true,
   false, true,
@@ -238,26 +238,26 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   0, 0
 },
 {
-  PGR_STANDARD, PGW_GENERIC,
-  PGL_GENERIC, PGT_GENERIC,
+  PGR_STANDARD, PGW_BRANCHING,
+  PGL_OAK, PGT_TREE,
   PGB_DEFAULT,
-  120, 0,
-  105, 0, 6,
-  0, 0,
+  340, 0,
+  700, 0, 6,
+  20, 6,
   false, true,
-  false, false,
+  false, true,
   true, false,
   0.54f,
   0,
   0,
-  0, 0
+  0.8f, 0.3f
 },
 {
   PGR_EYE, PGW_EYE,
   PGL_GENERIC, PGT_NONE,
   PGB_DEFAULT,
-  400, 0,
-  650, 0, 0,
+  700, 0,
+  1100, 0, 0,
   0, 0,
   true, true,
   false, true,
@@ -269,15 +269,15 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
 }
 };
 static constexpr PlantWorldgenProfileDef PLANT_WORLDGEN_PROFILES[PLANT_WORLDGEN_PROFILE_COUNT] = {
-{ PWG_BROADLEAF, PWGT_BROADLEAF, 13, 12, 9, 42 },
-{ PWG_PINE, PWGT_PINE, 23, 13, 10, 42 },
-{ PWG_WILLOW, PWGT_WILLOW, 18, 10, 14, 42 },
-{ PWG_CACTUS, PWGT_CACTUS, 9, 8, 2, 42 },
-{ PWG_BUSH, PWGT_BUSH, 4, 4, 5, 42 },
-{ PWG_EYE, PWGT_EYE, 20, 14, 20, 42 }
+{ PWG_BROADLEAF, PWGT_BROADLEAF, 32, 16, 16, 80 },
+{ PWG_PINE, PWGT_PINE, 44, 18, 17, 80 },
+{ PWG_WILLOW, PWGT_WILLOW, 34, 18, 24, 80 },
+{ PWG_CACTUS, PWGT_CACTUS, 28, 14, 8, 80 },
+{ PWG_BUSH, PWGT_BUSH, 8, 6, 8, 80 },
+{ PWG_EYE, PWGT_EYE, 38, 20, 30, 80 }
 };
-static constexpr int PLANT_WORLDGEN_MAX_HORIZONTAL_REACH = 20;
-static constexpr int PLANT_WORLDGEN_MAX_UPWARD_REACH = 42;
+static constexpr int PLANT_WORLDGEN_MAX_HORIZONTAL_REACH = 30;
+static constexpr int PLANT_WORLDGEN_MAX_UPWARD_REACH = 80;
 static constexpr PlantGrowthProfile PLANT_GROWTH_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PGR_OAK, PGR_PINE, PGR_WILLOW, PGR_CACTUS, PGR_MUSHROOM, PGR_BUSH, PGR_VINE, PGR_STANDARD, PGR_EYE};
 static constexpr PlantWorldgenProfile PLANT_WORLDGEN_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PWG_BROADLEAF, PWG_PINE, PWG_WILLOW, PWG_CACTUS, PWG_BROADLEAF, PWG_BUSH, PWG_BROADLEAF, PWG_BROADLEAF, PWG_EYE};
 static constexpr bool plantGrowthProfilesComplete() {

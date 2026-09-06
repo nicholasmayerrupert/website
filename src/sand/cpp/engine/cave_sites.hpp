@@ -79,7 +79,7 @@ inline CaveSitePlan makeCaveSite(int left, int top, int width, int height,
     room(imax(left+16, imin(left+width-17, x + side*(stride+12))), floor-62, 28, 26, p.castle ? 6 : design);
     p.links[p.linkCount++]={parent,p.roomCount-1};
     if((p.galleries && (seed&8)) || p.castle) {
-      room(x-side*stride/2, floor-2, 32, 22, p.castle ? 0 : design);
+      room(x-side*(stride*3/4), floor-2, 32, 22, p.castle ? 0 : design);
       p.links[p.linkCount++]={parent,p.roomCount-1};
     }
   }

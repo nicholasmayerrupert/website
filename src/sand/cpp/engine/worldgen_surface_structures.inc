@@ -105,6 +105,7 @@
             put(shelf + 2, floorY - 6, EYE_IRIS);
           }
         }
+        stampStructureRoute(put, left, floorY, left + w, floorY, foundation, L->isBackground);
         return;
       }
 
@@ -281,15 +282,15 @@
           }
         }
       } else {
-        // Two widely spaced masonry piers carry the roof into the terrace. They
-        // leave player-clear side entries and a broad central room, but prevent
-        // the foreground facade from reading as a roof suspended over a floor.
+        // Facade piers frame the upper rooms. The open aisle below them is
+        // supported through the bearing rear wall and terrace.
         for (int pierX : {left + 9, left + w - 9})
           for (int y = wallTop + 1; y <= floorY; y++) put(pierX, y, wall);
         // High beams brace the wide spans without shrinking the playable opening.
         for (int y = wallTop + 2; y < floorY - DOOR_CLEARANCE; y++) put(cx, y, wall);
         for (int x = left + 5; x <= left + w - 5; x++) if (x < cx - 4 || x > cx + 4) put(x, floorY - DOOR_CLEARANCE - 1, wall);
       }
+      stampStructureRoute(put, left, floorY, left + w, floorY, foundation, L->isBackground);
       if (L->isBackground) {
         // Hanging shop signs remain readable but, like streetlamps, sit behind the
         // player so the decorative post cannot obstruct the path between homes.
@@ -579,6 +580,18 @@
           put(lampX, ceiling + 1, CRYSTAL);
       }
 
+      // Offices and workshops sit above the galleries with usable floors and
+      // short stairwells, keeping the rail aisle continuous underneath.
+      for (int level = 0; level < levels; level++) {
+        const MineLevelPlan& lp = plan.level[level];
+        int stairX = (lp.roomLeft + lp.roomRight) / 2;
+        stampStructureRoute(put, lp.roomLeft, lp.ceiling - 1,
+                            lp.roomRight, lp.ceiling - 1, PINE_WOOD, L->isBackground);
+        if (!L->isBackground) for (int y = lp.roomTop + 3; y < lp.floor - 1; y++)
+          for (int x = stairX - 6; x <= stairX + 6; x++) put(x, y, EMPTY);
+        stampStructureLandings(put, stairX, 6, lp.roomTop + 3, lp.floor - 1, PINE_WOOD);
+      }
+
       // Broad inter-level shafts let the full player body pass with room to
       // maneuver. Timber ledges mark each landing in the background layer.
       for (int shaftX : {plan.shaftLeft, plan.shaftRight}) {
@@ -601,6 +614,9 @@
           }
         }
       }
+
+      for (int shaftX : {plan.shaftLeft, plan.shaftRight})
+        stampStructureLandings(put, shaftX, shaftHalf, plan.shaftTop, plan.shaftBottom, PINE_WOOD);
 
       // A substantial headhouse makes the mine legible at the surface. Its
       // constructed shaft is intentionally regular; natural cave mouths are not.
@@ -645,6 +661,8 @@
         put(houseLeft + houseW - 1, floor - PLAYER_H - 6, CRYSTAL);
       }
 
+      stampStructureRoute(put, houseLeft, floor, houseLeft + houseW, floor, houseWall, L->isBackground);
+
       int shaftTop = plan.connectorTop;
       int shaftBottom = plan.connectorBottom;
       if (!L->isBackground) {
@@ -655,6 +673,7 @@
           for (int x = center - shaftHalf - 2; x <= center + shaftHalf + 2; x++)
             put(x, y, WOOD);
       }
+      stampStructureLandings(put, center, shaftHalf, shaftTop, shaftBottom, PINE_WOOD);
     }
   }
 
@@ -1048,20 +1067,27 @@
         }
       }
 
-      // Open one full-height side door and connect it to the first nearby cave
-      // cell. The containing cavern normally starts immediately outside the
+      if (plan.kind < RK_CISTERN) {
+        int aisle = plan.floorY - (plan.kind == RK_MUSHGROVE ? 1 : 0);
+        stampStructureRoute(put, ax, aisle, ax + w - 1, aisle,
+                            plan.kind == RK_MUSHGROVE ? MYCELIUM : BRICK, L->isBackground);
+      }
+
+      // Open full-height side doors and connect them to nearby cave
+      // cells. The containing cavern normally starts immediately outside the
       // facade; the bounded search also handles thick noise walls.
       if (!L->isBackground) {
-        int dir = h2(0xAACC355u, lx, ly) < 0.5 ? -1 : 1;
-        int edgeX = dir < 0 ? ax : ax + w - 1;
-        int doorBottom = ay + h - 2;
-        int doorTop = doorBottom - PLAYER_H - 4;
-        int reach = 2;
-        for (int d = 1; d <= 28; d++) {
-          if (terrain.genOpenCaveAt(edgeX + dir * d, doorBottom)) { reach = d; break; }
+        for (int dir : {-1, 1}) {
+          int edgeX = dir < 0 ? ax : ax + w - 1;
+          int doorBottom = ay + h - 2;
+          int doorTop = doorBottom - PLAYER_H - 4;
+          int reach = 2;
+          for (int d = 1; d <= 28; d++) {
+            if (terrain.genOpenCaveAt(edgeX + dir * d, doorBottom)) { reach = d; break; }
+          }
+          for (int d = 0; d <= reach; d++)
+            for (int py = doorTop; py <= doorBottom; py++) put(edgeX + dir * d, py, EMPTY);
         }
-        for (int d = 0; d <= reach; d++)
-          for (int py = doorTop; py <= doorBottom; py++) put(edgeX + dir * d, py, EMPTY);
       }
     }
   }

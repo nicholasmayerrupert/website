@@ -176,17 +176,23 @@ e.destroy();
         || swamp.getGrid()[(surface - 1) * swamp.cols + x] !== MAT.WATER) continue;
     for (let dy = 0; dy < 6; dy++) beds.push((surface + dy) * swamp.cols + x);
   }
-  const muddy = () => beds.filter((k) => swamp.getGrid()[k] === MAT.MUD
+  const backgroundBed = beds.map(k => swamp.getGridBg()[k]);
+  const muddyBeds = beds.filter(k => swamp.getGridBg()[k] === MAT.MUD);
+  const muddy = () => muddyBeds.filter(k => swamp.getGrid()[k] === MAT.MUD
     && swamp.getGridBg()[k] === MAT.MUD).length;
   const water = () => [swamp.getGrid(), swamp.getGridBg()]
     .reduce((count, grid) => count + grid.filter((mat) => mat === MAT.WATER).length, 0);
-  check('swamp pool beds have mud skin and soil in both layers', beds.length > 300 && muddy() === beds.length);
+  check('swamp pool beds have mud skin and soil around buried roots', beds.length > 300
+    && muddyBeds.length > beds.length * 0.75
+    && beds.every(k => swamp.getGrid()[k] === MAT.MUD
+      && (swamp.getGridBg()[k] === MAT.MUD || swamp.getGridBg()[k] === MAT.WOOD)));
   const initialWater = water();
   swamp.shiftWorldXY(128, 0); swamp.shiftWorldXY(128, 0);
   swamp.shiftWorldXY(-128, 0); swamp.shiftWorldXY(-128, 0);
-  check('muddy pool beds survive streaming intact', muddy() === beds.length);
+  check('muddy pool beds and roots survive streaming intact',
+    beds.every((k, i) => swamp.getGrid()[k] === MAT.MUD && swamp.getGridBg()[k] === backgroundBed[i]));
   for (let tick = 0; tick < 400; tick++) swamp.stepWorld();
-  check('submerged swamp mud remains stable through settling', muddy() >= beds.length * 0.95);
+  check('submerged swamp mud remains stable through settling', muddy() >= muddyBeds.length * 0.95);
   check('swamp pools retain water above their sealed bed', water() >= initialWater * 0.95);
   swamp.destroy();
 }

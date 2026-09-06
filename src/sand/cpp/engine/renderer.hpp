@@ -104,7 +104,6 @@ class Renderer {
   inline int lightLossFor(uint8_t m) const { return MAT_LIGHT_LOSS[m]; }
   inline bool faceLitMaterial(uint8_t m) const { return MAT_FACE_LIT[m] != 0; }
   bool topRayStartsInSky(Layer* lay, int x);
-  bool sideRayStartsInSky(Layer* lay, int x, int y);
   // Lighting solves take an inclusive cell region [rx0,ry0..rx1,ry1]. Light
   // influence dies within ceil((255 - LIGHT_AMBIENT) / minLoss) = 59 cells of its
   // source (min loss 4/cell through air) and the cross-layer projection is

@@ -8,11 +8,12 @@
     for (int slot = floorDiv(left-reachX,14); slot <= floorDiv(right+reachX,14); slot++) {
       int wx = slot*14 + 3 + (int)(whash1(seed,slot)*8);
       int biome = terrain.genBiomeAt(wx);
-      if (biome != BIOME_ROCKY && biome != BIOME_WATCHWOOD) continue;
       int ground = terrain.genSurfaceAbs(wx), localGround = ground-L->worldOffsetY;
-      if (localGround+reachY < rowStart || localGround-reachY >= rowEnd || ground >= L->gSeaRow-1) continue;
+      if (localGround+reachY < rowStart || localGround-reachY >= rowEnd || ground >= L->gSeaRow+(biome==BIOME_SWAMP?6:-1)) continue;
       double patch = wfbm2(seed ^ 0x11u,wx*.025,2.4,2,.5);
-      if (whash1(seed ^ 0x12u,slot) > .28 + patch*.85) continue;
+      double density = biome==BIOME_DESERT?.18:biome==BIOME_TUNDRA?.24:
+        biome==BIOME_FOREST||biome==BIOME_JUNGLE||biome==BIOME_SWAMP?.38:.28;
+      if (whash1(seed ^ 0x12u,slot) > density + patch*.85) continue;
       if (terrain.genBiomeAt(wx-10)!=biome || terrain.genBiomeAt(wx+10)!=biome) continue;
       int rootDepth = TerrainGen::GEN_SKIN + terrain.genSoilDepthAt(wx,biome)+1;
       bool supported = true;
@@ -50,7 +51,162 @@
       int lean=whash1(seed^0x15u,slot)<.5?-1:1;
       uint8_t stem=eye?EYE_WOOD:RUST_BRAMBLE;
       uint8_t leaf=eye?VIOLET_FROND:OCHRE_REED;
-      if(form==0) {
+      if(biome!=BIOME_ROCKY && !eye) {
+        // Each habitat has its own silhouettes; a shared raster owns clipping
+        // and rooted placement so flora never depends on the loaded window.
+        stem=biome==BIOME_DESERT?CACTUS:biome==BIOME_TUNDRA?DRIFTWOOD:WOOD;
+        uint8_t green=biome==BIOME_TUNDRA?TEAL_LICHEN:PLANT;
+        uint8_t blossom=whash1(seed^0x16u,slot)<.5?VIOLET_FROND:OCHRE_REED;
+        auto flower = [&](int x,int y,uint8_t petal) {
+          oval(x,y,2,1,petal);line(x,y-2,x,y+1,1,petal);put(x,y,OCHRE_REED);
+        };
+        auto fern = [&](int x,int up,int side,uint8_t frond) {
+          line(0,0,x,-up/2,2,frond);line(x,-up/2,x+side*2,-up,1,frond);
+          for(int j=2;j<up;j+=3) {
+            int px=x*j/up,py=-j;
+            line(0,0,px,py,1,frond);
+            line(px,py,px+side*(j<up/2?4:2),py-2,1,frond);
+          }
+        };
+        if(biome==BIOME_DESERT) {
+          if(form==0) {
+            // Agave rosette: blue-green blades, gold tips and a bloom spike.
+            for(int i=-2;i<=2;i++) {
+              int tx=i*4,ty=-h+std::abs(i)*3;
+              line(0,0,tx/2,ty/2,3,CACTUS);
+              line(tx/2,ty/2,tx,ty,2,TEAL_LICHEN);put(tx,ty-1,OCHRE_REED);
+            }
+            if(slot%3==0){line(0,0,lean,-h-5,1,OCHRE_REED);flower(lean,-h-5,VIOLET_FROND);}
+          } else if(form==1) {
+            // Prickly pear pads overlap at their bases, with red fruit.
+            oval(0,-4,3,5,CACTUS);oval(-4,-8,3,4,CACTUS);
+            oval(4,-h+3,4,5,CACTUS);line(0,-3,4,-h+3,2,CACTUS);
+            line(-5,-9,-5,-6,1,TEAL_LICHEN);line(4,-h,4,-h+5,1,TEAL_LICHEN);
+            flower(4,-h-2,RUST_BRAMBLE);oval(-5,-12,1,2,VIOLET_FROND);
+          } else if(form==2) {
+            // Rounded ribbed barrel cactus with a crown of small flowers.
+            oval(0,-h/2,5,h/2,CACTUS);
+            for(int x=-3;x<=3;x+=3)line(x,-h+2,x,-2,1,TEAL_LICHEN);
+            flower(lean*2,-h,VIOLET_FROND);put(-5,-h/2,OCHRE_REED);put(5,-3,OCHRE_REED);
+          } else {
+            stem=DRIFTWOOD;
+            for(int i=-1;i<=1;i++) {
+              int x=i*7+lean,y=-h+std::abs(i)*4;
+              line(0,0,i*3,-4,2,stem);line(i*3,-4,x,y,1,stem);
+              for(int d=-2;d<=2;d+=2) {
+                line(x,y+2,x+d,y-2,1,OCHRE_REED);put(x+d,y-2,RUST_BRAMBLE);
+              }
+            }
+          }
+        } else if(biome==BIOME_TUNDRA) {
+          h=5+h/3;
+          if(form==0) {
+            // Low, wind-bent willow with russet buds above the snow.
+            line(0,0,lean*7,-h+2,2,stem);
+            for(int i=1;i<5;i++) {
+              int x=lean*i*2,y=-i;
+              line(x,y,x-lean,-h-1,1,stem);oval(x-lean,-h-1,1,2,RUST_BRAMBLE);
+            }
+          } else if(form==1) {
+            for(int i=-2;i<=2;i++) {
+              int x=i*4,y=-h+std::abs(i)*2;
+              line(0,0,x,y,2,TEAL_LICHEN);
+              line(x,y,x-2,y-3,1,TEAL_LICHEN);line(x,y,x+2,y-2,1,TEAL_LICHEN);
+              put(x-2,y-3,MUSH_STEM);put(x+2,y-2,MUSH_STEM);
+            }
+          } else if(form==2) {
+            // Heather cushions have individual flowering tips, not solid domes.
+            for(int i=-2;i<=2;i++) {
+              int x=i*3,y=-h+std::abs(i)*2;
+              line(0,0,x,y,2,PINE_NEEDLES);
+              oval(x,y,1,2,VIOLET_FROND);put(x,y-2,MUSH_STEM);
+            }
+          } else {
+            for(int i=-1;i<=1;i++) {
+              int x=i*5+lean,y=-h-2+std::abs(i)*3;
+              line(0,0,x,y,1,OCHRE_REED);oval(x,y,2,2,MUSH_STEM);
+              line(0,0,i*7,-3,1,TEAL_LICHEN);
+            }
+          }
+        } else if(biome==BIOME_PLAINS) {
+          stem=PLANT;
+          for(int i=-2;i<=2;i++) {
+            int x=i*4+lean,y=-h+std::abs(i)*3;
+            line(0,0,x,y,1,form==1?OCHRE_REED:green);
+            line(x/2,y/2,x/2+lean*3,y/2-2,1,green);
+            if(form==0||form==2)flower(x,y,form==2?MUSH_STEM:blossom);
+            else if(form==1){oval(x,y,1,3,OCHRE_REED);put(x,y-3,MUSH_STEM);}
+            else {oval(x,y+2,2,2,BUSH_LEAF);if(i%2==0)put(x,y,VIOLET_FROND);}
+          }
+        } else if(biome==BIOME_FOREST) {
+          if(form==0) {
+            fern(-6,h,-1,PLANT);fern(5,h-3,1,TEAL_LICHEN);fern(0,h+2,lean,PLANT);
+          } else if(form==1) {
+            for(int i=-1;i<=1;i++) {
+              int x=i*6,y=-h/2+(i==lean?-3:1);
+              line(0,1,x,0,2,stem);line(x,0,x,y,2,MUSH_STEM);
+              oval(x,y,4,2,MUSH_CAP);line(x-3,y+1,x+3,y+1,1,OCHRE_REED);
+              put(x-1,y-1,MUSH_STEM);put(x+2,y,MUSH_STEM);
+            }
+          } else if(form==2) {
+            // Mossy fallen branch with shelf fungi and broken twigs.
+            line(-10,-2,8,-4,4,DRIFTWOOD);line(0,1,0,-2,2,stem);
+            line(-5,-3,-7,-8,2,DRIFTWOOD);line(4,-4,7,-7,1,DRIFTWOOD);
+            line(-8,-3,5,-5,2,MOSS);oval(-4,-5,3,1,OCHRE_REED);oval(5,-6,2,1,MUSH_CAP);
+          } else {
+            for(int i=-1;i<=1;i++) {
+              int x=i*6,y=-h/2+(i==lean?-3:0);
+              line(0,0,x,y,2,stem);oval(x,y,3,3,BUSH_LEAF);
+              put(x-1,y-2,VIOLET_FROND);put(x+2,y,MUSH_CAP);
+            }
+          }
+        } else if(biome==BIOME_JUNGLE) {
+          if(form==0||form==1) {
+            // Broad split leaves and upright red bracts share a veined stalk.
+            line(0,0,lean*2,-h-5,2,stem);
+            for(int side:{-1,1})for(int j=0;j<2;j++) {
+              int x=side*(6-j*2),y=-5-j*6;
+              line(0,y+3,x,y,2,stem);oval(x,y,4,form==0?3:2,PLANT);
+              line(x-side*3,y+1,x+side*3,y-1,1,TEAL_LICHEN);
+              if(form==0){put(x+side*3,y-2,EMPTY);put(x+side*3,y+2,EMPTY);}
+            }
+            if(form==1)for(int j=0;j<3;j++) {
+              oval(lean*2+(j%2?2:-2),-h-4+j*3,2,1,RUST_BRAMBLE);
+              put(lean*2,-h-5+j*3,OCHRE_REED);
+            }
+          } else if(form==2) {
+            fern(-7,h+3,-1,PLANT);fern(6,h,1,PLANT);
+            fern(lean*3,h+7,lean,TEAL_LICHEN);
+          } else {
+            for(int i=-2;i<=2;i++) {
+              int x=i*4,y=-h+std::abs(i)*4;
+              line(0,0,x/2,y/2,3,BUSH_LEAF);line(x/2,y/2,x,y,2,PLANT);
+            }
+            line(0,0,0,-h-2,2,stem);flower(0,-h-2,VIOLET_FROND);
+          }
+        } else if(biome==BIOME_SWAMP) {
+          int waterDepth=imax(0,ground-L->gSeaRow);
+          h+=waterDepth;
+          if(form==0||form==1||waterDepth>0) {
+            for(int i=-1;i<=1;i++) {
+              int x=i*5+lean,y=-h+std::abs(i)*3;
+              line(0,1,x,y,1,OCHRE_REED);
+              if(form==0||waterDepth>0){oval(x,y,1,3,WOOD);put(x,y-3,OCHRE_REED);}
+              else flower(x,y,VIOLET_FROND);
+              line(0,0,i*8,-h/2,1,PLANT);
+            }
+          } else if(form==2) {
+            // Knuckled cypress roots and small green shoots hug the bank.
+            for(int i=-1;i<=1;i++) {
+              line(i*4,1,i*5,-h/2,3,DRIFTWOOD);
+              line(0,1,i*4,1,2,stem);put(i*5,-h/2-1,TEAL_LICHEN);
+            }
+          } else {
+            fern(-6,h,-1,TEAL_LICHEN);fern(6,h-2,1,PLANT);
+            line(0,0,lean*3,-h,1,stem);flower(lean*3,-h,VIOLET_FROND);
+          }
+        }
+      } else if(form==0) {
         // Feathered fans: ivory ribs with ochre tips, or broad violet pinnae.
         line(0,1,lean*2,-h,2,stem);
         for(int y=3;y<h;y+=3)for(int side:{-1,1}) {
@@ -106,7 +262,12 @@
         int lx=wx+x-L->worldOffsetX,ly=localGround+y;
         if(lx<colStart || lx>=colEnd || ly<rowStart || ly>=rowEnd)continue;
         uint8_t& target=L->grid[I(lx,ly)];
-        if(target==EMPTY || (y>=0 && x>=0 && x<=1 && target==VEIN_SOIL))target=m;
+        bool soil=target==DIRT || target==GRASS || target==SAND || target==SNOW || target==MUD;
+        bool root=y>=0 && x>=0 && x<=1 && target==VEIN_SOIL;
+        // Stems that meet an uphill soil bank bury into it, including the parts
+        // above the central root's elevation. Existing rock and trees stay intact.
+        if(target==EMPTY || root || (biome!=BIOME_ROCKY && !eye && soil)
+           || (biome==BIOME_SWAMP && target==WATER && y<0))target=m;
       }
     }
   }

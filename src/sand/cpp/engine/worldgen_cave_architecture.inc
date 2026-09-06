@@ -77,8 +77,7 @@
       int deck=floor-22;
       rect(left+2,deck,right-2,deck+1,timber);
       int start=(seed&1)?left+4:right-26;
-      if (!background) rect(start,deck,start+21,deck+1,EMPTY);
-      for (int i=0;i<=22;i++) put(start+i,floor-1-i,timber);
+      if (background) for (int i=0;i<=22;i++) put(start+i,floor-1-i,timber);
       if (background) {
         for(int x=left+8;x<right-5;x+=18) {
           line(x,deck+2,x+7,deck+10,2,trim);
@@ -287,6 +286,13 @@
     // Relief niches and irregular masonry teeth tie the vault into surrounding rock.
     if(background)for(int x=left+7;x<right-4;x+=17){
       int y=top+6+(int)(whash2(seed,x,7)*3);rect(x-2,y,x+2,y+2,trim);
+    }
+    stampStructureRoute(put, left, floor - 1, right, floor - 1, wall, background);
+    // A stairwell connects both galleries without bisecting the lower aisle.
+    if (height >= 38 && width >= 42) {
+      int stairX = (seed & 1) ? left + 12 : right - 12;
+      if (!background) rect(stairX - 6, top + 12, stairX + 6, floor - 2, EMPTY);
+      stampStructureLandings(put, stairX, 6, top + 12, floor - 1, timber);
     }
     if(!background)for(int side:{-1,1}) {
       int edge=side<0?left:right;

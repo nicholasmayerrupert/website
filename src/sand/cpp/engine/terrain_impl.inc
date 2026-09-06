@@ -901,7 +901,7 @@ bool TerrainGen::genTreeAt(int worldX, int surf) {
   if (surf >= E.L->gSeaRow - E.L->worldOffsetY) return false;  // at/under water -> no trees
   int biome = genBiomeAt(worldX);
   bool eye = pickTreeType(biome, worldX) == PT_EYE;
-  int spacing = eye ? 40 : 12;
+  int spacing = eye ? 58 : 20;
   int slot = floorDiv(worldX, spacing);
   int anchor = slot * spacing + spacing / 4
     + (int)(whash1(E.L->gTreeSeed ^ 0xE7E52u, slot) * (spacing / 2));

@@ -146,6 +146,8 @@
       return;
     }
 
+    stampStructureLandings(put, 0, 14, -18, 18, BRICK);
+
     // Flush hull lights and a glass-rimmed lift opening illuminate both decks
     // without placing scenery in the player's main corridor.
     for (int x = -148; x <= 160; x += 20) {
@@ -408,13 +410,14 @@
         }
         for (int side : {-1, 1}) {
           int cabin = center + side * 60;
-          if (L->isBackground) rect(cabin - 22, cabin + 22, deckY - 25, deckY - 5, DEEPSTONE);
-          else {
+          if (L->isBackground) {
+            rect(cabin - 22, cabin + 22, deckY - 25, deckY - 5, DEEPSTONE);
+            hline(cabin - 14, cabin + 14, deckY - 16, GLASS);
+          } else {
             hline(cabin - 22, cabin + 22, deckY - 25, STONE);
             hline(cabin - 22, cabin + 22, deckY - 5, STONE);
             vline(cabin - 22, deckY - 25, deckY - 5, STONE);
             vline(cabin + 22, deckY - 25, deckY - 5, STONE);
-            hline(cabin - 14, cabin + 14, deckY - 16, GLASS);
           }
         }
         vline(center - 10, deckY - 54, facilityBottom, STONE);
@@ -523,8 +526,10 @@
         hline(center - 31, center + 31, doorTop, IRON_ORE);
         vline(center - 31, doorTop, deckY, IRON_ORE);
         vline(center + 31, doorTop, deckY, IRON_ORE);
-        for (int y = doorTop + 6; y < deckY; y += 7)
-          hline(center - 29, center + 29, y, L->isBackground ? COPPER_ORE : GLASS);
+        if (L->isBackground) for (int y = doorTop + 6; y < deckY; y += 7)
+          hline(center - 29, center + 29, y, COPPER_ORE);
+        if (!L->isBackground) rect(center - 29, center + 29, doorTop + 2, deckY - 1, EMPTY);
+        hline(center - 29, center + 29, deckY - 22, IRON_ORE);
         for (int side : {-1, 1}) {
           int crane = center + side * 78;
           vline(crane, deckY - 60, deckY - 2, IRON_ORE);
@@ -545,13 +550,33 @@
 #undef WORLDGEN_FACILITY_ARCHETYPE
         case OFK_COUNT: assert(false && "invalid facility archetype"); break;
       }
+      stampStructureRoute(put, center - halfWidth, deckY, center + halfWidth, deckY, shell, L->isBackground);
+      for (int divider = 0; divider <= plan.dividerCount; divider++) {
+        int floor = divider < plan.dividerCount ? plan.dividerFloor[divider] : facilityBottom - 2;
+        stampStructureRoute(put, center - facilityHalf + 3, floor,
+                            center + facilityHalf - 3, floor, shell, L->isBackground);
+      }
+      auto accessWell = [&](int x, int top, int bottom) {
+        if (!L->isBackground) rect(x - 6, x + 6, top, bottom - 1, EMPTY);
+        stampStructureLandings(put, x, 6, top, bottom, shell);
+      };
+      if (plan.kind == OFK_MARS_REFINERY) {
+        accessWell(center - 48, deckY - 60, deckY);
+        accessWell(center + 48, deckY - 47, deckY);
+      } else if (plan.kind == OFK_MARS_GARDEN) {
+        accessWell(center - 62, deckY - 25, deckY);
+        accessWell(center + 62, deckY - 25, deckY);
+      }
+      int wellTop = deckY - (plan.kind == OFK_MARS_SPACEPORT ? 49
+        : plan.kind == OFK_MOON_MASS_DRIVER ? 51 : 32);
       if (!L->isBackground) {
         // Keep one generous, continuous lift well from the surface apron through
         // every deck, regardless of which surface archetype crosses the center.
-        rect(center - 6, center + 6, deckY - 14, facilityBottom - 3, EMPTY);
+        rect(center - 6, center + 6, wellTop, facilityBottom - 3, EMPTY);
         vline(center - 7, deckY, facilityTop + 12, shell);
         vline(center + 7, deckY, facilityTop + 12, shell);
       }
+      stampStructureLandings(put, center, 6, wellTop, facilityBottom - 2, shell);
     }
   }
 

@@ -66,8 +66,8 @@ class GLPresenter {
   // beyond the viewport so later camera cells reuse exact light.
   static constexpr int GL_LIGHT_PAN_LOOKAHEAD = 32;
   static constexpr int GL_DYNAMIC_LIGHT_CAP = 32;
-  // Region whose GL_LIGHT_EXACT_SHRINK inset is known exact. Pan-strip patches
-  // extend it along either or both movement axes.
+  // Inclusive rectangle of exact cached light, including face-light neighbours.
+  // Pan patches extend it; terrain patches invalidate its offscreen portion.
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1;
   // Exact x-ranges where a presentation diff changed a structural cell or a
   // worker-tagged user edit. Replication records them before replacing mirror rows.

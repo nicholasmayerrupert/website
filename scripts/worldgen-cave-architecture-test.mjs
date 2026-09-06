@@ -7,28 +7,28 @@ import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const {check,done}=makeChecker('cave architecture');
 const names=['cistern','waystation','prism chapel','lapidary','apothecary','spore bells','root cloister','nursery','furnace cathedral','chain foundry','pumping hall','astral sanctuary','geode organ','lens bridge','leviathan excavation','ossuary','dig camp','hanging archive','fungal village','root engine'];
-// Generation-19 examples: kind, seed, world X, world Y.
+// Generation-21 examples: kind, seed, world X, world Y.
 const scenes = [
-  [0, 7, -2921, 635.5],
-  [1, 7, -1012, 585],
-  [2, 7, 3085, 246.5],
-  [3, 7, 3368.5, 535],
+  [0, 3053, -1706.5, 384.5],
+  [1, 3053, 2176.5, 646.5],
+  [2, 3053, 117.5, 450],
+  [3, 3053, -118, 618],
   [4, 7, 182.5, 111.5],
-  [5, 7, 491.5, 484],
+  [5, 3053, -193.5, 32.5],
   [6, 7, -253.5, 354],
   [7, 7, -46, 285.5],
-  [8, 7, -375, 748],
+  [8, 3053, 92.5, 1711],
   [9, 7, -134.5, 819],
-  [10, 7, 709, 1479.5],
-  [11, 7, -453, 1325.5],
+  [10, 3053, 421, 761],
+  [11, 7, -777, 936],
   [12, 7, 396, 1716],
-  [13, 7, -691, 1505],
-  [14, 7, 3100.5, 1492],
-  [15, 7, -64.5, 1747.5],
-  [16, 7, 470, 1195],
-  [17, 7, -799.5, 1075],
-  [18, 7, 1215, 1462.5],
-  [19, 7, -71, 1402.5],
+  [13, 7, -453, 1325.5],
+  [14, 7, -64.5, 1747.5],
+  [15, 7, 470, 1195],
+  [16, 7, -1605, 1241],
+  [17, 3053, -75, 861.5],
+  [18, 7, -71, 1402.5],
+  [19, 3053, -489, 1026.5],
 ];
 const make=(seed,cols=384)=>createEngineWasm({cols,rows:320,worldSeed:seed,infinite:true,sinksOn:false});
 function move(e,x,y){

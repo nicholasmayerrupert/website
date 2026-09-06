@@ -57,6 +57,23 @@ for(const [kind,c] of cases){
    for(let y=top;y<=bottom;y++)for(let x=left;x<=right;x++)cells.push(g[(y-en.getWorldOffsetY())*en.cols+x-en.getWorldOffsetX()]);
    return cells;
  };
+ if([3,13,15].includes(kind)) {
+   const levels=[];
+   for(let x=left+2;x<=right-2;x+=4)levels.push(e.worldSurfaceAbsAt(x));
+   levels.sort((a,b)=>a-b);
+   const floor=kind===13?Math.min(levels[0]-2,11):levels[Math.floor(levels.length/2)]-1;
+   const span=kind===3?[-78,43,-67,-30]:kind===13?[-53,53,-56,-25]:[3,77,-78,-40];
+   let continuous=true;
+   for(let x=span[0];x<=span[1];x++) {
+     let roofing=0;
+     for(let y=span[2];y<=span[3];y++) {
+       const m=e.getGrid()[(floor+y-e.getWorldOffsetY())*e.cols+cx+x-e.getWorldOffsetX()];
+       if((MAT_FLAGS[m]&MF.rigid) && (MAT_FLAGS[m]&MF.bearing))roofing++;
+     }
+     continuous&&=roofing>=2;
+   }
+   check(`family ${kind}: roof has no missing vertical sections`,continuous);
+ }
  const initial=capture(e),wide=make(512,c.seed);move(wide,cx,cy);
  check(`family ${kind}: both layers reproduce at another viewport size`,same(initial,capture(wide)));wide.destroy();
  e.shiftWorldXY(352,0);e.shiftWorldXY(352,0);e.shiftWorldXY(-352,0);e.shiftWorldXY(-352,0);

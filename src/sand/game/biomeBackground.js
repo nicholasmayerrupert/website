@@ -59,6 +59,25 @@ export function createBiomeBackgroundBlend() {
   };
 }
 
+// Independent, eased samples preserve the spatial order of neighboring biomes.
+export function createBiomeSceneryField() {
+  const samples = Array.from({ length: 9 }, () => createBiomeBackgroundBlend());
+  return (engine, centerX, width, nowMs, immediate = false) => samples.map((sample, i) =>
+    sample(engine, centerX + (i / (samples.length - 1) - 0.5) * width, nowMs, immediate));
+}
+
+export function biomeSceneryWeight(field, biome, fraction) {
+  const position = Math.max(0, Math.min(1, fraction)) * (field.length - 1);
+  const left = Math.floor(position), right = Math.min(left + 1, field.length - 1);
+  return field[left][biome] + (field[right][biome] - field[left][biome]) * (position - left);
+}
+
+// Each world-anchored plant has a stable reveal threshold and a soft edge.
+export function biomePlantOpacity(coverage, threshold) {
+  const t = Math.max(0, Math.min(1, (coverage - threshold * 0.8) / 0.2));
+  return t * t * (3 - 2 * t);
+}
+
 const rgb = (hex) => [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
 const RIDGE_KEYS = ['ridgeFar', 'ridgeMid', 'ridgeNear', 'ridgeDeep'];
 const REFERENCE_RIDGES = BIOME_BACKGROUND_PROFILES[BIOME.FOREST].ridges.map(rgb);

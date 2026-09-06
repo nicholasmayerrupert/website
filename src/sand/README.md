@@ -780,8 +780,10 @@ Earth and Frontier's decorative Canvas2D backdrop samples the engine's surface
 biomes in a 192-cell band around the survival player or creative camera center.
 `game/biomeBackground.js` blends sky and ridge colors, terrain contours, snowcaps,
 and vegetation coverage. Each depth layer draws one opaque contour, with its
-height interpolated between biome silhouettes before rasterization. Vegetation
-occupies stable world-space patches; the backdrop has no decorative houses. A
+height interpolated between biome silhouettes before rasterization. Nine eased
+samples across the visible world place vegetation and snow on the appropriate
+side of biome boundaries. Plants occupy stable world-space patches and fade
+through seeded reveal thresholds; the backdrop has no decorative houses. A
 180 ms exponential easing time smooths ordinary travel, while teleports, paused
 views, reduced motion, and replay playback sample the destination immediately.
 Biome selection stays in the engine; the bounded presentation cache uses absolute

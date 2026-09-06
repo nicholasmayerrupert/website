@@ -61,8 +61,8 @@
     }
   }
 
-  // A bounded silhouette shared by seeded growth and generated trees. Emitting
-  // final materials bottom-up lets living plants add only connected cells.
+  // A bounded silhouette shared by seeded growth and generated trees. Each
+  // target cell carries its final wood, sclera, iris, or pupil material.
   template<class Put>
   static void stampEyeTree(Put&& put, int cx, int ground, int height,
                            uint32_t seed, int worldX) {

@@ -1,5 +1,5 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
-import { BIOME_BACKGROUND_PROFILES, biomeBackgroundStyle } from './biomeBackground.js';
+import { BIOME_BACKGROUND_PROFILES, biomeBackgroundStyle, biomeSceneryWeight, biomePlantOpacity } from './biomeBackground.js';
 import {
   DEFAULT_WEATHER_ID,
   applyWeatherToPalette,
@@ -549,7 +549,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   };
 }
 
-function drawSnowCap(ctx, points, snow, snowLine, amp) {
+function drawSnowCap(ctx, points, snow, snowLine, amp, coverageAt) {
   if (points.length < 4) return;
   const capPoints = points.map((point) => {
     const { rawY, worldX } = point;
@@ -570,12 +570,15 @@ function drawSnowCap(ctx, points, snow, snowLine, amp) {
       const t = column / columns;
       const x = left.x + column;
       const depth = Math.round(left.depth + (right.depth - left.depth) * t);
-      if (depth > 0) ctx.fillRect(x, left.y, 1, depth);
+      if (depth > 0) {
+        ctx.globalAlpha = coverageAt(x);
+        ctx.fillRect(x, left.y, 1, depth);
+      }
     }
   }
 }
 
-function drawSnowCaps(ctx, ridge, base, amp, color, daylight) {
+function drawSnowCaps(ctx, ridge, base, amp, color, daylight, coverageAt) {
   const snowLine = base - ridge.offY - amp * 0.16;
   const snow = mixColor(color, '#f5f5e9', 0.42 + daylight * 0.34);
   const points = ridge.surfacePoints;
@@ -589,12 +592,12 @@ function drawSnowCaps(ctx, ridge, base, amp, color, daylight) {
       cap.push(point);
     } else if (cap.length) {
       cap.push(point);
-      drawSnowCap(ctx, cap, snow, snowLine, amp);
+      drawSnowCap(ctx, cap, snow, snowLine, amp, coverageAt);
       cap = [];
     }
     previous = point;
   }
-  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp);
+  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp, coverageAt);
 }
 
 function drawPine(ctx, x, groundY, height, dark, light) {
@@ -609,7 +612,7 @@ function drawPine(ctx, x, groundY, height, dark, light) {
   ctx.fillRect(x - 1, top + 3, 1, 1);
 }
 
-function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverage = 1) {
+function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverageAt) {
   const opacity = ctx.globalAlpha;
   const dark = mixColor(color, '#061713', 0.62);
   const light = mixColor(color, skyLow, 0.28);
@@ -622,7 +625,8 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverage = 1) {
     const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
     for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
       const treeSeed = worldX + seed * 613 + band * 1877;
-      if (rand01(treeSeed + 801) >= coverage) continue;
+      const alpha = biomePlantOpacity(coverageAt(worldX - ridge.offX), rand01(treeSeed + 801));
+      if (alpha <= 0) continue;
       if (rand01(treeSeed) < Math.min(0.24, 0.1 + band * 0.006)) continue;
       const x = worldX - ridge.offX;
       const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
@@ -630,7 +634,7 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverage = 1) {
         + Math.floor(rand01(treeSeed + 198) * 4);
       if (groundY - height > h || groundY > h + 4) continue;
 
-      ctx.globalAlpha = opacity * Math.max(0.58, 1 - band * 0.035);
+      ctx.globalAlpha = opacity * alpha * Math.max(0.58, 1 - band * 0.035);
       drawPine(ctx, x, groundY, height, dark, light);
       if (rand01(treeSeed + 294) > 0.56) {
         ctx.fillStyle = light;
@@ -641,7 +645,8 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverage = 1) {
   ctx.globalAlpha = opacity;
 }
 
-function drawEyeGrove(ctx, w, h, ridge, palette, coverage) {
+function drawEyeGrove(ctx, w, h, ridge, palette, coverageAt) {
+  const opacity = ctx.globalAlpha;
   for (let band = 0; band < 3; band++) {
     const spacing = 51 + band * 9;
     const dark = mixColor(palette.ridgeNear, '#321f32', 0.38 + band * 0.1);
@@ -649,9 +654,12 @@ function drawEyeGrove(ctx, w, h, ridge, palette, coverage) {
     const first = Math.floor((ridge.offX - 64) / spacing) * spacing;
     for (let slot = first; slot < ridge.offX + w + 64; slot += spacing) {
       const seed = slot * 7 + band * 1397;
-      if (rand01(seed + 801) >= coverage * 0.82) continue;
+      if (rand01(seed + 801) >= 0.82) continue;
       const wx = slot + Math.floor(rand01(seed + 17) * 29) + band * 13;
       const x = wx - ridge.offX;
+      const alpha = biomePlantOpacity(coverageAt(x), rand01(seed + 803));
+      if (alpha <= 0) continue;
+      ctx.globalAlpha = opacity * alpha;
       const y = ridge.surfaceWorldY(wx) + 9 + band * 17
         + Math.floor(rand01(seed + 31) * 19);
       const height = 15 + Math.floor(rand01(seed + 53) * 29);
@@ -707,12 +715,14 @@ function drawEyeGrove(ctx, w, h, ridge, palette, coverage) {
       }
     }
   }
+  ctx.globalAlpha = opacity;
 }
 
-function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverage = 1) {
+function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverageAt) {
+  const opacity = ctx.globalAlpha;
   if (kind === 'none') return;
   if (kind === 'eyes') {
-    drawEyeGrove(ctx, w, h, ridge, palette, coverage);
+    drawEyeGrove(ctx, w, h, ridge, palette, coverageAt);
     return;
   }
   const dark = mixColor(palette.ridgeNear, '#061713', 0.6);
@@ -723,8 +733,10 @@ function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverage = 1) {
     const first = Math.floor(ridge.offX / spacing) * spacing - spacing;
     for (let wx = first; wx < ridge.offX + w + spacing; wx += spacing) {
       const seed = wx + band * 139;
-      if (rand01(seed + 801) >= coverage) continue;
       const x = wx - ridge.offX + band * 11;
+      const alpha = biomePlantOpacity(coverageAt(x), rand01(seed + 801));
+      if (alpha <= 0) continue;
+      ctx.globalAlpha = opacity * alpha;
       const y = ridge.surfaceWorldY(wx + band * 11) + 28 + (band - 1) * rowSpacing;
       if (y > h + 30) continue;
       const height = 11 + Math.floor(rand01(seed) * 10);
@@ -771,14 +783,19 @@ function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverage = 1) {
       }
     }
   }
+  ctx.globalAlpha = opacity;
 }
 
 const BIOME_WEIGHTS = Array.from({ length: SURFACE_BIOME_COUNT }, (_, id) =>
   Array.from({ length: SURFACE_BIOME_COUNT }, (__, other) => other === id ? 1 : 0));
 
-function drawBiomeScenery(ctx, w, h, qx, qy, horizon, scale, dayNight, weights) {
+function drawBiomeScenery(ctx, w, h, qx, qy, horizon, scale, dayNight, weights, scenery) {
   const profiles = weights.map((weight, id) => ({ ...BIOME_BACKGROUND_PROFILES[id], weight }))
     .filter(({ weight }) => weight > 0);
+  const field = scenery ?? [weights];
+  const weightAt = (id, x) => biomeSceneryWeight(field, id, x / w);
+  const snowAt = (x) => weights.reduce((sum, _, id) =>
+    sum + BIOME_BACKGROUND_PROFILES[id].snow * weightAt(id, x), 0);
   const style = biomeBackgroundStyle(paletteForPhase(dayNight.phase), weights);
   const palette = style.palette;
   // Every depth layer has one opaque contour. Biome weights shape its height
@@ -795,18 +812,21 @@ function drawBiomeScenery(ctx, w, h, qx, qy, horizon, scale, dayNight, weights) 
       palette.skyLow, detail, scale, (worldX) => biomeRidgeY(worldX, base, amp, seed, contours));
   };
   const far = ridge(FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, 2, 0);
-  ctx.globalAlpha = style.snow;
+  ctx.globalAlpha = 1;
   const farRelief = profiles.reduce((sum, profile) => sum + profile.relief[0] * profile.weight, 0);
   const farRise = profiles.reduce((sum, profile) => sum + (profile.rise?.[0] ?? 0) * profile.weight, 0);
-  if (style.snow > 0) drawSnowCaps(ctx, far, horizon + 17 - farRise, 20 * farRelief, palette.ridgeFar, dayNight.daylight);
+  drawSnowCaps(ctx, far, horizon + 17 - farRise, 20 * farRelief, palette.ridgeFar, dayNight.daylight, snowAt);
   ctx.globalAlpha = 1;
   ridge(0.34, horizon + 26, 18, palette.ridgeMid, 7.9, 2, 1);
   const near = ridge(0.52, horizon + 45, 22, palette.ridgeNear, 12.4, 3, 2);
-  const pineCoverage = profiles.reduce((sum, profile) => sum
-    + (profile.plants === 'pine' ? profile.forest * profile.weight : 0), 0);
-  if (pineCoverage > 0) drawForest(ctx, w, h, near, palette.ridgeNear, palette.skyLow, 12.4, pineCoverage);
-  for (const profile of profiles) if (profile.plants !== 'pine')
-    drawBiomePlants(ctx, w, h, near, palette, profile.plants, profile.weight);
+  const vegetation = Object.entries(BIOME_BACKGROUND_PROFILES)
+    .filter(([id]) => field.some((column) => column[id] > 0));
+  const pineAt = (x) => vegetation.reduce((sum, [id, profile]) => sum
+    + (profile.plants === 'pine' ? profile.forest * weightAt(id, x) : 0), 0);
+  if (vegetation.some(([, profile]) => profile.plants === 'pine'))
+    drawForest(ctx, w, h, near, palette.ridgeNear, palette.skyLow, 12.4, pineAt);
+  for (const [id, profile] of vegetation) if (profile.plants !== 'pine')
+    drawBiomePlants(ctx, w, h, near, palette, profile.plants, (x) => weightAt(id, x));
   ridge(0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, 2, 3);
 }
 
@@ -865,6 +885,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Callers that don't track the auto-cycle mix get the profile's own look.
     weatherMix,
     biomeWeights = null,
+    biomeScenery = null,
   } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
@@ -879,6 +900,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       canvas.width, canvas.height, qx, qy, s.toFixed(3), dayVisualKey,
       resolvedWeatherId, weatherVisualKey, weatherMixBucket,
       ...(biomeWeights?.map((weight) => Math.round(weight * 1024)) ?? []),
+      ...(biomeScenery?.flatMap((column) => column.map((weight) => Math.round(weight * 1024))) ?? []),
     ].join(':');
     if (key === lastKey) return;
     lastKey = key;
@@ -988,7 +1010,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       cloudCount(1), 210, dayNight.phase, s, cloudSpans,
     );
     drawBiomeScenery(ctx, w, h, qx, qy, horizon, s, dayNight,
-      biomeWeights ?? BIOME_WEIGHTS[BIOME.FOREST]);
+      biomeWeights ?? BIOME_WEIGHTS[BIOME.FOREST], biomeScenery);
     // Precipitation paints in front of every backdrop layer but clips to the
     // air above the simulated surface, so the world's own layers occlude it.
     const surfacePts = surfaceYAt ? [] : null;

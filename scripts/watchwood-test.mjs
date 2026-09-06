@@ -104,13 +104,27 @@ for (let seed = 0; seed < 8; seed++) {
   const seedX = 45 + seed * 8;
   if (typed) planted.placeSeedTyped(seedX, 88, eyeSpecies.id);
   else planted.placeMaterial(seedX, 88, 0, MAT.EYE_SEED);
-  for (let i = 0; i < 1100; i++) planted.step(i * 16);
+  for (let i = 0; i < 60; i++) planted.step(i * 16);
+  const youngCells = planted.getGrid().filter((mat) => eyeMats.has(mat)).length;
+  for (let i = 60; i < 100; i++) planted.step(i * 16);
+  const budding = planted.getGrid().slice();
+  for (let i = 100; i < 1100; i++) planted.step(i * 16);
   const grown = planted.getGrid().slice();
   check(`${typed ? 'typed' : 'material'} eyeball seeds grow complete eyes on branching trunks`,
     grown.includes(MAT.EYE_SEED)
     && [...eyeMats].every((mat) => grown.filter((value) => value === mat).length >= 3)
     && !grown.includes(MAT.PLANT));
   const coords = [...grown.keys()].filter((k) => eyeMats.has(grown[k]));
+  if (seed === 0) {
+    const isEye = (mat) => eyeMats.has(mat) && mat !== MAT.EYE_WOOD;
+    const budTop = Math.min(...coords.filter((k) => isEye(budding[k]))
+      .map((k) => Math.floor(k / planted.cols)));
+    check('the eye develops across a living crown instead of completing horizontal rows',
+      coords.some((k) => isEye(grown[k]) && budding[k] === MAT.EMPTY
+        && Math.floor(k / planted.cols) > budTop + 1));
+  }
+  check('eyeball seedlings grow gradually before filling their mature crowns',
+    youngCells > 0 && youngCells < coords.length / 2);
   const top = Math.min(...coords.map((k) => Math.floor(k / planted.cols)));
   const left = Math.min(...coords.map((k) => k % planted.cols));
   const right = Math.max(...coords.map((k) => k % planted.cols));

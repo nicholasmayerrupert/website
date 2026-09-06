@@ -1,6 +1,6 @@
 import process from 'node:process';
 import { BIOME, SURFACE_BIOME_COUNT } from '../src/sand/wasmBridge/abi.generated.js';
-import { BIOME_BACKGROUND_PROFILES, createBiomeBackgroundBlend, biomeBackgroundStyle } from '../src/sand/game/biomeBackground.js';
+import { BIOME_BACKGROUND_PROFILES, createBiomeBackgroundBlend, biomeBackgroundStyle, createBiomeSceneryField, biomeSceneryWeight, biomePlantOpacity } from '../src/sand/game/biomeBackground.js';
 import { biomeRidgeY, paletteForPhase } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -45,6 +45,38 @@ check('fade duration is independent of frame rate', a.every((weight, i) => close
 check('teleports immediately select the destination scenery', fade(engine, 10000, 190)[BIOME.DESERT] === 1);
 check('paused views immediately sample the requested position', fade(engine, 9999, 200, true)[BIOME.DESERT] === 1);
 check('replacing the engine discards cached biome identities', fade({ worldBiomeAt: () => BIOME.TUNDRA }, 9999, 210)[BIOME.TUNDRA] === 1);
+
+const fieldSample = createBiomeSceneryField();
+const field = fieldSample(engine, -2, 320, 0, true);
+const weightAt = (id, x) => biomeSceneryWeight(field, id, x);
+check('approaching a desert from the left reveals cacti on the right first',
+  weightAt(BIOME.DESERT, 0.1) < 0.05 && weightAt(BIOME.DESERT, 0.9) > 0.95
+  && biomePlantOpacity(weightAt(BIOME.DESERT, 0.75), 0.5)
+    > biomePlantOpacity(weightAt(BIOME.DESERT, 0.25), 0.5));
+check('departing forest vegetation disappears on the desert side first',
+  weightAt(BIOME.FOREST, 0.1) > 0.95 && weightAt(BIOME.FOREST, 0.9) < 0.05);
+const mirrored = fieldSample({ worldBiomeAt: (x) => x < 0 ? BIOME.DESERT : BIOME.FOREST }, -2, 320, 0, true);
+check('the spatial transition also works when the desert lies to the left',
+  biomeSceneryWeight(mirrored, BIOME.DESERT, 0.1) > 0.95
+  && biomeSceneryWeight(mirrored, BIOME.DESERT, 0.9) < 0.05);
+const island = fieldSample({ worldBiomeAt: (x) => Math.abs(x) < 96 ? BIOME.WATCHWOOD : BIOME.DESERT }, 0, 640, 0, true);
+check('a biome enclosed on both sides keeps its vegetation in the middle',
+  biomeSceneryWeight(island, BIOME.WATCHWOOD, 0.5) > 0.99
+  && biomeSceneryWeight(island, BIOME.WATCHWOOD, 0) === 0
+  && biomeSceneryWeight(island, BIOME.WATCHWOOD, 1) === 0);
+check('plant reveals fade through their threshold with exact absent and present endpoints',
+  biomePlantOpacity(0, 0) === 0 && biomePlantOpacity(1, 1) === 1
+  && close(biomePlantOpacity(0.5, 0.5), 0.5)
+  && biomePlantOpacity(0.49, 0.5) < biomePlantOpacity(0.51, 0.5));
+const easedField = createBiomeSceneryField();
+easedField(engine, -100, 320, 0);
+const intoDesert = easedField(engine, 40, 320, 90);
+const backToForest = easedField(engine, -100, 320, 180);
+check('reversing direction eases every screen region from its visible vegetation mix',
+  intoDesert.every((column, i) => backToForest[i][BIOME.DESERT] <= column[BIOME.DESERT])
+  && backToForest.every((column) => close(column.reduce((sum, weight) => sum + weight, 0), 1)));
+const snappedField = easedField(engine, 10000, 320, 190);
+check('teleports reset the whole vegetation field', snappedField.every((column) => column[BIOME.DESERT] === 1));
 
 const pure = (id) => Array.from({ length: SURFACE_BIOME_COUNT }, (_, i) => i === id ? 1 : 0);
 const noon = paletteForPhase(0.5);

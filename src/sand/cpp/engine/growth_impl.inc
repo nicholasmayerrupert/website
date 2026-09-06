@@ -702,14 +702,35 @@ void GrowthSystem::growEye(Comp& comp,
   int sx = seed % E.cols, sy = seed / E.cols;
   uint32_t signature = plantGrowthSignature(comp);
   int height = 20 + (int)(plantGrowthTrait(signature, 0) % 14u);
+  std::vector<std::pair<int, uint8_t>> targets;
   auto put = [&](int x, int y, uint8_t material) {
-    if (growth.size() >= 6 || !E.isInBounds(x, y)) return;
+    if (!E.isInBounds(x, y)) return;
     int k = E.I(x, y);
-    if (!plantTargetOpen(k, reserved)) return;
-    growth.push_back({k, material});
-    reserved.insert(k);
+    if (E.L->grid[k] == EMPTY) targets.push_back({k, material});
   };
   Engine::stampEyeTree(put, sx, sy, height, signature, 0);
+  // Grow from the living edge. Neighbor support favors compact buds while
+  // seeded variation lets different sides of each crown develop together.
+  for (int burst = 0; burst < 2; burst++) {
+    int best = -1;
+    double bestScore = -1;
+    for (int i = 0; i < (int)targets.size(); i++) {
+      int k = targets[i].first;
+      if (!plantTargetOpen(k, reserved)) continue;
+      int x = k % E.cols, y = k / E.cols, support = 0;
+      for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+        if ((!dx && !dy) || !E.isInBounds(x + dx, y + dy)) continue;
+        int neighbor = E.I(x + dx, y + dy);
+        if (gPlantCells.has(neighbor) || reserved.count(neighbor)) support++;
+      }
+      double score = whash2(signature ^ ((uint32_t)comp.age * 0x9e3779b9u)
+                            ^ (uint32_t)burst, x - sx, y - sy) * (support + 1);
+      if (score > bestScore) { best = i; bestScore = score; }
+    }
+    if (best < 0) break;
+    growth.push_back(targets[best]);
+    reserved.insert(targets[best].first);
+  }
   if (growth.empty()) comp.growing = false;
 }
 

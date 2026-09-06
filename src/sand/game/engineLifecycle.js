@@ -15,14 +15,14 @@ import {
 } from './viewportSizing.js';
 import { NIGHT_SKY_LIGHT } from './dayNightCycle.js';
 import { weatherSkyLight } from './weather.js';
-import { createBiomeBackgroundBlend, createBiomeSceneryField } from './biomeBackground.js';
+import { createBiomeBackgroundBlend, createBiomeScenerySampler } from './biomeBackground.js';
 import { PLANET, WEATHER } from '../wasmBridge/abi.generated.js';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createEngineLifecycle(ctx, { onLayoutChange }) {
   const { canvas, container, parallax } = ctx;
   const biomeBlend = createBiomeBackgroundBlend();
-  const biomeScenery = createBiomeSceneryField();
+  const biomeScenery = createBiomeScenerySampler();
 
   const refreshBounds = () => {
     const rect = container.getBoundingClientRect();
@@ -38,12 +38,11 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     const now = performance.now();
     const immediate = ctx.testPaused || ctx.reduced || !!ctx.worldWorker?.state?.replayPlaying;
     const earth = ctx.planetId === PLANET.EARTH || ctx.planetId === PLANET.FRONTIER;
-    const centerX = ctx.engine.getWorldOffsetX() + cam.x + ctx.viewCols * 0.5;
     return {
       biomeWeights: ctx.backgroundBiomeWeights ?? (earth
         ? biomeBlend(ctx.engine, biomeX, now, immediate) : null),
-      biomeScenery: earth && !ctx.backgroundBiomeWeights
-        ? biomeScenery(ctx.engine, centerX, ctx.viewCols, now, immediate) : null,
+      biomeSceneryAt: earth && !ctx.backgroundBiomeWeights
+        ? biomeScenery(ctx.engine) : null,
       // Anchor horizontal parallax to the view center. Runtime zoom preserves
       // this world point while moving the top-left camera by half the changing
       // viewport width; using that top-left value made the backdrop appear to

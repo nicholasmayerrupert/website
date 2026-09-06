@@ -1,5 +1,5 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
-import { BIOME_BACKGROUND_PROFILES, biomeBackgroundStyle, biomeSceneryWeight, biomePlantOpacity } from './biomeBackground.js';
+import { BIOME_BACKGROUND_PROFILES, biomeBackgroundStyle } from './biomeBackground.js';
 import {
   DEFAULT_WEATHER_ID,
   applyWeatherToPalette,
@@ -454,12 +454,51 @@ export function biomeRidgeY(worldX, base, amp, seed, contours) {
     + ridgeY(worldX, base - (contour.rise ?? 0), amp * contour.relief, seed, contour.shape) * contour.weight, 0);
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, scale = 1, contourAt = null) {
+// Each layer projects the same real biome sequence at its own parallax depth.
+// Coordinates, silhouettes, and decorations remain fixed in that layer.
+export function createBiomeRidgeSampler(biomeAt, fallback, palette, depth, layer, base, amp, seed) {
+  const samples = new Map(), palettes = new Map();
+  const colorKey = ['ridgeFar', 'ridgeMid', 'ridgeNear', 'ridgeDeep'][layer];
+  return (worldX) => {
+    if (samples.has(worldX)) return samples.get(worldX);
+    const weights = biomeAt ? biomeAt(worldX / depth) : fallback;
+    let height = 0, relief = 0, rise = 0, snow = 0, facets = 0;
+    const plants = {};
+    weights.forEach((weight, id) => {
+      if (weight <= 0) return;
+      const profile = BIOME_BACKGROUND_PROFILES[id];
+      const localRelief = layer < 3 ? profile.relief[layer] : 0.6;
+      const localRise = profile.rise?.[layer] ?? 0;
+      height += ridgeY(worldX, base - localRise, amp * localRelief, seed, profile.shape) * weight;
+      relief += localRelief * weight;
+      rise += localRise * weight;
+      snow += profile.snow * weight;
+      if (profile.shape === 'crags' || profile.shape === 'alpine') facets += weight;
+      plants[profile.plants] = (plants[profile.plants] ?? 0)
+        + weight * (profile.plants === 'pine' ? profile.forest : 1);
+    });
+    const paletteKey = weights.join(':');
+    if (!palettes.has(paletteKey)) {
+      if (palettes.size >= 512) palettes.delete(palettes.keys().next().value);
+      palettes.set(paletteKey, biomeBackgroundStyle(palette, weights).palette);
+    }
+    const localPalette = palettes.get(paletteKey);
+    const sample = { height, base: base - rise, amp: amp * relief, snow, plants, facets,
+      grove: 0.3 + 0.7 * smooth01((smoothNoise1D(worldX / 65, 947) - 0.2) / 0.6),
+      palette: localPalette, color: localPalette[colorKey], skyLow: localPalette.skyLow };
+    if (samples.size >= 4096) samples.delete(samples.keys().next().value);
+    samples.set(worldX, sample);
+    return sample;
+  };
+}
+
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, scale = 1, sceneryAt = null) {
   const offX = snapScreenPixel(camX * depth - w * 0.5, scale);
   // Round the stable contour before applying the screen-pixel offset. The
   // complete ridge then moves together without reshaping or four-pixel jumps.
   const offY = snapScreenPixel(backgroundDriftY(camY) * (1 + depth), scale);
-  const surfaceWorldBaseRawY = contourAt ?? ((worldX) => ridgeY(worldX, base, amp, seed, 'alpine'));
+  const surfaceWorldBaseRawY = (worldX) => sceneryAt
+    ? sceneryAt(worldX).height : ridgeY(worldX, base, amp, seed, 'alpine');
   const surfaceWorldRawY = (worldX) => surfaceWorldBaseRawY(worldX) - offY;
   const surfaceWorldY = (worldX) => Math.round(surfaceWorldBaseRawY(worldX)) - offY;
   const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
@@ -477,7 +516,13 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     });
   }
 
-  ctx.fillStyle = color;
+  if (sceneryAt) {
+    const first = surfacePoints[0], last = surfacePoints[surfacePoints.length - 1];
+    const gradient = ctx.createLinearGradient(first.x, 0, last.x, 0);
+    for (const point of surfacePoints)
+      gradient.addColorStop((point.x - first.x) / (last.x - first.x), sceneryAt(point.worldX).color);
+    ctx.fillStyle = gradient;
+  } else ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(surfacePoints[0].x, h);
   tracePixelSurface(ctx, surfacePoints);
@@ -494,17 +539,45 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   for (let i = 1; i < surfacePoints.length; i++) {
     const left = surfacePoints[i - 1];
     const right = surfacePoints[i];
+    if (sceneryAt) {
+      const local = sceneryAt(left.worldX);
+      ctx.fillStyle = mixColor(local.color, local.skyLow, 0.34);
+    }
     ctx.fillRect(left.x, left.y + 1, right.x - left.x, 1);
   }
 
-  // Alternating faces give each ridge structure as the camera pans.
+  // Facets run downhill from local peaks and stop within the neighboring slope.
+  if (sceneryAt) {
+    const step = RIDGE_SAMPLE_STEP;
+    const firstPeak = Math.floor((offX - 36) / step) * step;
+    for (let wx = firstPeak; wx < offX + w + 36; wx += step) {
+      const local = sceneryAt(wx);
+      if (local.facets < 0.01) continue;
+      const peak = surfaceWorldY(wx);
+      if (peak >= surfaceWorldY(wx - step) || peak > surfaceWorldY(wx + step)) continue;
+      let end = wx + step;
+      while (end < wx + 32 && surfaceWorldY(end + step) >= surfaceWorldY(end)) end += step;
+      const bottom = surfaceWorldY(end);
+      if (bottom - peak < 3) continue;
+      ctx.globalAlpha = 0.14 * Math.min(local.facets, sceneryAt(end).facets);
+      ctx.fillStyle = '#11131a';
+      ctx.beginPath();
+      ctx.moveTo(wx - offX, peak);
+      ctx.lineTo(end - offX, bottom + 2);
+      ctx.lineTo(wx - offX + (end - wx) * 0.3, bottom + Math.min(8, local.amp * 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else {
+  // Offworld formations carry alternating angular faces.
   const facetPeriod = 48 + detail * 12;
   const firstFacet = Math.floor((offX - facetPeriod) / facetPeriod) * facetPeriod;
   for (let worldX = firstFacet; worldX < offX + w + facetPeriod; worldX += facetPeriod) {
     const x = worldX - offX;
     const peakY = surfaceY(x);
     const width = facetPeriod * (0.55 + rand01(worldX + seed * 101) * 0.3);
-    const facet = ridgeFacetDepths(peakY, base, amp, offY);
+    const local = sceneryAt?.(worldX) ?? { base, amp, color, skyLow };
+    const facet = ridgeFacetDepths(peakY, local.base, local.amp, offY);
     ctx.globalAlpha = 0.13 + detail * 0.025;
     ctx.fillStyle = rand01(worldX + seed * 37) > 0.5 ? '#071116' : '#000000';
     ctx.beginPath();
@@ -515,13 +588,15 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     ctx.fill();
 
     ctx.globalAlpha = 0.18;
-    ctx.fillStyle = mixColor(color, skyLow, 0.52);
+    ctx.fillStyle = mixColor(local.color, local.skyLow, 0.52);
     ctx.beginPath();
     ctx.moveTo(x, peakY + 1);
-    ctx.lineTo(x - width * 0.28, peakY + amp * 0.62);
-    ctx.lineTo(x + width * 0.12, peakY + amp * 0.34);
+    ctx.lineTo(x - width * 0.28, peakY + local.amp * 0.62);
+    ctx.lineTo(x + width * 0.12, peakY + local.amp * 0.34);
     ctx.closePath();
     ctx.fill();
+  }
+
   }
 
   // Sparse deterministic ledges add texture without animated noise.
@@ -531,7 +606,9 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   const firstMark = Math.floor((offX - textureStep) / textureStep) * textureStep;
   for (let worldX = firstMark; worldX < offX + w + textureStep; worldX += textureStep) {
     const x = worldX - offX;
-    const y = surfaceWorldY(worldX) + 5 + Math.floor(rand01(worldX + seed * 211) * (amp * 1.8 + 8));
+    const local = sceneryAt?.(worldX) ?? { amp, color, skyLow };
+    ctx.fillStyle = mixColor(local.color, local.skyLow, 0.58);
+    const y = surfaceWorldY(worldX) + 5 + Math.floor(rand01(worldX + seed * 211) * (local.amp * 1.8 + 8));
     const length = 2 + Math.floor(rand01(worldX + seed * 307) * (3 + detail));
     ctx.fillRect(x, y, length, 1);
     if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);
@@ -540,7 +617,8 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   return {
     offX,
     offY,
-    minimumSurfaceY: base - offY - amp * 1.23,
+    minimumSurfaceY: Math.min(...surfacePoints.map((point) => point.y)),
+    sceneryAt,
     surfaceRawY,
     surfaceWorldRawY,
     surfaceWorldY,
@@ -549,55 +627,26 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   };
 }
 
-function drawSnowCap(ctx, points, snow, snowLine, amp, coverageAt) {
-  if (points.length < 4) return;
-  const capPoints = points.map((point) => {
-    const { rawY, worldX } = point;
-    const altitude = clamp((snowLine - rawY) / Math.max(1, amp * 0.7), 0, 1);
-    const variation = 0.24 + smoothNoise1D(worldX / 18, 419) * 0.08;
-    return {
-      ...point,
-      depth: Math.round(Math.pow(altitude, 0.72) * amp * variation),
-    };
+function drawSnowCaps(ctx, ridge, daylight) {
+  const points = ridge.surfacePoints.map((point) => {
+    const local = ridge.sceneryAt(point.worldX);
+    const snowLine = local.base - ridge.offY - local.amp * 0.16;
+    const altitude = clamp((snowLine - point.rawY) / Math.max(1, local.amp * 0.7), 0, 1);
+    const variation = 0.24 + smoothNoise1D(point.worldX / 18, 419) * 0.08;
+    return { ...point, depth: Math.round(Math.pow(altitude, 0.72) * local.amp * variation * local.snow) };
   });
-
-  ctx.fillStyle = snow;
-  for (let i = 1; i < capPoints.length; i++) {
-    const left = capPoints[i - 1];
-    const right = capPoints[i];
+  for (let i = 1; i < points.length; i++) {
+    const left = points[i - 1], right = points[i];
     const columns = Math.max(1, Math.round(right.x - left.x));
     for (let column = 0; column < columns; column++) {
       const t = column / columns;
-      const x = left.x + column;
       const depth = Math.round(left.depth + (right.depth - left.depth) * t);
-      if (depth > 0) {
-        ctx.globalAlpha = coverageAt(x);
-        ctx.fillRect(x, left.y, 1, depth);
-      }
+      if (depth <= 0) continue;
+      const local = ridge.sceneryAt(left.worldX + column);
+      ctx.fillStyle = mixColor(local.color, '#f5f5e9', 0.42 + daylight * 0.34);
+      ctx.fillRect(left.x + column, left.y, 1, depth);
     }
   }
-}
-
-function drawSnowCaps(ctx, ridge, base, amp, color, daylight, coverageAt) {
-  const snowLine = base - ridge.offY - amp * 0.16;
-  const snow = mixColor(color, '#f5f5e9', 0.42 + daylight * 0.34);
-  const points = ridge.surfacePoints;
-
-  let previous = points[0];
-  let cap = [];
-  for (let i = 1; i < points.length; i++) {
-    const point = points[i];
-    if (point.rawY < snowLine) {
-      if (cap.length === 0) cap.push(previous);
-      cap.push(point);
-    } else if (cap.length) {
-      cap.push(point);
-      drawSnowCap(ctx, cap, snow, snowLine, amp, coverageAt);
-      cap = [];
-    }
-    previous = point;
-  }
-  if (cap.length) drawSnowCap(ctx, cap, snow, snowLine, amp, coverageAt);
 }
 
 function drawPine(ctx, x, groundY, height, dark, light) {
@@ -612,10 +661,8 @@ function drawPine(ctx, x, groundY, height, dark, light) {
   ctx.fillRect(x - 1, top + 3, 1, 1);
 }
 
-function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverageAt) {
-  const opacity = ctx.globalAlpha;
-  const dark = mixColor(color, '#061713', 0.62);
-  const light = mixColor(color, skyLow, 0.28);
+function drawForest(ctx, w, h, ridge, seed) {
+  ctx.globalAlpha = 1;
   const bandStep = 9;
   const bandCount = Math.ceil(Math.max(0, h - ridge.minimumSurfaceY) / bandStep) + 1;
 
@@ -625,8 +672,8 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverageAt) {
     const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
     for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
       const treeSeed = worldX + seed * 613 + band * 1877;
-      const alpha = biomePlantOpacity(coverageAt(worldX - ridge.offX), rand01(treeSeed + 801));
-      if (alpha <= 0) continue;
+      const local = ridge.sceneryAt(worldX);
+      if (rand01(treeSeed + 801) >= (local.plants.pine ?? 0) * local.grove) continue;
       if (rand01(treeSeed) < Math.min(0.24, 0.1 + band * 0.006)) continue;
       const x = worldX - ridge.offX;
       const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
@@ -634,7 +681,8 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverageAt) {
         + Math.floor(rand01(treeSeed + 198) * 4);
       if (groundY - height > h || groundY > h + 4) continue;
 
-      ctx.globalAlpha = opacity * alpha * Math.max(0.58, 1 - band * 0.035);
+      const dark = mixColor(local.color, '#061713', 0.62);
+      const light = mixColor(local.color, local.skyLow, 0.28);
       drawPine(ctx, x, groundY, height, dark, light);
       if (rand01(treeSeed + 294) > 0.56) {
         ctx.fillStyle = light;
@@ -642,28 +690,32 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed, coverageAt) {
       }
     }
   }
-  ctx.globalAlpha = opacity;
 }
 
-function drawEyeGrove(ctx, w, h, ridge, palette, coverageAt) {
-  const opacity = ctx.globalAlpha;
+function drawEyeGrove(ctx, w, h, ridge) {
+  ctx.globalAlpha = 1;
   for (let band = 0; band < 3; band++) {
     const spacing = 51 + band * 9;
-    const dark = mixColor(palette.ridgeNear, '#321f32', 0.38 + band * 0.1);
-    const white = mixColor(palette.ridgeNear, palette.skyLow, 0.23 + band * 0.045);
     const first = Math.floor((ridge.offX - 64) / spacing) * spacing;
     for (let slot = first; slot < ridge.offX + w + 64; slot += spacing) {
       const seed = slot * 7 + band * 1397;
       if (rand01(seed + 801) >= 0.82) continue;
       const wx = slot + Math.floor(rand01(seed + 17) * 29) + band * 13;
-      const x = wx - ridge.offX;
-      const alpha = biomePlantOpacity(coverageAt(x), rand01(seed + 803));
-      if (alpha <= 0) continue;
-      ctx.globalAlpha = opacity * alpha;
-      const y = ridge.surfaceWorldY(wx) + 9 + band * 17
+      const screenX = wx - ridge.offX;
+      const local = ridge.sceneryAt(wx);
+      if (rand01(seed + 803) >= (local.plants.eyes ?? 0) * local.grove) continue;
+      const palette = local.palette;
+      const dark = mixColor(local.color, '#321f32', 0.38 + band * 0.1);
+      const white = mixColor(local.color, local.skyLow, 0.23 + band * 0.045);
+      const screenY = ridge.surfaceWorldY(wx) + 9 + band * 17
         + Math.floor(rand01(seed + 31) * 19);
       const height = 15 + Math.floor(rand01(seed + 53) * 29);
-      if (y - height > h || y < -12) continue;
+      if (screenY - height > h || screenY < -12) continue;
+      // Rasterize limbs in tree-local pixels, then translate the entire tree
+      // by the ridge's screen-pixel offset so branches and eyes move together.
+      ctx.save();
+      ctx.translate(screenX, screenY);
+      const x = 0, y = 0;
       const lean = Math.floor(rand01(seed + 71) * 19) - 9;
       const ry = 3 + Math.floor(rand01(seed + 93) * 5);
       const rx = ry + 1 + Math.floor(rand01(seed + 113) * 5);
@@ -713,20 +765,114 @@ function drawEyeGrove(ctx, w, h, ridge, palette, coverageAt) {
         limb(x, y, bx, y - 5, 1);
         eye(bx, y - 7, 3, 2, 0);
       }
+      ctx.restore();
     }
   }
-  ctx.globalAlpha = opacity;
 }
 
-function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverageAt) {
-  const opacity = ctx.globalAlpha;
+function drawBoneField(ctx, w, h, ridge) {
+  ctx.globalAlpha = 1;
+  for (let band = 0; band < 2; band++) {
+    const spacing = 63 + band * 16;
+    const first = Math.floor((ridge.offX - 40) / spacing) * spacing;
+    for (let slot = first; slot < ridge.offX + w + 40; slot += spacing) {
+      const seed = slot * 13 + band * 1733;
+      const wx = slot + Math.floor(rand01(seed + 19) * 27) + band * 21;
+      const local = ridge.sceneryAt(wx);
+      if (rand01(seed + 803) >= (local.plants.bones ?? 0) * (0.5 + local.grove * 0.5)) continue;
+      const height = 15 + Math.floor(rand01(seed + 53) * 9);
+      const ground = Math.max(ridge.surfaceWorldY(wx), ridge.surfaceWorldY(wx - 18),
+        ridge.surfaceWorldY(wx + 18)) + Math.round(height * 0.45) + band * 20;
+      if (ground - height > h || ground < -12) continue;
+      const bone = mixColor(local.color, local.skyLow, 0.35 - band * 0.06);
+      const worn = mixColor(local.color, local.skyLow, 0.23);
+      const shadow = mixColor(local.color, '#312a24', 0.27);
+      ctx.save();
+      ctx.translate(wx - ridge.offX, ground);
+      const form = Math.floor(rand01(seed + 97) * 3);
+      const lean = rand01(seed + 137) < 0.5 ? -1 : 1;
+      if (form === 0) {
+        // Scanline runs give the skull rounded, tilted sockets and a tapered jaw.
+        const reach = Math.ceil(height * 0.8);
+        const pixel = (dx, dy) => {
+          const x = dx + lean * dy * 0.13;
+          const ellipse = (x / (height * 0.66)) ** 2 + ((dy - height * 0.53) / (height * 0.47)) ** 2;
+          const jaw = dy <= height * 0.28 && Math.abs(x) <= height * 0.33 + dy * 0.2;
+          if (ellipse > 1 && !jaw) return 0;
+          const socket = ((Math.abs(x) - height * 0.28) / (height * (x < 0 ? 0.16 : 0.14))) ** 2
+            + ((dy - height * 0.57 - x * 0.12) / (height * 0.16)) ** 2;
+          if (socket < 1) return 2;
+          if (dy > height * 0.29 && dy < height * 0.47 && Math.abs(x) < (height * 0.48 - dy) * 0.45) return 2;
+          if (dy > height * 0.17 && dy < height * 0.24 && Math.abs(x) < height * 0.28
+              && (Math.floor(x) + height * 2) % 3 !== 0) return 2;
+          return ellipse > 0.77 || dy < height * 0.25 ? 3 : 1;
+        };
+        for (let dy = 0; dy <= height; dy++) {
+          let start = -reach, kind = pixel(start, dy);
+          for (let dx = start + 1; dx <= reach + 1; dx++) {
+            const next = dx <= reach ? pixel(dx, dy) : 0;
+            if (next === kind) continue;
+            if (kind) {
+              ctx.fillStyle = kind === 1 ? bone : kind === 2 ? shadow : worn;
+              ctx.fillRect(start, -dy + 3, dx - start, 1);
+            }
+            start = dx; kind = next;
+          }
+        }
+      } else if (form === 1) {
+        // A curved spine carries tapering, broken ribs rather than closed hoops.
+        ctx.fillStyle = worn;
+        for (let dx = -22; dx <= 22; dx++) {
+          const top = Math.round(-height * (0.45 + 0.4 * Math.cos(dx / 23)));
+          ctx.fillRect(dx, top, 1, 2);
+        }
+        for (let rib = 0; rib < 6; rib++) {
+          const x = -20 + rib * 7;
+          const top = Math.round(-height * (0.45 + 0.4 * Math.cos(x / 23)));
+          const length = -top - 2 - Math.floor(rand01(seed + rib * 31) * 5);
+          ctx.fillStyle = rib % 2 ? worn : bone;
+          for (let dy = 0; dy < length; dy++) {
+            const bend = Math.round(Math.sin(dy / length * Math.PI * 0.85) * 5);
+            ctx.fillRect(x + lean * bend, top + dy, 2, 1);
+          }
+        }
+      } else {
+        ctx.fillStyle = worn;
+        for (let dy = 0; dy <= height; dy++) {
+          const spine = lean * Math.floor(dy / 6);
+          ctx.fillRect(spine - 1, -dy, 3, 1);
+          if (dy % 5 < 3 && dy < height - 2) {
+            const half = 3 + (Math.floor(dy / 5) % 2);
+            ctx.fillStyle = bone;
+            ctx.fillRect(spine - half, -dy, half * 2 + 1, 1);
+            ctx.fillStyle = worn;
+          }
+        }
+      }
+      // Broken fragments and a low soil lip seat each fossil on the hillside.
+      ctx.fillStyle = local.color;
+      ctx.fillRect(-13, 1, 27, 2);
+      ctx.fillStyle = worn;
+      for (let chip = 0; chip < 3; chip++) {
+        const dx = -16 + Math.floor(rand01(seed + chip * 79 + 211) * 31);
+        ctx.fillRect(dx, 1 + (chip % 2), 2 + (chip % 2), 1);
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function drawBiomePlants(ctx, w, h, ridge, kind) {
+  ctx.globalAlpha = 1;
   if (kind === 'none') return;
   if (kind === 'eyes') {
-    drawEyeGrove(ctx, w, h, ridge, palette, coverageAt);
+    drawEyeGrove(ctx, w, h, ridge);
     return;
   }
-  const dark = mixColor(palette.ridgeNear, '#061713', 0.6);
-  const light = mixColor(palette.ridgeNear, palette.skyLow, 0.25);
+  if (kind === 'bones') {
+    drawBoneField(ctx, w, h, ridge);
+    return;
+  }
   const spacing = kind === 'jungle' ? 19 : kind === 'willow' ? 29 : 37;
   const rowSpacing = kind === 'jungle' || kind === 'willow' ? 16 : 23;
   for (let band = 0; band < 3; band++) {
@@ -734,9 +880,11 @@ function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverageAt) {
     for (let wx = first; wx < ridge.offX + w + spacing; wx += spacing) {
       const seed = wx + band * 139;
       const x = wx - ridge.offX + band * 11;
-      const alpha = biomePlantOpacity(coverageAt(x), rand01(seed + 801));
-      if (alpha <= 0) continue;
-      ctx.globalAlpha = opacity * alpha;
+      const local = ridge.sceneryAt(wx + band * 11);
+      if (rand01(seed + 801) >= (local.plants[kind] ?? 0) * local.grove) continue;
+      const palette = local.palette;
+      const dark = mixColor(local.color, '#061713', 0.6);
+      const light = mixColor(local.color, local.skyLow, 0.25);
       const y = ridge.surfaceWorldY(wx + band * 11) + 28 + (band - 1) * rowSpacing;
       if (y > h + 30) continue;
       const height = 11 + Math.floor(rand01(seed) * 10);
@@ -783,50 +931,32 @@ function drawBiomePlants(ctx, w, h, ridge, palette, kind, coverageAt) {
       }
     }
   }
-  ctx.globalAlpha = opacity;
 }
 
 const BIOME_WEIGHTS = Array.from({ length: SURFACE_BIOME_COUNT }, (_, id) =>
   Array.from({ length: SURFACE_BIOME_COUNT }, (__, other) => other === id ? 1 : 0));
 
-function drawBiomeScenery(ctx, w, h, qx, qy, horizon, scale, dayNight, weights, scenery) {
-  const profiles = weights.map((weight, id) => ({ ...BIOME_BACKGROUND_PROFILES[id], weight }))
-    .filter(({ weight }) => weight > 0);
-  const field = scenery ?? [weights];
-  const weightAt = (id, x) => biomeSceneryWeight(field, id, x / w);
-  const snowAt = (x) => weights.reduce((sum, _, id) =>
-    sum + BIOME_BACKGROUND_PROFILES[id].snow * weightAt(id, x), 0);
-  const style = biomeBackgroundStyle(paletteForPhase(dayNight.phase), weights);
-  const palette = style.palette;
-  // Every depth layer has one opaque contour. Biome weights shape its height
-  // field before rasterization, so peaks meet the sky with a single solid edge.
+function drawBiomeScenery(ctx, w, h, qx, qy, horizon, scale, dayNight, weights, biomeAt, cache) {
+  const palette = paletteForPhase(dayNight.phase);
+  const key = [horizon, ...Object.values(palette), ...(biomeAt ? [] : weights)].join(':');
+  if (cache.source !== biomeAt || cache.key !== key) {
+    cache.source = biomeAt;
+    cache.key = key;
+    cache.layers = [];
+  }
   const ridge = (depth, base, amp, color, seed, detail, layer) => {
-    const contours = profiles.map((profile) => ({
-      shape: profile.shape, weight: profile.weight,
-      relief: layer < 3 ? profile.relief[layer] : 0.6,
-      rise: profile.rise?.[layer] ?? 0,
-    }));
-    const relief = contours.reduce((sum, contour) => sum + contour.relief * contour.weight, 0);
-    const rise = contours.reduce((sum, contour) => sum + contour.rise * contour.weight, 0);
-    return drawRidge(ctx, w, h, qx, qy, depth, base - rise, amp * relief, color, seed,
-      palette.skyLow, detail, scale, (worldX) => biomeRidgeY(worldX, base, amp, seed, contours));
+    const sceneryAt = cache.layers[layer] ??= createBiomeRidgeSampler(biomeAt, weights, palette, depth, layer, base, amp, seed);
+    return drawRidge(ctx, w, h, qx, qy, depth, base, amp, color, seed,
+      palette.skyLow, detail, scale, sceneryAt);
   };
   const far = ridge(FAR_RIDGE_DEPTH, horizon + 17, 20, palette.ridgeFar, 3.2, 2, 0);
-  ctx.globalAlpha = 1;
-  const farRelief = profiles.reduce((sum, profile) => sum + profile.relief[0] * profile.weight, 0);
-  const farRise = profiles.reduce((sum, profile) => sum + (profile.rise?.[0] ?? 0) * profile.weight, 0);
-  drawSnowCaps(ctx, far, horizon + 17 - farRise, 20 * farRelief, palette.ridgeFar, dayNight.daylight, snowAt);
-  ctx.globalAlpha = 1;
+  drawSnowCaps(ctx, far, dayNight.daylight);
   ridge(0.34, horizon + 26, 18, palette.ridgeMid, 7.9, 2, 1);
   const near = ridge(0.52, horizon + 45, 22, palette.ridgeNear, 12.4, 3, 2);
-  const vegetation = Object.entries(BIOME_BACKGROUND_PROFILES)
-    .filter(([id]) => field.some((column) => column[id] > 0));
-  const pineAt = (x) => vegetation.reduce((sum, [id, profile]) => sum
-    + (profile.plants === 'pine' ? profile.forest * weightAt(id, x) : 0), 0);
-  if (vegetation.some(([, profile]) => profile.plants === 'pine'))
-    drawForest(ctx, w, h, near, palette.ridgeNear, palette.skyLow, 12.4, pineAt);
-  for (const [id, profile] of vegetation) if (profile.plants !== 'pine')
-    drawBiomePlants(ctx, w, h, near, palette, profile.plants, (x) => weightAt(id, x));
+  drawForest(ctx, w, h, near, 12.4);
+  const kinds = new Set(Object.values(BIOME_BACKGROUND_PROFILES).map((profile) => profile.plants));
+  for (const kind of kinds) if (kind !== 'pine' && kind !== 'none')
+    drawBiomePlants(ctx, w, h, near, kind);
   ridge(0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, 2, 3);
 }
 
@@ -852,7 +982,9 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
   const ctx = canvas.getContext('2d', { alpha: false });
   ctx.imageSmoothingEnabled = false;
 
+  const sceneryCache = { source: null, key: null, layers: [] };
   let lastKey = '';
+  let lastScenery = null;
   let lastPalette = null;
 
   const resize = (width, height) => {
@@ -885,7 +1017,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     // Callers that don't track the auto-cycle mix get the profile's own look.
     weatherMix,
     biomeWeights = null,
-    biomeScenery = null,
+    biomeSceneryAt = null,
   } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
@@ -900,10 +1032,10 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       canvas.width, canvas.height, qx, qy, s.toFixed(3), dayVisualKey,
       resolvedWeatherId, weatherVisualKey, weatherMixBucket,
       ...(biomeWeights?.map((weight) => Math.round(weight * 1024)) ?? []),
-      ...(biomeScenery?.flatMap((column) => column.map((weight) => Math.round(weight * 1024))) ?? []),
     ].join(':');
-    if (key === lastKey) return;
+    if (key === lastKey && biomeSceneryAt === lastScenery) return;
     lastKey = key;
+    lastScenery = biomeSceneryAt;
 
     // Logical drawing size: the pixel-art scale plus runtime zoom exactly fills
     // the backing store, so zoom-out cannot expose edge gaps.
@@ -1010,7 +1142,7 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
       cloudCount(1), 210, dayNight.phase, s, cloudSpans,
     );
     drawBiomeScenery(ctx, w, h, qx, qy, horizon, s, dayNight,
-      biomeWeights ?? BIOME_WEIGHTS[BIOME.FOREST], biomeScenery);
+      biomeWeights ?? BIOME_WEIGHTS[BIOME.FOREST], biomeSceneryAt, sceneryCache);
     // Precipitation paints in front of every backdrop layer but clips to the
     // air above the simulated surface, so the world's own layers occlude it.
     const surfacePts = surfaceYAt ? [] : null;

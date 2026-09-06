@@ -18,12 +18,23 @@ double TerrainGen::genMoistureAt(int worldX) {
   return std::fmax(0.0, std::fmin(1.0, broad * 0.80 + pockets * 0.10 + coast * 0.10));
 }
 
+int TerrainGen::climateRegionAt(int worldX) {
+  auto boundary = [&](int region) {
+    return region * SURFACE_REGION_WIDTH + (int)std::lround(
+      (whash1(E.L->worldSeed ^ 0xB10B0A1u, region) * 2.0 - 1.0)
+      * SURFACE_REGION_JITTER);
+  };
+  int region = floorDiv(worldX, SURFACE_REGION_WIDTH);
+  if (worldX < boundary(region)) return region - 1;
+  if (worldX >= boundary(region + 1)) return region + 1;
+  return region;
+}
+
 int TerrainGen::classifyBiomeAt(int worldX) {
   // Each climate district has a stable biome core. Ecotones and surface-shape
   // interpolation soften the border without introducing tiny interior patches.
-  constexpr int CLIMATE_DISTRICT_WIDTH = 384;
   constexpr int CLIMATE_SAMPLE_WIDTH = 256;
-  worldX = floorDiv(worldX, CLIMATE_DISTRICT_WIDTH) * CLIMATE_SAMPLE_WIDTH
+  worldX = climateRegionAt(worldX) * CLIMATE_SAMPLE_WIDTH
     + CLIMATE_SAMPLE_WIDTH / 2;
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
   BiomeCacheEntry& cached = climateBiomeCache[key & (BIOME_CACHE_SIZE - 1)];
@@ -49,9 +60,8 @@ int TerrainGen::classifyBiomeAt(int worldX) {
   __builtin_unreachable();
 }
 
-// Ecotones occupy a narrow band around raw climate boundaries. Four-column
-// deterministic patches borrow the neighbouring biome, producing a readable
-// transition without per-pixel speckle or a single hard material seam.
+// Semantic biome identity stays continuous throughout each irregular region.
+// Surface relief and soil depth provide the spatial blend at its borders.
 int TerrainGen::genBiomeAt(int worldX) {
   const PlanetDef& planet = planetDef(E.planetId);
   PlanetGenerationProfile profile = planet.generationProfile;
@@ -69,15 +79,6 @@ int TerrainGen::genBiomeAt(int worldX) {
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
 
   int center = classifyBiomeAt(worldX);
-  int left = classifyBiomeAt(worldX - 24);
-  int right = classifyBiomeAt(worldX + 24);
-  int alternate = left != center ? left : (right != center ? right : center);
-  if (left == right && left != center) alternate = left;
-  if (alternate != center) {
-    int patch = floorDiv(worldX, 4);
-    double chance = left != center && right != center ? 0.48 : 0.28;
-    if (whash1(E.L->worldSeed ^ 0xEC070E01u, patch) < chance) center = alternate;
-  }
 
   cached.seed = E.L->worldSeed;
   cached.x = worldX;
@@ -171,21 +172,24 @@ int TerrainGen::genSurfaceAbs(int worldX) {
 
   // Climate reads the base elevation. The final surface blends biome profiles
   // across fixed world-space knots, keeping slopes continuous at region borders.
-  constexpr int SHAPE_STEP = 64;
+  constexpr int SHAPE_STEP = 128;
   int left = floorDiv(worldX, SHAPE_STEP) * SHAPE_STEP;
   double mix = (double)(worldX - left) / SHAPE_STEP;
-  mix = mix * mix * (3.0 - 2.0 * mix);
+  mix = mix * mix * mix * (mix * (mix * 6.0 - 15.0) + 10.0);
   const SurfaceBiomeDef& a = surfaceBiomeDef(classifyBiomeAt(left));
   const SurfaceBiomeDef& b = surfaceBiomeDef(classifyBiomeAt(left + SHAPE_STEP));
   auto interpolate = [mix](double av, double bv) { return av + (bv - av) * mix; };
-  double relief = interpolate(a.surfaceReliefScale, b.surfaceReliefScale);
-  double detail = interpolate(a.surfaceDetailAmplitude, b.surfaceDetailAmplitude);
-  double ridgeMix = interpolate(a.surfaceRidgeMix, b.surfaceRidgeMix);
-  double rolling = wfbm2(E.L->worldSeed ^ 0xB10D01u, worldX * 0.009, 2.5, 2, 0.5) - 0.5;
-  double crags = wridged2(E.L->worldSeed ^ 0xB10D02u, worldX * 0.016, 7.2, 3, 0.5) - 0.5;
-  int value = (int)std::lround(SEA_LEVEL + (genBaseSurfaceAbs(worldX) - SEA_LEVEL) * relief
-    + interpolate(a.surfaceOffset, b.surfaceOffset)
-    + (rolling + (crags - rolling) * ridgeMix) * detail * 2.0);
+  double base = genBaseSurfaceAbs(worldX) - SEA_LEVEL;
+  auto shaped = [&](const SurfaceBiomeDef& def) {
+    double rolling = wfbm2(E.L->worldSeed ^ 0xB10D01u,
+      worldX * def.surfaceDetailFrequency, 2.5, 2, 0.5) - 0.5;
+    double crags = def.surfaceRidgeMix > 0 ? wridged2(E.L->worldSeed ^ 0xB10D02u,
+      worldX * def.surfaceDetailFrequency * 1.8, 7.2, 3, 0.5) - 0.5 : rolling;
+    return SEA_LEVEL + base * def.surfaceReliefScale + def.surfaceOffset
+      + (rolling + (crags - rolling) * def.surfaceRidgeMix) * def.surfaceDetailAmplitude * 2.0;
+  };
+  double av = shaped(a);
+  int value = (int)std::lround(a.id == b.id ? av : interpolate(av, shaped(b)));
   if (E.planetId == PL_FRONTIER) {
     // The expedition starts on a dry terrace beneath the western highlands.
     double distance = std::abs(worldX);
@@ -220,7 +224,7 @@ int TerrainGen::genSoilDepthAt(int worldX, int biome) {
   return imax(0, (int)std::lround((double)total / samples));
 }
 uint8_t TerrainGen::genSkinMat(int biome, int slope, bool underwater) {
-  if (underwater) return STONE;                // solid seabed (loose powder under water just avalanches)
+  if (underwater && biome != BIOME_SWAMP) return STONE;
   const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
   return slope <= 2 ? def.flatSkin : def.steepSkin;
 }
@@ -797,7 +801,8 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // Both layers share the visible skin + soil mantle. Matching strata prevent
   // gaps in foreground dirt/sand from exposing an unrelated stone backdrop.
   if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);
-  if (depth < GEN_SKIN + soil) return underwater ? STONE : genSoilMat(biome, depth - GEN_SKIN, soil); // solid under oceans
+  if (depth < GEN_SKIN + soil) return underwater && biome != BIOME_SWAMP
+    ? STONE : genSoilMat(biome, depth - GEN_SKIN, soil);
   // A thick solid stone buffer separates the loose soil (and any ocean floor)
   // from the cave zone, so generated sand never rests directly over a cave and
   // oceans can't drain into one (both churn the cross-layer transfer forever).
@@ -844,7 +849,7 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   return ore == STONE ? rock : ore;                       // preserve ores across the rock transition
 }
 // Per-biome tree density. Forest/jungle dense; plains/tundra/swamp sparser;
-// desert sparse (cacti); rocky bare.
+// desert sparse (cacti); bone highlands support fossil formations.
 double TerrainGen::genTreeProb(int biome) {
   return TREE_PROB * surfaceBiomeDef(biome).treeProbabilityScale;
 }
@@ -858,12 +863,17 @@ uint8_t TerrainGen::pickTreeType(int biome, int worldX) {
 }
 bool TerrainGen::genTreeAt(int worldX, int surf) {
   if (surf >= E.L->gSeaRow - E.L->worldOffsetY) return false;  // at/under water -> no trees
-  if (pickTreeType(genBiomeAt(worldX), worldX) == PT_EYE) {
-    // Wide crowns occupy stable, separated slots across streamed bands.
-    int slot = floorDiv(worldX, 40);
-    int anchor = slot * 40 + 16
-      + (int)(whash1(E.L->gTreeSeed ^ 0xE7E52u, slot) * 8);
-    return worldX == anchor;
-  }
-  return whash1(E.L->gTreeSeed, worldX) < genTreeProb(genBiomeAt(worldX));
+  int biome = genBiomeAt(worldX);
+  bool eye = pickTreeType(biome, worldX) == PT_EYE;
+  int spacing = eye ? 40 : 12;
+  int slot = floorDiv(worldX, spacing);
+  int anchor = slot * spacing + spacing / 4
+    + (int)(whash1(E.L->gTreeSeed ^ 0xE7E52u, slot) * (spacing / 2));
+  if (worldX != anchor) return false;
+  // Broad stands and glades vary density within a biome while separated trunk
+  // slots keep neighboring crowns legible and stable across streamed bands.
+  double grove = wfbm2(E.L->gTreeSeed ^ 0x620AEu, worldX * 0.008, 3.2, 2, 0.5);
+  double density = std::clamp((grove - 0.22) * 2.1, 0.12, 1.0);
+  double chance = std::fmin(0.96, genTreeProb(biome) * spacing) * density;
+  return whash1(E.L->gTreeSeed, slot) < chance;
 }

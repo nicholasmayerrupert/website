@@ -114,21 +114,20 @@
       int worldX = L->worldOffsetX + lx; int surf = terrain.genSurfaceAt(worldX);
       if (surf + reachY < rowStart
           || surf - reachY >= rowEnd) continue;
-      // Leave a clean skyline around deterministic villages. Besides making the
-      // settlement readable, this prevents background tree components from
-      // overlapping the foreground buildings across simulation layers.
+      if (!terrain.genTreeAt(worldX, surf)) continue;
+      // Village streets retain a clear skyline, with groves returning at their
+      // outskirts. The reservation includes roofs and mature canopy reach.
       bool nearVillage = false;
       int vq = floorDiv(worldX, VILLAGE_LATTICE);
       for (int v = vq - 1; v <= vq + 1; v++) {
         VillagePlan village;
         if (worldContext.villagePlan(v, village)
-            && std::abs(worldX - village.center) < 252) {
+            && worldX >= village.left - reachX && worldX <= village.right + reachX) {
           nearVillage = true;
           break;
         }
       }
       if (nearVillage) continue;
-      if (!terrain.genTreeAt(worldX, surf)) continue;
       int biome = terrain.genBiomeAt(worldX);
       uint8_t pt = terrain.pickTreeType(biome, worldX);
       const PlantWorldgenProfileDef& plantProfile =

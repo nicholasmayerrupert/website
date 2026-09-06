@@ -188,6 +188,35 @@
       OutcropPlan plan;
       if (!worldContext.outcropPlan(d, plan)) continue;
       int center = plan.center, floorY = plan.floorY, biome = plan.biome;
+      if (plan.style == OCS_BIOME_FORMATION) {
+        const SurfaceBiomeDef& def = surfaceBiomeDef(biome);
+        for (int dy = 0; dy <= plan.height; dy++) {
+          OutcropSlice slice;
+          worldContext.outcropSlice(plan, dy, slice);
+          for (int x = slice.left; x <= slice.right; x++) {
+            if (def.formationStyle == SFS_FOSSIL
+                && !worldContext.fossilCellAt(plan, x - center, dy)) continue;
+            bool accent = dy > 1 && ((def.formationStyle == SFS_BOULDER && dy >= plan.height - 1)
+              || (def.formationStyle == SFS_STACK && dy % 6 == 0)
+              || (def.formationStyle == SFS_SPIRE && x == slice.left + 1 && dy % 7 < 4)
+              || (def.formationStyle == SFS_FOSSIL && dy > plan.height * 3 / 4
+                  && x - center == (dy / 3) % 3 - 1));
+            put(x, floorY - dy, accent ? def.formationAccent : def.formationMaterial);
+          }
+        }
+        OutcropSlice base;
+        worldContext.outcropSlice(plan, 0, base);
+        for (int x = base.left; x <= base.right; x++) {
+          if (def.formationStyle == SFS_FOSSIL
+              && !worldContext.fossilCellAt(plan, x - center, 0)) continue;
+          int ground = terrain.genSurfaceAbs(x);
+          int soil = terrain.genSoilDepthAt(x, terrain.genBiomeAt(x));
+          int rootTop = def.formationStyle == SFS_FOSSIL ? imax(floorY + 1, ground) : floorY + 1;
+          for (int y = rootTop; y <= ground + TerrainGen::GEN_SKIN + soil; y++)
+            put(x, y, def.formationMaterial);
+        }
+        continue;
+      }
       const OffworldBiomeDef& biomeDef =
         offworldBiomeDef(planet.offworldMaterialProfile, biome);
       int height = plan.height;

@@ -693,6 +693,7 @@ enum OutcropStyle : uint8_t {
   OCS_NONE,
   OCS_MINERAL_SPIRE,
   OCS_WEATHERED_HOODOO,
+  OCS_BIOME_FORMATION,
 };
 
 struct OutcropProfileDef {
@@ -703,7 +704,7 @@ struct OutcropProfileDef {
 inline constexpr std::array<OutcropProfileDef,
                             PLANET_GENERATION_PROFILE_COUNT>
 OUTCROP_PROFILES = {{
-  {PGP_EARTH, OCS_NONE},
+  {PGP_EARTH, OCS_BIOME_FORMATION},
   {PGP_MOON, OCS_MINERAL_SPIRE},
   {PGP_MARS, OCS_WEATHERED_HOODOO},
   {PGP_SHIP, OCS_NONE},
@@ -758,8 +759,8 @@ class WorldContextSystem {
  public:
   explicit WorldContextSystem(Engine& e) : E(e) {}
 
-  static constexpr int VILLAGE_LATTICE = 420;
-  static constexpr double VILLAGE_CHANCE = 0.70;
+  static constexpr int VILLAGE_LATTICE = 720;
+  static constexpr double VILLAGE_CHANCE = 0.62;
   static constexpr int MINE_LATTICE = 512;
   static constexpr int OFFWORLD_FACILITY_LATTICE = 420;
   static constexpr int RUIN_LATTICE = 76;
@@ -777,6 +778,7 @@ class WorldContextSystem {
   bool outcropPlan(int latticeX, OutcropPlan& out) const;
   static bool outcropSlice(const OutcropPlan& plan, int dy,
                            OutcropSlice& out);
+  static bool fossilCellAt(const OutcropPlan& plan, int dx, int dy);
   WorldContext at(int worldX, int worldY) const;
   void writeSnapshot(int worldX, int worldY, int* out) const;
 

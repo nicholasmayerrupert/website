@@ -2,6 +2,9 @@
 // Do not edit by hand.
 #pragma once
 
+inline constexpr int SURFACE_REGION_WIDTH = 768;
+inline constexpr int SURFACE_REGION_JITTER = 96;
+
 enum SurfaceBiomeSelectionMode : uint8_t {
   SBSE_CLIMATE = 0,
   SBSE_REGIONAL = 1,
@@ -124,6 +127,13 @@ enum SurfaceStructureStyle : uint8_t {
   SSS_OBSERVATORY = 1,
 };
 
+enum SurfaceFormationStyle : uint8_t {
+  SFS_BOULDER = 0,
+  SFS_STACK = 1,
+  SFS_SPIRE = 2,
+  SFS_FOSSIL = 3,
+};
+
 struct SurfaceBiomeDef {
   Biome id;
   const char* name;
@@ -131,6 +141,11 @@ struct SurfaceBiomeDef {
   uint16_t climateClauseOffset;
   uint8_t climateClauseCount;
   double surfaceReliefScale, surfaceDetailAmplitude, surfaceRidgeMix, surfaceOffset;
+  double surfaceDetailFrequency;
+  SurfaceFormationStyle formationStyle;
+  uint8_t formationMaterial, formationAccent;
+  double formationChance;
+  int formationHeight;
   int soilScale, soilAdd;
   uint8_t flatSkin, steepSkin, soilTop, soilBase;
   int soilBaseNumerator, soilBaseDenominator;
@@ -146,8 +161,8 @@ struct SurfaceBiomeDef {
 inline constexpr std::array<SurfaceClimateTerm, 18>
     SURFACE_CLIMATE_TERMS = {{
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.51},
-  {SCV_MOISTURE, SCC_LESS_THAN, 0.36},
-  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.43},
+  {SCV_MOISTURE, SCC_LESS_THAN, 0.42},
+  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.4},
   {SCV_ALTITUDE, SCC_GREATER_THAN, 0.28},
   {SCV_RUGGED, SCC_GREATER_THAN, 0.58},
   {SCV_ALTITUDE, SCC_GREATER_THAN, 0.52},
@@ -155,7 +170,7 @@ inline constexpr std::array<SurfaceClimateTerm, 18>
   {SCV_TEMPERATURE, SCC_LESS_THAN, 0.29},
   {SCV_ALTITUDE, SCC_GREATER_THAN, 0.34},
   {SCV_TEMPERATURE, SCC_LESS_THAN, 0.45},
-  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.56},
+  {SCV_TEMPERATURE, SCC_GREATER_THAN, 0.5},
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.55},
   {SCV_MOISTURE, SCC_GREATER_THAN, 0.62},
   {SCV_SURFACE_MINUS_SEA, SCC_GREATER_THAN, -20},
@@ -181,49 +196,57 @@ inline constexpr std::array<SurfaceClimateClause, 10>
 
 inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES = {{
   {BIOME_PLAINS, "plains", 6, 0, 1,
-   0.48, 3, 0, -5,
+   0.38, 4, 0, -10, 0.0045,
+   SFS_BOULDER, STONE, MOSS, 0.18, 6,
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 0.45,
    PT_BUSH, PT_OAK, PT_OAK, 0.75, 1,
    SSS_VILLAGE, BRICK, BRICK, false, true},
   {BIOME_FOREST, "forest", 5, 1, 1,
-   0.85, 5, 0.15, -4,
+   0.72, 8, 0.15, -12, 0.0065,
+   SFS_BOULDER, STONE, MOSS, 0.32, 8,
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 3.8,
    PT_PINE, PT_OAK, PT_OAK, 0.85, 1,
-   SSS_VILLAGE, BRICK, BRICK, false, true},
+   SSS_VILLAGE, STONE, STONE, false, true},
   {BIOME_DESERT, "desert", 2, 2, 1,
-   0.3, 16, 0, -12,
+   0.2, 22, 0, -22, 0.0032,
+   SFS_STACK, SANDSTONE, CLAY, 0.42, 18,
    4, 0, SAND, SAND, SAND, SANDSTONE,
    2, 3, 0.8,
    PT_CACTUS, PT_CACTUS, PT_CACTUS, 1, 1,
    SSS_VILLAGE, SANDSTONE, SANDSTONE, true, true},
-  {BIOME_ROCKY, "rocky", 0, 3, 2,
-   1.25, 12, 1, -8,
-   0, 0, STONE, STONE, STONE, STONE,
-   0, 1, 0,
+  {BIOME_ROCKY, "bone highlands", 0, 3, 2,
+   1.25, 25, 0.95, -35, 0.007,
+   SFS_FOSSIL, BONE, PALESTONE, 1, 25,
+   0, 6, BONE, PALESTONE, PALESTONE, DEEPSTONE,
+   2, 3, 0,
    PT_OAK, PT_OAK, PT_OAK, 1, 1,
    SSS_VILLAGE, BRICK, BRICK, false, false},
   {BIOME_TUNDRA, "tundra", 1, 5, 2,
-   0.65, 4, 0, -8,
+   0.62, 9, 0.1, -14, 0.004,
+   SFS_BOULDER, STONE, ICE, 0.4, 10,
    1, 4, SNOW, SNOW, SNOW, DIRT,
    1, 2, 0.65,
    PT_PINE, PT_PINE, PT_PINE, 1, 1,
-   SSS_VILLAGE, BRICK, BRICK, false, true},
+   SSS_VILLAGE, STONE, STONE, false, true},
   {BIOME_JUNGLE, "jungle", 4, 7, 1,
-   0.85, 8, 0.2, -10,
+   0.62, 10, 0.1, -15, 0.006,
+   SFS_BOULDER, STONE, MOSS, 0.32, 11,
    1, 3, GRASS, SAND, DIRT, DIRT,
    0, 1, 5.2,
    PT_BUSH, PT_OAK, PT_OAK, 0.15, 1,
-   SSS_VILLAGE, BRICK, BRICK, true, true},
+   SSS_VILLAGE, CLAY, STONE, true, true},
   {BIOME_SWAMP, "swamp", 3, 8, 1,
-   0.12, 5, 0, 0,
+   0.07, 12, 0, -1, 0.007,
+   SFS_BOULDER, STONE, MOSS, 0.15, 5,
    2, 2, MUD, MUD, MUD, MUD,
    0, 1, 2,
    PT_WILLOW, PT_OAK, PT_BUSH, 0.85, 0.95,
-   SSS_VILLAGE, BRICK, BRICK, false, true},
+   SSS_VILLAGE, STONE, STONE, false, true},
   {BIOME_WATCHWOOD, "watchwood", -1, 9, 1,
-   0.38, 8, 0, -14,
+   0.34, 13, 0, -18, 0.005,
+   SFS_SPIRE, PALESTONE, EYE_WOOD, 0.48, 20,
    2, 4, VEIN_SOIL, PALESTONE, VEIN_SOIL, PALESTONE,
    1, 2, 1,
    PT_EYE, PT_EYE, PT_EYE, 1, 1,

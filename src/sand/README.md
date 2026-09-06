@@ -151,16 +151,27 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 11 is canonical in absolute coordinates: viewport size changes
+World generation version 14 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
-ruggedness fields select stable 384-cell climate districts. Adjacent districts
-may share a biome; narrow deterministic ecotones blend soil and vegetation.
+ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
+may share a biome, creating longer uninterrupted stretches. Biome identities
+remain continuous; soil depth and terrain shape blend across their boundaries.
 Biome-specific relief, rolling or craggy detail, and elevation offsets blend
-continuously across 64-cell surface knots. Plains have low rolling relief,
-deserts have sandy dunes and cacti, rocky highlands expose stone, tundra carries
+continuously across 128-cell surface knots. Plains have low rolling relief,
+deserts have sandy dunes and cacti, bone highlands expose ivory crust and fossils, tundra carries
 a snow mantle, jungles grow dense broadleaf vegetation, and swamps form low muddy
-wetlands. A broad anomaly field selects Watchwood pockets: rounded plum-soil hills,
+wetlands. Shallow swamp pools retain mud skin and soil in both layers, backed
+by solid rock beneath the mantle. Groves and clearings vary vegetation density within each region;
+separated trunk candidates keep tree silhouettes readable. Surface geology adds
+moss-capped boulders, sandstone stacks, icy rocks, and pale Watchwood spires,
+with bedrock roots and exclusions around cave mouths and settlements.
+Bone highlands retain steep mountain relief and contain component-backed skulls,
+rib arches, and vertebral columns made from mineable bone. Their shared solid
+mask preserves hollow sockets and rib gaps across both layers and streaming;
+buried roots anchor them beneath the pale crust. Distant fossil silhouettes
+share the ivory-and-umber palette without snow or vegetation.
+A broad anomaly field selects Watchwood pockets: rounded plum-soil hills,
 pale stone strata, and static ivory-eyed trees on branching burgundy trunks.
 Their component-backed wood, sclera, iris, and pupil remain destructible; generated
 eye trees have no growth, blinking, or tracking behavior. Plantable eyeball seeds
@@ -189,7 +200,9 @@ carts, and rail beds remain solid in the background. Surface settlements contain
 five to seven large role-specific buildings with distinct rooflines, terraced
 foundations, broad masonry supports, slope stairs, a market, lantern-lit streets,
 and a roofed well. Villages reserve their whole street with a gap between neighboring
-settlements. Mine entrances exclude settlements, and ruin plans exclude both settlements
+settlements. Streets occupy a single dry biome, with wider wilderness gaps
+between settlements. Desert buildings have low parapets and roof vents, and
+shared street furniture uses the local masonry. Mine entrances exclude settlements, and ruin plans exclude both settlements
 and mines; both simulated layers share these deterministic placement decisions.
 The biome catalogue selects the settlement architecture. Watchwood uses pale
 observation domes, ocular instruments, and burgundy ribs within the same reserved,
@@ -776,19 +789,21 @@ Bare hands, mining tools, and placeable blocks show the selected square footprin
 at the pointer. Equipping a weapon hides both the footprint and the legacy
 diamond tool preview so the weapon aim remains visually unambiguous.
 
-Earth and Frontier's decorative Canvas2D backdrop samples the engine's surface
-biomes in a 192-cell band around the survival player or creative camera center.
-`game/biomeBackground.js` blends sky and ridge colors, terrain contours, snowcaps,
-and vegetation coverage. Each depth layer draws one opaque contour, with its
-height interpolated between biome silhouettes before rasterization. Nine eased
-samples across the visible world place vegetation and snow on the appropriate
-side of biome boundaries. Plants occupy stable world-space patches and fade
-through seeded reveal thresholds; the backdrop has no decorative houses. A
-180 ms exponential easing time smooths ordinary travel, while teleports, paused
-views, reduced motion, and replay playback sample the destination immediately.
-Biome selection stays in the engine; the bounded presentation cache uses absolute
-coordinates and resets when the engine changes. Weather and day/night compose
-with the biome palette. Simulated background walls retain their material opacity.
+Earth and Frontier's decorative Canvas2D backdrop uses the engine's surface
+biome map. Sky colors ease around the survival player or creative camera center.
+Each scenery layer projects fixed parallax coordinates into the biome map and
+samples a permanent landscape: neighboring profiles connect through a smooth
+192-cell transition band. All depths use the same real region sequence,
+projected at independent horizontal scroll rates. Camera travel only translates
+the landscape. Mountain shading follows local peaks and slopes; rounded hills
+carry subtle ledges instead of triangular faces. Heights,
+rock faces, snow, local colors, and vegetation share the same coordinate sampler.
+Adding a biome profile automatically connects it to every other biome.
+Trees and other vegetation use deterministic placement thresholds and render
+fully opaque. The background has no decorative houses. Presentation caches use
+absolute coordinates and reset when the engine changes; eviction cannot change
+the generated scenery. Weather and day/night compose with the biome palette.
+Simulated background walls retain their material opacity.
 
 The render-only day/night cycle drives the sky and base skylight but not
 authority simulation state. Creative mode can scrub and hold the cycle; those
@@ -817,6 +832,9 @@ Transporter transitions and successful rescue-beam tags share a distinct energy
 cue.
 Audio asset provenance is in
 `audio/assets/README.md`.
+
+See [world-generation design and research](WORLDGEN_DESIGN.md) for the regional
+layout and the references informing it.
 
 ## Tests and benchmarks
 

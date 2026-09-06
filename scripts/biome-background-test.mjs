@@ -1,7 +1,8 @@
+import { SURFACE_REGION_WIDTH as REGION } from '../src/sand/wasmBridge/biomes.generated.js';
 import process from 'node:process';
 import { BIOME, SURFACE_BIOME_COUNT } from '../src/sand/wasmBridge/abi.generated.js';
-import { BIOME_BACKGROUND_PROFILES, createBiomeBackgroundBlend, biomeBackgroundStyle, createBiomeSceneryField, biomeSceneryWeight, biomePlantOpacity } from '../src/sand/game/biomeBackground.js';
-import { biomeRidgeY, paletteForPhase } from '../src/sand/game/parallaxBackground.js';
+import { BIOME_BACKGROUND_PROFILES, createBiomeBackgroundBlend, biomeBackgroundStyle, createBiomeScenerySampler } from '../src/sand/game/biomeBackground.js';
+import { biomeRidgeY, paletteForPhase, createBiomeRidgeSampler } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('biome background');
@@ -46,37 +47,21 @@ check('teleports immediately select the destination scenery', fade(engine, 10000
 check('paused views immediately sample the requested position', fade(engine, 9999, 200, true)[BIOME.DESERT] === 1);
 check('replacing the engine discards cached biome identities', fade({ worldBiomeAt: () => BIOME.TUNDRA }, 9999, 210)[BIOME.TUNDRA] === 1);
 
-const fieldSample = createBiomeSceneryField();
-const field = fieldSample(engine, -2, 320, 0, true);
-const weightAt = (id, x) => biomeSceneryWeight(field, id, x);
-check('approaching a desert from the left reveals cacti on the right first',
-  weightAt(BIOME.DESERT, 0.1) < 0.05 && weightAt(BIOME.DESERT, 0.9) > 0.95
-  && biomePlantOpacity(weightAt(BIOME.DESERT, 0.75), 0.5)
-    > biomePlantOpacity(weightAt(BIOME.DESERT, 0.25), 0.5));
-check('departing forest vegetation disappears on the desert side first',
-  weightAt(BIOME.FOREST, 0.1) > 0.95 && weightAt(BIOME.FOREST, 0.9) < 0.05);
-const mirrored = fieldSample({ worldBiomeAt: (x) => x < 0 ? BIOME.DESERT : BIOME.FOREST }, -2, 320, 0, true);
-check('the spatial transition also works when the desert lies to the left',
-  biomeSceneryWeight(mirrored, BIOME.DESERT, 0.1) > 0.95
-  && biomeSceneryWeight(mirrored, BIOME.DESERT, 0.9) < 0.05);
-const island = fieldSample({ worldBiomeAt: (x) => Math.abs(x) < 96 ? BIOME.WATCHWOOD : BIOME.DESERT }, 0, 640, 0, true);
-check('a biome enclosed on both sides keeps its vegetation in the middle',
-  biomeSceneryWeight(island, BIOME.WATCHWOOD, 0.5) > 0.99
-  && biomeSceneryWeight(island, BIOME.WATCHWOOD, 0) === 0
-  && biomeSceneryWeight(island, BIOME.WATCHWOOD, 1) === 0);
-check('plant reveals fade through their threshold with exact absent and present endpoints',
-  biomePlantOpacity(0, 0) === 0 && biomePlantOpacity(1, 1) === 1
-  && close(biomePlantOpacity(0.5, 0.5), 0.5)
-  && biomePlantOpacity(0.49, 0.5) < biomePlantOpacity(0.51, 0.5));
-const easedField = createBiomeSceneryField();
-easedField(engine, -100, 320, 0);
-const intoDesert = easedField(engine, 40, 320, 90);
-const backToForest = easedField(engine, -100, 320, 180);
-check('reversing direction eases every screen region from its visible vegetation mix',
-  intoDesert.every((column, i) => backToForest[i][BIOME.DESERT] <= column[BIOME.DESERT])
-  && backToForest.every((column) => close(column.reduce((sum, weight) => sum + weight, 0), 1)));
-const snappedField = easedField(engine, 10000, 320, 190);
-check('teleports reset the whole vegetation field', snappedField.every((column) => column[BIOME.DESERT] === 1));
+const scenery = createBiomeScenerySampler();
+const at = scenery(engine);
+check('fixed vegetation mixtures put forest to the left and desert to the right',
+  at(-140)[BIOME.FOREST] === 1 && at(140)[BIOME.DESERT] === 1);
+check('a scenery sampler retains its identity for the same world', scenery(engine) === at);
+const saved = at(12.25);
+for (let x = -20000; x < 20000; x += 16) at(x);
+check('reversals, teleports, and cache eviction cannot change a location',
+  at(12.25).every((weight, id) => close(weight, saved[id])));
+const islandAt = scenery({ worldBiomeAt: (x) => Math.abs(x) < 96 ? BIOME.WATCHWOOD : BIOME.DESERT });
+check('a biome enclosed on both sides keeps its own fixed patch of scenery',
+  islandAt(0)[BIOME.WATCHWOOD] > 0.99
+  && islandAt(-320)[BIOME.WATCHWOOD] === 0 && islandAt(320)[BIOME.WATCHWOOD] === 0);
+check('replacing the world resets scenery samples',
+  scenery({ worldBiomeAt: () => BIOME.TUNDRA })(12.25)[BIOME.TUNDRA] === 1);
 
 const pure = (id) => Array.from({ length: SURFACE_BIOME_COUNT }, (_, i) => i === id ? 1 : 0);
 const noon = paletteForPhase(0.5);
@@ -89,6 +74,10 @@ check('biomes use distinct silhouettes and vegetation',
   && BIOME_BACKGROUND_PROFILES[BIOME.ROCKY].shape === 'crags'
   && BIOME_BACKGROUND_PROFILES[BIOME.JUNGLE].plants === 'jungle'
   && BIOME_BACKGROUND_PROFILES[BIOME.SWAMP].plants === 'willow');
+check('bone highlands have fossil scenery without snow or trees',
+  BIOME_BACKGROUND_PROFILES[BIOME.ROCKY].plants === 'bones'
+  && BIOME_BACKGROUND_PROFILES[BIOME.ROCKY].snow === 0
+  && BIOME_BACKGROUND_PROFILES[BIOME.ROCKY].forest === 0);
 const watchwood = biomeBackgroundStyle(noon, pure(BIOME.WATCHWOOD));
 check('Watchwood has its own eye silhouettes and a snow-free plum landscape',
   BIOME_BACKGROUND_PROFILES[BIOME.WATCHWOOD].plants === 'eyes'
@@ -116,5 +105,47 @@ check('mountain elevation raises the complete contour as well as its peaks',
     biomeRidgeY(x, 60, 20, 3.2, [mountain]),
     biomeRidgeY(x, 60, 20, 3.2, [contours[0]]) - mountain.rise,
   )));
+
+const ridgeAt = (sampler, depth = 0.52, layer = 2, fallback = pure(BIOME.PLAINS)) =>
+  createBiomeRidgeSampler(sampler, fallback, noon, depth, layer, 100, 22, 12.4);
+const fixed = ridgeAt(at);
+const landmarks = [-72, -19.25, 0, 19.25, 72].map((x) => [x, JSON.stringify(fixed(x))]);
+const revisit = ridgeAt(at, 0.52, 2, pure(BIOME.DESERT));
+check('ridge height, facets, colors, snow, and vegetation ignore the player biome mix',
+  landmarks.every(([x, value]) => JSON.stringify(revisit(x)) === value));
+check('independent parallax layers project the same real biome boundaries',
+  [-140, -48, 0, 48, 140].every((x) => {
+    const samples = [0.18, 0.34, 0.52, 0.7].map((depth, layer) => ridgeAt(at, depth, layer)(x * depth));
+    return samples.every((sample) => Object.keys(sample.plants).every((kind) => close(sample.plants[kind], samples[0].plants[kind]))
+      && close(sample.snow, samples[0].snow));
+  }));
+const changingAt = createBiomeScenerySampler()({
+  worldBiomeAt: (x) => ((Math.floor(x / REGION) % SURFACE_BIOME_COUNT) + SURFACE_BIOME_COUNT) % SURFACE_BIOME_COUNT,
+});
+const dominant = (weights) => weights.indexOf(Math.max(...weights));
+check('scenery preserves each real biome rather than replacing a district by majority vote',
+  Array.from({length: SURFACE_BIOME_COUNT}, (_, id) => id).every((id) =>
+    dominant(changingAt((id + 0.5) * REGION)) === id));
+const boundarySaved = changingAt(REGION - 56);
+for (let i = -300; i < 300; i++) changingAt(i * REGION + 200);
+check('spatial boundaries survive cache eviction and return trips unchanged',
+  changingAt(REGION - 56).every((weight, id) => close(weight, boundarySaved[id])));
+check('rounded hills suppress angular mountain facets',
+  ridgeAt(null, 0.52, 2, pure(BIOME.WATCHWOOD))(0).facets === 0
+  && ridgeAt(null, 0.52, 2, pure(BIOME.ROCKY))(0).facets === 1);
+
+let allPairsJoin = true;
+for (let left = 0; left < SURFACE_BIOME_COUNT; left++) {
+  for (let right = left + 1; right < SURFACE_BIOME_COUNT; right++) {
+    const pairAt = createBiomeScenerySampler()({ worldBiomeAt: (x) => x < 0 ? left : right });
+    const ridge = ridgeAt(pairAt);
+    for (let x = -60; x < 60; x += 0.25) {
+      const weights = pairAt(x);
+      allPairsJoin &&= Math.abs(ridge(x + 0.01).height - ridge(x).height) < 0.1
+        && close(weights.reduce((sum, weight) => sum + weight, 0), 1);
+    }
+  }
+}
+check('every biome pair joins continuously through the same generic sampler', allPairsJoin);
 
 process.exit(done() === 0 ? 0 : 1);

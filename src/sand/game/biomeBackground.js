@@ -9,7 +9,7 @@ export const BIOME_BACKGROUND_PROFILES = {
   [BIOME.PLAINS]: { sky: [1.02, 1.02, 0.97], ridges: ['#859a92', '#738568', '#59734c', '#293126'], forest: 0.25, snow: 0.3, shape: 'rolling', relief: [0.45, 0.4, 0.4], plants: 'meadow' },
   [BIOME.FOREST]: { sky: [1, 1, 1], ridges: ['#718d9a', '#527264', '#35634f', '#222b29'], forest: 1, snow: 0.7, shape: 'alpine', relief: [1, 0.85, 0.8], plants: 'pine' },
   [BIOME.DESERT]: { sky: [1.13, 1.01, 0.88], ridges: ['#b6a18c', '#a88b68', '#99734d', '#3d3028'], forest: 0, snow: 0, shape: 'dunes', relief: [0.45, 0.65, 0.65], plants: 'cactus' },
-  [BIOME.ROCKY]: { sky: [0.96, 0.99, 1.02], ridges: ['#8b929e', '#747b80', '#5b6669', '#282c32'], forest: 0.12, snow: 0.85, shape: 'crags', relief: [1.6, 1.4, 1.2], rise: [18, 12, 7], plants: 'none' },
+  [BIOME.ROCKY]: { sky: [1.06, 0.98, 0.89], ridges: ['#b5ada0', '#958776', '#786a58', '#39312b'], forest: 0, snow: 0, shape: 'crags', relief: [1.6, 1.4, 1.2], rise: [18, 12, 7], plants: 'bones' },
   [BIOME.TUNDRA]: { sky: [0.94, 1.02, 1.05], ridges: ['#a0b2bc', '#879c9e', '#708b85', '#303b40'], forest: 0.2, snow: 1, shape: 'alpine', relief: [1.25, 0.85, 0.55], plants: 'pine' },
   [BIOME.JUNGLE]: { sky: [0.94, 1.02, 0.94], ridges: ['#779a91', '#4b806b', '#2c704d', '#1b3028'], forest: 1, snow: 0, shape: 'rolling', relief: [0.65, 0.6, 0.6], plants: 'jungle' },
   [BIOME.SWAMP]: { sky: [1.02, 1, 0.88], ridges: ['#939b83', '#707e60', '#526745', '#2b3025'], forest: 0.65, snow: 0, shape: 'rolling', relief: [0.22, 0.18, 0.15], plants: 'willow' },
@@ -33,8 +33,8 @@ export function createBiomeBackgroundBlend() {
     const left = Math.ceil((worldX - BLEND_RADIUS) / SAMPLE_STEP) * SAMPLE_STEP;
     const right = worldX + BLEND_RADIUS;
     let total = 0;
-    // A fixed world lattice and a smooth kernel keep four-cell ecotone patches
-    // from switching the whole backdrop as the player crosses them.
+    // A fixed world lattice and a smooth kernel blend the sky near regional
+    // boundaries without switching its palette abruptly.
     for (let x = left; x <= right; x += SAMPLE_STEP) {
       if (!samples.has(x)) samples.set(x, engine.worldBiomeAt(x));
       const distance = (x - worldX) / BLEND_RADIUS;
@@ -59,23 +59,31 @@ export function createBiomeBackgroundBlend() {
   };
 }
 
-// Independent, eased samples preserve the spatial order of neighboring biomes.
-export function createBiomeSceneryField() {
-  const samples = Array.from({ length: 9 }, () => createBiomeBackgroundBlend());
-  return (engine, centerX, width, nowMs, immediate = false) => samples.map((sample, i) =>
-    sample(engine, centerX + (i / (samples.length - 1) - 0.5) * width, nowMs, immediate));
-}
-
-export function biomeSceneryWeight(field, biome, fraction) {
-  const position = Math.max(0, Math.min(1, fraction)) * (field.length - 1);
-  const left = Math.floor(position), right = Math.min(left + 1, field.length - 1);
-  return field[left][biome] + (field[right][biome] - field[left][biome]) * (position - left);
-}
-
-// Each world-anchored plant has a stable reveal threshold and a soft edge.
-export function biomePlantOpacity(coverage, threshold) {
-  const t = Math.max(0, Math.min(1, (coverage - threshold * 0.8) / 0.2));
-  return t * t * (3 - 2 * t);
+// Scenery samples a fixed world lattice. Cache eviction and camera history
+// cannot change a location's biome mixture.
+export function createBiomeScenerySampler() {
+  let source = null, sample = null;
+  return (engine) => {
+    if (source === engine) return sample;
+    source = engine;
+    const blend = createBiomeBackgroundBlend();
+    const knots = new Map();
+    const atKnot = (x) => {
+      if (!knots.has(x)) {
+        if (knots.size >= 512) knots.delete(knots.keys().next().value);
+        knots.set(x, blend(engine, x, 0, true));
+      }
+      return knots.get(x);
+    };
+    sample = (worldX) => {
+      const left = Math.floor(worldX / 16) * 16;
+      const a = atKnot(left), b = atKnot(left + 16);
+      const t = (worldX - left) / 16;
+      const smooth = t * t * t * (t * (t * 6 - 15) + 10);
+      return a.map((weight, id) => weight + (b[id] - weight) * smooth);
+    };
+    return sample;
+  };
 }
 
 const rgb = (hex) => [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));

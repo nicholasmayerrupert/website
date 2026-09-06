@@ -201,17 +201,17 @@ check('viewport size does not change semantic world records',
 wide.destroy();
 earth.destroy();
 
-const overlapRegression = make({ worldSeed: 0xBED, cols: 768 });
-const overlapX = -322;
+const overlapRegression = make({ worldSeed: 7, cols: 768 });
+const overlapX = -376;
 const overlapSurface = overlapRegression.worldSurfaceAbsAt(overlapX);
-const overlapY = overlapSurface - 4;
+const overlapY = 12;
 const overlapContext = overlapRegression.worldContextAt(overlapX, overlapY);
 const overlapGridX = overlapX - overlapRegression.getWorldOffsetX();
 const overlapGridY = overlapY - overlapRegression.getWorldOffsetY();
 const overlapMaterial = overlapRegression.getGrid()[
   overlapGridY * overlapRegression.cols + overlapGridX];
 check('overlap ownership matches the rendered settlement masonry',
-  overlapMaterial === MAT.BRICK
+  overlapMaterial === MAT.STONE
     && overlapContext.featureKind === WORLD_FEATURE.VILLAGE
     && has(overlapContext, WORLD_AREA.SETTLEMENT)
     && !has(overlapContext, WORLD_AREA.MINE));
@@ -228,8 +228,8 @@ overlapRegression.destroy();
 // both sides of the origin and different biome/structure combinations.
 for (const seed of [0xBED, 0xBEEF, 7]) {
   const e = make({ worldSeed: seed });
-  const villages = new Map(), headhouses = new Map();
-  for (let x = -6000; x <= 6000; x += 12) {
+  const villages = new Map(), headhouses = new Map(), formations = new Map();
+  for (let x = -16000; x <= 16000; x += 12) {
     const surface = e.worldSurfaceAbsAt(x);
     for (let depth = -72; depth <= 48; depth += 12) {
       const context = e.worldContextAt(x, surface + depth);
@@ -237,9 +237,22 @@ for (const seed of [0xBED, 0xBEEF, 7]) {
         villages.set(context.featureId, context.bounds);
       if (context.siteRole === WORLD_SITE_ROLE.MINE_HEADHOUSE)
         headhouses.set(context.featureId, context.bounds);
+      if (context.featureKind === WORLD_FEATURE.OUTCROP)
+        formations.set(context.featureId, context.bounds);
     }
   }
   const streets = [...villages.values()].sort((a, b) => a.left - b.left);
+  check(`seed ${seed}: settlement streets stay within a single biome`,
+    streets.every((street) => {
+      const biome = e.worldBiomeAt(street.left);
+      for (let x = street.left; x <= street.right; x++)
+        if (e.worldBiomeAt(x) !== biome) return false;
+      return true;
+    }));
+  check(`seed ${seed}: natural formations are discoverable and respect settlement reservations`,
+    formations.size > 0 && [...formations.values()].every((rock) => streets.every((street) =>
+      rock.right < street.left || rock.left > street.right
+      || rock.bottom < street.top || rock.top > street.bottom)));
   check(`seed ${seed}: settlements and standalone mine buildings remain discoverable`,
     streets.length >= 5 && headhouses.size >= 2);
   check(`seed ${seed}: neighboring settlements reserve separate streets`,

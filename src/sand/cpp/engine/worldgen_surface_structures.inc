@@ -115,7 +115,18 @@
       auto roofColumn = [&](int x, int top) {
         for (int y = top; y <= wallTop; y++) put(x, y, wall);
       };
-      if (roofStyle == 0) {
+      if (biome == BIOME_DESERT) {
+        // Sun-baked terraces have low stepped parapets and shaded roof vents.
+        for (int x = left - 2; x <= left + w + 2; x++) {
+          int rise = x < left + 2 || x > left + w - 2 ? 5 : 2;
+          roofColumn(x, wallTop - rise);
+          if (x % 7 == 0) put(x, wallTop - rise, CLAY);
+        }
+        if (hall) for (int dx = -4; dx <= 4; dx++) {
+          for (int y = wallTop - 12; y <= wallTop - 2; y++)
+            put(cx + dx, y, std::abs(dx) >= 3 || y == wallTop - 12 ? wall : EMPTY);
+        }
+      } else if (roofStyle == 0) {
         for (int ry = 0; ry <= roofH; ry++)
           for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
         int dormerY = wallTop - roofH / 2;
@@ -294,12 +305,13 @@
       VillagePlan village;
       if (!worldContext.villagePlan(vx, village)) continue;
       int center = village.center, count = village.buildingCount;
-      bool watchwood = surfaceBiomeDef(terrain.genBiomeAt(center)).structureStyle == SSS_OBSERVATORY;
-      uint8_t masonry = watchwood ? PALESTONE : BRICK;
-      uint8_t stone = watchwood ? PALESTONE : SANDSTONE;
+      const SurfaceBiomeDef& settlement = surfaceBiomeDef(terrain.genBiomeAt(center));
+      bool watchwood = settlement.structureStyle == SSS_OBSERVATORY;
+      uint8_t masonry = settlement.structureWall;
+      uint8_t stone = settlement.structureFoundation;
       uint8_t timber = watchwood ? EYE_WOOD : PINE_WOOD;
       uint8_t street = watchwood ? VEIN_SOIL : SAND;
-      int wellX = center + count * 29 + 12, wellY;
+      int wellX = center + count * 29 + 64, wellY;
 
       // A continuous street and lanterns turn the individual facades into
       // one settlement. Everything follows the terrain instead of flattening it.
@@ -325,7 +337,7 @@
 
       // A covered market stall beside the well adds a communal place rather than
       // another sealed box: canopy, counter, produce, pottery, and hanging goods.
-      int marketX = wellX - 20, marketSurfaceSum = 0;
+      int marketX = wellX - 32, marketSurfaceSum = 0;
       for (int x = marketX - 11; x <= marketX + 11; x++) marketSurfaceSum += terrain.genSurfaceAbs(x);
       int marketY = floorDiv(marketSurfaceSum, 23) - 1;
       stampTerraceFoundation(marketX - 11, marketX + 11, marketY, stone, true);
@@ -595,16 +607,18 @@
       int houseW = plan.headhouseRight - plan.headhouseLeft;
       int houseLeft = plan.headhouseLeft;
       int floor = plan.headhouseFloor, houseTop = plan.headhouseTop;
+      const SurfaceBiomeDef& surfaceDef = surfaceBiomeDef(terrain.genBiomeAt(center));
+      uint8_t houseWall = surfaceDef.structureWall;
       for (int y = houseTop; y <= floor; y++) for (int x = houseLeft; x <= houseLeft + houseW; x++) {
         bool shell = x == houseLeft || x == houseLeft + houseW || y == houseTop || y == floor;
         bool doorway = y >= floor - PLAYER_H - 4 && std::abs(x - center) <= shaftHalf;
-        if (L->isBackground) put(x, y, BRICK);
-        else put(x, y, shell && !doorway ? BRICK : EMPTY);
+        if (L->isBackground) put(x, y, houseWall);
+        else put(x, y, shell && !doorway ? houseWall : EMPTY);
       }
-      stampTerraceFoundation(houseLeft, houseLeft + houseW, floor, BRICK, true);
-      for (int roof = 0; roof <= 9; roof++)
+      stampTerraceFoundation(houseLeft, houseLeft + houseW, floor, surfaceDef.structureFoundation, true);
+      for (int roof = 0; roof <= (surfaceDef.id == BIOME_DESERT ? 3 : 9); roof++)
         for (int x = houseLeft - 2 + roof; x <= houseLeft + houseW + 2 - roof; x++)
-          put(x, houseTop - roof, BRICK);
+          put(x, houseTop - roof, houseWall);
       if (L->isBackground) {
         // Hoist house machinery: glowing windows, winding wheel and drum, tool
         // rack, manifest board, and supplies beside the shaft.

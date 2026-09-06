@@ -505,7 +505,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 
 // Worldgen produces typed flora (trees are stamped into the background layer).
 {
-  const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 0xBED, sinksOn: false, infinite: true });
+  const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 0, sinksOn: false, infinite: true });
   const woods = new Set(); let willowLeaves = 0;
   for (let i = 0; i < 80; i++) {
     const targetY = Math.floor((e.worldSurfaceAbsAt(e.getWorldOffsetX() + 110) - 80) / 32) * 32;
@@ -527,7 +527,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 // species) survive a shift off-buffer and back via the tile store.
 {
   const C = 220, R = 140;
-  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 4, sinksOn: false, infinite: true });
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 1234, sinksOn: false, infinite: true });
   // Locate a clear surface column in the half that will leave on the next shift.
   // A fixed column can now intersect a canonical village roof or cave mouth.
   const grid = e.getGrid();
@@ -573,7 +573,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 {
   const C = 224, R = 160;
   const e = createEngineWasm({
-    cols: C, rows: R, worldSeed: 1, sinksOn: false, infinite: true,
+    cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: true,
   });
   e.setBgEnabled(false);
   e.shiftWorldXY(128, 0);
@@ -581,6 +581,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
   const baseline = e._componentStateCount();
   for (let x = 20; x <= 80; x++) for (let y = 4; y <= 46; y++)
     if (e.getGrid()[y * C + x] !== MAT.EMPTY) e.eraseDisc(x, y, 0);
+  for (let y = 46; y < R; y++) e.addDiscToStoneDraft(20, y, 0);
   for (let x = 20; x <= 80; x++) e.addDiscToStoneDraft(x, 46, 0);
   e.finalizeStoneDraft();
   const seedX = 50, seedY = 45;
@@ -815,7 +816,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 {
   const C = 224, R = 160;
   const e = createEngineWasm({
-    cols: C, rows: R, worldSeed: 1, sinksOn: false, infinite: true,
+    cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: true,
   });
 
   // Build a deterministic platform in clear sky with the seed near the first

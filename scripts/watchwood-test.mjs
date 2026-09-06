@@ -19,10 +19,10 @@ function moveTo(e, x, y) {
   while (e.getWorldOffsetY() !== targetY)
     e.shiftWorldXY(0, Math.max(-96, Math.min(96, targetY - e.getWorldOffsetY())));
 }
-const e = make(0xBEEF);
-moveTo(e, -550, -8);
+const e = make(7);
+moveTo(e, 416, -8);
 check('Watchwood is a real generated biome with plum soil and pale strata',
-  e.worldBiomeAt(-550) === BIOME.WATCHWOOD
+  e.worldBiomeAt(416) === BIOME.WATCHWOOD
   && e.getGrid().includes(MAT.VEIN_SOIL) && e.getGrid().includes(MAT.PALESTONE));
 check('generated eye trees contain trunks, sclera, irises, and pupils',
   [...eyeMats].every((mat) => e.getGridBg().filter((value) => value === mat).length > 40));
@@ -35,8 +35,8 @@ const patch = (en) => {
   return result;
 };
 const before = patch(e);
-const wide = make(0xBEEF, 512);
-moveTo(wide, -550, -8);
+const wide = make(7, 512);
+moveTo(wide, 416, -8);
 const wider = patch(wide);
 check('eye crowns and buried roots are identical across viewport sizes',
   before.every((mat, i) => mat === wider[i]));
@@ -72,19 +72,19 @@ check('cutting a rooted eye tree releases a simulated rigid body', !!cut && rele
 e.destroy();
 
 const village = make(7);
-moveTo(village, -225, -24);
-const context = village.worldContextAt(-225, -20);
+moveTo(village, -94, -24);
+const context = village.worldContextAt(-94, -18);
 check('Watchwood observation shrines participate in settlement placement and semantics',
   context.surfaceBiome === BIOME.WATCHWOOD
   && context.featureKind === WORLD_FEATURE.VILLAGE_BUILDING);
 let lenses = 0, dome = 0, blocked = 0;
-for (let wx = -244; wx <= -206; wx++) {
+for (let wx = -113; wx <= -75; wx++) {
   const x = wx - village.getWorldOffsetX();
-  for (let wy = -36; wy < -9; wy++) {
+  for (let wy = -35; wy < -3; wy++) {
     const k = (wy - village.getWorldOffsetY()) * village.cols + x;
     lenses += village.getGridBg()[k] === MAT.EYE_IRIS;
     dome += village.getGrid()[k] === MAT.PALESTONE;
-    if (wy >= -19) blocked += village.getGrid()[k] !== MAT.EMPTY;
+    if (wy >= -13) blocked += village.getGrid()[k] !== MAT.EMPTY;
   }
 }
 check('observation shrines contain pale domes and eye instruments with a clear passage',

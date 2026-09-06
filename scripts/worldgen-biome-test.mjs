@@ -14,6 +14,7 @@ import {
 import { MAT } from '../src/sand/materials.js';
 import { MAT_FLAGS, MF } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { SURFACE_REGION_WIDTH, SURFACE_REGION_JITTER } from '../src/sand/wasmBridge/biomes.generated.js';
 
 const COLS = 220, ROWS = 140, SEED = 0xBED;
 await initSandWasm();
@@ -99,7 +100,27 @@ for (let x = -30_000; x <= 30_000; x += 32) {
 }
 regionRuns.sort((a, b) => a - b);
 const medianRegion = regionRuns[Math.floor(regionRuns.length / 2)];
-check(`surface biomes have substantial continuous cores (median ${medianRegion} cells)`, medianRegion >= 384);
+check(`surface biomes have substantial continuous cores (median ${medianRegion} cells)`, medianRegion >= SURFACE_REGION_WIDTH);
+
+// Count exact semantic runs, including every cell at borders. Large regions
+// must not conceal four-cell biome flickers behind a smoothed voting metric.
+for (const seed of [0, 0xBED, 0xBEEF, 7]) {
+  const regionEngine = createEngineWasm({ cols: 96, rows: 96, worldSeed: seed, infinite: true });
+  const runs = [];
+  let start = -30000, previous = regionEngine.worldBiomeAt(start);
+  for (let x = start + 1; x <= 30000; x++) {
+    const biome = regionEngine.worldBiomeAt(x);
+    if (biome !== previous) {
+      runs.push(x - start);
+      start = x;
+      previous = biome;
+    }
+  }
+  const shortest = Math.min(...runs.slice(1));
+  check(`seed ${seed}: every complete biome run has a long uninterrupted core (${shortest} minimum)`,
+    runs.length >= 8 && shortest >= SURFACE_REGION_WIDTH - SURFACE_REGION_JITTER * 2);
+  regionEngine.destroy();
+}
 
 // Scan the surface skin + the mantle just under it, panning across many biomes.
 const skins = new Set();
@@ -137,6 +158,38 @@ check('a DIRT mantle is generated under grass', sawDirtMantle);
 check(`background matches exposed loose surface strata (${matchedBackgroundStrata} cells, ${backgroundVegetationStrata} vegetation occlusions)`,
   matchedBackgroundStrata > 0 && mismatchedBackgroundStrata === 0);
 e.destroy();
+
+// Shallow swamp pools retain their muddy mantle across the waterline in both
+// layers, with a sealed bed beneath them throughout settling and streaming.
+{
+  const swamp = createEngineWasm({ cols: 256, rows: 192, worldSeed: 0, sinksOn: false, infinite: true });
+  const targetX = -11232, targetY = -64;
+  while (swamp.getWorldOffsetX() !== targetX)
+    swamp.shiftWorldXY(Math.max(-128, Math.min(128, targetX - swamp.getWorldOffsetX())), 0);
+  while (swamp.getWorldOffsetY() !== targetY)
+    swamp.shiftWorldXY(0, Math.max(-96, Math.min(96, targetY - swamp.getWorldOffsetY())));
+  const beds = [];
+  for (let x = 80; x < 192; x++) {
+    const worldX = swamp.getWorldOffsetX() + x;
+    const surface = swamp.worldSurfaceAbsAt(worldX) - swamp.getWorldOffsetY();
+    if (swamp.worldBiomeAt(worldX) !== BIOME.SWAMP
+        || swamp.getGrid()[(surface - 1) * swamp.cols + x] !== MAT.WATER) continue;
+    for (let dy = 0; dy < 6; dy++) beds.push((surface + dy) * swamp.cols + x);
+  }
+  const muddy = () => beds.filter((k) => swamp.getGrid()[k] === MAT.MUD
+    && swamp.getGridBg()[k] === MAT.MUD).length;
+  const water = () => [swamp.getGrid(), swamp.getGridBg()]
+    .reduce((count, grid) => count + grid.filter((mat) => mat === MAT.WATER).length, 0);
+  check('swamp pool beds have mud skin and soil in both layers', beds.length > 300 && muddy() === beds.length);
+  const initialWater = water();
+  swamp.shiftWorldXY(128, 0); swamp.shiftWorldXY(128, 0);
+  swamp.shiftWorldXY(-128, 0); swamp.shiftWorldXY(-128, 0);
+  check('muddy pool beds survive streaming intact', muddy() === beds.length);
+  for (let tick = 0; tick < 400; tick++) swamp.stepWorld();
+  check('submerged swamp mud remains stable through settling', muddy() >= beds.length * 0.95);
+  check('swamp pools retain water above their sealed bed', water() >= initialWater * 0.95);
+  swamp.destroy();
+}
 
 // The freshly generated world (loose dirt/sand/snow mantle included) settles to
 // inert quickly.

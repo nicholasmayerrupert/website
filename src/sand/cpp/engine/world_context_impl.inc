@@ -50,21 +50,38 @@ bool WorldContextSystem::villageCandidate(int latticeX, VillagePlan& out) const 
   if (!featureApplies(GFF_VILLAGE)) return false;
   uint32_t seed = E.L->worldSeed ^ 0x57121314u;
   if (whash1(seed ^ 0xA11A6Eu, latticeX) > VILLAGE_CHANCE) return false;
-  int center = latticeX * VILLAGE_LATTICE + 76
-    + (int)(whash1(seed ^ 0xA11A6Fu, latticeX) * 268);
-  int surface = E.terrain.genSurfaceAbs(center);
-  if (surface >= E.L->gSeaRow) return false;
   int count = 5 + (int)(whash1(seed ^ 0xA11A70u, latticeX) * 3);
-  int wellX = center + count * 29 + 12;
-  out.latticeX = latticeX;
-  out.center = center;
-  out.buildingCount = count;
-  out.left = center - count * 29 - 30;
-  out.right = wellX + 12;
-  out.top = surface - 96;
-  out.bottom = surface + 48;
-  out.id = featureId(0x711A6E00u, latticeX, 0);
-  return true;
+  // Search a few deterministic sites for a dry, coherent street. A rejected
+  // hillside does not discard an otherwise usable settlement district.
+  for (int attempt = 0; attempt < 3; attempt++) {
+    double pick = attempt == 0 ? whash1(seed ^ 0xA11A6Fu, latticeX)
+      : whash2(seed ^ 0xA11A71u, latticeX, attempt);
+    int center = latticeX * VILLAGE_LATTICE + 76
+      + (int)(pick * (VILLAGE_LATTICE - 152));
+    int surface = E.terrain.genSurfaceAbs(center);
+    int biome = E.terrain.genBiomeAt(center);
+    if (surface >= E.L->gSeaRow || !surfaceBiomeDef(biome).allowsSurfaceStructures) continue;
+    int wellX = center + count * 29 + 64;
+    int left = center - count * 29 - 30, right = wellX + 12;
+    bool suitable = true;
+    for (int sample = left; sample < right + 24; sample += 24) {
+      int x = imin(sample, right);
+      int ground = E.terrain.genSurfaceAbs(x);
+      if (E.terrain.genBiomeAt(x) != biome || ground >= E.L->gSeaRow
+          || std::abs(ground - surface) > 32) { suitable = false; break; }
+    }
+    if (!suitable) continue;
+    out.latticeX = latticeX;
+    out.center = center;
+    out.buildingCount = count;
+    out.left = left;
+    out.right = right;
+    out.top = surface - 96;
+    out.bottom = surface + 48;
+    out.id = featureId(0x711A6E00u, latticeX, 0);
+    return true;
+  }
+  return false;
 }
 
 bool WorldContextSystem::villageBuildingPlan(
@@ -428,6 +445,27 @@ bool WorldContextSystem::outcropPlan(int latticeX, OutcropPlan& out) const {
   out.center = center;
   out.floorY = floorY;
   out.biome = E.terrain.genBiomeAt(center);
+  if (profile == PGP_EARTH) {
+    const SurfaceBiomeDef& def = surfaceBiomeDef(out.biome);
+    if (whash1(E.L->worldSeed ^ salt ^ 0x21u, latticeX) > def.formationChance
+        || floorY >= E.L->gSeaRow - 1) return false;
+    height = imax(3, (int)std::lround(def.formationHeight
+      * (0.55 + whash1(E.L->worldSeed ^ salt ^ 0x22u, latticeX) * 0.45)));
+    // Both layers use the foreground entrance map. Formations root in bedrock
+    // without plugging cave mouths or standing above unsupported slopes.
+    Engine::ForegroundTerrainScope foregroundQuery(E.L);
+    for (int x = center - 14; x <= center + 14; x++) {
+      int surface = E.terrain.genSurfaceAbs(x);
+      if (std::abs(surface - floorY) > 12 || E.terrain.genOpenCaveAt(x, surface)
+          || E.terrain.genOpenCaveAt(x, surface + 2)) return false;
+    }
+    if (overlapsVillage(featureDef(GFF_VILLAGE), {center - 32, floorY - height, center + 32, floorY + 24})
+        || overlapsMine(featureDef(GFF_MINE), {center - 32, floorY - height, center + 32, floorY + 24})) return false;
+    if (def.formationStyle == SFS_FOSSIL) {
+      floorY += imax(2, height / 5);
+      out.floorY = floorY;
+    }
+  }
   out.height = height;
   out.style = outcropProfile.style;
   out.lean = outcropProfile.style == OCS_MINERAL_SPIRE
@@ -440,7 +478,7 @@ bool WorldContextSystem::outcropPlan(int latticeX, OutcropPlan& out) const {
   out.left = center - OutcropPlan::BOUND_HALF_WIDTH;
   out.top = floorY - height;
   out.right = center + OutcropPlan::BOUND_HALF_WIDTH;
-  out.bottom = floorY;
+  out.bottom = floorY + (profile == PGP_EARTH ? OutcropPlan::BOUND_VERTICAL_REACH : 0);
   out.id = featureId(0x0A17C0DEu, latticeX, E.planetId);
   return candidateAccepted(featureDef(GFF_OUTCROP),
                            {out.left, out.top, out.right, out.bottom});
@@ -450,6 +488,25 @@ bool WorldContextSystem::outcropSlice(
     const OutcropPlan& plan, int dy, OutcropSlice& out) {
   if (dy < 0 || dy > plan.height) return false;
   out = {};
+  if (plan.style == OCS_BIOME_FORMATION) {
+    const SurfaceBiomeDef& def = surfaceBiomeDef(plan.biome);
+    double t = (double)dy / imax(1, plan.height);
+    int half = 0;
+    int center = plan.center;
+    if (def.formationStyle == SFS_FOSSIL) {
+      half = 25;
+    } else if (def.formationStyle == SFS_BOULDER) {
+      half = imax(1, (int)std::lround((plan.height + 3) * std::sqrt(1.0 - t * t)));
+    } else if (def.formationStyle == SFS_STACK) {
+      half = dy < plan.height / 3 ? 9 : dy < plan.height * 3 / 4 ? 5 : 8;
+    } else {
+      half = imax(0, (int)std::lround((1.0 - t) * 6));
+      center += (plan.latticeX % 2 ? -1 : 1) * dy / 7;
+    }
+    out.left = center - half;
+    out.right = center + half;
+    return true;
+  }
   if (plan.lean) {
     int spine = plan.center + plan.lean * dy / 5;
     int half = imax(0, 4 - dy * 4 / imax(1, plan.height));
@@ -471,6 +528,49 @@ bool WorldContextSystem::outcropSlice(
     out.hollowRight = plan.center + notch - 1;
   }
   return true;
+}
+
+// A shared solid mask keeps fossil cavities identical in both simulated layers
+// and in semantic feature queries. Every silhouette has grounded lower cells.
+bool WorldContextSystem::fossilCellAt(const OutcropPlan& plan, int dx, int dy) {
+  if (dy < 0 || dy > plan.height) return false;
+  const int h = plan.height;
+  const int form = plan.id % 3;
+  if (form == 0) {
+    double x = dx + (plan.id & 8 ? 1 : -1) * dy * .13;
+    double cy = h * .53, ry = h * .47, rx = h * .66;
+    double ex = x / rx, ey = (dy - cy) / ry;
+    bool cranium = ex * ex + ey * ey <= 1;
+    bool jaw = dy <= h * .28 && std::abs(x) <= h * .33 + dy * .2;
+    if (!cranium && !jaw) return false;
+    double sx = (std::abs(x) - h * .28) / (h * (x < 0 ? .16 : .14));
+    double sy = (dy - h * .57 - x * .12) / (h * .16);
+    if (sx * sx + sy * sy < 1) return false;
+    if (dy > h * .29 && dy < h * .47 && std::abs(x) < (h * .48 - dy) * .45) return false;
+    if (dy > h * .27 && dy < h * .4 && std::abs(x) > h * .47) return false;
+    // A broken dental line stays enclosed by the cheekbones and lower jaw.
+    if (dy > h * .17 && dy < h * .24 && std::abs(x) < h * .28
+        && ((int)std::floor(x) + h * 2) % 3 != 0) return false;
+    return true;
+  }
+  if (form == 1) {
+    // Three arches of different heights share a buried sternum.
+    if (dy <= 2) return std::abs(dx) <= 21;
+    for (int rib = -1; rib <= 1; rib++) {
+      int height = h - std::abs(rib) * 4;
+      if (dy > height) continue;
+      double t = (double)dy / height;
+      int radius = (int)std::lround(10 * std::sqrt(1 - t * t));
+      double lowerT = (double)(dy - 1) / height;
+      int lowerRadius = (int)std::lround(10 * std::sqrt(1 - lowerT * lowerT));
+      int x = std::abs(dx - rib * 11);
+      if (x <= lowerRadius && x >= imax(0, radius - 2)) return true;
+    }
+    return false;
+  }
+  int spine = (plan.latticeX % 2 ? -1 : 1) * dy / 8;
+  int half = dy < 3 ? 7 : dy >= h - 2 ? 2 : dy % 5 < 3 ? 5 : 1;
+  return std::abs(dx - spine) <= half;
 }
 
 bool WorldContextSystem::overlapsVillage(
@@ -744,6 +844,17 @@ bool WorldContextSystem::queryOutcrop(
     int dy = plan.floorY - worldY;
     OutcropSlice slice;
     bool contains = outcropSlice(plan, dy, slice) && slice.contains(worldX);
+    bool fossil = plan.style == OCS_BIOME_FORMATION
+      && surfaceBiomeDef(plan.biome).formationStyle == SFS_FOSSIL;
+    if (fossil && dy >= 0) contains = fossilCellAt(plan, worldX - plan.center, dy);
+    if (plan.style == OCS_BIOME_FORMATION && dy < 0) {
+      outcropSlice(plan, 0, slice);
+      int soil = E.terrain.genSoilDepthAt(worldX, E.terrain.genBiomeAt(worldX));
+      contains = slice.contains(worldX) && worldY <= E.terrain.genSurfaceAbs(worldX)
+        + TerrainGen::GEN_SKIN + soil;
+      if (fossil) contains = contains && fossilCellAt(plan, worldX - plan.center, 0);
+      if (fossil) contains = contains && worldY >= E.terrain.genSurfaceAbs(worldX);
+    }
     if (plan.style == OCS_WEATHERED_HOODOO && dy == 0
         && worldX >= plan.center - plan.halfBase - 3
         && worldX <= plan.center + plan.halfBase + 3)

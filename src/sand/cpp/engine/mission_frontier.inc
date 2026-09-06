@@ -19,14 +19,7 @@ bool MissionSystem::rewardFrontier(MissionObjective& objective, Player& player) 
   const auto& quest = E.content.quests[(size_t)objective.id];
   Player before = player;
   if (quest.type == OK_DELIVER) {
-    int remaining = quest.count;
-    for (auto& slot : player.inv) {
-      if (slot.itemKind != IK_MATERIAL || slot.material != quest.material) continue;
-      int take = imin(remaining, slot.count);
-      slot.count -= take; remaining -= take;
-      if (!slot.count) slot = InvSlot();
-    }
-    if (remaining) { player = before; return false; }
+    if (!E.inv.consumeMaterial(player, quest.material, quest.count)) return false;
   }
   bool rewarded = true;
   if (quest.rewardKind == 1) rewarded = E.inv.addToInventory(playerId, (uint8_t)quest.rewardId, quest.rewardCount);
@@ -93,9 +86,7 @@ void MissionSystem::updateFrontier() {
     if (objective.state != OS_ACTIVE) continue;
     double dx = wx - objective.worldX, dy = wy - objective.worldY;
     if (quest.type == OK_DELIVER) {
-      int count = 0;
-      for (const auto& slot : player->inv)
-        if (slot.itemKind == IK_MATERIAL && slot.material == quest.material) count += slot.count;
+      int count = E.inv.countMaterial(*player, quest.material);
       count = imin(count, objective.required);
       if (count != objective.current) { objective.current = count; revision++; }
       continue;

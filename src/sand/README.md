@@ -754,6 +754,26 @@ weapon, while the bound starter blast gun remains unlimited. The starting
 universal dig tool rapidly cuts ordinary terrain without accelerating bare hands
 or crafted material-specific picks.
 
+Three movable material pools occupy ordinary inventory slots (initial hotbar
+keys 7–9): building materials, powders, and liquids. Matching pickups go into
+their pool without the ordinary 999-unit stack limit; quantities remain finite
+and use checked int32 storage. Seeds, gases, tools, and weapons retain ordinary
+stack behavior. In the E inventory panel, Auto consumes checked materials in
+queue order; exact selection stops when that material runs out. Liquids start
+with an exact selection, and hazardous materials start excluded from Auto.
+Solid placement keeps its material for the current drag before advancing.
+Take withdraws up to 999 to the cursor (Shift-click takes one); clicking a matching
+pool deposits the cursor, and Store stacks deposits matching ordinary slots.
+Crafting and mission deliveries can spend all stored materials regardless of
+placement settings. Highlighted bag slots open directly on double-click (or
+Enter while focused); Inventory is also a clickable hotbar button. The bag menu
+shows enabled status, queue positions, density, hardness, and material traits.
+Property sorting changes the display; Use as queue explicitly applies that order
+to Auto. Click to pick up bags or drag them within the inventory; they cannot be
+dropped. Depleted materials are hidden while their placement preferences are retained. Pool
+containers are bound; death drops their contents as bulk material items. Pool
+edits travel through authority intents and replay.
+
 Projectile kind, fuse, and rotation plus creature attack state, progress, and
 buffer-local aim are packed into the ABI snapshots; the worker mirror restores
 that aim to the creature's absolute-world state. The server and worker transport
@@ -802,6 +822,11 @@ their tall 4x8 actor shape.
 | Pointer | Aim and use selected hand, tool, block, or weapon | Paint, draft, erase, or spawn |
 | `+`, `-`, `0` | Zoom in/out/reset | Zoom in/out/reset |
 
+Free-camera keyboard and joystick panning advances on every display frame,
+using elapsed time at a constant speed. The C++ camera caps stall recovery at
+50 ms and the browser discards suspended time when the viewport resumes.
+Physics and player input retain their fixed 60 Hz clock; replay owns its camera.
+
 Coarse-pointer creative mode starts in scroll-safe mode behind a `START` button.
 Its joystick, layer toggle, zoom controls, and material picker appear after the
 user enables drawing.
@@ -814,7 +839,9 @@ Terrain grain is keyed to absolute world coordinates. Settled animated materials
 repaint only visible chunks that contain animation.
 Presentation mirrors coalesce synced lighting invalidations to an eight-Hz
 wall-clock cadence while applying terrain and actor snapshots at their normal
-rates. Glass transmits skylight and local light with mild attenuation.
+rates. Incoming stream bands immediately refresh lighting in the visible window
+and its safety margin; direct-sky provenance refreshes across all columns to
+preserve offscreen shafts. Glass transmits skylight and local light with mild attenuation.
 Jetpack exhaust, raised wards, and explosive or energy projectiles contribute a
 capped set of render-only light sources to the same terrain-aware flood as fire
 and lava. Their cell-quantized motion uses the existing throttled light solve, so

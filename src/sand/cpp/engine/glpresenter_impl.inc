@@ -1954,7 +1954,7 @@ void GLPresenter::glDrawPreview() {
 // preserves the already-valid overlap and repaints only newly exposed edge bands.
 // Lighting solves the visible window +
 // margin (exact inside the window — see glpresenter.hpp); forced events after
-// startup (shift/day-night/texture rebuild) still solve the full buffer, and a
+// startup (day-night/texture rebuild) still solve the full buffer, and a
 // pure pan re-solves only when the window drifts outside the last solve's exact zone.
 void GLPresenter::glPresentWindow(int forceFull) {
   Engine::ActiveLayerScope boundary(E, &E.fg, &E.fg);
@@ -1999,10 +1999,10 @@ void GLPresenter::glPresentWindow(int forceFull) {
     }
   }
 
-  // Lighting policy: resize, world shift, and day-night changes solve the FULL
-  // buffer (keeps the sky shift-remap caches coherent buffer-wide). The very
-  // first authoritative frame has no cache to preserve, so solve only its
-  // window+margin; newly exposed cells are solved on demand as the view moves.
+  // Resize and day/night changes solve the full buffer. Presentation stream
+  // shifts solve the window+margin immediately; direct-sky provenance refreshes
+  // across all columns independently of the bounded light flood. The first
+  // authoritative frame also solves only its window+margin.
   // Ordinary content changes use the same regional path on the usual throttle.
   bool lightUpdated = false, fullLightUpdated = false;
   if (Renderer::RENDER_LIGHTING_ENABLED) {
@@ -2024,7 +2024,9 @@ void GLPresenter::glPresentWindow(int forceFull) {
     if (scheduledSolve || (windowExposed && !cameraPatchReady)) {
       double t0 = emscripten_get_now();
       int lx0 = 0, ly0 = 0, lx1 = E.cols - 1, ly1 = E.rows - 1;
-      if (!lightForced) {
+      bool regionalStream = worldShifted && E.storageRole == ESR_PRESENTATION &&
+                            !forceFull && !skyChanged;
+      if (!lightForced || regionalStream) {
         lx0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN); ly0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
         lx1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN); ly1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
       }

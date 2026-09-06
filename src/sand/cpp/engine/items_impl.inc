@@ -97,10 +97,10 @@ int ItemSystem::spawnItem(uint8_t mat, int count, double px, double py, double v
   return spawnStack(stack, px, py, vx, vy, IT_PICKUP_DELAY);
 }
 int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx, double vy,
-                           int delay, bool coagulate) {
+                           int delay, bool coagulate, bool bulk) {
   InvSlot canonical = stack;
   E.canonicalizeSeed(canonical.material, canonical.plantType);
-  const int limit = inventoryStackLimit(canonical.itemKind);
+  const int limit = bulk && canonical.itemKind == IK_MATERIAL ? INT_MAX : inventoryStackLimit(canonical.itemKind);
   int incoming = std::max(1, std::min(limit, canonical.count));
   // Mining can create scores of adjacent drops in one stroke. Keep the visual
   // flecks independent, but fold compatible collectible materials into nearby

@@ -165,6 +165,11 @@ const capsule = {
 };
 
 const text = await encodeReplayCapsule(capsule);
+for (const action of [0, 1, 2, 3, 4]) {
+  const message = normalizeReplayMessage({ type: 'intent', intent: 'pool', pool: 1, action, material: 3, value: 1 });
+  const poolCapsule = { ...capsule, events: [{ tick: 1, message }] };
+  assert.deepEqual(await decodeReplayCapsule(await encodeReplayCapsule(poolCapsule)), poolCapsule);
+}
 assert.ok(text.startsWith(REPLAY_PREFIX));
 assert.ok(text.length < 1_500, `compact replay text should stay event-sized, got ${text.length}`);
 assert.deepEqual(await decodeReplayCapsule(`\n${text}\n`), capsule);

@@ -122,10 +122,24 @@
         { "name": "count", "kind": "i32", "min": 0, "snapshotMember": "count" },
         { "name": "plantType", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "plantType" },
         { "name": "itemKind", "kind": "i32", "default": 0, "min": 0, "snapshotMember": "itemKind" },
-        { "name": "selected", "kind": "boolean", "default": false, "snapshotParameter": true }
+        { "name": "selected", "kind": "boolean", "default": false, "snapshotParameter": true },
+        { "name": "pool", "kind": "i32", "default": 0, "snapshotParameter": true }
       ],
       "snapshotStorage": "float",
       "snapshotWriters": [{ "name": "writeInventorySlotSnapshot" }]
+    },
+    "inventoryPool": {
+      "$comment": "Ordered pool entries; material 0 is a pool header carrying its exact selection (0 means Auto). Counts use int32 storage.",
+      "cPrefix": "IPS",
+      "fields": [
+        { "name": "pool", "kind": "i32", "snapshotParameter": true },
+        { "name": "material", "kind": "i32", "snapshotMember": "material" },
+        { "name": "count", "kind": "i32", "snapshotMember": "count" },
+        { "name": "enabled", "kind": "boolean", "snapshotMember": "enabled" },
+        { "name": "exactMaterial", "kind": "i32", "snapshotParameter": true }
+      ],
+      "snapshotStorage": "int32",
+      "snapshotWriters": [{ "name": "writeInventoryPoolSnapshot" }]
     },
     "projectileSnapshot": {
       "$comment": "float32 projectile records used by the authority worker and external GL renderer.",
@@ -423,8 +437,17 @@
         "IK_ACID_MORTAR": 7,
         "IK_CLUSTER_LAUNCHER": 8,
         "IK_MINIGUN": 9,
-        "IK_RESCUE_BEAM": 10
+        "IK_RESCUE_BEAM": 10,
+        "IK_BUILDING_POOL": 11,
+        "IK_POWDER_POOL": 12,
+        "IK_LIQUID_POOL": 13
       }
+    },
+    "InventoryPoolAction": {
+      "cName": "InventoryPoolAction",
+      "jsName": "POOL_ACTION",
+      "jsPrefix": "IPA",
+      "values": { "IPA_ENABLE": 0, "IPA_MOVE": 1, "IPA_SELECT": 2, "IPA_WITHDRAW": 3, "IPA_DEPOSIT": 4 }
     },
     "ProjectileKind": {
       "$comment": "Projectile actor kind used by simulation snapshots and presentation mirrors.",

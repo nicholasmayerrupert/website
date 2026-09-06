@@ -10,6 +10,17 @@ class InventorySystem {
 
   std::vector<float> invSnapshot;  // packed [IVS_STRIDE] floats per slot (one player)
   std::vector<float> cursorSnap;   // packed [IVS_STRIDE] floats for the carried cursor stack
+  std::vector<int32_t> poolSnapshot;
+
+  static int materialPool(uint8_t material);
+  bool hasPool(const Player& p, int pool) const;
+  bool storeInPool(Player& p, uint8_t material, int count);
+  InvSlot resolveSlot(const Player& p, const InvSlot& slot) const;
+  void consumeSelected(Player& p, uint8_t material, int count);
+  void poolAction(int id, int pool, int action, int material, int value);
+  int buildPoolSnapshot(int id);
+  int countMaterial(const Player& p, uint8_t material) const;
+  bool consumeMaterial(Player& p, uint8_t material, int count);
 
   void seedStarterTools(Player& p);
   void seedStarterTools(int id);

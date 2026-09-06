@@ -57,8 +57,9 @@ class GLPresenter {
   // by GL_LIGHT_EXACT_SHRINK (60 + the face-lit neighbour ring) are exactly
   // the full-solve values. When the window (+1) drifts outside that exact
   // zone, a re-solve is forced (throttle bypassed). The initial presentation
-  // solves its visible window + margin; later shifts/day-night changes solve
-  // the full buffer so the sky shift-remap caches stay coherent.
+  // and ordinary presentation stream shifts solve the visible window + margin.
+  // Direct skylight refreshes all column provenance when the world shifts.
+  // Forced refreshes and day/night changes solve the full buffer.
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
   static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
   static constexpr int GL_LIGHT_CHANGE_REACH = 60;

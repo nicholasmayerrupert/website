@@ -656,6 +656,7 @@ class SandGameElement extends HTMLElement {
             getCursor: () => game.getCursor(),
             recipes: game.getCraftingRecipes(),
             craft: (recipe, max) => game.craft(recipe, max),
+            poolAction: (pool, action, material, value) => game.poolAction(pool, action, material, value),
           });
           this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
           this._talkHud = createTalkHud(root, game, (detail) => {

@@ -514,6 +514,10 @@ static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_D
 // stack (placeable) or a tool (mines; never stacks). count 0 = empty.
 // INV_HOTBAR / INV_SLOTS live in abi.generated.hpp (shared with the JS HUD).
 static const int INV_STACK_MAX = 999;
+static constexpr int INV_POOL_COUNT = 3;
+static inline int inventoryPoolId(uint8_t kind) {
+  return kind >= IK_BUILDING_POOL && kind <= IK_LIQUID_POOL ? kind - IK_BUILDING_POOL + 1 : 0;
+}
 // Captured weapons carry their remaining ammunition in InvSlot::count. The
 // starter blast gun is deliberately absent: its singleton count is ownership,
 // not ammunition, and it remains unlimited.
@@ -553,6 +557,15 @@ struct InvSlot {
   uint8_t toolTier = 0;   // ToolTier when isTool
   uint8_t plantType = PT_STANDARD; // species carried by seed stacks
   int count = 0;          // stack size (tools = 1); 0 = empty
+};
+struct InventoryPoolEntry {
+  uint8_t material = EMPTY;
+  int count = 0;
+  bool enabled = true;
+};
+struct InventoryPool {
+  std::vector<InventoryPoolEntry> entries;
+  uint8_t exactMaterial = EMPTY; // EMPTY selects the first enabled, nonempty queue entry.
 };
 // Survival tool footprints are engine-defined shape masks. v1 ships square presets,
 // but the shape representation is generic so future custom patterns can reuse the
@@ -636,6 +649,7 @@ struct Player {
   uint8_t heldToolClass = TC_HAND, heldToolTier = TT_HAND;
   // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
   InvSlot inv[INV_SLOTS];
+  InventoryPool pools[INV_POOL_COUNT];
   int selectedSlot = 0;
   int selectedFootprint = SURVIVAL_FOOTPRINT_DEFAULT_ID;
   bool placeStrokeActive = false;

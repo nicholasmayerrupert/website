@@ -218,6 +218,9 @@ export function initSandWasm() {
         survivalFootprintSnapshot: c('engine_survival_footprint_snapshot', 'number', ['number']),
         survivalFootprintSnapshotPtr: c('engine_survival_footprint_snapshot_ptr', 'number', ['number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
+        inventoryPoolAction: c('engine_inventory_pool_action', null, ['number', 'number', 'number', 'number', 'number', 'number']),
+        inventoryPoolSnapshot: c('engine_inventory_pool_snapshot', 'number', ['number', 'number']),
+        inventoryPoolSnapshotPtr: c('engine_inventory_pool_snapshot_ptr', 'number', ['number']),
         placeFromSelected: c('engine_place_from_selected', 'number', ['number', 'number', 'number', 'number']),
         inventorySnapshot: c('engine_inventory_snapshot', 'number', ['number', 'number']),
         inventorySnapshotPtr: c('engine_inventory_snapshot_ptr', 'number', ['number']),
@@ -272,6 +275,7 @@ export function initSandWasm() {
         cameraGet: c('engine_camera_get', null, ['number', 'number']),
         cameraColX: c('engine_camera_col_x', 'number', ['number']),
         cameraPanTick: c('engine_camera_pan_tick', null, ['number']),
+        cameraPanFrame: c('engine_camera_pan_frame', null, ['number', 'number']),
         cameraFollowTo: c('engine_camera_follow_to', null, ['number', 'number', 'number']),
         streamWorld: c('engine_stream_world', 'number', ['number']),
         inputKey: c('engine_input_key', null, ['number', 'number', 'number']),
@@ -643,6 +647,7 @@ const renderStrides = Object.freeze({
     getCam() { M.cameraGet(ptr, camOut); const o = camOut >> 3; return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] }; },
     cameraColX() { return M.cameraColX(ptr); },
     cameraPanTick() { M.cameraPanTick(ptr); },
+    cameraPanFrame(elapsedMs) { M.cameraPanFrame(ptr, elapsedMs); },
     cameraFollowTo(cx, cy) { M.cameraFollowTo(ptr, cx, cy); },
     streamWorld() { return M.streamWorld(ptr); },
     inputKey(code, down) { M.inputKey(ptr, code | 0, down ? 1 : 0); },
@@ -1053,6 +1058,20 @@ const renderStrides = Object.freeze({
       return out;
     },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
+    inventoryPoolAction(id, pool, action, material = 0, value = 0) {
+      M.inventoryPoolAction(ptr, id | 0, pool | 0, action | 0, material | 0, value | 0);
+    },
+    getInventoryPools(id) {
+      const n = M.inventoryPoolSnapshot(ptr, id | 0);
+      const f = new Int32Array(mod.HEAP32.buffer, M.inventoryPoolSnapshotPtr(ptr), n * STRIDES.inventoryPool);
+      const rows = unpackSnapshotRecords(f, 'inventoryPool');
+      const pools = [];
+      for (const row of rows) {
+        if (!row.material) pools.push({ id: row.pool, exactMaterial: row.exactMaterial, entries: [] });
+        else pools.at(-1).entries.push({ material: row.material, count: row.count, enabled: row.enabled });
+      }
+      return pools;
+    },
     placeFromSelected(id, ax, ay) { return M.placeFromSelected(ptr, id | 0, ax | 0, ay | 0) === 1; },
     // Minecraft cursor model. cursorPick(slot, half) picks/places/swaps the carried
     // stack; throwFromCursor(whole) ejects it into the world (facing dir). getCursor
@@ -1074,6 +1093,9 @@ const renderStrides = Object.freeze({
       const f = new Float32Array(mod.HEAPF32.buffer, M.inventorySnapshotPtr(ptr), n * stride);
       let h = 2166136261 >>> 0;
       for (let i = 0; i < f.length; i++) h = Math.imul(h ^ (f[i] | 0), 16777619) >>> 0;
+      const poolCount = M.inventoryPoolSnapshot(ptr, id | 0);
+      const pools = new Int32Array(mod.HEAP32.buffer, M.inventoryPoolSnapshotPtr(ptr), poolCount * STRIDES.inventoryPool);
+      for (let i = 0; i < pools.length; i++) h = Math.imul(h ^ pools[i], 16777619) >>> 0;
       return Math.imul(h ^ (M.selectedFootprint(ptr, id | 0) | 0), 16777619) >>> 0;
     },
     getInventory(id) {
@@ -1089,7 +1111,12 @@ const renderStrides = Object.freeze({
         slots[i] = unpackInventoryStackAt(f, i);
         if (f[o + O.selected] === 1) selected = i;
       }
-      return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
+      const pools = this.getInventoryPools(id);
+      for (const slot of slots) if (slot.pool) {
+        const entry = pools.find((pool) => pool.id === slot.pool)?.entries.find((row) => row.material === slot.material);
+        slot.count = entry?.count || 0;
+      }
+      return { slots, selected, pools, selectedFootprint: this.getSelectedFootprint(id) };
     },
     craft(id, recipeId, craftMax = false) { return M.craftRecipe(ptr, id | 0, recipeId | 0, craftMax ? 1 : 0) | 0; },
     respawnPlayer(id) { return M.respawnPlayer(ptr, id | 0) === 1; },

@@ -887,7 +887,7 @@ export const workerBrowserCases = {
       `${zoomStream1.shiftBytes}/${zoomStream1.fullBytes} bytes`);
 
     // Force each worker world turn over budget. The main thread should continue
-    // receiving ~60 RAF callbacks and pan the camera on its actor clock while the
+    // receiving RAF callbacks and pan the camera on its display clock while the
     // worker naturally drops below 60 TPS.
     // Reload to isolate scheduling from the intentionally active sand scene above;
     // the delay hook itself consumes no CPU and represents an over-budget world turn.

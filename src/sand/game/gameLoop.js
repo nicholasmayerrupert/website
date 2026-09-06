@@ -284,9 +284,10 @@ export function createGameLoop(ctx, {
       const inventory = ctx.worldWorker?.getInventory();
       const ownPlayer = localPlayer();
       const selected = inventory?.slots?.[inventory.selected];
-      const erasing = !selected || selected.itemKind === ITEM_KIND.MINING_TOOL || selected.count <= 0;
+      const erasing = !selected || (!selected.pool && (selected.itemKind === ITEM_KIND.MINING_TOOL || selected.count <= 0));
       const mineTarget = ctx.worldWorker?.getMineTarget();
-      const usable = !selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL;
+      const usable = (!selected?.pool || selected.count > 0) &&
+        (!selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL);
       engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
     } else {
       engine.glSetSurvivalPreview(false, 0, false, null);
@@ -335,12 +336,11 @@ export function createGameLoop(ctx, {
 
   // The browser never advances authoritative actors or cells. Its fixed clock
   // sends normalized input to the active authority and predicts only the local
-  // survival player; creative uses the same mirror clock for free-camera pan.
+  // survival player. Free-camera motion uses the display clock.
   const doActorStep = () => {
     const engine = ctx.engine;
     if (!engine) return false;
     const replayPlaying = !!ctx.worldWorker?.state?.replayPlaying;
-    if (!ctx.playMode && !replayPlaying) engine.cameraPanTick();
     if (!replayPlaying && ctx.worldWorker && ctx.playMode) {
       ctx.worldWorker.sendInput(currentLocalInput(), ++ctx.inputSeq);
     }
@@ -388,12 +388,14 @@ export function createGameLoop(ctx, {
     if (ctx.testPaused) {
       actorClock.reset(now);
     } else if (ctx.reduced) {
-      // Preserve the existing local-simulation pause, but keep user-driven free
-      // camera motion on the fixed clock.
-      timing = actorClock.advance(now, () => ctx.engine?.cameraPanTick());
+      actorClock.reset(now);
     } else {
       timing = actorClock.advance(now, () => { if (doActorStep(now)) actorChanged = true; });
-      if (!ctx.worldWorker?.state?.replayPlaying) ctx.worldWorker?.updateControl();
+    }
+    const replayPlaying = !!ctx.worldWorker?.state?.replayPlaying;
+    if (!ctx.testPaused && !replayPlaying) {
+      if (!ctx.playMode) ctx.engine?.cameraPanFrame(rafDelta);
+      if (!ctx.reduced) ctx.worldWorker?.updateControl();
     }
     ctx.timingStats = {
       actorSteps: timing.steps,

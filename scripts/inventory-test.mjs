@@ -55,12 +55,13 @@ const hasDraftCell = (cells, x, y) => {
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  // The starter gun + mining tool reserve slots 0-1; fill the other 34 exactly.
-  e.addToInventory(id, MAT.STONE, 999 * 34);
-  const full = e.addToInventory(id, MAT.GOLD_ORE, 1);
+  // Equipment and the three pool containers leave 31 ordinary stack slots.
+  e.addToInventory(id, MAT.SEED, 999 * 31);
+  const full = e.addToInventory(id, MAT.STEAM, 1);
   check('a full inventory rejects a new material', full === false);
+  check('a full ordinary inventory still accepts pooled materials', e.addToInventory(id, MAT.GOLD_ORE, 1));
   // And a world item near the player is NOT absorbed when the inventory is full.
-  e.spawnItem(MAT.GOLD_ORE, 1, 52, FLOOR - 4, 0, 0);
+  e.spawnItem(MAT.STEAM, 1, 52, FLOOR - 4, 0, 0);
   run(e, 30);
   check(`unabsorbable item stays in the world (count ${e.itemCount()})`, e.itemCount() === 1);
   e.destroy();
@@ -198,7 +199,7 @@ const hasDraftCell = (cells, x, y) => {
   e.placeMaterial(44, FLOOR - 1, 0, MAT.STONE);
   e.paintDiscLayer(1, 44, FLOOR - 1, 0, MAT.STONE, true);
   e.syncComponentsLayer(1);
-  e.setSelectedSlot(id, 8); // empty arsenal slot -> legacy bare-hand mining
+  e.setSelectedSlot(id, 3); // empty slot selects bare-hand mining
   e.setSelectedFootprint(id, 0);
   for (let s = 0; s < 40; s++) {
     e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 44.5, aimY: FLOOR - 1 + 0.5, seq: s + 1 });

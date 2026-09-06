@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 41;
 
-export const ABI_FINGERPRINT = 0x772a326f8c18;
+export const ABI_FINGERPRINT = 0xd4063d445e6d;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -45,7 +45,8 @@ export const STRIDES = Object.freeze({
   playerSnapshot: 29,
   itemSnapshot: 12,
   creatureSnapshot: 22,
-  inventorySlot: 8,
+  inventorySlot: 9,
+  inventoryPool: 5,
   projectileSnapshot: 10,
   craftingRecipe: 7,
   craftingIngredient: 3,
@@ -64,7 +65,8 @@ export const SNAPSHOT_CODECS = Object.freeze({
   playerSnapshot: Object.freeze({ fields: Object.freeze(["id","active","x","y","vx","vy","w","h","facing","grounded","tool","aimX","aimY","health","inputSeq","alive","jumpReady","animState","animFrame","deathTicks","respawnReady","bowCharge","heldItemKind","jetpackFuel","jetpackActive","shieldHealth","shieldActive","weaponKick","hurtCooldown"]), kinds: 'ibnnnniiibinniubbiiibninbibni', storage: 'float' }),
   itemSnapshot: Object.freeze({ fields: Object.freeze(["id","kind","material","count","x","y","life","plantType","itemKind","isTool","toolClass","toolTier"]), kinds: 'iiiinniiibii', storage: 'float' }),
   creatureSnapshot: Object.freeze({ fields: Object.freeze(["id","species","x","y","vx","vy","w","h","facing","health","maxHealth","alive","animFrame","attackState","attackProgress","aimX","aimY","spawnProgress","attackPattern","rescueProgress","hurtCooldown","shelterCharge"]), kinds: 'iinnnniiiiibiinnnninin', storage: 'float' }),
-  inventorySlot: Object.freeze({ fields: Object.freeze(["material","isTool","toolClass","toolTier","count","plantType","itemKind","selected"]), kinds: 'ibiiiiib', storage: 'float' }),
+  inventorySlot: Object.freeze({ fields: Object.freeze(["material","isTool","toolClass","toolTier","count","plantType","itemKind","selected","pool"]), kinds: 'ibiiiiibi', storage: 'float' }),
+  inventoryPool: Object.freeze({ fields: Object.freeze(["pool","material","count","enabled","exactMaterial"]), kinds: 'iiibi', storage: 'int32' }),
   projectileSnapshot: Object.freeze({ fields: Object.freeze(["id","owner","x","y","vx","vy","charge","kind","fuse","rotation"]), kinds: 'iinnnnniin', storage: 'float' }),
   craftingRecipe: Object.freeze({ fields: Object.freeze(["id","outputKind","outputMaterial","outputTier","outputCount","ingredientStart","ingredientCount"]), kinds: 'iiiiiii', storage: 'int32' }),
   craftingIngredient: Object.freeze({ fields: Object.freeze(["kind","value","count"]), kinds: 'iii', storage: 'int32' }),
@@ -83,7 +85,8 @@ export const OFF = Object.freeze({
   playerSnapshot: Object.freeze({ id: 0, active: 1, x: 2, y: 3, vx: 4, vy: 5, w: 6, h: 7, facing: 8, grounded: 9, tool: 10, aimX: 11, aimY: 12, health: 13, inputSeq: 14, alive: 15, jumpReady: 16, animState: 17, animFrame: 18, deathTicks: 19, respawnReady: 20, bowCharge: 21, heldItemKind: 22, jetpackFuel: 23, jetpackActive: 24, shieldHealth: 25, shieldActive: 26, weaponKick: 27, hurtCooldown: 28 }),
   itemSnapshot: Object.freeze({ id: 0, kind: 1, material: 2, count: 3, x: 4, y: 5, life: 6, plantType: 7, itemKind: 8, isTool: 9, toolClass: 10, toolTier: 11 }),
   creatureSnapshot: Object.freeze({ id: 0, species: 1, x: 2, y: 3, vx: 4, vy: 5, w: 6, h: 7, facing: 8, health: 9, maxHealth: 10, alive: 11, animFrame: 12, attackState: 13, attackProgress: 14, aimX: 15, aimY: 16, spawnProgress: 17, attackPattern: 18, rescueProgress: 19, hurtCooldown: 20, shelterCharge: 21 }),
-  inventorySlot: Object.freeze({ material: 0, isTool: 1, toolClass: 2, toolTier: 3, count: 4, plantType: 5, itemKind: 6, selected: 7 }),
+  inventorySlot: Object.freeze({ material: 0, isTool: 1, toolClass: 2, toolTier: 3, count: 4, plantType: 5, itemKind: 6, selected: 7, pool: 8 }),
+  inventoryPool: Object.freeze({ pool: 0, material: 1, count: 2, enabled: 3, exactMaterial: 4 }),
   projectileSnapshot: Object.freeze({ id: 0, owner: 1, x: 2, y: 3, vx: 4, vy: 5, charge: 6, kind: 7, fuse: 8, rotation: 9 }),
   craftingRecipe: Object.freeze({ id: 0, outputKind: 1, outputMaterial: 2, outputTier: 3, outputCount: 4, ingredientStart: 5, ingredientCount: 6 }),
   craftingIngredient: Object.freeze({ kind: 0, value: 1, count: 2 }),
@@ -99,7 +102,8 @@ export const OFF = Object.freeze({
 
 export const INPUT = Object.freeze({ LEFT: 1, RIGHT: 2, JUMP: 4, DOWN: 8, PRIMARY: 16, SECONDARY: 32, RUN: 64, JETPACK: 128, SHIELD: 256 });
 export const WEATHER = Object.freeze({ CLEAR: 0, RAIN: 1 });
-export const ITEM_KIND = Object.freeze({ MATERIAL: 0, MINING_TOOL: 1, BOW: 2, ARROW: 3, BLAST_GUN: 4, DYNAMITE_SATCHEL: 5, BORE_CANNON: 6, ACID_MORTAR: 7, CLUSTER_LAUNCHER: 8, MINIGUN: 9, RESCUE_BEAM: 10 });
+export const ITEM_KIND = Object.freeze({ MATERIAL: 0, MINING_TOOL: 1, BOW: 2, ARROW: 3, BLAST_GUN: 4, DYNAMITE_SATCHEL: 5, BORE_CANNON: 6, ACID_MORTAR: 7, CLUSTER_LAUNCHER: 8, MINIGUN: 9, RESCUE_BEAM: 10, BUILDING_POOL: 11, POWDER_POOL: 12, LIQUID_POOL: 13 });
+export const POOL_ACTION = Object.freeze({ ENABLE: 0, MOVE: 1, SELECT: 2, WITHDRAW: 3, DEPOSIT: 4 });
 export const PROJECTILE_KIND = Object.freeze({ ARROW: 0, BLAST_ROUND: 1, DYNAMITE: 2, ACID_SHELL: 3, CLUSTER_BOMB: 4, MINIGUN_ROUND: 5, BORE_BEAM: 6, RESCUE_BEAM: 7, EXTRACTION_BEAM: 8 });
 export const CRAFT_INGREDIENT = Object.freeze({ MATERIAL: 0, MATERIAL_FLAG: 1 });
 export const TOOL = Object.freeze({ CUBE: 0, SAND: 1, WATER: 2, STONE: 3, OIL: 4, FIRE: 5, ACID: 6, LAVA: 7, ICE: 8, SEED: 9, DRIFTWOOD: 10, ERASER: 11 });

@@ -5,6 +5,7 @@ import {
   createTurnDeadline,
 } from '../src/sand/timing/fixedRateClock.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
+import { createGameLoop } from '../src/sand/game/gameLoop.js';
 
 const { check, done } = makeChecker('split actor/world timing');
 
@@ -83,8 +84,7 @@ const makeFloorEngine = () => {
   a.destroy(); b.destroy();
 }
 
-// Creative camera consumes the same actor clock, so grouping ticks into 20 ms
-// frames produces exactly the same displacement as 60 direct ticks.
+// The fixed-tick camera adapter remains available to deterministic callers.
 {
   const direct = createEngineWasm({ cols: 200, rows: 120, worldSeed: 1, sinksOn: false });
   const grouped = createEngineWasm({ cols: 200, rows: 120, worldSeed: 1, sinksOn: false });
@@ -99,6 +99,93 @@ const makeFloorEngine = () => {
   for (let frame = 1; frame <= 50; frame++) clock.advance(frame * 20, () => grouped.cameraPanTick());
   check(`creative camera displacement is clock-group invariant (${direct.getCam().x.toFixed(4)})`, direct.getCam().x === grouped.getCam().x);
   direct.destroy(); grouped.destroy();
+}
+
+// Drive the real browser loop with synthetic display deadlines and a real WASM
+// camera. Each frame must move, including frames with no actor tick.
+{
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalCancel = globalThis.cancelAnimationFrame;
+  let pendingFrame;
+  globalThis.requestAnimationFrame = (callback) => { pendingFrame = callback; return 1; };
+  globalThis.cancelAnimationFrame = () => { pendingFrame = null; };
+  const e = createEngineWasm({ cols: 200, rows: 120, worldSeed: 1, sinksOn: false });
+  e.setViewport(1, 4, 80, 60);
+  e.setPlayMode(false);
+  e.inputKey(1, true);
+  const ctx = {
+    engine: e, playMode: false, reduced: false, testPaused: false,
+    dayPhaseOverride: 0.5, clientX: -1, clientY: -1,
+    viewCols: 80, viewRows: 60,
+    worldWorker: {
+      state: { ready: false, replayPlaying: false },
+      applyPending() { return false; }, config() {}, updateControl() {},
+      consumeSoundEvents() { return []; },
+    },
+    audio: { updatePlayerEffects() {} },
+  };
+  const loop = createGameLoop(ctx, {
+    parallaxCamera: (value) => value, updatePointer() {}, updateMineProgress() {},
+  });
+  let now = performance.now();
+  const frame = (ms) => { now += ms; pendingFrame(now); };
+  try {
+    loop.start();
+    frame(0);
+    for (const hz of [60, 120, 144]) {
+      e.cameraSet(10, 20);
+      let worstError = 0;
+      for (let i = 0; i < hz; i++) {
+        const before = e.getCam().x;
+        frame(1000 / hz);
+        worstError = Math.max(worstError, Math.abs(e.getCam().x - before - 100 / hz));
+      }
+      check(`${hz} Hz pan moves on every frame at 100 cells/sec`,
+        worstError < 1e-8 && Math.abs(e.getCam().x - 110) < 1e-8);
+    }
+    e.cameraSet(10, 20);
+    let worstError = 0;
+    for (let i = 0; i < 20; i++) for (const ms of [15, 18, 16, 20, 14, 17]) {
+      const before = e.getCam().x;
+      frame(ms);
+      worstError = Math.max(worstError, Math.abs(e.getCam().x - before - ms / 10));
+      // Keep the sample clear of the loaded-window clamp.
+      e.cameraSet(10, 20);
+    }
+    check('irregular frame deadlines never repeat or double a camera tick', worstError < 1e-8);
+    ctx.reduced = true;
+    frame(10);
+    check('reduced-motion mode preserves manual panning', Math.abs(e.getCam().x - 11) < 1e-8);
+    ctx.testPaused = true;
+    frame(10);
+    check('test pause freezes camera motion', Math.abs(e.getCam().x - 11) < 1e-8);
+    ctx.testPaused = false;
+    ctx.worldWorker.state.replayPlaying = true;
+    frame(10);
+    check('replay owns camera motion while playing', Math.abs(e.getCam().x - 11) < 1e-8);
+    ctx.worldWorker.state.replayPlaying = false;
+    frame(1000);
+    check('a stalled frame has bounded camera recovery', Math.abs(e.getCam().x - 16) < 1e-8);
+    loop.setViewportPaused(true);
+    loop.setViewportPaused(false);
+    frame(5000);
+    check('viewport resume discards suspended camera time', Math.abs(e.getCam().x - 16) < 1e-8);
+    e.inputClearKeys();
+    frame(10);
+    check('releasing input stops panning immediately', Math.abs(e.getCam().x - 16) < 1e-8);
+    e.inputStick(0.3, -0.4);
+    frame(10);
+    check('analog camera input uses the frame duration on both axes',
+      Math.abs(e.getCam().x - 16.3) < 1e-8 && Math.abs(e.getCam().y - 19.6) < 1e-8);
+    e.setPlayMode(true);
+    frame(10);
+    check('free-camera input does not move the play-mode camera', Math.abs(e.getCam().x - 16.3) < 1e-8);
+  } finally {
+    loop.stop();
+    e.destroy();
+    globalThis.requestAnimationFrame = originalRaf;
+    globalThis.cancelAnimationFrame = originalCancel;
+  }
 }
 
 const failures = done();

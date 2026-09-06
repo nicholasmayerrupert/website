@@ -43,7 +43,11 @@ const crewStart = e.getCreatures().filter(c => c.species !== CREATURE.SURVEYOR);
 for (let i = 0; i < 240; i++) e.stepActors();
 check('residents can walk around their homes', crewStart.length === 2 && crewStart.every(before => Math.abs(e.getCreatures().find(c => c.id === before.id).x - before.x) > .5));
 check('resident walking does not embed them in floors', e.getCreatures().every(clearBox));
-const count = material => e.getInventory(player).slots.reduce((n, slot) => n + (slot.itemKind === ITEM_KIND.MATERIAL && slot.material === material ? slot.count : 0), 0);
+const count = material => {
+  const inv = e.getInventory(player);
+  return inv.slots.reduce((n, slot) => n + (!slot.pool && slot.itemKind === ITEM_KIND.MATERIAL && slot.material === material ? slot.count : 0), 0)
+    + inv.pools.flatMap(pool => pool.entries).reduce((n, entry) => n + (entry.material === material ? entry.count : 0), 0);
+};
 move(96, 5); tick();
 check('an empty-handed delivery fails', !e.interactFrontier(player, id('mill-supplies')));
 e.addToInventory(player, MAT.IRON_ORE, 31);

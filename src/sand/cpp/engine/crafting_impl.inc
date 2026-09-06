@@ -31,6 +31,14 @@ bool CraftingSystem::craftOnce(Player& p, const CraftRecipe& recipe) {
         if (s.count <= 0) s = InvSlot();
       }
     }
+    for (int pool = 1; pool <= INV_POOL_COUNT && left > 0; pool++) {
+      if (!E.inv.hasPool(trial, pool)) continue;
+      for (auto& entry : trial.pools[pool - 1].entries) {
+        InvSlot s; s.material = entry.material; s.count = entry.count;
+        if (!ingredientMatches(s, ingredient)) continue;
+        int take = imin(left, entry.count); entry.count -= take; left -= take;
+      }
+    }
     if (left > 0) return false;
   }
   if (!E.inv.addStack(trial, recipe.output)) return false;

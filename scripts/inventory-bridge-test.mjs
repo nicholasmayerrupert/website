@@ -4,7 +4,7 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
-import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
+import { ITEM_KIND, POOL_ACTION } from '../src/sand/wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from '../src/sand/worker/playerPresentation.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -68,6 +68,8 @@ check('cycle wraps 0 -> 8', e.getInventory(id).selected === 8);
 
 // inventoryMove swaps two slots.
 e.addToInventory(id, MAT.STONE, 7);
+e.inventoryPoolAction(id, 1, POOL_ACTION.WITHDRAW, MAT.STONE, 7);
+e.inventoryCursorPick(id, 2, false);
 const stoneIdx = e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE);
 e.inventoryMove(id, stoneIdx, 20);
 const after = e.getInventory(id);

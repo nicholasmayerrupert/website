@@ -865,7 +865,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('a full minigun load produces exactly 250 successful shots before emptying',
     shots === 250 && e.getInventory(player).slots[slot]?.count === 0);
 
-  e.setSelectedSlot(player, 7); // slot changes must not bypass the held-trigger latch
+  e.setSelectedSlot(player, 5); // empty-slot changes must not bypass the held-trigger latch
   e.setSelectedFootprint(player, 0); // isolate trigger routing from 10x10 mining work scaling
   const mineX = Math.floor(e.getPlayer(player).x + 10);
   const mineY = Math.floor(e.getPlayer(player).y + 3);

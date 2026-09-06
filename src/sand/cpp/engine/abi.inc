@@ -1045,6 +1045,11 @@ EMSCRIPTEN_KEEPALIVE int engine_add_special_item(Engine* e, int id, int itemKind
   return isInventoryItemKindValue(itemKind)
     && e->inv.addSpecialItem(id, (uint8_t)itemKind, count) ? 1 : 0;
 }
+EMSCRIPTEN_KEEPALIVE void engine_inventory_pool_action(Engine* e, int id, int pool, int action, int material, int value) {
+  e->inv.poolAction(id, pool, action, material, value);
+}
+EMSCRIPTEN_KEEPALIVE int engine_inventory_pool_snapshot(Engine* e, int id) { return e->inv.buildPoolSnapshot(id); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_inventory_pool_snapshot_ptr(Engine* e) { return e->inv.poolSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->inv.setSelectedSlot(id, slot); }
 EMSCRIPTEN_KEEPALIVE void engine_cycle_selected_slot(Engine* e, int id, int delta) { e->inv.cycleSelectedSlot(id, delta); }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_footprint(Engine* e, int id, int footprintId) { e->tools.setSelectedFootprint(id, footprintId); }
@@ -1203,6 +1208,7 @@ EMSCRIPTEN_KEEPALIVE void engine_camera_set(Engine* e, double x, double y) { e->
 EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->cam.camX; out[1] = e->cam.camY; }
 EMSCRIPTEN_KEEPALIVE int engine_camera_col_x(Engine* e) { return e->cam.colX(); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_pan_tick(Engine* e) { e->cam.panTick(); }
+EMSCRIPTEN_KEEPALIVE void engine_camera_pan_frame(Engine* e, double elapsedMs) { e->cam.panFrame(elapsedMs); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_follow_to(Engine* e, double cx, double cy) { e->cam.followTo(cx, cy); }
 EMSCRIPTEN_KEEPALIVE int engine_stream_world(Engine* e) { return e->streamWorld(); }
 EMSCRIPTEN_KEEPALIVE void engine_input_key(Engine* e, int code, int down) { e->cam.inputKey(code, down); }

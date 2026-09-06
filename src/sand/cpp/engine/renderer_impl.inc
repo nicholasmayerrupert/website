@@ -70,6 +70,8 @@ void Renderer::remapSkyTopInput(Layer* lay) {
 
 void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) {
   const int n = E.cols * E.rows;
+  bool worldShifted = lay->skyValid &&
+    (lay->skyOffsetX != lay->worldOffsetX || lay->skyOffsetY != lay->worldOffsetY);
   remapSkyTopInput(lay);
   if ((int)lay->skyLight.size() != n) lay->skyLight.assign(n, 0);
   else {
@@ -87,26 +89,28 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
   // from moving buffer edges. Finite worlds also have fixed side skylights.
   // Open shafts retain direct sky without lighting an entire winding cave.
   // Rays scan from the real buffer edge, checking transparency along the path;
-  // only the seeding is restricted to the solve region. Out-of-region columns
-  // keep their previous skyDownDepth/Value/reach entries (they are only read by
-  // the shift remap, and shifts force a full-region solve).
+  // only the seeding is restricted to the solve region. A world shift refreshes
+  // provenance for every column so skyDownDepth/Value/reach remain coherent in
+  // the new coordinate frame even when the light flood covers only the view.
   auto castTopRay = [&](int x) {
+    bool seedColumn = x >= rx0 && x <= rx1;
     uint8_t topValue = lay->skyTopInput[x];
     if (topRayStartsInSky(lay, x) && renderSkyLight > topValue) topValue = renderSkyLight;
     if (topValue <= LIGHT_AMBIENT) { lay->skyDownDepth[x] = -1; lay->skyDownValue[x] = 0; return; }
     int deepest = -1;
     for (int y = 0; y < E.rows; y++) {
       int k = y * E.cols + x;
-      if (y >= ry0 && y <= ry1) seedSkyOnly(k, topValue);
+      if (seedColumn && y >= ry0 && y <= ry1) seedSkyOnly(k, topValue);
       deepest = y;
       if (!transparentForLight(g[k])) break;
     }
     lay->skyDownDepth[x] = deepest;
     lay->skyDownValue[x] = topValue;
   };
-  for (int x = rx0; x <= rx1; x++) castTopRay(x);
+  int skyX0 = worldShifted ? 0 : rx0, skyX1 = worldShifted ? E.cols - 1 : rx1;
+  for (int x = skyX0; x <= skyX1; x++) castTopRay(x);
   // Update the sparse reach map after casting the rays.
-  for (int x = rx0; x <= rx1; x++) {
+  for (int x = skyX0; x <= skyX1; x++) {
     int deepest = lay->skyDownDepth[x];
     if (deepest < 0) continue;
     int worldX = lay->worldOffsetX + x;

@@ -542,6 +542,9 @@ export function createSandGame(container, opts = {}) {
     craft(recipe, max = false) {
       ctx.worldWorker?.intent('craft', { recipe: recipe | 0, max: !!max });
     },
+    poolAction(pool, action, material = 0, value = 0) {
+      ctx.worldWorker?.intent('pool', { pool, action, material, value });
+    },
     respawn() {
       ctx.worldWorker?.intent('respawn');
     },

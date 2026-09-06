@@ -1233,6 +1233,7 @@ function applyRuntimeMessage(data) {
       case 'pick': engine.inventoryCursorPick(localPlayerId, data.slot | 0, !!data.half); break;
       case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
       case 'craft': engine.craft(localPlayerId, data.recipe | 0, !!data.max); break;
+      case 'pool': engine.inventoryPoolAction(localPlayerId, data.pool | 0, data.action | 0, data.material | 0, data.value | 0); break;
       case 'quest-interact': engine.interactFrontier(localPlayerId, data.objectiveId | 0); break;
       case 'respawn': engine.respawnPlayer(localPlayerId); break;
       case 'repair-base':

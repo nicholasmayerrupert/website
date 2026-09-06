@@ -298,6 +298,10 @@ component registration, and restoration. Browser presentation exposes
   until their backlog drains; smaller fronts finish atomically. Body-owned TNT
   shares a 1,200 source-cell budget with the static front.
 - Presentation diffs use validated row copies and keep only one packet in flight.
+- Ordinary presentation stream shifts solve lighting for the visible window
+  plus its exactness margin. Direct sky rays refresh provenance in all columns,
+  preserving sunlight through offscreen shafts across both streaming axes.
+  `stream-lighting-e2e` compares the resulting pixels with full-buffer lighting.
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot
   propagation loop does not divide every visited cell index by the grid width.

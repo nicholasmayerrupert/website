@@ -2,6 +2,134 @@
 // JS renders packed snapshots and forwards intents; the selected slot drives
 // mining or placement.
 
+int InventorySystem::materialPool(uint8_t material) {
+  if (!isMaterialId(material) || MAT_IS_PLANT_SEED[material]) return 0;
+  if (MAT_KIND[material] == K_COMPONENT || MAT_KIND[material] == K_FREE_RIGID) return 1;
+  if (MAT_KIND[material] == K_POWDER) return 2;
+  if (MAT_KIND[material] == K_LIQUID) return 3;
+  return 0;
+}
+bool InventorySystem::hasPool(const Player& p, int pool) const {
+  if (pool < 1 || pool > INV_POOL_COUNT) return false;
+  if (p.cursor.count > 0 && inventoryPoolId(p.cursor.itemKind) == pool) return true;
+  for (const auto& s : p.inv)
+    if (s.count > 0 && inventoryPoolId(s.itemKind) == pool) return true;
+  return false;
+}
+bool InventorySystem::storeInPool(Player& p, uint8_t material, int count) {
+  int pool = materialPool(material);
+  if (count <= 0 || !hasPool(p, pool)) return false;
+  auto& store = p.pools[pool - 1];
+  for (auto& entry : store.entries) if (entry.material == material) {
+    if (count > INT_MAX - entry.count) return false;
+    entry.count += count;
+    return true;
+  }
+  bool enabled = !(MAT_FLAGS[material] & MF_SPAWNHAZARD);
+  store.entries.push_back({material, count, enabled});
+  // Liquids start pinned to their first collected material. Auto is explicit.
+  if (pool == 3 && store.entries.size() == 1) store.exactMaterial = material;
+  return true;
+}
+InvSlot InventorySystem::resolveSlot(const Player& p, const InvSlot& slot) const {
+  int pool = inventoryPoolId(slot.itemKind);
+  if (!pool || slot.count <= 0) return slot;
+  const auto& store = p.pools[pool - 1];
+  uint8_t exact = store.exactMaterial;
+  if (E.tools.drafting && E.tools.draftOwner == p.id && materialPool(E.tools.draftMaterial) == pool)
+    exact = E.tools.draftMaterial;
+  InvSlot resolved;
+  for (const auto& entry : store.entries) {
+    if (exact ? entry.material != exact : (!entry.enabled || entry.count <= 0)) continue;
+    resolved.material = entry.material; resolved.count = entry.count;
+    break;
+  }
+  return resolved;
+}
+void InventorySystem::consumeSelected(Player& p, uint8_t material, int count) {
+  int pool = inventoryPoolId(p.inv[p.selectedSlot].itemKind);
+  if (pool) {
+    for (auto& entry : p.pools[pool - 1].entries) if (entry.material == material) {
+      entry.count = imax(0, entry.count - count); return;
+    }
+  } else {
+    auto& s = p.inv[p.selectedSlot];
+    s.count -= count;
+    if (s.count <= 0) s = InvSlot();
+  }
+}
+int InventorySystem::countMaterial(const Player& p, uint8_t material) const {
+  int64_t count = 0;
+  for (const auto& s : p.inv)
+    if (s.itemKind == IK_MATERIAL && s.material == material) count += s.count;
+  int pool = materialPool(material);
+  if (hasPool(p, pool)) for (const auto& entry : p.pools[pool - 1].entries)
+    if (entry.material == material) count += entry.count;
+  return (int)std::min(count, (int64_t)INT_MAX);
+}
+bool InventorySystem::consumeMaterial(Player& p, uint8_t material, int count) {
+  if (count < 0 || countMaterial(p, material) < count) return false;
+  for (auto& s : p.inv) if (s.itemKind == IK_MATERIAL && s.material == material) {
+    int take = imin(count, s.count); s.count -= take; count -= take;
+    if (!s.count) s = InvSlot();
+  }
+  int pool = materialPool(material);
+  if (hasPool(p, pool)) for (auto& entry : p.pools[pool - 1].entries)
+    if (entry.material == material) { int take = imin(count, entry.count); entry.count -= take; count -= take; }
+  return true;
+}
+void InventorySystem::poolAction(int id, int pool, int action, int material, int value) {
+  Player* p = E.psys.findPlayer(id);
+  if (!p || !p->active || !p->alive || !hasPool(*p, pool)) return;
+  auto& store = p->pools[pool - 1];
+  if (action == IPA_DEPOSIT) {
+    for (auto& s : p->inv) if (s.itemKind == IK_MATERIAL && materialPool(s.material) == pool && s.count > 0)
+      if (storeInPool(*p, s.material, s.count)) s = InvSlot();
+    return;
+  }
+  if (!isMaterialId(material) || (material != EMPTY && materialPool((uint8_t)material) != pool)) return;
+  auto it = std::find_if(store.entries.begin(), store.entries.end(),
+    [&](const auto& entry) { return entry.material == material; });
+  if (action == IPA_SELECT && (material == EMPTY || it != store.entries.end())) {
+    if (E.tools.drafting && E.tools.draftOwner == id) E.psys.playerFinalizeSolidDraft();
+    store.exactMaterial = (uint8_t)material;
+    resetPlayerPlaceStroke(*p);
+  } else if (it != store.entries.end()) {
+    if (action == IPA_ENABLE) it->enabled = value != 0;
+    else if (action == IPA_MOVE) {
+      int from = (int)(it - store.entries.begin());
+      int to = std::clamp(value, 0, (int)store.entries.size() - 1);
+      auto entry = *it; store.entries.erase(store.entries.begin() + from);
+      store.entries.insert(store.entries.begin() + to, entry);
+    } else if (action == IPA_WITHDRAW && value > 0) {
+      auto& cursor = p->cursor;
+      if (cursor.count > 0 && (cursor.itemKind != IK_MATERIAL || cursor.material != material)) return;
+      int take = imin(it->count, imin(value, INV_STACK_MAX - cursor.count));
+      if (take <= 0) return;
+      if (!cursor.count) { cursor = InvSlot(); cursor.material = (uint8_t)material; }
+      cursor.count += take; it->count -= take;
+    }
+  }
+}
+int InventorySystem::buildPoolSnapshot(int id) {
+  poolSnapshot.clear();
+  Player* p = E.psys.findPlayer(id); if (!p) return 0;
+  for (int pool = 1; pool <= INV_POOL_COUNT; pool++) {
+    if (!hasPool(*p, pool)) continue;
+    const auto& store = p->pools[pool - 1];
+    auto append = [&](const InventoryPoolEntry& entry) {
+      size_t at = poolSnapshot.size(); poolSnapshot.resize(at + IPS_STRIDE);
+      writeInventoryPoolSnapshot(poolSnapshot.data() + at, entry, {
+        .pool = WriteInventoryPoolSnapshotPool{pool},
+        .exactMaterial = WriteInventoryPoolSnapshotExactMaterial{store.exactMaterial},
+      });
+    };
+    append(InventoryPoolEntry{});
+    for (const auto& entry : store.entries) append(entry);
+  }
+  return (int)poolSnapshot.size() / IPS_STRIDE;
+}
+
 // Destructive survival starts armed and able to harvest terrain. The blast gun
 // is intentionally infinite-energy; the iron dig tool restores the mining loop.
 void InventorySystem::seedStarterTools(Player& p) {
@@ -15,6 +143,11 @@ void InventorySystem::seedStarterTools(Player& p) {
   p.inv[1].toolClass = TC_DIG;
   p.inv[1].toolTier = TT_IRON;
   p.inv[1].count = 1;
+  for (int i = 0; i < INV_POOL_COUNT; i++) {
+    p.pools[i] = InventoryPool();
+    p.inv[INV_HOTBAR - INV_POOL_COUNT + i].itemKind = IK_BUILDING_POOL + i;
+    p.inv[INV_HOTBAR - INV_POOL_COUNT + i].count = 1;
+  }
   p.selectedFootprint = E.tools.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   setSelectedSlot(p, 0);
 }
@@ -66,6 +199,8 @@ bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
   return isFiniteAmmoWeapon(a.itemKind);
 }
 bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
+  if (incoming.itemKind == IK_MATERIAL && incoming.count > 0 && hasPool(p, materialPool(incoming.material)))
+    return storeInPool(p, incoming.material, incoming.count);
   Player trial = p;
   int count = incoming.count;
   if (count <= 0) return true;
@@ -110,7 +245,7 @@ bool InventorySystem::consumeSelectedWeaponAmmo(Player& p, uint8_t itemKind) {
 // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
 // Tools/empty/self-overlap place nothing.
 bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer) {
-  InvSlot& s = p.inv[p.selectedSlot];
+  InvSlot s = resolveSlot(p, p.inv[p.selectedSlot]);
   if (s.itemKind != IK_MATERIAL || s.isTool || s.count <= 0 || s.material == EMPTY) return false;
   // Don't reject the whole build when the disc grazes the player — place only the
   // cells outside the body (passing &p), so building against yourself still works
@@ -124,12 +259,12 @@ bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer)
   }
   if (placed <= 0) return false;
   uint8_t placedMaterial = s.material;
-  s.count -= placed; if (s.count <= 0) s = InvSlot();
+  consumeSelected(p, placedMaterial, placed);
   E.audio.emit(SE_PLACE, ax, ay, std::min(1.25, 0.35 + placed * 0.04), placedMaterial, foreground ? 0 : 1);
   return true;
 }
 bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer) {
-  InvSlot& s = p.inv[p.selectedSlot];
+  InvSlot s = resolveSlot(p, p.inv[p.selectedSlot]);
   if (s.itemKind != IK_MATERIAL || s.isTool || s.count <= 0 || s.material == EMPTY) return false;
   bool foreground = layer == &E.fg;
   if (!foreground) E.bgEnabled = true;
@@ -140,7 +275,7 @@ bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1,
   }
   if (placed <= 0) return false;
   uint8_t placedMaterial = s.material;
-  s.count -= placed; if (s.count <= 0) s = InvSlot();
+  consumeSelected(p, placedMaterial, placed);
   E.audio.emit(SE_PLACE, x1, y1, std::min(1.25, 0.3 + placed * 0.025), placedMaterial, foreground ? 0 : 1);
   return true;
 }
@@ -168,6 +303,12 @@ void InventorySystem::moveSlot(int id, int from, int to) { Player* p = E.psys.fi
 void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   if (slot < 0 || slot >= INV_SLOTS) return;
   InvSlot& s = p.inv[slot]; InvSlot& c = p.cursor;
+  int pool = inventoryPoolId(s.itemKind);
+  if (pool && c.count > 0 && c.itemKind == IK_MATERIAL && materialPool(c.material) == pool) {
+    int deposit = half ? 1 : c.count;
+    if (storeInPool(p, c.material, deposit)) { c.count -= deposit; if (!c.count) c = InvSlot(); }
+    return;
+  }
   bool cEmpty = c.count <= 0, sEmpty = s.count <= 0;
   if (cEmpty) {
     if (sEmpty) return;
@@ -224,7 +365,7 @@ void InventorySystem::dropAll(Player& p) {
     // The infinite-ammo starter gun is a bound loadout item. Respawn grants a
     // fresh loadout, so dropping this copy would duplicate it when the old gun
     // magnetized back to the player.
-    if (s.itemKind == IK_BLAST_GUN || s.itemKind == IK_RESCUE_BEAM) {
+    if (s.itemKind == IK_BLAST_GUN || s.itemKind == IK_RESCUE_BEAM || inventoryPoolId(s.itemKind)) {
       s = InvSlot();
       return;
     }
@@ -235,6 +376,14 @@ void InventorySystem::dropAll(Player& p) {
   };
   for (int i = 0; i < INV_SLOTS; i++) drop(p.inv[i]);
   drop(p.cursor);
+  for (auto& pool : p.pools) for (auto& entry : pool.entries) {
+    if (entry.count <= 0) continue;
+    InvSlot stack; stack.material = entry.material; stack.count = entry.count;
+    double a = ordinal++ * 2.399963229728653;
+    E.itemsys.spawnStack(stack, p.px + p.w * .5, p.py + p.h * .45,
+      std::cos(a) * 1.35, -.75 - std::fabs(std::sin(a)) * .8, 180, false, true);
+    entry.count = 0;
+  }
   setSelectedSlot(p, 0);
 }
 
@@ -245,6 +394,7 @@ int InventorySystem::buildCursorSnapshot(int playerId) {
   InvSlot& s = p->cursor;
   writeInventorySlotSnapshot(cursorSnap.data(), s, {
     .selected = WriteInventorySlotSnapshotSelected{false},
+    .pool = WriteInventorySlotSnapshotPool{inventoryPoolId(s.itemKind)},
   });
   return s.count > 0 ? 1 : 0;
 }
@@ -255,10 +405,11 @@ int InventorySystem::buildInventorySnapshot(int playerId) {
   Player* p = E.psys.findPlayer(playerId);
   if (!p) return 0;
   for (int i = 0; i < INV_SLOTS; i++) {
-    InvSlot& s = p->inv[i];
+    InvSlot s = resolveSlot(*p, p->inv[i]);
     float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
     writeInventorySlotSnapshot(o, s, {
       .selected = WriteInventorySlotSnapshotSelected{i == p->selectedSlot},
+      .pool = WriteInventorySlotSnapshotPool{inventoryPoolId(p->inv[i].itemKind)},
     });
   }
   return INV_SLOTS;
@@ -302,7 +453,8 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
     return dx * dx + dy * dy <= P_TOOL_REACH * P_TOOL_REACH;
   };
   bool aimInReach = inReachOf(ax, ay);
-  InvSlot& sel = p.inv[p.selectedSlot];
+  InvSlot sel = resolveSlot(p, p.inv[p.selectedSlot]);
+  bool pooled = inventoryPoolId(p.inv[p.selectedSlot].itemKind) != 0;
   const SurvivalFootprint& fp = E.tools.getSurvivalFootprint(p);
 
   // (1) An active component draft this player owns takes over its originating
@@ -315,12 +467,13 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       int sx = E.tools.draftStrokeActive ? E.tools.lastDraftCx : ax, sy = E.tools.draftStrokeActive ? E.tools.lastDraftCy : ay;
       int added = E.tools.addFootprintStrokeToDraftCapped(E.tools.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.tools.draftLayer ? nullptr : &p);
       E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
-      if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
+      if (added > 0) consumeSelected(p, sel.material, added);
     } else if (!aimInReach) E.tools.draftStrokeActive = false;
     return;
   }
 
-  bool mineMode = sel.itemKind == IK_MINING_TOOL || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
+  bool mineMode = !pooled && (sel.itemKind == IK_MINING_TOOL || sel.count <= 0);
+  if (pooled && sel.count <= 0) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
   if (sel.itemKind == IK_BLAST_GUN) { E.projectiles.applyBlastGunInput(p); return; }
   if (sel.itemKind == IK_DYNAMITE_SATCHEL) { E.projectiles.applyDynamiteSatchelInput(p, prev); return; }
@@ -368,8 +521,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       }
       if (placed) {
         E.audio.emit(SE_PLACE, x0, y0, 0.6, E.plantSeedMat(plantType), toBg ? 1 : 0);
-        sel.count--;
-        if (sel.count <= 0) sel = InvSlot();
+        consumeSelected(p, sel.material, 1);
         E.playerActionCount++;
       }
     }
@@ -383,7 +535,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       {
         Engine::ActiveLayerScope active(E, toBg ? &E.bg : &E.fg);
         int added = E.tools.addFootprintToDraftCapped(E.tools.draft, ax, ay, fp, E.rows, sel.count, toBg ? nullptr : &p);
-        if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
+        if (added > 0) consumeSelected(p, sel.material, added);
       }
       E.playerActionCount++;
     }

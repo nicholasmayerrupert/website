@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 41;
 
-static const uint64_t ABI_FINGERPRINT = 0x772a326f8c18ULL;
+static const uint64_t ABI_FINGERPRINT = 0xd4063d445e6dULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
@@ -288,7 +288,7 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_SHELTER_CHARGE] = static_cast<float>(0);
 }
 
-// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
+// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool
 enum InventorySlotField : int {
   IVS_MATERIAL = 0,
   IVS_IS_TOOL = 1,
@@ -298,16 +298,23 @@ enum InventorySlotField : int {
   IVS_PLANT_TYPE = 5,
   IVS_ITEM_KIND = 6,
   IVS_SELECTED = 7,
+  IVS_POOL = 8,
 };
-static const int IVS_STRIDE = 8;
+static const int IVS_STRIDE = 9;
 
 struct WriteInventorySlotSnapshotSelected {
   bool value;
   WriteInventorySlotSnapshotSelected() = delete;
   constexpr explicit WriteInventorySlotSnapshotSelected(bool input) : value(input) {}
 };
+struct WriteInventorySlotSnapshotPool {
+  int value;
+  WriteInventorySlotSnapshotPool() = delete;
+  constexpr explicit WriteInventorySlotSnapshotPool(int input) : value(input) {}
+};
 struct WriteInventorySlotSnapshotParameters {
   WriteInventorySlotSnapshotSelected selected;
+  WriteInventorySlotSnapshotPool pool;
 };
 template <class Record>
 inline void writeInventorySlotSnapshot(float* out, const Record& record, const WriteInventorySlotSnapshotParameters& values) {
@@ -319,6 +326,40 @@ inline void writeInventorySlotSnapshot(float* out, const Record& record, const W
   out[IVS_PLANT_TYPE] = static_cast<float>(record.plantType);
   out[IVS_ITEM_KIND] = static_cast<float>(record.itemKind);
   out[IVS_SELECTED] = (values.selected.value ? 1.0f : 0.0f);
+  out[IVS_POOL] = static_cast<float>(values.pool.value);
+}
+
+// inventoryPool: pool, material, count, enabled, exactMaterial
+enum InventoryPoolField : int {
+  IPS_POOL = 0,
+  IPS_MATERIAL = 1,
+  IPS_COUNT = 2,
+  IPS_ENABLED = 3,
+  IPS_EXACT_MATERIAL = 4,
+};
+static const int IPS_STRIDE = 5;
+
+struct WriteInventoryPoolSnapshotPool {
+  int value;
+  WriteInventoryPoolSnapshotPool() = delete;
+  constexpr explicit WriteInventoryPoolSnapshotPool(int input) : value(input) {}
+};
+struct WriteInventoryPoolSnapshotExactMaterial {
+  int value;
+  WriteInventoryPoolSnapshotExactMaterial() = delete;
+  constexpr explicit WriteInventoryPoolSnapshotExactMaterial(int input) : value(input) {}
+};
+struct WriteInventoryPoolSnapshotParameters {
+  WriteInventoryPoolSnapshotPool pool;
+  WriteInventoryPoolSnapshotExactMaterial exactMaterial;
+};
+template <class Record>
+inline void writeInventoryPoolSnapshot(int32_t* out, const Record& record, const WriteInventoryPoolSnapshotParameters& values) {
+  out[IPS_POOL] = static_cast<int32_t>(values.pool.value);
+  out[IPS_MATERIAL] = static_cast<int32_t>(record.material);
+  out[IPS_COUNT] = static_cast<int32_t>(record.count);
+  out[IPS_ENABLED] = (record.enabled ? 1 : 0);
+  out[IPS_EXACT_MATERIAL] = static_cast<int32_t>(values.exactMaterial.value);
 }
 
 // projectileSnapshot: id, owner, x, y, vx, vy, charge, kind, fuse, rotation
@@ -773,6 +814,9 @@ enum InventoryItemKind : uint8_t {
   IK_CLUSTER_LAUNCHER = 8,
   IK_MINIGUN = 9,
   IK_RESCUE_BEAM = 10,
+  IK_BUILDING_POOL = 11,
+  IK_POWDER_POOL = 12,
+  IK_LIQUID_POOL = 13,
 };
 
 static constexpr bool isInventoryItemKindValue(int value) {
@@ -788,6 +832,29 @@ static constexpr bool isInventoryItemKindValue(int value) {
     case IK_CLUSTER_LAUNCHER:
     case IK_MINIGUN:
     case IK_RESCUE_BEAM:
+    case IK_BUILDING_POOL:
+    case IK_POWDER_POOL:
+    case IK_LIQUID_POOL:
+      return true;
+    default: return false;
+  }
+}
+
+enum InventoryPoolAction : int {
+  IPA_ENABLE = 0,
+  IPA_MOVE = 1,
+  IPA_SELECT = 2,
+  IPA_WITHDRAW = 3,
+  IPA_DEPOSIT = 4,
+};
+
+static constexpr bool isInventoryPoolActionValue(int value) {
+  switch (value) {
+    case IPA_ENABLE:
+    case IPA_MOVE:
+    case IPA_SELECT:
+    case IPA_WITHDRAW:
+    case IPA_DEPOSIT:
       return true;
     default: return false;
   }

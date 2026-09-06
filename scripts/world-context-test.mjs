@@ -210,10 +210,10 @@ const overlapGridX = overlapX - overlapRegression.getWorldOffsetX();
 const overlapGridY = overlapY - overlapRegression.getWorldOffsetY();
 const overlapMaterial = overlapRegression.getGrid()[
   overlapGridY * overlapRegression.cols + overlapGridX];
-check('overlap ownership matches the rendered settlement masonry',
+check('a landmark reservation suppresses stale settlement ownership',
   overlapMaterial === MAT.STONE
-    && overlapContext.featureKind === WORLD_FEATURE.VILLAGE
-    && has(overlapContext, WORLD_AREA.SETTLEMENT)
+    && overlapContext.featureKind === WORLD_FEATURE.LANDMARK
+    && !has(overlapContext, WORLD_AREA.SETTLEMENT)
     && !has(overlapContext, WORLD_AREA.MINE));
 const overlapSky = overlapRegression.worldContextAt(
   overlapX, overlapSurface - 40);

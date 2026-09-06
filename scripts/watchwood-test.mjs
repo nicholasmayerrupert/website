@@ -71,20 +71,20 @@ if (cut) {
 check('cutting a rooted eye tree releases a simulated rigid body', !!cut && released);
 e.destroy();
 
-const village = make(7);
-moveTo(village, -94, -24);
-const context = village.worldContextAt(-94, -18);
+const village = make(2);
+moveTo(village, -12618, -25);
+const context = village.worldContextAt(-12618, -28);
 check('Watchwood observation shrines participate in settlement placement and semantics',
   context.surfaceBiome === BIOME.WATCHWOOD
   && context.featureKind === WORLD_FEATURE.VILLAGE_BUILDING);
 let lenses = 0, dome = 0, blocked = 0;
-for (let wx = -113; wx <= -75; wx++) {
+for (let wx = -12637; wx <= -12599; wx++) {
   const x = wx - village.getWorldOffsetX();
-  for (let wy = -35; wy < -3; wy++) {
+  for (let wy = -39; wy < -7; wy++) {
     const k = (wy - village.getWorldOffsetY()) * village.cols + x;
     lenses += village.getGridBg()[k] === MAT.EYE_IRIS;
     dome += village.getGrid()[k] === MAT.PALESTONE;
-    if (wy >= -13) blocked += village.getGrid()[k] !== MAT.EMPTY;
+    if (wy >= -17) blocked += village.getGrid()[k] !== MAT.EMPTY;
   }
 }
 check('observation shrines contain pale domes and eye instruments with a clear passage',

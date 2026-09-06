@@ -19,6 +19,7 @@ const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : n
 const comparePath = flag('--compare');
 const updatePath = flag('--update');
 const pngDir = flag('--png');
+const WORLD_SEED = 0xC0FFEE;
 
 // --- start dev server ---
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', '5179', '--strictPort'], {
@@ -198,6 +199,16 @@ try {
   const dsf = Number(process.env.DSF) || 1; // emulate browser zoom: <1 = zoomed out
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: dsf, reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
+  // Set the embed seed before React connects the element. The simulation keeps
+  // its normal RNG; only the procedural world is fixed for comparable workloads.
+  await page.addInitScript((seed) => {
+    const createElement = Document.prototype.createElement;
+    Document.prototype.createElement = function (...args) {
+      const element = createElement.apply(this, args);
+      if (element.localName === 'sand-game') element.setAttribute('world-seed', String(seed));
+      return element;
+    };
+  }, WORLD_SEED);
   await page.goto(baseURL, { waitUntil: 'load' });
   // The game mounts after WASM init; wait for the hooks + a fitted engine.
   await page.locator('sand-game').scrollIntoViewIfNeeded().catch(() => {});
@@ -276,6 +287,7 @@ try {
 
   result = {
     meta: {
+      worldSeed: WORLD_SEED,
       platform: process.platform,
       arch: process.arch,
       node: process.version,

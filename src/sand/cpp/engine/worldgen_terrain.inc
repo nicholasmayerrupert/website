@@ -128,6 +128,14 @@
         }
       }
       if (nearVillage) continue;
+      bool nearLandmark = false;
+      int lq = floorDiv(worldX, worldContext.featureDef(GFF_LANDMARK).latticeWidth);
+      for (int q = lq - 1; q <= lq + 1; q++) {
+        LandmarkPlan plan;
+        if (worldContext.landmarkPlan(q, plan) && worldX >= plan.left - reachX
+            && worldX <= plan.right + reachX) { nearLandmark = true; break; }
+      }
+      if (nearLandmark) continue;
       int biome = terrain.genBiomeAt(worldX);
       uint8_t pt = terrain.pickTreeType(biome, worldX);
       const PlantWorldgenProfileDef& plantProfile =

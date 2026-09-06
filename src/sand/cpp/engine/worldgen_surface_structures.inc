@@ -976,11 +976,43 @@
       put(ax + 2, ay + h - 3, CRYSTAL);
     };
 
+    auto stampCistern = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 0, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampWaystation = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 1, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampPrismChapel = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 2, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampLensWorks = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 3, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampApothecary = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 4, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampSporeGarden = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 5, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampRootCloister = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 6, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
+    auto stampNursery = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      stampCaveArchitecture(put, ax, ay, w, h, 7, L->isBackground,
+        (uint32_t)(h2(0xD35C0u, lx, ly) * 4294967295.0));
+    };
     for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
       RuinPlan plan;
       if (!worldContext.ruinPlan(lx, ly, plan)) continue;
       int ax = plan.left, ay = plan.top;
-      int w = plan.right - plan.left, h = plan.bottom - plan.top + 1;
+      int w = plan.right - plan.left, h = plan.floorY - plan.top + 1;
       if (plan.right < rectX0 || plan.left > rectX1
           || plan.bottom < rectY0 || plan.top > rectY1) continue;
       switch (plan.kind) {
@@ -991,6 +1023,24 @@
 #undef WORLDGEN_RUIN_ARCHETYPE
 #undef WORLDGEN_FACILITY_ARCHETYPE
         case RK_COUNT: assert(false && "invalid ruin archetype"); break;
+      }
+
+      // Piers search the same foreground cave floor in both layers. Each foot
+      // continues through the first rock cells, without filling the whole cavern.
+      {
+        ForegroundTerrainScope foregroundQuery(L);
+        for (int x = ax + 2; x < ax + w - 2; x++) {
+          if (x > ax + 4 && x < ax + w - 5 && std::abs(x - (ax + w / 2)) > 1) continue;
+          int anchor = plan.floorY + 1;
+          while (anchor < plan.floorY + RuinPlan::FOUNDATION_DEPTH - 2 && terrain.genOpenCaveAt(x, anchor)) anchor++;
+          for (int y = plan.floorY; y <= anchor + 2; y++) put(x, y, STONE);
+        }
+      }
+      if (L->isBackground && plan.kind < RK_CISTERN) {
+        for (int x = ax + 7; x < ax + w - 4; x += 19) {
+          for (int y = ay + 2; y < ay + 7; y++) put(x, y, IRON_ORE);
+          put(x, ay + 7, LIGHT);
+        }
       }
 
       // Open one full-height side door and connect it to the first nearby cave
@@ -1010,7 +1060,3 @@
       }
     }
   }
-  // Monumental ruins inhabit whole deep chambers. Each plan is shared by both
-  // layers: the foreground supplies roomy architecture and traversable doors,
-  // while the background supplies the solid back wall, furnishings, light, and
-  // storytelling detail without putting clutter in the player's path.

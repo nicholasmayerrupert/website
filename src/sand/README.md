@@ -151,7 +151,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 14 is canonical in absolute coordinates: viewport size changes
+World generation version 16 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
@@ -167,9 +167,9 @@ separated trunk candidates keep tree silhouettes readable. Surface geology adds
 moss-capped boulders, sandstone stacks, icy rocks, and pale Watchwood spires,
 with bedrock roots and exclusions around cave mouths and settlements.
 Bone highlands retain steep mountain relief and contain component-backed skulls,
-rib arches, and vertebral columns made from mineable bone. Their shared solid
+rib arches, vertebral columns, and lashed timber stakes with bone tips. Their shared solid
 mask preserves hollow sockets and rib gaps across both layers and streaming;
-buried roots anchor them beneath the pale crust. Distant fossil silhouettes
+individual rib feet and buried roots anchor them beneath the pale crust. Distant fossil silhouettes
 share the ivory-and-umber palette without snow or vegetation.
 A broad anomaly field selects Watchwood pockets: rounded plum-soil hills,
 pale stone strata, and static ivory-eyed trees on branching burgundy trunks.
@@ -217,11 +217,25 @@ scaffolds, exhibits, shelves, lamps, and machinery. Coal and copper have compact
 starter lodes near the original spawn; iron, gold, and environmental hazards
 unlock progressively deeper.
 
+Large biome landmarks add 19 families, documented in [`LANDMARKS.md`](LANDMARKS.md).
+Caves add eight upper-cave archetypes and twelve large deep chamber layouts:
+large cisterns, chapels, cloisters and gardens; smaller workshops and nurseries;
+deep foundries, crystal instruments, fossil excavations and fungal settlements. They share foreground doorways and galleries with
+furnished, lit rear walls; buried piers meet the cave floor. Neighboring ruins
+resolve overlaps deterministically and respect the larger deep monuments.
+Acid springs use asymmetric bowls, stepped beds and paired pools with crystal
+linings, mineral rims and banks fitted to natural rock, outside structure sites.
+Their deterministic districts reserve space before ordinary settlements and mines;
+whole-footprint biome and slope checks keep each site coherent. Foundations extend
+column by column into terrain, tapered approaches meet the surrounding soil, and
+cave openings remain clear. Swamp decks stand on piles; fallen serpents follow the
+actual hillside. The material cells participate in ordinary component simulation.
+
 `WorldContextSystem` exposes the semantic plan behind generated terrain at any
 absolute coordinate: surface/cave biome, surface-relative depth, composable area
 tags, stable feature identity and bounds, parent feature, and nested site role.
 Worldgen and context queries share the plans for settlements, mines, ruins,
-deep monuments, formations, and facilities, so spawning and tools can target a
+deep monuments, formations, landmarks, and facilities, so spawning and tools can target a
 site without inspecting mutable cell materials. One compile-time registry row
 owns each family's placement reach, profile eligibility, stage, write/layer
 policy, exclusions, priority, semantics, and executable callbacks. These

@@ -120,7 +120,7 @@ inline constexpr int CAVE_DRESSING_LATTICE = 11;
 inline constexpr int CAVE_DRESSING_MAX_ACID_RADIUS = 35;
 inline constexpr int CAVE_DRESSING_ACID_BANK = 4;
 inline constexpr int CAVE_DRESSING_MAX_FLOOR_SEARCH = 12;
-inline constexpr int CAVE_DRESSING_MAX_ACID_DEPTH = 20;
+inline constexpr int CAVE_DRESSING_MAX_ACID_DEPTH = 22;
 inline constexpr int CAVE_DRESSING_REACH_X = 40;
 inline constexpr int CAVE_DRESSING_REACH_Y = 40;
 inline constexpr int DEEP_DRESSING_BANK = 3;
@@ -171,6 +171,55 @@ struct VillagePlan {
   int latticeX = 0;
   int center = 0;
   int buildingCount = 0;
+  int left = 0, top = 0, right = 0, bottom = 0;
+  uint32_t id = 0;
+};
+
+enum LandmarkKind : uint8_t {
+  LM_WINDMILL, LM_AQUEDUCT, LM_CASTLE, LM_ABBEY,
+  LM_PYRAMID, LM_TOMB, LM_LEVIATHAN, LM_OSSUARY,
+  LM_LONGHOUSE, LM_ICEWATCH, LM_STEP_TEMPLE, LM_SANCTUARY,
+  LM_STILT_HAMLET, LM_SUNKEN_ROTUNDA, LM_IRIS_CATHEDRAL, LM_STAR_OBSERVATORY,
+  LM_IGLOO_CLUSTER, LM_BONE_CAMP, LM_BONE_LOOKOUT, LM_COUNT,
+};
+
+struct LandmarkDef {
+  const char* name;
+  int halfWidth, height;
+  uint8_t masonry, trim, timber;
+};
+inline constexpr std::array<LandmarkDef, LM_COUNT> LANDMARKS = {{
+  {"windmill grange", 82, 68, BRICK, SANDSTONE, OAK_WOOD},
+  {"broken aqueduct", 104, 48, STONE, MOSS, OAK_WOOD},
+  {"woodland castle", 92, 78, STONE, SANDSTONE, PINE_WOOD},
+  {"ruined abbey", 86, 74, STONE, MOSS, OAK_WOOD},
+  {"sun pyramid", 104, 72, SANDSTONE, CLAY, PINE_WOOD},
+  {"buried royal tomb", 86, 46, SANDSTONE, GOLD_ORE, PINE_WOOD},
+  {"fallen leviathan", 118, 50, BONE, PALESTONE, DEEPSTONE},
+  {"ossuary gate", 86, 68, PALESTONE, BONE, DEEPSTONE},
+  {"northern longhouse", 92, 58, STONE, ICE, PINE_WOOD},
+  {"icewatch bridge", 96, 78, STONE, ICE, PINE_WOOD},
+  {"terraced sun temple", 102, 80, STONE, MOSS, CLAY},
+  {"overgrown sanctuary", 90, 60, STONE, MOSS, OAK_WOOD},
+  {"reedwater hamlet", 106, 48, OAK_WOOD, MOSS, WOOD},
+  {"sunken rotunda", 86, 60, STONE, MOSS, WOOD},
+  {"iris cathedral", 92, 84, PALESTONE, EYE_WOOD, EYE_WOOD},
+  {"star observatory", 88, 76, PALESTONE, EYE_IRIS, EYE_WOOD},
+  {"snowhaven igloos", 98, 44, ICE, SNOW, PINE_WOOD},
+  {"bonehunter encampment", 102, 56, DEEPSTONE, BONE, PINE_WOOD},
+  {"tuskbound lookout", 82, 78, DEEPSTONE, BONE, PINE_WOOD},
+}};
+
+inline LandmarkKind landmarkKindForBiome(int biome, uint32_t id) {
+  if (biome == BIOME_TUNDRA && (id >> 4) % 3 == 0) return LM_IGLOO_CLUSTER;
+  if (biome == BIOME_ROCKY && (id & 1) && (id & 48))
+    return id & 16 ? LM_BONE_CAMP : LM_BONE_LOOKOUT;
+  return (LandmarkKind)(biome * 2 + (id & 1));
+}
+
+struct LandmarkPlan {
+  int center = 0, floorY = 0, biome = 0;
+  LandmarkKind kind = LM_WINDMILL;
   int left = 0, top = 0, right = 0, bottom = 0;
   uint32_t id = 0;
 };
@@ -643,6 +692,7 @@ static_assert(ruinArchetypeInvalidFixturesAreRejected(),
               "Invalid ruin archetypes must fail validation");
 
 struct RuinPlan {
+  static constexpr int FOUNDATION_DEPTH = 32;
   static constexpr int MAX_WIDTH = ruinMaxWidth(RUIN_ARCHETYPES);
   static constexpr int MAX_HEIGHT = ruinMaxHeight(RUIN_ARCHETYPES);
   static constexpr int FLOOR_SEARCH_REACH = RUIN_FLOOR_SEARCH_REACH;
@@ -656,7 +706,9 @@ struct RuinPlan {
                 && CANDIDATE_OVERSCAN_X
                   >= MAX_WIDTH / 2 + SIDE_TUNNEL_REACH);
   static_assert(CANDIDATE_OVERSCAN_Y
-                >= FLOOR_SEARCH_REACH + MAX_HEIGHT - 1);
+                >= FLOOR_SEARCH_REACH + MAX_HEIGHT - 1
+                && CANDIDATE_OVERSCAN_Y >= FLOOR_SEARCH_REACH
+                  + RUIN_CANDIDATE_JITTER_MAX + FOUNDATION_DEPTH);
   int latticeX = 0, latticeY = 0;
   RuinKind kind = RK_HOUSE;
   int left = 0, top = 0, right = 0, bottom = 0;
@@ -665,14 +717,14 @@ struct RuinPlan {
 };
 
 struct DeepStructurePlan {
-  static constexpr int MIN_WIDTH = 86;
-  static constexpr int WIDTH_VARIATION = 25;
+  static constexpr int MIN_WIDTH = 124;
+  static constexpr int WIDTH_VARIATION = 37;
   static constexpr int MAX_WIDTH = MIN_WIDTH + WIDTH_VARIATION - 1;
-  static constexpr int MIN_HEIGHT = 40;
-  static constexpr int HEIGHT_VARIATION = 12;
+  static constexpr int MIN_HEIGHT = 60;
+  static constexpr int HEIGHT_VARIATION = 21;
   static constexpr int MAX_HEIGHT = MIN_HEIGHT + HEIGHT_VARIATION - 1;
   static constexpr int SIDE_PORTAL_REACH = 22;
-  static constexpr int BUTTRESS_DEPTH = 20;
+  static constexpr int BUTTRESS_DEPTH = 112;
   static constexpr int FLOOR_SEARCH_EXTRA = 36;
   static constexpr int CANDIDATE_OVERSCAN_X =
     MAX_WIDTH / 2 + SIDE_PORTAL_REACH;
@@ -767,11 +819,13 @@ class WorldContextSystem {
   static constexpr int OUTCROP_LATTICE = 92;
 
   bool villagePlan(int latticeX, VillagePlan& out) const;
+  bool landmarkPlan(int latticeX, LandmarkPlan& out) const;
   bool villageBuildingPlan(const VillagePlan& village, int ordinal,
                            VillageBuildingPlan& out,
                            int queryX = INT_MIN) const;
   bool minePlan(int latticeX, MinePlan& out) const;
   bool offworldFacilityPlan(int latticeX, OffworldFacilityPlan& out) const;
+  bool ruinCandidate(int latticeX, int latticeY, RuinPlan& out) const;
   bool ruinPlan(int latticeX, int latticeY, RuinPlan& out) const;
   bool deepStructurePlan(int gridX, int gridY,
                          DeepStructurePlan& out) const;
@@ -779,6 +833,7 @@ class WorldContextSystem {
   static bool outcropSlice(const OutcropPlan& plan, int dy,
                            OutcropSlice& out);
   static bool fossilCellAt(const OutcropPlan& plan, int dx, int dy);
+  bool overlapsConstruction(const WorldBounds& bounds) const;
   WorldContext at(int worldX, int worldY) const;
   void writeSnapshot(int worldX, int worldY, int* out) const;
 
@@ -814,6 +869,9 @@ class WorldContextSystem {
   }
  private:
   Engine& E;
+  mutable std::unordered_map<uint64_t, LandmarkPlan> landmarkCache;
+  mutable std::unordered_map<uint64_t, RuinPlan> ruinCache;
+  mutable uint32_t ruinCacheSeed = 0, ruinCacheContent = 0;
 
   static int floorDiv(int value, int divisor);
   bool featureApplies(GeneratedFeatureFamily family) const;

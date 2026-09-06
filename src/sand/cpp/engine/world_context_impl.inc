@@ -46,6 +46,71 @@ bool WorldContextSystem::villagePlan(int latticeX, VillagePlan& out) const {
   return candidateAccepted(def, {out.left, out.top, out.right, out.bottom});
 }
 
+bool WorldContextSystem::landmarkPlan(int latticeX, LandmarkPlan& out) const {
+  if (!featureApplies(GFF_LANDMARK)) return false;
+  uint64_t key = ((uint64_t)(E.L->worldSeed ^ E.content.fingerprint) << 32) | (uint32_t)latticeX;
+  auto found = landmarkCache.find(key);
+  if (found != landmarkCache.end()) { out = found->second; return out.id != 0; }
+  LandmarkPlan result;
+  const auto& feature = featureDef(GFF_LANDMARK);
+  uint32_t seed = E.L->worldSeed ^ 0x1A6D4A2Bu;
+  uint32_t id = featureId(0x1A6D0001u, latticeX, 0);
+  Engine::ForegroundTerrainScope foregroundQuery(E.L);
+  for (int attempt = 0; attempt < 4 && whash2(seed, latticeX, 17) < .46; attempt++) {
+    int cx = latticeX * feature.latticeWidth + 160
+      + (int)(whash2(seed, latticeX, attempt) * 320);
+    int biome = E.terrain.genBiomeAt(cx);
+    LandmarkKind kind = landmarkKindForBiome(biome, id);
+    const LandmarkDef& def = LANDMARKS[kind];
+    bool wet = biome == BIOME_SWAMP;
+    bool skeleton = kind == LM_LEVIATHAN;
+    bool followsSlope = skeleton || kind == LM_BONE_CAMP || kind == LM_BONE_LOOKOUT;
+    int lo = INT_MAX, hi = INT_MIN;
+    std::vector<int> levels;
+    bool suitable = true;
+    for (int dx = -def.halfWidth - 24; dx <= def.halfWidth + 24; dx += 4) {
+      int x = cx + dx, y = E.terrain.genSurfaceAbs(x);
+      if (E.terrain.genBiomeAt(x) != biome || (!wet && y >= E.L->gSeaRow)
+          || (!skeleton && std::abs(dx) < 24 && E.terrain.genOpenCaveAt(x, y))) { suitable = false; break; }
+      lo = imin(lo, y); hi = imax(hi, y); levels.push_back(y);
+    }
+    if (!suitable || hi - lo > (followsSlope ? 90 : wet ? 24 : 36)) continue;
+    std::sort(levels.begin(), levels.end());
+    int floor = levels[levels.size() / 2] - 1;
+    if (wet) floor = imin(lo - 2, E.L->gSeaRow - 7);
+    WorldBounds bounds{cx - def.halfWidth - 26, lo - def.height - 12,
+                       cx + def.halfWidth + 26, hi + 64};
+    if (!candidateAccepted(feature, bounds)) continue;
+    if (E.planetId == PL_FRONTIER) {
+      for (const ContentRect& rect : E.content.rectangles) {
+        if (rect.right < bounds.left || rect.left > bounds.right) continue;
+        int offset = E.content.surfaceOffset(rect.surface);
+        if (rect.bottom + offset >= bounds.top && rect.top + offset <= bounds.bottom) {
+          suitable = false; break;
+        }
+      }
+    }
+    if (!suitable) continue;
+    result = {cx, floor, biome, kind, bounds.left, bounds.top, bounds.right, bounds.bottom, id};
+    break;
+  }
+  if (landmarkCache.size() >= 256) landmarkCache.clear();
+  landmarkCache.emplace(key, result);
+  out = result;
+  return out.id != 0;
+}
+
+bool WorldContextSystem::overlapsLandmark(
+    const GeneratedFeatureDef& def, const WorldBounds& bounds) const {
+  for (int q = floorDiv(bounds.left - def.overscanX, def.latticeWidth);
+       q <= floorDiv(bounds.right + def.overscanX, def.latticeWidth); q++) {
+    LandmarkPlan plan;
+    if (landmarkPlan(q, plan) && bounds.overlaps({plan.left, plan.top, plan.right, plan.bottom})) return true;
+  }
+  return false;
+}
+
+
 bool WorldContextSystem::villageCandidate(int latticeX, VillagePlan& out) const {
   if (!featureApplies(GFF_VILLAGE)) return false;
   uint32_t seed = E.L->worldSeed ^ 0x57121314u;
@@ -277,11 +342,43 @@ bool WorldContextSystem::offworldFacilityPlan(
                            {out.left, out.top, out.right, out.bottom});
 }
 
-bool WorldContextSystem::ruinPlan(
+bool WorldContextSystem::overlapsConstruction(const WorldBounds& bounds) const {
+  for (const GeneratedFeatureDef& def : FEATURES) {
+    if (def.family == GFF_OUTCROP || !featureApplies(def.family)) continue;
+    if ((this->*def.overlaps)(def, bounds)) return true;
+  }
+  return false;
+}
+
+bool WorldContextSystem::ruinPlan(int latticeX, int latticeY, RuinPlan& out) const {
+  if (ruinCacheSeed != E.L->worldSeed || ruinCacheContent != E.content.fingerprint) {
+    ruinCache.clear(); ruinCacheSeed = E.L->worldSeed; ruinCacheContent = E.content.fingerprint;
+  }
+  uint64_t key = ((uint64_t)(uint32_t)latticeX << 32) | (uint32_t)latticeY;
+  auto found = ruinCache.find(key);
+  if (found != ruinCache.end()) { out = found->second; return out.id != 0; }
+  RuinPlan plan;
+  if (ruinCandidate(latticeX, latticeY, plan)) {
+    WorldBounds footprint{plan.left - 3, plan.top - 3, plan.right + 3, plan.bottom};
+    constexpr int neighborsX = (RuinPlan::MAX_WIDTH + RUIN_CANDIDATE_JITTER_MAX + 6 + RUIN_LATTICE - 1) / RUIN_LATTICE;
+    constexpr int neighborsY = (RuinPlan::MAX_HEIGHT + RuinPlan::FOUNDATION_DEPTH
+      + RUIN_FLOOR_SEARCH_REACH * 2 + RUIN_CANDIDATE_JITTER_MAX + 6 + RUIN_LATTICE - 1) / RUIN_LATTICE;
+    for (int dy = -neighborsY; dy <= neighborsY && plan.id; dy++) for (int dx = -neighborsX; dx <= neighborsX && plan.id; dx++) {
+      if (!dx && !dy) continue;
+      RuinPlan other;
+      if (ruinCandidate(latticeX + dx, latticeY + dy, other) && other.id < plan.id
+          && footprint.overlaps({other.left - 3, other.top - 3, other.right + 3, other.bottom})) plan.id = 0;
+    }
+  }
+  if (ruinCache.size() >= 512) ruinCache.clear();
+  ruinCache.emplace(key, plan); out = plan; return out.id != 0;
+}
+
+bool WorldContextSystem::ruinCandidate(
     int latticeX, int latticeY, RuinPlan& out) const {
   if (!featureApplies(GFF_RUIN)) return false;
   uint32_t seed = E.L->worldSeed ^ 0x57121314u;
-  if (whash2(seed, latticeX, latticeY) >= 0.25) return false;
+  if (whash2(seed, latticeX, latticeY) >= 0.32) return false;
 
   int left = latticeX * RUIN_LATTICE
     + (int)(whash2(seed ^ 0xA1u, latticeX, latticeY) * 6);
@@ -347,12 +444,16 @@ bool WorldContextSystem::ruinPlan(
   int top = floorY - height + 1;
   int surfaceY = E.terrain.genSurfaceAbs(centerX);
   if (top < surfaceY + 30 || floorY > E.terrain.caveBottomAbs()) return false;
+  // The complete vault stays below the surface, including hillside entrances.
+  for (int x = left; x <= left + width; x += 4)
+    if (top < E.terrain.genSurfaceAbs(x) + 30) return false;
+  if (top < E.terrain.genSurfaceAbs(left + width) + 30) return false;
 
   if (selectedArchetype.minSurfaceDepth > 0
       && floorY - surfaceY < selectedArchetype.minSurfaceDepth)
     kind = selectedArchetype.shallowFallback;
 
-  WorldBounds ruinBounds{left, top, left + width, floorY};
+  WorldBounds ruinBounds{left, top, left + width, floorY + RuinPlan::FOUNDATION_DEPTH};
   if (!candidateAccepted(featureDef(GFF_RUIN), ruinBounds)) return false;
   out.latticeX = latticeX;
   out.latticeY = latticeY;
@@ -360,7 +461,7 @@ bool WorldContextSystem::ruinPlan(
   out.left = left;
   out.top = top;
   out.right = left + width;
-  out.bottom = floorY;
+  out.bottom = floorY + RuinPlan::FOUNDATION_DEPTH;
   out.floorY = floorY;
   out.surfaceY = surfaceY;
   out.id = featureId(0x2A11C0DEu, latticeX, latticeY);
@@ -554,8 +655,8 @@ bool WorldContextSystem::fossilCellAt(const OutcropPlan& plan, int dx, int dy) {
     return true;
   }
   if (form == 1) {
-    // Three arches of different heights share a buried sternum.
-    if (dy <= 2) return std::abs(dx) <= 21;
+    // Separate ribs curve down into individual buried feet.
+    if (dy <= 2) return fossilCellAt(plan, dx, 3);
     for (int rib = -1; rib <= 1; rib++) {
       int height = h - std::abs(rib) * 4;
       if (dy > height) continue;
@@ -567,6 +668,16 @@ bool WorldContextSystem::fossilCellAt(const OutcropPlan& plan, int dx, int dy) {
       if (x <= lowerRadius && x >= imax(0, radius - 2)) return true;
     }
     return false;
+  }
+  if (plan.id & 8) {
+    // Leaning timber stakes, lashed crossbars, and pointed bone caps.
+    for (int stake = -1; stake <= 1; stake++) {
+      int height = h - std::abs(stake) * 5;
+      int x = stake * 10 + stake * dy / 10;
+      int half = dy > height - 4 ? imax(0, (height - dy) / 2) : 2;
+      if (dy <= height && std::abs(dx - x) <= half) return true;
+    }
+    return dy >= h / 3 && dy <= h / 3 + 1 && std::abs(dx) <= 13;
   }
   int spine = (plan.latticeX % 2 ? -1 : 1) * dy / 8;
   int half = dy < 3 ? 7 : dy >= h - 2 ? 2 : dy % 5 < 3 ? 5 : 1;
@@ -732,6 +843,19 @@ static void preferFeatureMatch(
           kind, role, tags, id, parentId, bounds};
 }
 
+bool WorldContextSystem::queryLandmark(
+    const GeneratedFeatureDef& def, int worldX, int worldY, GeneratedFeatureMatch& best) const {
+  for (int q = floorDiv(worldX - def.overscanX, def.latticeWidth);
+       q <= floorDiv(worldX + def.overscanX, def.latticeWidth); q++) {
+    LandmarkPlan plan;
+    if (landmarkPlan(q, plan) && worldX >= plan.left && worldX <= plan.right
+        && worldY >= plan.top && worldY <= plan.bottom)
+      preferFeatureMatch(best, def, 0, def.kind, def.role, def.tags, plan.id, 0,
+        {plan.left, plan.top, plan.right, plan.bottom});
+  }
+  return best.found;
+}
+
 bool WorldContextSystem::queryVillage(
     const GeneratedFeatureDef& def, int worldX, int worldY,
     GeneratedFeatureMatch& best) const {
@@ -802,7 +926,8 @@ bool WorldContextSystem::queryRuin(
       WorldBounds bounds{ruin.left, ruin.top, ruin.right, ruin.bottom};
       if (bounds.contains(worldX, worldY))
         preferFeatureMatch(best, def, 0, def.kind, def.role,
-                           def.tags, ruin.id, 0, bounds);
+                           worldY <= ruin.floorY ? def.tags : WA_STRUCTURE,
+                           ruin.id, 0, bounds);
     }
   }
   return best.found;
@@ -827,7 +952,8 @@ bool WorldContextSystem::queryDeepStructure(
       WorldBounds bounds{deep.left, deep.top, deep.right, deep.bottom};
       if (bounds.contains(worldX, worldY))
         preferFeatureMatch(best, def, 0, def.kind, def.role,
-                           def.tags, deep.id, 0, bounds);
+                           worldY <= deep.floorY ? def.tags : WA_STRUCTURE,
+                           deep.id, 0, bounds);
     }
   }
   return best.found;
@@ -853,7 +979,7 @@ bool WorldContextSystem::queryOutcrop(
       contains = slice.contains(worldX) && worldY <= E.terrain.genSurfaceAbs(worldX)
         + TerrainGen::GEN_SKIN + soil;
       if (fossil) contains = contains && fossilCellAt(plan, worldX - plan.center, 0);
-      if (fossil) contains = contains && worldY >= E.terrain.genSurfaceAbs(worldX);
+      if (fossil && plan.id % 3 != 1) contains = contains && worldY >= E.terrain.genSurfaceAbs(worldX);
     }
     if (plan.style == OCS_WEATHERED_HOODOO && dy == 0
         && worldX >= plan.center - plan.halfBase - 3
@@ -930,6 +1056,12 @@ void stampVillageGeneratedFeature(
     int colStart, int colEnd, int rowStart, int rowEnd) {
   engine.fillVillageGeneratedFeature(
     feature, colStart, colEnd, rowStart, rowEnd);
+}
+
+void stampLandmarkGeneratedFeature(
+    Engine& engine, const GeneratedFeatureDef& feature,
+    int colStart, int colEnd, int rowStart, int rowEnd) {
+  engine.fillLandmarkGeneratedFeature(feature, colStart, colEnd, rowStart, rowEnd);
 }
 
 void stampMineGeneratedFeature(

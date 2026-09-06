@@ -201,7 +201,10 @@
               || (def.formationStyle == SFS_SPIRE && x == slice.left + 1 && dy % 7 < 4)
               || (def.formationStyle == SFS_FOSSIL && dy > plan.height * 3 / 4
                   && x - center == (dy / 3) % 3 - 1));
-            put(x, floorY - dy, accent ? def.formationAccent : def.formationMaterial);
+            bool stakes = def.formationStyle == SFS_FOSSIL && plan.id % 3 == 2 && (plan.id & 8);
+            uint8_t mat = accent ? def.formationAccent : def.formationMaterial;
+            if (stakes && dy < plan.height - 7) mat = dy % 7 < 2 ? BONE : PINE_WOOD;
+            put(x, floorY - dy, mat);
           }
         }
         OutcropSlice base;
@@ -211,7 +214,7 @@
               && !worldContext.fossilCellAt(plan, x - center, 0)) continue;
           int ground = terrain.genSurfaceAbs(x);
           int soil = terrain.genSoilDepthAt(x, terrain.genBiomeAt(x));
-          int rootTop = def.formationStyle == SFS_FOSSIL ? imax(floorY + 1, ground) : floorY + 1;
+          int rootTop = def.formationStyle == SFS_FOSSIL && plan.id % 3 != 1 ? imax(floorY + 1, ground) : floorY + 1;
           for (int y = rootTop; y <= ground + TerrainGen::GEN_SKIN + soil; y++)
             put(x, y, def.formationMaterial);
         }

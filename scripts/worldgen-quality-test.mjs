@@ -57,7 +57,7 @@ const mk = (cols, rows, seed) => createEngineWasm({
 // cells remain valid cave-basin decoration.
 {
   let openEntranceCells = 0, blockedEntranceCells = 0, largestStoneBlocker = 0;
-  for (const seed of [0, 0xBED, 0xBEEF]) {
+  for (const seed of [0, 0xBED, 0xBEEF, 7]) {
     const cols = 1280, rows = 200;
     const e = mk(cols, rows, seed);
     const grid = e.getGrid();

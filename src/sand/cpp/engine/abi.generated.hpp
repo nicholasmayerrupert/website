@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 38;
+static const int ABI_VERSION = 39;
 
-static const uint64_t ABI_FINGERPRINT = 0xe30c920246e0ULL;
+static const uint64_t ABI_FINGERPRINT = 0x03ff7f0a45f5ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
 enum PlayerSnapshotField : int {
@@ -1073,6 +1073,7 @@ enum WorldFeatureKind : uint8_t {
   WF_RUIN = 5,
   WF_DEEP_STRUCTURE = 6,
   WF_OUTCROP = 7,
+  WF_LANDMARK = 8,
 };
 
 static constexpr bool isWorldFeatureKindValue(int value) {
@@ -1085,6 +1086,7 @@ static constexpr bool isWorldFeatureKindValue(int value) {
     case WF_RUIN:
     case WF_DEEP_STRUCTURE:
     case WF_OUTCROP:
+    case WF_LANDMARK:
       return true;
     default: return false;
   }

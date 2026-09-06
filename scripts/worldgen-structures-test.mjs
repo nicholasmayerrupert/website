@@ -4,6 +4,7 @@
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
+import { MAT_FLAGS, MF } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 256, ROWS = 256, SEED = 0xBED;
@@ -54,7 +55,7 @@ function surfaceMasonryComponents(g, engine) {
   const stack = [];
   const builtAt = (k) => {
     const x = k % COLS, y = (k / COLS) | 0, mat = g[k];
-    return (mat === MAT.BRICK || mat === MAT.SANDSTONE) && y <= surfaceY[x];
+    return (MAT_FLAGS[mat] & MF.rigid) && (MAT_FLAGS[mat] & MF.bearing) && !(MAT_FLAGS[mat] & MF.plantLeaf) && y <= surfaceY[x];
   };
   const comps = [];
   for (let start = 0; start < g.length; start++) {
@@ -63,7 +64,7 @@ function surfaceMasonryComponents(g, engine) {
     stack.length = 0;
     stack.push(start);
     let n = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1;
-    let edge = false, groundContacts = 0;
+    let edge = false, groundContacts = 0, masonryCells = 0;
     while (stack.length) {
       const k = stack.pop();
       const x = k % COLS, y = (k / COLS) | 0;
@@ -72,6 +73,7 @@ function surfaceMasonryComponents(g, engine) {
       minY = Math.min(minY, y); maxY = Math.max(maxY, y);
       edge ||= x === 0 || x === COLS - 1 || y === 0 || y === ROWS - 1;
       groundContacts += y >= surfaceY[x] - 1;
+      masonryCells += g[k] === MAT.BRICK || g[k] === MAT.SANDSTONE;
       const neighbors = [
         x ? k - 1 : -1, x + 1 < COLS ? k + 1 : -1,
         y ? k - COLS : -1, y + 1 < ROWS ? k + COLS : -1,
@@ -84,7 +86,7 @@ function surfaceMasonryComponents(g, engine) {
     }
     comps.push({
       n, width: maxX - minX + 1, height: maxY - minY + 1,
-      edge, groundContacts,
+      edge, groundContacts, masonryCells,
     });
   }
   return comps;
@@ -175,7 +177,7 @@ function surfaceMasonryComponents(g, engine) {
       if (depth === 0) for (const c of surfaceMasonryComponents(g, e)) {
         // Ignore natural one-cell sandstone crusts and structures clipped by the
         // streaming window. A full facade is substantial in both dimensions.
-        if (c.edge || c.n < 80 || c.width < 12 || c.height < 8) continue;
+        if (c.edge || c.masonryCells < 80 || c.width < 12 || c.height < 8) continue;
         tally.surfaceShells++;
         tally.surfaceGroundContacts += c.groundContacts;
         if (c.groundContacts >= 3) tally.groundedSurfaceShells++;
@@ -234,7 +236,7 @@ function surfaceMasonryComponents(g, engine) {
   check(`mine levels contain machinery, cargo, lamps, and themed rooms (${tally.decoratedMineRows}/${tally.mineRailRows})`,
     tally.decoratedMineRows > tally.mineRailRows * 0.80);
   check(`surface buildings contain visible furnishings (${tally.surfaceFurnishings} cells)`, tally.surfaceFurnishings > 200);
-  check(`surface structures are masonry-connected to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
+  check(`surface structures are connected through load-bearing materials to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
     tally.surfaceShells > 10 && tally.groundedSurfaceShells === tally.surfaceShells
       && tally.surfaceGroundContacts > tally.surfaceShells * 3);
   check(`village streets use sand with masonry terrace approaches (${tally.looseStreetApproaches} sandy, ${tally.pavedStreetApproaches}/${tally.streetLamps} accessible)`,
@@ -249,35 +251,37 @@ function surfaceMasonryComponents(g, engine) {
 
 // --- the archive archetype remains a real furnished library, not an empty shell ---
 {
-  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1234, sinksOn: false, infinite: true });
   const bookIds = new Set([MAT.CLAY, MAT.MOSS, MAT.CRYSTAL, MAT.COPPER_ORE, MAT.COAL_ORE]);
   let archiveBays = 0;
-  e.shiftWorldXY(0, 96);
-  for (let band = 0; band < 50; band++) {
-    const fg = e.getGrid(), bg = e.getGridBg();
-    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
-    for (let y = 5; y < ROWS - 6; y++) for (let x = 1; x < COLS - 11; x++) {
-      const worldX = offX + x, worldY = offY + y;
-      if (worldY < e.worldSurfaceAbsAt(worldX) + 30) continue;
-      let upperShelf = true, lowerShelf = true;
-      for (let dx = 0; dx < 10; dx++) {
-        upperShelf &&= bg[y * COLS + x + dx] === MAT.WOOD;
-        lowerShelf &&= bg[(y + 5) * COLS + x + dx] === MAT.WOOD;
+  for (const seed of [0x1234, 0xBED, 7]) {
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: true });
+    e.shiftWorldXY(0, 96);
+    for (let band = 0; band < 50; band++) {
+      const fg = e.getGrid(), bg = e.getGridBg();
+      const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
+      for (let y = 5; y < ROWS - 6; y++) for (let x = 1; x < COLS - 11; x++) {
+        const worldX = offX + x, worldY = offY + y;
+        if (worldY < e.worldSurfaceAbsAt(worldX) + 30) continue;
+        let upperShelf = true, lowerShelf = true;
+        for (let dx = 0; dx < 10; dx++) {
+          upperShelf &&= bg[y * COLS + x + dx] === MAT.WOOD;
+          lowerShelf &&= bg[(y + 5) * COLS + x + dx] === MAT.WOOD;
+        }
+        if (!upperShelf || !lowerShelf) continue;
+        let books = 0, framing = 0, visible = 0;
+        for (let yy = y - 4; yy < y; yy++) for (let dx = 0; dx < 10; dx++) {
+          const k = yy * COLS + x + dx;
+          books += bookIds.has(bg[k]);
+          framing += bg[k] === MAT.PINE_WOOD;
+          visible += bookIds.has(bg[k]) && fg[k] === MAT.EMPTY;
+        }
+        if (books >= 4 && framing >= 4 && visible >= 2) archiveBays++;
       }
-      if (!upperShelf || !lowerShelf) continue;
-      let books = 0, framing = 0, visible = 0;
-      for (let yy = y - 4; yy < y; yy++) for (let dx = 0; dx < 10; dx++) {
-        const k = yy * COLS + x + dx;
-        books += bookIds.has(bg[k]);
-        framing += bg[k] === MAT.PINE_WOOD;
-        visible += bookIds.has(bg[k]) && fg[k] === MAT.EMPTY;
-      }
-      if (books >= 4 && framing >= 4 && visible >= 2) archiveBays++;
+      e.shiftWorldXY(128, 0);
     }
-    e.shiftWorldXY(128, 0);
+    e.destroy();
   }
   check(`lost archives contain framed, visible book bays (${archiveBays} bays)`, archiveBays >= 4);
-  e.destroy();
 }
 
 // --- ocean flora stays submerged. Surface markets and cave ruins now also use

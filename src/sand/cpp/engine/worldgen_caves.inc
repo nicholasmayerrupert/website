@@ -1,3 +1,7 @@
+  // Monumental ruins inhabit whole deep chambers. Each plan is shared by both
+  // layers: the foreground supplies roomy architecture and traversable doors,
+  // while the background supplies the solid back wall, furnishings, light, and
+  // storytelling detail without putting clutter in the player's path.
   void fillDeepGeneratedFeature(
       const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
@@ -21,7 +25,6 @@
                               feature.latticeHeight));
     int gy1 = imax(0, floorDiv(wy1 - TerrainGen::CAVE_BOTTOM,
                               feature.latticeHeight));
-    uint32_t seed = L->worldSeed ^ 0xD33A900u;
 
     // All placement queries use the foreground graph, including during
     // background generation and predictive prefetch.
@@ -42,168 +45,30 @@
       if (plan.right < rectX0 || plan.left > rectX1
           || plan.bottom < rectY0 || plan.top - 3 > rectY1) continue;
 
-      uint8_t wall = biomeDef.monumentWall;
-      uint8_t accent = biomeDef.monumentAccent;
-      int half = imax(1, width / 2);
+      CaveDeepStructureHandler handler = caveProfileHandler(biomeDef.profile).deepStructure;
+      int theme = handler == CDSH_MAGMA ? 0 : handler == CDSH_GEODE ? 1
+                : handler == CDSH_FOSSIL ? 2 : 3;
+      int variant = (plan.id >> 3) % 3;
+      stampCaveArchitecture(put, left, top, width, height, 8 + theme * 3 + variant, background, plan.id);
 
-      // Clear a genuinely roomy nave in front. Behind it, repair any rare natural
-      // background recess into one continuous decorated wall.
-      for (int x = left; x <= right; x++) {
-        int dx = std::abs(x - p.centerX);
-        int roofY = top + dx * dx * 7 / (half * half);
-        for (int y = roofY + 2; y < floorY; y++) {
-          if (background) {
-            bool course = (y - top) % 8 == 0;
-            put(x, y, course ? wall : DEEPSTONE);
-          } else {
-            put(x, y, EMPTY);
-          }
-        }
-        put(x, roofY, wall);
-        put(x, roofY + 1, wall);
-        put(x, floorY, wall);
-        put(x, floorY + 1, DEEPSTONE);
-        put(x, floorY + 2, DEEPSTONE);
-      }
-      for (int y = top + 6; y <= floorY; y++) {
-        put(left, y, wall); put(left + 1, y, wall);
-        put(right - 1, y, wall); put(right, y, wall);
-      }
-
-      // Massive exterior buttresses carry the hall into the cavern floor or lava.
-      for (int bx : {left + 7, p.centerX, right - 7}) {
-        int baseWidth = bx == p.centerX ? 3 : 2;
-        for (int y = floorY + 1;
-             y <= floorY + DeepStructurePlan::BUTTRESS_DEPTH; y++) {
-          int flare = (y - floorY) / 7;
-          for (int dx = -baseWidth - flare; dx <= baseWidth + flare; dx++) put(bx + dx, y, DEEPSTONE);
+      // Tapered piers seek real bedrock under the hall or lava lake. Absolute
+      // floor queries and bounded reach make clipped stamps reproduce exactly.
+      for (int bx : {left + 3, p.centerX, right - 3}) {
+        int anchor = floorY + 2;
+        while (anchor < floorY + DeepStructurePlan::BUTTRESS_DEPTH - 3
+            && terrain.genOpenCaveAt(bx, anchor)) anchor++;
+        for (int y = floorY; y <= anchor + 2; y++) {
+          int halfFoot = 2 + imin(4, (y - floorY) / 12);
+          for (int dx = -halfFoot; dx <= halfFoot; dx++) put(bx + dx, y, DEEPSTONE);
         }
       }
-
-      // Two wide side portals meet the natural cavern even when the shell clips
-      // into a rough wall. At 14 cells high they clear the player with room to jump.
+      // Side passages preserve the cave's travel route through the lower nave.
       if (!background) for (int side : {-1, 1}) {
         int edge = side < 0 ? left : right;
         for (int d = 0; d <= DeepStructurePlan::SIDE_PORTAL_REACH; d++)
-          for (int y = floorY - PLAYER_H - 6; y < floorY; y++)
-            put(edge + side * d, y, EMPTY);
+          for (int y = floorY - PLAYER_H - 5; y < floorY - 1; y++) put(edge + side * d, y, EMPTY);
       }
 
-      CaveDeepStructureHandler structureHandler =
-        caveProfileHandler(biomeDef.profile).deepStructure;
-      if (structureHandler == CDSH_MAGMA) {
-        // Furnace citadel: tall arched bays, molten hearths, chains, and an
-        // uninterrupted central causeway above the surrounding lava.
-        for (int bay = 0; bay < 4; bay++) {
-          int cx = left + (bay * 2 + 1) * width / 8;
-          if (background) {
-            for (int y = floorY - 11; y <= floorY - 4; y++)
-              for (int x = cx - 5; x <= cx + 5; x++)
-                put(x, y, (x == cx - 5 || x == cx + 5 || y == floorY - 11) ? BRICK : DEEPSTONE);
-            for (int y = floorY - 8; y <= floorY - 4; y++)
-              for (int x = cx - 2; x <= cx + 2; x++) put(x, y, LAVA);
-            put(cx - 6, floorY - 3, IRON_ORE);
-            put(cx - 5, floorY - 3, IRON_ORE);
-          } else {
-            for (int y = floorY - 10; y < floorY - 2; y++) {
-              put(cx - 6, y, BRICK); put(cx + 6, y, BRICK);
-            }
-            for (int x = cx - 6; x <= cx + 6; x++) put(x, floorY - 11, BRICK);
-          }
-          for (int y = top + 7; y < floorY - 13; y++) put(cx, y, IRON_ORE);
-          put(cx, floorY - 13, CRYSTAL);
-        }
-        for (int x = left + 3; x <= right - 3; x += 4) {
-          put(x, floorY - 2, IRON_ORE);
-          if ((x - left) % 12 == 3) put(x, floorY - 3, GOLD_ORE);
-        }
-      } else if (structureHandler == CDSH_GEODE) {
-        // Crystal observatory: concentric luminous arches frame a broad altar,
-        // with a star-map mosaic living safely in the background.
-        for (int ring = 0; ring < 3; ring++) {
-          int rx = width / 2 - 12 - ring * 8, ry = height - 15 - ring * 5;
-          for (int dx = -rx; dx <= rx; dx++) {
-            double nx = (double)dx / (double)rx;
-            int y = floorY - (int)std::round(ry * std::sqrt(std::fmax(0.0, 1.0 - nx * nx)));
-            put(p.centerX + dx, y, ring == 1 ? DEEPSTONE : CRYSTAL);
-          }
-        }
-        if (background) {
-          for (int star = 0; star < 28; star++) {
-            int x = left + 8 + (int)(whash2(seed ^ 0xB10u, gx * 31 + star, gy) * (width - 16));
-            int y = top + 9 + (int)(whash2(seed ^ 0xB11u, gx, gy * 31 + star) * (height - 20));
-            put(x, y, star % 5 ? CRYSTAL : GOLD_ORE);
-          }
-          for (int x = p.centerX - 10; x <= p.centerX + 10; x++)
-            put(x, floorY - 4 - std::abs(x - p.centerX) / 4, CRYSTAL);
-        }
-      } else if (structureHandler == CDSH_FOSSIL) {
-        // Fossil conservatory: broad timber scaffolds, excavation tables, rail
-        // carts, and carefully mounted remains make this feel actively studied.
-        for (int sx = left + 10; sx < right - 8; sx += 18) {
-          for (int y = top + 10; y < floorY; y++) put(sx, y, WOOD);
-          for (int x = sx; x <= imin(right - 3, sx + 13); x++) {
-            put(x, top + 15, WOOD);
-            put(x, floorY - 10, WOOD);
-          }
-        }
-        if (background) {
-          for (int table = 0; table < 4; table++) {
-            int x0 = left + 9 + table * (width - 20) / 4;
-            for (int x = x0; x < x0 + 10; x++) put(x, floorY - 5, WOOD);
-            put(x0 + 1, floorY - 4, SANDSTONE);
-            put(x0 + 4, floorY - 4, DEBRIS);
-            put(x0 + 7, floorY - 4, GOLD_ORE);
-          }
-          for (int x = left + 5; x <= right - 5; x++) {
-            put(x, floorY - 2, IRON_ORE);
-            if ((x - left) % 8 == 0) {
-              put(x, floorY - 3, IRON_ORE);
-              put(x + 2, floorY - 3, IRON_ORE);
-            }
-          }
-          for (int x = p.centerX - 14; x <= p.centerX + 14; x++) {
-            int y = top + 11 + (x - p.centerX) * (x - p.centerX) / 42;
-            put(x, y, SANDSTONE);
-          }
-        }
-      } else if (structureHandler == CDSH_VOID) {
-        // Hanging archive: high galleries, packed shelves, fungal tapestries,
-        // lamps, and a clear ceremonial aisle through the center.
-        for (int level = 0; level < 2; level++) {
-          int y = floorY - 12 - level * 12;
-          for (int x = left + 5; x <= right - 5; x++) put(x, y, BRICK);
-          for (int x : {left + 8, right - 8}) for (int yy = y; yy < floorY; yy++) put(x, yy, BRICK);
-        }
-        if (background) {
-          for (int shelf = 0; shelf < 7; shelf++) {
-            int x0 = left + 7 + shelf * (width - 16) / 7;
-            for (int y = floorY - 10; y <= floorY - 4; y++) {
-              put(x0, y, WOOD); put(x0 + 6, y, WOOD);
-            }
-            for (int y : {floorY - 10, floorY - 7, floorY - 4})
-              for (int x = x0; x <= x0 + 6; x++) put(x, y, WOOD);
-            put(x0 + 2, floorY - 8, MYCELIUM);
-            put(x0 + 4, floorY - 5, GLOWSHROOM);
-          }
-          for (int x : {p.centerX - 18, p.centerX, p.centerX + 18}) {
-            for (int y = top + 4; y <= top + 15; y++) put(x, y, VINE);
-            put(x - 1, top + 15, GLOWSHROOM);
-            put(x, top + 15, GLOWSHROOM);
-            put(x + 1, top + 15, GLOWSHROOM);
-          }
-        }
-      } else if (structureHandler != CDSH_NONE) {
-        __builtin_trap();
-      }
-
-      // Reopen a generous central aisle after every archetype's foreground
-      // detailing. Architectural rhythm remains on either side, never as clutter
-      // the player has to squeeze through.
-      if (!background)
-        for (int x = p.centerX - 7; x <= p.centerX + 7; x++)
-          for (int y = floorY - PLAYER_H - 6; y < floorY; y++) put(x, y, EMPTY);
-      if (background) put(p.centerX, floorY - 2, accent);
     }
   }
   // Deterministic ocean gardens rooted in the background seabed. VINE is used as
@@ -336,34 +201,67 @@
       }
     };
     auto stampCrystalAcidBasin = [&](int wx, int floorY, int gx, int gy) {
-      // Big lakes are the norm: taking the MAX of two rolls skews the size toward
-      // the large end, and the floor keeps out tiny ponds entirely. Depth tracks
-      // width so even the widest basins stay rounded (never a flat acid smear).
-      double av = whash2(sseed ^ 0x440u, gx, gy), bv = whash2(sseed ^ 0x441u, gx, gy);
-      int rx = 12 + (int)(std::fmax(av, bv) * 23);                         // 12..35, large-skewed
-      int ry = 3 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 5) + rx / 5;     // depth grows with width (lake-like)
-      for (int dx = -rx - 4; dx <= rx + 4; dx++) {
-        int px = wx + dx;
-        double ax = (double)std::abs(dx);
-        double nx = std::fmin(1.0, ax / (double)imax(1, rx));
-        double curve = std::sqrt(std::fmax(0.0, 1.0 - nx * nx));
-        int depth = 3 + (int)std::floor(curve * ry);
-        bool bank = ax > rx;
-        bool wall = ax >= rx - 2;
-        if (bank) {
-          for (int yy = floorY - 2; yy <= floorY + depth + 3; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, STONE, false);
-          continue;
+      // Mineral springs form asymmetric bowls, stepped shelves, or paired pools
+      // at different elevations. A continuous crystal rind contains the acid;
+      // pale mineral rims and tapered rock banks meet the surrounding floor.
+      double size = whash2(sseed ^ 0x440u, gx, gy);
+      int radius = 14 + (int)(std::sqrt(size) * 20);
+      int style = (int)(whash2(sseed ^ 0x441u, gx, gy) * 3);
+      WorldBounds bounds{wx - radius - 4, floorY - 12, wx + radius + 4, floorY + CAVE_DRESSING_MAX_ACID_DEPTH};
+      if (worldContext.overlapsConstruction(bounds)) return;
+      auto bowl = [&](int center, int level, int rx, int ordinal) {
+        int leftRadius = rx;
+        int rightRadius = imax(7, rx - (int)(whash2(sseed ^ 0x442u, gx, gy + ordinal) * rx * .20));
+        int ry = 5 + rx / 4 + (int)(whash2(sseed ^ 0x443u, gx + ordinal, gy) * 3);
+        // Fit each bank to existing rock and keep a solid natural anchor beneath
+        // the bowl; thin shelves remain intact instead of becoming hanging pools.
+        while (leftRadius > 7 && terrain.genOpenCaveAt(center - leftRadius - 2, level + 4)) leftRadius--;
+        while (rightRadius > 7 && terrain.genOpenCaveAt(center + rightRadius + 2, level + 4)) rightRadius--;
+        if (terrain.genOpenCaveAt(center - leftRadius - 2, level + 4)
+            || terrain.genOpenCaveAt(center + rightRadius + 2, level + 4)
+            || terrain.genOpenCaveAt(center, level + ry + 6)) return;
+        for (int dx = -leftRadius - 4; dx <= rightRadius + 4; dx++) {
+          int px = center + dx, sideRadius = dx < 0 ? leftRadius : rightRadius;
+          int distance = std::abs(dx);
+          double nx = std::fmin(1.0, (double)distance / sideRadius);
+          double curve = std::sqrt(std::fmax(0.0, 1.0 - nx * nx));
+          int depth = 3 + (int)std::floor(curve * ry);
+          if (style == 1) depth = 3 + ((depth - 3) / 3) * 3;
+          auto put = [&](int y, uint8_t m) {
+            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, y, m, false);
+          };
+          if (distance > sideRadius) {
+            int bank = distance - sideRadius;
+            int lip = level - 2 + bank / 2;
+            for (int y = lip; y <= level + 7 - bank / 2; y++)
+              put(y, y == lip ? PALESTONE : STONE);
+          } else {
+            for (int y = level + depth - 1; y <= level + depth + 3; y++)
+              put(y, y <= level + depth ? CRYSTAL : STONE);
+            if (distance >= sideRadius - 1) {
+              for (int y = level - 1; y <= level + depth; y++) put(y, CRYSTAL);
+            } else {
+              for (int y = level; y < level + depth - 1; y++) put(y, ACID);
+            }
+          }
         }
-        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 2, STONE, false);
-        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 1, STONE, false);
-        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth, CRYSTAL, false);
-        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth - 1, CRYSTAL, false);
-        if (wall) {
-          for (int yy = floorY - 1; yy <= floorY + depth; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, CRYSTAL, false);
-          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 1, STONE, false);
-        } else {
-          for (int yy = floorY; yy < floorY + depth - 1; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, ACID, false);
+        // Unequal crystal fans grow out of the bank, leaving the waterline clear.
+        for (int side : {-1, 1}) {
+          int bx = center + side * ((side < 0 ? leftRadius : rightRadius) + 2);
+          int height = 4 + (int)(whash2(sseed ^ 0x444u, gx + side, gy + ordinal) * 7);
+          for (int i = 0; i < height; i++) {
+            int width = i < height / 2 ? 1 : 0;
+            for (int dx = -width; dx <= width; dx++)
+              putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, bx + dx, level - 1 - i, CRYSTAL, i > 1);
+          }
         }
+      };
+      if (style == 2) {
+        int smallRadius = radius / 2 - 2;
+        bowl(wx - radius / 2, floorY, smallRadius, 0);
+        bowl(wx + radius / 2 + 1, floorY + 3, smallRadius, 1);
+      } else {
+        bowl(wx, floorY, radius, 0);
       }
     };
     auto stampMyceliumTendril = [&](int wx, int startY, int gx, int gy) {

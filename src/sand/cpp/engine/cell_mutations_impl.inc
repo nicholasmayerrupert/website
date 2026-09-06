@@ -16,6 +16,7 @@ CellMutationBatch::~CellMutationBatch() {
 
 void CellMutationBatch::detachOldTopology(int cell, uint8_t oldMaterial) {
   if (E.isBodyCell(cell)) {
+    touchedBodies = true;
     if (bodyById.empty())
       for (Body* body : E.L->bodies) bodyById[body->id] = body;
     if (!E.rigid.eraseBodyCellIndex(cell, bodyById, dirtyBodies)) {
@@ -247,7 +248,8 @@ void CellMutationBatch::commitBodiesOnly() {
 #endif
   compactCanceledRemovals();
   if (!finishedBodies) {
-    E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+    if (touchedBodies || !dirtyBodies.empty())
+      E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
     finishedBodies = true;
   }
   committed = true;

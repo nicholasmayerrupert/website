@@ -31,6 +31,8 @@ struct WorldBounds {
   }
 };
 
+#include "cave_sites.hpp"
+
 enum GeneratedFeatureFamily : uint8_t {
 #define SAND_GENERATED_FEATURE(ID, ...) GFF_##ID,
 #include "worldgen_features.def"
@@ -682,9 +684,10 @@ constexpr bool ruinArchetypeInvalidFixturesAreRejected() {
     fixture[(size_t)RK_OVERGROWN].preferredChance;
   if (ruinArchetypesAreComplete(fixture)) return false;
   fixture = RUIN_ARCHETYPES;
-  fixture[1].widthAdd = 128;
+  int expandedWidth = ruinMaxWidth(RUIN_ARCHETYPES) + 128;
+  fixture[1].widthAdd = expandedWidth;
   return ruinArchetypesAreComplete(fixture)
-      && ruinMaxWidth(fixture) == RUIN_BASE_MAX_WIDTH + 128
+      && ruinMaxWidth(fixture) == RUIN_BASE_MAX_WIDTH + expandedWidth
       && ruinCandidateOverscanXForWidth(ruinMaxWidth(fixture))
            > RUIN_MIN_CANDIDATE_OVERSCAN_X;
 }

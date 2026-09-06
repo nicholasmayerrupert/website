@@ -28,6 +28,7 @@ const GOLDEN_BY_VERSION = Object.freeze({
   14: 0x93eebb2a,
   15: 0x538743c1,
   16: 0xbb739530,
+  17: 0x54bafa4a,
 });
 const SEEDS = [0, 0xBED, 0xC0FFEE];
 const WINDOWS = [

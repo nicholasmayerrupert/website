@@ -1714,6 +1714,7 @@ bool ComponentSystem::splitRigidAfterStableErase(
       return fragment;
     };
     bool first = true;
+    splitPart.reserve(source.cells.size());
     for (int seed : source.cells) {
       if (seed < 0 || seed >= gridLen || lay.seenStamp[seed] != survivorGen) continue;
       splitPart.clear();
@@ -1721,14 +1722,23 @@ bool ComponentSystem::splitRigidAfterStableErase(
       lay.seenStamp[seed] = 0;
       for (size_t qi = 0; qi < splitPart.size(); qi++) {
         int k = splitPart[qi], y = k / E.cols, x = k - y * E.cols;
+        auto visit = [&](int nk) {
+          if (lay.seenStamp[nk] != survivorGen) return;
+          lay.seenStamp[nk] = 0;
+          splitPart.push_back(nk);
+        };
+        if (x > 0 && x + 1 < E.cols && y > 0 && y + 1 < E.rows) {
+          visit(k - E.cols - 1); visit(k - E.cols); visit(k - E.cols + 1);
+          visit(k - 1); visit(k + 1);
+          visit(k + E.cols - 1); visit(k + E.cols); visit(k + E.cols + 1);
+          continue;
+        }
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
           if (!ox && !oy) continue;
           int nx = x + ox, ny = y + oy;
           if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
           int nk = ny * E.cols + nx;
-          if (lay.seenStamp[nk] != survivorGen) continue;
-          lay.seenStamp[nk] = 0;
-          splitPart.push_back(nk);
+          visit(nk);
         }
       }
       int previousSize = (int)lay.components.size();
@@ -1750,6 +1760,8 @@ bool ComponentSystem::splitRigidAfterStableErase(
       lay.crossBondedComp[slot] = 0;
       lay.componentTombstones++;
     }
+    // Reuse the retired membership buffer for the next connectivity flood.
+    splitPart.swap(source.cells);
   }
 
   patchStableComponentTopology(lay, changedSlots,

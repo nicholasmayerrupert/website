@@ -153,14 +153,12 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
   else {
     for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->light.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, LIGHT_AMBIENT); }
   }
-  lightQueue.clear();
-  lightQueue.reserve((size_t)n / 4);
+  for (auto& bucket : lightBuckets) bucket.clear();
 
   computeDirectSky(lay, rx0, ry0, rx1, ry1);
 
   const uint8_t* g = lay->grid;
-  // Seed sky and emissive cells by rows, then concatenate in the original
-  // row-major order before the ordered flood.
+  // Seed sky cells into intensity buckets before adding emissive sources.
   for (int y = ry0; y <= ry1; y++) {
     int rb = y * E.cols;
     for (int x = rx0; x <= rx1; x++) {
@@ -169,7 +167,7 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
         uint8_t v = lay->skyLight[k];
         if (v > lay->light[k]) {
           lay->light[k] = v;
-          lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+          lightBuckets[lay->light[k]].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
         }
       }
     }
@@ -182,7 +180,7 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
       uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
       if (e && e > lay->light[k]) {
         lay->light[k] = e;
-        lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+        lightBuckets[lay->light[k]].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
       }
     }
   }
@@ -197,27 +195,31 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
       int k = source.y * E.cols + source.x;
       if (source.intensity <= lay->light[k]) continue;
       lay->light[k] = source.intensity;
-      lightQueue.push_back(((uint64_t)(uint32_t)source.x << 32) | (uint32_t)k);
+      lightBuckets[source.intensity].push_back(((uint64_t)(uint32_t)source.x << 32) | (uint32_t)k);
     }
   }
 
   // Flood clamped to the region: the ring underestimates (its far sources are
   // cut off), which cannot change any value inside the exact window (their
   // real contribution there is <= ambient by the distance argument above).
-  for (size_t qi = 0; qi < lightQueue.size(); qi++) {
-    uint64_t q = lightQueue[qi];
-    int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
-    int cur = lay->light[k];
-    auto pushNeighbour = [&](int nk, int nx) {
-      int nl = cur - lightLossFor(g[nk]);
-      if (nl <= (int)lay->light[nk]) return;
-      lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
-      lightQueue.push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
-    };
-    if (x > rx0) pushNeighbour(k - 1, x - 1);
-    if (x < rx1) pushNeighbour(k + 1, x + 1);
-    if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
-    if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+  for (int level = 255; level > LIGHT_AMBIENT; level--) {
+    auto& bucket = lightBuckets[level];
+    for (size_t qi = 0; qi < bucket.size(); qi++) {
+      uint64_t q = bucket[qi];
+      int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
+      int cur = lay->light[k];
+      if (cur != level) continue;
+      auto pushNeighbour = [&](int nk, int nx) {
+        int nl = cur - lightLossFor(g[nk]);
+        if (nl <= (int)lay->light[nk]) return;
+        lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
+        lightBuckets[nl].push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
+      };
+      if (x > rx0) pushNeighbour(k - 1, x - 1);
+      if (x < rx1) pushNeighbour(k + 1, x + 1);
+      if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
+      if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+    }
   }
 }
 
@@ -226,12 +228,10 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
 // projected from clean bases in one frame without the two calls contaminating each
 // other. Callers MUST snapshot crossLay->lightBase = crossLay->light before calling.
 void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int ry0, int rx1, int ry1) {
-  const int n = E.cols * E.rows;
   const uint8_t* g = lay->grid;
   const uint8_t* cg = crossLay->grid;
   const uint8_t* cl = crossLay->lightBase.data();
-  lightQueue.clear();
-  lightQueue.reserve((size_t)n / 8);
+  for (auto& bucket : lightBuckets) bucket.clear();
   for (int y = ry0; y <= ry1; y++) {
     int rb = y * E.cols;
     for (int x = rx0; x <= rx1; x++) {
@@ -244,25 +244,29 @@ void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int 
       }
       if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
         lay->light[k] = (uint8_t)v;
-        if (transparentForLight(g[k])) lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+        if (transparentForLight(g[k])) lightBuckets[lay->light[k]].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
       }
     }
   }
 
-  for (size_t qi = 0; qi < lightQueue.size(); qi++) {
-    uint64_t q = lightQueue[qi];
-    int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
-    int cur = lay->light[k];
-    auto pushNeighbour = [&](int nk, int nx) {
-      int nl = cur - lightLossFor(g[nk]);
-      if (nl <= (int)lay->light[nk]) return;
-      lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
-      if (transparentForLight(g[nk])) lightQueue.push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
-    };
-    if (x > rx0) pushNeighbour(k - 1, x - 1);
-    if (x < rx1) pushNeighbour(k + 1, x + 1);
-    if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
-    if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+  for (int level = 255; level > LIGHT_AMBIENT; level--) {
+    auto& bucket = lightBuckets[level];
+    for (size_t qi = 0; qi < bucket.size(); qi++) {
+      uint64_t q = bucket[qi];
+      int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
+      int cur = lay->light[k];
+      if (cur != level) continue;
+      auto pushNeighbour = [&](int nk, int nx) {
+        int nl = cur - lightLossFor(g[nk]);
+        if (nl <= (int)lay->light[nk]) return;
+        lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
+        if (transparentForLight(g[nk])) lightBuckets[nl].push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
+      };
+      if (x > rx0) pushNeighbour(k - 1, x - 1);
+      if (x < rx1) pushNeighbour(k + 1, x + 1);
+      if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
+      if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
+    }
   }
 }
 

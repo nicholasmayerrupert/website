@@ -79,5 +79,6 @@ class CellMutationBatch {
   bool removedPlantTopology = false;
   bool removedNonPlantTopology = false;
   bool finishedBodies = false;
+  bool touchedBodies = false;
   bool committed = false;
 };

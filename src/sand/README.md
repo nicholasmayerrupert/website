@@ -151,7 +151,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 16 is canonical in absolute coordinates: viewport size changes
+World generation version 17 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
@@ -219,8 +219,11 @@ unlock progressively deeper.
 
 Large biome landmarks add 19 families, documented in [`LANDMARKS.md`](LANDMARKS.md).
 Caves add eight upper-cave archetypes and twelve large deep chamber layouts:
-large cisterns, chapels, cloisters and gardens; smaller workshops and nurseries;
-deep foundries, crystal instruments, fossil excavations and fungal settlements. They share foreground doorways and galleries with
+sprawling cisterns, rail workings, chapels, buried castles and open mushroom colonies;
+smaller workshops and nurseries; deep foundries, crystal instruments, fossil
+excavations and fungal settlements. Eight designs use connected wings, sloping
+passages and branches around preserved natural rock, with shared raster and
+semantic interior plans in `cave_sites.hpp`. They share foreground doorways and galleries with
 furnished, lit rear walls; buried piers meet the cave floor. Neighboring ruins
 resolve overlaps deterministically and respect the larger deep monuments.
 Acid springs use asymmetric bowls, stepped beds and paired pools with crystal

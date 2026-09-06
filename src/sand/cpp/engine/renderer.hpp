@@ -45,7 +45,8 @@ class Renderer {
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
   std::vector<RenderLightSource> dynamicLights;
   // Packed [x:k] entries avoid dividing k by cols for every flood-fill pop.
-  std::vector<uint64_t> lightQueue;   // render-only flood-fill scratch
+  // Brightest-first propagation settles each cell at its final intensity.
+  std::array<std::vector<uint64_t>, 256> lightBuckets;
   // Snapshot storage used by exact lighting patches. A patch solves with a
   // propagation margin, keeps its exact inner rect, then restores the margin.
   std::vector<uint8_t> lightPatchScratch;

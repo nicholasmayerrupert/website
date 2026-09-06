@@ -924,10 +924,14 @@ bool WorldContextSystem::queryRuin(
       RuinPlan ruin;
       if (!ruinPlan(gx, gy, ruin)) continue;
       WorldBounds bounds{ruin.left, ruin.top, ruin.right, ruin.bottom};
-      if (bounds.contains(worldX, worldY))
+      if (bounds.contains(worldX, worldY)) {
+        int design=(int)ruin.kind-(int)RK_CISTERN;
+        bool inside=worldY<=ruin.floorY;
+        if(caveHasSprawlingSite(design))inside=makeCaveSite(ruin.left,ruin.top,
+          ruin.right-ruin.left,ruin.floorY-ruin.top+1,design,ruin.id).interiorAt(worldX,worldY);
         preferFeatureMatch(best, def, 0, def.kind, def.role,
-                           worldY <= ruin.floorY ? def.tags : WA_STRUCTURE,
-                           ruin.id, 0, bounds);
+                           inside ? def.tags : WA_STRUCTURE, ruin.id, 0, bounds);
+      }
     }
   }
   return best.found;
@@ -950,10 +954,16 @@ bool WorldContextSystem::queryDeepStructure(
       DeepStructurePlan deep;
       if (!deepStructurePlan(gx, gy, deep)) continue;
       WorldBounds bounds{deep.left, deep.top, deep.right, deep.bottom};
-      if (bounds.contains(worldX, worldY))
+      if (bounds.contains(worldX, worldY)) {
+        auto handler=caveProfileHandler(caveBiomeDef(deep.caveBiome).profile).deepStructure;
+        int theme=handler==CDSH_MAGMA?0:handler==CDSH_GEODE?1:handler==CDSH_FOSSIL?2:3;
+        int design=8+theme*3+(deep.id>>3)%3;
+        bool inside=worldY<=deep.floorY;
+        if(caveHasSprawlingSite(design))inside=makeCaveSite(deep.naveLeft,deep.naveTop,
+          deep.naveRight-deep.naveLeft+1,deep.floorY-deep.naveTop+1,design,deep.id).interiorAt(worldX,worldY);
         preferFeatureMatch(best, def, 0, def.kind, def.role,
-                           worldY <= deep.floorY ? def.tags : WA_STRUCTURE,
-                           deep.id, 0, bounds);
+                           inside ? def.tags : WA_STRUCTURE, deep.id, 0, bounds);
+      }
     }
   }
   return best.found;

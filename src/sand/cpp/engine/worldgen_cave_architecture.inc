@@ -58,6 +58,7 @@
     for (int x=left;x<=right;x++) {
       double nx=std::abs(x-cx)/(width*.5);
       int roof=top+(int)(variant==1 ? nx*8 : nx*nx*10);
+      if(design==6)roof=top+5;
       if (!deep && theme==2) roof=top+3+(int)(nx*nx*6);
       for (int y=roof;y<=floor;y++) {
         bool shell=y<roof+3||y>=floor-1||x<left+2||x>right-2;
@@ -72,7 +73,7 @@
     }
     // A continuous lower aisle meets the cave at both ends. Upper galleries
     // have staggered stairs and leave headroom above the lower walking floor.
-    if (height>=38) {
+    if (height>=38 && width>=42) {
       int deck=floor-22;
       rect(left+2,deck,right-2,deck+1,timber);
       int start=(seed&1)?left+4:right-26;

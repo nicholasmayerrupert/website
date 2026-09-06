@@ -1,5 +1,6 @@
 #include "worldgen_terrain.inc"
 #include "worldgen_cave_architecture.inc"
+#include "worldgen_cave_sites.inc"
 #include "worldgen_surface_structures.inc"
 #include "worldgen_landmarks.inc"
 #include "worldgen_caves.inc"

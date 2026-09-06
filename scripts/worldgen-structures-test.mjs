@@ -377,7 +377,7 @@ function surfaceMasonryComponents(g, engine) {
 {
   let lava = 0, lavaBottomBoundary = 0, lavaBottomStone = 0, lavaSideBoundary = 0, lavaSideStone = 0, lavaBasins = 0;
   for (let depth = 0; depth < 3; depth++) {
-    const e = mk();
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: [SEED, 0xBEEF, 7][depth], sinksOn: false, infinite: true });
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
     for (let s = 0; s < 30; s++) {
       const g = e.getGrid();

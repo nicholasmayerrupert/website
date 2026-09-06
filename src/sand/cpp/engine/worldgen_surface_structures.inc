@@ -1015,6 +1015,11 @@
       int w = plan.right - plan.left, h = plan.floorY - plan.top + 1;
       if (plan.right < rectX0 || plan.left > rectX1
           || plan.bottom < rectY0 || plan.top > rectY1) continue;
+      int siteDesign=(int)plan.kind-(int)RK_CISTERN;
+      if(caveHasSprawlingSite(siteDesign)) {
+        stampCaveSite(put,ax,ay,w,h,siteDesign,L->isBackground,plan.id,RuinPlan::FOUNDATION_DEPTH);
+        continue;
+      }
       switch (plan.kind) {
 #define WORLDGEN_FACILITY_ARCHETYPE(...)
 #define WORLDGEN_RUIN_ARCHETYPE(symbol, id, name, profile, chance, neutral, size, widthAdd, heightAdd, minDepth, fallback, stamp) \

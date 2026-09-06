@@ -49,6 +49,11 @@
       int theme = handler == CDSH_MAGMA ? 0 : handler == CDSH_GEODE ? 1
                 : handler == CDSH_FOSSIL ? 2 : 3;
       int variant = (plan.id >> 3) % 3;
+      int design=8+theme*3+variant;
+      if(caveHasSprawlingSite(design)) {
+        stampCaveSite(put,left,top,width,height,design,background,plan.id,DeepStructurePlan::BUTTRESS_DEPTH);
+        continue;
+      }
       stampCaveArchitecture(put, left, top, width, height, 8 + theme * 3 + variant, background, plan.id);
 
       // Tapered piers seek real bedrock under the hall or lava lake. Absolute

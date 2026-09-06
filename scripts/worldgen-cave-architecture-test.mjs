@@ -7,28 +7,28 @@ import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const {check,done}=makeChecker('cave architecture');
 const names=['cistern','waystation','prism chapel','lapidary','apothecary','spore bells','root cloister','nursery','furnace cathedral','chain foundry','pumping hall','astral sanctuary','geode organ','lens bridge','leviathan excavation','ossuary','dig camp','hanging archive','fungal village','root engine'];
-// Visually inspected generation-16 examples: kind, seed, world X, world Y.
+// Visually inspected generation-17 examples: kind, seed, world X, world Y.
 const scenes = [
-  [0, 7, 4392.5, 413],
-  [1, 7, -4983, 61.5],
-  [2, 7, 3033, 277.5],
-  [3, 7, 3368.5, 535],
+  [0, 7, -2921, 635.5],
+  [1, 7, -3673, 629.5],
+  [2, 7, 3228.5, 473.5],
+  [3, 7, 3600, 603],
   [4, 7, 182.5, 111.5],
-  [5, 7, -6023.5, 49.5],
-  [6, 7, -5185, 334.5],
+  [5, 7, 491.5, 484],
+  [6, 7, -255.5, 381.5],
   [7, 7, -46, 285.5],
-  [8, 7, -5673, 827],
-  [9, 7, 1357, 733.5],
-  [10, 7, 5091, 757.5],
-  [11, 7, -3965, 828],
-  [12, 7, 1802, 857],
-  [13, 7, 2992.5, 863],
-  [14, 7, 355.5, 993],
-  [15, 7, 3514, 895],
-  [16, 7, -2084, 860],
-  [17, 7, 4173, 1031],
-  [18, 7, 5660, 921.5],
-  [19, 7, -4695.5, 1065],
+  [8, 7, 728.5, 1599.5],
+  [9, 7, -134.5, 819],
+  [10, 7, -375, 748],
+  [11, 7, -453, 1325.5],
+  [12, 7, 396, 1716],
+  [13, 7, -691, 1505],
+  [14, 7, 3367, 1635],
+  [15, 7, 355.5, 993],
+  [16, 7, -64.5, 1747.5],
+  [17, 7, -1021, 1228],
+  [18, 7, -71, 1402.5],
+  [19, 7, 135, 1507],
 ];
 const make=(seed,cols=384)=>createEngineWasm({cols,rows:320,worldSeed:seed,infinite:true,sinksOn:false});
 function move(e,x,y){
@@ -40,6 +40,7 @@ const same=(a,b)=>a.length===b.length&&a.every((m,i)=>m===b[i]);
 check('all twenty cave designs have regression examples',scenes.length===20&&new Set(scenes.map(s=>s[0])).size===20);
 for(const [kind,seed,x,y] of scenes){
  const e=make(seed);move(e,x,y);
+ const sprawling=[0,1,2,5,6,9,16,18].includes(kind);
  const c=e.worldContextAt(x,y),deep=kind>=8;
  check(`${names[kind]}: planned cave structure`,c.featureKind===(deep?WORLD_FEATURE.DEEP_STRUCTURE:WORLD_FEATURE.RUIN));
  if(c.featureKind!==(deep?WORLD_FEATURE.DEEP_STRUCTURE:WORLD_FEATURE.RUIN)){e.destroy();continue;}
@@ -59,17 +60,46 @@ for(const [kind,seed,x,y] of scenes){
  e.shiftWorldXY(0,288);e.shiftWorldXY(0,288);e.shiftWorldXY(0,-288);e.shiftWorldXY(0,-288);
  check(`${names[kind]}: exact vertical streaming restoration`,same(initial,capture(e)));
  let open=0,lights=0,doors=true;const anchors=[];
+ let naturalGaps=0,indoor=0;
  for(let wy=top+12;wy<floor;wy++)for(let wx=nl+3;wx<nr-2;wx++){
   open+=cell(e,0,wx,wy)===MAT.EMPTY;
+  if(sprawling && wx%4===0 && wy%4===0){
+   if(e.worldContextAt(wx,wy).tags&WORLD_AREA.INDOOR)indoor++;
+   else naturalGaps++;
+  }
   lights+=cell(e,1,wx,wy)===MAT.LIGHT;
   for(let layer=0;layer<2;layer++){
    const m=cell(e,layer,wx,wy),f=MAT_FLAGS[m];
    if((f&MF.rigid)&&(f&MF.bearing)&&!(f&MF.plantLeaf))anchors.push([layer,wx,wy,m]);
   }
  }
- for(const wx of [nl,nr])for(let wy=floor-11;wy<floor-1;wy++)doors&&=cell(e,0,wx,wy)===MAT.EMPTY;
- check(`${names[kind]}: generous usable interior and two clear doors`,open>(nr-nl)*(floor-top)*.35&&doors);
- check(`${names[kind]}: lit, substantial rear architecture`,lights>0&&anchors.length>(nr-nl)*8);
+ for(const wx of [nl,nr]) {
+  let found=false;
+  for(let wy=top+12;wy<=floor;wy++) {
+   if(!(MAT_FLAGS[cell(e,0,wx,wy)]&MF.bearing))continue;
+   let clear=true;for(let dy=1;dy<=10;dy++)clear&&=cell(e,0,wx,wy-dy)===MAT.EMPTY;
+   found ||= clear;
+  }
+  doors &&= found;
+ }
+ check(`${names[kind]}: generous usable interior and two clear doors`,open>(nr-nl)*(floor-top)*(sprawling?.12:.35)&&doors);
+ check(`${names[kind]}: lit, substantial rear architecture`,lights>0&&anchors.length>(nr-nl)*(sprawling?4:8));
+ if(sprawling){
+  check(`${names[kind]}: natural cave gaps separate the occupied wings`,naturalGaps>indoor*.25&&indoor>20);
+  const w=nr-nl+1,h=floor-top+1,walk=new Uint8Array(w*h),regions=new Int32Array(w*h);let id=0;
+  for(let yy=8;yy<h;yy++)for(let xx=2;xx<w-2;xx++){
+   let clear=true;for(let dy=0;dy<9&&clear;dy++)for(let dx=-2;dx<=2;dx++)if(cell(e,0,nl+xx+dx,top+yy-dy)!==MAT.EMPTY){clear=false;break;}
+   walk[yy*w+xx]=+clear;
+  }
+  for(let k=0;k<walk.length;k++)if(walk[k]&&!regions[k]){
+   id++;const q=[k];regions[k]=id;
+   for(let j=0;j<q.length;j++){const z=q[j],xx=z%w;for(const n of [xx?z-1:-1,xx+1<w?z+1:-1,z-w,z+w])if(n>=0&&n<walk.length&&walk[n]&&!regions[n]){regions[n]=id;q.push(n);}}
+  }
+  const target=new Map();let total=0;
+  for(let yy=8;yy<h;yy+=3)for(let xx=2;xx<w-2;xx+=3){const k=yy*w+xx;if(walk[k]&&(e.worldContextAt(nl+xx,top+yy).tags&WORLD_AREA.INDOOR)){total++;target.set(regions[k],(target.get(regions[k])||0)+1);}}
+  const connected=Math.max(0,...target.values());
+  check(`${names[kind]}: wings connect through player-sized passages (${connected}/${total})`,total>20&&connected>=total*.98);
+ }
  for(let tick=0;tick<100;tick++)e.stepWorld();
  const moved=anchors.filter(([layer,wx,wy,m])=>cell(e,layer,wx,wy)!==m);
  check(`${names[kind]}: structural details remain anchored (${moved.length}/${anchors.length})`,moved.length===0);

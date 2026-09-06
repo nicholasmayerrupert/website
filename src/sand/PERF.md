@@ -157,6 +157,9 @@ component registration, and restoration. Browser presentation exposes
 - Fire and acid split only touched components. Base-grounded acid bites use a
   bounded exact-connectivity proof before falling back to a full component
   flood, and safe local cuts avoid full grounding floods.
+- Fire's stable-slot repairs reuse connectivity scratch and specialize interior
+  neighbour probes while retaining the exact flood order. Mutation batches
+  repair body rosters only when they actually edit a body.
 - A TNT batch accumulates overlapping stencils into one bounds-local
   maximum-energy field, with generation-stamped sparse storage for widely
   separated waves. Each unique affected cell is classified once, each
@@ -298,6 +301,9 @@ component registration, and restoration. Browser presentation exposes
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot
   propagation loop does not divide every visited cell index by the grid width.
+- Lighting propagates from brightest to dimmest through intensity buckets.
+  Superseded queue entries are skipped, so overlapping sources settle each cell
+  at its final light value before it propagates to its neighbours.
 - Static animated materials repaint only visible chunks that contain animation.
 - Direct-mapped terrain-query caches avoid repeating surface, climate, cave, and
   cave-plan noise within fills and diagnostic scans.

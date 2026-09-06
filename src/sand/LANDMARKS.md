@@ -29,7 +29,7 @@ profile, each curved rib terminates in its own buried foot, and broken limbs res
 on the slope. Small fossil rib formations also extend individual feet into soil.
 Support columns preserve natural cave voids rather than plugging entrances.
 
-The generation version is 16; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
+The generation version is 17; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
 The existing engine component-registration pass owns every rigid cell. No separate
 visual overlay or unsimulated collider represents these landmarks.
 
@@ -41,15 +41,16 @@ and context fingerprint; `worldgen-quality` checks cave access.
 ## Cave architecture
 
 `cpp/engine/worldgen_cave_architecture.inc` draws coordinated two-layer cave
-rooms. Eight additional upper-cave archetypes extend the existing ruin catalogue;
-the four deep cavern biomes each have three large chamber layouts.
+rooms. `cave_sites.hpp` plans connected wings and `worldgen_cave_sites.inc` stamps
+their rooms, branches and foundations. Eight upper-cave archetypes extend the
+existing ruin catalogue; the four deep cavern biomes each have three large chamber layouts.
 
 | Cave environment | Discoveries |
 | --- | --- |
-| General cave network | Vaulted cisterns with water bowls and valves; waystations with clocks, benches, luggage and rails |
+| General cave network | Cistern districts with water bowls and valves; branching rail workings with stations and workshops |
 | Crystal caves | Prism chapels with nested luminous arches; lapidary workshops with mounted lenses and specimen benches |
 | Mushroom caves | Apothecaries with jars, shelves and copper stills; spore bell gardens with layered caps and gills |
-| Lush caves | Root-bound stone cloisters; hanging nurseries with suspended baskets and growing beds |
+| Lush caves | Buried castle wings with crenellated towers and a lower crypt; hanging nurseries with suspended baskets and growing beds |
 | Magma depths | Furnace cathedrals; chain foundries with gantries and gears; basalt pumping halls |
 | Geode depths | Astral sanctuaries with concentric instruments; crystal organs; suspended lens galleries |
 | Fossil depths | Mounted leviathan excavations; ossuary amphitheaters; timber-braced dig camps |
@@ -60,10 +61,18 @@ floor and depth constraints. Biome preferences retain a neutral pool for older
 ruins, cisterns and waystations. Neighboring candidates resolve overlapping
 footprints by stable feature ID; shallow ruins also respect deep monuments.
 
-Cisterns, prism chapels, spore gardens and root cloisters are 104–132 cells
-wide and 52–71 cells tall. Their whole footprint must remain buried, including
-under hillsides. Workshops, waystations, apothecaries and nurseries provide
-smaller discoveries between them.
+Cisterns, waystations, prism chapels, spore gardens and root cloisters reserve
+208–252-cell-wide sites, 82–103 cells tall. Four or five wings occupy different
+levels, joined by sloping passages with upper branches and optional lower workings.
+Castle sites always include a lower crypt. Rock remains between wings; mushroom
+colonies occupy open vaulted pockets instead of enclosed masonry rooms. The whole
+site must remain buried, including under hillsides. Workshops, apothecaries and
+nurseries provide smaller discoveries between them.
+
+Deep chain foundries, fossil dig camps and fungal villages also use connected
+sites, with three main chambers and branching routes where cavern height permits.
+Only actual rooms and passages count as indoor space; the reservation also protects
+the intervening natural terrain from competing structures.
 
 Deep halls are 124–160 cells wide (limited by their cavern) and 60–80 cells tall.
 Foreground vaults, galleries and stairs surround a clear lower aisle. The rear
@@ -72,7 +81,8 @@ cave network; buried piers search for bedrock independently instead of filling
 whole voids. Foundation reservations below the floor do not count as interiors.
 
 `node scripts/run-tests.mjs --only cave-architecture,structures,deep-world,world-context,worldgen-version`
-checks the twenty new layouts, clear entrances, lighting, structural stability,
+checks the twenty layouts, player-sized connectivity across sprawling sites,
+clear entrances, lighting, structural stability,
 viewport-independent foundations, and streaming restoration.
 
 ## Acid springs

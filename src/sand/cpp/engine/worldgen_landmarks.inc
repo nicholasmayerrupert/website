@@ -325,6 +325,7 @@
             boneLine(kneeX, kneeY, kneeX + side * 13, g(kneeX + side * 13) + 2, 3);
             ellipse(facing * kneeX, kneeY, 4, 4, BONE, false);
           }
+          boneLine(86, spineY(86), 86, g(86) - 5, 3);
           for (int x = 86; x < 112; x += 3) boneLine(x, g(x) - 5, x + 3, g(x + 3) - 3, 2);
           break;
         }
@@ -466,6 +467,7 @@
           if (backdrop) {
             for (int x : {-43, 41}) {
               line(x, -6, x + 8, 4, 1, wood);
+              rect(x + 8, 4, x + 8, 11, MOSS);
               for (int y = 3; y < 12; y += 2) line(x + 7, y, x + 12, y, 1, MOSS);
             }
           }

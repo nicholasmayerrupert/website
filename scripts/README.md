@@ -83,6 +83,13 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
+`node scripts/bench-burning-wood.mjs` measures a sustained fire cutting an
+81,600-cell wood slab into moving fragments. Add `--surface` for erosion along
+its supported top edge. Save the JSON output before changing the engine, then
+pass `--compare FILE` with the same scene to check exact material/checksum
+parity and report phase timing deltas. Fixture construction and fire injection
+are outside the step timings.
+
 ```sh
 node scripts/scenario-runner.mjs --scenario placement --sizes 80,160,240 --repeat 3
 node scripts/scenario-runner.mjs --scenario aftermath --seed 1401181199 --steps 92

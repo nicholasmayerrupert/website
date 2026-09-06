@@ -81,6 +81,15 @@ run('surface structure policy must be boolean', (schema) => {
 run('surface structure walls must be load-bearing', (schema) => {
   schema.surfaceBiomes[0].structureWall = 'WATER';
 }, false);
+run('underground extent must be bounded', (schema) => {
+  schema.surfaceBiomes[0].undergroundDepth = 900;
+}, false);
+run('underground rock must support cave ceilings', (schema) => {
+  schema.surfaceBiomes[0].undergroundRock = 'SAND';
+}, false);
+run('underground flora must be a component', (schema) => {
+  schema.surfaceBiomes[0].undergroundFlora = 'WATER';
+}, false);
 run('unknown surface architecture styles are rejected', (schema) => {
   schema.surfaceBiomes[0].structureStyle = 'SSS_MISSING';
 }, false);

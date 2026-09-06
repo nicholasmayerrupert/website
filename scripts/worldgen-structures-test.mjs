@@ -454,6 +454,12 @@ function surfaceMasonryComponents(g, engine) {
       if (!featureMats.has(g[i])) continue;
       const x = i % COLS, y = (i / COLS) | 0;
       if (offY + y <= e.worldSurfaceAbsAt(offX + x) + 30) continue;
+      if (x < 22 || x + 32 >= COLS || y < 18 || y + 26 >= ROWS) continue;
+      // A region must contain a garden or deposit, not just an isolated glint.
+      let nearby = 0;
+      for (let dy = -18; dy < 26; dy++) for (let dx = -22; dx < 32; dx++)
+        if (featureMats.has(g[(y + dy) * COLS + x + dx])) nearby++;
+      if (nearby <= 8) continue;
       bx = x; by = y; break;
     }
     if (bx < 0) e.shiftWorldXY(128, 0);

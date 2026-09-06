@@ -4,6 +4,7 @@
 #include "worldgen_cave_sites.inc"
 #include "worldgen_surface_structures.inc"
 #include "worldgen_landmarks.inc"
+#include "worldgen_shallow_ecology.inc"
 #include "worldgen_caves.inc"
 #include "worldgen_offworld.inc"
 #include "worldgen_frontier.inc"

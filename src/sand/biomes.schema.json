@@ -85,6 +85,10 @@
       },
       "selectionPriority": 6,
       "climate": [[]],
+      "undergroundDepth": 112,
+      "undergroundRock": "SHALE",
+      "undergroundAccent": "PALESTONE",
+      "undergroundFlora": "MOSS",
       "soilScale": 1,
       "soilAdd": 2,
       "flatSkin": "GRASS",
@@ -166,6 +170,10 @@
       "climate": [[
         { "variable": "moisture", "comparison": ">", "value": 0.51 }
       ]],
+      "undergroundDepth": 148,
+      "undergroundRock": "ROOTSTONE",
+      "undergroundAccent": "SHALE",
+      "undergroundFlora": "VINE",
       "soilScale": 1,
       "soilAdd": 2,
       "flatSkin": "GRASS",
@@ -249,6 +257,10 @@
         { "variable": "moisture", "comparison": "<", "value": 0.42 },
         { "variable": "temperature", "comparison": ">", "value": 0.40 }
       ]],
+      "undergroundDepth": 168,
+      "undergroundRock": "SANDSTONE",
+      "undergroundAccent": "SHALE",
+      "undergroundFlora": "CRYSTAL",
       "soilScale": 4,
       "soilAdd": 0,
       "flatSkin": "SAND",
@@ -339,6 +351,10 @@
           { "variable": "temperature", "comparison": ">", "value": 0.27 }
         ]
       ],
+      "undergroundDepth": 180,
+      "undergroundRock": "PALESTONE",
+      "undergroundAccent": "SHALE",
+      "undergroundFlora": "RUST_BRAMBLE",
       "soilScale": 0,
       "soilAdd": 6,
       "flatSkin": "BONE",
@@ -427,6 +443,10 @@
           { "variable": "temperature", "comparison": "<", "value": 0.45 }
         ]
       ],
+      "undergroundDepth": 148,
+      "undergroundRock": "SLATE",
+      "undergroundAccent": "PALESTONE",
+      "undergroundFlora": "CRYSTAL",
       "soilScale": 1,
       "soilAdd": 4,
       "flatSkin": "SNOW",
@@ -510,6 +530,10 @@
         { "variable": "temperature", "comparison": ">", "value": 0.50 },
         { "variable": "moisture", "comparison": ">", "value": 0.55 }
       ]],
+      "undergroundDepth": 176,
+      "undergroundRock": "ROOTSTONE",
+      "undergroundAccent": "SHALE",
+      "undergroundFlora": "VINE",
       "soilScale": 1,
       "soilAdd": 3,
       "flatSkin": "GRASS",
@@ -594,6 +618,10 @@
         { "variable": "surfaceMinusSea", "comparison": ">", "value": -20 },
         { "variable": "temperature", "comparison": ">", "value": 0.38 }
       ]],
+      "undergroundDepth": 128,
+      "undergroundRock": "SHALE",
+      "undergroundAccent": "ROOTSTONE",
+      "undergroundFlora": "TEAL_LICHEN",
       "soilScale": 2,
       "soilAdd": 2,
       "flatSkin": "MUD",
@@ -689,6 +717,10 @@
           }
         ]
       ],
+      "undergroundDepth": 180,
+      "undergroundRock": "VEIN_ROCK",
+      "undergroundAccent": "PALESTONE",
+      "undergroundFlora": "VIOLET_FROND",
       "soilScale": 2,
       "soilAdd": 4,
       "flatSkin": "VEIN_SOIL",

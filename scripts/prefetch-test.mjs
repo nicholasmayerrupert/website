@@ -94,7 +94,7 @@ console.log('deep hazard boundaries stay inside a streamed entering band');
     fgMismatches === 0 && bgMismatches === 0,
     `foreground=${fgMismatches} background=${bgMismatches}`);
   check('hazard sealing does not rewrite the retained edge cell',
-    retainedBeforeShift === MAT.STONE
+    retainedBeforeShift === MAT.IRON_ORE
       && syncFg[retainedIndexAfterShift] === retainedBeforeShift,
     `before=${retainedBeforeShift} after=${syncFg[retainedIndexAfterShift]}`);
   const syncStats = synchronous.getShiftFillStats();

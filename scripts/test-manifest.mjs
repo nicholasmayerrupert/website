@@ -41,6 +41,7 @@ export const UNIT_SUITES = [
   ['planet-selection', 'planet-selection-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
   ['watchwood', 'watchwood-test.mjs'],
+  ['shallow-biomes', 'shallow-biomes-test.mjs', { timeoutMs: 240_000 }],
   ['biome-undergrowth', 'biome-undergrowth-test.mjs'],
   ['bone-highlands', 'bone-highlands-test.mjs'],
   ['worldgen-landmarks', 'worldgen-landmarks-test.mjs', { timeoutMs: 240_000 }],

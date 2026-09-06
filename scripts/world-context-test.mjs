@@ -211,7 +211,7 @@ const overlapGridY = overlapY - overlapRegression.getWorldOffsetY();
 const overlapMaterial = overlapRegression.getGrid()[
   overlapGridY * overlapRegression.cols + overlapGridX];
 check('unclaimed rock has no stale settlement ownership',
-  overlapMaterial === MAT.STONE
+  [MAT.STONE, MAT.SHALE, MAT.SLATE, MAT.ROOTSTONE, MAT.VEIN_ROCK, MAT.PALESTONE, MAT.SANDSTONE, MAT.BONE].includes(overlapMaterial)
     && overlapContext.featureKind === WORLD_FEATURE.NONE
     && !has(overlapContext, WORLD_AREA.SETTLEMENT)
     && !has(overlapContext, WORLD_AREA.MINE));
@@ -229,7 +229,7 @@ overlapRegression.destroy();
 for (const seed of [0xBED, 0xBEEF, 7]) {
   const e = make({ worldSeed: seed });
   const villages = new Map(), headhouses = new Map(), formations = new Map();
-  for (let x = -16000; x <= 16000; x += 12) {
+  for (let x = -24000; x <= 24000; x += 12) {
     const surface = e.worldSurfaceAbsAt(x);
     for (let depth = -72; depth <= 48; depth += 12) {
       const context = e.worldContextAt(x, surface + depth);

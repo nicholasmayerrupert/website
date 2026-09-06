@@ -146,6 +146,8 @@ struct SurfaceBiomeDef {
   uint8_t formationMaterial, formationAccent;
   double formationChance;
   int formationHeight;
+  int undergroundDepth;
+  uint8_t undergroundRock, undergroundAccent, undergroundFlora;
   int soilScale, soilAdd;
   uint8_t flatSkin, steepSkin, soilTop, soilBase;
   int soilBaseNumerator, soilBaseDenominator;
@@ -198,6 +200,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_PLAINS, "plains", 6, 0, 1,
    0.38, 4, 0, -10, 0.0045,
    SFS_BOULDER, STONE, MOSS, 0.18, 6,
+   112, SHALE, PALESTONE, MOSS,
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 0.45,
    PT_BUSH, PT_OAK, PT_OAK, 0.75, 1,
@@ -205,6 +208,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_FOREST, "forest", 5, 1, 1,
    0.72, 8, 0.15, -12, 0.0065,
    SFS_BOULDER, STONE, MOSS, 0.32, 8,
+   148, ROOTSTONE, SHALE, VINE,
    1, 2, GRASS, SAND, DIRT, DIRT,
    0, 1, 3.8,
    PT_PINE, PT_OAK, PT_OAK, 0.85, 1,
@@ -212,6 +216,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_DESERT, "desert", 2, 2, 1,
    0.2, 22, 0, -22, 0.0032,
    SFS_STACK, SANDSTONE, CLAY, 0.42, 18,
+   168, SANDSTONE, SHALE, CRYSTAL,
    4, 0, SAND, SAND, SAND, SANDSTONE,
    2, 3, 0.8,
    PT_CACTUS, PT_CACTUS, PT_CACTUS, 1, 1,
@@ -219,6 +224,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_ROCKY, "bone highlands", 0, 3, 2,
    1.25, 25, 0.95, -35, 0.007,
    SFS_FOSSIL, BONE, PALESTONE, 1, 25,
+   180, PALESTONE, SHALE, RUST_BRAMBLE,
    0, 6, BONE, PALESTONE, PALESTONE, DEEPSTONE,
    2, 3, 0,
    PT_OAK, PT_OAK, PT_OAK, 1, 1,
@@ -226,6 +232,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_TUNDRA, "tundra", 1, 5, 2,
    0.62, 9, 0.1, -14, 0.004,
    SFS_BOULDER, STONE, ICE, 0.4, 10,
+   148, SLATE, PALESTONE, CRYSTAL,
    1, 4, SNOW, SNOW, SNOW, DIRT,
    1, 2, 0.65,
    PT_PINE, PT_PINE, PT_PINE, 1, 1,
@@ -233,6 +240,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_JUNGLE, "jungle", 4, 7, 1,
    0.62, 10, 0.1, -15, 0.006,
    SFS_BOULDER, STONE, MOSS, 0.32, 11,
+   176, ROOTSTONE, SHALE, VINE,
    1, 3, GRASS, SAND, DIRT, DIRT,
    0, 1, 5.2,
    PT_BUSH, PT_OAK, PT_OAK, 0.15, 1,
@@ -240,6 +248,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_SWAMP, "swamp", 3, 8, 1,
    0.07, 12, 0, -1, 0.007,
    SFS_BOULDER, STONE, MOSS, 0.15, 5,
+   128, SHALE, ROOTSTONE, TEAL_LICHEN,
    2, 2, MUD, MUD, MUD, MUD,
    0, 1, 2,
    PT_WILLOW, PT_OAK, PT_BUSH, 0.85, 0.95,
@@ -247,6 +256,7 @@ inline constexpr std::array<SurfaceBiomeDef, SURFACE_BIOME_COUNT> SURFACE_BIOMES
   {BIOME_WATCHWOOD, "watchwood", -1, 9, 1,
    0.34, 13, 0, -18, 0.005,
    SFS_SPIRE, PALESTONE, EYE_WOOD, 0.48, 20,
+   180, VEIN_ROCK, PALESTONE, VIOLET_FROND,
    2, 4, VEIN_SOIL, PALESTONE, VEIN_SOIL, PALESTONE,
    1, 2, 1,
    PT_EYE, PT_EYE, PT_EYE, 1, 1,

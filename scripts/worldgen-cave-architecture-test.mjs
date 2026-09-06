@@ -7,28 +7,28 @@ import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const {check,done}=makeChecker('cave architecture');
 const names=['cistern','waystation','prism chapel','lapidary','apothecary','spore bells','root cloister','nursery','furnace cathedral','chain foundry','pumping hall','astral sanctuary','geode organ','lens bridge','leviathan excavation','ossuary','dig camp','hanging archive','fungal village','root engine'];
-// Generation-18 examples: kind, seed, world X, world Y.
+// Generation-19 examples: kind, seed, world X, world Y.
 const scenes = [
-  [0, 7, 1635.5, 667.5],
-  [1, 7, -3982.5, 619.5],
+  [0, 7, -2921, 635.5],
+  [1, 7, -1012, 585],
   [2, 7, 3085, 246.5],
-  [3, 7, 3600, 603],
+  [3, 7, 3368.5, 535],
   [4, 7, 182.5, 111.5],
   [5, 7, 491.5, 484],
   [6, 7, -253.5, 354],
   [7, 7, -46, 285.5],
-  [8, 7, -426.5, 933.5],
+  [8, 7, -375, 748],
   [9, 7, -134.5, 819],
-  [10, 7, 659.5, 943],
-  [11, 7, 396, 1716],
-  [12, 7, -453, 1325.5],
-  [13, 7, 1802, 857],
-  [14, 7, 982, 1760],
-  [15, 7, 355.5, 993],
-  [16, 7, -64.5, 1747.5],
-  [17, 7, -71, 1402.5],
-  [18, 7, 135, 1507],
-  [19, 7, -799.5, 1075],
+  [10, 7, 709, 1479.5],
+  [11, 7, -453, 1325.5],
+  [12, 7, 396, 1716],
+  [13, 7, -691, 1505],
+  [14, 7, 3100.5, 1492],
+  [15, 7, -64.5, 1747.5],
+  [16, 7, 470, 1195],
+  [17, 7, -799.5, 1075],
+  [18, 7, 1215, 1462.5],
+  [19, 7, -71, 1402.5],
 ];
 const make=(seed,cols=384)=>createEngineWasm({cols,rows:320,worldSeed:seed,infinite:true,sinksOn:false});
 function move(e,x,y){
@@ -96,7 +96,15 @@ for(const [kind,seed,x,y] of scenes){
    for(let j=0;j<q.length;j++){const z=q[j],xx=z%w;for(const n of [xx?z-1:-1,xx+1<w?z+1:-1,z-w,z+w])if(n>=0&&n<walk.length&&walk[n]&&!regions[n]){regions[n]=id;q.push(n);}}
   }
   const target=new Map();let total=0;
-  for(let yy=8;yy<h;yy+=3)for(let xx=2;xx<w-2;xx+=3){const k=yy*w+xx;if(walk[k]&&(e.worldContextAt(nl+xx,top+yy).tags&WORLD_AREA.INDOOR)){total++;target.set(regions[k],(target.get(regions[k])||0)+1);}}
+  // Count occupiable indoor space. A foot touching a room's bounding edge
+  // can otherwise misclassify an exterior rock pocket as a disconnected wing.
+  for(let yy=8;yy<h;yy+=3)for(let xx=2;xx<w-2;xx+=3){
+   const k=yy*w+xx;if(!walk[k])continue;
+   let indoors=true;
+   for(let dy=0;dy<9&&indoors;dy++)for(let dx=-2;dx<=2;dx++)
+    if(!(e.worldContextAt(nl+xx+dx,top+yy-dy).tags&WORLD_AREA.INDOOR)){indoors=false;break;}
+   if(indoors){total++;target.set(regions[k],(target.get(regions[k])||0)+1);}
+  }
   const connected=Math.max(0,...target.values());
   check(`${names[kind]}: wings connect through player-sized passages (${connected}/${total})`,total>20&&connected>=total*.98);
  }

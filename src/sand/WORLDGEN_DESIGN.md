@@ -13,6 +13,29 @@ vegetation from becoming an unreadable wall. Natural formations share the
 existing feature planning, clipping, and streaming paths. Settlements reserve
 coherent dry streets within one biome.
 
+## Shallow geology
+
+Every Earth surface biome extends beneath its local terrain into a bedrock zone.
+The biome schema declares `undergroundDepth`, `undergroundRock`,
+`undergroundAccent`, and `undergroundFlora`. Nominal depths range from 112 to
+180 cells; a broad noise field varies the bottom by up to 32 cells. The last
+48 cells interleave with ordinary cave rock in coherent lenses. Neighboring
+biome roots have irregular lateral seams and share the same geology in both
+simulated layers. Soil thickness, cave entrances, and deep-cavern levels remain
+independent of this zone.
+
+Plains have warm shale; forests and jungles have rootstone; deserts have layered
+sandstone; tundra has blue slate; swamps have shale and olive mineral lenses.
+Bone highlands have pale fossil-bearing strata, and Watchwood has plum vein rock.
+Ores retain their existing placement and mining progression.
+
+Shallow cave gardens follow foreground floors and ceilings in the simulated
+background: rootlets, mineral fans, lichen, small fossil spines, and hanging eye
+roots. Their density falls away with the geology, giving independent cave
+biomes room below. Construction reservations keep growth out of architecture;
+background placement preserves foreground walking routes. Both geology and
+cave dressing use absolute coordinates and bounded streaming reach.
+
 ## Research informing this design
 
 - [Minecraft's world-generation overview](https://learn.microsoft.com/en-us/minecraft/creator/documents/world-generation?view=minecraft-bedrock-stable)

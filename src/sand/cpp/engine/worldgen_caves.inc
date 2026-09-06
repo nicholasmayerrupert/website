@@ -115,7 +115,10 @@
   // existing cave network rather than carving detached oval rooms.
   void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd,
                         int reachX, int reachY) {
-    if (L->isBackground) return;
+    if (L->isBackground) {
+      fillShallowCaveEcology(colStart, colEnd, rowStart, rowEnd, reachX, reachY);
+      return;
+    }
     uint32_t sseed = L->gCaveSeed ^ 0xF3A741u;
     int wx0 = L->worldOffsetX + colStart - reachX;
     int wx1 = L->worldOffsetX + colEnd + reachX;
@@ -324,6 +327,9 @@
         stampMethanePocket(wx, ceilY, gx, gy);
         continue;
       }
+
+      // Surface ecology gives way to independent cave gardens with depth.
+      if (whash2(sseed ^ 0x6E01081u, gx, gy) < terrain.genUndergroundStrength(wx, wy)) continue;
 
       CaveUpperDressingHandler upperHandler =
         caveProfileHandler(caveDef.profile).upperDressing;

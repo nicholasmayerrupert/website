@@ -214,12 +214,13 @@ if (selectionSurface.length === 0
 
 const surfaceFields = [
   'surfaceReliefScale', 'surfaceDetailAmplitude', 'surfaceRidgeMix', 'surfaceOffset',
-  'soilScale', 'soilAdd', 'soilBaseNumerator', 'soilBaseDenominator',
+  'soilScale', 'soilAdd', 'soilBaseNumerator', 'soilBaseDenominator', 'undergroundDepth',
   'treeProbabilityScale', 'treeFirstCut', 'treeSecondCut', 'copperRich',
   'allowsSurfaceStructures',
 ];
 const surfaceMaterials = [
   'flatSkin', 'steepSkin', 'soilTop', 'soilBase',
+  'undergroundRock', 'undergroundAccent', 'undergroundFlora',
   'structureWall', 'structureFoundation',
   'formationMaterial', 'formationAccent',
 ];
@@ -291,9 +292,13 @@ for (const record of sortedSurface) {
   for (const field of surfaceMaterials)
     if (!materialNames.has(record[field]))
       throw new Error(`${record.symbol}.${field} references unknown material ${record[field]}`);
-  for (const field of ['structureWall', 'structureFoundation'])
+  if (!Number.isInteger(record.undergroundDepth) || record.undergroundDepth < 64 || record.undergroundDepth > 256)
+    throw new Error(`${record.symbol}.undergroundDepth must be between 64 and 256 cells`);
+  for (const field of ['structureWall', 'structureFoundation', 'undergroundRock', 'undergroundAccent'])
     if (!isLoadBearingMaterial(record[field]))
       throw new Error(`${record.symbol}.${field} must be a load-bearing structure material`);
+  if (!materialByName.get(record.undergroundFlora).flags.includes('rigid'))
+    throw new Error(`${record.symbol}.undergroundFlora must be a component material`);
   for (const field of ['treeFirst', 'treeSecond', 'treeThird'])
     if (!plantNames.has(record[field]))
       throw new Error(`${record.symbol}.${field} references unknown plant ${record[field]}`);
@@ -478,6 +483,7 @@ const surfaceRows = sortedSurface.map((record) => {
   return `  {${record.symbol}, ${JSON.stringify(record.name)}, ${record.selectionPriority}, ${climate.clauseOffset}, ${climate.clauseCount},\n`
   + `   ${n(record.surfaceReliefScale)}, ${n(record.surfaceDetailAmplitude)}, ${n(record.surfaceRidgeMix)}, ${n(record.surfaceOffset)}, ${n(record.surfaceDetailFrequency)},\n`
   + `   ${record.formationStyle}, ${record.formationMaterial}, ${record.formationAccent}, ${n(record.formationChance)}, ${record.formationHeight},\n`
+  + `   ${record.undergroundDepth}, ${record.undergroundRock}, ${record.undergroundAccent}, ${record.undergroundFlora},\n`
   + `   ${record.soilScale}, ${record.soilAdd}, ${record.flatSkin}, ${record.steepSkin}, ${record.soilTop}, ${record.soilBase},\n`
   + `   ${record.soilBaseNumerator}, ${record.soilBaseDenominator}, ${n(record.treeProbabilityScale)},\n`
   + `   ${record.treeFirst}, ${record.treeSecond}, ${record.treeThird}, ${n(record.treeFirstCut)}, ${n(record.treeSecondCut)},\n`
@@ -614,6 +620,8 @@ struct SurfaceBiomeDef {
   uint8_t formationMaterial, formationAccent;
   double formationChance;
   int formationHeight;
+  int undergroundDepth;
+  uint8_t undergroundRock, undergroundAccent, undergroundFlora;
   int soilScale, soilAdd;
   uint8_t flatSkin, steepSkin, soilTop, soilBase;
   int soilBaseNumerator, soilBaseDenominator;

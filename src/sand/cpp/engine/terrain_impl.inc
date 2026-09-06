@@ -240,6 +240,43 @@ int TerrainGen::genCaveTopAbs(int worldX) {
   int biome = genBiomeAt(worldX), soil = genSoilDepthAt(worldX, biome);
   return genSurfaceAbs(worldX) + GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
 }
+// Shared foreground/background geology follows local ground with a wandering
+// lower boundary. Its last 48 cells interleave with the independent cave rock.
+int TerrainGen::genUndergroundBottomAbs(int worldX) {
+  auto& cached = undergroundBottomCache[(uint32_t)worldX & (SURFACE_CACHE_SIZE-1)];
+  if(cached.seed==E.L->worldSeed && cached.x==worldX)return cached.value;
+  int biome=genBiomeAt(worldX);
+  double extent=surfaceBiomeDef(biome).undergroundDepth;
+  for(int dx:{-24,24})extent+=surfaceBiomeDef(genBiomeAt(worldX+dx)).undergroundDepth;
+  double variation=valueNoise2D(E.L->worldSeed^0x6E01071u,worldX*.008,4.7);
+  int bottom=genSurfaceAbs(worldX)+(int)std::lround(extent/3+(variation-.5)*64);
+  cached={E.L->worldSeed,worldX,bottom};
+  return bottom;
+}
+double TerrainGen::genUndergroundStrength(int worldX, int worldY) {
+  if(planetDef(E.planetId).generationProfile!=PGP_EARTH || worldY>=DEEP_BLEND_TOP)return 0;
+  return std::clamp((genUndergroundBottomAbs(worldX)-worldY)/48.0,0.0,1.0);
+}
+uint8_t TerrainGen::genUndergroundRockAt(int worldX, int worldY) {
+  double strength=genUndergroundStrength(worldX,worldY);
+  if(strength<=0)return genDeepRockAt(worldX,worldY);
+  uint32_t seed=E.L->worldSeed^0x6E01072u;
+  double lens=valueNoise2D(seed,worldX*.065,worldY*.055);
+  if(lens>strength)return STONE;
+  int biome=genBiomeAt(worldX);
+  // Only biome borders need lateral warping; cores retain their local geology.
+  if(genBiomeAt(worldX-24)!=biome || genBiomeAt(worldX+24)!=biome) {
+    double depth=std::clamp((worldY-genSurfaceAbs(worldX))/40.0,0.0,1.0);
+    int warp=(int)std::lround((valueNoise2D(seed^1u,worldX*.018,worldY*.022)-.5)*40*depth);
+    biome=genBiomeAt(worldX+warp);
+  }
+  const auto& def=surfaceBiomeDef(biome);
+  double fold=valueNoise2D(seed^2u,worldX*.018,worldY*.006)*22;
+  int band=floorDiv(worldY+(int)fold,3);
+  if((band%9+9)%9<2 && lens>.3)return def.undergroundAccent;
+  if(biome==BIOME_ROCKY && lens>.69)return BONE;
+  return def.undergroundRock;
+}
 int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
   const PlanetDef& planet = planetDef(E.planetId);
   PlanetGenerationProfile profile = planet.generationProfile;
@@ -808,20 +845,19 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // oceans can't drain into one (both churn the cross-layer transfer forever).
   int caveTop = GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
   if (genOpenCaveAt(worldX, worldY)) return EMPTY;
-  // Background caves are intentionally sparse and inert: no generated
-  // liquids/ores/features, only voids that create visual depth and transfer paths.
-  uint8_t rock = genDeepRockAt(worldX, worldY);
+  // The two layers share shallow geology; the foreground owns ore deposits.
+  uint8_t rock = genUndergroundRockAt(worldX, worldY);
   if (E.L->isBackground) return rock;
-  // Cave-wall lining is intentionally sparse. Whole-biome component walls look
-  // rich, but they create enormous static components; structures carry most of
-  // the biome identity instead.
+  // Mineral glints remain visible in shallow geology. Independent cave-wall
+  // vegetation takes over beneath the surface biome root zone.
   if (depth >= caveTop && genIsCaveWall(worldX, worldY)) {
     int caveBiome = genCaveBiomeAt(worldX, worldY);
     const CaveBiomeDef& caveDef = caveBiomeDef(caveBiome);
     double detail = whash2(E.L->gCaveSeed ^ 0x305bu, worldX, worldY);
-    if (caveDef.wallAccent != EMPTY && detail > caveDef.wallAccentCut)
+    double caveIdentity = 1.0 - genUndergroundStrength(worldX, worldY);
+    if (caveDef.wallAccent != EMPTY && detail > 1.0 - (1.0 - caveDef.wallAccentCut) * caveIdentity)
       return caveDef.wallAccent;
-    if (caveDef.wallTendrilMaterial != EMPTY) {
+    if (caveDef.wallTendrilMaterial != EMPTY && caveIdentity > .5) {
       double tendril = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x4d79u, worldX * 0.035, worldY * 0.050, 2, 0.5) - 0.5);
       if (detail > caveDef.wallTendrilDetailCut
           && tendril < caveDef.wallTendrilNoiseCut)
@@ -832,12 +868,12 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
     // Non-crystal caves receive extra glints for ambient light.
     if (detail > caveDef.crystalCut) return CRYSTAL;
     double moss = wfbm2(E.L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
-    if (moss > 0.74 && detail > 0.88) return MOSS;
+    if (moss > 0.74 && detail > 1.0 - .12 * caveIdentity) return MOSS;
   }
   // Mycelium doesn't only cling to the cave surface — in a mushroom biome it also
   // threads THROUGH the surrounding solid stone as embedded veins (like ore), so a
   // dug wall reveals fungal rock, not just a mossy skin.
-  if (depth >= caveTop && worldY < DEEP_BLEND_BOTTOM) {
+  if (depth >= caveTop && worldY < DEEP_BLEND_BOTTOM && genUndergroundStrength(worldX, worldY) < .5) {
     double vein = wridged2(E.L->gCaveSeed ^ 0x4d80u, worldX * 0.045, worldY * 0.055, 2, 0.5);
     const CaveBiomeDef& caveDef = caveBiomeDef(
       genCaveBiomeAt(worldX, worldY));

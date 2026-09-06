@@ -859,7 +859,7 @@ Audio asset provenance is in
 `audio/assets/README.md`.
 
 See [world-generation design and research](WORLDGEN_DESIGN.md) for the regional
-layout and the references informing it.
+layout, per-biome shallow geology and cave ecology, and the references informing it.
 
 ## Tests and benchmarks
 

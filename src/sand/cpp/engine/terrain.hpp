@@ -9,7 +9,7 @@ struct Engine;
 
 // Terrain, feature plans, and semantic identities are one compatibility unit.
 // Bump this when deterministic generation or feature containment changes.
-inline constexpr int WORLD_GENERATION_VERSION = 18;
+inline constexpr int WORLD_GENERATION_VERSION = 19;
 
 class TerrainGen {
  public:
@@ -58,6 +58,9 @@ class TerrainGen {
   uint8_t genSkinMat(int biome, int slope, bool underwater);
   uint8_t genSoilMat(int biome, int d, int soil);
   int genCaveTopAbs(int worldX);
+  int genUndergroundBottomAbs(int worldX);
+  double genUndergroundStrength(int worldX, int worldY);
+  uint8_t genUndergroundRockAt(int worldX, int worldY);
   int genCaveBiomeAt(int worldX, int worldY);
   bool genIsBackboneCave(int worldX, int worldY);
   bool genIsDeepCave(int worldX, int worldY);
@@ -122,6 +125,7 @@ class TerrainGen {
   Engine& E;
   std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> surfaceCache{};
   std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> baseSurfaceCache{};
+  std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> undergroundBottomCache{};
   std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> biomeCache{};
   std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> climateBiomeCache{};
   std::array<CaveCacheEntry, CAVE_CACHE_SIZE> caveCache{};

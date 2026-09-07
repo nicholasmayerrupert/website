@@ -1,4 +1,6 @@
+  __attribute__((minsize, noinline))
   void fillSpaceship(int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     auto put = [&](int worldX, int worldY, uint8_t material) {
       int x = worldX - L->worldOffsetX, y = worldY - L->worldOffsetY;
       if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
@@ -164,6 +166,7 @@
       put(-15, y, GLASS);
       put(15, y, GLASS);
     }
+#pragma clang attribute pop
   }
 
   void fillOutcropGeneratedFeature(
@@ -256,9 +259,11 @@
     }
   }
 
+  __attribute__((minsize, noinline))
   void fillFacilityGeneratedFeature(
     const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     const PlanetDef& planet = planetDef(planetId);
     int worldLeft = L->worldOffsetX + colStart;
     int worldRight = L->worldOffsetX + colEnd - 1;
@@ -578,6 +583,7 @@
       }
       stampStructureLandings(put, center, 6, wellTop, facilityBottom - 2, shell);
     }
+#pragma clang attribute pop
   }
 
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd):

@@ -42,6 +42,20 @@ behavior/fingerprint checks across machines; use same-host repeated runs for
 their timing comparisons. Checksums and work-volume counters remain comparable
 across environments.
 
+Structure stamping uses Clang `minsize` on the village, mine, ruin, landmark,
+deep-site, facility, spaceship, and shared cave-architecture/site routines.
+Their scoped attribute pragmas also cover local lambdas, which are separate
+functions for optimization purposes. The entry routines use `noinline` to keep
+their size policy at the call boundary. These annotations favor compact code
+for initial generation and fresh streaming bands; simulation, rendering, and
+terrain sampling retain the build's `-O3` policy. Structure definitions and
+stamping remain C++, with no JavaScript callbacks.
+
+For changes to this policy, compare raw and Brotli-compressed WASM sizes, the
+engine benchmark, and generation at representative structure sites. Preserve
+foreground/background cell checksums and run the relevant generation suites;
+the main benchmark alone does not cover the entire structure catalogue.
+
 ## Engine scenarios
 
 - `pan-stream`: stepping, rendering, and fresh/cached streaming.

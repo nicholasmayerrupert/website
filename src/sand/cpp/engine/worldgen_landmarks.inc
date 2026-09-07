@@ -1,8 +1,10 @@
   // Large surface landmarks use absolute plans, clipped writes, and column-wise
   // terrain contacts. Foreground shells remain traversable; background masonry
   // carries the architectural detail.
+  __attribute__((minsize, noinline))
   void fillLandmarkGeneratedFeature(const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     int wx0 = L->worldOffsetX + colStart, wx1 = L->worldOffsetX + colEnd - 1;
     for (int q = floorDiv(wx0 - feature.overscanX, feature.latticeWidth);
          q <= floorDiv(wx1 + feature.overscanX, feature.latticeWidth); q++) {
@@ -787,4 +789,5 @@
       }
 
     }
+#pragma clang attribute pop
   }

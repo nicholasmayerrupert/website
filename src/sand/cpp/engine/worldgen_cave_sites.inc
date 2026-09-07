@@ -1,8 +1,10 @@
   // Separate wings occupy their own pieces of the cave. Only the connecting
   // routes carve between them; no enclosing wall or ceiling spans the site.
   template<class Put>
+  __attribute__((minsize, noinline))
   void stampCaveSite(Put&& write, int left, int top, int width, int height,
                      int design, bool background, uint32_t seed, int foundation) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     const CaveSitePlan site = makeCaveSite(left, top, width, height, design, seed);
     int right = left + width - 1, floor = top + height - 1;
     uint8_t masonry = design == 2 ? PALESTONE : design == 16 ? BONE : STONE;
@@ -110,4 +112,5 @@
         put(x,r.floor,masonry);
       }
     }
+#pragma clang attribute pop
   }

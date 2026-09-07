@@ -2,9 +2,11 @@
   // layers: the foreground supplies roomy architecture and traversable doors,
   // while the background supplies the solid back wall, furnishings, light, and
   // storytelling detail without putting clutter in the player's path.
+  __attribute__((minsize, noinline))
   void fillDeepGeneratedFeature(
       const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     bool background = L->isBackground;
     auto put = [&](int wx, int wy, uint8_t mat) {
       int x = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
@@ -75,6 +77,7 @@
       }
 
     }
+#pragma clang attribute pop
   }
   // Deterministic ocean gardens rooted in the background seabed. VINE is used as
   // flexible kelp, with leafy forks and occasional luminous berries attached to

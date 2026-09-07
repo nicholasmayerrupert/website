@@ -1,8 +1,10 @@
   // Sectioned underground architecture: the solid rear wall carries ornament,
   // light, and equipment; floors and vaults form the traversable foreground.
   template<class Put>
+  __attribute__((minsize, noinline))
   void stampCaveArchitecture(Put&& write, int left, int top, int width, int height,
                             int design, bool background, uint32_t seed) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     int right = left + width - 1, floor = top + height - 1, cx = left + width / 2;
     bool deep = design >= 8;
     int theme = deep ? (design - 8) / 3 : design / 2;
@@ -298,4 +300,5 @@
       int edge=side<0?left:right;
       for(int dx=0;dx<3;dx++)for(int y=floor-PLAYER_H-5;y<floor-1;y++)put(edge-side*dx,y,EMPTY);
     }
+#pragma clang attribute pop
   }

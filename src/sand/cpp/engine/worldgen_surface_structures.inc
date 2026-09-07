@@ -1,6 +1,8 @@
+  __attribute__((minsize, noinline))
   void fillVillageGeneratedFeature(
       const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     // Keep clipping and store logic shared across structure stamp sites.
     auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
@@ -376,11 +378,14 @@
       }
       put(wellX, wellY - 3, CLAY); put(wellX - 4, wellY - 1, MOSS);
     }
+#pragma clang attribute pop
   }
 
+  __attribute__((minsize, noinline))
   void fillMineGeneratedFeature(
       const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
@@ -675,11 +680,14 @@
       }
       stampStructureLandings(put, center, shaftHalf, shaftTop, shaftBottom, PINE_WOOD);
     }
+#pragma clang attribute pop
   }
 
+  __attribute__((minsize, noinline))
   void fillRuinGeneratedFeature(
       const GeneratedFeatureDef& feature,
       int colStart, int colEnd, int rowStart, int rowEnd) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
     auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
@@ -1090,4 +1098,5 @@
         }
       }
     }
+#pragma clang attribute pop
   }

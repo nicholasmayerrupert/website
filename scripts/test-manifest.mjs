@@ -63,6 +63,7 @@ export const UNIT_SUITES = [
   ['loose-acceleration', 'loose-acceleration-test.mjs'],
   ['primitive-clipping', 'primitive-clipping-test.mjs', exclusive(120_000)],
   ['neutronium-force', 'neutronium-force-test.mjs'],
+  ['neutronium-cut', 'neutronium-cut-test.mjs', exclusive(120_000)],
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],
   ['rigid-collision', 'rigid-collision-test.mjs'],

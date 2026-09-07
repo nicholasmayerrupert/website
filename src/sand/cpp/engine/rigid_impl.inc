@@ -800,9 +800,13 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
         return false;
       }
     }
+    // Fit larger conflicting shapes first so small fragments can use the
+    // remaining gaps without exhausting the shared assignment-search budget.
     std::stable_sort(searchNodes.begin(), searchNodes.end(),
       [&](int a, int b) {
-        return worldRasterMove[a] > worldRasterMove[b];
+        if (worldRasterMove[a] != worldRasterMove[b])
+          return worldRasterMove[a] > worldRasterMove[b];
+        return worldRasterNodes[a].body->nPts > worldRasterNodes[b].body->nPts;
       });
 
     static constexpr double directions[16][2] = {

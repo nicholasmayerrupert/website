@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 2;
+static constexpr uint32_t CHECKPOINT_VERSION = 3;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -13,6 +13,7 @@ struct CheckpointArchive {
   bool reading = false, valid = true;
   size_t at = 0;
   int layerId = 0;
+  uint32_t version = CHECKPOINT_VERSION;
   struct Peer { Body* body; int layer, id; };
   std::vector<Peer> peers;
   std::map<std::pair<int,int>, Body*> bodies;
@@ -59,7 +60,7 @@ struct CheckpointArchive {
   void field(StoredCompFragment& v) { fields(v.id,v.cellOffsets); }
   void field(InventoryPool& v) { fields(v.entries,v.exactMaterial); }
   void field(Player& v) { fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame); }
-  void field(AdventureChest& v) { fields(v.id,v.wx,v.wy,v.opened,v.loot); }
+  void field(AdventureChest& v) { fields(v.id,v.wx,v.wy,v.opened,v.loot); if (version>=3) field(v.packed); else if (reading) v.packed=false; }
   void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); }
   void field(Body*& body) {
     if (reading) body = new Body();
@@ -117,12 +118,13 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   bytes.assign(data,data+length-4); CheckpointArchive a{bytes,true};
   uint32_t magic=0,version=0,worldVersion=0; int cols=0,rows=0;
   a.fields(magic,version,cols,rows,worldVersion);
-  if (magic!=CHECKPOINT_MAGIC || version!=CHECKPOINT_VERSION || worldVersion!=WORLD_GENERATION_VERSION || cols!=E.cols || rows!=E.rows) return false;
+  if (magic!=CHECKPOINT_MAGIC || (version!=2 && version!=CHECKPOINT_VERSION) || worldVersion!=WORLD_GENERATION_VERSION || cols!=E.cols || rows!=E.rows) return false;
   for (auto* layer:{&E.fg,&E.bg}) {
     for (auto* body:layer->bodies) delete body;
     for (auto& bucket:layer->bodyStore) for (auto& entry:bucket.second) delete entry.first;
     layer->bodies.clear(); layer->bodyStore.clear();
   }
+  a.version=version;
   checkpointState(a,E);
   if (!a.valid || a.at!=bytes.size()) return false;
   const size_t cells=(size_t)E.cols*E.rows;
@@ -139,10 +141,14 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     auto found=a.bodies.find({peer.layer,peer.id}); if (found==a.bodies.end()) return false;
     peer.body->jointPeer=found->second;
   }
+  auto migrateSeed=[&](InvSlot& slot){ E.canonicalizeSeed(slot.material,slot.plantType); };
+  for (auto& chest:E.containers.chests) for (auto& slot:chest.loot) migrateSeed(slot);
   for (auto& p:E.psys.players) {
+    for (auto& slot:p.inv) migrateSeed(slot);
+    migrateSeed(p.cursor);
     if (!std::isfinite(p.px) || !std::isfinite(p.py) || p.selectedSlot<0 || p.selectedSlot>=INV_HOTBAR) return false;
-    p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0; p.mineActive=false; p.placeStrokeActive=false;
-    for (const auto& slot:p.inv) if (slot.definitionId && !E.content.gear(slot.definitionId)) return false;
+    p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0; p.mineActive=false; p.mineChestId=0; p.placeStrokeActive=false;
+    for (const auto& slot:p.inv) if (slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) return false;
   }
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;
   E.rigid.clearContactCaches(); E.containers.activeChest=0; E.discovery.revision++;

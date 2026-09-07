@@ -674,7 +674,7 @@ bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD 
 // (dig ignores material type — flat class speed so only hardness + tier matter).
 void PlayerSystem::resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
-  if (E.planetId == PL_FRONTIER) { p.mineActive=false; p.mineFootprint=-1; return; }
+  if (E.planetId == PL_FRONTIER) { p.mineChestId=0; p.mineActive=false; p.mineFootprint=-1; return; }
   auto clearLayer = [&](Layer* layer) {
     Engine::ActiveLayerScope active(E, layer);
     if (p.mineFootprint >= 0) E.tools.clearMineDamageFootprint(p.mineX, p.mineY, E.tools.getSurvivalFootprint(p.mineFootprint));
@@ -738,20 +738,18 @@ void PlayerSystem::resolveMineDrops(Player& p) {
                             IT_PARTICLE_LIFE);
   }
 }
-// Target the first surface along the aim ray. Background excavation requires
-// an unobstructed foreground path, so a pick cannot tunnel through a wall.
+// Target the first collectable surface in the selected layer along the aim ray.
 bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer) const {
   double cx = p.px + p.w*.5, cy = p.py + p.h*.42;
   double dx = p.aimX-cx, dy = p.aimY-cy, length = std::hypot(dx,dy);
   if (!std::isfinite(length) || length < .01) return false;
   dx/=length; dy/=length;
-  auto mineable = [&](uint8_t m) { return m != EMPTY && !E.isLiquidMaterial(m) && !E.isGasMaterial(m); };
+  auto mineable = [&](uint8_t m) { return m != EMPTY && !E.isGasMaterial(m); };
   const auto& grid = layer ? E.bg.grid : E.fg.grid;
   for (double at = .5; at <= std::min(P_FRONTIER_MINE_REACH,length+1); at += .35) {
     int xx=(int)std::floor(cx+dx*at), yy=(int)std::floor(cy+dy*at);
     if (xx<=0 || xx>=E.cols-1 || yy<=0 || yy>=E.rows) return false;
     int k=E.I(xx,yy);
-    if (layer && mineable(E.fg.grid[k])) return false;
     if (mineable(grid[k])) { x=xx; y=yy; return true; }
   }
   return false;
@@ -762,6 +760,10 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
   if (swinging) {
     p.facing = p.mineX+.5 < p.px+p.w*.5 ? -1 : 1;
     if (p.actionDuration-p.actionTicks == P_FRONTIER_MINE_IMPACT) {
+      if (p.mineChestId) {
+        if (E.containers.pack(p,p.mineChestId)) E.playerActionCount++;
+        return;
+      }
       double cx=p.px+p.w*.5,cy=p.py+p.h*.42;
       int x=0,y=0;
       Player target=p; target.aimX=p.mineX+.5;target.aimY=p.mineY+.5;
@@ -780,9 +782,11 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
   }
   if (!primary && !secondary) { resetPlayerMine(p); return; }
   int x=0,y=0,layer=secondary&&!primary ? 1 : 0;
-  if (!frontierMineTarget(p,x,y,layer)) { resetPlayerMine(p); return; }
+  int chestId=layer ? 0 : E.containers.target(p);
+  if (chestId) { x=(int)std::floor(p.aimX); y=(int)std::floor(p.aimY); }
+  else if (!frontierMineTarget(p,x,y,layer)) { resetPlayerMine(p); return; }
   if (!p.mineActive || p.mineX!=x || p.mineY!=y || p.mineLayer!=layer) resetPlayerMine(p);
-  p.mineActive=true;p.mineX=x;p.mineY=y;p.mineLayer=layer;p.mineFootprint=-1;
+  p.mineActive=true;p.mineX=x;p.mineY=y;p.mineLayer=layer;p.mineFootprint=-1;p.mineChestId=chestId;
   p.actionState=AS_AXE;p.actionTicks=p.actionDuration=P_FRONTIER_MINE_SWING-imin(3,(int)p.heldToolTier)*2;p.actionDefinition=0;
   E.audio.emit(SE_SWING,p.px,p.py,.35,EMPTY);
 }

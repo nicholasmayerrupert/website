@@ -11,6 +11,8 @@ void CraftingSystem::ensureRecipes() {
   if (E.planetId == PL_FRONTIER) {
     InvSlot pick; pick.itemKind=IK_MINING_TOOL; pick.isTool=true; pick.toolClass=TC_DIG; pick.toolTier=TT_GOLD; pick.count=1;
     recipes.push_back({9,pick,{mat(GOLD_ORE,24),mat(IRON_ORE,48),mat(OAK_WOOD,12)},4,0});
+    InvSlot chest; chest.itemKind=IK_CHEST; chest.count=1;
+    recipes.push_back({10,chest,{mat(OAK_WOOD,40)}});
     InvSlot arrows; arrows.itemKind = IK_ARROW; arrows.count = 12;
     recipes.push_back({8, arrows, {mat(OAK_WOOD, 8), mat(STONE, 4)}});
     for (const auto& [id, gear] : E.content.equipment) {

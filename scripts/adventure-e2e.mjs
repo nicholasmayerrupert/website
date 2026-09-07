@@ -37,9 +37,14 @@ process.exitCode=await runBrowserCases({adventure:async({page,baseURL,check})=>{
  await page.getByRole('dialog',{name:'Inventory',exact:true}).waitFor();
  check('proximity alone does not open a chest',await page.getByRole('button',{name:'Take all',exact:true}).count()===0);
  await page.keyboard.press('Escape');
- const chestPoint=await page.evaluate(()=>{const host=document.querySelector('sand-game'),g=host._game,v=g.getMissionView(),c=g.getChests()[0],r=host.shadowRoot.querySelector('#sand-main').getBoundingClientRect();return {x:r.x+(c.worldX-v.cameraWorldX)/v.viewCols*r.width,y:r.y+(c.worldY+2-v.cameraWorldY)/v.viewRows*r.height};});
+ const chestPoint=await page.evaluate(()=>{const host=document.querySelector('sand-game'),g=host._game,c=g.getChests()[0],r=window.__sandTest.cellRect(c.worldX-window.__sandTest.worldOffset().x,c.worldY+2-window.__sandTest.worldOffset().y),bounds=host.shadowRoot.querySelector('#sand-main').getBoundingClientRect();return {x:bounds.x+r.x/devicePixelRatio,y:bounds.y+r.y/devicePixelRatio};});
  await page.mouse.move(chestPoint.x,chestPoint.y);
  await page.locator('.ad-chest-prompt').waitFor({state:'visible'});
+ check('hover highlights the chest itself',await page.locator('.ad-chest-highlight').isVisible());
+ await page.screenshot({path:artifacts+'/chest-hover.png'});
+ await page.getByRole('button',{name:'Open chest (E)',exact:true}).click();
+ await page.getByRole('button',{name:'Take all',exact:true}).waitFor();
+ await page.keyboard.press('Escape');
  await page.mouse.move(2,2);
  check('chest prompt clears when the pointer leaves',!(await page.locator('.ad-chest-prompt').isVisible()));
  await page.mouse.move(chestPoint.x,chestPoint.y);await page.keyboard.press('e');

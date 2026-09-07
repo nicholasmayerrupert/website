@@ -3,7 +3,33 @@ import { mkdirSync } from 'node:fs';
 import process from 'node:process';
 const artifacts = '.sand-artifacts/adventure-tools';
 mkdirSync(artifacts, { recursive: true });
-process.exitCode = await runBrowserCases({ tools: async ({ page, baseURL, check }) => {
+process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, check }) => {
+  await page.goto(baseURL + '/game?nosave', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('sand-game')?._game?.getPlayer(), null, { timeout: 60000 });
+  await page.locator('sand-game').evaluate(host => host.shadowRoot.querySelector('.sg-sim').focus());
+  for (let i=0;i<40;i++) {
+    const delta=await page.evaluate(()=>{
+      const g=document.querySelector('sand-game')._game,v=g.getMissionView();
+      const actor=g.getTalkableActors().sort((a,b)=>Math.hypot(a.worldX-v.playerWorldX,a.worldY-v.playerWorldY)-Math.hypot(b.worldX-v.playerWorldX,b.worldY-v.playerWorldY))[0];
+      return {x:actor.worldX-v.playerWorldX,distance:Math.hypot(actor.worldX-v.playerWorldX,actor.worldY-v.playerWorldY)};
+    });
+    if(delta.distance<23)break;
+    const key=delta.x<0?'a':'d';await page.keyboard.down(key);await page.waitForTimeout(80);await page.keyboard.up(key);
+  }
+  await page.locator('.sg-talk-button:visible').waitFor();
+  for (const size of [{width:1366,height:768},{width:900,height:650}]) {
+    await page.setViewportSize(size);await page.waitForTimeout(300);
+    const aligned=await page.evaluate(()=>{
+      const host=document.querySelector('sand-game'),g=host._game,v=g.getMissionView();
+      const actor=g.getTalkableActors().sort((a,b)=>Math.hypot(a.worldX-v.playerWorldX,a.worldY-v.playerWorldY)-Math.hypot(b.worldX-v.playerWorldX,b.worldY-v.playerWorldY))[0];
+      const button=[...host.shadowRoot.querySelectorAll('.sg-talk-button')].find(b=>!b.hidden),r=button.getBoundingClientRect();
+      const offset=window.__sandTest.worldOffset(),cell=window.__sandTest.cellRect(actor.worldX-offset.x,actor.headWorldY-offset.y),canvas=host.shadowRoot.querySelector('#sand-main').getBoundingClientRect();
+      return Math.abs(r.x+r.width/2-(canvas.x+cell.x/devicePixelRatio))<2 && Math.abs(r.bottom+8-(canvas.y+cell.y/devicePixelRatio))<2;
+    });
+    check(`NPC speech prompt stays centered above its rendered head at ${size.width}px`,aligned);
+  }
+  await page.screenshot({path:artifacts+'/npc-prompt.png'});
+}, tools: async ({ page, baseURL, check }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseURL + '/game?nosave', { waitUntil: 'domcontentloaded' });
@@ -73,11 +99,16 @@ process.exitCode = await runBrowserCases({ tools: async ({ page, baseURL, check 
   await page.waitForFunction(value => document.querySelector('sand-game')._game.getInventory().selectedFootprint === value - 1, originalSize);
   await page.keyboard.press(']');
   await page.waitForFunction(value => document.querySelector('sand-game')._game.getInventory().selectedFootprint === value, originalSize);
-  check('bracket keys resize during play', true);
+  check('mining controls show radius instead of square dimensions', await page.getByRole('button', { name: 'Choose tool size (Q)' }).textContent() === `Radius ${originalSize} · Q`);
+  await select(1);
+  await page.waitForFunction(value => document.querySelector('sand-game').shadowRoot.querySelector('[aria-label="Choose tool size (Q)"]').textContent === `${value + 1}×${value + 1} · Q`, originalSize);
+  check('placement sizes retain square dimensions', true);
+  await select('pick');
+  await page.waitForFunction(value => document.querySelector('sand-game').shadowRoot.querySelector('[aria-label="Choose tool size (Q)"]').textContent === `Radius ${value} · Q`, originalSize);
   await page.keyboard.press('q');
   await page.locator('.fp-panel.open').waitFor();
   check('Q opens the size picker directly', await page.getByRole('dialog', { name: 'Inventory', exact: true }).count() === 0);
-  await page.locator('.fp-panel').getByRole('button', { name: '1x1', exact: true }).click();
+  await page.locator('.fp-panel').getByRole('button', { name: '1 pixel', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('sand-game')._game.getInventory().selectedFootprint === 0);
   await page.keyboard.press(']');
   await page.waitForFunction(() => document.querySelector('sand-game')._game.getInventory().selectedFootprint === 1);

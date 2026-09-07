@@ -843,7 +843,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double angle = restAngle + std::atan2(std::sin(delta),std::cos(delta))*raise + facing*(broken*.7-recoil*.3);
     double ux = std::cos(angle), uy = std::sin(angle), nx=-uy, ny=ux;
     double sx = pxc+PLAYER_W*.5 + facing*(.65 + bodyLean*.35) + ax*(raise*1.65-recoil);
-    double sy = pyc+PLAYER_H*.62 - raise*1.0 + ay*raise*.8 + bodyBob + broken*.65;
+    double sy = pyc+PLAYER_H*.42 - raise*.55 + ay*raise*.8 + bodyBob + broken*.65;
     articulatedArm(pxc+PLAYER_W*.5-facing*.25, pyc+PLAYER_H*.40+bodyBob,
       sx-ax*.65, sy+.55, sx, sy, true);
     const auto* shield = E.content.gear(equipment[6]);
@@ -856,7 +856,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       float r = rim?.75f:style==1?.40f*grain:.36f;
       float g = rim?.63f:style==1?.29f*grain:.44f;
       float b = rim?.38f:style==1?.17f*grain:.40f;
-      worldSquare(sx+ux*x*.22+nx*y*.22, sy+uy*x*.22+ny*y*.22,.25,r,g,b);
+      worldSquare(sx+ux*x*.34+nx*y*.34, sy+uy*x*.34+ny*y*.34,.37,r,g,b);
     }
     worldSquare(sx,sy,.70,.23f,.25f,.20f);
     worldSquare(sx-ux*.08,sy-.1,.43,.86f,.81f,.64f);
@@ -1030,6 +1030,11 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         drawPixel(head, side, .40, .61f, .67f, .64f);
         drawPixel(head + .18, side, .20, .86f, .87f, .74f);
       }
+      for (double side=-.8;side>=-2.0;side-=.2)
+        for (double at=3.3;at<=4.5;at+=.2) {
+          drawPixel(at,side,.28,.61f,.67f,.64f);
+          if (side < -1.7) drawPixel(at,side,.18,.90f,.91f,.80f);
+        }
     } else if (heldItemKind == IK_MINING_TOOL) {
       bool drilling = own && glSurvivalPreviewOn && glSurvivalPreviewLocked;
       double scan = drilling ? std::fmod(E.actorTick * .12, 1.0) : 0;
@@ -2140,7 +2145,11 @@ void GLPresenter::glDrawPreview() {
     // Browser/worker play always supplies the authority-derived preview policy.
     // `off` is meaningful there: the held item is a weapon (or the player is
     // dead), so do not fall back to a tool cursor.
-    if (glUseExtPlayers && !glSurvivalPreviewOn) return;
+    bool placingChest=false;
+    if (glUseExtPlayers) for (size_t i=0;i+GLP_STRIDE<=glExtPlayers.size();i+=GLP_STRIDE)
+      if (glExtPlayers[i+GLP_OWN]>.5 && glExtPlayers[i+GLP_ALIVE]>.5)
+        placingChest=(int)glExtPlayers[i+GLP_HELD_ITEM_KIND]==IK_CHEST;
+    if (glUseExtPlayers && !glSurvivalPreviewOn && !placingChest) return;
     Player* lp = nullptr;
     for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
     // External snapshots use the authority's player id, while the sole local
@@ -2149,6 +2158,12 @@ void GLPresenter::glDrawPreview() {
     if (!lp && glUseExtPlayers) for (auto& pp : E.psys.players) if (pp.active) { lp = &pp; break; }
     if (lp) {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
+      if (placingChest || lp->inv[lp->selectedSlot].itemKind==IK_CHEST) {
+        bool valid=E.containers.canPlace(*lp,ax,ay);
+        glUniform4f(glc->uColor,valid?.86f:1.f,valid?.75f:.3f,valid?.46f:.2f,.4f);
+        for (int y=ay;y<ay+4;y++) for (int x=ax-3;x<=ax+3;x++) cell(x,y);
+        return;
+      }
       bool toBg = (E.cam.pointerBtns & 2) != 0;
       bool erasing = (lp->selectedTool == T_ERASER);
       const SurvivalFootprint* fp = nullptr;

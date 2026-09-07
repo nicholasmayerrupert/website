@@ -502,20 +502,19 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
   draft.erase(k);
   return true;
 }
-// A connected patch follows the selected material within the selected mining footprint.
+// A connected patch follows the selected material inside the mining radius.
 std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& layer, const SurvivalFootprint& fp) const {
   std::vector<int> cells;
   if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
   uint8_t material=layer.grid[E.I(cx,cy)];
-  if (material==EMPTY || E.isLiquidMaterial(material) || E.isGasMaterial(material)) return cells;
-  int x0, y0, x1, y1;
-  survivalFootprintBounds(fp,cx,cy,x0,y0,x1,y1);
+  if (material==EMPTY || E.isGasMaterial(material)) return cells;
+  const int radius = (int)fp.width - 1;
   cells.push_back(E.I(cx,cy));
   for (size_t i=0;i<cells.size();i++) {
     int x=cells[i]%E.cols,y=cells[i]/E.cols;
     for (auto [dx,dy] : {std::pair<int,int>{1,0},{-1,0},{0,1},{0,-1}}) {
       int nx=x+dx,ny=y+dy;
-      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || nx<x0 || nx>x1 || ny<y0 || ny>y1) continue;
+      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || (nx-cx)*(nx-cx)+(ny-cy)*(ny-cy)>radius*radius) continue;
       int k=E.I(nx,ny);
       if (layer.grid[k]==material && std::find(cells.begin(),cells.end(),k)==cells.end()) cells.push_back(k);
     }
@@ -535,9 +534,8 @@ bool ToolSystem::strikeFrontierPatch(Player& miner) {
   E.rigid.finishErasedBodies(dirtyBodies,E.L->bodyCells);
   splitComponentsAfterDestroy(erasedStructural);
   if (changed) {
-    int x0, y0, x1, y1;
-    survivalFootprintBounds(getSurvivalFootprint(miner),miner.mineX,miner.mineY,x0,y0,x1,y1);
-    E.markDirtyRect(x0,y0,x1,y1);
+    const int radius = (int)getSurvivalFootprint(miner).width - 1;
+    E.markDirtyRect(miner.mineX-radius,miner.mineY-radius,miner.mineX+radius,miner.mineY+radius);
   }
   if (!lastMinedCells.empty()) E.L->skyDirty=true;
   return changed;
@@ -666,6 +664,7 @@ bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, P
 // reaches a stable raster and bakes into the component system.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
+  if (pt==PT_STANDARD) pt=PT_OAK;
   Body* body = E.rigid.finishSpawn({{x0, y0}}, E.plantSeedMat(pt), false);
   if (!body) return false;
   body->plantType = pt;

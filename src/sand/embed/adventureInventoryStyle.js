@@ -1,5 +1,6 @@
 export const ADVENTURE_INVENTORY_STYLE = `
-.ad-chest-prompt {pointer-events:none}
+.ad-chest-highlight {position:absolute;pointer-events:none;border:2px solid #f4df9a;background:#ffe7a822;box-shadow:0 0 0 1px #302b1f;z-index:75}
+.ad-chest-highlight[hidden] {display:none}
 .pool-heading-row {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
 .pool-heading-row .pool-heading {margin:0!important}.pool-heading-row button {font-size:11px;color:#d7c28e}
 .pool-select-label {display:flex;align-items:center;gap:12px}.pool-controls[hidden],.pool-sorting[hidden],.pool-summary[hidden],.pool-empty[hidden]{display:none!important}

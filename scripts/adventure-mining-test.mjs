@@ -21,14 +21,15 @@ test('windup does no damage; contact applies one discrete hit; release completes
  step(20);assert.equal(count(),before,'one click cannot silently repeat');
  hold();step(13);assert.ok(count()<before,'the second strike preserves and finishes earlier damage');
 });
-test('liquids survive the pickaxe and far targets cannot be mined',({e,id,hold,step})=>{
+test('the pickaxe collects liquids and cannot mine far targets',({e,id,hold,step})=>{
  e.paintDisc(48,65,1,MAT.WATER,true);const water=e.getGrid().filter(m=>m===MAT.WATER).length;
- hold(INPUT.PRIMARY,46,65);step(80);assert.equal(e.getGrid().filter(m=>m===MAT.WATER).length,water);
+ hold(INPUT.PRIMARY,46,65);step(80);assert.ok(e.getGrid().filter(m=>m===MAT.WATER).length<water);
+ assert.ok(e.getInventory(id).pools.flatMap(p=>p.entries).some(s=>s.material===MAT.WATER&&s.count>0),'water reaches the inventory');
  hold(INPUT.PRIMARY,20,35);step(50);assert.equal(e.getPlayerMineTarget(id),null);
 });
-test('foreground blocks access to background walls',({e,id,hold,step})=>{
- for(let y=59;y<68;y++)for(let x=59;x<65;x++)e.paintDiscLayer(1,x,y,0,MAT.WOOD,true);e.syncComponents();const before=Array.from(e.getGridBg());
- hold(INPUT.SECONDARY,60,65);step(80);assert.deepEqual(Array.from(e.getGridBg()),before);assert.equal(e.getPlayerMineTarget(id),null);
+test('background walls can be mined through foreground terrain',({e,hold,step})=>{
+ for(let y=59;y<68;y++)for(let x=59;x<65;x++)e.paintDiscLayer(1,x,y,0,MAT.WOOD,true);e.syncComponents();const before=Array.from(e.getGrid());
+ hold(INPUT.SECONDARY,60,65);step(80);assert.ok(e.getGridBg().filter(m=>m===MAT.WOOD).length<54);assert.deepEqual(Array.from(e.getGrid()),before);
 });
 for(const material of [MAT.DIRT,MAT.STONE,MAT.IRON_ORE]){
  const a=arena(material,0),b=arena(material,9);
@@ -79,3 +80,18 @@ test('single-pixel placement creates exactly one component-backed cell',({e,id,h
  hold(INPUT.PRIMARY,45,60);step();hold(0,45,60);step(2);
  assert.equal(e.getGrid().filter(m=>m===MAT.WOOD).length,1);
 });
+
+for (const radius of [1,2,4]) {
+ const a=arena(MAT.DIRT,radius);
+ try {
+  const before=Array.from(a.e.getGrid());a.hold();a.step();
+  const target=a.e.getPlayerMineTarget(a.id);assert.ok(target);
+  a.hold(0);a.step(35);
+  const after=a.e.getGrid();
+  for(let k=0;k<before.length;k++)if(before[k]===MAT.DIRT){
+   const x=k%128,y=Math.floor(k/128),inside=(x-target.x)**2+(y-target.y)**2<=radius**2;
+   assert.equal(after[k],inside?MAT.EMPTY:MAT.DIRT,`radius ${radius} at ${x},${y}`);
+  }
+  console.log('ok: mining carves the exact circular radius',radius);
+ } finally {a.e.destroy();}
+}

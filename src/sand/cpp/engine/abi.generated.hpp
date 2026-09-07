@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 47;
 
-static const uint64_t ABI_FINGERPRINT = 0x910c9e92240fULL;
+static const uint64_t ABI_FINGERPRINT = 0x1280fc70a81aULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -1013,6 +1013,7 @@ enum InventoryItemKind : uint8_t {
   IK_POWDER_POOL = 12,
   IK_LIQUID_POOL = 13,
   IK_GEAR = 14,
+  IK_CHEST = 15,
 };
 
 static constexpr bool isInventoryItemKindValue(int value) {
@@ -1032,6 +1033,7 @@ static constexpr bool isInventoryItemKindValue(int value) {
     case IK_POWDER_POOL:
     case IK_LIQUID_POOL:
     case IK_GEAR:
+    case IK_CHEST:
       return true;
     default: return false;
   }

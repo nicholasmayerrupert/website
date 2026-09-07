@@ -5,6 +5,7 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
+import { PLANT_SPECIES } from '../src/sand/materials.generated.js';
 import {
   CREATIVE_KIND as CK, CREATURE, CREATURE_CREATIVE_ENTRIES,
 } from '../src/sand/wasmBridge/abi.generated.js';
@@ -36,9 +37,10 @@ check('creative menu ends with every schema-enabled creature spawn egg',
     && menuTail.every((entry, i) =>
     entry.kind === CK.CREATURE && entry.label === expectedEggs[i][0] && entry.value === expectedEggs[i][1]));
 const seedEntries = buildEntries().filter((entry) => entry.kind === CK.SEED);
-check('all seven species seeds have distinct creative-menu pixel icons',
-  seedEntries.length === 7 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 7
-    && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === 7);
+check('every visible species seed has a distinct creative-menu pixel icon',
+  seedEntries.length === PLANT_SPECIES.filter(s=>s.palette).length && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === seedEntries.length
+    && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === seedEntries.length);
+check('the separate default seed is absent from the palette', !buildEntries().some(entry=>entry.kind===CK.MATERIAL&&entry.value===MAT.SEED));
 
 // 1) Any COMPONENT material drafts with a live preview, then starts as a body,
 // falls, and bakes after grounded contact.
@@ -117,8 +119,8 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.pointerDown(50, 40, 0);
   check('default seed does not create a stone-style draft preview', e.getStoneDraftCells().length === 0);
   e.pointerUp(0);
-  let seeds = 0; for (const v of e.getGrid()) if (v === MAT.SEED) seeds++;
-  check(`default seed placed one SEED cell (${seeds})`, seeds === 1);
+  let seeds = 0; for (const v of e.getGrid()) if (v === MAT.OAK_SEED) seeds++;
+  check(`default seed resolves to one OAK_SEED cell (${seeds})`, seeds === 1);
   e.destroy();
 }
 

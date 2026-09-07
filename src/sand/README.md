@@ -582,9 +582,10 @@ logical component across bake cycles, and rigid fractures preserve their species
 When a seed-bearing tree rebakes after rigid motion, resumed growth derives an
 upward leader and crown frame from the settled raster, so a fallen trunk bends
 back toward the sky instead of reusing its invalid pre-fall axis.
-The plain seed grows staggered spreading forks and a lobed `WOOD`/`PLANT` crown.
-Oak has a broad, asymmetric crown and a tapered trunk with thick buttress roots,
-using distinct `OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. Live static TNT fuses remain
+Oak grows staggered spreading forks and a lobed crown using distinct
+`OAK_SEED`/`OAK_WOOD`/`OAK_LEAF` identities. The palette exposes typed seeds;
+default seed placement resolves to oak. Vines prefer downward growth and can
+climb or spread along supporting surfaces when downward growth is blocked. Live static TNT fuses remain
 cell-addressed, while a body fuse retains its body-local ignition front through
 motion, splitting, welding, and baking.
 Mixed assemblies retain a per-cell material map, so ore, masonry, timber,

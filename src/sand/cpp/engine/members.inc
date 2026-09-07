@@ -368,7 +368,10 @@
     if (!isSeedMaterial(material)) return;
     uint8_t encoded = MAT_PLANT_SPECIES[material];
     if (encoded != NO_PLANT_SPECIES) plantType = encoded;
-    else material = plantSeedMat(plantType);
+    else {
+      if (plantType==PT_STANDARD) plantType=PT_OAK;
+      material = plantSeedMat(plantType);
+    }
   }
   inline bool isMyceliumMaterial(uint8_t m) { return m == MYCELIUM || m == MYCELIUM_SPORE; }
   inline bool componentDisplaceable(uint8_t m) {

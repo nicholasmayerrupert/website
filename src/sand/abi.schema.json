@@ -1671,7 +1671,8 @@
         "IK_BUILDING_POOL": 11,
         "IK_POWDER_POOL": 12,
         "IK_LIQUID_POOL": 13,
-        "IK_GEAR": 14
+        "IK_GEAR": 14,
+        "IK_CHEST": 15
       }
     },
     "InventoryPoolAction": {

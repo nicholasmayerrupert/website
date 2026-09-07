@@ -342,21 +342,21 @@ export const MAT_FACE_LIT = [0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 
 // Flora identity/material mapping and creative-palette metadata share the same
 // schema records as the C++ growth/component helpers.
 export const NO_PLANT_SPECIES = 255;
-export const PGR = Object.freeze({"OAK":0,"PINE":1,"WILLOW":2,"CACTUS":3,"MUSHROOM":4,"BUSH":5,"VINE":6,"STANDARD":7,"EYE":8});
+export const PGR = Object.freeze({"OAK":0,"PINE":1,"WILLOW":2,"CACTUS":3,"MUSHROOM":4,"BUSH":5,"VINE":6,"EYE":7});
 export const PWG = Object.freeze({"BROADLEAF":0,"PINE":1,"WILLOW":2,"CACTUS":3,"BUSH":4,"EYE":5});
 export const PLANT_GROWTH_PROFILES = Object.freeze([
   {
     "id": 0,
     "name": "oak",
-    "woodTopology": "oak",
+    "woodTopology": "branching",
     "leafTopology": "oak",
     "trunkProfile": "tree",
     "straight": false,
-    "maxWoodBase": 560,
-    "maxWoodVariation": 31,
-    "maxLeafBase": 1350,
-    "maxLeafVariation": 71,
-    "leafStart": 36,
+    "maxWoodBase": 340,
+    "maxWoodVariation": 0,
+    "maxLeafBase": 700,
+    "maxLeafVariation": 0,
+    "leafStart": 6,
     "leaves": true,
     "variedTree": false,
     "finishStemFirst": true,
@@ -366,10 +366,10 @@ export const PLANT_GROWTH_PROFILES = Object.freeze([
     "foliageAlongsideWoodChance": 0,
     "leafBurst": "default",
     "gravityRecovery": false,
-    "thickenHeight": 38,
-    "oppositeChance": 0.94,
-    "wideBaseChance": 0.78,
-    "wideBaseHeight": 12
+    "thickenHeight": 20,
+    "oppositeChance": 0.8,
+    "wideBaseChance": 0.3,
+    "wideBaseHeight": 6
   },
   {
     "id": 1,
@@ -529,32 +529,6 @@ export const PLANT_GROWTH_PROFILES = Object.freeze([
   },
   {
     "id": 7,
-    "name": "standard",
-    "woodTopology": "branching",
-    "leafTopology": "oak",
-    "trunkProfile": "tree",
-    "straight": false,
-    "maxWoodBase": 340,
-    "maxWoodVariation": 0,
-    "maxLeafBase": 700,
-    "maxLeafVariation": 0,
-    "leafStart": 6,
-    "leaves": true,
-    "variedTree": false,
-    "finishStemFirst": true,
-    "extraWood": true,
-    "woodLeafChance": 0.54,
-    "vineBerriesChance": 0,
-    "foliageAlongsideWoodChance": 0,
-    "leafBurst": "default",
-    "gravityRecovery": false,
-    "thickenHeight": 20,
-    "oppositeChance": 0.8,
-    "wideBaseChance": 0.3,
-    "wideBaseHeight": 6
-  },
-  {
-    "id": 8,
     "name": "eye",
     "woodTopology": "eye",
     "leafTopology": "generic",
@@ -823,7 +797,7 @@ export const PLANT_SPECIES = [
     "id": 7,
     "name": "STANDARD",
     "label": "Standard",
-    "growthProfile": 7,
+    "growthProfile": 0,
     "worldgenProfile": 0,
     "seedMaterial": 7,
     "woodMaterial": 8,
@@ -849,7 +823,7 @@ export const PLANT_SPECIES = [
     "id": 8,
     "name": "EYE",
     "label": "Eyeball",
-    "growthProfile": 8,
+    "growthProfile": 7,
     "worldgenProfile": 5,
     "seedMaterial": 61,
     "woodMaterial": 56,
@@ -877,9 +851,9 @@ export const PLANT_WOOD_MATERIAL = [53, 26, 8, 27, 28, 8, 30, 8, 56];
 export const PLANT_LEAF_MATERIAL = [54, 44, 45, 9, 29, 46, 40, 9, 57];
 export const MAT_PLANT_SPECIES = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 3, 4, 4, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 6, 255, 255, 255, 1, 2, 5, 255, 255, 255, 255, 255, 0, 0, 0, 255, 8, 8, 255, 255, 255, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
 export const MAT_IS_PLANT_SEED = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_PALETTE_HIDDEN = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const PALETTE_MAIN_ORDER = ["cube","eraser","rigid","neutronium","stone","water","acid","lava","tnt","seed","sand","fire","methane","oil","gunpowder","crystal","mycelium_spore","mycelium","glowberry","glowshroom","brine","steam","acrid_smoke","ice","oak seed","eyeball seed","pine seed","willow seed","cactus seed","mushroom seed","bush seed","vine seed","grass","dirt","snow","mud","salt","gold_ore","iron_ore","copper_ore","coal_ore","brick","clay","sandstone","moss","wood","oak_wood","pine_wood","oak_leaf","pine_needles","willow_leaf","bush_leaf","cactus","mush_cap","mush_stem","vine","plant","driftwood","debris","vein_soil","eye_wood","eye_sclera","eye_iris","eye_pupil","palestone"];
-export const PALETTE_SECTIONS = [{"id":"main","label":"Main","accent":"#f6c56f","all":true},{"id":"tools","label":"Tools","accent":"#cbd5e1","labels":["cube","eraser","rigid"]},{"id":"terrain","label":"Terrain","accent":"#c99a6b","labels":["shale","slate","rootstone","vein_rock","vein_soil","palestone","sand","stone","neutronium","dirt","snow","mud","clay","sandstone","copper_ore","iron_ore","coal_ore","gold_ore","brick","salt","debris","crystal"]},{"id":"fluids","label":"Fluids","accent":"#70bfff","labels":["water","oil","acid","lava","ice","steam","brine"]},{"id":"flora","label":"Flora","accent":"#7dd88a","labels":["rust_bramble","ochre_reed","teal_lichen","violet_frond","eye_wood","eye_sclera","eye_iris","eye_pupil","seed","wood","plant","oak_wood","oak_leaf","driftwood","moss","pine_wood","cactus","mush_stem","mush_cap","pine_needles","willow_leaf","bush_leaf","vine","mycelium","mycelium_spore","glowberry","glowshroom","grass"],"entryKinds":["seed"]},{"id":"reactions","label":"Reactions","accent":"#ff856c","labels":["fire","steam","methane","oil","acid","lava","neutronium","acrid_smoke","salt","brine","gunpowder","tnt","debris"]},{"id":"creatures","label":"Creatures","accent":"#c99cff","entryKinds":["creature"]}];
+export const MAT_PALETTE_HIDDEN = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const PALETTE_MAIN_ORDER = ["cube","eraser","rigid","neutronium","stone","water","acid","lava","tnt","sand","fire","methane","oil","gunpowder","crystal","mycelium_spore","mycelium","glowberry","glowshroom","brine","steam","acrid_smoke","ice","oak seed","eyeball seed","pine seed","willow seed","cactus seed","mushroom seed","bush seed","vine seed","grass","dirt","snow","mud","salt","gold_ore","iron_ore","copper_ore","coal_ore","brick","clay","sandstone","moss","wood","oak_wood","pine_wood","oak_leaf","pine_needles","willow_leaf","bush_leaf","cactus","mush_cap","mush_stem","vine","plant","driftwood","debris","vein_soil","eye_wood","eye_sclera","eye_iris","eye_pupil","palestone"];
+export const PALETTE_SECTIONS = [{"id":"main","label":"Main","accent":"#f6c56f","all":true},{"id":"tools","label":"Tools","accent":"#cbd5e1","labels":["cube","eraser","rigid"]},{"id":"terrain","label":"Terrain","accent":"#c99a6b","labels":["shale","slate","rootstone","vein_rock","vein_soil","palestone","sand","stone","neutronium","dirt","snow","mud","clay","sandstone","copper_ore","iron_ore","coal_ore","gold_ore","brick","salt","debris","crystal"]},{"id":"fluids","label":"Fluids","accent":"#70bfff","labels":["water","oil","acid","lava","ice","steam","brine"]},{"id":"flora","label":"Flora","accent":"#7dd88a","labels":["rust_bramble","ochre_reed","teal_lichen","violet_frond","eye_wood","eye_sclera","eye_iris","eye_pupil","wood","plant","oak_wood","oak_leaf","driftwood","moss","pine_wood","cactus","mush_stem","mush_cap","pine_needles","willow_leaf","bush_leaf","vine","mycelium","mycelium_spore","glowberry","glowshroom","grass"],"entryKinds":["seed"]},{"id":"reactions","label":"Reactions","accent":"#ff856c","labels":["fire","steam","methane","oil","acid","lava","neutronium","acrid_smoke","salt","brine","gunpowder","tnt","debris"]},{"id":"creatures","label":"Creatures","accent":"#c99cff","entryKinds":["creature"]}];
 
 // Mining gate tables: which tool class drops a material and the min tier required.
 export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 3, 0, 2, 2, 2, 1, 1, 1, 1, 3, 2, 2, 2, 3, 2, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];

@@ -3,7 +3,7 @@ import { EQUIPMENT_BY_ID } from '../content/equipment.js';
 import { gearIcon } from './gearIcon.js';
 import { GAME_CONTENT, GAME_JOBS, GAME_WORLD } from '../content/catalog.js';
 import { MATERIAL_BY_ID } from '../materials.generated.js';
-import { OBJECTIVE_STATE } from '../wasmBridge/abi.generated.js';
+import { OBJECTIVE_STATE, ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { ADVENTURE_STYLE } from './adventureStyle.js';
 import { ADVENTURE_INVENTORY_STYLE } from './adventureInventoryStyle.js';
 import { createAdventureEquipment } from './adventureEquipment.js';
@@ -81,8 +81,8 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   }
   const captionTimer = setTimeout(() => caption.classList.add('faded'), 7000);
   const inventoryHome = inventory.el.parentNode;
-  const footprintLabel = el('label', 'ad-muted ad-footprint', 'Mining / building size ');
-  const footprint = createGameSelect(root, { label: 'Tool footprint', options: game.getSurvivalFootprints().map(shape => ({ value: shape.id, label: `${shape.width} × ${shape.height}` })), onChange: value => game.setSelectedFootprint(Number(value)) });
+  const footprintLabel = el('label', 'ad-muted ad-footprint', 'Mining radius / placement size ');
+  const footprint = createGameSelect(root, { label: 'Tool footprint', options: game.getSurvivalFootprints().map(shape => ({ value: shape.id, label: `${shape.width === 1 ? '1 pixel' : `Radius ${shape.width - 1}`} / ${shape.width} × ${shape.height}` })), onChange: value => game.setSelectedFootprint(Number(value)) });
   footprint.value = game.getInventory().selectedFootprint;
   footprintLabel.append(footprint.el); inventory.el.append(footprintLabel);
   const equipment = createAdventureEquipment(game, inventory);
@@ -90,6 +90,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const refreshEquipment = equipment.refresh;
   let nearChest = null, shownChest = 0, lootSignature = '', chestPointer = null;
   const chestPrompt = button('E · Open chest', () => openChest(), 'ad-chest-prompt'); chestPrompt.hidden = true; root.append(chestPrompt);
+  const chestHighlight = el('div', 'ad-chest-highlight'); chestHighlight.hidden = true; root.append(chestHighlight);
   const chestSection = el('section', 'ad-loot'); chestSection.hidden = true; pages.inventory.prepend(chestSection);
   function openChest() {
     refreshChest();
@@ -99,28 +100,34 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   }
   function refreshChest() {
     const view = game.getMissionView();
-    const bounds = root.querySelector('#sand-main')?.getBoundingClientRect();
-    const wx = view && bounds && chestPointer ? view.cameraWorldX + (chestPointer.x - bounds.left) / bounds.width * view.viewCols : NaN;
-    const wy = view && bounds && chestPointer ? view.cameraWorldY + (chestPointer.y - bounds.top) / bounds.height * view.viewRows : NaN;
+    const point = chestPointer && game.screenToWorld(chestPointer.x, chestPointer.y);
+    const wx = point?.x ?? NaN, wy = point?.y ?? NaN;
     nearChest = view && !panel && !dialogueOpen ? game.getChests().find(chest => Math.abs(wx - chest.worldX) <= 3.5
       && wy >= chest.worldY - (chest.opened ? 2 : .5) && wy <= chest.worldY + 4
       && Math.hypot(chest.worldX - view.playerWorldX, chest.worldY - view.playerWorldY) < 28) : null;
-    chestPrompt.hidden = !!panel || dialogueOpen || !nearChest;
+    chestHighlight.hidden = chestPrompt.hidden = !!panel || dialogueOpen || !nearChest;
     if (nearChest && view) {
-      chestPrompt.style.left = `${(nearChest.worldX-view.cameraWorldX)/view.viewCols*100}%`;
-      chestPrompt.style.top = `${(nearChest.worldY-view.cameraWorldY)/view.viewRows*100}%`;
-      chestPrompt.textContent = nearChest.remaining ? 'E · Open chest' : 'E · Empty chest';
+      const top = game.worldToScreen(nearChest.worldX - 3.5, nearChest.worldY - (nearChest.opened ? 2 : .5));
+      const bottom = game.worldToScreen(nearChest.worldX + 3.5, nearChest.worldY + 4);
+      chestPrompt.style.left = `${(top.x + bottom.x) / 2}px`;
+      chestPrompt.style.top = `${top.y}px`;
+      Object.assign(chestHighlight.style, { left: `${top.x}px`, top: `${top.y}px`, width: `${bottom.x-top.x}px`, height: `${bottom.y-top.y}px` });
+      const mining = game.getPlayer()?.heldItemKind === ITEM_KIND.MINING_TOOL;
+      chestPrompt.textContent = mining ? 'E · Open / Hold pickaxe · Pick up' : 'E / Click · Open chest';
+      chestPrompt.setAttribute('aria-label', 'Open chest (E)');
     }
     chestSection.hidden = panel !== 'inventory' || !shownChest;
     const loot = game.getChestLoot();
     if (!shownChest || loot.id !== shownChest) return;
-    const signature = `${loot.id}:${JSON.stringify(loot.slots)}`;
+    const carried = game.getCursor();
+    const signature = `${loot.id}:${JSON.stringify(loot.slots)}:${JSON.stringify(carried)}`;
     if (lootSignature === signature) return;
     lootSignature = signature;
     chestSection.replaceChildren(el('h2', '', GAME_WORLD.chests.find(c => c.id === shownChest)?.name || (shownChest >= 8000000 ? 'Returned belongings · Hearthwood' : 'Forgotten coffer')));
+    if (carried?.count && carried.itemKind !== ITEM_KIND.CHEST) chestSection.append(button('Store carried item', () => game.interactChest(shownChest, -3)));
     if (!loot.slots.length) chestSection.append(el('p', 'ad-muted', 'Empty'));
     for (const [index, stack] of loot.slots.entries()) {
-      const item = EQUIPMENT_BY_ID[stack.definitionId];
+      const item = stack.itemKind === ITEM_KIND.GEAR ? EQUIPMENT_BY_ID[stack.definitionId] : null;
       const row = button('', () => game.interactChest(shownChest, index));
       if (item) row.append(gearIcon(item.id));
       row.append(el('span', '', `${item?.name || MATERIAL_BY_ID[stack.material]?.name || 'Arrows'}${stack.count > 1 ? ` × ${stack.count}` : ''}`), el('span', 'ad-muted', 'Take'));
@@ -163,7 +170,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
       pause(); tabButtons[name].focus({ preventScroll: true });
     } else {
       pause();
-      if (previousFocus?.isConnected && !overlay.contains(previousFocus)) previousFocus.focus?.({ preventScroll: true });
+      if (previousFocus?.isConnected && previousFocus !== chestPrompt && previousFocus.getClientRects().length && !overlay.contains(previousFocus)) previousFocus.focus?.({ preventScroll: true });
       else focusGame();
       previousFocus = null;
     }
@@ -276,7 +283,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     if (event.composedPath().some(node => node.getAttribute?.('role') === 'listbox' || node.getAttribute?.('role') === 'combobox' && (node.getAttribute('aria-expanded') === 'true' || event.key !== 'Escape'))) return;
     if (event.repeat || event.composedPath().some(node => /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName))) return;
     if (dialogueOpen) return;
-    if (event.code === 'KeyE' && !panel && nearChest && root.activeElement === root.querySelector('.sg-sim')) {
+    if (event.code === 'KeyE' && !panel && nearChest) {
       event.preventDefault(); event.stopImmediatePropagation(); openChest(); return;
     }
     const page = { KeyM:'map', KeyJ:'journal', KeyI:'inventory', KeyE:'inventory' }[event.code];
@@ -294,6 +301,12 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const onDialogue = event => { dialogueOpen = event.detail.open; pause(); };
   const pointAtChest = event => {
     const bounds = root.querySelector('#sand-main')?.getBoundingClientRect();
+    if (event.composedPath().includes(chestPrompt)) return;
+    if (nearChest) {
+      const prompt = chestPrompt.getBoundingClientRect(), chest = chestHighlight.getBoundingClientRect();
+      if (event.clientX >= Math.min(prompt.left,chest.left) && event.clientX <= Math.max(prompt.right,chest.right)
+        && event.clientY >= prompt.top && event.clientY <= chest.bottom) return;
+    }
     const control = event.composedPath().some(node => /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(node.tagName) || node.getAttribute?.('role') === 'dialog');
     chestPointer = bounds && !control && event.clientX >= bounds.left && event.clientX <= bounds.right
       && event.clientY >= bounds.top && event.clientY <= bounds.bottom ? { x: event.clientX, y: event.clientY } : null;
@@ -301,6 +314,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   };
   const clickChest = event => {
     if (panel || dialogueOpen || event.button !== 0) return;
+    if (event.composedPath().includes(chestPrompt) || game.getPlayer()?.heldItemKind === ITEM_KIND.MINING_TOOL) return;
     pointAtChest(event);
     if (nearChest) { event.preventDefault(); event.stopImmediatePropagation(); openChest(); }
   };
@@ -312,8 +326,10 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   overlay.addEventListener('pointerdown', event => { if (event.target === overlay) open(null); });
   overlay.addEventListener('wheel', event => event.stopPropagation());
   const observer = new ResizeObserver(drawMap); observer.observe(mapWrap);
+  let chestFrame = 0;
+  const trackChest = () => { refreshChest(); if (!destroyed) chestFrame = requestAnimationFrame(trackChest); };
+  chestFrame = requestAnimationFrame(trackChest);
   const refresh = setInterval(() => {
-    refreshChest();
     const hero = game.getPlayer(), view = game.getMissionView();
     const bosses = {20:'Thornbound Hart',21:'Mire Matron',22:'Cinder Castellan',23:'The Hollow Bellkeeper',14:'The Stonebound',15:'Ashen Sentinel',28:'Root Knight'};
     const actors = game.getCombatActors();
@@ -351,6 +367,6 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     openWorkshop(actor) { open('inventory'); inventory.setStation(actor?.npcId || 0, game.getPlayer()?.abilities || 0); inventory.update(game.getInventory()); },
     isOpen: () => !!panel,
     inventoryChanged(value) { if (value && panel !== 'inventory') open('inventory'); else if (!value && panel === 'inventory') open(null); },
-    destroy() { footprint.destroy(); destroyed = true; clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
+    destroy() { footprint.destroy(); destroyed = true; cancelAnimationFrame(chestFrame); clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); chestHighlight.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
   };
 }

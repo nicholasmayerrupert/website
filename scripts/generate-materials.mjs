@@ -590,10 +590,7 @@ const encodedPlantSpecies = (m) => {
   const uses = plantMaterialSpecies.get(m.name);
   return uses?.size === 1 ? [...uses][0] : 255;
 };
-const standardPlantSpecies = plantSpeciesList.find((species) => species.name === 'STANDARD');
-const genericSeedMaterial = standardPlantSpecies.seedMaterial;
 const hiddenPaletteMaterials = new Set(plantSpeciesList
-  .filter((species) => species.palette && species.seedMaterial !== genericSeedMaterial)
   .map((species) => species.seedMaterial));
 
 if (!palette || !Array.isArray(palette.mainOrder) || !Array.isArray(palette.sections))

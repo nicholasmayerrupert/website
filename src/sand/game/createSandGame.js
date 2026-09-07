@@ -18,6 +18,9 @@ import {
   CREATIVE_KIND, CREATURE, MISSION, PLANET, WEATHER,
 } from '../wasmBridge/abi.generated.js';
 import { MAT } from '../materials.js';
+import creatureArt from '../content/creatureArt.js';
+
+const creatureArtHeight = Object.fromEntries(Object.entries(creatureArt).map(([key, art]) => [CREATURE[key], art.height * art.pixelScale]));
 import { resolvePlanetId } from './planetSelection.js';
 import {
   DEFAULT_WEATHER_ID,
@@ -521,12 +524,30 @@ export function createSandGame(container, opts = {}) {
           ...actor,
           worldX: offsetX + actor.x + actor.w * 0.5,
           worldY: offsetY + actor.y,
+          headWorldY: offsetY + actor.y + actor.h - creatureArtHeight[actor.species],
         }));
     },
     getPlanetState() {
       return {
         id: ctx.engine?.getPlanet() ?? ctx.planetId,
         gravityScale: ctx.engine?.getGravityScale() ?? ctx.gravityScale,
+      };
+    },
+    worldToScreen(worldX, worldY) {
+      if (!ctx.engine || !ctx.cellDev) return null;
+      const canvas = ctx.canvas.getBoundingClientRect(), host = ctx.canvas.getRootNode().host?.getBoundingClientRect() || canvas;
+      const cam = ctx.engine.getCam(), offset = ctx.engine.glGetOffset();
+      return {
+        x: canvas.left - host.left + ((worldX - ctx.engine.getWorldOffsetX() - Math.floor(cam.x)) * ctx.cellDev + offset.offX) * canvas.width / ctx.canvas.width,
+        y: canvas.top - host.top + ((worldY - ctx.engine.getWorldOffsetY() - Math.floor(cam.y)) * ctx.cellDev + offset.offY) * canvas.height / ctx.canvas.height,
+      };
+    },
+    screenToWorld(clientX, clientY) {
+      if (!ctx.engine || !ctx.cellDev) return null;
+      const canvas = ctx.canvas.getBoundingClientRect(), cam = ctx.engine.getCam(), offset = ctx.engine.glGetOffset();
+      return {
+        x: ctx.engine.getWorldOffsetX() + Math.floor(cam.x) + ((clientX - canvas.left) * ctx.canvas.width / canvas.width - offset.offX) / ctx.cellDev,
+        y: ctx.engine.getWorldOffsetY() + Math.floor(cam.y) + ((clientY - canvas.top) * ctx.canvas.height / canvas.height - offset.offY) / ctx.cellDev,
       };
     },
     getMissionView() {

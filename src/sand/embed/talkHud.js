@@ -214,7 +214,7 @@ export function createTalkHud(root, game, onAction) {
   const sync = (now) => {
     raf = requestAnimationFrame(sync);
     const view = game.getMissionView?.();
-    if (now - lastActorRead >= 100) {
+    if (now - lastActorRead >= 32) {
       actors = game.getTalkableActors?.() || [];
       lastActorRead = now;
     }
@@ -223,8 +223,7 @@ export function createTalkHud(root, game, onAction) {
     if (!view || !width || !height || !view.viewCols || !view.viewRows) return;
 
     for (const sign of signs) {
-      const x = (sign.x - view.cameraWorldX) / view.viewCols * width;
-      const y = (sign.y - view.cameraWorldY) / view.viewRows * height;
+      const { x, y } = game.worldToScreen(sign.x, sign.y);
       sign.node.hidden = x < 50 || x > width - 50 || y < 80 || y > height - 80;
       sign.node.style.left = `${x}px`; sign.node.style.top = `${y}px`;
     }
@@ -232,9 +231,7 @@ export function createTalkHud(root, game, onAction) {
     nearestActor = null;
     let nearestDistance = Infinity;
     for (const actor of actors) {
-      const rawX = ((actor.worldX - view.cameraWorldX) / view.viewCols) * width;
-      const rawY =
-        ((actor.worldY - view.cameraWorldY) / view.viewRows) * height;
+      const { x: rawX, y: rawY } = game.worldToScreen(actor.worldX, actor.headWorldY);
       const distance = Number.isFinite(view.playerWorldX)
         ? Math.hypot(
             actor.worldX - view.playerWorldX,
@@ -285,10 +282,7 @@ export function createTalkHud(root, game, onAction) {
     if (!commander) {
       questMarker.hidden = true;
     } else {
-      const rawX =
-        ((commander.worldX - view.cameraWorldX) / view.viewCols) * width;
-      const rawY =
-        ((commander.worldY - view.cameraWorldY) / view.viewRows) * height;
+      const { x: rawX, y: rawY } = game.worldToScreen(commander.worldX, commander.headWorldY);
       const distance = Number.isFinite(view.playerWorldX)
         ? Math.hypot(
             commander.worldX - view.playerWorldX,
@@ -318,10 +312,7 @@ export function createTalkHud(root, game, onAction) {
       game.getPlanetState?.().id,
       view.playerWorldY,
     );
-    const playerX =
-      ((view.playerWorldX - view.cameraWorldX) / view.viewCols) * width;
-    const playerY =
-      ((view.playerWorldY - view.cameraWorldY) / view.viewRows) * height;
+    const { x: playerX, y: playerY } = game.worldToScreen(view.playerWorldX, view.playerWorldY);
     recoveryBeam.classList.toggle('on', recovering);
     if (recovering) {
       recoveryBeam.style.transform = `translate(${Math.round(playerX)}px,${Math.round(playerY)}px) translate(-50%,-44%)`;

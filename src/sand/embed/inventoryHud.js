@@ -30,9 +30,9 @@ const TIER_NAME = ['', 'Wood', 'Stone', 'Iron', 'Gold'];
 // Crisp SVG pixels keep silhouettes legible at hotbar size.
 const PICKAXE_ART = [
   '............',
-  '..MMMMMM....',
-  '...MMMMMM...',
-  '....MMMMMM..',
+  '.MMMMMMM....',
+  '.MMMMMMMM...',
+  '..MMMMMMMM..',
   '.....MM.MM..',
   '.....HH..M..',
   '....HH......',
@@ -42,59 +42,20 @@ const PICKAXE_ART = [
   '............',
   '............',
 ];
-const TOOL_ART = {
-  1: PICKAXE_ART, // legacy pickaxe class (same silhouette)
-  2: [ // axe — blade on the left, handle down the right
-    '............',
-    '...MMM......',
-    '..MMMMM.....',
-    '.MMMMMMM....',
-    '.MMMMMMMHH..',
-    '.MMMMMMMHH..',
-    '.MMMMMMMHH..',
-    '..MMMMM.HH..',
-    '...MMM..HH..',
-    '........HH..',
-    '........HH..',
-    '............',
-  ],
-  3: [ // shovel — handle on top, spade scoop at the bottom
-    '............',
-    '.....HH.....',
-    '.....HH.....',
-    '.....HH.....',
-    '.....HH.....',
-    '....MMMM....',
-    '...MMMMMM...',
-    '...MMMMMM...',
-    '...MMMMMM...',
-    '...MMMMMM...',
-    '....MMMM....',
-    '............',
-  ],
-  5: [ // mining emitter with paired rails and a pistol grip
-    '............',
-    '..DDDD......',
-    '.DMMMMDDCCC.',
-    '.DMMMMMDD.CC',
-    '.DMMMMMDD.CC',
-    '..DDDDDDCCC.',
-    '...DDDD.....',
-    '...DDD......',
-    '...DDD......',
-    '....DD......',
-    '............',
-    '............',
-  ],
-};
 const TOOL_HANDLE = '#9b6a39'; // wood
 // Metal-head tint indexed by toolTier (0 = generic, 1 wood, 2 stone, 3 iron, 4 gold).
 const TOOL_HEAD = ['#c9ccd4', '#b07a44', '#9aa0a8', '#dfe4ec', '#f2c734'];
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+function chestIcon() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16'); svg.setAttribute('width', '32'); svg.setAttribute('height', '32');
+  svg.innerHTML = '<path fill="#a0713e" stroke="#e1bc71" d="M2 5h12v8H2z"/><path fill="#64462d" stroke="#e1bc71" d="M2 5l1-2h10l1 2v3H2z"/><path fill="#efd18a" d="M7 7h2v3H7z"/>';
+  return svg;
+}
 const _toolIconCache = new Map();
 function buildToolIcon(toolClass, toolTier, sizePx) {
-  const grid = toolClass === 5 ? PICKAXE_ART : TOOL_ART[toolClass];
+  const grid = PICKAXE_ART;
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12');
   svg.setAttribute('width', String(sizePx));
@@ -441,6 +402,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         const c = document.createElement('span'); c.className = 'inv-count';
         c.textContent = s.count >= 10000 ? `${Math.floor(s.count / 1000)}k` : String(s.count); el.append(c);
       }
+    } else if (s.itemKind === ITEM_KIND.CHEST && s.count) {
+      el.append(chestIcon());
     } else if (s.itemKind === ITEM_KIND.GEAR && s.count) {
       el.append(gearIcon(s.definitionId));
       if (s.count > 1) {
@@ -476,6 +439,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!s) return;
     if (s.pool) {
       cursorItem.append(poolIcon(s.pool));
+    } else if (s.itemKind === ITEM_KIND.CHEST && s.count) {
+      cursorItem.append(chestIcon());
     } else if (s.itemKind === ITEM_KIND.GEAR && s.count) {
       cursorItem.append(gearIcon(s.definitionId, 32));
       if (s.count > 1) {
@@ -545,14 +510,15 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function describeSlot(index) {
     const stack = index < SLOTS ? snapshot?.slots?.[index] : snapshot?.equipment?.[index - SLOTS];
     const equipmentSlot = index >= SLOTS ? index - SLOTS : -1;
-    const data = stack?.definitionId ? gearDetails(stack.definitionId, snapshot?.equipment, equipmentSlot) : null;
+    const data = stack?.itemKind === ITEM_KIND.GEAR && stack?.definitionId ? gearDetails(stack.definitionId, snapshot?.equipment, equipmentSlot) : null;
     const holding = hasCursor();
     const quick = equipmentSlot >= 0 ? 'Shift-click to unequip' : data && EQUIPMENT_BY_ID[stack.definitionId].slot >= 0 ? 'Shift-click to equip' : 'Shift-click to transfer';
     const action = !open ? 'Click to select' : holding ? 'Click to place or swap\nRight-click to place one'
       : stack?.pool ? 'Double-click to open bag\nClick or drag to move' : `Click or drag to move${stack?.count > 1 ? '\nRight-click to split' : ''}${managed ? `\n${quick}` : ''}`;
     if (managed && stack?.isTool) return { name: slotName(stack), type: 'Pickaxe',
-      description: 'Hold to mine. Right-click to mine background walls.\nA red outline requires a stronger pickaxe.',
+      description: 'One pickaxe mines soil, stone, trees and liquids. Hold to mine; right-click for background walls.\nA red outline requires a stronger pickaxe.',
       action, inspectTouch: open, touchAction: 'Tap again to pick up' };
+    if (stack?.itemKind === ITEM_KIND.CHEST) return { name: 'Chest', type: 'Storage', description: 'Select in the hotbar and click an open space to place. Hold the pickaxe over a chest to pick it up with its contents. Hover and press E to open.', action, inspectTouch: open, touchAction: 'Tap again to pick up' };
     if (data) return { ...data, action, inspectTouch: open, touchAction: 'Tap again to pick up' };
     if (stack?.pool) return { name: `${POOL_NAMES[stack.pool]} bag`, type: 'Material storage',
       stats: [{ label: 'Stored', value: (snapshot?.pools?.find(p => p.id === stack.pool)?.entries || []).reduce((sum, entry) => sum + entry.count, 0).toLocaleString() }], action, inspectTouch: open, touchAction: 'Tap again to pick up · Use the bag buttons to open' };
@@ -760,6 +726,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // materials, "Hand" for an empty slot (the implicit bare hand).
   const slotName = (s) => {
     if (!s) return 'Hand';
+    if (s.itemKind === ITEM_KIND.CHEST && s.count) return 'Chest';
     if (s.itemKind === ITEM_KIND.GEAR && s.count) return EQUIPMENT_BY_ID[s.definitionId]?.name || 'Relic';
     if (s.pool) return `${POOL_NAMES[s.pool]} pool${s.count > 0 ? ` · ${(NAME[s.material] || '').toLowerCase()}` : ' · empty'}`;
     if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
@@ -790,6 +757,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   let station = 0, abilities = 0;
   const recipeName = (r) => {
+    if (r.outputKind === ITEM_KIND.CHEST) return 'Chest';
     if (r.outputKind === ITEM_KIND.GEAR) return EQUIPMENT_BY_ID[r.outputDefinition]?.name || 'Equipment';
     if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} ${managed ? 'Pickaxe' : 'Mining Tool'}`.trim();
     if (r.outputKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';

@@ -22,7 +22,7 @@ enum RenderDetailPattern : uint8_t { RDPAT_NONE = 0, RDPAT_HASH_MASK = 1, RDPAT_
 enum RenderDetailProfile : uint8_t { RDP_NONE = 0, RDP_CRYSTAL_CORE = 1, RDP_MYCELIUM_NODULE = 2, RDP_MYCELIUM_SPORE = 3, RDP_GLOWBERRY_CORE = 4, RDP_GLOWSHROOM_CORE = 5 };
 enum MaterialPlacement : uint8_t { MP_ERASE = 0, MP_PAINT = 1, MP_STRUCTURE = 2 };
 enum PlantType : uint8_t { PT_OAK = 0, PT_PINE = 1, PT_WILLOW = 2, PT_CACTUS = 3, PT_MUSHROOM = 4, PT_BUSH = 5, PT_VINE = 6, PT_STANDARD = 7, PT_EYE = 8 };
-enum PlantGrowthProfile : uint8_t { PGR_OAK = 0, PGR_PINE = 1, PGR_WILLOW = 2, PGR_CACTUS = 3, PGR_MUSHROOM = 4, PGR_BUSH = 5, PGR_VINE = 6, PGR_STANDARD = 7, PGR_EYE = 8 };
+enum PlantGrowthProfile : uint8_t { PGR_OAK = 0, PGR_PINE = 1, PGR_WILLOW = 2, PGR_CACTUS = 3, PGR_MUSHROOM = 4, PGR_BUSH = 5, PGR_VINE = 6, PGR_EYE = 7 };
 enum PlantWorldgenProfile : uint8_t { PWG_BROADLEAF = 0, PWG_PINE = 1, PWG_WILLOW = 2, PWG_CACTUS = 3, PWG_BUSH = 4, PWG_EYE = 5 };
 enum PlantWoodGrowthTopology : uint8_t { PGW_GENERIC = 0, PGW_VINE = 1, PGW_OAK = 2, PGW_PINE = 3, PGW_WILLOW = 4, PGW_CACTUS = 5, PGW_EYE = 6, PGW_BRANCHING = 7 };
 enum PlantLeafGrowthTopology : uint8_t { PGL_GENERIC = 0, PGL_MUSHROOM = 1, PGL_VINE = 2, PGL_WILLOW = 3, PGL_PINE = 4, PGL_OAK = 5 };
@@ -108,7 +108,7 @@ static const int PLANT_SPECIES_COUNT = 9;
 static constexpr bool isPlantSpeciesId(int species) {
   return species >= 0 && species < PLANT_SPECIES_COUNT;
 }
-static const int PLANT_GROWTH_PROFILE_COUNT = 9;
+static const int PLANT_GROWTH_PROFILE_COUNT = 8;
 static const int PLANT_WORLDGEN_PROFILE_COUNT = 6;
 struct PlantGrowthProfileDef {
   PlantGrowthProfile profile;
@@ -133,19 +133,19 @@ struct PlantWorldgenProfileDef {
 };
 static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFILE_COUNT] = {
 {
-  PGR_OAK, PGW_OAK,
+  PGR_OAK, PGW_BRANCHING,
   PGL_OAK, PGT_TREE,
   PGB_DEFAULT,
-  560, 31,
-  1350, 71, 36,
-  38, 12,
+  340, 0,
+  700, 0, 6,
+  20, 6,
   false, true,
   false, true,
   true, false,
   0.54f,
   0,
   0,
-  0.94f, 0.78f
+  0.8f, 0.3f
 },
 {
   PGR_PINE, PGW_PINE,
@@ -238,21 +238,6 @@ static constexpr PlantGrowthProfileDef PLANT_GROWTH_PROFILES[PLANT_GROWTH_PROFIL
   0, 0
 },
 {
-  PGR_STANDARD, PGW_BRANCHING,
-  PGL_OAK, PGT_TREE,
-  PGB_DEFAULT,
-  340, 0,
-  700, 0, 6,
-  20, 6,
-  false, true,
-  false, true,
-  true, false,
-  0.54f,
-  0,
-  0,
-  0.8f, 0.3f
-},
-{
   PGR_EYE, PGW_EYE,
   PGL_GENERIC, PGT_NONE,
   PGB_DEFAULT,
@@ -278,7 +263,7 @@ static constexpr PlantWorldgenProfileDef PLANT_WORLDGEN_PROFILES[PLANT_WORLDGEN_
 };
 static constexpr int PLANT_WORLDGEN_MAX_HORIZONTAL_REACH = 30;
 static constexpr int PLANT_WORLDGEN_MAX_UPWARD_REACH = 80;
-static constexpr PlantGrowthProfile PLANT_GROWTH_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PGR_OAK, PGR_PINE, PGR_WILLOW, PGR_CACTUS, PGR_MUSHROOM, PGR_BUSH, PGR_VINE, PGR_STANDARD, PGR_EYE};
+static constexpr PlantGrowthProfile PLANT_GROWTH_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PGR_OAK, PGR_PINE, PGR_WILLOW, PGR_CACTUS, PGR_MUSHROOM, PGR_BUSH, PGR_VINE, PGR_OAK, PGR_EYE};
 static constexpr PlantWorldgenProfile PLANT_WORLDGEN_PROFILE_BY_SPECIES[PLANT_SPECIES_COUNT] = {PWG_BROADLEAF, PWG_PINE, PWG_WILLOW, PWG_CACTUS, PWG_BROADLEAF, PWG_BUSH, PWG_BROADLEAF, PWG_BROADLEAF, PWG_EYE};
 static constexpr bool plantGrowthProfilesComplete() {
   for (int i = 0; i < PLANT_GROWTH_PROFILE_COUNT; i++)
@@ -307,7 +292,7 @@ static const uint8_t PLANT_WOOD_MATERIAL[PLANT_SPECIES_COUNT] = {53, 26, 8, 27, 
 static const uint8_t PLANT_LEAF_MATERIAL[PLANT_SPECIES_COUNT] = {54, 44, 45, 9, 29, 46, 40, 9, 57};
 static const uint8_t MAT_PLANT_SPECIES[TABLE] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 3, 4, 4, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 6, 255, 255, 255, 1, 2, 5, 255, 255, 255, 255, 255, 0, 0, 0, 255, 8, 8, 255, 255, 255, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 static const uint8_t MAT_IS_PLANT_SEED[TABLE] = {0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t MAT_PALETTE_HIDDEN[TABLE] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint8_t MAT_PALETTE_HIDDEN[TABLE] = {0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Render transparency: 0 = opaque, 1 = invisible. Packed color alpha is ignored.
 static const float    MAT_TRANSPARENCY[TABLE]= {0, 0, 0.42f, 0, 0, 0, 0.62f, 0, 0, 0, 0.32f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.52f, 0, 0.38f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7f, 0, 0, 0, 0, 0.68f, 0.12f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Mining gate: which tool class drops a material + the min tier required.

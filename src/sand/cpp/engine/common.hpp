@@ -648,6 +648,7 @@ struct Player {
   bool emptyWeaponTriggerLatch = false;
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
+  int mineChestId = 0; // Transient target; in-flight mining is cancelled on restore.
   // Held mining tool: a destroyed cell drops its material only when this class/tier
   // satisfies the material's MAT_TOOLCLASS/MAT_TOOLTIER gate (set from the selected
   // inventory slot in inventory.inc; defaults to a bare hand).

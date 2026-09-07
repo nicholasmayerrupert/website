@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 47;
 
-export const ABI_FINGERPRINT = 0x910c9e92240f;
+export const ABI_FINGERPRINT = 0x1280fc70a81a;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -115,7 +115,7 @@ export const OFF = Object.freeze({
 export const PLAYER_ANIMATION = Object.freeze({ IDLE: 0, WALK: 1, RUN: 2, RISE: 3, FALL: 4, WADE: 5, SWIM: 6, LAND: 7, CROUCH: 8, DODGE: 9, DASH: 10, GLIDE: 11, SWORD: 12, AXE: 13, SPEAR: 14, BOW: 15, STAFF: 16, GUARD_RAISE: 17, GUARD: 18, GUARD_HIT: 19, GUARD_BREAK: 20, CAST: 21, CHARGE: 22, HURT: 23, STAGGER: 24, DEATH: 25, REVIVE: 26, INTERACT: 27, DRINK: 28, COUNT: 29 });
 export const INPUT = Object.freeze({ LEFT: 1, RIGHT: 2, JUMP: 4, DOWN: 8, PRIMARY: 16, SECONDARY: 32, RUN: 64, JETPACK: 128, SHIELD: 256 });
 export const WEATHER = Object.freeze({ CLEAR: 0, RAIN: 1 });
-export const ITEM_KIND = Object.freeze({ MATERIAL: 0, MINING_TOOL: 1, BOW: 2, ARROW: 3, BLAST_GUN: 4, DYNAMITE_SATCHEL: 5, BORE_CANNON: 6, ACID_MORTAR: 7, CLUSTER_LAUNCHER: 8, MINIGUN: 9, RESCUE_BEAM: 10, BUILDING_POOL: 11, POWDER_POOL: 12, LIQUID_POOL: 13, GEAR: 14 });
+export const ITEM_KIND = Object.freeze({ MATERIAL: 0, MINING_TOOL: 1, BOW: 2, ARROW: 3, BLAST_GUN: 4, DYNAMITE_SATCHEL: 5, BORE_CANNON: 6, ACID_MORTAR: 7, CLUSTER_LAUNCHER: 8, MINIGUN: 9, RESCUE_BEAM: 10, BUILDING_POOL: 11, POWDER_POOL: 12, LIQUID_POOL: 13, GEAR: 14, CHEST: 15 });
 export const POOL_ACTION = Object.freeze({ ENABLE: 0, MOVE: 1, SELECT: 2, WITHDRAW: 3, DEPOSIT: 4 });
 export const PROJECTILE_KIND = Object.freeze({ ARROW: 0, BLAST_ROUND: 1, DYNAMITE: 2, ACID_SHELL: 3, CLUSTER_BOMB: 4, MINIGUN_ROUND: 5, BORE_BEAM: 6, RESCUE_BEAM: 7, EXTRACTION_BEAM: 8, RUNE: 9, RUNE_BURST: 10 });
 export const CRAFT_INGREDIENT = Object.freeze({ MATERIAL: 0, MATERIAL_FLAG: 1 });

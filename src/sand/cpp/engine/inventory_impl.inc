@@ -358,6 +358,7 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   InvSlot& c = p.cursor;
   if (c.count <= 0 || c.itemKind == IK_BLAST_GUN ||
       c.itemKind == IK_MINING_TOOL || c.itemKind == IK_RESCUE_BEAM) return false;
+  if (c.itemKind == IK_CHEST) return false;
   if (c.itemKind == IK_GEAR) {
     const auto* gear = E.content.gear(c.definitionId);
     if (!gear || gear->family == 11) return false;
@@ -513,6 +514,11 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
 
   bool mineMode = !pooled && (sel.itemKind == IK_MINING_TOOL || sel.count <= 0);
   if (pooled && sel.count <= 0) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (sel.itemKind == IK_CHEST) {
+    E.psys.resetPlayerMine(p);
+    if (primaryRising && E.containers.place(p,ax,ay)) E.playerActionCount++;
+    return;
+  }
   if (sel.itemKind == IK_GEAR) { E.combat.apply(p, prev); return; }
   if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
   if (sel.itemKind == IK_BLAST_GUN) { E.projectiles.applyBlastGunInput(p); return; }

@@ -170,7 +170,7 @@ try {
     const fixtureSpecies = extensionRegistry.PLANT_SPECIES.at(-1);
     check('synthetic species inherits explicit reusable policies',
       fixtureSpecies.name === 'FIXTURE_STANDARD'
-        && fixtureSpecies.growthProfile === extensionRegistry.PGR.STANDARD
+        && fixtureSpecies.growthProfile === extensionRegistry.PGR.OAK
         && fixtureSpecies.worldgenProfile === extensionRegistry.PWG.BROADLEAF);
     const generatedSand = extensionRegistry.MATERIAL_BY_ID[defaultedMaterial.id];
     check('optional texture/durability fields emit normalized zero defaults',

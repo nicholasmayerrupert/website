@@ -31,6 +31,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   let open = false;
   let options = [];
   let selected = 0;
+  let mining = false;
   let signature = '';
   let broadSize = 9;
   let previousFocus = null;
@@ -90,8 +91,13 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   function togglePrecision() { choose(selected === 0 ? broadSize : 0); }
   function render() {
     const fp = options.find(option => option.id === selected);
-    current.textContent = `${fp?.width ?? 1}×${fp?.height ?? 1} · Q`;
-    precision.textContent = selected === 0 ? 'Restore size · V' : '1×1 · V';
+    const label = shape => mining
+      ? (shape?.width > 1 ? `Radius ${shape.width - 1}` : '1 pixel')
+      : `${shape?.width ?? 1}×${shape?.height ?? 1}`;
+    head.textContent = mining ? 'MINING RADIUS' : 'PLACEMENT SIZE';
+    controls.setAttribute('aria-label', mining ? 'Mining radius' : 'Placement size');
+    current.textContent = `${label(fp)} · Q`;
+    precision.textContent = selected === 0 ? 'Restore size · V' : '1 pixel · V';
     precision.setAttribute('aria-pressed', String(selected === 0));
     smaller.disabled = selected === options[0]?.id;
     larger.disabled = selected === options.at(-1)?.id;
@@ -100,7 +106,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'fp-btn' + (fp.id === selected ? ' sel' : '');
-      btn.textContent = `${fp.width}x${fp.height}`;
+      btn.textContent = mining ? label(fp) : `${fp.width}x${fp.height}`;
       btn.addEventListener('click', () => {
         choose(fp.id);
         setOpen(false);
@@ -132,14 +138,15 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   root.addEventListener('keydown', onKey);
   root.append(backdrop, wrap);
   return {
-    update(nextOptions, nextSelected) {
+    update(nextOptions, nextSelected, nextMining = false) {
       const nextOpts = Array.isArray(nextOptions) ? nextOptions : options;
       const nextSel = nextSelected ?? selected;
-      const nextSig = `${nextSel}|${nextOpts.map((fp) => `${fp.id}:${fp.width}x${fp.height}:${fp.cellCount}`).join(',')}`;
+      const nextSig = `${nextMining}|${nextSel}|${nextOpts.map((fp) => `${fp.id}:${fp.width}x${fp.height}:${fp.cellCount}`).join(',')}`;
       if (nextSig === signature) return;
       signature = nextSig;
       options = nextOpts;
       selected = nextSel;
+      mining = nextMining;
       if (selected !== 0) broadSize = selected;
       render();
     },

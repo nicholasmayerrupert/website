@@ -21,6 +21,9 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
   std::vector<uint8_t> solidContact(n, 0);
   std::vector<uint8_t> upwardContact(n, 0);
   std::vector<uint8_t> bodyContact(n, 0);
+  std::vector<double> supportMinX(n), supportMaxX(n), supportMinY(n), supportMaxY(n);
+  std::vector<uint8_t> otherSupport(n, 0);
+  std::vector<double> supportMass(n), supportMomentX(n), terrainMinX(n), terrainMaxX(n);
   std::vector<uint8_t> terrainSideContactDirections(n, 0);
   std::vector<int> solveParent(n), solveBodyCount(n);
   std::vector<int> contactOrder, contactRoot;
@@ -1434,6 +1437,49 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         if (contact.targetVn > 0 && contact.accJn > 0)
           resolveContactNormal(contact);
     }
+    // A level support cannot balance gravity with the centre of mass
+    // outside its contact span. Side contacts, unequal support heights and
+    // external loads retain the general solver's settling policy.
+    std::fill(supportMinX.begin(), supportMinX.end(), 1e18);
+    std::fill(supportMaxX.begin(), supportMaxX.end(), -1e18);
+    std::fill(supportMinY.begin(), supportMinY.end(), 1e18);
+    std::fill(supportMaxY.begin(), supportMaxY.end(), -1e18);
+    std::fill(otherSupport.begin(), otherSupport.end(), 0);
+    std::fill(supportMass.begin(), supportMass.end(), 0);
+    std::fill(supportMomentX.begin(), supportMomentX.end(), 0);
+    std::fill(terrainMinX.begin(), terrainMinX.end(), 1e18);
+    std::fill(terrainMaxX.begin(), terrainMaxX.end(), -1e18);
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      if (body->invMass <= 0) continue;
+      int root = ufFind(solveParent, bi);
+      double mass = 1 / body->invMass;
+      supportMass[root] += mass;
+      supportMomentX[root] += mass * body->px;
+    }
+    auto noteSupport = [&](Body* body, double rx, double ry, double ny) {
+      int i = body->idx;
+      if (i < 0 || i >= n || solverBodies[i] != body) return;
+      if (ny >= -0.1 || ry <= 0) { otherSupport[i] = 1; return; }
+      supportMinX[i] = std::fmin(supportMinX[i], rx);
+      supportMaxX[i] = std::fmax(supportMaxX[i], rx);
+      supportMinY[i] = std::fmin(supportMinY[i], ry);
+      supportMaxY[i] = std::fmax(supportMaxY[i], ry);
+    };
+    for (const Contact& contact : contacts) {
+      // Touching anchors can carry zero impulse in a particular solve while
+      // still limiting the body's next motion.
+      if (contact.depth < -R_CONTACT_SKIN * 0.5 && contact.accJn <= 1e-8) continue;
+      if (!contact.b) {
+        int root = ufFind(solveParent, contact.a->idx);
+        double x = contact.a->px + contact.rax;
+        terrainMinX[root] = std::fmin(terrainMinX[root], x);
+        terrainMaxX[root] = std::fmax(terrainMaxX[root], x);
+      }
+      noteSupport(contact.a, contact.rax, contact.ray, contact.ny);
+      if (contact.b && contact.bIntegrated)
+        noteSupport(contact.b, contact.rbx, contact.rby, -contact.ny);
+    }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       Engine::ActiveLayerScope scope(E, bodyLayer(b));
@@ -1466,6 +1512,27 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       }
       if (!b->hadContact) { b->stillTicks = 0; continue; }
       bool frictionalContact = solidContact[bi] || looseContact;
+      int supportRoot = ufFind(solveParent, bi);
+      double islandX = supportMass[supportRoot] > 0
+        ? supportMomentX[supportRoot] / supportMass[supportRoot] : b->px;
+      // Coupled bodies may counterbalance one another. Preserve their general
+      // settling policy while the whole pile lies over its terrain supports.
+      bool islandOverhang = terrainMinX[supportRoot] <= terrainMaxX[supportRoot]
+        && (islandX < terrainMinX[supportRoot] - 0.5
+          || islandX > terrainMaxX[supportRoot] + 0.5);
+      bool unbalancedSupport = b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN
+        && (solveBodyCount[supportRoot] == 1 || islandOverhang)
+        && !otherSupport[bi] && !looseContact
+        && !liquidContact[bi] && !b->spatialForceApplied
+        && E.scaledGravity(R_GRAVITY) > 0
+        && supportMinX[bi] <= supportMaxX[bi]
+        && supportMaxY[bi] - supportMinY[bi] <= 1.0
+        && (supportMinX[bi] > 0.5 || supportMaxX[bi] < -0.5)
+        && b->omega * (supportMinX[bi] > 0.5 ? -1 : 1) > 1e-8;
+      if (unbalancedSupport) {
+        b->stillTicks = 0;
+        b->restProbeTicks = 0;
+      }
       if (frictionalContact
           && b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) {
         b->vx *= R_CONTACT_LIN_DAMP;
@@ -1483,7 +1550,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           || !rigidStructureScaleBody(b)
           || std::fabs(b->omega) * b->maxR
             < R_CONTACT_ANG_DAMP_POINT_SPEED);
-      if (frictionalContact && !spinGrowing && spinInsideRestBand) {
+      if (frictionalContact && !unbalancedSupport && !spinGrowing && spinInsideRestBand) {
         b->omega *= R_CONTACT_ANG_DAMP;
         int shortSide = imin(b->w, b->h);
         int longSide = imax(b->w, b->h);
@@ -1529,7 +1596,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       }
       double sleepLinear = liquidContact[bi]
         ? R_FLUID_SLEEP_LIN : R_SLEEP_LIN;
-      bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
+      bool sleepQuiet = !unbalancedSupport && b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
                      && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
                      && b->maxDepth <= R_REST_DEPTH;
       if (fluidOnlyContact && !fluidRestContact) sleepQuiet = false;

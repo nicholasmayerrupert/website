@@ -185,6 +185,7 @@ class RigidBodySystem {
   bool bodyFootprintOverlapsSolid(Body* b);
   int bodyTerrainBlocked(Body* b);
   bool sleepingBodyTouchesMovingLiquid(Body* b);
+  uint64_t sleepSupportTerrainMask(Body* b, const BodySleepSupport& support);
   bool sleepingBodyHasSupport(Body* b, double probe);
   bool findTerrainClearAdjustment(Body* b, double& dx, double& dy);
   void bakeBodyToGrid(

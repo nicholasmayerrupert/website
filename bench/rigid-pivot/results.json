@@ -1,0 +1,1106 @@
+{
+  "revision": "a630329",
+  "solverMode": 45,
+  "gravityPerTick": 0.06,
+  "ticks": 600,
+  "meaning": "Diagnostic measurements, not a production-qualified fix",
+  "cases": {
+    "rested": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 183.14590686762952,
+        "first45": 41,
+        "sleep": 154,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.0009252249210180017
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 179.85820218707352,
+        "first45": 56,
+        "sleep": 185,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.00043712416605455856
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 89.86749052201218,
+        "first45": 74,
+        "sleep": 185,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.0002309889911522671
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 32,
+        "maxAngle": 0.7947036233496624,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 240,
+        "radius": 23.787998841619487,
+        "centerOfMassX": 323.46666666666664,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 64,
+        "maxAngle": 0.3280866530628199,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 960,
+        "radius": 48.228368783896876,
+        "centerOfMassX": 324.93333333333334,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 128,
+        "maxAngle": 0.18798828161071507,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 3840,
+        "radius": 97.11025806897213,
+        "centerOfMassX": 329.8666666666667,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 0.47235103844003906,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 0.23256871631006865,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 0.13573574048480852,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      }
+    ],
+    "dropOne": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 187.0888252075411,
+        "first45": 41,
+        "sleep": 160,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 179.89289013157,
+        "first45": 57,
+        "sleep": 184,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 94.01174390804762,
+        "first45": 76,
+        "sleep": 184,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 32,
+        "maxAngle": 152.08980230222008,
+        "first45": 54,
+        "sleep": 163,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 240,
+        "radius": 23.787998841619487,
+        "centerOfMassX": 323.46666666666664,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 64,
+        "maxAngle": 136.3857537755195,
+        "first45": 91,
+        "sleep": 205,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 960,
+        "radius": 48.228368783896876,
+        "centerOfMassX": 324.93333333333334,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 128,
+        "maxAngle": 134.98056755694876,
+        "first45": 102,
+        "sleep": 204,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 3840,
+        "radius": 97.11025806897213,
+        "centerOfMassX": 329.8666666666667,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0.03591321719418373,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 118.57422268360266,
+        "first45": 75,
+        "sleep": 212,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 0.3563168220387707,
+        "first45": -1,
+        "sleep": 29,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 104.72660543243799,
+        "first45": 138,
+        "sleep": 283,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      }
+    ],
+    "dropTwelve": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 186.77403800801093,
+        "first45": 42,
+        "sleep": 158,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 179.98688046803443,
+        "first45": 60,
+        "sleep": 190,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 179.9597942763136,
+        "first45": 78,
+        "sleep": 297,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 32,
+        "maxAngle": 153.462690043804,
+        "first45": 55,
+        "sleep": 163,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 240,
+        "radius": 23.787998841619487,
+        "centerOfMassX": 323.46666666666664,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 64,
+        "maxAngle": 136.34559593976635,
+        "first45": 83,
+        "sleep": 195,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 960,
+        "radius": 48.228368783896876,
+        "centerOfMassX": 324.93333333333334,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 128,
+        "maxAngle": 134.98506213557673,
+        "first45": 101,
+        "sleep": 202,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 3840,
+        "radius": 97.11025806897213,
+        "centerOfMassX": 329.8666666666667,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0.0366907687665209,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 118.10920129860922,
+        "first45": 74,
+        "sleep": 214,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 105.21481982806033,
+        "first45": 104,
+        "sleep": 230,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 104.88836450939458,
+        "first45": 134,
+        "sleep": 280,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      }
+    ],
+    "balanced": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 0.06593851426970956,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 8.046278882029477e-05
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 0.05754228790688081,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 2.486807891199491e-05
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 0.0751238950408968,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 6.390185859981892e-06
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 0.06610750774592783,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 0.019372922344832903,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 0.004506747629731194,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      }
+    ],
+    "noSnapRested": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 183.14590686762952,
+        "first45": 41,
+        "sleep": 154,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.0009252249210180017
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 179.85820218707352,
+        "first45": 56,
+        "sleep": 185,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.00043712416605455856
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 89.86749052201218,
+        "first45": 74,
+        "sleep": 185,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.0002309889911522671
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 32,
+        "maxAngle": 149.48994626404897,
+        "first45": 54,
+        "sleep": 160,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 240,
+        "radius": 23.787998841619487,
+        "centerOfMassX": 323.46666666666664,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.0004076631975688804
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 64,
+        "maxAngle": 136.36937400652468,
+        "first45": 85,
+        "sleep": 199,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 960,
+        "radius": 48.228368783896876,
+        "centerOfMassX": 324.93333333333334,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.00015327112504125962
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 128,
+        "maxAngle": 134.96915441064226,
+        "first45": 102,
+        "sleep": 205,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 3840,
+        "radius": 97.11025806897213,
+        "centerOfMassX": 329.8666666666667,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0.02909621434704194,
+        "firstTickOmega": 7.777965527280077e-05
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 195.4526814619871,
+        "first45": 77,
+        "sleep": 198,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0.00019619705771060385
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 182.4928908032318,
+        "first45": 111,
+        "sleep": 261,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 8.375853455069025e-05
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 104.37542649423976,
+        "first45": 131,
+        "sleep": 275,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 4.242733768238265e-05
+      }
+    ],
+    "noSnapDropOne": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 187.0888252075411,
+        "first45": 41,
+        "sleep": 160,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 179.89289013157,
+        "first45": 57,
+        "sleep": 184,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 94.01174390804762,
+        "first45": 76,
+        "sleep": 184,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 32,
+        "maxAngle": 152.08980230222008,
+        "first45": 54,
+        "sleep": 163,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 240,
+        "radius": 23.787998841619487,
+        "centerOfMassX": 323.46666666666664,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 64,
+        "maxAngle": 136.3857537755195,
+        "first45": 91,
+        "sleep": 205,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 960,
+        "radius": 48.228368783896876,
+        "centerOfMassX": 324.93333333333334,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "l",
+        "size": 128,
+        "maxAngle": 134.97789960243185,
+        "first45": 102,
+        "sleep": 204,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 3840,
+        "radius": 97.11025806897213,
+        "centerOfMassX": 329.8666666666667,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0.03591321719418373,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 118.57422268360266,
+        "first45": 75,
+        "sleep": 214,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 323,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 118.71495959478787,
+        "first45": 111,
+        "sleep": 275,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 325,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 104.72660543243799,
+        "first45": 138,
+        "sleep": 281,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 330,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 0
+      }
+    ],
+    "noSnapBalanced": [
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 32,
+        "maxAngle": 0.06593851426970956,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 128,
+        "radius": 15.572411502397436,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 8.046278882029477e-05
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 64,
+        "maxAngle": 0.05754228790688081,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 512,
+        "radius": 31.693847983480957,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 2.486807891199491e-05
+      },
+      {
+        "mode": 45,
+        "shape": "bar",
+        "size": 128,
+        "maxAngle": 0.0751238950408968,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 2048,
+        "radius": 63.94137940332536,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 6.390185859981892e-06
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 32,
+        "maxAngle": 0.21771085962052997,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 448,
+        "radius": 21.920310216782973,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 1.7921483535805832e-06
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 64,
+        "maxAngle": 0.07873100416743832,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 1792,
+        "radius": 44.54772721475249,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 5.730439689265107e-07
+      },
+      {
+        "mode": 45,
+        "shape": "arch",
+        "size": 128,
+        "maxAngle": 0.021152791141296735,
+        "first45": -1,
+        "sleep": 19,
+        "blocked": 0,
+        "corrections": 0,
+        "cellCount": 7168,
+        "radius": 89.80256121069154,
+        "centerOfMassX": 320,
+        "supportX": [
+          319,
+          322
+        ],
+        "maxCorrection": 0,
+        "firstTickOmega": 1.5892533730740327e-07
+      }
+    ]
+  }
+}

@@ -180,7 +180,11 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
             && std::fabs(support.x - x) <= 0.5
             && std::fabs(support.y - y) <= 0.5)
           return;
-      b->sleepSupports.push_back({x, y, owner, (uint8_t)layer});
+      BodySleepSupport support;
+      support.x = x; support.y = y;
+      support.owner = owner; support.layer = (uint8_t)layer;
+      if (owner < 0) support.terrainMask = sleepSupportTerrainMask(b, support);
+      b->sleepSupports.push_back(support);
     };
     uint8_t bodyTerrainSideDirections = 0;
     for (int i = sleepContactOffsets[bi]; i < sleepContactOffsets[bi + 1]; i++) {

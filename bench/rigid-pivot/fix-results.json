@@ -1,0 +1,145 @@
+{
+  "baseRevision": "a630329",
+  "solverMode": 45,
+  "build": {
+    "generatedAt": "2026-09-06T23:34:53.181Z",
+    "output": {
+      "path": "src/sand/wasm/sandEngine.js",
+      "bytes": 70507,
+      "sha256": "33308b96926db335043a0a847a7c22e65fc79d60d3c6e318bbb8361e08c9f55a",
+      "fnv1a": "0x8873fd66"
+    },
+    "wasm": {
+      "path": "src/sand/wasm/sandEngine.wasm",
+      "bytes": 1944625,
+      "sha256": "afb3c564908c6f77cef8f6b7e87601cd30b9bf78378a2edf85a5db6b31192325",
+      "fnv1a": "0x949c6e79"
+    },
+    "source": {
+      "commit": "a630329",
+      "dirty": true,
+      "sha256": "19d6d16d92be02c3eca0f846b0a9010bd413f7ebb70a3febe1043fff9dec733d"
+    },
+    "variant": "production",
+    "toolchain": {
+      "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.0 (afa15e0c56d1292e073c2c91bafc1d5e0cdf0dd3)",
+      "emccPath": "/Users/nicholasmayer-rupert/emsdk/upstream/emscripten/emcc"
+    }
+  },
+  "suites": [
+    {
+      "name": "rigid-collision",
+      "passed": true
+    },
+    {
+      "name": "rigid-dense-pile",
+      "passed": true
+    },
+    {
+      "name": "rigid-world-raster-island",
+      "passed": true
+    },
+    {
+      "name": "rigid-pivot",
+      "passed": true
+    },
+    {
+      "name": "rigid-shape-stress",
+      "passed": true
+    },
+    {
+      "name": "rigid-inertia",
+      "passed": true
+    },
+    {
+      "name": "rigid-fluid-accuracy",
+      "passed": true
+    },
+    {
+      "name": "rigid-layer-solver",
+      "passed": true
+    },
+    {
+      "name": "rigid-world-raster",
+      "passed": true
+    },
+    {
+      "name": "rigid-joint-erase-scale",
+      "passed": true
+    },
+    {
+      "name": "rigid-large-body",
+      "passed": true
+    },
+    {
+      "name": "rigid-rotation",
+      "passed": true
+    },
+    {
+      "name": "rigid-terrain-contact",
+      "passed": true
+    },
+    {
+      "name": "rigid-stamp-reject",
+      "passed": true
+    },
+    {
+      "name": "rigid-topple",
+      "passed": true
+    },
+    {
+      "name": "actor-rigid",
+      "passed": true
+    },
+    {
+      "name": "rigid-complex-stack",
+      "passed": true
+    }
+  ],
+  "baselineFailures": [
+    {
+      "suite": "rigid-blast-settle",
+      "assertion": "blast debris overlap exceeds the one-cell alias allowance"
+    },
+    {
+      "suite": "rigid-window-edge",
+      "assertion": "three debris bodies observed where the fixture expects two"
+    }
+  ],
+  "pivotResults": {
+    "allMirroredCasesToppleThenSleep": true,
+    "terrainPenetration": 0,
+    "balancedMaxDegrees": 0.077,
+    "largeLFirst45Tick": 101,
+    "largeFrameFirst45Tick": 130,
+    "frame256First45Tick": 177,
+    "partialSupportRemovalFirst45Tick": 322
+  },
+  "siteBuildPassed": true,
+  "performance": {
+    "beforeChecksum": "0xe1e87436",
+    "afterChecksum": "0xe0214132",
+    "repeats": 3,
+    "node": "v26.7.0",
+    "stepMeanMs": {
+      "before": 2.128,
+      "after": 2.112
+    },
+    "stepP99Ms": {
+      "before": 12.115,
+      "after": 12.165
+    },
+    "timingGatesPassed": true,
+    "note": "Same-host baseline from a clean archive of a630329; timing captures ran without concurrent local builds or tests. Checksum changes are intentional.",
+    "committedBaselineUpdated": true,
+    "finalBaselineComparePassed": true
+  },
+  "pan": {
+    "passed": true,
+    "horizontalInstability": 0,
+    "verticalInstability": 0,
+    "nearRidgeMismatchPercent": 0,
+    "frameAverageMs": 21.806,
+    "frameP95Ms": 25.8
+  }
+}

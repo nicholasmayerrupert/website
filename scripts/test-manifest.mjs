@@ -78,6 +78,7 @@ export const UNIT_SUITES = [
   ['rigid-joint-erase-scale', 'rigid-joint-erase-scale-test.mjs', exclusive(120_000)],
   ['rigid-large-body', 'rigid-large-body-test.mjs', exclusive(240_000)],
   ['rigid-rotation', 'rigid-rotation-test.mjs'],
+  ['rigid-pivot', 'rigid-pivot-test.mjs'],
   ['rigid-terrain-contact', 'rigid-terrain-contact-test.mjs'],
   ['rigid-blast-impulse', 'rigid-blast-impulse-test.mjs'],
   ['rigid-blast-settle', 'rigid-blast-settle-test.mjs'],

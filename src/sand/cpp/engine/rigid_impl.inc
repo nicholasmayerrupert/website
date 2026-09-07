@@ -3466,11 +3466,34 @@ bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
   });
   return moving;
 }
+// Retain the static terrain stencil around a solved anchor. Losing part of a
+// support requires a new contact solve even if another nearby cell remains.
+uint64_t RigidBodySystem::sleepSupportTerrainMask(Body* b, const BodySleepSupport& support) {
+  Layer& layer = support.layer ? E.bg : E.fg;
+  Engine::ActiveLayerScope scope(E, &layer);
+  int cx = (int)std::floor(support.x), cy = (int)std::floor(support.y);
+  uint64_t mask = 0;
+  for (int oy = -3; oy <= 3; oy++) for (int ox = -3; ox <= 3; ox++) {
+    int x = cx + ox, y = cy + oy;
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+    int k = y * E.cols + x;
+    if (layer.bodyOwner[k] < 0 && !canBodyOccupy(layer.grid[k], k, b->density))
+      mask |= uint64_t{1} << ((oy + 3) * 7 + ox + 3);
+  }
+  return mask;
+}
 // A sleeping body keeps support while the solved load-bearing anchors or its
 // current underside still touch a medium, terrain, a sleeping body, or the
 // world floor. The anchors preserve valid diagonal and frictional support on
 // irregular shapes without treating an unrelated nearby wall as ground.
 bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
+  for (const BodySleepSupport& support : b->sleepSupports) {
+    if (support.owner >= 0 || support.terrainMask == 0) continue;
+    const Layer& layer = support.layer ? E.bg : E.fg;
+    if (!layer.sleepingBodySupportDirty) continue;
+    uint64_t retained = sleepSupportTerrainMask(b, support);
+    if ((retained & support.terrainMask) != support.terrainMask) return false;
+  }
   auto stableBodyOwner = [](Layer& layer, int owner) {
     for (Body* support : layer.bodies)
       if (support->id == owner) return !support->awake;

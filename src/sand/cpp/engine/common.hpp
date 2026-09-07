@@ -238,6 +238,7 @@ struct BodyRasterCell {
 
 struct BodySleepSupport {
   double x = 0, y = 0;
+  uint64_t terrainMask = 0;
   int owner = -1;
   uint8_t layer = 0;
 };

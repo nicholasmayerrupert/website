@@ -13,6 +13,9 @@ class WeatherSystem {
   void setKind(int value);
   WeatherKind getKind() const { return kind; }
   void update();
+  struct State { int kind, cadence; uint32_t seed; };
+  State checkpoint() const { return {(int)kind,lastCadenceBucket,sourceSeed}; }
+  void restore(State state) { kind=(WeatherKind)state.kind; lastCadenceBucket=state.cadence; sourceSeed=state.seed; }
 
  private:
   struct WeatherProfile;

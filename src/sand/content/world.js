@@ -1,6 +1,6 @@
-// Authored game content. Validated by content/compile.js.
+// Authored places and stories for the Hollow Bell chapter.
 export default {
-  "version": 2,
+  "version": 3,
   "id": "aster-valley",
   "title": "Aster",
   "subtitle": "The waking valley",
@@ -464,6 +464,14 @@ export default {
         "cellar": [
           -100,
           77
+        ],
+        "mira": [
+          -88,
+          44
+        ],
+        "iven": [
+          170,
+          5
         ]
       },
       "preview": {
@@ -1946,6 +1954,14 @@ export default {
         "console": [
           0,
           0
+        ],
+        "senna": [
+          -20,
+          -12
+        ],
+        "matron": [
+          20,
+          10
         ]
       },
       "preview": {
@@ -4422,8 +4438,8 @@ export default {
     },
     {
       "id": "observatory",
-      "name": "Windward Observatory",
-      "description": "The signal at the summit is still alive. Find your own way up.",
+      "name": "Windward Belfry",
+      "description": "A weathered belfry above the clouds. The last silent note waits beneath its open arches.",
       "origin": [
         900,
         0
@@ -4433,6 +4449,14 @@ export default {
         "instrument": [
           0,
           -130
+        ],
+        "elowen": [
+          -22,
+          -12
+        ],
+        "bell": [
+          0,
+          -169
         ]
       },
       "preview": {
@@ -4663,6 +4687,170 @@ export default {
             5,
             -128
           ]
+        },
+        {
+          "layer": "fg",
+          "material": "EMPTY",
+          "rect": [
+            -47,
+            -193,
+            47,
+            -144
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "SANDSTONE",
+          "rect": [
+            -48,
+            -143,
+            48,
+            -140
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "BRICK",
+          "rect": [
+            -48,
+            -143,
+            -45,
+            -77
+          ]
+        },
+        {
+          "layer": "both",
+          "material": "BRICK",
+          "rect": [
+            45,
+            -143,
+            48,
+            -77
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "SANDSTONE",
+          "rect": [
+            -47,
+            -190,
+            -43,
+            -144
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "SANDSTONE",
+          "rect": [
+            43,
+            -190,
+            47,
+            -144
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -49,
+            -192,
+            49,
+            -189
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -2,
+            -190,
+            2,
+            -181
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "GOLD_ORE",
+          "polygon": [
+            [
+              -6,
+              -182
+            ],
+            [
+              6,
+              -182
+            ],
+            [
+              8,
+              -169
+            ],
+            [
+              12,
+              -165
+            ],
+            [
+              -12,
+              -165
+            ],
+            [
+              -8,
+              -169
+            ]
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "COPPER_ORE",
+          "rect": [
+            -12,
+            -165,
+            12,
+            -163
+          ]
+        },
+        {
+          "layer": "bg",
+          "material": "GOLD_ORE",
+          "rect": [
+            -2,
+            -162,
+            2,
+            -160
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            -63,
+            -127,
+            -49,
+            -125
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "PINE_WOOD",
+          "rect": [
+            49,
+            -127,
+            63,
+            -125
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            -40,
+            -149
+          ]
+        },
+        {
+          "use": "lantern",
+          "at": [
+            40,
+            -149
+          ]
         }
       ]
     },
@@ -4682,6 +4870,10 @@ export default {
         "ore": [
           57,
           7
+        ],
+        "rowan": [
+          -35,
+          -12
         ]
       },
       "preview": {
@@ -4738,7 +4930,7 @@ export default {
           "material": "WATER",
           "rect": [
             -22,
-            35,
+            18,
             22,
             73
           ]
@@ -4904,12 +5096,56 @@ export default {
             93,
             4
           ]
+        },
+        {
+          "layer": "fg",
+          "material": "STONE",
+          "polygon": [
+            [
+              -26,
+              18
+            ],
+            [
+              -12,
+              46
+            ],
+            [
+              -12,
+              75
+            ],
+            [
+              -26,
+              75
+            ]
+          ]
+        },
+        {
+          "layer": "fg",
+          "material": "STONE",
+          "polygon": [
+            [
+              26,
+              18
+            ],
+            [
+              12,
+              46
+            ],
+            [
+              12,
+              75
+            ],
+            [
+              26,
+              75
+            ]
+          ]
         }
       ]
     },
     {
       "id": "foundry",
-      "name": "The Last Shift",
+      "name": "The Cinder Court",
       "description": "An abandoned cutting yard. Its foreman never received the evacuation order.",
       "origin": [
         -1060,
@@ -4920,6 +5156,10 @@ export default {
         "foreman": [
           -30,
           -1
+        ],
+        "brann": [
+          -90,
+          -12
         ]
       },
       "preview": {
@@ -5096,6 +5336,150 @@ export default {
           ]
         }
       ]
+    },
+    {
+      "id": "watchwood",
+      "name": "The Watchwood sanctuary",
+      "description": "The Watchwood sanctuary",
+      "origin": [
+        670,
+        0
+      ],
+      "anchors": {
+        "rowan": [
+          -80,
+          -12
+        ],
+        "hart": [
+          10,
+          -20
+        ],
+        "shrine": [
+          45,
+          -12
+        ]
+      },
+      "operations": [
+        {
+          "layer": "both",
+          "rect": [
+            -112,
+            -60,
+            112,
+            12
+          ],
+          "material": "EMPTY"
+        },
+        {
+          "layer": "both",
+          "rect": [
+            -116,
+            12,
+            116,
+            22
+          ],
+          "material": "SANDSTONE"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            -112,
+            -54,
+            -105,
+            12
+          ],
+          "material": "OAK_WOOD"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            104,
+            -54,
+            111,
+            12
+          ],
+          "material": "OAK_WOOD"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            -108,
+            -58,
+            108,
+            -52
+          ],
+          "material": "OAK_LEAF"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            -68,
+            -28,
+            -64,
+            12
+          ],
+          "material": "STONE"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            64,
+            -28,
+            68,
+            12
+          ],
+          "material": "STONE"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            -72,
+            -30,
+            -60,
+            -26
+          ],
+          "material": "SANDSTONE"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            60,
+            -30,
+            72,
+            -26
+          ],
+          "material": "SANDSTONE"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            38,
+            -12,
+            52,
+            11
+          ],
+          "material": "BRICK"
+        },
+        {
+          "layer": "bg",
+          "rect": [
+            43,
+            -15,
+            47,
+            -13
+          ],
+          "material": "FIRE"
+        }
+      ],
+      "preview": {
+        "at": [
+          0,
+          -12
+        ],
+        "zoomSteps": 0,
+        "dayPhase": 0.2
+      },
+      "surfaceAt": 670
     }
   ],
   "quests": [
@@ -5121,7 +5505,9 @@ export default {
       "color": "#dfac73",
       "mapX": 392,
       "mapY": 177,
-      "symbol": "01"
+      "symbol": "01",
+      "giver": 2,
+      "chapter": "main"
     },
     {
       "key": "mill-bridge",
@@ -5146,42 +5532,42 @@ export default {
         "mill-supplies"
       ],
       "reward": {
-        "item": "BORE_CANNON",
-        "count": 30,
-        "name": "Bore cannon"
+        "gear": 2,
+        "count": 1,
+        "name": "Briar sabre"
       },
       "color": "#78cbb7",
       "mapX": 457,
       "mapY": 180,
-      "symbol": "02"
+      "symbol": "02",
+      "giver": 2,
+      "chapter": "main"
     },
     {
-      "key": "buried-pass",
-      "title": "The buried pass",
-      "place": "West · Old railway",
-      "summary": "Open a route through the rockfall.",
-      "description": "The old rail line is buried under a rockfall. Cut a walkable tunnel and recover the survey instrument on the far side. Beyond the station, something is still running the night shift.",
-      "hint": "Make room to walk. A careful tunnel or a well-placed blast will both do.",
-      "target": "railway.instrument",
+      "key": "thornbound-hart",
+      "title": "The heart beneath the thorns",
+      "giver": 5,
+      "target": "watchwood.hart",
       "condition": {
-        "kind": "passage",
-        "bounds": [
-          -808,
-          -2,
-          -792,
-          36
-        ],
-        "surfaceAt": -790
+        "kind": "defeat",
+        "species": "THORNBOUND_HART"
       },
+      "after": [
+        "mill-bridge"
+      ],
+      "radius": 90,
       "reward": {
-        "material": "TNT",
-        "count": 48,
-        "name": "Demolition charges"
+        "gear": 340,
+        "count": 1,
+        "name": "Gale Step"
       },
-      "color": "#dfac73",
-      "symbol": "03",
-      "mapX": 110,
-      "mapY": 190
+      "place": "The heart beneath the thorns",
+      "summary": "Free the ancient guardian from the thorns that bind it.",
+      "description": "Free the ancient guardian from the thorns that bind it.",
+      "hint": "The hart commits to its charge. Dodge past its antlers, then strike its unguarded flank.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "main"
     },
     {
       "key": "drowned-archive",
@@ -5201,85 +5587,434 @@ export default {
         ]
       },
       "reward": {
-        "material": "BRICK",
-        "count": 240,
-        "name": "Building stone"
+        "gear": 304,
+        "count": 1,
+        "name": "Briar rune"
       },
       "color": "#78cbb7",
       "symbol": "04",
       "mapX": 230,
-      "mapY": 310
+      "mapY": 310,
+      "giver": 3,
+      "after": [
+        "thornbound-hart"
+      ],
+      "chapter": "main"
+    },
+    {
+      "key": "mire-matron",
+      "title": "The memory in the mire",
+      "giver": 6,
+      "target": "archive.matron",
+      "condition": {
+        "kind": "defeat",
+        "species": "MIRE_MATRON"
+      },
+      "after": [
+        "drowned-archive"
+      ],
+      "radius": 90,
+      "reward": {
+        "gear": 341,
+        "count": 1,
+        "name": "Windmantle"
+      },
+      "place": "The memory in the mire",
+      "summary": "Defeat the keeper of the drowned pages and recover the lost verse.",
+      "description": "Defeat the keeper of the drowned pages and recover the lost verse.",
+      "hint": "The pools mark where her grasp will rise. Drain the hall or freeze the water, and keep moving.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "main"
     },
     {
       "key": "last-shift",
-      "title": "Clock out, Foreman",
+      "title": "An oath of cinders",
       "place": "Far west · The cutting yard",
       "summary": "Shut down the quarry foreman.",
-      "description": "The rail survey led to a cutting yard whose machinery never stopped. Its armored foreman treats every visitor as a trespasser. Break its last shift and recover the weapon cache.",
-      "hint": "The yard is west of the railway. Use the stone cover between attacks. Hold F to block a burst, then release and fire. The foreman’s telegraphs give you time to move.",
+      "description": "The Cinder Castellan holds the forge beneath an unbroken oath. End its vigil and recover the clapper for the Hollow Bell.",
+      "hint": "The hammer’s light marks its landing. Dodge the slam, cross the scorched floor, and punish its long recovery.",
       "target": "foundry.foreman",
       "radius": 100,
       "condition": {
         "kind": "defeat",
-        "species": "QUARRY_FOREMAN"
+        "species": "CINDER_CASTELLAN"
       },
       "after": [
-        "buried-pass"
+        "mire-matron"
       ],
       "reward": {
-        "item": "MINIGUN",
-        "count": 240,
-        "name": "Salvaged minigun"
+        "gear": 343,
+        "count": 1,
+        "name": "Bell clapper"
       },
       "color": "#dc8270",
       "mapX": 43,
       "mapY": 201,
-      "symbol": "05"
+      "symbol": "05",
+      "giver": 4,
+      "chapter": "main"
     },
     {
       "key": "windward",
-      "title": "A light on the mountain",
+      "title": "The road above the wind",
       "place": "East · Windward Observatory",
       "summary": "Reach the beacon above the clouds.",
-      "description": "A signal repeats from Windward: six notes, then silence. Climb the broken landings to the receiver beneath the antenna. Bring the recording home when the other work is done.",
-      "hint": "Rest on the tower’s timber landings, or build your own route up the mountainside.",
+      "description": "Climb to Windward Belfry with the breath of Watchwood and the memory of the archive.",
+      "hint": "Use Gale Step in the air and hold jump while falling to glide. Timber landings offer rest.",
       "target": "observatory.instrument",
       "condition": {
         "kind": "reach"
       },
       "reward": {
-        "item": "DYNAMITE_SATCHEL",
-        "count": 24,
-        "name": "Dynamite satchel"
+        "gear": 305,
+        "count": 1,
+        "name": "Lumen rune"
       },
       "color": "#d7dbaa",
       "symbol": "06",
       "mapX": 545,
-      "mapY": 65
+      "mapY": 65,
+      "giver": 0,
+      "after": [
+        "last-shift"
+      ],
+      "chapter": "main"
     },
     {
-      "key": "homecoming",
-      "title": "Bring the valley home",
-      "place": "Home · Hearthwood Lodge",
-      "summary": "Return to Vale.",
-      "description": "A working mill crossing. An open railway. A quiet cutting yard. A dry archive. And the mountain’s strange recording. Return to Vale with a valley that is beginning to feel like home.",
-      "hint": "Look for the moss-covered roof and the light in the windows.",
+      "key": "hollow-bellkeeper",
+      "title": "Let the Hollow Bell ring",
+      "giver": 8,
+      "target": "observatory.bell",
+      "condition": {
+        "kind": "defeat",
+        "species": "HOLLOW_BELLKEEPER"
+      },
+      "after": [
+        "windward"
+      ],
+      "radius": 90,
+      "reward": {
+        "gear": 3,
+        "count": 1,
+        "name": "Oathblade"
+      },
+      "place": "Let the Hollow Bell ring",
+      "summary": "Face the keeper of the last silent note. Let the valley hear its bell again.",
+      "description": "Face the keeper of the last silent note. Let the valley hear its bell again.",
+      "hint": "The rings widen before they break. Use the belfry’s height, guard the echoes, and strike after the final toll.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "main"
+    },
+    {
+      "key": "buried-pass",
+      "title": "A road under stone",
+      "giver": 7,
+      "target": "railway.instrument",
+      "condition": {
+        "kind": "passage",
+        "bounds": [
+          -808,
+          -2,
+          -792,
+          36
+        ],
+        "surfaceAt": -790
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 303,
+        "count": 1,
+        "name": "Stonebreak rune"
+      },
+      "place": "A road under stone",
+      "summary": "Open the old pilgrim road beneath the western rockfall.",
+      "description": "Open the old pilgrim road beneath the western rockfall.",
+      "hint": "A supported tunnel or a destructive spell can both make a path.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "miras-lantern",
+      "title": "A lantern for Mira",
+      "giver": 3,
+      "target": "hearth.mira",
+      "condition": {
+        "kind": "deliver",
+        "material": "COAL_ORE",
+        "count": 20
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 13,
+        "count": 1,
+        "name": "Hearth staff"
+      },
+      "place": "A lantern for Mira",
+      "summary": "Bring Mira coal to keep her reading lantern lit.",
+      "description": "Bring Mira coal to keep her reading lantern lit.",
+      "hint": "Dig dark coal seams and return to Mira.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "hearth-stones",
+      "title": "Stones for the hearth",
+      "giver": 2,
+      "target": "hearth.osei",
+      "condition": {
+        "kind": "deliver",
+        "material": "STONE",
+        "count": 80
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 103,
+        "count": 1,
+        "name": "Wayfarer leggings"
+      },
+      "place": "Stones for the hearth",
+      "summary": "Bring Osei sound stone for the village hearths.",
+      "description": "Bring Osei sound stone for the village hearths.",
+      "hint": "Loose stone and harvested building stone both count.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "root-and-branch",
+      "title": "Root and branch",
+      "giver": 5,
+      "target": "watchwood.rowan",
+      "condition": {
+        "kind": "deliver",
+        "material": "OAK_WOOD",
+        "count": 64
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 106,
+        "count": 1,
+        "name": "Briarbound hood"
+      },
+      "place": "Root and branch",
+      "summary": "Bring Rowan oak wood to mend the sanctuary fence.",
+      "description": "Bring Rowan oak wood to mend the sanctuary fence.",
+      "hint": "Fell oak carefully and collect the wood.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "cold-comfort",
+      "title": "Cold comfort",
+      "giver": 6,
+      "target": "archive.senna",
+      "condition": {
+        "kind": "deliver",
+        "material": "SNOW",
+        "count": 32
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 302,
+        "count": 1,
+        "name": "Gale rune"
+      },
+      "place": "Cold comfort",
+      "summary": "Bring Senna snow for her fever remedies.",
+      "description": "Bring Senna snow for her fever remedies.",
+      "hint": "Snow can be collected from cold country or made with Rime.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "iron-promise",
+      "title": "An iron promise",
+      "giver": 4,
+      "target": "foundry.brann",
+      "condition": {
+        "kind": "deliver",
+        "material": "IRON_ORE",
+        "count": 48
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 201,
+        "count": 1,
+        "name": "Hearthguard shield"
+      },
+      "place": "An iron promise",
+      "summary": "Bring Brann iron worthy of a village shield.",
+      "description": "Bring Brann iron worthy of a village shield.",
+      "hint": "Iron ore occurs in the valley’s exposed rock.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "golden-thread",
+      "title": "A golden thread",
+      "giver": 7,
+      "target": "hearth.iven",
+      "condition": {
+        "kind": "deliver",
+        "material": "GOLD_ORE",
+        "count": 12
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 222,
+        "count": 1,
+        "name": "Moonlit reed"
+      },
+      "place": "A golden thread",
+      "summary": "Bring Iven gold for a charm that softens a fall.",
+      "description": "Bring Iven gold for a charm that softens a fall.",
+      "hint": "Look for gold in the deeper seams.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "old-sanctuary",
+      "title": "The last root-knight",
+      "giver": 5,
+      "target": "watchwood.shrine",
+      "condition": {
+        "kind": "defeat",
+        "species": "ROOT_KNIGHT",
+        "count": 1
+      },
+      "after": [],
+      "radius": 90,
+      "reward": {
+        "gear": 224,
+        "count": 1,
+        "name": "Swift feather"
+      },
+      "place": "Where the trees listen",
+      "summary": "A knight of bark bars the little shrine. Bait the heavy blow, then strike during its recovery.",
+      "description": "A knight of bark bars the little shrine. Bait the heavy blow, then strike during its recovery.",
+      "hint": "Watch the marked ground. Move before the blow falls, then punish its recovery.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "archive-promise",
+      "title": "The Stonebound reader",
+      "giver": 3,
+      "target": "archive.console",
+      "condition": {
+        "kind": "defeat",
+        "species": "QUARRY_FOREMAN",
+        "count": 1
+      },
+      "after": [
+        "drowned-archive"
+      ],
+      "radius": 90,
+      "reward": {
+        "gear": 221,
+        "count": 1,
+        "name": "Hearthstone"
+      },
+      "place": "A reader’s promise",
+      "summary": "The archive guardian is buried in its own stone. Open the gallery and break the enchantment.",
+      "description": "The archive guardian is buried in its own stone. Open the gallery and break the enchantment.",
+      "hint": "Watch the marked ground. Move before the blow falls, then punish its recovery.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "song-for-home",
+      "title": "A song for home",
+      "giver": 8,
       "target": "hearth.vale",
       "condition": {
         "kind": "reach"
       },
       "after": [
-        "mill-supplies",
-        "mill-bridge",
-        "buried-pass",
-        "drowned-archive",
-        "last-shift",
-        "windward"
+        "hollow-bellkeeper"
       ],
-      "color": "#edca7b",
-      "symbol": "⌂",
-      "mapX": 345,
-      "mapY": 167
+      "radius": 90,
+      "reward": {
+        "gear": 225,
+        "count": 1,
+        "name": "Bell fragment"
+      },
+      "place": "A song for home",
+      "summary": "Carry the first new note back to Hearthwood.",
+      "description": "Carry the first new note back to Hearthwood.",
+      "hint": "Vale waits beneath the moss-covered roof.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "branns-gift",
+      "title": "The ash that would not sleep",
+      "giver": 4,
+      "target": "foundry.foreman",
+      "condition": {
+        "kind": "defeat",
+        "species": "REACTOR_WARDEN",
+        "count": 1
+      },
+      "after": [
+        "last-shift"
+      ],
+      "radius": 90,
+      "reward": {
+        "gear": 5,
+        "count": 1,
+        "name": "Cinder cleaver"
+      },
+      "place": "A gift of living fire",
+      "summary": "An ashen sentinel has risen in the reclaimed court. Brann asks you to quiet its living flame.",
+      "description": "An ashen sentinel has risen in the reclaimed court. Brann asks you to quiet its living flame.",
+      "hint": "Watch the marked ground. Move before the blow falls, then punish its recovery.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
+    },
+    {
+      "key": "homecoming",
+      "title": "A valley awake",
+      "giver": 1,
+      "target": "hearth.vale",
+      "condition": {
+        "kind": "reach"
+      },
+      "after": [
+        "hollow-bellkeeper"
+      ],
+      "radius": 90,
+      "reward": {
+        "gear": 130,
+        "count": 1,
+        "name": "Oathkeeper hood"
+      },
+      "place": "A valley awake",
+      "summary": "Return to Vale with the bell ringing over a changed valley.",
+      "description": "Return to Vale with the bell ringing over a changed valley.",
+      "hint": "Come home. Leave the roads you made for whoever walks them next.",
+      "color": "#c6b37b",
+      "symbol": "◇",
+      "chapter": "side"
     }
   ],
   "dialogue": {
@@ -5337,44 +6072,133 @@ export default {
   "signs": [
     {
       "anchor": "hearth.vale",
-      "text": "HEARTHWOOD LODGE",
       "offset": [
         30,
         -51
-      ]
+      ],
+      "text": "HEARTHWOOD LODGE"
     },
     {
       "anchor": "hearth.osei",
-      "text": "THE WORKSHOP",
       "offset": [
         11,
         -36
-      ]
+      ],
+      "text": "THE WORKSHOP"
     },
     {
       "anchor": "mill.bridge",
-      "text": "WILLOW MILL",
       "offset": [
         0,
         -33
-      ]
+      ],
+      "text": "WILLOW MILL"
     }
   ],
   "residents": [
     {
+      "id": 1,
       "species": "IRIS_COMMANDER",
       "anchor": "hearth.vale",
-      "roamRadius": 12
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Vale",
+        "role": "Keeper of Hearthwood",
+        "text": "The bell on Windward has fallen silent. Now the roots wake hungry, and the river forgets its banks. Help Osei mend our crossing. Then follow the old paths: the wood, the water, the fire, and finally the bell.",
+        "action": "Journal",
+        "intent": "mission-console"
+      }
     },
     {
+      "id": 2,
       "species": "IRIS_ENGINEER",
       "anchor": "hearth.osei",
-      "roamRadius": 12
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Osei",
+        "role": "Maker and mender",
+        "text": "We still have a mill, if we can reach it. Bring me iron from the exposed vein beside Willow Mill. I will cut fresh bridge timber. A good bridge leaves the water room to breathe.",
+        "action": "Use the workbench",
+        "intent": "workshop"
+      }
     },
     {
+      "id": 3,
       "species": "SURVEYOR",
-      "anchor": "hearth.cellar",
-      "roamRadius": 8
+      "anchor": "hearth.mira",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Mira",
+        "role": "Keeper of the lost pages",
+        "text": "The archive is drowning below us. There is an empty cavern beneath the reading hall. Give the water a way out, and the old words may yet survive.",
+        "action": "Journal",
+        "intent": "mission-console"
+      }
+    },
+    {
+      "id": 4,
+      "species": "IRIS_ENGINEER",
+      "anchor": "foundry.brann",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Brann",
+        "role": "Smith of the Cinder Court",
+        "text": "The Castellan has claimed my forge. Watch the glow beneath its hammer: that is where the blow will fall. Break its oath of cinders and I can make the bell a heart again.",
+        "action": "Use the forge",
+        "intent": "workshop"
+      }
+    },
+    {
+      "id": 5,
+      "species": "IRIS_COMMANDER",
+      "anchor": "watchwood.rowan",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Rowan",
+        "role": "Warden of Watchwood",
+        "text": "The hart once guarded every seedling here. Something thorny has grown around its heart. Its antlers warn before it charges. Let it pass, then strike the roots at its flank.",
+        "action": "Journal",
+        "intent": "mission-console"
+      }
+    },
+    {
+      "id": 6,
+      "species": "SURVEYOR",
+      "anchor": "archive.senna",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Senna",
+        "role": "Herbalist of the low water",
+        "text": "Do not mistake still water for a safe floor. The Matron listens from the silt. Cold will slow her, and a channel will take her water away.",
+        "action": "Journal",
+        "intent": "mission-console"
+      }
+    },
+    {
+      "id": 7,
+      "species": "IRIS_ENGINEER",
+      "anchor": "hearth.iven",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Iven",
+        "role": "Trader of small wonders",
+        "text": "Copper travels farther than promises. Bring me copper ore and I will trade cordials and runes. Old coffers hold armor; Osei and Brann can forge what you are missing.",
+        "action": "Browse wares",
+        "intent": "workshop"
+      }
+    },
+    {
+      "id": 8,
+      "species": "SURVEYOR",
+      "anchor": "observatory.elowen",
+      "roamRadius": 8,
+      "dialogue": {
+        "name": "Elowen",
+        "role": "Last bell singer",
+        "text": "The bellkeeper has swallowed every note. Bring the wood’s breath, the water’s memory, and the forge’s heart. When the bellkeeper falls, we will sing the valley awake.",
+        "action": "Journal",
+        "intent": "mission-console"
+      }
     }
   ],
   "presentation": {
@@ -5384,5 +6208,721 @@ export default {
     "fadeBottom": 220,
     "backgroundTint": 0.55
   },
-  "textures": {}
+  "textures": {},
+  "chests": [
+    {
+      "id": 1,
+      "anchor": "hearth.spawn",
+      "offset": [
+        30,
+        0
+      ],
+      "name": "Traveller’s coffer",
+      "loot": [
+        {
+          "gear": 100,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 8
+        },
+        {
+          "gear": 4,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "anchor": "hearth.cellar",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Traveller’s coffer",
+      "loot": [
+        {
+          "gear": 101,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 8
+        },
+        {
+          "gear": 10,
+          "count": 1
+        },
+        {
+          "item": "ARROW",
+          "count": 35
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "anchor": "hearth.cellar",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Traveller’s coffer",
+      "loot": [
+        {
+          "gear": 102,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 8
+        },
+        {
+          "gear": 301,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "anchor": "hearth.cellar",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Traveller’s coffer",
+      "loot": [
+        {
+          "gear": 103,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 8
+        },
+        {
+          "gear": 220,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "anchor": "hearth.cellar",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Traveller’s coffer",
+      "loot": [
+        {
+          "gear": 104,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 8
+        },
+        {
+          "gear": 200,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "anchor": "mill.ore",
+      "offset": [
+        -36,
+        -8
+      ],
+      "name": "Millwright’s chest",
+      "loot": [
+        {
+          "gear": 106,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "anchor": "mill.ore",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Millwright’s chest",
+      "loot": [
+        {
+          "gear": 107,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "anchor": "mill.ore",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Millwright’s chest",
+      "loot": [
+        {
+          "gear": 108,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "anchor": "mill.ore",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Millwright’s chest",
+      "loot": [
+        {
+          "gear": 109,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "anchor": "mill.ore",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Millwright’s chest",
+      "loot": [
+        {
+          "gear": 110,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "anchor": "railway.instrument",
+      "offset": [
+        -36,
+        -8
+      ],
+      "name": "Wayside cache",
+      "loot": [
+        {
+          "gear": 112,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "anchor": "railway.instrument",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Wayside cache",
+      "loot": [
+        {
+          "gear": 113,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "anchor": "railway.instrument",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Wayside cache",
+      "loot": [
+        {
+          "gear": 114,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "anchor": "railway.instrument",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Wayside cache",
+      "loot": [
+        {
+          "gear": 115,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "anchor": "railway.instrument",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Wayside cache",
+      "loot": [
+        {
+          "gear": 116,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "anchor": "archive.console",
+      "offset": [
+        -36,
+        -8
+      ],
+      "name": "Silted reliquary",
+      "loot": [
+        {
+          "gear": 118,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "anchor": "archive.console",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Silted reliquary",
+      "loot": [
+        {
+          "gear": 119,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "anchor": "archive.console",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Silted reliquary",
+      "loot": [
+        {
+          "gear": 120,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "anchor": "archive.console",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Silted reliquary",
+      "loot": [
+        {
+          "gear": 121,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "anchor": "archive.console",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Silted reliquary",
+      "loot": [
+        {
+          "gear": 122,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "anchor": "foundry.foreman",
+      "offset": [
+        -36,
+        -8
+      ],
+      "name": "Forge strongbox",
+      "loot": [
+        {
+          "gear": 124,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "anchor": "foundry.foreman",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Forge strongbox",
+      "loot": [
+        {
+          "gear": 125,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "anchor": "foundry.foreman",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Forge strongbox",
+      "loot": [
+        {
+          "gear": 126,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "anchor": "foundry.foreman",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Forge strongbox",
+      "loot": [
+        {
+          "gear": 127,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "anchor": "foundry.foreman",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Forge strongbox",
+      "loot": [
+        {
+          "gear": 128,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "anchor": "observatory.instrument",
+      "offset": [
+        -36,
+        -8
+      ],
+      "name": "Belfry chest",
+      "loot": [
+        {
+          "gear": 130,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 28
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "anchor": "observatory.instrument",
+      "offset": [
+        -18,
+        -8
+      ],
+      "name": "Belfry chest",
+      "loot": [
+        {
+          "gear": 131,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 28
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "anchor": "observatory.instrument",
+      "offset": [
+        0,
+        -8
+      ],
+      "name": "Belfry chest",
+      "loot": [
+        {
+          "gear": 132,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 28
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "anchor": "observatory.instrument",
+      "offset": [
+        18,
+        -8
+      ],
+      "name": "Belfry chest",
+      "loot": [
+        {
+          "gear": 133,
+          "count": 1
+        },
+        {
+          "gear": 321,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 28
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "anchor": "observatory.instrument",
+      "offset": [
+        36,
+        -8
+      ],
+      "name": "Belfry chest",
+      "loot": [
+        {
+          "gear": 134,
+          "count": 1
+        },
+        {
+          "gear": 320,
+          "count": 1
+        },
+        {
+          "material": "IRON_ORE",
+          "count": 28
+        }
+      ]
+    }
+  ]
 };

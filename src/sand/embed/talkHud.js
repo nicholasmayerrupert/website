@@ -96,7 +96,7 @@ export function createTalkHud(root, game, onAction) {
   questMarker.className = 'sg-quest-marker';
   questMarker.hidden = true;
   questMarker.setAttribute('role', 'img');
-  questMarker.setAttribute('aria-label', 'Mission coordinator Commander Vale');
+  questMarker.setAttribute('aria-label', 'Vale, keeper of Hearthwood');
   const questMarkerIcon = document.createElement('span');
   questMarkerIcon.className = 'sg-quest-marker-icon';
   questMarker.appendChild(questMarkerIcon);
@@ -141,6 +141,7 @@ export function createTalkHud(root, game, onAction) {
 
   const closeDialogue = (restoreFocus = true) => {
     dialogue.hidden = true;
+    root.dispatchEvent(new CustomEvent('sand:dialogue', { detail: { open: false } }));
     activeActor = null;
     if (restoreFocus)
       root.querySelector('.sg-sim')?.focus({ preventScroll: true });
@@ -158,7 +159,7 @@ export function createTalkHud(root, game, onAction) {
     activeIntent = null;
     if (game.getPlanetState?.().id === PLANET.FRONTIER) {
       const key = Object.keys(GAME_WORLD.dialogue).find(key => CREATURE[key] === actor.species);
-      const authored = GAME_WORLD.dialogue[key];
+      const authored = GAME_WORLD.residents.find(n => n.id === actor.npcId)?.dialogue || GAME_WORLD.dialogue[key];
       if (authored) {
         policy = { name: authored.name, dialogue: authored.text, action: authored.action };
         activeIntent = authored.intent;
@@ -169,26 +170,36 @@ export function createTalkHud(root, game, onAction) {
     if (game.getPlanetState?.().id === PLANET.FRONTIER) {
       const mission = game.getMission?.();
       const key = Object.keys(GAME_WORLD.dialogue).find(key => CREATURE[key] === actor.species);
-      const authored = GAME_WORLD.dialogue[key];
+      const authored = GAME_WORLD.residents.find(n => n.id === actor.npcId)?.dialogue || GAME_WORLD.dialogue[key];
       const variant = authored?.variants?.find(v => {
         const index = GAME_WORLD.quests.findIndex(q => q.key === v.quest);
         return mission?.objectives[index]?.state === OBJECTIVE_STATE[v.state.toUpperCase()];
       });
       if (variant) policy = { ...policy, dialogue: variant.text };
+      if (actor.npcId === 2) {
+        const repair = document.createElement('button');
+        repair.type = 'button'; repair.textContent = 'Mend the lodge';
+        repair.title = 'Restore the lodge walls and hearth. Buildings beyond the lodge are untouched.';
+        repair.addEventListener('click', () => {
+          onAction?.({ action: 'repair-base', actor }); closeDialogue();
+        });
+        actions.prepend(repair); deliveryButtons.push(repair);
+      }
       GAME_WORLD.quests.forEach((quest, index) => {
-        if (quest.condition.kind !== 'deliver' || mission?.objectives[index]?.state !== OBJECTIVE_STATE.ACTIVE) return;
-        if (!GAME_WORLD.residents.some(r => CREATURE[r.species] === actor.species && r.anchor === quest.target)) return;
+        if (mission?.objectives[index]?.state !== OBJECTIVE_STATE.ACTIVE || quest.giver !== actor.npcId) return;
+        if (mission.objectives[index].accepted && quest.condition.kind !== 'deliver') return;
         const progress = mission.objectives[index];
         const button = document.createElement('button');
         button.type = 'button'; button.className = 'primary';
-        button.textContent = `Hand over ${quest.condition.material.toLowerCase().replaceAll('_', ' ')} (${progress.current}/${progress.required})`;
-        button.disabled = progress.current < progress.required;
+        button.textContent = !progress.accepted ? `Accept: ${quest.title}` : `Hand over ${quest.condition.material.toLowerCase().replaceAll('_', ' ')} (${progress.current}/${progress.required})`;
+        button.disabled = !!progress.accepted && progress.current < progress.required;
         button.addEventListener('click', () => { game.interactQuest(index); closeDialogue(); });
         actions.prepend(button); deliveryButtons.push(button);
       });
     }
     activeActor = actor;
     name.textContent = policy.name;
+    if (game.getPlanetState?.().id === PLANET.FRONTIER && game.getMission()?.objectives[7]?.state === OBJECTIVE_STATE.COMPLETE) policy = { ...policy, dialogue: actor.npcId === 8 ? 'Listen. That is our valley, answering. The bell has a voice again, and every road you opened is part of its song.' : actor.npcId === 1 ? 'I heard it from the hearth. A clear note, all the way down the valley. There will always be a place for you here. Stay a while; there are still people who could use a kind hand.' : policy.dialogue };
     copy.textContent =
       game.getPlanetState?.().id === PLANET.SHIP
         ? policy.shipDialogue || policy.dialogue
@@ -196,6 +207,7 @@ export function createTalkHud(root, game, onAction) {
     primary.hidden = !policy.action;
     primary.textContent = policy.action || '';
     dialogue.hidden = false;
+    root.dispatchEvent(new CustomEvent('sand:dialogue', { detail: { open: true } }));
     (policy.action ? primary : close).focus({ preventScroll: true });
   };
 
@@ -250,7 +262,7 @@ export function createTalkHud(root, game, onAction) {
         button.textContent = 'Talk';
         button.setAttribute(
           'aria-label',
-          `Talk to ${TALKABLES[actor.species].name}`,
+          `Talk to ${GAME_WORLD.residents.find(n => n.id === actor.npcId)?.dialogue.name || TALKABLES[actor.species]?.name || "traveller"}`,
         );
         button.addEventListener('click', () => openDialogue(actor));
         layer.appendChild(button);
@@ -320,7 +332,7 @@ export function createTalkHud(root, game, onAction) {
     if (event.repeat) return;
     if (!dialogue.hidden && (event.key === 'Escape' || event.code === 'KeyT')) {
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       closeDialogue();
     } else if (
       event.code === 'KeyT' &&
@@ -328,7 +340,7 @@ export function createTalkHud(root, game, onAction) {
       root.activeElement?.classList.contains('sg-sim')
     ) {
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       openDialogue(nearestActor);
     }
   };
@@ -337,6 +349,8 @@ export function createTalkHud(root, game, onAction) {
   raf = requestAnimationFrame(sync);
 
   return {
+    close: closeDialogue,
+    isOpen: () => !dialogue.hidden,
     destroy() {
       cancelAnimationFrame(raf);
       root.removeEventListener('keydown', onKey, true);

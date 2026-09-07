@@ -3,6 +3,8 @@
 // renderer. Run: node scripts/player-anim-test.mjs
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { PLAYER_ART } from '../src/sand/content/catalog.js';
+import { ANIMATION_STATES } from '../src/sand/content/compile.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -44,7 +46,7 @@ check('swim when submerged', drive(0, 8).has(AS.SWIM));
 
 // the frame index stays within the state's frame count (2-4).
 const p = e.getPlayer(id);
-check(`animFrame in range (state ${p.animState}, frame ${p.animFrame})`, p.animFrame >= 0 && p.animFrame < 4);
+check(`animFrame in range (state ${p.animState}, frame ${p.animFrame})`, p.animFrame >= 0 && p.animFrame < PLAYER_ART.clips[ANIMATION_STATES[p.animState]].frames.length);
 
 e.destroy();
 const failures = done();

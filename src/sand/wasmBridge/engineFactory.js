@@ -185,7 +185,7 @@ export function initSandWasm() {
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         playerMineTarget: c('engine_player_mine_target', 'number', ['number', 'number', 'number']),
-        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
@@ -217,6 +217,17 @@ export function initSandWasm() {
         selectedFootprint: c('engine_selected_footprint', 'number', ['number', 'number']),
         survivalFootprintSnapshot: c('engine_survival_footprint_snapshot', 'number', ['number']),
         survivalFootprintSnapshotPtr: c('engine_survival_footprint_snapshot_ptr', 'number', ['number']),
+        checkpointWrite: c('engine_checkpoint_write', 'number', ['number']),
+        checkpointPtr: c('engine_checkpoint_ptr', 'number', ['number']),
+        checkpointRead: c('engine_checkpoint_read', 'number', ['number', 'number', 'number']),
+        glSetChests: c('engine_gl_set_chests', null, ['number', 'number', 'number']),
+        chestSnapshot: c('engine_chest_snapshot', 'number', ['number']),
+        chestSnapshotPtr: c('engine_chest_snapshot_ptr', 'number', ['number']),
+        chestLootSnapshot: c('engine_chest_loot_snapshot', 'number', ['number']),
+        chestLootSnapshotPtr: c('engine_chest_loot_snapshot_ptr', 'number', ['number']),
+        chestActive: c('engine_chest_active', 'number', ['number']),
+        chestInteract: c('engine_chest_interact', 'number', ['number', 'number', 'number', 'number']),
+        addGear: c('engine_add_gear', 'number', ['number', 'number', 'number', 'number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
         inventoryPoolAction: c('engine_inventory_pool_action', null, ['number', 'number', 'number', 'number', 'number', 'number']),
         inventoryPoolSnapshot: c('engine_inventory_pool_snapshot', 'number', ['number', 'number']),
@@ -260,7 +271,7 @@ export function initSandWasm() {
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number', 'number']),
         glSetDebugHitboxes: c('engine_gl_set_debug_hitboxes', null, ['number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
-        glSetSurvivalPreview: c('engine_gl_set_survival_preview', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        glSetSurvivalPreview: c('engine_gl_set_survival_preview', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
         glSetCreatures: c('engine_gl_set_creatures', null, ['number', 'number', 'number', 'number']),
         glSetProjectiles: c('engine_gl_set_projectiles', null, ['number', 'number', 'number', 'number']),
@@ -282,6 +293,9 @@ export function initSandWasm() {
         inputClearKeys: c('engine_input_clear_keys', null, ['number']),
         inputStick: c('engine_input_stick', null, ['number', 'number', 'number']),
         heldKeys: c('engine_held_keys', 'number', ['number']),
+        discoveryRevision: c('engine_discovery_revision', 'number', ['number']),
+        discoverySnapshot: c('engine_discovery_snapshot', 'number', ['number']),
+        discoverySnapshotPtr: c('engine_discovery_snapshot_ptr', 'number', ['number']),
         inputPointer: c('engine_input_pointer', null, ['number', 'number', 'number', 'number', 'number']),
         setPlayMode: c('engine_set_play_mode', null, ['number', 'number']),
         setDrawMode: c('engine_set_draw_mode', null, ['number', 'number']),
@@ -581,7 +595,7 @@ const renderStrides = Object.freeze({
         M.glSetPlayers(ptr, 0, 0, 0, ownId | 0);
       }
     },
-    glSetSurvivalPreview(on, footprint, erasing, target = null) {
+    glSetSurvivalPreview(on, footprint, erasing, target = null, progress = 0, tier = 0) {
       M.glSetSurvivalPreview(
         ptr,
         on ? 1 : 0,
@@ -590,6 +604,7 @@ const renderStrides = Object.freeze({
         target ? 1 : 0,
         target?.x | 0,
         target?.y | 0,
+        progress, tier | 0,
       );
     },
     // Dropped items to overlay. The authority draws its own items; presentation
@@ -976,6 +991,11 @@ const renderStrides = Object.freeze({
     startMission(missionId, playerId) {
       return M.startMission(ptr, missionId | 0, playerId | 0) === 1;
     },
+    getDiscoveryRevision() { return M.discoveryRevision(ptr); },
+    getDiscovery() {
+      const count = M.discoverySnapshot(ptr);
+      return new Int32Array(mod.HEAP32.buffer, M.discoverySnapshotPtr(ptr), count * 3).slice();
+    },
     getMission() {
       if (M.missionSnapshot(ptr) !== 1) return null;
       const objectiveCount = M.objectiveSnapshot(ptr);
@@ -1000,6 +1020,7 @@ const renderStrides = Object.freeze({
           id: packed[o + O.id] | 0,
           type: packed[o + O.type] | 0,
           state: packed[o + O.state] | 0,
+          accepted: packed[o + O.accepted] === 1,
           current: packed[o + O.current] | 0,
           required: packed[o + O.required] | 0,
           worldX: packed[o + O.worldX] | 0,
@@ -1057,6 +1078,31 @@ const renderStrides = Object.freeze({
       }
       return out;
     },
+    glSetChests(chests) {
+      const packed = Float32Array.from(chests.flatMap(c => [c.id, c.worldX, c.worldY, c.opened ? 1 : 0, c.remaining]));
+      const buffer = glScratch(Math.max(1, packed.length));
+      mod.HEAPF32.set(packed, buffer >> 2); M.glSetChests(ptr, buffer, chests.length);
+    },
+    writeCheckpoint() {
+      const length = M.checkpointWrite(ptr);
+      return new Uint8Array(mod.HEAPU8.buffer, M.checkpointPtr(ptr), length).slice();
+    },
+    readCheckpoint(bytes) {
+      if (!(bytes instanceof Uint8Array) || bytes.length < 24 || bytes.length > 192 * 1024 * 1024) return false;
+      return withTemporaryBytes(bytes, 'authority checkpoint', buffer => M.checkpointRead(ptr, buffer, bytes.length) === 1);
+    },
+    getChests() {
+      const n = M.chestSnapshot(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.chestSnapshotPtr(ptr), n * 5);
+      return Array.from({ length: n }, (_, i) => ({ id: f[i*5], worldX: f[i*5+1], worldY: f[i*5+2], opened: !!f[i*5+3], remaining: f[i*5+4] }));
+    },
+    getChestLoot() {
+      const n = M.chestLootSnapshot(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.chestLootSnapshotPtr(ptr), n * STRIDES.inventorySlot);
+      return { id: M.chestActive(ptr), slots: Array.from({ length: n }, (_, i) => unpackInventoryStackAt(f, i)) };
+    },
+    interactChest(id, chest, slot = -2) { return M.chestInteract(ptr, id, chest, slot) === 1; },
+    addGear(id, definition, count = 1) { return M.addGear(ptr, id, definition, count) === 1; },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
     inventoryPoolAction(id, pool, action, material = 0, value = 0) {
       M.inventoryPoolAction(ptr, id | 0, pool | 0, action | 0, material | 0, value | 0);
@@ -1116,7 +1162,7 @@ const renderStrides = Object.freeze({
         const entry = pools.find((pool) => pool.id === slot.pool)?.entries.find((row) => row.material === slot.material);
         slot.count = entry?.count || 0;
       }
-      return { slots, selected, pools, selectedFootprint: this.getSelectedFootprint(id) };
+      return { slots: slots.slice(0, 36), equipment: slots.slice(36), selected, pools, selectedFootprint: this.getSelectedFootprint(id) };
     },
     craft(id, recipeId, craftMax = false) { return M.craftRecipe(ptr, id | 0, recipeId | 0, craftMax ? 1 : 0) | 0; },
     respawnPlayer(id) { return M.respawnPlayer(ptr, id | 0) === 1; },
@@ -1131,7 +1177,7 @@ const renderStrides = Object.freeze({
           const q = (rf[o + R.ingredientStart] + j) * STRIDES.craftingIngredient;
           ingredients.push({ kind: inf[q + I.kind] | 0, value: inf[q + I.value] | 0, count: inf[q + I.count] | 0 });
         }
-        out[n] = { id: rf[o + R.id] | 0, outputKind: rf[o + R.outputKind] | 0, outputMaterial: rf[o + R.outputMaterial] | 0, outputTier: rf[o + R.outputTier] | 0, outputCount: rf[o + R.outputCount] | 0, ingredients };
+        out[n] = { id: rf[o + R.id] | 0, outputKind: rf[o + R.outputKind] | 0, outputMaterial: rf[o + R.outputMaterial] | 0, outputTier: rf[o + R.outputTier] | 0, outputCount: rf[o + R.outputCount] | 0, outputDefinition: rf[o + R.outputDefinition] | 0, npcId: rf[o + R.npcId] | 0, ability: rf[o + R.ability] | 0, ingredients };
       }
       return out;
     },
@@ -1194,7 +1240,7 @@ const renderStrides = Object.freeze({
     setPlayerTool(id, toolClass, toolTier) { M.setPlayerTool(ptr, id, toolClass | 0, toolTier | 0); },
     playerMine(id, ax, ay) { return M.playerMine(ptr, id, ax, ay) === 1; },
     getPlayerMineProgress(id) { return Math.max(0, Math.min(1, M.playerMineProgress(ptr, id | 0) || 0)); },
-    // Locked hold-mine cell for HUD overlays; null when not actively mining.
+    // Authority-selected mining surface for world overlays; null without a target.
     getPlayerMineTarget(id) {
       if (M.playerMineTarget(ptr, id | 0, glOffOut) !== 1) return null;
       const o = glOffOut >> 2;
@@ -1202,10 +1248,10 @@ const renderStrides = Object.freeze({
     },
     setPlayerState(id, {
       x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false,
-      jetpackFuel = 1, jetpackActive = false,
+      jetpackFuel = 1, jetpackActive = false, abilities = 0, stamina = 100, actionTicks = 0, actionState = 0, dodgeCooldown = 0, airDashUsed = false, movementPrevInput = 0,
     }) {
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0,
-        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0);
+        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed ? 1 : 0, movementPrevInput);
     },
 
     // Authority snapshots are copied out of the serialization scratch blob;

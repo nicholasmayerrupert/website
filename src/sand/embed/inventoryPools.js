@@ -1,6 +1,7 @@
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { POOL_ACTION } from '../wasmBridge/abi.generated.js';
 import { packedToRgb } from './uiShared.js';
+import { createGameSelect } from './gameSelect.js';
 
 export const POOL_NAMES = ['', 'Building materials', 'Powders', 'Liquids'];
 const names = new Map(MATERIALS.map((m) => [m.id, m.name.toLowerCase().replaceAll('_', ' ')]));
@@ -32,31 +33,32 @@ export function poolIcon(pool, size = 30) {
   return svg;
 }
 
-export function createInventoryPools({ poolAction }) {
+export function createInventoryPools({ root, poolAction, tooltips }) {
   const el = document.createElement('section'); el.className = 'inv-pools';
   el.setAttribute('aria-label', 'Material pools');
   const tabs = document.createElement('div'); tabs.className = 'pool-tabs';
   const heading = document.createElement('h2'); heading.className = 'pool-heading';
   const summary = document.createElement('p'); summary.className = 'pool-summary';
   const controls = document.createElement('div'); controls.className = 'pool-controls';
-  const label = document.createElement('label'); label.textContent = 'Place ';
-  const select = document.createElement('select'); select.setAttribute('aria-label', 'Pool placement mode');
-  label.append(select);
+  const label = document.createElement('label'); label.textContent = 'Place '; label.className = 'pool-select-label';
+  const select = createGameSelect(root, { label: 'Pool placement mode', onChange: value => send(POOL_ACTION.SELECT, Number(value)) });
+  label.append(select.el);
   const deposit = document.createElement('button'); deposit.type = 'button'; deposit.textContent = 'Store stacks';
   deposit.title = 'Move matching ordinary inventory stacks into this pool';
   controls.append(label, deposit);
   const list = document.createElement('div'); list.className = 'pool-list';
-  const sorting = document.createElement('div'); sorting.className = 'pool-controls';
+  const sorting = document.createElement('details'); sorting.className = 'pool-sorting';
+  const sortSummary = document.createElement('summary'); sortSummary.textContent = 'Sorting'; sorting.append(sortSummary);
   const sortLabel = document.createElement('label'); sortLabel.textContent = 'Sort materials ';
-  const sort = document.createElement('select'); sort.setAttribute('aria-label', 'Sort materials');
-  for (const [value, text] of [['queue', 'Queue order'], ['name', 'Name A–Z'], ['count', 'Amount: most first'],
-    ['density', 'Density: lightest first'], ['durability', 'Hardness: softest first'], ['flammable', 'Flammable first'], ['hazard', 'Hazardous first']]) {
-    const option = document.createElement('option'); option.value = value; option.textContent = text; sort.append(option);
-  }
-  const applySort = document.createElement('button'); applySort.type = 'button'; applySort.textContent = 'Use as queue';
-  sortLabel.append(sort); sorting.append(sortLabel, applySort);
-  const empty = document.createElement('p'); empty.className = 'pool-help'; empty.textContent = 'Collect materials to fill this pool. Capacity is unlimited.';
-  el.append(tabs, heading, summary, controls, sorting, empty, list);
+  const sort = createGameSelect(root, { label: 'Sort materials', onChange: () => render(), options: [
+    ['queue', 'Placement order'], ['name', 'Name'], ['count', 'Amount'],
+    ['density', 'Density'], ['durability', 'Hardness'], ['flammable', 'Flammable first'], ['hazard', 'Hazardous first'],
+  ].map(([value, label]) => ({ value, label })) });
+  const applySort = document.createElement('button'); applySort.type = 'button'; applySort.textContent = 'Apply order';
+  sortLabel.append(sort.el); sorting.append(sortLabel, applySort);
+  const empty = document.createElement('p'); empty.className = 'pool-help'; empty.textContent = 'Empty'; empty.classList.add('pool-empty');
+  const headingRow = document.createElement('div'); headingRow.className = 'pool-heading-row'; headingRow.append(heading, deposit);
+  el.append(tabs, headingRow, summary, controls, empty, list, sorting);
   let inventory = null, active = 1, selectedSlot = -1, optionKey = '';
   const rows = new Map();
   const send = (action, material = 0, value = 0) => poolAction?.(active, action, material, value);
@@ -66,9 +68,7 @@ export function createInventoryPools({ poolAction }) {
     button.addEventListener('click', () => { active = i + 1; render(); });
     tabs.append(button); return button;
   });
-  select.addEventListener('change', () => send(POOL_ACTION.SELECT, Number(select.value)));
   deposit.addEventListener('click', () => send(POOL_ACTION.DEPOSIT));
-  sort.addEventListener('change', render);
   function sorted(entries) {
     if (sort.value === 'queue') return entries;
     const value = (entry) => {
@@ -95,25 +95,20 @@ export function createInventoryPools({ poolAction }) {
     const stored = pool?.entries || [];
     const entries = stored.filter((entry) => entry.count > 0);
     heading.textContent = `${POOL_NAMES[active]} bag`;
-    summary.textContent = `${number.format(entries.reduce((n, row) => n + row.count, 0))} stored · ${entries.filter((row) => row.enabled).length} enabled / ${entries.length} materials`;
+    summary.textContent = `${number.format(entries.reduce((n, row) => n + row.count, 0))} stored · ${entries.length} ${entries.length === 1 ? 'material' : 'materials'}`;
+    summary.hidden = controls.hidden = sorting.hidden = !entries.length;
+    if (!entries.length) { sorting.open = false; select.close(); sort.close(); }
     applySort.disabled = sort.value === 'queue' || entries.length < 2;
     const depletedSelection = pool?.exactMaterial && !entries.some((entry) => entry.material === pool.exactMaterial);
     const key = `${active}:${depletedSelection ? pool.exactMaterial : 0}:${entries.map((row) => row.material).join(',')}`;
     if (key !== optionKey) {
       optionKey = key;
-      select.replaceChildren();
-      for (const [value, text] of [[0, 'Auto — follow queue'], ...entries.map((row) => [row.material, names.get(row.material)])]) {
-        const option = document.createElement('option'); option.value = value; option.textContent = text;
-        select.append(option);
-      }
-      if (depletedSelection) {
-        const option = document.createElement('option'); option.value = pool.exactMaterial;
-        option.textContent = 'Selected material depleted'; option.disabled = true; select.append(option);
-      }
+      select.setOptions([{ value: 0, label: 'Next available' }, ...entries.map(row => ({ value: row.material, label: names.get(row.material) })),
+        ...(depletedSelection ? [{ value: pool.exactMaterial, label: 'Selected material depleted', disabled: true }] : [])]);
     }
     select.value = String(pool?.exactMaterial || 0);
     select.disabled = !pool;
-    deposit.disabled = !pool;
+    deposit.disabled = !pool || !inventory?.slots?.some(slot => slot.count && !slot.pool && slot.itemKind === 0);
     empty.hidden = entries.length > 0;
     const wanted = new Set(entries.map((row) => `${active}:${row.material}`));
     for (const [id, row] of rows) if (!wanted.has(id)) { row.el.remove(); rows.delete(id); }
@@ -136,6 +131,10 @@ export function createInventoryPools({ poolAction }) {
         const properties = document.createElement('small'); properties.className = 'pool-properties';
         properties.textContent = `Density ${material.density} · Hardness ${material.durability}${MAT_FLAGS[entry.material] & MF.flammable ? ' · Flammable' : ''}${MAT_FLAGS[entry.material] & MF.spawnHazard ? ' · Hazardous' : ''}`;
         const description = document.createElement('span'); description.append(name, properties);
+        description.tabIndex = 0;
+        tooltips?.bind(description, () => ({ name: names.get(entry.material), type: 'Material',
+          stats: [{ label: 'Density', value: material.density }, { label: 'Hardness', value: material.durability }],
+          description: [MAT_FLAGS[entry.material] & MF.flammable ? 'Flammable' : '', MAT_FLAGS[entry.material] & MF.spawnHazard ? 'Hazardous' : ''].filter(Boolean).join(' · ') }));
         const count = document.createElement('span'); count.className = 'pool-count';
         const up = document.createElement('button'); up.type = 'button'; up.textContent = '↑';
         up.setAttribute('aria-label', `Move ${names.get(entry.material)} earlier`);
@@ -144,6 +143,7 @@ export function createInventoryPools({ poolAction }) {
         const withdraw = document.createElement('button'); withdraw.type = 'button'; withdraw.textContent = 'Take';
         withdraw.setAttribute('aria-label', `Withdraw ${names.get(entry.material)}`);
         withdraw.title = 'Take up to 999 into the cursor. Shift-click takes one.';
+        tooltips?.bind(withdraw, () => ({ name: `Take ${names.get(entry.material)}`, action: 'Click to take up to 999\nShift-click to take one' }));
         row = { el: item, enabled, state, rank, count, up, down, withdraw, index };
         up.addEventListener('click', () => send(POOL_ACTION.MOVE, entry.material, row.upTarget));
         down.addEventListener('click', () => send(POOL_ACTION.MOVE, entry.material, row.downTarget));
@@ -168,7 +168,8 @@ export function createInventoryPools({ poolAction }) {
   }
   return {
     el,
-    open(pool) { active = pool; sort.value = 'queue'; render(); select.focus({ preventScroll: true }); },
+    destroy() { select.destroy(); sort.destroy(); },
+    open(pool) { active = pool; sort.value = 'queue'; render(); if (!controls.hidden) select.focus(); else tabButtons[active - 1].focus({ preventScroll: true }); },
     update(inv) {
       inventory = inv;
       if (inv?.selected !== selectedSlot) {

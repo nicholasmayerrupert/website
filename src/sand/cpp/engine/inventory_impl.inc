@@ -130,8 +130,17 @@ int InventorySystem::buildPoolSnapshot(int id) {
   return (int)poolSnapshot.size() / IPS_STRIDE;
 }
 
-// Destructive survival starts armed and able to harvest terrain. The blast gun
-// is intentionally infinite-energy; the iron dig tool restores the mining loop.
+bool InventorySystem::addGear(int id, int definition, int count) {
+  if (!E.content.gear(definition) || count < 1 || count > 99) return false;
+  InvSlot item; item.itemKind = IK_GEAR; item.definitionId = definition; item.count = count;
+  return addStack(id, item);
+}
+bool InventorySystem::acceptsEquipment(const InvSlot& item, int slot) const {
+  if (!item.count) return true;
+  const auto* gear = item.itemKind == IK_GEAR ? E.content.gear(item.definitionId) : nullptr;
+  return gear && (gear->slot == slot || (gear->slot == 7 && slot == 8));
+}
+// The wayfarer begins with road-worn equipment and the tools to reshape terrain.
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
@@ -143,6 +152,14 @@ void InventorySystem::seedStarterTools(Player& p) {
   p.inv[1].toolClass = TC_DIG;
   p.inv[1].toolTier = TT_IRON;
   p.inv[1].count = 1;
+  if (E.planetId == PL_FRONTIER) {
+    p.inv[0].itemKind = IK_GEAR; p.inv[0].definitionId = 1;
+    p.inv[2].itemKind = IK_GEAR; p.inv[2].definitionId = 300; p.inv[2].count = 1;
+    p.inv[3].itemKind = IK_GEAR; p.inv[3].definitionId = 320; p.inv[3].count = 1;
+    for (int i = 0; i < 7; i++) {
+      p.equipment[i].itemKind = IK_GEAR; p.equipment[i].definitionId = i == 6 ? 200 : 100 + i; p.equipment[i].count = 1;
+    }
+  }
   for (int i = 0; i < INV_POOL_COUNT; i++) {
     p.pools[i] = InventoryPool();
     p.inv[INV_HOTBAR - INV_POOL_COUNT + i].itemKind = IK_BUILDING_POOL + i;
@@ -301,8 +318,9 @@ void InventorySystem::moveSlot(int id, int from, int to) { Player* p = E.psys.fi
 // right-click variant (pick up half, place one). Refreshes the held tool if the
 // touched slot is the selected hotbar slot.
 void InventorySystem::cursorPick(Player& p, int slot, bool half) {
-  if (slot < 0 || slot >= INV_SLOTS) return;
-  InvSlot& s = p.inv[slot]; InvSlot& c = p.cursor;
+  if (!p.alive || slot < 0 || slot >= INV_SLOTS + 9) return;
+  if (slot >= INV_SLOTS && !acceptsEquipment(p.cursor, slot - INV_SLOTS)) return;
+  InvSlot& s = slot < INV_SLOTS ? p.inv[slot] : p.equipment[slot - INV_SLOTS]; InvSlot& c = p.cursor;
   int pool = inventoryPoolId(s.itemKind);
   if (pool && c.count > 0 && c.itemKind == IK_MATERIAL && materialPool(c.material) == pool) {
     int deposit = half ? 1 : c.count;
@@ -340,6 +358,15 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   InvSlot& c = p.cursor;
   if (c.count <= 0 || c.itemKind == IK_BLAST_GUN ||
       c.itemKind == IK_MINING_TOOL || c.itemKind == IK_RESCUE_BEAM) return false;
+  if (c.itemKind == IK_GEAR) {
+    const auto* gear = E.content.gear(c.definitionId);
+    if (!gear || gear->family == 11) return false;
+    InvSlot dropped = c; dropped.count = whole ? c.count : 1;
+    E.itemsys.spawnStack(dropped, p.px + p.w / 2.0 + p.facing * 1.5, p.py + p.h / 2.0,
+                         p.facing * IT_THROW_SPEED, IT_THROW_UP, IT_THROW_PICKUP_DELAY);
+    c.count -= dropped.count; if (!c.count) c = InvSlot();
+    return true;
+  }
   if (c.itemKind == IK_DYNAMITE_SATCHEL || c.itemKind == IK_BORE_CANNON ||
       c.itemKind == IK_ACID_MORTAR || c.itemKind == IK_CLUSTER_LAUNCHER ||
       c.itemKind == IK_MINIGUN) {
@@ -359,6 +386,18 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
 bool InventorySystem::throwFromCursor(int id, int whole) { Player* p = E.psys.findPlayer(id); return p ? throwFromCursor(*p, whole != 0) : false; }
 
 void InventorySystem::dropAll(Player& p) {
+  if (E.planetId == PL_FRONTIER) {
+    AdventureChest recovery;
+    recovery.id = 8000000 + E.actorTick % 8000000; recovery.wx = p.spawnWorldX + 14; recovery.wy = p.spawnWorldY;
+    for (auto& pool : p.pools) for (auto& entry : pool.entries) {
+      int lost = entry.count / 4;
+      if (!lost) continue;
+      InvSlot stack; stack.material = entry.material; stack.count = lost;
+      recovery.loot.push_back(stack); entry.count -= lost;
+    }
+    if (!recovery.loot.empty()) E.containers.chests.push_back(std::move(recovery));
+    return;
+  }
   int ordinal = 0;
   auto drop = [&](InvSlot& s) {
     if (s.count <= 0) return;
@@ -401,18 +440,18 @@ int InventorySystem::buildCursorSnapshot(int playerId) {
 
 // Pack one player's inventory into invSnapshot for the JS HUD.
 int InventorySystem::buildInventorySnapshot(int playerId) {
-  invSnapshot.assign((size_t)INV_SLOTS * IVS_STRIDE, 0.0f);
+  invSnapshot.assign((size_t)(INV_SLOTS + 9) * IVS_STRIDE, 0.0f);
   Player* p = E.psys.findPlayer(playerId);
   if (!p) return 0;
-  for (int i = 0; i < INV_SLOTS; i++) {
-    InvSlot s = resolveSlot(*p, p->inv[i]);
+  for (int i = 0; i < INV_SLOTS + 9; i++) {
+    InvSlot s = i < INV_SLOTS ? resolveSlot(*p, p->inv[i]) : p->equipment[i - INV_SLOTS];
     float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
     writeInventorySlotSnapshot(o, s, {
       .selected = WriteInventorySlotSnapshotSelected{i == p->selectedSlot},
-      .pool = WriteInventorySlotSnapshotPool{inventoryPoolId(p->inv[i].itemKind)},
+      .pool = WriteInventorySlotSnapshotPool{i < INV_SLOTS ? inventoryPoolId(p->inv[i].itemKind) : 0},
     });
   }
-  return INV_SLOTS;
+  return INV_SLOTS + 9;
 }
 
 // Survival input model. The selected hotbar slot decides what the mouse buttons do:
@@ -474,6 +513,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
 
   bool mineMode = !pooled && (sel.itemKind == IK_MINING_TOOL || sel.count <= 0);
   if (pooled && sel.count <= 0) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (sel.itemKind == IK_GEAR) { E.combat.apply(p, prev); return; }
   if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
   if (sel.itemKind == IK_BLAST_GUN) { E.projectiles.applyBlastGunInput(p); return; }
   if (sel.itemKind == IK_DYNAMITE_SATCHEL) { E.projectiles.applyDynamiteSatchelInput(p, prev); return; }
@@ -483,6 +523,12 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (sel.itemKind == IK_MINIGUN) { E.projectiles.applyMinigunInput(p); return; }
   if (sel.itemKind == IK_RESCUE_BEAM) { E.projectiles.applyRescueBeamInput(p); return; }
   if (sel.itemKind == IK_ARROW) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (E.planetId == PL_FRONTIER && mineMode) {
+    if (sel.itemKind == IK_MINING_TOOL && !p.placeStrokeActive) E.psys.applyFrontierMining(p, primary, secondary);
+    else E.psys.resetPlayerMine(p);
+    if (!primary && !secondary) resetPlayerPlaceStroke(p);
+    return;
+  }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && E.isSeedMaterial(sel.material);
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);
   if (!primary && !secondary) { E.psys.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }

@@ -10,6 +10,9 @@ export const UNIT_SUITES = [
   ['scenario-runner', 'scenario-runner-test.mjs'],
   ['campaign', 'campaign-test.mjs'],
   ['frontier', 'frontier-test.mjs', exclusive(240_000)],
+  ['adventure', 'adventure-test.mjs', exclusive(120_000)],
+  ['adventure-combat', 'adventure-combat-test.mjs'],
+  ['adventure-mining', 'adventure-mining-test.mjs'],
   ['game-content', 'game-content-test.mjs', exclusive(120_000)],
   ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],
@@ -141,6 +144,10 @@ export const UNIT_SUITES = [
 
 export const BROWSER_SUITES = [
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],
+  ['adventure-e2e', 'adventure-e2e.mjs', exclusive(240_000)],
+  ['adventure-inventory-e2e', 'adventure-inventory-e2e.mjs', exclusive(180_000)],
+  ['adventure-resume-e2e', 'adventure-resume-e2e.mjs', exclusive(120_000)],
+  ['adventure-opening-e2e', 'adventure-opening-e2e.mjs', exclusive(240_000)],
   ['campaign-e2e', 'campaign-e2e.mjs', exclusive(240_000)],
   ['sand-lifecycle', 'sand-lifecycle-e2e.mjs', exclusive(180_000)],
   ['players-e2e', 'player-e2e.mjs', exclusive(240_000)],

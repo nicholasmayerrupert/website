@@ -22,6 +22,9 @@ static inline bool abiHalfExtentsValid(
       && halfW <= e->cols && halfH <= e->rows;
 }
 extern "C" {
+EMSCRIPTEN_KEEPALIVE int engine_discovery_revision(Engine* e) { return e->discovery.revision; }
+EMSCRIPTEN_KEEPALIVE int engine_discovery_snapshot(Engine* e) { return e->discovery.buildSnapshot(); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_discovery_snapshot_ptr(Engine* e) { return e->discovery.snapshot.data(); }
 // ABI contract stamps (abi.generated.hpp). initSandWasm() refuses a module whose
 // version or generated schema/export fingerprint mismatches the JS manifest.
 EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
@@ -905,18 +908,24 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine(Engine* e, int id, int ax, int ay) {
   return (e->survivalInventory ? e->psys.mineFootprint(*p, ax, ay, &e->fg) : e->psys.mineDisc(*p, ax, ay, &e->fg)) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE double engine_player_mine_progress(Engine* e, int id) { return e->tools.playerMineProgress(id); }
-// Locked hold-mine origin for HUD overlays (progress bar). Returns 1 and writes
-// (mineX, mineY) into out[0..1] when the player has an active mine lock.
+// Current mining target for the world highlight and mining progress overlay.
 EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) {
   Player* p = e->psys.findPlayer(id);
-  if (!p || !p->mineActive) return 0;
+  if (!p || !p->alive) return 0;
+  if (e->planetId == PL_FRONTIER && !p->mineActive) {
+    const auto& held=p->inv[p->selectedSlot];
+    int x=0,y=0;
+    if (held.itemKind!=IK_MINING_TOOL || !held.count || !e->psys.frontierMineTarget(*p,x,y,(p->input&PI_SECONDARY) && !(p->input&PI_PRIMARY))) return 0;
+    if(out){out[0]=x;out[1]=y;} return 1;
+  }
+  if (!p->mineActive) return 0;
   if (out) { out[0] = p->mineX; out[1] = p->mineY; }
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy,
                                                   int facing, int grounded, int jumpReady,
-                                                  double jetpackFuel, int jetpackActive) {
-  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive);
+                                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput) {
+  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed, movementPrevInput);
 }
 
 // Dropped-item and particle hooks plus the packed replication/render snapshot.
@@ -1026,6 +1035,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.rescueProgress = in[CSN_RESCUE_PROGRESS];
     c.hurtCooldown = (int)in[CSN_HURT_COOLDOWN];
     c.shelterCharge = in[CSN_SHELTER_CHARGE];
+    c.npcId = (int)in[CSN_NPC_ID];
     e->creatures.creatures.push_back(c);
   }
 }
@@ -1187,7 +1197,7 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->g
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff, int animationPaused) { e->glp.glSetFlags(gutterOn, snapOff, animationPaused); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_debug_hitboxes(Engine* e, int on) { e->glp.glSetDebugHitboxes(on); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glp.glSetPlayers(useExternal, data, count, ownId); }
-EMSCRIPTEN_KEEPALIVE void engine_gl_set_survival_preview(Engine* e, int on, int footprint, int erasing, int locked, int x, int y) { e->glp.glSetSurvivalPreview(on, footprint, erasing, locked, x, y); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_survival_preview(Engine* e, int on, int footprint, int erasing, int locked, int x, int y, double progress, int tier) { e->glp.glSetSurvivalPreview(on, footprint, erasing, locked, x, y, progress, tier); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glp.glSetItems(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_creatures(Engine* e, int useExternal, float* data, int count) { e->glp.glSetCreatures(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_projectiles(Engine* e, int useExternal, float* data, int count) { e->glp.glSetProjectiles(useExternal, data, count); }
@@ -1229,4 +1239,19 @@ EMSCRIPTEN_KEEPALIVE int engine_repair_frontier_base(Engine* e, int id) {
 EMSCRIPTEN_KEEPALIVE int engine_interact_frontier(Engine* e, int playerId, int objectiveId) {
   return e->missions.interactFrontier(playerId, objectiveId) ? 1 : 0;
 }
+EMSCRIPTEN_KEEPALIVE int engine_add_gear(Engine* e, int id, int definition, int count) { return e->inv.addGear(id, definition, count) ? 1 : 0; }
+
+EMSCRIPTEN_KEEPALIVE int engine_chest_snapshot(Engine* e) { return e->containers.buildSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_chest_snapshot_ptr(Engine* e) { return e->containers.snapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_chest_loot_snapshot(Engine* e) { return e->containers.buildLootSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_chest_loot_snapshot_ptr(Engine* e) { return e->containers.lootSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_chest_active(Engine* e) { return e->containers.activeChest; }
+EMSCRIPTEN_KEEPALIVE int engine_chest_interact(Engine* e, int player, int chest, int slot) { return e->containers.interact(player, chest, slot) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_chests(Engine* e, float* data, int count) {
+  if (count < 0 || count > 512 || (count && !data)) return;
+  e->glp.chestData.assign(data, data + count * 5);
+}
+EMSCRIPTEN_KEEPALIVE int engine_checkpoint_write(Engine* e) { return e->checkpoint.write(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_checkpoint_ptr(Engine* e) { return e->checkpoint.bytes.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_checkpoint_read(Engine* e, uint8_t* data, int length) { return e->checkpoint.read(data, length) ? 1 : 0; }
 } // extern "C"

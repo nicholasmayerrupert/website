@@ -14,7 +14,7 @@ export function PixelEditor() {
   const [art, setArt] = useState(() => structuredClone(PLAYER_ART));
   const [clip, setClip] = useState('idle');
   const [frame, setFrame] = useState(0);
-  const [color, setColor] = useState('T');
+  const [color, setColor] = useState(Object.keys(PLAYER_ART.palette).find(key => key !== '.'));
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   const canvas = useRef(null), painting = useRef(false);
@@ -41,17 +41,19 @@ export function PixelEditor() {
   };
   return <section className="studio-editor">
     <h2>Pixel frame editor</h2><p>Paint source pixels. Saving reloads the live character.</p>
-    <div className="editor-row"><select aria-label="Animation clip" value={clip} onChange={e => { setClip(e.target.value); setFrame(0); }}>{ANIMATION_STATES.map(s => <option key={s}>{s}</option>)}</select><select aria-label="Animation frame" value={frame} onChange={e => setFrame(Number(e.target.value))}>{art.clips[clip].frames.map((_, i) => <option key={i} value={i}>Frame {i + 1}</option>)}</select></div>
-    <div className="studio-actions"><button disabled={art.clips[clip].frames.length >= 16} onClick={() => {
+    <div className="editor-row"><select aria-label="Animation clip" value={clip} onChange={e => { setClip(e.target.value); setFrame(0); }}>{ANIMATION_STATES.filter(s => art.clips[s]).map(s => <option key={s}>{s}</option>)}</select><select aria-label="Animation frame" value={frame} onChange={e => setFrame(Number(e.target.value))}>{art.clips[clip].frames.map((_, i) => <option key={i} value={i}>Frame {i + 1}</option>)}</select></div>
+    <div className="studio-actions"><button disabled={art.clips[clip].frames.length >= 32} onClick={() => {
       const next = structuredClone(art); next.clips[clip].frames.splice(frame + 1, 0, [...next.clips[clip].frames[frame]]);
+      next.clips[clip].durations?.splice(frame + 1, 0, next.clips[clip].durations[frame]);
       setArt(next); setFrame(frame + 1); setDirty(true);
     }}>Duplicate frame</button><button disabled={art.clips[clip].frames.length <= 1} onClick={() => {
       const next = structuredClone(art); next.clips[clip].frames.splice(frame, 1);
+      next.clips[clip].durations?.splice(frame, 1);
       setArt(next); setFrame(Math.min(frame, next.clips[clip].frames.length - 1)); setDirty(true);
     }}>Delete frame</button></div>
     <canvas ref={canvas} width={art.width * 10} height={art.height * 10} aria-label="Editable player pixels" onPointerDown={e => { painting.current = true; e.currentTarget.setPointerCapture(e.pointerId); paint(e); }} onPointerMove={e => { if (painting.current) paint(e); }} onPointerUp={() => { painting.current = false; }} onPointerCancel={() => { painting.current = false; }} />
     <div className="editor-palette">{Object.entries(art.palette).map(([key, value]) => <button key={key} aria-label={`Pixel color ${key}`} aria-pressed={key === color} style={{ background: value }} onClick={() => setColor(key)}>{key === '.' ? '×' : ''}</button>)}</div>
-    <label>Ticks per frame<input type="number" min="1" max="120" value={art.clips[clip].ticks} onChange={e => { const next = structuredClone(art); next.clips[clip].ticks = Number(e.target.value); setArt(next); setDirty(true); }} /></label>
+    <label>Ticks per frame<input type="number" min="1" max="120" value={art.clips[clip].durations?.[frame] ?? art.clips[clip].ticks} onChange={e => { const next = structuredClone(art); if (next.clips[clip].durations) next.clips[clip].durations[frame] = Number(e.target.value); else next.clips[clip].ticks = Number(e.target.value); setArt(next); setDirty(true); }} /></label>
     <div className="studio-actions"><button disabled={!dirty} onClick={async () => { try { await save('player', art); } catch (e) { setError(e.message); } }}>Save artwork</button><button disabled={!dirty} onClick={() => { setArt(structuredClone(PLAYER_ART)); setFrame(0); setDirty(false); setError(''); }}>Discard edits</button></div>
     {error && <p role="alert">{error}</p>}
   </section>;

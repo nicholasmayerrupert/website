@@ -35,7 +35,7 @@ export default function GamePage() {
     const prev = document.title;
     document.title = DIRECT_SANDBOX
       ? 'Explosive Survival — Nicholas Mayer-Rupert'
-      : 'Aster — Earth Expedition';
+      : 'Aster — The Hollow Bell';
     return () => { document.title = prev; };
   }, []);
 

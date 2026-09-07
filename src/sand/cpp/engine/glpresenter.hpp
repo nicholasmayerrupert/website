@@ -92,6 +92,8 @@ class GLPresenter {
   bool glSurvivalPreviewErasing = true;
   bool glSurvivalPreviewLocked = false;
   int glSurvivalPreviewX = 0, glSurvivalPreviewY = 0;
+  double glMineProgress = 0;
+  int glMineTier = 0;
 
   bool glUseExtItems = false;           // client renders dropped items from host snapshots
   std::vector<float> glExtItems;        // packed IS_* authority-render records
@@ -118,7 +120,7 @@ class GLPresenter {
   void glSetFlags(int gutterOn, int snapOff, int animationPaused);
   void glSetDebugHitboxes(int on);
   void glSetPlayers(int useExternal, const float* data, int count, int ownId);
-  void glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y);
+  void glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y, double progress, int tier);
   void glSetItems(int useExternal, const float* data, int count);
   void glSetCreatures(int useExternal, const float* data, int count);
   void glSetProjectiles(int useExternal, const float* data, int count);
@@ -141,7 +143,10 @@ class GLPresenter {
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
-                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow);
+                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
+                     int heldDefinition, const int* equipment);
+  std::vector<float> chestData;
+  void glDrawChests();
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
                      int camCol, int camRow);
@@ -152,7 +157,7 @@ class GLPresenter {
                          double attackProgress,
                          double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtCooldown, double shelterCharge, float light,
-                         int camCol, int camRow);
+                         int camCol, int camRow, int npcId = 0);
   void glDrawCreatures();
   void glDrawPreview();
   void glPresentWindow(int forceFull);

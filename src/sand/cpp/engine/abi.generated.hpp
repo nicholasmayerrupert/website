@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 41;
+static const int ABI_VERSION = 47;
 
-static const uint64_t ABI_FINGERPRINT = 0xd4063d445e6dULL;
+static const uint64_t ABI_FINGERPRINT = 0xc9016576f621ULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -38,8 +38,27 @@ enum PlayerSnapshotField : int {
   PS_SHIELD_ACTIVE = 26,
   PS_WEAPON_KICK = 27,
   PS_HURT_COOLDOWN = 28,
+  PS_MANA = 29,
+  PS_STAMINA = 30,
+  PS_ACTION_TICKS = 31,
+  PS_ACTION_STATE = 32,
+  PS_ABILITIES = 33,
+  PS_HELD_DEFINITION = 34,
+  PS_GEAR0 = 35,
+  PS_GEAR1 = 36,
+  PS_GEAR2 = 37,
+  PS_GEAR3 = 38,
+  PS_GEAR4 = 39,
+  PS_GEAR5 = 40,
+  PS_GEAR6 = 41,
+  PS_GEAR7 = 42,
+  PS_GEAR8 = 43,
+  PS_ACTION_DURATION = 44,
+  PS_DODGE_COOLDOWN = 45,
+  PS_AIR_DASH_USED = 46,
+  PS_MOVEMENT_PREV_INPUT = 47,
 };
-static const int PS_STRIDE = 29;
+static const int PS_STRIDE = 48;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -56,10 +75,70 @@ struct WritePlayerSnapshotHeldItemKind {
   WritePlayerSnapshotHeldItemKind() = delete;
   constexpr explicit WritePlayerSnapshotHeldItemKind(int input) : value(input) {}
 };
+struct WritePlayerSnapshotHeldDefinition {
+  int value;
+  WritePlayerSnapshotHeldDefinition() = delete;
+  constexpr explicit WritePlayerSnapshotHeldDefinition(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear0 {
+  int value;
+  WritePlayerSnapshotGear0() = delete;
+  constexpr explicit WritePlayerSnapshotGear0(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear1 {
+  int value;
+  WritePlayerSnapshotGear1() = delete;
+  constexpr explicit WritePlayerSnapshotGear1(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear2 {
+  int value;
+  WritePlayerSnapshotGear2() = delete;
+  constexpr explicit WritePlayerSnapshotGear2(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear3 {
+  int value;
+  WritePlayerSnapshotGear3() = delete;
+  constexpr explicit WritePlayerSnapshotGear3(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear4 {
+  int value;
+  WritePlayerSnapshotGear4() = delete;
+  constexpr explicit WritePlayerSnapshotGear4(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear5 {
+  int value;
+  WritePlayerSnapshotGear5() = delete;
+  constexpr explicit WritePlayerSnapshotGear5(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear6 {
+  int value;
+  WritePlayerSnapshotGear6() = delete;
+  constexpr explicit WritePlayerSnapshotGear6(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear7 {
+  int value;
+  WritePlayerSnapshotGear7() = delete;
+  constexpr explicit WritePlayerSnapshotGear7(int input) : value(input) {}
+};
+struct WritePlayerSnapshotGear8 {
+  int value;
+  WritePlayerSnapshotGear8() = delete;
+  constexpr explicit WritePlayerSnapshotGear8(int input) : value(input) {}
+};
 struct WritePlayerSnapshotParameters {
   WritePlayerSnapshotRespawnReady respawnReady;
   WritePlayerSnapshotBowCharge bowCharge;
   WritePlayerSnapshotHeldItemKind heldItemKind;
+  WritePlayerSnapshotHeldDefinition heldDefinition;
+  WritePlayerSnapshotGear0 gear0;
+  WritePlayerSnapshotGear1 gear1;
+  WritePlayerSnapshotGear2 gear2;
+  WritePlayerSnapshotGear3 gear3;
+  WritePlayerSnapshotGear4 gear4;
+  WritePlayerSnapshotGear5 gear5;
+  WritePlayerSnapshotGear6 gear6;
+  WritePlayerSnapshotGear7 gear7;
+  WritePlayerSnapshotGear8 gear8;
 };
 template <class Record>
 inline void writePlayerSnapshot(float* out, const Record& record, const WritePlayerSnapshotParameters& values) {
@@ -92,9 +171,28 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_SHIELD_ACTIVE] = (record.shieldActive ? 1.0f : 0.0f);
   out[PS_WEAPON_KICK] = static_cast<float>(record.weaponKick);
   out[PS_HURT_COOLDOWN] = static_cast<float>(record.hurtCooldown);
+  out[PS_MANA] = static_cast<float>(record.mana);
+  out[PS_STAMINA] = static_cast<float>(record.stamina);
+  out[PS_ACTION_TICKS] = static_cast<float>(record.actionTicks);
+  out[PS_ACTION_STATE] = static_cast<float>(record.actionState);
+  out[PS_ABILITIES] = static_cast<float>(record.abilities);
+  out[PS_HELD_DEFINITION] = static_cast<float>(values.heldDefinition.value);
+  out[PS_GEAR0] = static_cast<float>(values.gear0.value);
+  out[PS_GEAR1] = static_cast<float>(values.gear1.value);
+  out[PS_GEAR2] = static_cast<float>(values.gear2.value);
+  out[PS_GEAR3] = static_cast<float>(values.gear3.value);
+  out[PS_GEAR4] = static_cast<float>(values.gear4.value);
+  out[PS_GEAR5] = static_cast<float>(values.gear5.value);
+  out[PS_GEAR6] = static_cast<float>(values.gear6.value);
+  out[PS_GEAR7] = static_cast<float>(values.gear7.value);
+  out[PS_GEAR8] = static_cast<float>(values.gear8.value);
+  out[PS_ACTION_DURATION] = static_cast<float>(record.actionDuration);
+  out[PS_DODGE_COOLDOWN] = static_cast<float>(record.dodgeCooldown);
+  out[PS_AIR_DASH_USED] = (record.airDashUsed ? 1.0f : 0.0f);
+  out[PS_MOVEMENT_PREV_INPUT] = static_cast<float>(record.movementPrevInput);
 }
 
-// itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier
+// itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId
 enum ItemSnapshotField : int {
   IS_ID = 0,
   IS_KIND = 1,
@@ -108,8 +206,9 @@ enum ItemSnapshotField : int {
   IS_IS_TOOL = 9,
   IS_TOOL_CLASS = 10,
   IS_TOOL_TIER = 11,
+  IS_DEFINITION_ID = 12,
 };
-static const int IS_STRIDE = 12;
+static const int IS_STRIDE = 13;
 
 template <class Record>
 inline void writeItemSnapshot(float* out, const Record& record) {
@@ -125,9 +224,10 @@ inline void writeItemSnapshot(float* out, const Record& record) {
   out[IS_IS_TOOL] = (record.isTool ? 1.0f : 0.0f);
   out[IS_TOOL_CLASS] = static_cast<float>(record.toolClass);
   out[IS_TOOL_TIER] = static_cast<float>(record.toolTier);
+  out[IS_DEFINITION_ID] = static_cast<float>(record.definitionId);
 }
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge, npcId
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -151,8 +251,9 @@ enum CreatureSnapshotField : int {
   CSN_RESCUE_PROGRESS = 19,
   CSN_HURT_COOLDOWN = 20,
   CSN_SHELTER_CHARGE = 21,
+  CSN_NPC_ID = 22,
 };
-static const int CSN_STRIDE = 22;
+static const int CSN_STRIDE = 23;
 
 struct WriteCreatureSnapshotX {
   float value;
@@ -222,6 +323,7 @@ inline void writeCreatureSnapshot(float* out, const Record& record, const WriteC
   out[CSN_RESCUE_PROGRESS] = static_cast<float>(record.rescueProgress);
   out[CSN_HURT_COOLDOWN] = static_cast<float>(record.hurtCooldown);
   out[CSN_SHELTER_CHARGE] = static_cast<float>(record.shelterCharge);
+  out[CSN_NPC_ID] = static_cast<float>(record.npcId);
 }
 
 struct WriteCreatureTelegraphSnapshotX {
@@ -286,9 +388,10 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_RESCUE_PROGRESS] = static_cast<float>(0);
   out[CSN_HURT_COOLDOWN] = static_cast<float>(0);
   out[CSN_SHELTER_CHARGE] = static_cast<float>(0);
+  out[CSN_NPC_ID] = static_cast<float>(0);
 }
 
-// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool
+// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool, definitionId
 enum InventorySlotField : int {
   IVS_MATERIAL = 0,
   IVS_IS_TOOL = 1,
@@ -299,8 +402,9 @@ enum InventorySlotField : int {
   IVS_ITEM_KIND = 6,
   IVS_SELECTED = 7,
   IVS_POOL = 8,
+  IVS_DEFINITION_ID = 9,
 };
-static const int IVS_STRIDE = 9;
+static const int IVS_STRIDE = 10;
 
 struct WriteInventorySlotSnapshotSelected {
   bool value;
@@ -327,6 +431,7 @@ inline void writeInventorySlotSnapshot(float* out, const Record& record, const W
   out[IVS_ITEM_KIND] = static_cast<float>(record.itemKind);
   out[IVS_SELECTED] = (values.selected.value ? 1.0f : 0.0f);
   out[IVS_POOL] = static_cast<float>(values.pool.value);
+  out[IVS_DEFINITION_ID] = static_cast<float>(record.definitionId);
 }
 
 // inventoryPool: pool, material, count, enabled, exactMaterial
@@ -391,7 +496,7 @@ inline void writeProjectileSnapshot(float* out, const Record& record) {
   out[PRS_ROTATION] = static_cast<float>(record.rotation);
 }
 
-// craftingRecipe: id, outputKind, outputMaterial, outputTier, outputCount, ingredientStart, ingredientCount
+// craftingRecipe: id, outputKind, outputMaterial, outputTier, outputCount, ingredientStart, ingredientCount, outputDefinition, npcId, ability
 enum CraftingRecipeField : int {
   CR_ID = 0,
   CR_OUTPUT_KIND = 1,
@@ -400,8 +505,11 @@ enum CraftingRecipeField : int {
   CR_OUTPUT_COUNT = 4,
   CR_INGREDIENT_START = 5,
   CR_INGREDIENT_COUNT = 6,
+  CR_OUTPUT_DEFINITION = 7,
+  CR_NPC_ID = 8,
+  CR_ABILITY = 9,
 };
-static const int CR_STRIDE = 7;
+static const int CR_STRIDE = 10;
 
 struct WriteCraftingRecipeSnapshotIngredientStart {
   int value;
@@ -426,6 +534,9 @@ inline void writeCraftingRecipeSnapshot(int32_t* out, const Record& record, cons
   out[CR_OUTPUT_COUNT] = static_cast<int32_t>(record.output.count);
   out[CR_INGREDIENT_START] = static_cast<int32_t>(values.ingredientStart.value);
   out[CR_INGREDIENT_COUNT] = static_cast<int32_t>(values.ingredientCount.value);
+  out[CR_OUTPUT_DEFINITION] = static_cast<int32_t>(record.output.definitionId);
+  out[CR_NPC_ID] = static_cast<int32_t>(record.npcId);
+  out[CR_ABILITY] = static_cast<int32_t>(record.ability);
 }
 
 // craftingIngredient: kind, value, count
@@ -472,7 +583,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -493,8 +604,18 @@ enum GlPlayerExtField : int {
   GLP_SHIELD_ACTIVE = 16,
   GLP_WEAPON_KICK = 17,
   GLP_HURT_COOLDOWN = 18,
+  GLP_HELD_DEFINITION = 19,
+  GLP_GEAR0 = 20,
+  GLP_GEAR1 = 21,
+  GLP_GEAR2 = 22,
+  GLP_GEAR3 = 23,
+  GLP_GEAR4 = 24,
+  GLP_GEAR5 = 25,
+  GLP_GEAR6 = 26,
+  GLP_GEAR7 = 27,
+  GLP_GEAR8 = 28,
 };
-static const int GLP_STRIDE = 19;
+static const int GLP_STRIDE = 29;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -629,7 +750,7 @@ inline void writeMissionSnapshot(int32_t* out, const Record& record, const Write
   out[MS_RECOVERED_WEAPON_MASK] = static_cast<int32_t>(record.recoveredWeaponMask);
 }
 
-// objectiveSnapshot: id, type, state, current, required, worldX, worldY, targetActorId, flags
+// objectiveSnapshot: id, type, state, current, required, worldX, worldY, targetActorId, flags, accepted
 enum ObjectiveSnapshotField : int {
   OS_ID = 0,
   OS_TYPE = 1,
@@ -640,8 +761,9 @@ enum ObjectiveSnapshotField : int {
   OS_WORLD_Y = 6,
   OS_TARGET_ACTOR_ID = 7,
   OS_FLAGS = 8,
+  OS_ACCEPTED = 9,
 };
-static const int OS_STRIDE = 9;
+static const int OS_STRIDE = 10;
 
 template <class Record>
 inline void writeObjectiveSnapshot(int32_t* out, const Record& record) {
@@ -654,6 +776,7 @@ inline void writeObjectiveSnapshot(int32_t* out, const Record& record) {
   out[OS_WORLD_Y] = static_cast<int32_t>(record.worldY);
   out[OS_TARGET_ACTOR_ID] = static_cast<int32_t>(record.targetActorId);
   out[OS_FLAGS] = static_cast<int32_t>(record.flags);
+  out[OS_ACCEPTED] = (record.accepted ? 1 : 0);
 }
 
 // worldContext: surfaceBiome, caveBiome, surfaceY, depth, tags, featureKind, siteRole, featureId, parentFeatureId, left, top, right, bottom
@@ -760,6 +883,76 @@ inline void writeTestBodyStateSnapshot(double* out, const Record& record, const 
   out[TBS_WORLD_STILL_TICKS] = static_cast<double>(record.worldStillTicks);
 }
 
+enum AnimState : uint8_t {
+  AS_IDLE = 0,
+  AS_WALK = 1,
+  AS_RUN = 2,
+  AS_RISE = 3,
+  AS_FALL = 4,
+  AS_WADE = 5,
+  AS_SWIM = 6,
+  AS_LAND = 7,
+  AS_CROUCH = 8,
+  AS_DODGE = 9,
+  AS_DASH = 10,
+  AS_GLIDE = 11,
+  AS_SWORD = 12,
+  AS_AXE = 13,
+  AS_SPEAR = 14,
+  AS_BOW = 15,
+  AS_STAFF = 16,
+  AS_GUARD_RAISE = 17,
+  AS_GUARD = 18,
+  AS_GUARD_HIT = 19,
+  AS_GUARD_BREAK = 20,
+  AS_CAST = 21,
+  AS_CHARGE = 22,
+  AS_HURT = 23,
+  AS_STAGGER = 24,
+  AS_DEATH = 25,
+  AS_REVIVE = 26,
+  AS_INTERACT = 27,
+  AS_DRINK = 28,
+  AS_COUNT = 29,
+};
+
+static constexpr bool isAnimStateValue(int value) {
+  switch (value) {
+    case AS_IDLE:
+    case AS_WALK:
+    case AS_RUN:
+    case AS_RISE:
+    case AS_FALL:
+    case AS_WADE:
+    case AS_SWIM:
+    case AS_LAND:
+    case AS_CROUCH:
+    case AS_DODGE:
+    case AS_DASH:
+    case AS_GLIDE:
+    case AS_SWORD:
+    case AS_AXE:
+    case AS_SPEAR:
+    case AS_BOW:
+    case AS_STAFF:
+    case AS_GUARD_RAISE:
+    case AS_GUARD:
+    case AS_GUARD_HIT:
+    case AS_GUARD_BREAK:
+    case AS_CAST:
+    case AS_CHARGE:
+    case AS_HURT:
+    case AS_STAGGER:
+    case AS_DEATH:
+    case AS_REVIVE:
+    case AS_INTERACT:
+    case AS_DRINK:
+    case AS_COUNT:
+      return true;
+    default: return false;
+  }
+}
+
 enum PlayerInput : int {
   PI_LEFT = 1,
   PI_RIGHT = 2,
@@ -817,6 +1010,7 @@ enum InventoryItemKind : uint8_t {
   IK_BUILDING_POOL = 11,
   IK_POWDER_POOL = 12,
   IK_LIQUID_POOL = 13,
+  IK_GEAR = 14,
 };
 
 static constexpr bool isInventoryItemKindValue(int value) {
@@ -835,6 +1029,7 @@ static constexpr bool isInventoryItemKindValue(int value) {
     case IK_BUILDING_POOL:
     case IK_POWDER_POOL:
     case IK_LIQUID_POOL:
+    case IK_GEAR:
       return true;
     default: return false;
   }
@@ -870,6 +1065,8 @@ enum ProjectileKind : uint8_t {
   PK_BORE_BEAM = 6,
   PK_RESCUE_BEAM = 7,
   PK_EXTRACTION_BEAM = 8,
+  PK_RUNE = 9,
+  PK_RUNE_BURST = 10,
 };
 
 static constexpr bool isProjectileKindValue(int value) {
@@ -883,6 +1080,8 @@ static constexpr bool isProjectileKindValue(int value) {
     case PK_BORE_BEAM:
     case PK_RESCUE_BEAM:
     case PK_EXTRACTION_BEAM:
+    case PK_RUNE:
+    case PK_RUNE_BURST:
       return true;
     default: return false;
   }
@@ -977,6 +1176,15 @@ enum CreatureSpeciesAbi : int {
   CREATURE_IRIS_COMMANDER = 17,
   CREATURE_IRIS_ENGINEER = 18,
   CREATURE_VILLAGER = 19,
+  CREATURE_THORNBOUND_HART = 20,
+  CREATURE_MIRE_MATRON = 21,
+  CREATURE_CINDER_CASTELLAN = 22,
+  CREATURE_HOLLOW_BELLKEEPER = 23,
+  CREATURE_BRIAR_WOLF = 24,
+  CREATURE_BELL_BAT = 25,
+  CREATURE_BONE_GUARD = 26,
+  CREATURE_FEN_WISP = 27,
+  CREATURE_ROOT_KNIGHT = 28,
 };
 
 static constexpr bool isCreatureSpeciesAbiValue(int value) {
@@ -1001,6 +1209,15 @@ static constexpr bool isCreatureSpeciesAbiValue(int value) {
     case CREATURE_IRIS_COMMANDER:
     case CREATURE_IRIS_ENGINEER:
     case CREATURE_VILLAGER:
+    case CREATURE_THORNBOUND_HART:
+    case CREATURE_MIRE_MATRON:
+    case CREATURE_CINDER_CASTELLAN:
+    case CREATURE_HOLLOW_BELLKEEPER:
+    case CREATURE_BRIAR_WOLF:
+    case CREATURE_BELL_BAT:
+    case CREATURE_BONE_GUARD:
+    case CREATURE_FEN_WISP:
+    case CREATURE_ROOT_KNIGHT:
       return true;
     default: return false;
   }
@@ -1316,6 +1533,10 @@ enum SoundEventType : uint8_t {
   SE_SPAWN_BREACH = 27,
   SE_WEAPON_EXPLOSION = 28,
   SE_BEAM = 29,
+  SE_SWING = 30,
+  SE_RUNE = 31,
+  SE_BELL = 32,
+  SE_GUARD = 33,
 };
 
 static constexpr bool isSoundEventTypeValue(int value) {
@@ -1350,6 +1571,10 @@ static constexpr bool isSoundEventTypeValue(int value) {
     case SE_SPAWN_BREACH:
     case SE_WEAPON_EXPLOSION:
     case SE_BEAM:
+    case SE_SWING:
+    case SE_RUNE:
+    case SE_BELL:
+    case SE_GUARD:
       return true;
     default: return false;
   }

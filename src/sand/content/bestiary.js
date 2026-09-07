@@ -1,0 +1,22 @@
+// These names describe the creatures encountered in the Hollow Bell chapter.
+export const BESTIARY = {
+  1: { name: 'Silverfang pike', note: 'A flash beneath the water. Fight from a bank or change the current.' },
+  2: { name: 'Ember fox', note: 'Quick feet, a committed pounce. Sidestep and answer with a short blade.' },
+  4: { name: 'Mossback crawler', note: 'A low silhouette in the roots. Spears keep its bite at a distance.' },
+  7: { name: 'Briar goblin', note: 'Watch its marked patch of ground. It cannot redirect a strike once the warning appears.' },
+  8: { name: 'Hollow knight', note: 'A patient guard with a long reach. Draw out the heavy attack before closing.' },
+  9: { name: 'Fen witch', note: 'Its curse settles where you stood. Keep moving through the marsh.' },
+  10: { name: 'Thornwing', note: 'Circles above the leaves. A bow or a well-aimed rune brings it down.' },
+  11: { name: 'Oathless archer', note: 'The old roads still have sentries. Raise a shield toward the threat.' },
+  24: { name: 'Briar wolf', note: 'Antlers of root and a dangerous rush. Let its charge carry it past you.' },
+  25: { name: 'Bell bat', note: 'A flutter in the rafters. Short bursts of magic work well in narrow galleries.' },
+  26: { name: 'Bone guard', note: 'Clattering feet betray its approach. Break its line with a dodge.' },
+  27: { name: 'Fen wisp', note: 'A wandering light above the silt. Keep dry ground beneath your feet.' },
+  14: { name: 'The Stonebound', note: 'The archive’s forgotten guardian. Its broad strikes can also reshape the room.' },
+  15: { name: 'Ashen Sentinel', note: 'Living fire in a suit of old iron. Leave the marked ground before the blow.' },
+  28: { name: 'Root Knight', note: 'A stubborn oath protects the shrine. Roots can hold even this warrior in place.' },
+  20: { name: 'Thornbound Hart', note: 'Charge, thornfall, then a widening ring. The wounded hart shortens its warning.' },
+  21: { name: 'Mire Matron', note: 'Her pools spread as the fight deepens. Drain them or turn water to ice.' },
+  22: { name: 'Cinder Castellan', note: 'The hammer breaks stone as well as bone. Keep a way out of the court.' },
+  23: { name: 'Hollow Bellkeeper', note: 'Read the widening circles and move through their gaps. The final note belongs to you.' },
+};

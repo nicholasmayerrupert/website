@@ -62,6 +62,8 @@ struct CreatureSpecies {
 #include "creatures.generated.hpp"
 
 struct Creature {
+  int burnTicks = 0, slowTicks = 0, rootTicks = 0;
+  int npcId = 0;
   int id = 0;
   uint8_t species = CS_MINNOW;
   bool alive = true;

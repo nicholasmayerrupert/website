@@ -427,6 +427,7 @@ static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (
 static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
 // Item snapshot layout: IS_* offsets / IS_STRIDE in abi.generated.hpp.
 struct Item {
+  int definitionId = 0;
   int id = 0;
   uint8_t kind = IT_ITEM;
   uint8_t itemKind = IK_MATERIAL;
@@ -497,6 +498,8 @@ static const int    P_SPAWN_SEARCH_X = 64, P_SPAWN_SEARCH_Y = 64, P_SPAWN_HAZARD
 // Player tool reach and action cadence.
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between held creative/place actions (survival mining progresses every tick)
+static constexpr double P_FRONTIER_MINE_REACH = 7.0;
+static constexpr int P_FRONTIER_MINE_SWING = 28, P_FRONTIER_MINE_IMPACT = 11;
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 // Eraser hits happen at this constant cadence for every material. DURABILITY[]
 // controls how many hits a cell survives, not the time between hits.
@@ -551,6 +554,7 @@ static inline bool inventoryStackCanSplit(uint8_t itemKind) {
 }
 // Inventory snapshot layout: IVS_* offsets / IVS_STRIDE in abi.generated.hpp.
 struct InvSlot {
+  int definitionId = 0;
   uint8_t itemKind = IK_MATERIAL;
   uint8_t material = 0;   // material id for a stack (0 when a tool or empty)
   uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
@@ -600,7 +604,7 @@ enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE
 // ---- Player sprite + animation (player.inc state pick; gl.inc per-pixel blit) ----
 // Deterministic: animState picked from physics at the end of integratePlayer, frame
 // derived from the actor tick, so prediction/replay reproduce the same frame.
-enum AnimState : uint8_t { AS_IDLE = 0, AS_WALK, AS_RUN, AS_RISE, AS_FALL, AS_WADE, AS_SWIM, AS_COUNT };
+// AnimState is generated from the shared ABI animation catalogue.
 static const double AS_MOVE_EPS = 0.10;            // |vx| below -> idle
 static const double AS_RUN_SPEED = P_MAX_RUN * 0.95; // run only past ~walk top speed
 static const double AS_RISE_EPS = 0.05;            // airborne |vy| below -> treat as fall (apex)
@@ -650,6 +654,11 @@ struct Player {
   uint8_t heldToolClass = TC_HAND, heldToolTier = TT_HAND;
   // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
   InvSlot inv[INV_SLOTS];
+  InvSlot equipment[9];
+  int mana = 100, stamina = 100, actionTicks = 0, actionState = AS_IDLE;
+  int actionDuration = 0, actionDefinition = 0, dodgeCooldown = 0, abilities = 0;
+  bool airDashUsed = false;
+  int movementPrevInput = 0;
   InventoryPool pools[INV_POOL_COUNT];
   int selectedSlot = 0;
   int selectedFootprint = SURVIVAL_FOOTPRINT_DEFAULT_ID;

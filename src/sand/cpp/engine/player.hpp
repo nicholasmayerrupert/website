@@ -53,6 +53,8 @@ class PlayerSystem {
   bool isSolidTool(int t);
   void resetPlayerMine(Player& p);
   void resolveMineDrops(Player& p);
+  bool frontierMineTarget(const Player& p, int& x, int& y, int layer) const;
+  void applyFrontierMining(Player& p, bool primary, bool secondary);
   // True if the survival footprint at (cx,cy) still has at least one non-EMPTY
   // cell in `layer` (or both layers when layer is null — dual-mine / RMB path).
   bool mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer);
@@ -65,7 +67,8 @@ class PlayerSystem {
   void updatePlayers();
   void stepPlayerOnly(int id);
   void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
-                      double jetpackFuel = 1.0, int jetpackActive = 0);
+                      double jetpackFuel = 1.0, int jetpackActive = 0, int abilities = 0, int stamina = 100,
+                      int actionTicks = 0, int actionState = 0, int dodgeCooldown = 0, int airDashUsed = 0, int movementPrevInput = 0);
   int buildPlayerSnapshot();
 
  private:

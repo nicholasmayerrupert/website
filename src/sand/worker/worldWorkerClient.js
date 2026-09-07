@@ -1,6 +1,6 @@
 import WorldWorker from './worldWorkerConstructor.js';
 import { Predictor } from './playerPrediction.js';
-import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
+import { OFF, STRIDES, PLANET } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from './replicaCoordinates.js';
 import { prepareMirrorShift } from './mirrorShift.js';
@@ -53,6 +53,12 @@ export function createWorldWorkerClient(ctx) {
   let livenessProbePending = false;
   let failNextMirrorApply = false;
   let closed = false;
+  const saveBeforeLeaving = () => {
+    if (!closed) (parkedLiveWorker || worker).postMessage({ type: 'adventure-save-now' });
+  };
+  const saveWhenHidden = () => { if (document.hidden) saveBeforeLeaving(); };
+  globalThis.window?.addEventListener?.('pagehide', saveBeforeLeaving);
+  globalThis.document?.addEventListener?.('visibilitychange', saveWhenHidden);
   let workerGeneration = 0;
   let predictor = null;
   let predictorEngine = null;
@@ -68,6 +74,9 @@ export function createWorldWorkerClient(ctx) {
   let mineTarget = null;
   let actionCount = 0;
   let mission = null;
+  let saveState = { savedAt: 0, error: '' };
+  let chests = [], chestLoot = { id: 0, slots: [] };
+  let discovery = new Int32Array();
   let missionSignature = '';
   let missionDirty = false;
   let appliedEpoch = 0;
@@ -479,7 +488,10 @@ export function createWorldWorkerClient(ctx) {
           ? data.projectileData
           : prior?.projectileData,
         mission: data.mission !== undefined ? data.mission : prior?.mission,
+        discovery: data.discovery !== undefined ? data.discovery : prior?.discovery,
       };
+    } else if (data.type === 'adventure-save') {
+      saveState = { ...saveState, ...data };
     } else if (data.type === 'sounds') {
       if (!data.epoch || data.epoch >= appliedEpoch) {
         if (typeof document === 'undefined' || !document.hidden) {
@@ -674,6 +686,7 @@ export function createWorldWorkerClient(ctx) {
       };
       const message = {
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
+        persistAdventure: planetId === PLANET.FRONTIER && !new URLSearchParams(location.search).has('studio') && !new URLSearchParams(location.search).has('nosave'),
         ...initOptions, drawMode: ctx.drawModeOn,
       };
       replayJournal.reset(message);
@@ -1363,6 +1376,9 @@ export function createWorldWorkerClient(ctx) {
         }
         if (packet.inventory !== undefined) { inventory = packet.inventory; inventoryDirty = true; }
         if (packet.cursor !== undefined) cursor = packet.cursor;
+        if (packet.discovery !== undefined) discovery = packet.discovery;
+        if (packet.chests !== undefined) chests = packet.chests;
+        if (packet.chestLoot !== undefined) chestLoot = packet.chestLoot;
         if (packet.itemData !== undefined) {
           items = new Float32Array(packet.itemData);
           translatePackedPositions(items, STRIDES.itemSnapshot,
@@ -1420,6 +1436,8 @@ export function createWorldWorkerClient(ctx) {
     },
     destroy() {
       if (closed) return;
+      globalThis.window?.removeEventListener?.('pagehide', saveBeforeLeaving);
+      globalThis.document?.removeEventListener?.('visibilitychange', saveWhenHidden);
       closed = true;
       rejectReplayRequests('Simulation worker was closed.');
       clearTimeout(resizeTimer);
@@ -1472,6 +1490,10 @@ export function createWorldWorkerClient(ctx) {
     getMineTarget() { return mineTarget; },
     getActionCount() { return actionCount; },
     getMission() { return mission; },
+    getDiscovery() { return discovery; },
+    getSaveState() { return saveState; },
+    getChests() { return chests; },
+    getChestLoot() { return chestLoot; },
     consumeMissionDirty() {
       const dirty = missionDirty;
       missionDirty = false;
@@ -1596,6 +1618,7 @@ export function createWorldWorkerClient(ctx) {
     predictorPlayerId = authoritativePlayerId = 0;
     appliedEpoch = 0;
     players = []; inventory = cursor = mission = null;
+    discovery = new Int32Array();
     missionSignature = ''; missionDirty = false;
     items = new Float32Array(0); projectiles = new Float32Array(0);
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;

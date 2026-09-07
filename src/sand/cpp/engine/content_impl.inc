@@ -1,109 +1,195 @@
+namespace {
+struct ContentReader {
+  const int32_t* data;
+  int length, at = 0;
+  bool valid = true;
+  int take() {
+    if (at >= length) { valid = false; return 0; }
+    return data[at++];
+  }
+  int bounded(int low, int high) {
+    int value = take();
+    if (value < low || value > high) valid = false;
+    return value;
+  }
+  int coordinate() { return bounded(-100000, 100000); }
+  int surface() {
+    int value = take();
+    if (value != INT_MIN && (value < -100000 || value > 100000)) valid = false;
+    return value;
+  }
+  int material() {
+    int value = take();
+    if (!isMaterialId(value)) valid = false;
+    return value;
+  }
+  ContentClip clip(int frames) {
+    ContentClip value;
+    value.count = bounded(1, 32); value.offset = bounded(0, frames - 1);
+    if (!valid) return value;
+    if (value.offset + value.count > frames) valid = false;
+    value.durations.clear(); value.duration = 0;
+    for (int i = 0; i < value.count; i++) {
+      int ticks = bounded(1, 120);
+      value.durations.push_back(ticks); value.duration += ticks;
+    }
+    value.ticks = value.durations.front();
+    return value;
+  }
+  std::vector<std::array<float, 4>> colors(int count) {
+    std::vector<std::array<float, 4>> result;
+    for (int i = 0; i < count; i++) {
+      uint32_t color = (uint32_t)take();
+      if ((i == 0 && color != 0) || (i > 0 && (color >> 24) != 255)) valid = false;
+      result.push_back({((color >> 16) & 255) / 255.f, ((color >> 8) & 255) / 255.f,
+                        (color & 255) / 255.f, ((color >> 24) & 255) / 255.f});
+    }
+    return result;
+  }
+  std::vector<uint8_t> pixels(int count, int paletteSize) {
+    std::vector<uint8_t> result;
+    if (!valid || count < 0 || count > length - at) { valid = false; return result; }
+    result.reserve((size_t)count);
+    for (int i = 0; i < count; i++) result.push_back((uint8_t)bounded(0, paletteSize - 1));
+    return result;
+  }
+};
+}
+
 bool ContentSystem::load(const int32_t* data, int length) {
-  if (!data || length < 22 || length > 1000000 || data[0] != 0x41535452 || data[1] != 2) return false;
-  int nr = data[3], nq = data[4], w = data[5], h = data[6], nf = data[7], np = data[8];
-  if (nr < 0 || nr > 20000 || nq < 1 || nq > 16 || w < 1 || w > 64 || h < 1 || h > 64 ||
-      nf < 7 || nf > 112 || np < 2 || np > 32 || data[9] < 100 || data[9] > 2000) return false;
-  int textureStart = 21 + nr * 7 + nq * 17 + 21 + np + nf * w * h;
-  if (textureStart >= length || data[textureStart] < 0 || data[textureStart] > 256 ||
-      textureStart + 1 + data[textureStart] * 65 >= length || data[20] < 100 || data[20] > 1000) return false;
-  auto coordinate = [](int v) { return v >= -100000 && v <= 100000; };
-  auto surface = [&](int v) { return v == INT_MIN || coordinate(v); };
-  for (int i = 10; i < 16; i++) if (!coordinate(data[i])) return false;
-  if (data[10] > data[12] || data[11] > data[13]) return false;
-  if (data[16] < 0 || data[16] > 255 || data[17] < 0 || data[17] > 255 ||
-      !coordinate(data[18]) || !coordinate(data[19]) || data[18] >= data[19]) return false;
-  int at = 21;
+  if (!data || length < 22 || length > 8000000) return false;
+  ContentReader r{data, length};
+  if (r.take() != 0x41535452 || r.take() != 3) return false;
+  uint32_t nextFingerprint = (uint32_t)r.take();
+  int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
+  int width = r.bounded(1, 64), height = r.bounded(1, 64);
+  int frameCount = r.bounded(AS_COUNT, AS_COUNT * 32), paletteSize = r.bounded(2, 32);
+  double scale = r.bounded(100, 2000) / 1000.0;
+  std::array<int, 4> repair;
+  for (int& v : repair) v = r.coordinate();
+  if (repair[0] > repair[2] || repair[1] > repair[3]) return false;
+  std::array<int, 2> nextSpawn{r.coordinate(), r.coordinate()};
+  std::array<int, 4> nextAmbient{r.bounded(0, 255), r.bounded(0, 255), r.coordinate(), r.coordinate()};
+  if (nextAmbient[2] >= nextAmbient[3]) return false;
+  float tint = r.bounded(100, 1000) / 1000.f;
+  if (!r.valid) return false;
   std::vector<ContentRect> nextRects;
-  for (int i = 0; i < nr; i++, at += 7) {
-    const int32_t* d = data + at;
-    if (d[0] < 0 || d[0] > 2 || !surface(d[1]) || !isMaterialId(d[6]) ||
-        d[2] > d[4] || d[3] > d[5]) return false;
-    for (int j = 2; j < 6; j++) if (!coordinate(d[j])) return false;
-    nextRects.push_back({d[0], d[1], d[2], d[3], d[4], d[5], d[6]});
+  for (int i = 0; i < rectangleCount && r.valid; i++) {
+    ContentRect rect{r.bounded(0, 2), r.surface(), r.coordinate(), r.coordinate(),
+                     r.coordinate(), r.coordinate(), r.material()};
+    if (rect.left > rect.right || rect.top > rect.bottom) return false;
+    nextRects.push_back(rect);
   }
   std::vector<ContentQuest> nextQuests;
-  for (int i = 0; i < nq; i++, at += 17) {
-    const int32_t* d = data + at;
-    if ((d[0] != OK_PASSAGE && d[0] != OK_DRAIN && d[0] != OK_SURVEY && d[0] != OK_BUILD && d[0] != OK_DELIVER && d[0] != OK_DEFEAT) ||
-        d[1] < 0 || d[1] >= (1 << i) || !surface(d[4]) || !surface(d[9]) ||
-        d[5] > d[7] || d[6] > d[8] || d[10] < 1 || d[10] > 100 ||
-        d[11] < 0 || d[11] > 2 || d[13] < 0 || d[13] > 10000) return false;
-    for (int j : {2, 3, 5, 6, 7, 8}) if (!coordinate(d[j])) return false;
-    if ((d[11] == 1 && !isMaterialId(d[12])) ||
-        (d[11] == 2 && (d[12] < IK_BLAST_GUN || d[12] > IK_RESCUE_BEAM))) return false;
-    if (!isMaterialId(d[14]) || d[15] < 1 || d[15] > 10000 || d[16] < 0 || d[16] >= CS_COUNT) return false;
-    if ((d[0] == OK_BUILD || d[0] == OK_DELIVER) && d[14] == EMPTY) return false;
-    if (d[0] == OK_BUILD && (d[7] - d[5] > 128 || d[8] - d[6] > 64 || d[15] != d[7] - d[5] + 1)) return false;
-    nextQuests.push_back({d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15],d[16]});
+  for (int i = 0; i < questCount && r.valid; i++) {
+    ContentQuest quest{};
+    quest.type = r.take(); quest.prerequisiteCount = r.bounded(0, i);
+    quest.x = r.coordinate(); quest.y = r.coordinate(); quest.surface = r.surface();
+    quest.left = r.coordinate(); quest.top = r.coordinate();
+    quest.right = r.coordinate(); quest.bottom = r.coordinate(); quest.areaSurface = r.surface();
+    quest.radius = r.bounded(1, 100); quest.rewardKind = r.bounded(0, 3);
+    quest.rewardId = r.take(); quest.rewardCount = r.bounded(0, 10000);
+    quest.material = r.material(); quest.count = r.bounded(1, 10000); quest.species = r.bounded(0, CS_COUNT - 1); quest.giver = r.bounded(0, 64);
+    if ((quest.type != OK_PASSAGE && quest.type != OK_DRAIN && quest.type != OK_SURVEY &&
+         quest.type != OK_BUILD && quest.type != OK_DELIVER && quest.type != OK_DEFEAT) ||
+        quest.left > quest.right || quest.top > quest.bottom) return false;
+    if ((quest.rewardKind == 1 && !isMaterialId(quest.rewardId)) ||
+        (quest.rewardKind == 2 && (quest.rewardId < IK_BLAST_GUN || quest.rewardId > IK_RESCUE_BEAM))) return false;
+    if ((quest.type == OK_BUILD || quest.type == OK_DELIVER) && quest.material == EMPTY) return false;
+    if (quest.type == OK_BUILD && (quest.right - quest.left > 128 || quest.bottom - quest.top > 64 ||
+                                 quest.count != quest.right - quest.left + 1)) return false;
+    for (int j = 0; j < quest.prerequisiteCount; j++) {
+      int id = r.bounded(0, i - 1);
+      if (std::find(quest.prerequisites.begin(), quest.prerequisites.end(), id) != quest.prerequisites.end()) return false;
+      quest.prerequisites.push_back(id);
+    }
+    nextQuests.push_back(std::move(quest));
   }
-  std::array<ContentClip, 7> nextClips;
+  std::array<ContentClip, AS_COUNT> nextClips;
+  int expectedOffset = 0;
   for (auto& clip : nextClips) {
-    clip = {data[at], data[at + 1], data[at + 2]}; at += 3;
-    if (clip.count < 1 || clip.count > 16 || clip.ticks < 1 || clip.ticks > 120 ||
-        clip.offset < 0 || clip.offset + clip.count > nf) return false;
+    clip = r.clip(frameCount);
+    if (!r.valid || clip.offset != expectedOffset) return false;
+    expectedOffset += clip.count;
   }
-  std::vector<std::array<float, 4>> nextPalette;
-  for (int i = 0; i < np; i++) {
-    uint32_t color = (uint32_t)data[at++];
-    nextPalette.push_back({((color >> 16) & 255) / 255.f, ((color >> 8) & 255) / 255.f,
-                           (color & 255) / 255.f, ((color >> 24) & 255) / 255.f});
+  if (expectedOffset != frameCount) return false;
+  auto nextPalette = r.colors(paletteSize);
+  auto nextPixels = r.pixels(frameCount * width * height, paletteSize);
+  std::array<bool, 256> nextHasTexture{};
+  std::vector<std::array<uint32_t, 64>> nextTextures(256);
+  int textureCount = r.bounded(0, 256);
+  for (int i = 0; i < textureCount && r.valid; i++) {
+    int material = r.material();
+    if (!r.valid || nextHasTexture[(size_t)material]) return false;
+    nextHasTexture[(size_t)material] = true;
+    for (uint32_t& pixel : nextTextures[(size_t)material]) pixel = (uint32_t)r.take();
   }
-  std::vector<uint8_t> nextPixels;
-  for (; at < textureStart; at++) {
-    if (data[at] < 0 || data[at] >= np) return false;
-    nextPixels.push_back((uint8_t)data[at]);
-  }
-  fingerprint = (uint32_t)data[2]; spriteWidth = w; spriteHeight = h; pixelScale = data[9] / 1000.0;
-  for (int i = 0; i < 4; i++) repairBounds[i] = data[10 + i];
-  spawn = {data[14], data[15]};
-  backgroundTint = data[20] / 1000.f;
-  for (int i = 0; i < 4; i++) ambient[i] = data[16 + i];
-  rectangles = std::move(nextRects); quests = std::move(nextQuests);
-  clips = nextClips; palette = std::move(nextPalette); pixels = std::move(nextPixels);
-  hasTexture.fill(false);
-  int textureCount = data[at++];
-  for (int i = 0; i < textureCount; i++) {
-    int material = data[at++];
-    if (!isMaterialId(material)) return false;
-    hasTexture[(size_t)material] = true;
-    for (int j = 0; j < 64; j++) textures[(size_t)material][j] = (uint32_t)data[at++];
-  }
-  int creatureCount = data[at++];
-  if (creatureCount < 0 || creatureCount > CS_COUNT) return false;
+  std::array<ContentCreatureArt, CS_COUNT> nextCreatureArt;
   std::array<bool, CS_COUNT> seen{};
-  for (int i = 0; i < creatureCount; i++) {
-    if (at + 5 > length) return false;
-    int species = data[at++], aw = data[at++], ah = data[at++], scale = data[at++], colors = data[at++];
-    if (species < 0 || species >= CS_COUNT || seen[(size_t)species] || aw < 1 || aw > 64 || ah < 1 || ah > 64 ||
-        scale < 100 || scale > 2000 || colors < 2 || colors > 32 || at + colors + aw * ah * 4 > length) return false;
+  int creatureCount = r.bounded(0, CS_COUNT);
+  for (int i = 0; i < creatureCount && r.valid; i++) {
+    int species = r.bounded(0, CS_COUNT - 1);
+    if (!r.valid || seen[(size_t)species]) return false;
     seen[(size_t)species] = true;
-    auto& art = creatureArt[(size_t)species];
-    art.width = aw; art.height = ah; art.scale = scale / 1000.0;
-    for (int j = 0; j < colors; j++) {
-      uint32_t c = (uint32_t)data[at++];
-      art.palette.push_back({((c >> 16) & 255) / 255.f, ((c >> 8) & 255) / 255.f, (c & 255) / 255.f, ((c >> 24) & 255) / 255.f});
+    auto& art = nextCreatureArt[(size_t)species];
+    art.width = r.bounded(1, 128); art.height = r.bounded(1, 128);
+    art.scale = r.bounded(100, 2000) / 1000.0;
+    int colorCount = r.bounded(2, 32), frames = r.bounded(CC_COUNT, CC_COUNT * 32);
+    expectedOffset = 0;
+    for (auto& clip : art.clips) {
+      clip = r.clip(frames);
+      if (!r.valid || clip.offset != expectedOffset) return false;
+      expectedOffset += clip.count;
     }
-    for (int j = 0; j < aw * ah * 4; j++) {
-      int color = data[at++];
-      if (color < 0 || color >= colors) return false;
-      art.pixels.push_back((uint8_t)color);
+    if (expectedOffset != frames) return false;
+    art.palette = r.colors(colorCount);
+    art.pixels = r.pixels(art.width * art.height * frames, colorCount);
+  }
+  int residentCount = r.bounded(0, 64);
+  std::vector<ContentResident> nextResidents;
+  for (int i = 0; i < residentCount && r.valid; i++)
+    nextResidents.push_back({r.bounded(1, 64), r.bounded(0, CS_COUNT - 1), r.coordinate(), r.coordinate(), r.surface(), r.bounded(0, 48)});
+  std::array<int, 4> nextLimbColors;
+  for (int& color : nextLimbColors) color = r.bounded(1, paletteSize - 1);
+  std::map<int, ContentGear> nextEquipment;
+  int gearCount = r.bounded(1, 512);
+  for (int i = 0; i < gearCount && r.valid; i++) {
+    ContentGear g{r.bounded(1, 10000), r.bounded(1, 11), r.bounded(-1, 8), r.bounded(0, 200),
+      r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 100),
+      r.bounded(0, 6), r.bounded(0, 6), r.bounded(0, 10000)};
+    if (!nextEquipment.emplace(g.id, g).second) return false;
+  }
+  std::vector<ContentChest> nextChests;
+  std::unordered_set<int> chestIds;
+  int chestCount = r.bounded(0, 512);
+  for (int i = 0; i < chestCount && r.valid; i++) {
+    ContentChest chest{r.bounded(1, 100000), r.coordinate(), r.coordinate(), r.surface(), {}};
+    if (!chestIds.insert(chest.id).second) return false;
+    int stacks = r.bounded(0, 24);
+    for (int j = 0; j < stacks && r.valid; j++) {
+      InvSlot item; item.itemKind = r.bounded(0, IK_GEAR); int value = r.take(); item.count = r.bounded(1, 999);
+      if (item.itemKind == IK_GEAR) { if (!nextEquipment.count(value)) return false; item.definitionId = value; }
+      else if (item.itemKind == IK_MATERIAL) { if (!isMaterialId(value)) return false; item.material = value; }
+      else if (item.itemKind != IK_ARROW) return false;
+      chest.loot.push_back(item);
     }
+    nextChests.push_back(std::move(chest));
   }
-  if (at >= length) return false;
-  int residentCount = data[at++];
-  if (residentCount < 0 || residentCount > 32 || at + residentCount * 5 + 4 != length) return false;
-  residents.clear();
-  for (int i = 0; i < residentCount; i++, at += 5) {
-    const int32_t* d = data + at;
-    if (d[0] < 0 || d[0] >= CS_COUNT || !coordinate(d[1]) || !coordinate(d[2]) ||
-        !surface(d[3]) || d[4] < 0 || d[4] > 48) return false;
-    residents.push_back({d[0],d[1],d[2],d[3],d[4]});
+  if (!r.valid || r.at != length) return false;
+  for (const auto& quest : nextQuests) {
+    if (quest.rewardKind == 3 && !nextEquipment.count(quest.rewardId)) return false;
+    if (quest.giver && std::none_of(nextResidents.begin(), nextResidents.end(), [&](const auto& n) { return n.id == quest.giver; })) return false;
   }
-  for (int& color : limbColors) {
-    color = data[at++];
-    if (color < 1 || color >= np) return false;
-  }
-  if (at != length) return false;
+  chests = std::move(nextChests);
+  equipment = std::move(nextEquipment);
+  fingerprint = nextFingerprint; spriteWidth = width; spriteHeight = height; pixelScale = scale;
+  repairBounds = repair; spawn = nextSpawn; ambient = nextAmbient; backgroundTint = tint;
+  rectangles = std::move(nextRects); quests = std::move(nextQuests); residents = std::move(nextResidents);
+  clips = std::move(nextClips); palette = std::move(nextPalette); pixels = std::move(nextPixels);
+  hasTexture = nextHasTexture;
+  std::copy(nextTextures.begin(), nextTextures.end(), textures.begin());
+  creatureArt = std::move(nextCreatureArt);
+  limbColors = nextLimbColors;
   return true;
 }
 

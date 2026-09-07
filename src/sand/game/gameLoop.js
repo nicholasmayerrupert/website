@@ -249,6 +249,7 @@ export function createGameLoop(ctx, {
     const engine = ctx.engine;
     if (!engine) return;
     const renderStart = performance.now();
+    engine.glSetChests(ctx.worldWorker?.getChests() || []);
     // Players to overlay come from authority-worker snapshots (own = blue).
     // While the bench is paused we draw none (an empty external set) so the
     // flicker probe sees only the cell grid.
@@ -288,7 +289,7 @@ export function createGameLoop(ctx, {
       const mineTarget = ctx.worldWorker?.getMineTarget();
       const usable = (!selected?.pool || selected.count > 0) &&
         (!selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL);
-      engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
+      engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget, ctx.worldWorker?.getMineProgress() || 0, selected?.toolTier || 0);
     } else {
       engine.glSetSurvivalPreview(false, 0, false, null);
     }
@@ -357,7 +358,7 @@ export function createGameLoop(ctx, {
   let viewportPaused = false;
   let lastAmbienceSample = -Infinity;
   let lastPlayerStateSignature = '';
-  const shouldPauseWorker = () => ctx.testPaused || ctx.reduced;
+  const shouldPauseWorker = () => ctx.testPaused || ctx.gameplayPaused || ctx.reduced;
   const loop = (now) => {
     if (!running || viewportPaused) return;
     raf = requestAnimationFrame(loop);
@@ -385,7 +386,7 @@ export function createGameLoop(ctx, {
       workerPaused = pauseWorker;
       ctx.worldWorker.config({ paused: pauseWorker });
     }
-    if (ctx.testPaused) {
+    if (ctx.testPaused || ctx.gameplayPaused) {
       actorClock.reset(now);
     } else if (ctx.reduced) {
       actorClock.reset(now);
@@ -393,7 +394,7 @@ export function createGameLoop(ctx, {
       timing = actorClock.advance(now, () => { if (doActorStep(now)) actorChanged = true; });
     }
     const replayPlaying = !!ctx.worldWorker?.state?.replayPlaying;
-    if (!ctx.testPaused && !replayPlaying) {
+    if (!ctx.testPaused && !ctx.gameplayPaused && !replayPlaying) {
       if (!ctx.playMode) ctx.engine?.cameraPanFrame(rafDelta);
       if (!ctx.reduced) ctx.worldWorker?.updateControl();
     }

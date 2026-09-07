@@ -58,6 +58,7 @@ const INTENT = Object.freeze({
   'preview-scene': 10,
   'quest-interact': 11,
   pool: 12,
+  chest: 13,
 });
 const INTENT_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(INTENT).map(([name, code]) => [code, name]),
@@ -118,6 +119,7 @@ export function normalizeReplayInit(data) {
     missionId: data.missionId | 0,
     loadout,
     drawMode: !!data.drawMode,
+    ...(data.checkpoint ? { checkpoint: { data: String(data.checkpoint.data), compressed: !!data.checkpoint.compressed } } : {}),
   };
   return init;
 }
@@ -155,6 +157,7 @@ export function normalizeReplayMessage(data, survival = false) {
         buttons: data.buttons | 0,
         inside: !!data.inside,
         drawMode: !!data.drawMode,
+    ...(data.checkpoint ? { checkpoint: { data: String(data.checkpoint.data), compressed: !!data.checkpoint.compressed } } : {}),
       });
       return control;
     }
@@ -166,6 +169,7 @@ export function normalizeReplayMessage(data, survival = false) {
       if (!hasOwn(INTENT, data.intent)) return null;
       const intent = { type: 'intent', intent: data.intent };
       switch (data.intent) {
+        case 'chest': intent.chest = data.chest | 0; intent.slot = data.slot | 0; break;
         case 'quest-interact':
           if (!Number.isInteger(data.objectiveId) || data.objectiveId < 0 || data.objectiveId > 15) return null;
           intent.objectiveId = data.objectiveId; break;
@@ -309,6 +313,8 @@ export function validateReplayCapsule(value, options = {}) {
   if (init.dayPhase !== undefined && !Number.isFinite(Number(init.dayPhase)))
     throw new Error('Replay day phase is invalid.');
 
+  if (init.checkpoint && (typeof init.checkpoint.data !== 'string' || init.checkpoint.data.length > 48 * 1024 * 1024
+      || !/^[A-Za-z0-9+/]*={0,2}$/.test(init.checkpoint.data))) throw new Error('Replay checkpoint is invalid.');
   const turns = value.turns;
   const events = value.events;
   const gates = value.gates;
@@ -398,6 +404,7 @@ function unpackChangedState(row, start, previous, fields, booleanFields) {
 function packIntent(message) {
   const code = INTENT[message.intent];
   switch (message.intent) {
+    case 'chest': return [code, message.chest, message.slot];
     case 'quest-interact': return [code, message.objectiveId];
     case 'select': return [code, message.slot];
     case 'size': return [code, message.footprint];
@@ -419,6 +426,7 @@ function unpackIntent(row) {
   const name = INTENT_NAMES[row[2]];
   if (!name) throw new Error('Replay contains an unknown intent.');
   switch (name) {
+    case 'chest': return { type: 'intent', intent: name, chest: row[3], slot: row[4] };
     case 'quest-interact': return { type: 'intent', intent: name, objectiveId: row[3] };
     case 'select': return { type: 'intent', intent: name, slot: row[3] };
     case 'size': return { type: 'intent', intent: name, footprint: row[3] };

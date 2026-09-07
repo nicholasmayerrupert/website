@@ -321,5 +321,5 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     else ctx.container.setAttribute('tabindex', originalTabIndex);
   };
 
-  return { attach, detach, updatePointer };
+  return { attach, detach, updatePointer, clearLatchedInput };
 }

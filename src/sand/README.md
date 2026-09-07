@@ -1007,3 +1007,22 @@ Choose the narrowest extension mechanism that expresses the behavior:
    `scripts/run-tests.mjs --only <manifest-key>`, then compare the relevant engine
    benchmark. A behavior-preserving catalogue change must retain the
    deterministic checksum.
+
+## Aster adventure
+
+`/game` runs the Hollow Bell chapter. Its implementation and acceptance gates are
+recorded in [content/ADVENTURE.md](content/ADVENTURE.md). `CombatSystem`,
+`ContainerSystem`, `DiscoverySystem`, and `CheckpointSystem` are composed by the
+C++ engine. Equipment definitions live in `content/equipment.js`; structures,
+NPCs, quests, and authored loot live in `content/world.js`.
+
+The embed owns one Map/Journal/Inventory panel controller in
+`embed/adventureHud.js`. Panel pause stops gameplay while preserving worker
+transactions and presentation. `worker/adventureSaveStore.js` stores compressed
+full checkpoints in IndexedDB. Checkpoint loading is intended for a fresh
+authority engine. `?nosave` and studio/replay sessions do not write campaign saves.
+
+Player content supports 29 named animation clips and creature content supports
+eight named clips, with up to 32 frames and optional per-frame durations. Keep
+the creature source formatted across lines: large single-line sprite literals
+are expensive for the development server to transform.

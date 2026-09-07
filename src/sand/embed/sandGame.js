@@ -8,6 +8,7 @@ import { createSandGame } from '../game/createSandGame';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
+import { createAdventureHud } from './adventureHud';
 import { createSurvivalStatus } from './survivalStatus';
 import { createFootprintMenu } from './footprintMenu';
 import { createMissionHud, presentMissionSnapshot } from './missionHud';
@@ -625,10 +626,12 @@ class SandGameElement extends HTMLElement {
             ));
           },
           onToggleInventory: () => {
+            if (this._adventureHud) { this._adventureHud.open(this._hud.isOpen() ? null : 'inventory'); return; }
             this._sizeMenu?.setOpen(false);
             this._hud?.toggleOpen();
           },
           onToggleFootprintMenu: () => {
+            if (this._adventureHud) { this._adventureHud.open('inventory'); return; }
             this._hud?.setOpen(false);
             this._sizeMenu?.toggleOpen();
           },
@@ -650,6 +653,8 @@ class SandGameElement extends HTMLElement {
           // grid. Combat weapons share the same slot/cursor model as mined blocks
           // and tools.
           this._hud = createInventoryHud(root, {
+            managed: mission === 'frontier',
+            onOpenChange: (open) => this._adventureHud?.inventoryChanged(open),
             selectSlot: (i) => game.selectSlot(i),
             cursorPick: (slot, half) => game.cursorPick(slot, half),
             throwFromCursor: (whole) => game.throwFromCursor(whole),
@@ -660,6 +665,9 @@ class SandGameElement extends HTMLElement {
           });
           this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
           this._talkHud = createTalkHud(root, game, (detail) => {
+            if (this._adventureHud && detail.action === 'mission-console') this._adventureHud.open('journal');
+            if (this._adventureHud && detail.action === 'workshop') this._adventureHud.openWorkshop(detail.actor);
+            if (this._adventureHud && detail.action === 'repair-base') game.repairBase();
             this.dispatchEvent(new CustomEvent('sand:talkaction', {
               detail, bubbles: true, composed: true,
             }));
@@ -670,6 +678,10 @@ class SandGameElement extends HTMLElement {
           if (mission) this._missionHud = createMissionHud(root, game);
           this._hud.update(game.getInventory());
           this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
+          if (mission === 'frontier') this._adventureHud = createAdventureHud(root, game, this._hud, {
+            setPaused: (paused) => game.setGameplayPaused(paused),
+            closeDialogue: () => this._talkHud?.close(false),
+          });
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
@@ -798,6 +810,8 @@ class SandGameElement extends HTMLElement {
     this._cancel?.();
     // Release analog input while its engine is still alive.
     this._stick?.destroy();
+    this._adventureHud?.destroy();
+    this._adventureHud = null;
     this._game?.destroy();
     this._palette?.destroy();
     this._hud?.destroy();

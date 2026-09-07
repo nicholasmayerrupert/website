@@ -262,7 +262,7 @@ void MissionSystem::completeObjective(MissionObjective& objective) {
 }
 
 void MissionSystem::onCreatureKilled(Creature& creature) {
-  if (!active() || !creature.missionActor) return;
+  if ((!active() && !(missionId == MI_FRONTIER && phase == MP_COMPLETE)) || !creature.missionActor) return;
   MissionObjective* objective = findObjective(creature.missionObjective);
   if (!objective || objective->state != OS_ACTIVE) return;
   if (missionId == MI_FRONTIER) {
@@ -395,6 +395,7 @@ void MissionSystem::updateThreat() {
 }
 
 void MissionSystem::update() {
+  if (missionId == MI_FRONTIER && (active() || phase == MP_COMPLETE)) { updateFrontier(); return; }
   if (!active()) return;
   if (missionId == MI_FRONTIER) { updateFrontier(); return; }
   if (pendingObjective >= 0) {

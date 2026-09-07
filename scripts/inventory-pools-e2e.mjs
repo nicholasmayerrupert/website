@@ -1,5 +1,6 @@
 import { runBrowserCases } from './browser-harness.mjs';
 import { MAT } from '../src/sand/materials.js';
+import process from 'node:process';
 
 async function exercise({ page, baseURL, check }, narrow = false) {
   await page.addInitScript(() => {
@@ -27,11 +28,13 @@ async function exercise({ page, baseURL, check }, narrow = false) {
     await dialog.getByRole('heading', { name: 'Building materials bag' }).isVisible()
     && await host.locator('.inv-slot.inv-bag').count() === 3);
   check('opening a bag does not pick it up', await page.evaluate(() => window.__sandTest.getInventory().slots[6].pool === 1));
-  await dialog.getByLabel('Sort materials').selectOption('density');
+  await dialog.locator('.pool-sorting summary').click();
+  await dialog.getByRole('combobox', { name: 'Sort materials' }).click();
+  await host.getByRole('option', { name: 'Density', exact: true }).click();
   check('density sorts wood before stone without changing the queue',
     await dialog.locator('.pool-row').first().getAttribute('data-material') === String(MAT.WOOD)
     && await page.evaluate((mat) => window.__sandTest.getInventory().pools[0].entries[0].material === mat, MAT.STONE));
-  await dialog.getByRole('button', { name: 'Use as queue' }).click();
+  await dialog.getByRole('button', { name: 'Apply order' }).click();
   await page.waitForFunction((mat) => window.__sandTest.getInventory().pools[0].entries[0].material === mat, MAT.WOOD);
   await dialog.getByRole('button', { name: 'Move stone earlier' }).click();
   await page.waitForFunction((mat) => window.__sandTest.getInventory().pools[0].entries[0].material === mat, MAT.STONE);
@@ -45,13 +48,14 @@ async function exercise({ page, baseURL, check }, narrow = false) {
   await dialog.getByRole('checkbox', { name: 'Use wood in Auto' }).check();
   await page.waitForFunction((mat) => window.__sandTest.getInventory().slots[6].material === mat, MAT.WOOD);
   check('queue order and enabled state round-trip through the worker', true);
-  await dialog.getByLabel('Pool placement mode').selectOption(String(MAT.STONE));
+  await dialog.getByRole('combobox', { name: 'Pool placement mode' }).click();
+  await host.getByRole('option', { name: 'stone', exact: true }).click();
   await page.waitForFunction((mat) => window.__sandTest.getInventory().pools[0].exactMaterial === mat, MAT.STONE);
   await dialog.getByRole('button', { name: 'Withdraw wood' }).click();
   await page.waitForFunction((mat) => window.__sandTest.getInventory().pools[0].entries.find((e) => e.material === mat)?.count === 0, MAT.WOOD);
   await dialog.locator(`.pool-row[data-material="${MAT.WOOD}"]`).waitFor({ state: 'detached' });
   check('depleted materials disappear from the bag and material selector',
-    await dialog.getByLabel('Pool placement mode').locator(`option[value="${MAT.WOOD}"]`).count() === 0);
+    await host.getByRole('option', { name: 'wood', exact: true, includeHidden: true }).count() === 0);
   await dialog.locator('.inv-slot[data-index="9"]').click();
   await page.waitForFunction((mat) => {
     const s = window.__sandTest.getInventory().slots[9]; return s.material === mat && s.count === 200 && !s.pool;
@@ -82,7 +86,7 @@ async function exercise({ page, baseURL, check }, narrow = false) {
   await page.waitForFunction(() => window.__sandTest.getInventory().slots[6].pool === 1);
   check('pool containers move through the existing cursor and grid', true);
   await dialog.getByRole('button', { name: 'Liquids', exact: true }).click();
-  check('liquids start exact and acid starts excluded', await dialog.getByLabel('Pool placement mode').inputValue() === String(MAT.WATER) && !(await dialog.getByRole('checkbox', { name: 'Use acid in Auto' }).isChecked()));
+  check('liquids start exact and acid starts excluded', await dialog.getByRole('combobox', { name: 'Pool placement mode' }).getAttribute('data-value') === String(MAT.WATER) && !(await dialog.getByRole('checkbox', { name: 'Use acid in Auto' }).isChecked()));
   await dialog.getByRole('button', { name: 'Building materials', exact: true }).click();
   const bounds = await dialog.boundingBox();
   const viewport = page.viewportSize();
@@ -111,13 +115,13 @@ const failures = await runBrowserCases({
   desktop: (ctx) => exercise(ctx),
   narrow: (ctx) => exercise(ctx, true),
   expedition: async ({ page, baseURL, check }) => {
-    await page.goto(`${baseURL}/game`);
-    await page.getByRole('button', { name: 'Start exploring' }).click({ timeout: 60000 });
+    await page.goto(`${baseURL}/game?nosave`);
+    await page.waitForFunction(() => document.querySelector('sand-game')?._game?.getInventory()?.equipment?.length);
     const host = page.locator('sand-game');
     await host.locator('.inv-slot[data-index="7"]').dblclick();
-    const dialog = host.getByRole('dialog', { name: 'Inventory and crafting' });
+    const dialog = host.getByRole('dialog', { name: 'Inventory', exact: true });
     await dialog.getByRole('heading', { name: 'Powders bag' }).waitFor();
-    check('expedition bags open directly, including an empty bag', true);
+    check('empty bags hide placement and sorting controls', !(await dialog.getByRole('combobox', { name: 'Pool placement mode' }).isVisible()) && !(await dialog.locator('.pool-sorting').isVisible()));
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
     check('Escape closes the bag without opening the expedition pause menu',

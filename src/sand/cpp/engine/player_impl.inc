@@ -287,7 +287,8 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
   // Death drops the old loadout into the world; always restore the starter gun
   // so respawning cannot leave the combat mode soft-locked with empty hands.
-  if (E.survivalInventory) E.inv.seedStarterTools(p);
+  if (E.survivalInventory && E.planetId != PL_FRONTIER) E.inv.seedStarterTools(p);
+  p.stamina = p.mana = 100; p.actionTicks = p.dodgeCooldown = 0; p.airDashUsed = false;
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
   return true;
 }
@@ -304,6 +305,7 @@ bool PlayerSystem::requestRespawn(int id) {
 }
 void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
+  p.animState = AS_DEATH; p.animFrame = 0;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
   p.respawnPending = false; p.jetpackActive = false; p.shieldActive = false;
   resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
@@ -332,19 +334,26 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
                                double sourceX, double sourceY,
                                bool bypassCooldown) {
   if (!p.active || !p.alive || damage <= 0) return 0;
-  int remaining = damage;
+  if (E.planetId == PL_FRONTIER && (p.actionState == AS_DODGE || p.actionState == AS_DASH) && p.actionTicks > 4) return 0;
+  int remaining = E.planetId == PL_FRONTIER ? imax(1, damage * (100 - E.combat.defense(p)) / 100) : damage;
   if (shieldCoversSource(p, sourceX, sourceY)) {
     if (!bypassCooldown && p.shieldHurtCooldown > 0) return 0;
     int shieldBefore = p.shieldHealth;
-    int absorbed = imin(p.shieldHealth, remaining);
-    p.shieldHealth -= absorbed;
+    int absorbed = imin(E.planetId == PL_FRONTIER ? p.stamina : p.shieldHealth, remaining);
+    if (E.planetId == PL_FRONTIER) p.stamina -= absorbed;
+    if (E.planetId != PL_FRONTIER) p.shieldHealth -= absorbed;
+    if (E.planetId == PL_FRONTIER && p.stamina <= 0) {
+      p.shieldActive = false; p.actionState = AS_GUARD_BREAK; p.actionTicks = p.actionDuration = 42; p.actionDefinition = 0;
+    } else if (E.planetId == PL_FRONTIER && absorbed > 0) {
+      p.actionState = AS_GUARD_HIT; p.actionTicks = p.actionDuration = 10; p.actionDefinition = 0;
+    }
     p.lastShieldDamageTick = E.actorTick;
     // Ward impacts use their own short immunity window. This
     // preserves the intended "200 ward ~= twice 100 health" combat durability
     // against high-rate explosive rounds without making the player's unguarded
     // rear invulnerable after a frontal block.
     p.shieldHurtCooldown = cooldown;
-    E.audio.emit(SE_SHIELD_HIT, p.px + p.w * .5, p.py + p.h * .5,
+    E.audio.emit(E.planetId == PL_FRONTIER ? SE_GUARD : SE_SHIELD_HIT, p.px + p.w * .5, p.py + p.h * .5,
                  std::min(1.2, .4 + absorbed / 40.0), EMPTY);
     if (shieldBefore > 0 && p.shieldHealth <= 0)
       E.audio.emit(SE_SHIELD_BREAK, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
@@ -360,7 +369,8 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
 }
 void PlayerSystem::updatePlayerVitals(Player& p) {
   if (!p.alive) { p.deathTicks++; return; }
-  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0;
+  if (E.planetId == PL_FRONTIER) E.combat.tick(p);
+  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
   if (p.shieldHealth < P_SHIELD_MAX_HEALTH &&
       E.actorTick - p.lastShieldDamageTick >= P_SHIELD_RECHARGE_DELAY)
     p.shieldHealth = imin(P_SHIELD_MAX_HEALTH,
@@ -382,7 +392,7 @@ void PlayerSystem::updatePlayerVitals(Player& p) {
       selectedHazard = profile;
   }
   if (cells > 0 && blocked * 2 >= cells) p.buriedTicks++; else p.buriedTicks = 0;
-  if (p.landingImpact > 3.0) damagePlayer(p, imin(45, (int)std::floor((p.landingImpact - 3.0) * 15.0)), 12);
+  if (p.landingImpact > 3.0) damagePlayer(p, imin(45, (int)std::floor((p.landingImpact - 3.0) * (E.planetId == PL_FRONTIER && E.combat.hasCharm(p, 222) ? 6.0 : 15.0))), 12);
   p.landingImpact = 0;
   if (selectedHazard != CHP_NONE)
     damagePlayer(p, CONTACT_HAZARD_PLAYER_DAMAGE[selectedHazard],
@@ -456,20 +466,27 @@ double PlayerSystem::samplePlayerFluidCoverage(const Player& p) {
 
 void PlayerSystem::integratePlayer(Player& p) {
   if (!p.active) return;
-  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0;
+  bool wasGuarding = p.shieldActive;
+  if (E.planetId == PL_FRONTIER && !(p.input & PI_SHIELD) && wasGuarding) {
+    p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
+  }
+  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
+  if (E.planetId == PL_FRONTIER && p.shieldActive && !wasGuarding) {
+    p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
+  }
   bool wasGrounded = p.grounded;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   double moveX = p.analogInput ? p.inputX : ((right ? 1.0 : 0.0) - (left ? 1.0 : 0.0));
   double moveStrength = std::fabs(moveX);
   bool run = (p.input & PI_RUN) != 0;
   bool wantJump = (p.input & PI_JUMP) != 0;
-  bool wantJetpack = (p.input & PI_JETPACK) != 0;
+  bool wantJetpack = E.planetId != PL_FRONTIER && (p.input & PI_JETPACK) != 0;
   p.jetpackActive = false;
   // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
   // run); past the higher SWIM threshold he can also swim upward with jump/up.
   double fluidCoverage = samplePlayerFluidCoverage(p);
   bool inLiquid = fluidCoverage >= P_LIQUID_MIN_COVERAGE;
-  bool swimming = fluidCoverage >= P_LIQUID_SWIM_COVERAGE;
+  bool swimming = fluidCoverage >= (E.planetId == PL_FRONTIER ? P_LIQUID_MIN_COVERAGE : P_LIQUID_SWIM_COVERAGE);
   double forceX = 0, forceY = 0;
   bool spatialForce = E.forces.sampleActor(
     p.px + p.w * 0.5, p.py + p.h * 0.5, forceX, forceY);
@@ -511,6 +528,24 @@ void PlayerSystem::integratePlayer(Player& p) {
     E.audio.emit(SE_JUMP, p.px + p.w * 0.5, p.py + p.h, 0.8, EMPTY, 0);
   }
 
+  if (E.planetId == PL_FRONTIER) {
+    if (p.grounded) p.airDashUsed = false;
+    bool dodge = (p.input & PI_DOWN) && !(p.movementPrevInput & PI_DOWN);
+    int cost = E.combat.hasCharm(p, 224) ? 16 : 24;
+    bool canDash = p.grounded || ((p.abilities & 1) && !p.airDashUsed);
+    if (dodge && canDash && !p.dodgeCooldown && p.stamina >= cost) {
+      p.actionState = p.grounded ? AS_DODGE : AS_DASH;
+      p.actionTicks = p.actionDuration = 16; p.actionDefinition = 0;
+      p.dodgeCooldown = 36; p.stamina -= cost;
+      if (!p.grounded) { p.airDashUsed = true; p.vy = 0; }
+    }
+    if (p.actionTicks > 0 && (p.actionState == AS_DODGE || p.actionState == AS_DASH)) {
+      p.vx = p.facing * 2.4;
+      if (p.actionState == AS_DASH) p.vy = -.08;
+    }
+    if ((p.abilities & 2) && wantJump && p.vy > .3 && !p.grounded) p.vy = .3;
+    p.movementPrevInput = p.input;
+  }
   // horizontal move
   if (tryMoveX(p, p.vx, bury)) p.vx = 0;
 
@@ -572,8 +607,15 @@ void PlayerSystem::integratePlayer(Player& p) {
   else if (spd >= AS_RUN_SPEED && (p.input & PI_RUN)) as = AS_RUN;
   else if (spd >= AS_MOVE_EPS) as = AS_WALK;
   else as = AS_IDLE;
+  if (E.planetId == PL_FRONTIER) {
+    if (p.actionTicks) as = (uint8_t)p.actionState;
+    else if (p.shieldActive) as = AS_GUARD;
+    else if (p.bowChargeTicks) as = AS_BOW;
+    else if ((p.abilities & 2) && wantJump && !p.grounded && p.vy > 0) as = AS_GLIDE;
+    else if (!wasGrounded && p.grounded) as = AS_LAND;
+  }
   p.animState = as;
-  p.animFrame = (uint8_t)(((uint32_t)E.actorTick / E.content.clips[as].ticks) % E.content.clips[as].count);
+  p.animFrame = (uint8_t)E.content.clips[as].frameAt(p.actionTicks ? (p.actionDuration - p.actionTicks) * E.content.clips[as].duration / imax(1,p.actionDuration) : E.actorTick);
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----
@@ -632,6 +674,7 @@ bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD 
 // (dig ignores material type — flat class speed so only hardness + tier matter).
 void PlayerSystem::resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
+  if (E.planetId == PL_FRONTIER) { p.mineActive=false; p.mineFootprint=-1; return; }
   auto clearLayer = [&](Layer* layer) {
     Engine::ActiveLayerScope active(E, layer);
     if (p.mineFootprint >= 0) E.tools.clearMineDamageFootprint(p.mineX, p.mineY, E.tools.getSurvivalFootprint(p.mineFootprint));
@@ -694,6 +737,54 @@ void PlayerSystem::resolveMineDrops(Player& p) {
     E.itemsys.spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6,
                             IT_PARTICLE_LIFE);
   }
+}
+// Target the first surface along the aim ray. Background excavation requires
+// an unobstructed foreground path, so a pick cannot tunnel through a wall.
+bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer) const {
+  double cx = p.px + p.w*.5, cy = p.py + p.h*.42;
+  double dx = p.aimX-cx, dy = p.aimY-cy, length = std::hypot(dx,dy);
+  if (!std::isfinite(length) || length < .01) return false;
+  dx/=length; dy/=length;
+  auto mineable = [&](uint8_t m) { return m != EMPTY && !E.isLiquidMaterial(m) && !E.isGasMaterial(m); };
+  const auto& grid = layer ? E.bg.grid : E.fg.grid;
+  for (double at = .5; at <= std::min(P_FRONTIER_MINE_REACH,length+1); at += .35) {
+    int xx=(int)std::floor(cx+dx*at), yy=(int)std::floor(cy+dy*at);
+    if (xx<=0 || xx>=E.cols-1 || yy<=0 || yy>=E.rows) return false;
+    int k=E.I(xx,yy);
+    if (layer && mineable(E.fg.grid[k])) return false;
+    if (mineable(grid[k])) { x=xx; y=yy; return true; }
+  }
+  return false;
+}
+void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) {
+  bool swinging = p.mineActive && p.actionState == AS_AXE && p.actionTicks > 0;
+  if (p.shieldActive || (p.actionTicks && !swinging)) { resetPlayerMine(p); return; }
+  if (swinging) {
+    p.facing = p.mineX+.5 < p.px+p.w*.5 ? -1 : 1;
+    if (p.actionDuration-p.actionTicks == P_FRONTIER_MINE_IMPACT) {
+      double cx=p.px+p.w*.5,cy=p.py+p.h*.42;
+      int x=0,y=0;
+      Player target=p; target.aimX=p.mineX+.5;target.aimY=p.mineY+.5;
+      bool reachable=std::hypot(target.aimX-cx,target.aimY-cy)<=P_FRONTIER_MINE_REACH+1
+        && frontierMineTarget(target,x,y,p.mineLayer) && x==p.mineX && y==p.mineY;
+      if (reachable) {
+        Engine::ActiveLayerScope active(E,p.mineLayer ? &E.bg : &E.fg);
+        uint8_t material=E.L->grid[E.I(p.mineX,p.mineY)];
+        E.tools.strikeFrontierPatch(p); resolveMineDrops(p);
+        E.audio.emit(SE_IMPACT,p.mineX,p.mineY,.55,material,p.mineLayer);
+        for (int i=0;i<5;i++) E.itemsys.spawnParticle(material,p.mineX+.5,p.mineY+.5,(i-2)*.18,-.5-(i%2)*.2,IT_PARTICLE_LIFE);
+        E.playerActionCount++;
+      }
+    }
+    return;
+  }
+  if (!primary && !secondary) { resetPlayerMine(p); return; }
+  int x=0,y=0,layer=secondary&&!primary ? 1 : 0;
+  if (!frontierMineTarget(p,x,y,layer)) { resetPlayerMine(p); return; }
+  if (!p.mineActive || p.mineX!=x || p.mineY!=y || p.mineLayer!=layer) resetPlayerMine(p);
+  p.mineActive=true;p.mineX=x;p.mineY=y;p.mineLayer=layer;p.mineFootprint=-1;
+  p.actionState=AS_AXE;p.actionTicks=p.actionDuration=P_FRONTIER_MINE_SWING-imin(3,(int)p.heldToolTier)*2;p.actionDefinition=0;
+  E.audio.emit(SE_SWING,p.px,p.py,.35,EMPTY);
 }
 bool PlayerSystem::mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed) {
   int layerId = layer == &E.bg ? 1 : 0;
@@ -891,19 +982,27 @@ void PlayerSystem::updatePlayers() {
 // world), recording inputs to replay after a server correction.
 void PlayerSystem::stepPlayerOnly(int id) {
   Player* p = findPlayer(id);
-  if (p && p->active && p->alive) integratePlayer(*p);
+  if (p && p->active && p->alive) {
+    if (E.planetId == PL_FRONTIER) {
+      if (p->actionTicks > 0) p->actionTicks--;
+      if (p->dodgeCooldown > 0) p->dodgeCooldown--;
+    }
+    integratePlayer(*p);
+  }
   E.actorTick++;
 }
 // Snap a player to an authoritative state (reconciliation), before replaying its
 // unacknowledged inputs.
 void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
-                                  double jetpackFuel, int jetpackActive) {
+                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput) {
   Player* p = findPlayer(id);
   if (!p) return;
   p->px = x; p->py = y; p->vx = vx; p->vy = vy;
   p->facing = facing; p->grounded = grounded != 0; p->jumpReady = jumpReady != 0;
   p->jetpackFuel = std::isfinite(jetpackFuel) ? std::max(0.0, std::min(1.0, jetpackFuel)) : 0.0;
   p->jetpackActive = jetpackActive != 0 && p->jetpackFuel > 0;
+  p->abilities = abilities; p->stamina = stamina; p->actionTicks = actionTicks; p->actionState = actionState;
+  p->dodgeCooldown = dodgeCooldown; p->airDashUsed = airDashUsed != 0; p->movementPrevInput = movementPrevInput;
 }
 
 // Pack players into flat PS_STRIDE records for replication and presentation.
@@ -922,6 +1021,17 @@ int PlayerSystem::buildPlayerSnapshot() {
         (float)(p.bowChargeTicks / chargeMax)},
       .heldItemKind = WritePlayerSnapshotHeldItemKind{
         held.count > 0 ? held.itemKind : IK_MATERIAL},
+      .heldDefinition = WritePlayerSnapshotHeldDefinition{held.definitionId},
+      .gear0 = WritePlayerSnapshotGear0{p.equipment[0].definitionId},
+      .gear1 = WritePlayerSnapshotGear1{p.equipment[1].definitionId},
+      .gear2 = WritePlayerSnapshotGear2{p.equipment[2].definitionId},
+      .gear3 = WritePlayerSnapshotGear3{p.equipment[3].definitionId},
+      .gear4 = WritePlayerSnapshotGear4{p.equipment[4].definitionId},
+      .gear5 = WritePlayerSnapshotGear5{p.equipment[5].definitionId},
+      .gear6 = WritePlayerSnapshotGear6{p.equipment[6].definitionId},
+      .gear7 = WritePlayerSnapshotGear7{p.equipment[7].definitionId},
+      .gear8 = WritePlayerSnapshotGear8{p.equipment[8].definitionId},
+
     });
   }
   return (int)players.size();

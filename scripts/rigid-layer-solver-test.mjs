@@ -74,4 +74,45 @@ for (const obstacle of ['terrain', 'body']) {
   check('each physical layer remains clear of its own terrain', terrain === 0);
   engine.destroy();
 }
+// Burning away a joint's last foreground cell transfers its surviving rear
+// footprint into the ordinary background roster during the world erosion pass.
+for (const otherBackgroundBody of [false, true]) {
+  const engine = create();
+  for (const [x, y] of rect(60, 30, 89, 30))
+    engine.getGridBg()[y * cols + x] = MAT.STONE;
+  engine.syncComponentsLayer(1);
+  engine.paintDiscLayer(0, 70, 30, 0, MAT.WOOD, true);
+  engine.stepWorld();
+  check('burning attachment fixture creates a joint object',
+    engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2);
+  if (otherBackgroundBody)
+    engine._spawnBoxLayer(1, 120, 60, 2, 2, MAT.RIGID);
+  let conserved = true, ownedMaterialsPresent = true;
+  for (let tick = 0; tick < 40; tick++) {
+    const foreground = engine.getGrid();
+    const owners = engine._bodyOwnerGrid(0);
+    for (let k = 0; k < foreground.length; k++) {
+      if (owners[k] < 0 || foreground[k] !== MAT.WOOD) continue;
+      const x = k % cols, y = Math.floor(k / cols);
+      for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1]])
+        engine.paintDisc(x + dx, y + dy, 0, MAT.FIRE, false);
+    }
+    engine.stepWorld();
+    const background = engine.getGridBg();
+    const rearOwners = engine._bodyOwnerGrid(1);
+    let stoneCells = 0;
+    for (let k = 0; k < background.length; k++) {
+      if (background[k] === MAT.STONE) stoneCells++;
+      if (rearOwners[k] >= 0 && background[k] === MAT.EMPTY)
+        ownedMaterialsPresent = false;
+    }
+    conserved = conserved && stoneCells === 30;
+  }
+  check(`fire removes the foreground attachment (other rear body: ${otherBackgroundBody})`,
+    engine._bodyCountLayer(0) === 0);
+  check(`background-only conversion preserves visible material without ghost cells (other rear body: ${otherBackgroundBody})`,
+    conserved && ownedMaterialsPresent);
+  engine.destroy();
+}
 process.exitCode = done();

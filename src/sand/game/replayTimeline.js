@@ -169,9 +169,11 @@ export function createReplayTimeline(ctx, { onResumed, onShow, onHide } = {}) {
     catchup.style.left = `${Math.max(0, Math.min(1, catchupTurn / turns)) * 100}%`;
     current.textContent = formatTime(turn);
     total.textContent = formatTime(turns);
-    ticks.textContent = catchingUp
+    const simulationTick = Math.max(0, ctx.engine?.getTick() ?? 0);
+    ticks.textContent = (catchingUp
       ? `Tick ${catchupTurn.toLocaleString()} -> ${seekTarget.toLocaleString()} / ${turns.toLocaleString()}`
-      : `Tick ${turn.toLocaleString()} / ${turns.toLocaleString()}`;
+      : `Tick ${turn.toLocaleString()} / ${turns.toLocaleString()}`)
+      + ` · Sim tick ${simulationTick.toLocaleString()}`;
     if (keyboardTurn === state.replayTurn) keyboardTurn = null;
     const paused = !!state.replayPaused;
     play.textContent = paused ? '▶' : 'Ⅱ';

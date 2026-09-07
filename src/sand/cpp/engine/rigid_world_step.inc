@@ -81,11 +81,15 @@ void RigidBodySystem::moveWorldBodies() {
     Engine::ActiveLayerScope scope(E, layer == 0 ? &E.fg : &E.bg);
     commitBodyMovement();
   }
-  // Erosion may split a joint object. Both owner rasters must be committed
-  // before any operation can change its component membership or body roster.
+  // Publish both current rosters before erosion can split a joint object and
+  // append a surviving piece to either layer's ordinary body cells.
   for (int layer = 0; layer < (E.bgEnabled ? 2 : 1); layer++) {
     Engine::ActiveLayerScope scope(E, layer == 0 ? &E.fg : &E.bg);
-    if (movement().prepared) erodeBodies(movement().moveCells);
+    if (movement().prepared) E.L->bodyCells.swap(movement().moveCells);
+  }
+  for (int layer = 0; layer < (E.bgEnabled ? 2 : 1); layer++) {
+    Engine::ActiveLayerScope scope(E, layer == 0 ? &E.fg : &E.bg);
+    if (movement().prepared) erodeBodies(E.L->bodyCells);
     if (layer == 1) erodeBodies(E.bg.passiveBodyCells, true);
   }
 }

@@ -816,11 +816,23 @@ void ProjectileSystem::updateProjectiles() {
         if (p.px < 1 || p.py < 1 || p.px >= E.cols-1 || p.py >= E.rows-1) { hit = true; break; }
         int mat = E.fg.grid[E.I((int)p.px,(int)p.py)];
         const auto* rune = E.content.gear(p.fuse);
-        if (E.isBlockingForActor(mat) || (rune && rune->spell == 2 && mat == WATER) || hitsCreature(p.px,p.py,1,p.owner)) { hit = true; break; }
+        if (E.isBlockingForActor(mat) || (rune && rune->spell == 2 && mat == WATER) ||
+            (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,1,p.owner))) ||
+            hitsCreature(p.px,p.py,1,p.owner)) { hit = true; break; }
       }
       if (hit || --p.life <= 0) {
         auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
-        if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
+        if (p.owner < 0 && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1) {
+          int radius = p.charge > 18 ? 12 : 8;
+          uint8_t material = p.fuse == 301 ? WATER : p.fuse == 304 ? ACID : p.fuse == 302 ? ICE : FIRE;
+          E.combat.enemyTerrainImpact(p.px, p.py, radius, material);
+          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, true);
+          if (material == WATER || material == ACID || material == FIRE) {
+            Engine::ActiveLayerScope foreground(E, &E.fg);
+            E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);
+          }
+        } else if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
+        p.rotation = p.owner < 0 && p.charge > 18 ? 12 : 8;
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
       }
       projectiles[write++] = p; continue;
@@ -856,6 +868,8 @@ void ProjectileSystem::updateProjectiles() {
         E.explosives.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner,
                    GUNPOWDER, seed, SE_WEAPON_EXPLOSION);
       } else if (p.kind == PK_ARROW) {
+        if (p.owner < 0 && E.planetId == PL_FRONTIER && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1)
+          E.combat.enemyTerrainImpact(p.px, p.py, 6, STONE);
         E.itemsys.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
         E.audio.emit(SE_ARROW_HIT, p.px, p.py, 0.45 + p.charge * .55, STONE);
       }

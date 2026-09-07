@@ -3771,7 +3771,11 @@
         "SE_SWING": 30,
         "SE_RUNE": 31,
         "SE_BELL": 32,
-        "SE_GUARD": 33
+        "SE_GUARD": 33,
+        "SE_HEAVY_IMPACT": 34,
+        "SE_SPELL_IMPACT": 35,
+        "SE_SHOCKWAVE": 36,
+        "SE_MELEE_HIT": 37
       }
     }
   },

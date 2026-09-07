@@ -1500,20 +1500,29 @@ void GLPresenter::glDrawProjectiles() {
     if (kind == PK_RUNE || kind == PK_RUNE_BURST) {
       const auto* gear = E.content.gear((int)fuse);
       int spell = gear ? gear->spell : 1;
-      static const float colors[6][3]={{1,.47f,.15f},{.60f,.85f,1},{.78f,.90f,.72f},{.94f,.76f,.45f},{.51f,.84f,.39f},{1,.93f,.66f}};
+      static const float colors[6][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f}};
       const auto& tint = colors[imax(0,imin(5,spell-1))];
       bool burst = kind == PK_RUNE_BURST;
-      double radius = burst ? (1-charge)*8 : .7;
+      double radius = burst ? (1-charge)*(rotation > 1 ? rotation : 8) : 1.1;
       for (int mote = 0; mote < (burst ? 24 : 9); mote++) {
         double angle = mote * 2.39996 + E.actorTick * .05;
         double mx = burst ? std::cos(angle)*radius : -vx*mote*.32;
         double my = burst ? std::sin(angle)*radius : -vy*mote*.32 + std::sin(angle)*.35;
         float fade = burst ? charge : 1-mote/10.f;
         glUniform4f(glc->uColor,tint[0],tint[1],tint[2],fade*.85f);
-        double size = (burst ? .30 : .8-mote*.055)*glCellDev;
+        double size = (burst ? .4 + charge * .6 : 1.1-mote*.075)*glCellDev;
         glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
+        if (burst && mote % 3 == 0) {
+          glUniform4f(glc->uColor,1,.98f,.88f,fade*.9f);
+          double tip = size * .5;
+          glSolidDev(cx+mx*glCellDev-tip*.5,cy+my*glCellDev-tip*.5,tip,tip);
+        }
       }
-      if (!burst) { glUniform4f(glc->uColor,1,.98f,.83f,1); glSolidDev(cx-.2*glCellDev,cy-.2*glCellDev,.4*glCellDev,.4*glCellDev); }
+      if (!burst || charge > .65) {
+        double core = (burst ? (charge-.65)*7 : .65)*glCellDev;
+        glUniform4f(glc->uColor,1,.98f,.83f,burst ? (float)charge : 1);
+        glSolidDev(cx-core*.5,cy-core*.5,core,core);
+      }
       continue;
     }
     if (kind == PK_BORE_BEAM) {
@@ -1929,10 +1938,15 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     bool chargeAttack = (speciesId == CS_THORNBOUND_HART && attackPattern == 0) || speciesId == CS_BRIAR_WOLF || speciesId == CS_FOX || speciesId == CS_BONE_GUARD;
     bool ring = (speciesId == CS_HOLLOW_BELLKEEPER && attackPattern == 0) || (heavy && attackPattern == 2 && speciesId != CS_MIRE_MATRON);
     auto mark = [&](double wx, double wy, double radius, float opacity) {
+      bool cold = speciesId == CS_MIRE_MATRON;
+      bool violet = speciesId == CS_HOLLOW_BELLKEEPER;
+      bool green = speciesId == CS_FEN_WISP;
       for (int i = 0; i < 64; i++) {
         double a = i * 6.2831853 / 64;
-        glUniform4f(glc->uColor, .96f,.58f,.28f,opacity);
-        glSolidDev((wx + std::cos(a)*radius-camCol)*cell+glOffX,(wy+std::sin(a)*radius-camRow)*cell+glOffY,.32*cell,.32*cell);
+        glUniform4f(glc->uColor, cold ? .18f : green ? .32f : violet ? .72f : 1,
+          cold ? .8f : green ? 1 : violet ? .36f : .58f, cold || violet ? 1 : .18f, opacity);
+        double size = (attackState == CAS_FIRING ? .65 : .32)*cell;
+        glSolidDev((wx + std::cos(a)*radius-camCol)*cell+glOffX,(wy+std::sin(a)*radius-camRow)*cell+glOffY,size,size);
       }
     };
     float opacity = attackState == CAS_FIRING ? .9f : (float)(.2+attackProgress*.6);

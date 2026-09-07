@@ -32,6 +32,10 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.RUNE]: 80,
   [SOUND_EVENT.SWING]: 60,
   [SOUND_EVENT.GUARD]: 90,
+  [SOUND_EVENT.MELEE_HIT]: 95,
+  [SOUND_EVENT.HEAVY_IMPACT]: 160,
+  [SOUND_EVENT.SPELL_IMPACT]: 180,
+  [SOUND_EVENT.SHOCKWAVE]: 240,
   [SOUND_EVENT.EXPLOSION]: 190,
   [SOUND_EVENT.FUSE]: 95,
   [SOUND_EVENT.IMPACT]: 90,
@@ -93,6 +97,9 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.SHIELD_BREAK]: 240,
   [SOUND_EVENT.SPAWN_BREACH]: 700,
   [SOUND_EVENT.BEAM]: 120,
+  [SOUND_EVENT.MELEE_HIT]: 35,
+  [SOUND_EVENT.HEAVY_IMPACT]: 55,
+  [SOUND_EVENT.SHOCKWAVE]: 200,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -121,7 +128,7 @@ function updateMediaSessionMetadata() {
 export function semanticEventCooldownMs(type, continuousPlace = false) {
   // Projectile detonations are already discrete authority events. Unlike a TNT
   // chain or a dense brush, suppressing any one of them loses gameplay feedback.
-  if (type === SOUND_EVENT.WEAPON_EXPLOSION) return 0;
+  if (type === SOUND_EVENT.WEAPON_EXPLOSION || type === SOUND_EVENT.SPELL_IMPACT) return 0;
   return continuousPlace ? 125 : (EVENT_COOLDOWN_MS[type] ?? 45);
 }
 
@@ -489,7 +496,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
 
   const playNoise = ({ duration, gain, pan, frequency, type = 'bandpass', q = 0.7,
     rate = 1, buffer = noiseBuffer, delay = 0, attack = 0.012,
-    weaponExplosion = false }) => {
+    weaponExplosion = false, toFrequency = frequency }) => {
     const atVoiceLimit = !weaponExplosion && activeVoices >= MAX_VOICES;
     if (!audible() || !context || atVoiceLimit || gain <= 0.001) return;
     const now = context.currentTime + delay;
@@ -498,6 +505,8 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     source.playbackRate.value = rate;
     const filter = context.createBiquadFilter();
     filter.type = type; filter.frequency.value = frequency; filter.Q.value = q;
+    filter.frequency.setValueAtTime(frequency, now);
+    filter.frequency.exponentialRampToValueAtTime(toFrequency, now + duration);
     const envelope = context.createGain();
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + Math.min(attack, duration * 0.45));
@@ -552,7 +561,8 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
   };
 
   const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
-    attack = 0.004, frequency = 0, explosion = false, weaponExplosion = false }) => {
+    attack = 0.004, frequency = 0, explosion = false, weaponExplosion = false,
+    duration: requestedDuration }) => {
     if (!buffer || !audible() || !context
         || (!explosion && !weaponExplosion && activeVoices >= MAX_VOICES)
         || gain <= 0.001) return false;
@@ -563,7 +573,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     const envelope = context.createGain();
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.linearRampToValueAtTime(gain, now + attack);
-    const duration = buffer.duration / rate;
+    const duration = Math.min(buffer.duration / rate, requestedDuration ?? Infinity);
     envelope.gain.setValueAtTime(gain, now + Math.max(0.01, duration - 0.04));
     envelope.gain.linearRampToValueAtTime(0.0001, now + duration);
     let filter = null;
@@ -596,7 +606,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
         source.disconnect(); filter?.disconnect(); envelope.disconnect();
       };
     } else trackVoice(source, weaponExplosion);
-    source.start(now);
+    source.start(now, 0, duration * rate);
     return true;
   };
 
@@ -794,15 +804,84 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
         wave: 'sine', delay: 0.67, attack: 0.018 });
     } else if (type === SOUND_EVENT.SWING) {
-      playNoise({duration:.15,gain:gain*.24,pan,frequency:1600*pitch,type:'bandpass',q:.5,rate:1.1});
-      playTone({from:180,to:80,duration:.1,gain:gain*.04,pan,wave:'triangle'});
+      const weight = material === 2 ? 1.3 : material === 3 ? .8 : 1;
+      const rate = .94 + variation * .12;
+      // A broad air rush crests at the blade's fastest point; its thin edge and
+      // brief, inharmonic steel resonance sit above the low cloth movement.
+      playNoise({ duration: .25 * weight, gain: gain * .58, pan,
+        frequency: 3300 * rate / weight, toFrequency: 480 / weight,
+        q: .45, attack: .055 * weight, rate });
+      playNoise({ duration: .12 * weight, gain: gain * .20, pan,
+        frequency: 6200, toFrequency: 2200, type: 'highpass', q: .3,
+        attack: .028, delay: .032 });
+      playNoise({ duration: .19 * weight, gain: gain * .17, pan,
+        frequency: 470, toFrequency: 180, buffer: brownBuffer,
+        q: .55, attack: .04 });
+      playTone({ from: 1850 * rate / weight, to: 1310 / weight,
+        duration: .11, gain: gain * .025, pan, delay: .055, attack: .003 });
+    } else if (type === SOUND_EVENT.MELEE_HIT) {
+      playNoise({ duration: .045, gain: gain * .52, pan, frequency: 2500,
+        type: 'highpass', q: .4, attack: .001, buffer: crackleBuffer });
+      playNoise({ duration: .16, gain: gain * .36, pan, frequency: 680,
+        toFrequency: 220, q: .6, buffer: brownBuffer, attack: .002 });
+      playRecordedWeapon('weaponAction', { gain: gain * .16, pan,
+        rate: .68 + variation * .15, key: 'blade-contact' });
+      playTone({ from: 2240, to: 2110, duration: .16, gain: gain * .035,
+        pan, delay: .004, attack: .001 });
     } else if (type === SOUND_EVENT.GUARD) {
       playNoise({duration:.09,gain:gain*.25,pan,frequency:900,type:'bandpass',q:1.2,rate:1});
       for (const f of [330,670,1010]) playTone({from:f,to:f*.96,duration:.24,gain:gain*.07,pan,wave:'sine'});
     } else if (type === SOUND_EVENT.RUNE) {
-      const note=[392,587,440,196,330,659][Math.max(0,Math.min(5,material-1))];
-      playTone({from:note*.5,to:note,duration:.3,gain:gain*.13,pan,wave:'sine',attack:.03});
-      playTone({from:note*2,duration:.6,gain:gain*.04,pan,wave:'triangle',delay:.06});
+      const cold = material === 2, air = material === 3, thorn = material === 5;
+      const rate = .92 + variation * .16;
+      playNoise({ duration: .23, gain: gain * .42, pan,
+        frequency: cold ? 5100 : air ? 2300 : 1800,
+        toFrequency: cold ? 1400 : 420, q: .65, attack: .016,
+        buffer: thorn ? crackleBuffer : noiseBuffer, rate });
+      playNoise({ duration: .055, gain: gain * .30, pan, frequency: 3900,
+        type: 'highpass', q: .35, attack: .001, delay: .016 });
+      playNoise({ duration: .32, gain: gain * .28, pan, frequency: 370,
+        toFrequency: 100, type: 'lowpass', buffer: brownBuffer, attack: .006 });
+      playTone({ from: (cold ? 1260 : thorn ? 530 : 780) * rate, to: air ? 120 : 240,
+        duration: .18, gain: gain * .065, pan, wave: 'triangle', attack: .003 });
+      playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .13,
+        pan, rate: 1.65, frequency: 650, duration: .24, attack: .002 });
+      if (cold || thorn) playNoise({ duration: .38, gain: gain * .12, pan,
+        frequency: cold ? 4200 : 1800, toFrequency: 850, q: 1.1,
+        buffer: crackleBuffer, delay: .045, attack: .004 });
+    } else if (type === SOUND_EVENT.HEAVY_IMPACT || type === SOUND_EVENT.SPELL_IMPACT) {
+      const magic = type === SOUND_EVENT.SPELL_IMPACT;
+      const cold = material === MAT.ICE || material === MAT.WATER;
+      const acid = material === MAT.ACID;
+      const fire = material === MAT.FIRE;
+      playSample({ buffer: recordedAssets?.tntDeepExplosion, gain: gain * (fire ? .34 : .21),
+        pan, rate: .9 + variation * .16, frequency: fire ? 4800 : 1500,
+        duration: fire ? .65 : .35, attack: .001 });
+      playNoise({ duration: .065, gain: gain * .48, pan,
+        frequency: cold ? 5600 : 2900, type: 'highpass', q: .35, attack: .001 });
+      playNoise({ duration: .42, gain: gain * .35, pan, frequency: 920,
+        toFrequency: 170, q: .55, buffer: brownBuffer, attack: .003 });
+      playTone({ from: magic ? 135 : 95, to: 36, duration: .32,
+        gain: gain * .19, pan, attack: .002 });
+      playNoise({ duration: acid ? .75 : .48, gain: gain * .24, pan,
+        frequency: cold ? 4800 : acid ? 2900 : 1900, toFrequency: cold ? 1700 : 700,
+        q: .6, buffer: crackleBuffer, delay: .035, attack: .01 });
+      if (cold) for (const [i, frequency] of [2350, 3710, 5290].entries())
+        playTone({ from: frequency, to: frequency * .93, duration: .18 + i * .06,
+          gain: gain * .027, pan: clamp(pan + (i - 1) * .12, -1, 1),
+          delay: .035 + i * .025, attack: .001 });
+      if (material === MAT.WATER) playSample({ buffer: recordedAssets?.waterFlow,
+        gain: gain * .26, pan, rate: 1.25, duration: .4, attack: .006 });
+    } else if (type === SOUND_EVENT.SHOCKWAVE) {
+      playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .32,
+        pan, rate: .7 + variation * .05, frequency: 800, duration: 1.1, attack: .002 });
+      playNoise({ duration: .65, gain: gain * .40, pan, frequency: 2400,
+        toFrequency: 180, q: .6, attack: .008 });
+      playNoise({ duration: .8, gain: gain * .21, pan, frequency: 1200,
+        toFrequency: 340, buffer: crackleBuffer, delay: .06, attack: .015 });
+      for (const [i, ratio] of [1, 1.47, 2.09].entries())
+        playTone({ from: 116 * ratio, to: 108 * ratio, duration: 1.15 - i * .18,
+          gain: gain * .14 / (i + 1), pan, delay: i * .008, attack: .002 });
     } else if (type === SOUND_EVENT.BELL) {
       for (const [i,ratio] of [1,2.01,2.76,4.07].entries()) playTone({from:196*ratio,to:195.7*ratio,duration:3.8-i*.45,gain:gain*.12/(i+1),pan,wave:'sine',attack:.003,delay:i*.008});
     } else if (type === SOUND_EVENT.BEAM) {
@@ -886,10 +965,17 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       playTone({ from: 430, to: 690, duration: 0.09, gain: gain * 0.16, pan, wave: 'square' });
       playTone({ from: 620, to: 880, duration: 0.1, gain: gain * 0.11, pan, wave: 'triangle', delay: 0.06 });
     } else if (type === SOUND_EVENT.BOW) {
-      playNoise({ duration: 0.09, gain: gain * 0.18, pan, frequency: 1550, type: 'bandpass', q: 1.1, rate: 1.35 });
-      playTone({ from: 240, to: 115, duration: 0.13, gain: gain * 0.13, pan, wave: 'triangle' });
+      playNoise({ duration: .035, gain: gain * .46, pan, frequency: 3600,
+        type: 'highpass', q: .5, attack: .001, buffer: crackleBuffer });
+      playNoise({ duration: .19, gain: gain * .30, pan, frequency: 2400,
+        toFrequency: 600, q: .55, attack: .012 });
+      playTone({ from: 190 + variation * 20, to: 92, duration: .12,
+        gain: gain * .07, pan, wave: 'triangle', attack: .001 });
     } else if (type === SOUND_EVENT.ARROW_HIT) {
-      playNoise({ duration: 0.12, gain: gain * 0.3, pan, frequency: 1150, type: 'bandpass', q: 0.8, rate: 1.1 });
+      playNoise({ duration: .045, gain: gain * .40, pan, frequency: 2700,
+        type: 'highpass', q: .4, attack: .001 });
+      playNoise({ duration: .16, gain: gain * .28, pan, frequency: 850,
+        toFrequency: 300, buffer: brownBuffer, q: .7, attack: .002 });
     } else if (type === SOUND_EVENT.DEATH) {
       playTone({ from: 210, to: 58, duration: 0.5, gain: gain * 0.25, pan, wave: 'sawtooth' });
     } else if (type === SOUND_EVENT.RESPAWN) {

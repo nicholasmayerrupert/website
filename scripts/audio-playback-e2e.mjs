@@ -1,5 +1,9 @@
 // Render the production mixer with real decoded recordings and Web Audio nodes.
 import { chromium } from 'playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import process from 'node:process';
+import { Buffer } from 'node:buffer';
 import { startTestServer } from './browser-harness.mjs';
 const server = await startTestServer();
 let browser;
@@ -94,4 +98,76 @@ try {
       volleyOnsets: 24, retired, distinctRates: rates.size };
   });
   console.log('Audio playback passed:', result);
+  const combat = await page.evaluate(async () => {
+    const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
+    const { OFF, SOUND_EVENT, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
+    const { MAT } = await import('/src/sand/materials.js');
+    const cases = [
+      ['sword', SOUND_EVENT.SWING, 1], ['axe', SOUND_EVENT.SWING, 2],
+      ['bow', SOUND_EVENT.BOW, 0], ['arrow impact', SOUND_EVENT.ARROW_HIT, MAT.STONE],
+      ['blade contact', SOUND_EVENT.MELEE_HIT, 1], ['wand', SOUND_EVENT.RUNE, 1],
+      ['frost cast', SOUND_EVENT.RUNE, 2], ['briar cast', SOUND_EVENT.RUNE, 5],
+      ['heavy strike', SOUND_EVENT.HEAVY_IMPACT, MAT.STONE],
+      ['fire impact', SOUND_EVENT.SPELL_IMPACT, MAT.FIRE],
+      ['water impact', SOUND_EVENT.SPELL_IMPACT, MAT.WATER],
+      ['acid impact', SOUND_EVENT.SPELL_IMPACT, MAT.ACID],
+      ['shockwave', SOUND_EVENT.SHOCKWAVE, MAT.ICE],
+    ];
+    const ctx = new OfflineAudioContext(2, 48000 * (cases.length * 1.5 + 1), 48000);
+    let decoded = 0;
+    const decode = ctx.decodeAudioData.bind(ctx);
+    ctx.decodeAudioData = async (...args) => { const buffer = await decode(...args); decoded++; return buffer; };
+    Object.defineProperty(ctx, 'state', { get: () => 'running' });
+    ctx.close = async () => {};
+    window.AudioContext = function () { return ctx; };
+    const mixer = createSandAudio(); mixer.setMuted(false); await mixer.unlock();
+    const deadline = performance.now() + 10000;
+    while (decoded < 8 && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    if (decoded !== 8) throw new Error('Combat recordings failed to load');
+    const pauses = cases.map((_, i) => ctx.suspend(.2 + i * 1.5));
+    const rendering = ctx.startRendering();
+    for (let i = 0; i < cases.length; i++) {
+      await pauses[i];
+      // Event admission uses wall time even when the audio graph renders offline.
+      await new Promise(resolve => setTimeout(resolve, 90));
+      const values = new Float32Array(STRIDES.soundEvent);
+      values[OFF.soundEvent.type] = cases[i][1];
+      values[OFF.soundEvent.material] = cases[i][2];
+      values[OFF.soundEvent.intensity] = 1;
+      mixer.playEvents(values, { x: 0, y: 0, viewWidth: 100 });
+      await ctx.resume();
+    }
+    const rendered = await rendering;
+    const left = rendered.getChannelData(0), right = rendered.getChannelData(1);
+    const levels = cases.map(([name], i) => {
+      const start = Math.floor((.2 + i * 1.5) * 48000);
+      let peak = 0, sum = 0;
+      for (let j = start; j < start + 48000; j++) {
+        if (!Number.isFinite(left[j]) || !Number.isFinite(right[j])) throw new Error(`${name}: non-finite audio`);
+        peak = Math.max(peak, Math.abs(left[j]), Math.abs(right[j])); sum += left[j] ** 2 + right[j] ** 2;
+      }
+      if (peak < .025 || peak >= 1) throw new Error(`${name}: silent or clipped (${peak})`);
+      return { name, peak, rms: Math.sqrt(sum / 96000) };
+    });
+    const pcm = new Uint8Array(rendered.length * 4), view = new DataView(pcm.buffer);
+    for (let i = 0; i < rendered.length; i++) {
+      view.setInt16(i * 4, Math.round(left[i] * 32767), true);
+      view.setInt16(i * 4 + 2, Math.round(right[i] * 32767), true);
+    }
+    let binary = '';
+    for (let i = 0; i < pcm.length; i += 8192) binary += String.fromCharCode(...pcm.subarray(i, i + 8192));
+    mixer.destroy();
+    return { levels, pcm: btoa(binary) };
+  });
+  const artifactDir = process.env.SAND_TEST_ARTIFACTS || resolve('.sand-artifacts/audio');
+  mkdirSync(artifactDir, { recursive: true });
+  const pcm = Buffer.from(combat.pcm, 'base64'), header = Buffer.alloc(44);
+  header.write('RIFF'); header.writeUInt32LE(pcm.length + 36, 4); header.write('WAVEfmt ', 8);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(2, 22);
+  header.writeUInt32LE(48000, 24); header.writeUInt32LE(192000, 28);
+  header.writeUInt16LE(4, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
+  writeFileSync(resolve(artifactDir, 'combat-audio.wav'), Buffer.concat([header, pcm]));
+  writeFileSync(resolve(artifactDir, 'combat-audio.json'), JSON.stringify(combat.levels, null, 2));
+  console.log('Combat playback passed:', combat.levels);
 } finally { await browser?.close(); server.close(); }

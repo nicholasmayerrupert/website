@@ -1033,3 +1033,17 @@ single-cell precision. Seeds always place and preview one cell. Mining reaches
 12 cells and holds its selected surface contact through the swing. Weapons use
 the right hand and shields the left, with depth following player facing. Raised
 shields follow an oval around the visible body to cover overhead aim.
+
+Adventure enemy charges gouge terrain along their path, heavy strikes excavate
+their marked areas, and expanding shockwaves fracture radial channels. These
+attacks use bounded blast batches to cut and repair both terrain layers and
+throw physical rubble and bright cosmetic sparks. Enemy arrows chip walls;
+spell volleys travel into their first obstacle and burst into fire, water, acid,
+or crystalline flecks. Terrain blast energy is separate from actor damage, so
+strong excavation does not multiply the damage of a telegraphed strike.
+
+Combat audio distinguishes a blade's air-cut from actual contact. Rune launches
+combine a swept air discharge with low pressure and elemental crackle; heavy
+impacts, elemental bursts, and expanding shockwaves have separate semantic
+events and layered recorded/synthesized tails. The browser playback suite renders
+a combat audio preview alongside its clipping and voice-admission checks.

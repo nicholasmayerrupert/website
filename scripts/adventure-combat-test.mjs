@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { CREATURE, PLAYER_ANIMATION } from '../src/sand/wasmBridge/abi.generated.js';
+import { CREATURE, PLAYER_ANIMATION, OFF, STRIDES, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 await initSandWasm();
 const arena=()=>{
  const e=attachTestHooks(createEngineWasm({cols:200,rows:128,worldSeed:73,sinksOn:false,planetId:PLANET.FRONTIER}));
@@ -12,6 +12,72 @@ const arena=()=>{
 function run(label,fn){const a=arena();try{fn(a.e,a.id);console.log('ok:',label);}finally{a.e.destroy();}}
 const tick=(e,n=1)=>{for(let i=0;i<n;i++)e.stepActors();};
 const hold=(e,id,bits,aimX=110,aimY=91)=>e.setPlayerInput(id,{bits,aimX,aimY});
+const soundTypes=e=>{
+ const events=e.drainSoundEvents(),types=[];
+ for(let i=0;i<events.length;i+=STRIDES.soundEvent)types.push(events[i+OFF.soundEvent.type]);
+ return types;
+};
+run('a sword cuts the air without inventing a contact sound',(e,id)=>{
+ e.drainSoundEvents();hold(e,id,INPUT.PRIMARY,90,84);tick(e,1);hold(e,id,0);tick(e,12);
+ const sounds=soundTypes(e);
+ assert.ok(sounds.includes(SOUND_EVENT.SWING));
+ assert.ok(!sounds.includes(SOUND_EVENT.IMPACT)&&!sounds.includes(SOUND_EVENT.MELEE_HIT),'a miss has no impact thud');
+});
+
+function commitEnemy(e,species,pattern=0){
+ e.setCreatureRuntime(true,false);
+ const enemy=e.spawnScriptedCreature(species,88+e.getWorldOffsetX(),80+e.getWorldOffsetY());
+ const snapshot=e.getCreatureSnapshotData(),o=OFF.creatureSnapshot;
+ snapshot[o.attackState]=2;snapshot[o.attackPattern]=pattern;snapshot[o.attackProgress]=1;
+ snapshot[o.y]=96-snapshot[o.h];
+ snapshot[o.aimX]=55;snapshot[o.aimY]=92;snapshot[o.facing]=-1;
+ e.setMirrorCreatures(snapshot,e.getWorldOffsetX(),e.getWorldOffsetY());
+ return enemy;
+}
+const stoneCount=grid=>grid.filter(m=>m===MAT.STONE).length;
+function backgroundFloor(e){
+ e.setBgEnabled(true);
+ for(let x=0;x<200;x++)for(let y=96;y<128;y++)e.paintDiscLayer(1,x,y,0,MAT.STONE,true);
+ e.syncComponentsLayer(1);
+}
+for(const species of [CREATURE.BONE_GUARD,CREATURE.ROOT_KNIGHT,CREATURE.HOLLOW_BELLKEEPER]){
+ run(`enemy ${species} fractures terrain in both layers without blast damage to itself`,(e)=>{
+  backgroundFloor(e);const enemy=commitEnemy(e,species);
+  const hp=e.getCreatures().find(c=>c.id===enemy).health;
+  const before=[stoneCount(e.getGrid()),stoneCount(e.getGridBg())];
+  tick(e,12);
+  [e.getGrid(),e.getGridBg()].forEach((grid,i)=>assert.ok(before[i]-stoneCount(grid)>10,`layer ${i} has a real crater`));
+  assert.equal(e.getCreatures().find(c=>c.id===enemy).health,hp,'terrain fracture does not hurt the attacker');
+  assert.ok(e.getItems().some(item=>item.material===MAT.ICE),'impact throws bright flecks');
+  assert.ok(soundTypes(e).includes(species===CREATURE.HOLLOW_BELLKEEPER?SOUND_EVENT.SHOCKWAVE:SOUND_EVENT.HEAVY_IMPACT),'physical impacts have their own sound');
+  for(let i=0;i<3;i++)e.stepWorld();
+  assert.equal(e.getGrid()[120*200+15],MAT.STONE,'undamaged stone survives component repair');
+ });
+}
+run('an enemy spell damages the player only when its projectile arrives',(e,id)=>{
+ commitEnemy(e,CREATURE.FEN_WISP);const before=e.getPlayer(id).health;
+ tick(e);assert.equal(e.getPlayer(id).health,before);
+ e.setCreatureRuntime(false,false);tick(e,24);
+ assert.ok(e.getPlayer(id).health<before,'the traveling attack deals damage on contact');
+ assert.ok(soundTypes(e).includes(SOUND_EVENT.SPELL_IMPACT));
+});
+for(const species of [CREATURE.FEN_WISP,CREATURE.MIRE_MATRON,CREATURE.CINDER_CASTELLAN,CREATURE.MINIGUNNER]){
+ run(`enemy ${species} launches a visible shot that carves the first wall`,(e,id)=>{
+  backgroundFloor(e);
+  for(let layer=0;layer<2;layer++){
+   for(let x=74;x<=80;x++)for(let y=50;y<96;y++)e.paintDiscLayer(layer,x,y,0,MAT.STONE,true);
+   e.syncComponentsLayer(layer);
+  }
+  commitEnemy(e,species);const hp=e.getPlayer(id).health;
+  const before=[stoneCount(e.getGrid()),stoneCount(e.getGridBg())];
+  tick(e);
+  assert.ok(e.getProjectiles().some(p=>p.owner<0),'the attack has a traveling projectile');
+  assert.equal(e.getPlayer(id).health,hp,'the target is not hit at launch');
+  e.setCreatureRuntime(false,false);tick(e,14);
+  [e.getGrid(),e.getGridBg()].forEach((grid,i)=>assert.ok(before[i]-stoneCount(grid)>15,`projectile excavates layer ${i}`));
+  assert.equal(e.getPlayer(id).health,hp,'the wall intercepts the shot');
+ });
+}
 run('sword windup, stamina cost, one strike, and blocking terrain',(e,id)=>{
  const target=e.spawnScriptedCreature(CREATURE.BONE_GUARD,64+e.getWorldOffsetX(),88+e.getWorldOffsetY()),health=()=>e.getCreatures().find(c=>c.id===target).health;
  const initial=health();hold(e,id,INPUT.PRIMARY,70,91);tick(e,2);

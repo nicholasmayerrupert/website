@@ -52,7 +52,6 @@ void CombatSystem::apply(Player& p, int previousInput) {
   p.actionTicks = p.actionDuration = gear->cooldown;
   p.actionState = gear->family == 1 ? AS_SWORD : gear->family == 2 ? AS_AXE : gear->family == 3 ? AS_SPEAR : gear->family == 10 ? AS_DRINK : AS_CAST;
   p.weaponKick = 1;
-  if (gear->family <= 3) E.audio.emit(SE_SWING,p.px,p.py,.7,EMPTY);
   E.playerActionCount++;
 }
 void CombatSystem::strike(Player& p, const ContentGear& gear) {
@@ -68,6 +67,7 @@ void CombatSystem::strike(Player& p, const ContentGear& gear) {
   double dx = p.aimX - cx, dy = p.aimY - cy, distance = std::hypot(dx, dy);
   if (distance < .01) { dx = p.facing; dy = 0; distance = 1; }
   dx /= distance; dy /= distance;
+  if (gear.family <= 3) E.audio.emit(SE_SWING, cx, cy, 1, (uint8_t)gear.family);
   if ((gear.family == 5 || gear.family == 9) && gear.spell != 6) {
     Projectile bolt; bolt.id = E.projectiles.nextId++; bolt.owner = p.id; bolt.kind = PK_RUNE; bolt.fuse = gear.id;
     bolt.px = cx; bolt.py = cy; bolt.vx = dx * 2.8; bolt.vy = dy * 2.8; bolt.life = imax(1, (int)std::ceil(gear.reach / 2.8));
@@ -101,6 +101,7 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
         if (E.psys.playerCellSolid((int)(cx+vx*at/length),(int)(cy+vy*at/length))) { blocked=true; break; }
       if (blocked) continue;
     }
+    if (gear.family <= 3) E.audio.emit(SE_MELEE_HIT, x, y, .85, (uint8_t)gear.family);
     creature.health -= damage; creature.hurtCooldown = 15;
     if (spell == 1) creature.burnTicks = 120;
     if (spell == 2) creature.slowTicks = 150;
@@ -113,9 +114,9 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
   }
   if (gear.family == 2 || spell == 4) {
     E.explosives.detonate((int)tx, (int)ty, spell == 4 ? 9 : 3, spell == 4 ? 17.0 : 4.0,
-      p.id, STONE, UINT32_MAX, SE_BREAK, 0.0);
+      p.id, STONE, UINT32_MAX, SE_HEAVY_IMPACT, 0.0);
   } else if (spell == 1) {
-    E.explosives.detonate((int)tx, (int)ty, 8, 24.0, p.id, FIRE, UINT32_MAX, SE_EXPLOSION, 0.0);
+    E.explosives.detonate((int)tx, (int)ty, 8, 24.0, p.id, FIRE, UINT32_MAX, SE_SPELL_IMPACT, 0.0);
     E.tools.paintDisc((int)tx, (int)ty, 2, FIRE, false);
   } else if (spell == 2) {
     Engine::ActiveLayerScope scope(E, &E.fg);
@@ -132,7 +133,46 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     int x0, y0;
     if (E.tools.getSeedOrigin((int)tx, (int)ty, x0, y0)) E.tools.placeSeedAtTyped(x0, y0, 0);
   } else if (spell == 6) p.health = imin(100, p.health + 32);
-  E.audio.emit(SE_IMPACT, cx, cy, .55, STONE);
+  if ((gear.family == 1 || gear.family == 3) && E.psys.playerCellSolid((int)tx, (int)ty))
+    E.audio.emit(SE_MELEE_HIT, tx, ty, .9, STONE);
+  if (spell && spell != 1 && spell != 4)
+    E.audio.emit(SE_SPELL_IMPACT, tx, ty, .8, spell == 2 ? ICE : spell == 5 ? ACID : EMPTY);
+}
+
+// Terrain destruction shares the component-aware blast transaction. Actor hits
+// belong to the attack's contact shape, independently of terrain blast energy.
+void CombatSystem::enemyTerrainImpact(double x, double y, int radius, uint8_t material, double ringRadius) {
+  Engine::ActiveLayerScope foreground(E, &E.fg);
+  ExplosivesSystem::BlastBatch front, back;
+  front.emitGas = material == FIRE;
+  back.emitGas = back.emitParticles = false;
+  back.debrisStepCap = 0;
+  int waves = ringRadius > 0 ? 16 : 1;
+  for (int i = 0; i < waves; i++) {
+    double angle = i * 6.283185307179586 / waves;
+    int cx = (int)std::floor(x + std::cos(angle) * ringRadius);
+    int cy = (int)std::floor(y + std::sin(angle) * ringRadius);
+    if (cx < 1 || cy < 1 || cx >= E.cols - 1 || cy >= E.rows - 1) continue;
+    uint32_t seed = (uint32_t)E.actorTick * 2654435761u ^ (uint32_t)i * 2246822519u;
+    E.explosives.carveBlast(cx, cy, radius, 24, front, nullptr, material, seed);
+    if (E.bgEnabled) {
+      Engine::ActiveLayerScope background(E, &E.bg);
+      E.explosives.carveBlast(cx, cy, radius, 24, back, nullptr, material, seed);
+    }
+  }
+  E.explosives.finishBlastBatches(front, &back);
+  for (int i = 0; i < 24; i++) {
+    double angle = i * 2.399963 + E.actorTick * .17;
+    double speed = 1.0 + (i % 5) * .38;
+    uint8_t fleck = i % 3 == 0 ? ICE : ringRadius > 0 ? CRYSTAL
+      : material == STONE ? (i % 2 ? FIRE : GOLD_ORE) : material;
+    E.itemsys.spawnParticle(fleck,
+      x + std::cos(angle) * ringRadius, y + std::sin(angle) * ringRadius,
+      std::cos(angle) * speed, std::sin(angle) * speed - .6, 22 + i % 12);
+  }
+  if (ringRadius == 0 || ringRadius <= 8)
+    E.audio.emit(ringRadius > 0 ? SE_SHOCKWAVE : material == STONE ? SE_HEAVY_IMPACT : SE_SPELL_IMPACT,
+      x, y, radius >= 8 || ringRadius > 0 ? 1.2 : .7, material);
 }
 
 // Fantasy enemies commit to a telegraphed point before resolving their strike.
@@ -141,33 +181,49 @@ void CombatSystem::enemyAttack(Creature& c) {
   bool boss = c.species >= CS_THORNBOUND_HART && c.species <= CS_HOLLOW_BELLKEEPER;
   bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
   bool enraged = c.health * 2 < species.maxHealth;
+  int damage = heavy ? (enraged ? 28 : 22) : imax(10, imin(18, species.damage));
   int windup = heavy ? (enraged ? 42 : 60) : 26;
   bool ring = (c.species == CS_HOLLOW_BELLKEEPER && c.attackPattern == 0) || (heavy && c.attackPattern == 2 && c.species != CS_MIRE_MATRON);
   int duration = ring ? 50 : 18;
+  bool contact = (c.species == CS_THORNBOUND_HART && c.attackPattern == 0) || c.species == CS_BRIAR_WOLF || c.species == CS_FOX || c.species == CS_BONE_GUARD;
+  bool slam = c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN;
   double x = c.wx + species.w * .5, y = c.wy + species.h * .5;
   double localX = x - E.fg.worldOffsetX, localY = y - E.fg.worldOffsetY;
   if (c.attackState == CAS_FIRING) {
     int tick = c.attackTicks++;
     c.attackProgress = 1 - c.attackTicks / (double)duration;
-    bool contact = (c.species == CS_THORNBOUND_HART && c.attackPattern == 0) || c.species == CS_BRIAR_WOLF || c.species == CS_FOX || c.species == CS_BONE_GUARD;
     bool toll = ring;
     bool archer = c.species == CS_MINIGUNNER;
-    if (tick == 0 && archer) {
+    if (tick == 0 && archer && (int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
       double dx=c.attackAimX-x,dy=c.attackAimY-y,d=std::max(1.0,std::hypot(dx,dy));
       Projectile arrow; arrow.id=E.projectiles.nextId++; arrow.owner=-c.id; arrow.kind=PK_ARROW;
       arrow.px=localX; arrow.py=localY; arrow.vx=dx/d*3.5; arrow.vy=dy/d*3.5-.2;
-      arrow.fuse=species.damage; arrow.charge=.7; E.projectiles.projectiles.push_back(arrow);
+      arrow.fuse=damage; arrow.charge=.7; E.projectiles.projectiles.push_back(arrow);
       E.audio.emit(SE_BOW,localX,localY,.7,EMPTY);
     }
-    if (contact) c.vx = c.facing * (heavy ? 2.1 : 1.35);
-    if (tick == 0 && !ring && (c.species == CS_CINDER_CASTELLAN || c.species == CS_ROOT_KNIGHT)) {
-      E.explosives.detonate((int)c.attackAimX - E.fg.worldOffsetX, (int)c.attackAimY - E.fg.worldOffsetY,
-        heavy ? 8 : 5, 9, 0, STONE, UINT32_MAX, SE_IMPACT, 0.0, false, c.id);
-      E.tools.paintDisc((int)c.attackAimX - E.fg.worldOffsetX, (int)c.attackAimY - E.fg.worldOffsetY, 2, FIRE, false);
+    if (contact) {
+      c.vx = c.facing * (heavy ? 2.1 : 1.35);
+      if (tick % 4 == 0) enemyTerrainImpact(localX + c.facing * (species.w * .5 + 2),
+        localY + species.h * .35, heavy ? 8 : 5, STONE);
     }
-    if (tick == 0 && c.species == CS_MIRE_MATRON) {
-      for (int side = (c.attackPattern == 1 ? -2 : -1); side <= (c.attackPattern == 1 ? 2 : 1); side++)
-        E.tools.paintDisc((int)c.attackAimX - E.fg.worldOffsetX + side * 20, (int)c.attackAimY - E.fg.worldOffsetY, 4, WATER, false);
+    if (ring && tick % 6 == 0) enemyTerrainImpact(localX, localY, 5, ICE, 8 + tick * 1.4);
+    if (tick == 0 && !ring && !contact && !archer) {
+      int spread = heavy && c.attackPattern == 1 ? 1 : 0;
+      if (c.species == CS_MIRE_MATRON) spread = c.attackPattern == 1 ? 2 : 1;
+      for (int side = -spread; side <= spread; side++) {
+        double tx = c.attackAimX - E.fg.worldOffsetX + side * 20;
+        double ty = c.attackAimY - E.fg.worldOffsetY;
+        if (slam) { enemyTerrainImpact(tx, ty, 13, STONE); continue; }
+        if ((int)E.projectiles.projectiles.size() >= PROJECTILE_MAX) break;
+        double dx = tx - localX, dy = ty - localY, d = std::max(1.0, std::hypot(dx, dy));
+        Projectile bolt; bolt.id = E.projectiles.nextId++; bolt.owner = -c.id; bolt.kind = PK_RUNE;
+        bolt.fuse = c.species == CS_MIRE_MATRON ? 301 : c.species == CS_FEN_WISP ? 304
+          : c.species == CS_HOLLOW_BELLKEEPER ? 302 : 300;
+        bolt.px = localX; bolt.py = localY; bolt.vx = dx / d * 2.4; bolt.vy = dy / d * 2.4;
+        bolt.life = 70; bolt.charge = damage;
+        E.projectiles.projectiles.push_back(bolt);
+        if (side == 0) E.audio.emit(SE_RUNE, localX, localY, 1, (uint8_t)(bolt.fuse - 299));
+      }
     }
     for (auto& p : E.psys.players) {
       if (!p.active || !p.alive) continue;
@@ -177,13 +233,13 @@ void CombatSystem::enemyAttack(Creature& c) {
         double radius = 8 + tick * 1.4;
         hit = std::fabs(std::hypot(px-x, py-y) - radius) < 3 && (tick % 3 == 0);
       } else if (contact) hit = std::hypot(px-x, py-y) < species.w*.5 + 5;
-      else if (tick == 0 && !archer) {
+      else if (tick == 0 && slam) {
         int spread = heavy && c.attackPattern == 1 ? 1 : 0;
         if (c.species == CS_MIRE_MATRON) spread = c.attackPattern == 1 ? 2 : 1;
         for (int side = -spread; side <= spread; side++)
           hit |= std::hypot(px-c.attackAimX-side*20, py-c.attackAimY) < (heavy ? 13 : 7);
       }
-      if (hit) E.psys.damagePlayer(p, heavy ? (enraged ? 28 : 22) : imin(18,species.damage), 30, localX, localY);
+      if (hit) E.psys.damagePlayer(p, damage, 30, localX, localY);
     }
     if (c.attackTicks >= duration) {
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
@@ -196,7 +252,7 @@ void CombatSystem::enemyAttack(Creature& c) {
     if (c.attackTicks >= windup) {
       c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
       if (c.species == CS_THORNBOUND_HART || c.species == CS_BRIAR_WOLF) c.vy = -1.3;
-      E.audio.emit(SE_CREATURE, localX, localY, 1, c.species);
+      if (!ring && (contact || slam)) E.audio.emit(SE_SWING, localX, localY, heavy ? 1.2 : .8, heavy ? 2 : 1);
     }
     return;
   }

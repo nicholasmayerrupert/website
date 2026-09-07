@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 47;
 
-static const uint64_t ABI_FINGERPRINT = 0x1280fc70a81aULL;
+static const uint64_t ABI_FINGERPRINT = 0x1e20be2dcf93ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -1541,6 +1541,10 @@ enum SoundEventType : uint8_t {
   SE_RUNE = 31,
   SE_BELL = 32,
   SE_GUARD = 33,
+  SE_HEAVY_IMPACT = 34,
+  SE_SPELL_IMPACT = 35,
+  SE_SHOCKWAVE = 36,
+  SE_MELEE_HIT = 37,
 };
 
 static constexpr bool isSoundEventTypeValue(int value) {
@@ -1579,6 +1583,10 @@ static constexpr bool isSoundEventTypeValue(int value) {
     case SE_RUNE:
     case SE_BELL:
     case SE_GUARD:
+    case SE_HEAVY_IMPACT:
+    case SE_SPELL_IMPACT:
+    case SE_SHOCKWAVE:
+    case SE_MELEE_HIT:
       return true;
     default: return false;
   }

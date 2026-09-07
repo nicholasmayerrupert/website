@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 47;
 
-export const ABI_FINGERPRINT = 0x1280fc70a81a;
+export const ABI_FINGERPRINT = 0x1e20be2dcf93;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -141,7 +141,7 @@ export const MISSION = Object.freeze({ NONE: 0, GREENFALL_RECOVERY: 1, SILENT_QU
 export const MISSION_PHASE = Object.freeze({ INACTIVE: 0, ACTIVE: 1, EXTRACTION: 2, COMPLETE: 3, FAILED: 4 });
 export const OBJECTIVE_KIND = Object.freeze({ CLEAR: 0, RESCUE: 1, ANCHOR: 2, BOSS: 3, CORE: 4, EXTRACT: 5, PASSAGE: 6, DRAIN: 7, SURVEY: 8, BUILD: 9, DELIVER: 10, DEFEAT: 11 });
 export const OBJECTIVE_STATE = Object.freeze({ LOCKED: 0, ACTIVE: 1, COMPLETE: 2, FAILED: 3 });
-export const SOUND_EVENT = Object.freeze({ EXPLOSION: 0, FUSE: 1, IMPACT: 2, JUMP: 3, LAND: 4, PLACE: 5, BREAK: 6, PICKUP: 7, HURT: 8, CREATURE: 9, FLUID_FALL: 10, POWDER_MOVE: 11, SOLID_LAND: 12, ACID_DISSOLVE: 13, CRAFT: 14, BOW: 15, ARROW_HIT: 16, DEATH: 17, RESPAWN: 18, BLAST_GUN: 19, BORE_CHARGE: 20, BORE_FIRE: 21, ACID_MORTAR: 22, CLUSTER_LAUNCH: 23, MINIGUN: 24, SHIELD_HIT: 25, SHIELD_BREAK: 26, SPAWN_BREACH: 27, WEAPON_EXPLOSION: 28, BEAM: 29, SWING: 30, RUNE: 31, BELL: 32, GUARD: 33 });
+export const SOUND_EVENT = Object.freeze({ EXPLOSION: 0, FUSE: 1, IMPACT: 2, JUMP: 3, LAND: 4, PLACE: 5, BREAK: 6, PICKUP: 7, HURT: 8, CREATURE: 9, FLUID_FALL: 10, POWDER_MOVE: 11, SOLID_LAND: 12, ACID_DISSOLVE: 13, CRAFT: 14, BOW: 15, ARROW_HIT: 16, DEATH: 17, RESPAWN: 18, BLAST_GUN: 19, BORE_CHARGE: 20, BORE_FIRE: 21, ACID_MORTAR: 22, CLUSTER_LAUNCH: 23, MINIGUN: 24, SHIELD_HIT: 25, SHIELD_BREAK: 26, SPAWN_BREACH: 27, WEAPON_EXPLOSION: 28, BEAM: 29, SWING: 30, RUNE: 31, BELL: 32, GUARD: 33, HEAVY_IMPACT: 34, SPELL_IMPACT: 35, SHOCKWAVE: 36, MELEE_HIT: 37 });
 export const CREATURE_BEHAVIOR_PROFILE = Object.freeze({"GENERIC":0,"DYNAMITEER":1,"BORE_SENTINEL":2,"CAUSTIC_MORTARMAN":3,"CLUSTER_WASP":4,"MINIGUNNER":5,"QUARRY_FOREMAN":6,"REACTOR_WARDEN":7});
 export const CREATURE_RENDER_PROFILE = Object.freeze({"MINNOW":0,"PIKE":1,"FOX":2,"HARE":3,"CRAWLER":4,"MOLE":5,"BIRD":6,"DYNAMITEER":7,"BORE_SENTINEL":8,"CAUSTIC_MORTARMAN":9,"CLUSTER_WASP":10,"MINIGUNNER":11,"SURVEYOR":12,"SHIELD_ANCHOR":13,"QUARRY_FOREMAN":14,"REACTOR_WARDEN":15,"REACTOR_CORE":16,"IRIS_COMMANDER":17,"IRIS_ENGINEER":18,"VILLAGER":19});
 export const CREATURE_SPECIES_DEFS = Object.freeze([

@@ -4,6 +4,7 @@ class CombatSystem {
  public:
   explicit CombatSystem(Engine& engine) : E(engine) {}
   void enemyAttack(Creature& creature);
+  void enemyTerrainImpact(double x, double y, int radius, uint8_t material, double ringRadius = 0);
   bool hasCharm(const Player& player, int id) const;
   int defense(const Player& player) const;
   bool canGuard(const Player& player) const;

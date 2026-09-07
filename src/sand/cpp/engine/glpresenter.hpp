@@ -144,7 +144,7 @@ class GLPresenter {
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
                      bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
-                     int heldDefinition, const int* equipment);
+                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration);
   std::vector<float> chestData;
   void glDrawChests();
   void glDrawPlayers();

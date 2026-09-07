@@ -9,7 +9,14 @@ const STYLE = `
   background:#252b31; border:3px solid #0a0c0f;
   box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45);
   pointer-events: auto; }
-.fp-panel.open { display: block; }
+.fp-panel.open { display: block; margin-bottom:8px; }
+.fp-controls { display:grid; grid-template-columns:32px 120px 32px; gap:4px; pointer-events:auto; }
+.fp-controls .fp-precision { grid-column:1 / -1; min-height:28px; font-size:10px; }
+.fp-controls .fp-btn { background:#17251d; border-color:#6f7454; box-shadow:none; }
+.fp-controls .fp-btn:disabled { opacity:.4; cursor:default; }
+.fp-controls .fp-btn[aria-pressed=true] { color:#f0d465; border-color:#f0d465; }
+:host([mission="frontier"]) .fp-wrap { font-family:"Sand Pixel",monospace; }
+@media (max-width:800px) { .fp-wrap { bottom:180px; right:12px; } }
 .fp-head { margin:0 0 8px; font-size:10px; font-weight:800; letter-spacing:.12em; color:#f0d465; }
 .fp-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .fp-btn { min-height:34px; border:2px solid #0d1013; border-radius:0;
@@ -25,6 +32,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   let options = [];
   let selected = 0;
   let signature = '';
+  let broadSize = 9;
   let previousFocus = null;
 
   const backdrop = document.createElement('div');
@@ -38,12 +46,26 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
 
   const head = document.createElement('div');
   head.className = 'fp-head';
-  head.textContent = 'TOOL SIZE';
+  head.textContent = 'MINING / BUILDING SIZE';
 
   const list = document.createElement('div');
   list.className = 'fp-list';
   panel.append(head, list);
-  wrap.appendChild(panel);
+  const controls = document.createElement('div'); controls.className = 'fp-controls';
+  controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', 'Mining and building size');
+  const button = (text, label, action) => {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'fp-btn';
+    el.textContent = text; el.setAttribute('aria-label', label); el.title = label;
+    el.addEventListener('click', action); controls.append(el); return el;
+  };
+  const smaller = button('−', 'Smaller tool size ([)', () => adjust(-1));
+  const current = button('', 'Choose tool size (Q)', () => setOpen(!open));
+  current.setAttribute('aria-expanded', 'false');
+  const larger = button('+', 'Larger tool size (])', () => adjust(1));
+  const precision = button('1×1 · V', 'Toggle single-pixel size (V)', togglePrecision);
+  precision.classList.add('fp-precision'); precision.setAttribute('aria-pressed', 'false');
+  wrap.append(panel, controls);
+  swallowEvents(controls);
 
   swallowEvents(panel);
   swallowEvents(backdrop);
@@ -51,7 +73,28 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   backdrop.addEventListener('contextmenu', (e) => e.preventDefault());
   backdrop.addEventListener('pointerdown', () => setOpen(false));
 
+  function choose(id) {
+    const fp = options.find(option => option.id === id);
+    if (!fp) return;
+    if (fp.id !== 0) broadSize = fp.id;
+    else if (selected !== 0) broadSize = selected;
+    selected = fp.id; signature = '';
+    render(); selectFootprint?.(fp.id);
+    root.querySelector('.sg-sim')?.focus({ preventScroll: true });
+  }
+  function adjust(delta) {
+    const index = options.findIndex(fp => fp.id === selected);
+    const next = options[Math.max(0, Math.min(options.length - 1, index + delta))];
+    if (next) choose(next.id);
+  }
+  function togglePrecision() { choose(selected === 0 ? broadSize : 0); }
   function render() {
+    const fp = options.find(option => option.id === selected);
+    current.textContent = `${fp?.width ?? 1}×${fp?.height ?? 1} · Q`;
+    precision.textContent = selected === 0 ? 'Restore size · V' : '1×1 · V';
+    precision.setAttribute('aria-pressed', String(selected === 0));
+    smaller.disabled = selected === options[0]?.id;
+    larger.disabled = selected === options.at(-1)?.id;
     list.replaceChildren();
     for (const fp of options) {
       const btn = document.createElement('button');
@@ -59,10 +102,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
       btn.className = 'fp-btn' + (fp.id === selected ? ' sel' : '');
       btn.textContent = `${fp.width}x${fp.height}`;
       btn.addEventListener('click', () => {
-        selected = fp.id;
-        signature = '';
-        render();
-        selectFootprint?.(fp.id);
+        choose(fp.id);
         setOpen(false);
       });
       list.appendChild(btn);
@@ -76,13 +116,20 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
     open = nextOpen;
     panel.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
+    current.setAttribute('aria-expanded', String(open));
+    if (open) list.querySelector('.sel')?.focus({ preventScroll: true });
     if (!open) {
-      const target = previousFocus?.isConnected ? previousFocus : root.querySelector('.sg-sim');
+      const target = root.querySelector('.sg-sim') || (previousFocus?.isConnected ? previousFocus : null);
       previousFocus = null;
       target?.focus?.({ preventScroll: true });
     }
   }
 
+  const onKey = (event) => {
+    if (!open || !['Escape', 'q', 'Q'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation(); setOpen(false);
+  };
+  root.addEventListener('keydown', onKey);
   root.append(backdrop, wrap);
   return {
     update(nextOptions, nextSelected) {
@@ -93,12 +140,16 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
       signature = nextSig;
       options = nextOpts;
       selected = nextSel;
+      if (selected !== 0) broadSize = selected;
       render();
     },
     setOpen,
+    adjust,
+    togglePrecision,
     toggleOpen() { setOpen(!open); },
     isOpen() { return open; },
     destroy() {
+      root.removeEventListener('keydown', onKey);
       backdrop.remove();
       wrap.remove();
     },

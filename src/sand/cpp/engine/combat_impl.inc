@@ -91,8 +91,8 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     double y = creature.wy - E.fg.worldOffsetY + species.h * .5;
     double vx = x - cx, vy = y - cy, length = std::hypot(vx, vy);
     bool hit = gear.family <= 3
-      ? length <= std::hypot(tx - cx, ty - cy) + species.w * .5 &&
-        (vx * dx + vy * dy) / std::max(1.0, length) > (gear.family == 3 ? .87 : .20)
+      ? length <= (gear.family == 1 ? gear.reach : std::hypot(tx - cx, ty - cy)) + species.w * .5 &&
+        (vx * dx + vy * dy) / std::max(1.0, length) > (gear.family == 3 ? .87 : gear.family == 1 ? -.15 : .20)
       : std::hypot(x - tx, y - ty) < 9 + species.w * .5;
     if (!hit) continue;
     if (gear.family <= 3 && length > .01) {
@@ -115,6 +115,7 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     E.explosives.detonate((int)tx, (int)ty, spell == 4 ? 9 : 3, spell == 4 ? 17.0 : 4.0,
       p.id, STONE, UINT32_MAX, SE_BREAK, 0.0);
   } else if (spell == 1) {
+    E.explosives.detonate((int)tx, (int)ty, 8, 24.0, p.id, FIRE, UINT32_MAX, SE_EXPLOSION, 0.0);
     E.tools.paintDisc((int)tx, (int)ty, 2, FIRE, false);
   } else if (spell == 2) {
     Engine::ActiveLayerScope scope(E, &E.fg);

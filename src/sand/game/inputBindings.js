@@ -8,7 +8,7 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 /** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
-export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onEquipLastCreativeMaterial, onLogs, onReplay, onReplayPlayback, onReplayStep }) {
+export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onInteraction, onToggleInventory, onToggleFootprintMenu, onAdjustFootprint, onTogglePrecision, onEquipLastCreativeMaterial, onLogs, onReplay, onReplayPlayback, onReplayStep }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button/key state is edge-owned: down latches, up/cancel/blur clears.
@@ -194,7 +194,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     const isQ = key === 'q' || e.code === 'KeyQ';
     // OS key-repeat must not flip latched menus. Movement and zoom still use
     // the extra keydowns as no-ops or as step repeats.
-    if (e.repeat && (key === 'e' || isQ || key === 'l' || key === 'r')) return;
+    if (e.repeat && (key === 'e' || isQ || key === 'v' || key === 'l' || key === 'r')) return;
     // Creative camera movement, selection restore, logs, and replay should
     // survive focus moving to palette buttons and should not require a priming
     // click. Survival and the remaining shortcuts stay scoped to explicit
@@ -239,6 +239,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
       if (isQ) { onToggleFootprintMenu?.(); e.preventDefault(); return; }
+      if (key === '[' || key === ']') { onAdjustFootprint?.(key === '[' ? -1 : 1); e.preventDefault(); return; }
+      if (key === 'v') { onTogglePrecision?.(); e.preventDefault(); return; }
     }
     if (!ctx.survival && isQ) {
       onEquipLastCreativeMaterial?.();

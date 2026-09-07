@@ -81,7 +81,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   }
   const captionTimer = setTimeout(() => caption.classList.add('faded'), 7000);
   const inventoryHome = inventory.el.parentNode;
-  const footprintLabel = el('label', 'ad-muted ad-footprint', 'Building footprint ');
+  const footprintLabel = el('label', 'ad-muted ad-footprint', 'Mining / building size ');
   const footprint = createGameSelect(root, { label: 'Tool footprint', options: game.getSurvivalFootprints().map(shape => ({ value: shape.id, label: `${shape.width} × ${shape.height}` })), onChange: value => game.setSelectedFootprint(Number(value)) });
   footprint.value = game.getInventory().selectedFootprint;
   footprintLabel.append(footprint.el); inventory.el.append(footprintLabel);

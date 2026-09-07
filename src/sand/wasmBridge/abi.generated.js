@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 47;
 
-export const ABI_FINGERPRINT = 0xc9016576f621;
+export const ABI_FINGERPRINT = 0x910c9e92240f;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -49,6 +49,8 @@ export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_a
   out[offset + 26] = record.gear6;
   out[offset + 27] = record.gear7;
   out[offset + 28] = record.gear8;
+  out[offset + 29] = record.actionTicks;
+  out[offset + 30] = record.actionDuration;
 }
 
 export const STRIDES = Object.freeze({
@@ -61,7 +63,7 @@ export const STRIDES = Object.freeze({
   craftingRecipe: 10,
   craftingIngredient: 3,
   survivalFootprint: 6,
-  glPlayerExt: 29,
+  glPlayerExt: 31,
   soundEvent: 6,
   perfSnapshot: 33,
   missionSnapshot: 10,
@@ -81,7 +83,7 @@ export const SNAPSHOT_CODECS = Object.freeze({
   craftingRecipe: Object.freeze({ fields: Object.freeze(["id","outputKind","outputMaterial","outputTier","outputCount","ingredientStart","ingredientCount","outputDefinition","npcId","ability"]), kinds: 'iiiiiiiiii', storage: 'int32' }),
   craftingIngredient: Object.freeze({ fields: Object.freeze(["kind","value","count"]), kinds: 'iii', storage: 'int32' }),
   survivalFootprint: Object.freeze({ fields: Object.freeze(["id","width","height","cellCount","anchorX","anchorY"]), kinds: 'iiiiii', storage: 'int32' }),
-  glPlayerExt: Object.freeze({ fields: Object.freeze(["x","y","w","h","facing","own","animState","animFrame","alive","heldItemKind","bowCharge","aimX","aimY","jetpackFuel","jetpackActive","shieldHealth","shieldActive","weaponKick","hurtCooldown","heldDefinition","gear0","gear1","gear2","gear3","gear4","gear5","gear6","gear7","gear8"]), kinds: 'nniiibiibinnnnbibniiiiiiiiiii', storage: 'float' }),
+  glPlayerExt: Object.freeze({ fields: Object.freeze(["x","y","w","h","facing","own","animState","animFrame","alive","heldItemKind","bowCharge","aimX","aimY","jetpackFuel","jetpackActive","shieldHealth","shieldActive","weaponKick","hurtCooldown","heldDefinition","gear0","gear1","gear2","gear3","gear4","gear5","gear6","gear7","gear8","actionTicks","actionDuration"]), kinds: 'nniiibiibinnnnbibniiiiiiiiiiiii', storage: 'float' }),
   soundEvent: Object.freeze({ fields: Object.freeze(["type","x","y","intensity","material","layer"]), kinds: 'innnii', storage: 'float' }),
   perfSnapshot: Object.freeze({ fields: Object.freeze(["stepMs","actorMs","dirtyChunks","dirtyRows","dirtyCells","componentCount","componentCellCount","crossBondCount","lightMs","fillMs","uploadMs","shiftSave","shiftBuffers","shiftTranslate","shiftRegister","shiftFill","forcePrepareMs","forceWakeMs","groundingMs","crossLayerGroundingMs","componentIndexMs","assemblyUnionMs","carryMs","bodyMs","sandMs","liquidMs","gasMs","reactMs","tailMs","liquidRelaxMs","liquidSurfaceMs","layersMs","crossMs"]), kinds: 'nniiiiiinnnnnnnnnnnnnnnnnnnnnnnnn', storage: 'double' }),
   missionSnapshot: Object.freeze({ fields: Object.freeze(["revision","missionId","planetId","phase","objectiveCount","threatLevel","extractionX","extractionY","elapsedTicks","recoveredWeaponMask"]), kinds: 'iiiiiiiiii', storage: 'int32' }),
@@ -101,7 +103,7 @@ export const OFF = Object.freeze({
   craftingRecipe: Object.freeze({ id: 0, outputKind: 1, outputMaterial: 2, outputTier: 3, outputCount: 4, ingredientStart: 5, ingredientCount: 6, outputDefinition: 7, npcId: 8, ability: 9 }),
   craftingIngredient: Object.freeze({ kind: 0, value: 1, count: 2 }),
   survivalFootprint: Object.freeze({ id: 0, width: 1, height: 2, cellCount: 3, anchorX: 4, anchorY: 5 }),
-  glPlayerExt: Object.freeze({ x: 0, y: 1, w: 2, h: 3, facing: 4, own: 5, animState: 6, animFrame: 7, alive: 8, heldItemKind: 9, bowCharge: 10, aimX: 11, aimY: 12, jetpackFuel: 13, jetpackActive: 14, shieldHealth: 15, shieldActive: 16, weaponKick: 17, hurtCooldown: 18, heldDefinition: 19, gear0: 20, gear1: 21, gear2: 22, gear3: 23, gear4: 24, gear5: 25, gear6: 26, gear7: 27, gear8: 28 }),
+  glPlayerExt: Object.freeze({ x: 0, y: 1, w: 2, h: 3, facing: 4, own: 5, animState: 6, animFrame: 7, alive: 8, heldItemKind: 9, bowCharge: 10, aimX: 11, aimY: 12, jetpackFuel: 13, jetpackActive: 14, shieldHealth: 15, shieldActive: 16, weaponKick: 17, hurtCooldown: 18, heldDefinition: 19, gear0: 20, gear1: 21, gear2: 22, gear3: 23, gear4: 24, gear5: 25, gear6: 26, gear7: 27, gear8: 28, actionTicks: 29, actionDuration: 30 }),
   soundEvent: Object.freeze({ type: 0, x: 1, y: 2, intensity: 3, material: 4, layer: 5 }),
   perfSnapshot: Object.freeze({ stepMs: 0, actorMs: 1, dirtyChunks: 2, dirtyRows: 3, dirtyCells: 4, componentCount: 5, componentCellCount: 6, crossBondCount: 7, lightMs: 8, fillMs: 9, uploadMs: 10, shiftSave: 11, shiftBuffers: 12, shiftTranslate: 13, shiftRegister: 14, shiftFill: 15, forcePrepareMs: 16, forceWakeMs: 17, groundingMs: 18, crossLayerGroundingMs: 19, componentIndexMs: 20, assemblyUnionMs: 21, carryMs: 22, bodyMs: 23, sandMs: 24, liquidMs: 25, gasMs: 26, reactMs: 27, tailMs: 28, liquidRelaxMs: 29, liquidSurfaceMs: 30, layersMs: 31, crossMs: 32 }),
   missionSnapshot: Object.freeze({ revision: 0, missionId: 1, planetId: 2, phase: 3, objectiveCount: 4, threatLevel: 5, extractionX: 6, extractionY: 7, elapsedTicks: 8, recoveredWeaponMask: 9 }),

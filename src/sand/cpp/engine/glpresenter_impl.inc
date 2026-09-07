@@ -205,11 +205,11 @@ void GLPresenter::glCollectDynamicLights() {
                        int shieldHealth, bool shieldActive) {
     if (!alive) return;
     double cx = x + w * .5, cy = y + h * .5;
-    if (heldItemKind == IK_MINING_TOOL)
+    if (heldItemKind == IK_MINING_TOOL && E.planetId != PL_FRONTIER)
       add(aimX, aimY, 225);
     if (jetpackActive)
       add(cx - facing * 1.55, y + h - 1.15, 225);
-    if (shieldActive && shieldHealth > 0) {
+    if (shieldActive && shieldHealth > 0 && E.planetId != PL_FRONTIER) {
       double dx = aimX - cx, dy = aimY - cy;
       double length = std::hypot(dx, dy);
       if (length < 1e-6) { dx = facing; dy = 0; length = 1; }
@@ -561,7 +561,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
                      bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
-                     int heldDefinition, const int* equipment) {
+                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration) {
   if (!alive) animState = AS_DEATH;
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   const auto& art = E.content;
@@ -578,19 +578,27 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                      heldItemKind == IK_RESCUE_BEAM;
 
   // Torso follow-through and the weapon hand share the same shoulder anchor.
-  const double actionPhase = animFrame / (double)imax(1, art.clips[animState].count - 1);
+  const double actionPhase = actionTicks > 0 && actionDuration > 0
+    ? std::max(0.0, std::min(1.0, (actionDuration - actionTicks) / (double)actionDuration))
+    : animFrame / (double)imax(1, art.clips[animState].count - 1);
   auto ease = [](double t) { t = std::max(0.0, std::min(1.0, t)); return t*t*(3.0-2.0*t); };
   auto swordAngle = [&](double t) {
     if (t < .20) return -.80 - 1.25 * ease(t/.20);
-    if (t < .46) return -2.05 + 3.30 * ease((t-.20)/.26);
-    if (t < .60) return 1.25 + .15 * ease((t-.46)/.14);
-    return 1.40 - 2.20 * ease((t-.60)/.40);
+    if (t < .34) return -2.05 + 2.05 * ease((t-.20)/.14);
+    if (t < .50) return 1.65 * ease((t-.34)/.16);
+    return 1.65 - 2.45 * ease((t-.50)/.50);
   };
   bool sword = E.planetId == PL_FRONTIER && gear && gear->family == 1;
   bool cutting = sword && animState == AS_SWORD;
   double bodyLean = cutting ? (actionPhase < .20 ? -.35 * ease(actionPhase/.20)
     : actionPhase < .46 ? -.35 + .95 * ease((actionPhase-.20)/.26) : .60 * (1-ease((actionPhase-.46)/.54))) : 0;
-  double bodyBob = 0;
+  bool mining = E.planetId == PL_FRONTIER && heldItemKind == IK_MINING_TOOL && animState == AS_AXE;
+  double mineContact = P_FRONTIER_MINE_IMPACT / (double)imax(1, actionDuration);
+  if (mining) bodyLean = actionPhase < mineContact
+    ? -.3 + .9 * ease(actionPhase / mineContact)
+    : .6 * (1-ease((actionPhase-mineContact)/(1-mineContact)));
+  if (E.planetId == PL_FRONTIER && shieldActive) bodyLean -= .22;
+  double bodyBob = mining ? .18 * std::sin(actionPhase * 3.14159265) : 0;
   if (alive) {
     static const double WALK_BOB[4] = {0.0, -0.10, 0.0, -0.06};
     static const double RUN_BOB[4] = {-0.14, 0.0, -0.11, 0.0};
@@ -825,14 +833,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double raise = shieldActive ? 1.0 : 0.0;
     if (animState == AS_GUARD_RAISE) raise = shieldActive ? ease(phase) : 1-ease(phase);
     if (animState == AS_GUARD_BREAK) raise = 1-ease(phase);
-    double recoil = animState == AS_GUARD_HIT ? std::sin(phase * 3.14159265) * .65 : 0;
+    double recoil = animState == AS_GUARD_HIT ? (phase < .2 ? ease(phase/.2) : 1-ease((phase-.2)/.8)) * .85 : 0;
     double broken = animState == AS_GUARD_BREAK ? std::sin(phase * 3.14159265) : 0;
     double ax = aimX-(pxc+PLAYER_W*.5), ay = aimY-(pyc+PLAYER_H*.5), length = std::hypot(ax,ay);
     if (length < .01) { ax=facing; ay=0; length=1; }
     ax/=length; ay/=length;
     double restAngle = facing > 0 ? .30 : 2.84;
     double delta = std::atan2(ay,ax) - restAngle;
-    double angle = restAngle + std::atan2(std::sin(delta),std::cos(delta))*raise + facing*broken*.7;
+    double angle = restAngle + std::atan2(std::sin(delta),std::cos(delta))*raise + facing*(broken*.7-recoil*.3);
     double ux = std::cos(angle), uy = std::sin(angle), nx=-uy, ny=ux;
     double sx = pxc+PLAYER_W*.5 + facing*(.65 + bodyLean*.35) + ax*(raise*1.65-recoil);
     double sy = pyc+PLAYER_H*.62 - raise*1.0 + ay*raise*.8 + bodyBob + broken*.65;
@@ -900,7 +908,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
     dx /= d; dy /= d;
     if (gear && gear->family <= 3) {
-      double phase = animFrame / (double)imax(1, art.clips[animState].count - 1);
+      double phase = actionPhase;
       double angle = std::atan2(dy, dx);
       if (animState == AS_SWORD) angle += facing * swordAngle(actionPhase);
       else if (animState == AS_AXE) angle += facing * (-1.6 + phase * 2.9);
@@ -911,17 +919,18 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       double angle = facing > 0 ? -.85 : -2.29;
       if (animState == AS_AXE) {
         double phase = actionPhase;
-        double swing = phase < .22 ? -.8-1.4*ease(phase/.22)
-          : phase < .44 ? -2.2+2.2*ease((phase-.22)/.22)
-          : phase < .60 ? .4*ease((phase-.44)/.16)
-          : .4-1.2*ease((phase-.60)/.40);
+        double windup = mineContact * .55;
+        double swing = phase < windup ? -.8-1.4*ease(phase/windup)
+          : phase < mineContact ? -2.2+2.2*ease((phase-windup)/(mineContact-windup))
+          : phase < mineContact+.14 ? .35*ease((phase-mineContact)/.14)
+          : .35-1.15*ease((phase-mineContact-.14)/(1-mineContact-.14));
         angle=std::atan2(dy,dx)+facing*swing;
       }
       dx=std::cos(angle);dy=std::sin(angle);
     }
     double nx = -dy, ny = dx;
     double kick = std::max(0.0, std::min(1.0, weaponKick));
-    double gripReach = sword ? (cutting ? 1.2 + .8 * std::sin(actionPhase*3.14159265) : shieldActive ? .85 : 1.15) : 1.55 - kick * kick * .65;
+    double gripReach = mining ? 1.4 + .65 * std::sin(actionPhase * 3.14159265) : sword ? (cutting ? 1.2 + .8 * std::sin(actionPhase*3.14159265) : shieldActive ? .85 : 1.15) : 1.55 - kick * kick * .65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     double hx = (handX - camCol) * cell + glOffX;
     double hy = (handY - camRow) * cell + glOffY;
@@ -965,7 +974,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         double past=std::max(.20,actionPhase-i*.009);
         double angle=aimAngle+facing*swordAngle(past);
         float alpha=(float)((1-i/10.0)*.45*(1-ease((actionPhase-.46)/.09)));
-        for(double radius:{4.7,5.0,5.3}) worldSquare(shoulderX+std::cos(angle)*(gripReach+radius),
+        for(double radius:{gear->reach*.65,gear->reach*.78,gear->reach*.90}) worldSquare(shoulderX+std::cos(angle)*(gripReach+radius),
           shoulderY+std::sin(angle)*(gripReach+radius),.23,.91f,.94f,.83f,alpha);
       }
     }
@@ -1185,7 +1194,7 @@ void GLPresenter::glDrawPlayers() {
                       p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
                       (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
                       p[GLP_WEAPON_KICK], (int)p[GLP_HURT_COOLDOWN],
-                      p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment);
+                      p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment, (int)p[GLP_ACTION_TICKS], (int)p[GLP_ACTION_DURATION]);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
@@ -1198,7 +1207,7 @@ void GLPresenter::glDrawPlayers() {
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
                       p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
                       p.shieldHealth, p.shieldActive, p.weaponKick, p.hurtCooldown, p.id == glOwnPlayerId,
-                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment);
+                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment, p.actionTicks, p.actionDuration);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -2162,9 +2171,9 @@ void GLPresenter::glDrawPreview() {
         }
       }
       if (E.planetId == PL_FRONTIER && erasing) {
-        if (!glSurvivalPreviewLocked) return;
+        if (!glSurvivalPreviewLocked && !E.psys.frontierMineTarget(*lp,ax,ay,toBg ? 1 : 0)) return;
         const Layer& layer = toBg ? E.bg : E.fg;
-        const auto patch = E.tools.frontierMinePatch(ax,ay,layer);
+        const auto patch = E.tools.frontierMinePatch(ax,ay,layer,fp ? *fp : E.tools.getSurvivalFootprint(*lp));
         for (int k : patch) {
           int x=k%E.cols,y=k/E.cols;
           bool hard=MAT_TOOLTIER[layer.grid[k]]>glMineTier;

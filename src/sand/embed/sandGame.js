@@ -631,10 +631,12 @@ class SandGameElement extends HTMLElement {
             this._hud?.toggleOpen();
           },
           onToggleFootprintMenu: () => {
-            if (this._adventureHud) { this._adventureHud.open('inventory'); return; }
-            this._hud?.setOpen(false);
+            if (this._adventureHud) this._adventureHud.open(null);
+            else this._hud?.setOpen(false);
             this._sizeMenu?.toggleOpen();
           },
+          onAdjustFootprint: (delta) => this._sizeMenu?.adjust(delta),
+          onTogglePrecision: () => this._sizeMenu?.togglePrecision(),
           onEquipCreativeMaterial: (kind, value) => {
             if (!this._palette) return false;
             return this._palette.selectCreative(kind, value);

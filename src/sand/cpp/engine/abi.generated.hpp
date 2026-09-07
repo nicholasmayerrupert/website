@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 47;
 
-static const uint64_t ABI_FINGERPRINT = 0xc9016576f621ULL;
+static const uint64_t ABI_FINGERPRINT = 0x910c9e92240fULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -583,7 +583,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -614,8 +614,10 @@ enum GlPlayerExtField : int {
   GLP_GEAR6 = 26,
   GLP_GEAR7 = 27,
   GLP_GEAR8 = 28,
+  GLP_ACTION_TICKS = 29,
+  GLP_ACTION_DURATION = 30,
 };
-static const int GLP_STRIDE = 29;
+static const int GLP_STRIDE = 31;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {

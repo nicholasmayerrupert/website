@@ -144,6 +144,7 @@ export const UNIT_SUITES = [
 
 export const BROWSER_SUITES = [
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],
+  ['adventure-tools-e2e', 'adventure-tools-e2e.mjs', exclusive(120_000)],
   ['adventure-e2e', 'adventure-e2e.mjs', exclusive(240_000)],
   ['adventure-inventory-e2e', 'adventure-inventory-e2e.mjs', exclusive(180_000)],
   ['adventure-resume-e2e', 'adventure-resume-e2e.mjs', exclusive(120_000)],

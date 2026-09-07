@@ -429,7 +429,7 @@ export function createGameLoop(ctx, {
     }
     if (ctx.survival && onPlayerState) {
       const player = localPlayer();
-      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}:${player.jetpackFuel}:${player.jetpackActive}:${player.shieldHealth}:${player.shieldActive}` : '';
+      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}:${player.jetpackFuel}:${player.jetpackActive}:${player.shieldHealth}:${player.shieldActive}:${player.mana}:${player.stamina}:${player.heldDefinition}` : '';
       if (signature !== lastPlayerStateSignature) {
         lastPlayerStateSignature = signature;
         onPlayerState(player);

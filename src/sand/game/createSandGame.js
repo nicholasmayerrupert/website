@@ -56,6 +56,8 @@ export function createSandGame(container, opts = {}) {
     onInteraction = null,
     onToggleInventory = null,
     onToggleFootprintMenu = null,
+    onAdjustFootprint = null,
+    onTogglePrecision = null,
     onEquipCreativeMaterial = null,
     onReplayUi = null,
   } = opts;
@@ -362,6 +364,8 @@ export function createSandGame(container, opts = {}) {
     onInteraction,
     onToggleInventory,
     onToggleFootprintMenu,
+    onAdjustFootprint,
+    onTogglePrecision,
     onEquipLastCreativeMaterial: equipLastCreativeSelection,
     onLogs: replayPanel.open,
     onReplay: replayPanel.startReplay,

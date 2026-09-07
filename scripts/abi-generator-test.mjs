@@ -1,5 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import process from 'node:process';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -412,7 +413,7 @@ check('generated enums participate in the runtime contract',
   enumFingerprints
     && enumFingerprints.abi !== baselineFingerprints?.abi);
 
-const glRecord = { x: 1, y: 2, w: 3, h: 4, facing: -1 };
+const glRecord = { x: 1, y: 2, w: 3, h: 4, facing: -1, actionTicks: 12, actionDuration: 28 };
 const glPacked = new Float32Array(STRIDES.glPlayerExt);
 writeGlPlayerExtSnapshot(
   glPacked, 0, glRecord, true, 5, 6, true, 7, 0.8, 9, 10,
@@ -426,7 +427,9 @@ check('generated JS writer follows generated field order',
     && glPacked[OFF.glPlayerExt.shieldHealth] === 123
     && glPacked[OFF.glPlayerExt.shieldActive] === 0
     && glPacked[OFF.glPlayerExt.weaponKick] === 0.5
-    && glPacked[OFF.glPlayerExt.hurtCooldown] === 12);
+    && glPacked[OFF.glPlayerExt.hurtCooldown] === 12
+    && glPacked[OFF.glPlayerExt.actionTicks] === 12
+    && glPacked[OFF.glPlayerExt.actionDuration] === 28);
 
 const bodyCodec = SNAPSHOT_CODECS.testBodyState;
 const bodyPacked = new Float64Array(STRIDES.testBodyState);

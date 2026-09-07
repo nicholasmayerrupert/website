@@ -128,6 +128,9 @@ int ToolSystem::buildSurvivalFootprintSnapshot() {
 void ToolSystem::setSelectedFootprint(Player& p, int id) {
   int next = clampSurvivalFootprintId(id);
   if (p.selectedFootprint == next) return;
+  if (E.planetId == PL_FRONTIER && p.mineActive && p.actionState == AS_AXE) {
+    p.actionTicks = 0; p.actionState = AS_IDLE;
+  }
   p.selectedFootprint = next;
   p.placeStrokeActive = false;
   E.psys.resetPlayerMine(p);
@@ -454,6 +457,8 @@ double ToolSystem::playerMineProgress(int id) {
       const SurvivalFootprint& fp = getSurvivalFootprint(p->mineFootprint);
       uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
       for (const SurvivalFootprintCell& o : fp.cells) consider(p->mineX + (int)o.ox, p->mineY + (int)o.oy, areaScale);
+    } else if (E.planetId == PL_FRONTIER) {
+      for (int k : frontierMinePatch(p->mineX, p->mineY, *E.L, getSurvivalFootprint(*p))) consider(k % E.cols, k / E.cols, 1);
     } else {
       for (int oy = -P_MINE_R; oy <= P_MINE_R; oy++) {
         for (int ox = -P_MINE_R; ox <= P_MINE_R; ox++) {
@@ -497,18 +502,20 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
   draft.erase(k);
   return true;
 }
-// A small flood fill follows the selected material rather than carving a square.
-std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& layer) const {
+// A connected patch follows the selected material within the selected mining footprint.
+std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& layer, const SurvivalFootprint& fp) const {
   std::vector<int> cells;
   if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
   uint8_t material=layer.grid[E.I(cx,cy)];
   if (material==EMPTY || E.isLiquidMaterial(material) || E.isGasMaterial(material)) return cells;
+  int x0, y0, x1, y1;
+  survivalFootprintBounds(fp,cx,cy,x0,y0,x1,y1);
   cells.push_back(E.I(cx,cy));
   for (size_t i=0;i<cells.size();i++) {
     int x=cells[i]%E.cols,y=cells[i]/E.cols;
     for (auto [dx,dy] : {std::pair<int,int>{1,0},{-1,0},{0,1},{0,-1}}) {
       int nx=x+dx,ny=y+dy;
-      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || (nx-cx)*(nx-cx)+(ny-cy)*(ny-cy)>P_MINE_R*P_MINE_R) continue;
+      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || nx<x0 || nx>x1 || ny<y0 || ny>y1) continue;
       int k=E.I(nx,ny);
       if (layer.grid[k]==material && std::find(cells.begin(),cells.end(),k)==cells.end()) cells.push_back(k);
     }
@@ -520,14 +527,18 @@ bool ToolSystem::strikeFrontierPatch(Player& miner) {
   std::vector<int> erasedStructural;
   std::unordered_map<int,Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   bool changed=false;
-  for (int k : frontierMinePatch(miner.mineX,miner.mineY,*E.L)) {
+  for (int k : frontierMinePatch(miner.mineX,miner.mineY,*E.L,getSurvivalFootprint(miner))) {
     uint8_t m=E.L->grid[k];
     if (miner.heldToolTier < MAT_TOOLTIER[m]) continue;
     changed |= mineDamageCellStep(k,m,miner,true,1,1,erasedStructural,bodyById,dirtyBodies);
   }
   E.rigid.finishErasedBodies(dirtyBodies,E.L->bodyCells);
   splitComponentsAfterDestroy(erasedStructural);
-  if (changed) E.markDirtyRect(miner.mineX-P_MINE_R,miner.mineY-P_MINE_R,miner.mineX+P_MINE_R,miner.mineY+P_MINE_R);
+  if (changed) {
+    int x0, y0, x1, y1;
+    survivalFootprintBounds(getSurvivalFootprint(miner),miner.mineX,miner.mineY,x0,y0,x1,y1);
+    E.markDirtyRect(x0,y0,x1,y1);
+  }
   if (!lastMinedCells.empty()) E.L->skyDirty=true;
   return changed;
 }

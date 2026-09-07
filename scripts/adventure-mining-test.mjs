@@ -16,7 +16,7 @@ function arena(material=MAT.STONE,footprint=9){
 }
 function test(name,fn){const a=arena();try{fn(a);console.log('ok:',name);}finally{a.e.destroy();}}
 test('windup does no damage; contact applies one discrete hit; release completes the swing',({e,id,hold,step,count})=>{
- const before=count();hold();step();hold(0);step(9);assert.equal(count(),before);assert.equal(e.getPlayerMineProgress(id),0);
+ const before=count();hold();step();hold(0);step(7);assert.equal(count(),before);assert.equal(e.getPlayerMineProgress(id),0);
  step(2);assert.equal(count(),before);assert.ok(e.getPlayerMineProgress(id)>0);
  step(20);assert.equal(count(),before,'one click cannot silently repeat');
  hold();step(13);assert.ok(count()<before,'the second strike preserves and finishes earlier damage');
@@ -32,9 +32,11 @@ test('foreground blocks access to background walls',({e,id,hold,step})=>{
 });
 for(const material of [MAT.DIRT,MAT.STONE,MAT.IRON_ORE]){
  const a=arena(material,0),b=arena(material,9);
+ const before=a.count();
  try{for(const t of [a,b]){t.hold();t.step(65);}
- assert.deepEqual(Array.from(a.e.getGrid()),Array.from(b.e.getGrid()));
- assert.ok(a.e.getPlayerMineProgress(a.id)>=0);console.log('ok: building footprint does not change mining',material);
+ assert.ok(a.count()<before,'precision mining still clears material');
+ assert.ok(b.count()<a.count(),'larger mining sizes clear more material');
+ console.log('ok: selected size controls mining area',material);
  }finally{a.e.destroy();b.e.destroy();}
 }
 const soft=arena(MAT.DIRT),stone=arena(MAT.STONE);
@@ -47,13 +49,33 @@ test('an exposed background wall can be excavated without changing the foregroun
  const foreground=Array.from(e.getGrid());hold(INPUT.SECONDARY,60,65);step(15);
  assert.equal(e.getGridBg()[65*128+58],MAT.EMPTY);assert.deepEqual(Array.from(e.getGrid()),foreground);
 });
-test('a strike removes at most one small connected material patch',({e,hold,step,count})=>{
- e.paintDisc(59,65,0,MAT.WOOD,true);e.syncComponents();const before=count();hold();step(35);
- assert.ok(before-count()>0 && before-count()<=13);assert.equal(e.getGrid()[65*128+59],MAT.WOOD);
+test('a swing clears a broad connected patch and preserves other materials',({e,hold,step,count})=>{
+ e.paintDisc(59,65,0,MAT.WOOD,true);e.syncComponents();const before=count();hold();step(37);hold(0);
+ assert.ok(before-count()>30, `cleared ${before-count()} stone cells`);assert.equal(e.getGrid()[65*128+59],MAT.WOOD);
 });
 
 test('the forge offers a stronger craftable pick and enforces its workshop',({e,id})=>{
  const recipe=e.getCraftingRecipes().find(r=>r.id===9);assert.equal(recipe.outputTier,TT.gold);assert.equal(recipe.npcId,4);
  for(const ingredient of recipe.ingredients)e.addToInventory(id,ingredient.value,ingredient.count);
  const before=e.getInventory(id);assert.equal(e.craft(id,9),0);assert.deepEqual(e.getInventory(id),before);
+});
+
+{
+ const a=arena(MAT.DIRT,0);
+ try { const before=a.count();a.hold();a.step();a.hold(0);a.step(35);
+ assert.equal(before-a.count(),1,'one precision swing removes exactly one cell');
+ console.log('ok: single-pixel mining');
+ } finally {a.e.destroy();}
+}
+test('switching to precision cancels the pending large strike',({e,id,hold,step,count})=>{
+ const before=count();hold();step(3);e.setSelectedFootprint(id,0);hold(0);step(35);
+ assert.equal(count(),before,'the cancelled large strike cannot land');
+ hold();step(40);hold(0);assert.equal(before-count(),1);
+});
+test('single-pixel placement creates exactly one component-backed cell',({e,id,hold,step})=>{
+ e.addToInventory(id,MAT.WOOD,50);
+ const slot=e.getInventory(id).slots.findIndex(s=>s.material===MAT.WOOD&&s.count>0);assert.ok(slot>=0);
+ e.setSelectedSlot(id,slot);e.setSelectedFootprint(id,0);
+ hold(INPUT.PRIMARY,45,60);step();hold(0,45,60);step(2);
+ assert.equal(e.getGrid().filter(m=>m===MAT.WOOD).length,1);
 });

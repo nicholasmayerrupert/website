@@ -21,6 +21,20 @@ run('sword windup, stamina cost, one strike, and blocking terrain',(e,id)=>{
  for(let x=60;x<63;x++)for(let y=80;y<96;y++)e.paintDisc(x,y,0,MAT.STONE,true);e.syncComponents();
  hold(e,id,INPUT.PRIMARY,70,91);tick(e,1);hold(e,id,0);tick(e,16);assert.equal(health(),after,'melee cannot reach through a wall');
 });
+run('sword catches distant and off-axis foes in one swing',(e,id)=>{
+ const ids=[[72,88],[55,75]].map(([x,y])=>e.spawnScriptedCreature(CREATURE.BONE_GUARD,x+e.getWorldOffsetX(),y+e.getWorldOffsetY()));
+ const health=()=>ids.map(id=>e.getCreatures().find(c=>c.id===id).health);
+ const before=health();hold(e,id,INPUT.PRIMARY,100,91);tick(e,1);hold(e,id,0);tick(e,12);
+ health().forEach((hp,i)=>assert.ok(hp<before[i],`target ${i} is inside the sword sweep`));
+});
+run('starter wand spends mana and blasts a cavity in stone',(e,id)=>{
+ const slot=e.getInventory(id).slots.findIndex(s=>s.definitionId===300);assert.ok(slot>=0);e.setSelectedSlot(id,slot);
+ for(let y=78;y<96;y++)for(let x=80;x<95;x++)e.paintDisc(x,y,0,MAT.STONE,true);
+ e.syncComponents();const before=e.getGrid().filter(m=>m===MAT.STONE).length;
+ hold(e,id,INPUT.PRIMARY,85,91);tick(e,1);assert.equal(e.getPlayer(id).mana,82);hold(e,id,0);tick(e,32);
+ const cleared=before-e.getGrid().filter(m=>m===MAT.STONE).length;
+ assert.ok(cleared>20,`blast clears a substantial cavity (${cleared} cells)`);
+});
 run('guard faces the hit and armor mitigates damage',(e,id)=>{
  hold(e,id,INPUT.SHIELD,90,91);tick(e,1);
  assert.equal(e.getPlayer(id).actionState,PLAYER_ANIMATION.GUARD_RAISE);

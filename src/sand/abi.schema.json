@@ -968,6 +968,16 @@
           "name": "gear8",
           "kind": "i32",
           "snapshotMember": "gear8"
+        },
+        {
+          "name": "actionTicks",
+          "kind": "i32",
+          "snapshotMember": "actionTicks"
+        },
+        {
+          "name": "actionDuration",
+          "kind": "i32",
+          "snapshotMember": "actionDuration"
         }
       ],
       "snapshotStorage": "float",

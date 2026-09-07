@@ -631,25 +631,33 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       worldSquare(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, size, r, g, b);
     }
   };
+  const auto& outline = art.palette[art.limbColors[0]];
+  auto sleeve = art.palette[art.limbColors[1]];
+  auto skin = art.palette[art.limbColors[2]];
+  auto hand = art.palette[art.limbColors[3]];
+  if (E.planetId == PL_FRONTIER && equipment) {
+    const auto* gloves = E.content.gear(equipment[2]);
+    const auto* coat = E.content.gear(equipment[1]);
+    static const float cloth[6][3]={{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
+    if (coat && coat->style > 0 && coat->style <= 6) for (int i=0;i<3;i++) sleeve[i]=cloth[coat->style-1][i];
+    if (gloves && gloves->style > 0 && gloves->style <= 6) for (int i=0;i<3;i++) skin[i]=hand[i]=cloth[gloves->style-1][i]*.8f;
+  }
+  auto drawHand = [&](double hx, double hy, bool rear) {
+    float shade = rear ? .78f : 1.0f;
+    if (E.planetId == PL_FRONTIER)
+      worldSquare(hx, hy, .80, outline[0], outline[1], outline[2]);
+    worldSquare(hx, hy, .57, hand[0] * shade, hand[1] * shade, hand[2] * shade);
+    if (E.planetId == PL_FRONTIER)
+      worldSquare(hx+facing*.13, hy-.15, .23, hand[0]*1.2f*shade, hand[1]*1.2f*shade, hand[2]*1.2f*shade);
+  };
   auto articulatedArm = [&](double sx, double sy, double ex, double ey,
                             double hx, double hy, bool rear) {
     float shade = rear ? .78f : 1.0f;
-    const auto& outline = art.palette[art.limbColors[0]];
-    auto sleeve = art.palette[art.limbColors[1]];
-    auto skin = art.palette[art.limbColors[2]];
-    auto hand = art.palette[art.limbColors[3]];
-    if (E.planetId == PL_FRONTIER && equipment) {
-      const auto* gloves = E.content.gear(equipment[2]);
-      const auto* coat = E.content.gear(equipment[1]);
-      static const float cloth[6][3]={{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
-      if (coat && coat->style > 0 && coat->style <= 6) for (int i=0;i<3;i++) sleeve[i]=cloth[coat->style-1][i];
-      if (gloves && gloves->style > 0 && gloves->style <= 6) for (int i=0;i<3;i++) skin[i]=hand[i]=cloth[gloves->style-1][i]*.8f;
-    }
     segment(sx, sy, ex, ey, .72, outline[0], outline[1], outline[2]);
     segment(ex, ey, hx, hy, .64, outline[0], outline[1], outline[2]);
     segment(sx, sy, ex, ey, .53, sleeve[0] * shade, sleeve[1] * shade, sleeve[2] * shade);
     segment(ex, ey, hx, hy, .46, skin[0] * shade, skin[1] * shade, skin[2] * shade);
-    worldSquare(hx, hy, .57, hand[0] * shade, hand[1] * shade, hand[2] * shade);
+    drawHand(hx, hy, rear);
   };
 
   // A relaxed/stroke pose is rendered as two independently articulated arms.
@@ -919,16 +927,23 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     }
     double nx = -dy, ny = dx;
     double kick = std::max(0.0, std::min(1.0, weaponKick));
-    double gripReach = mining ? 1.4 + .65 * std::sin(actionPhase * 3.14159265) : sword ? (cutting ? 1.2 + .8 * std::sin(actionPhase*3.14159265) : shieldActive ? .85 : 1.15) : 1.55 - kick * kick * .65;
+    double gripReach = E.planetId == PL_FRONTIER
+      ? ((mining || cutting) ? 2.6 + .45*std::sin(actionPhase*3.14159265) : 2.85-kick*.2)
+      : 1.55-kick*kick*.65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     bool carrying = E.planetId == PL_FRONTIER &&
       ((gear && gear->family <= 3 && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
        || (heldItemKind == IK_MINING_TOOL && animState != AS_AXE));
     if (carrying) {
-      // Rest the right hand beside the hip, with the tool pointing toward the ground.
-      handX = shoulderX + facing*1.1;
-      handY = shoulderY + 1.9;
-      dx = facing*.42; dy = std::sqrt(1-dx*dx);
+      // Hold the tool upright in front of a lowered elbow.
+      handX = shoulderX+facing*2.25; handY = shoulderY+1.55;
+      dx = facing*.12; dy = -std::sqrt(1-dx*dx);
+      nx = -dy; ny = dx;
+    } else if (E.planetId == PL_FRONTIER && gear && (gear->family == 5 || gear->family == 9)) {
+      // The wand turns in a raised hand while the upper arm stays lowered.
+      handX = shoulderX+facing*2.35; handY = shoulderY+1.35+dy*.9;
+      double aimLength = std::hypot(targetX-handX,targetY-handY);
+      if (aimLength > .01) { dx = (targetX-handX)/aimLength; dy = (targetY-handY)/aimLength; }
       nx = -dy; ny = dx;
     }
     double hx = (handX - camCol) * cell + glOffX;
@@ -944,6 +959,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                    supportHX, supportHY, true);
     double leadEX = shoulderX + dx * .72 + nx * .25;
     double leadEY = shoulderY + dy * .72 + ny * .25;
+    if (E.planetId == PL_FRONTIER) {
+      // Two equal-length arm segments meet at a bent elbow.
+      double armX = handX-shoulderX, armY = handY-shoulderY;
+      double armLength = std::max(.01, std::hypot(armX,armY));
+      double bend = std::sqrt(std::max(0.0, 1.7*1.7-armLength*armLength*.25));
+      leadEX = (shoulderX+handX)*.5-facing*armY/armLength*bend;
+      leadEY = (shoulderY+handY)*.5+facing*armX/armLength*bend;
+    }
     articulatedArm(shoulderX, shoulderY, leadEX, leadEY, handX, handY, rightHandRear);
     auto drawPixel = [&](double forward, double side, double size,
                          float r, float g, float b, float a = 1.0f) {
@@ -989,7 +1012,6 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
           drawPixel(at,-.03,width,.70f,.78f,.75f);
           drawPixel(at,-width*.32,.12,.95f,.96f,.86f);
         }
-        worldSquare(handX,handY,.48,.55f,.59f,.42f);
       } else if (gear->family == 4) {
         double pull = bowCharge * 1.4;
         for (double side = -2.5; side <= 2.5; side += .2) {
@@ -1151,6 +1173,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       drawPixel(3.76, -.68, .62, .19f, .22f, .22f);
       drawPixel(3.94, -.68, .27, 1.0f, .55f, .10f);
     }
+    if (E.planetId == PL_FRONTIER) drawHand(handX, handY, rightHandRear);
   };
   if (rightHandRear) drawHeldWeapon();
   else drawShield();

@@ -43,6 +43,16 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
     return { x: bounds.x + (r.x + r.size / 2) / devicePixelRatio,
       y: bounds.y + (r.y + r.size / 2) / devicePixelRatio };
   }, { dx, dy });
+  const capturePlayer = async name => {
+    const clip = await page.evaluate(() => {
+      const host = document.querySelector('sand-game'), p = host._game.getPlayer();
+      const r = window.__sandTest.cellRect(p.x - 10, p.y - 10);
+      const bounds = host.shadowRoot.querySelector('#sand-main').getBoundingClientRect();
+      return { x: bounds.x + r.x / devicePixelRatio, y: bounds.y + r.y / devicePixelRatio,
+        width: r.size * 24 / devicePixelRatio, height: r.size * 24 / devicePixelRatio };
+    });
+    await page.screenshot({ path: `${artifacts}/${name}.png`, clip });
+  };
   const aim = await point(45, 3);
   await page.mouse.move(aim.x, aim.y);
   const select = definition => page.evaluate(definition => {
@@ -75,6 +85,7 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
   await page.mouse.down();
   await page.waitForTimeout(170);
   await page.screenshot({ path: artifacts + '/sword.png' });
+  await capturePlayer('sword-arm-swing');
   await page.mouse.up();
   await page.waitForFunction(() => {
     const host = document.querySelector('sand-game'), p = host._game.getPlayer();
@@ -100,15 +111,24 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
       const p = document.querySelector('sand-game')._game.getPlayer();
       return p.shieldActive === guarding && p.facing === facing && !p.actionTicks;
     }, { guarding, facing: dx < 2 ? -1 : 1 });
-    const clip = await page.evaluate(() => {
-      const host = document.querySelector('sand-game'), p = host._game.getPlayer();
-      const r = window.__sandTest.cellRect(p.x - 10, p.y - 10);
-      const bounds = host.shadowRoot.querySelector('#sand-main').getBoundingClientRect();
-      return { x: bounds.x + r.x / devicePixelRatio, y: bounds.y + r.y / devicePixelRatio,
-        width: r.size * 24 / devicePixelRatio, height: r.size * 24 / devicePixelRatio };
-    });
-    await page.screenshot({ path: `${artifacts}/${name}.png`, clip });
+    await capturePlayer(name);
     if (guarding) await page.keyboard.up('f');
+  }
+  for (const [definition, name] of [[300, 'wand'], ['pick', 'pickaxe']]) {
+    await select(definition);
+    await page.waitForFunction(definition => {
+      const p = document.querySelector('sand-game')._game.getPlayer();
+      return !p.actionTicks && (definition === 'pick' ? p.heldItemKind === 1 : p.heldDefinition === definition);
+    }, definition);
+    for (const [side, dx, dy] of [['right', 35, 3], ['left', -35, 3], ['up', 4, -30]]) {
+      const target = await point(dx, dy);
+      await page.mouse.move(target.x, target.y);
+      await page.waitForFunction(({ dx, dy }) => {
+        const p = document.querySelector('sand-game')._game.getPlayer();
+        return p.facing === (dx < 2 ? -1 : 1) && (dy >= 0 || p.aimY < p.y - 10);
+      }, { dx, dy });
+      await capturePlayer(`${name}-arm-${side}`);
+    }
   }
   await select('pick');
   await page.waitForFunction(() => !document.querySelector('sand-game')._game.getPlayer().actionTicks);
@@ -145,6 +165,7 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
   await page.mouse.down();
   await page.waitForFunction(() => document.querySelector('sand-game')._game.getPlayer().actionTicks > 0);
   await page.screenshot({ path: artifacts + '/pickaxe.png' });
+  await capturePlayer('pickaxe-arm-swing');
   await page.mouse.up();
   await page.evaluate(material => window.__sandTest.addInventory(material, 10), MAT.OAK_SEED);
   await page.waitForFunction(material => document.querySelector('sand-game')._game.getInventory().slots.some(s => s.material === material && s.count > 0), MAT.OAK_SEED);

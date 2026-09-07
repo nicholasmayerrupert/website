@@ -83,6 +83,17 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
+`node scripts/bench-adventure-actors.mjs --json FILE` measures idle and walking exploration,
+enemy charges, shockwaves, and spell volleys in a generated two-layer world.
+After rebuilding, use `--compare FILE` on the same host/runtime to check exact
+terrain, actor, projectile, debris, and discovery checksums and report actor/world
+timing deltas. Use `--only idle,charges`, `--repeat 5`, or `--profile PREFIX` to
+narrow or sample the workload. Fixture construction is outside the timings.
+For named WASM profiles, build with `npm run build:sand -- --profile` and run
+with `SAND_WASM_LOADER=.sand-artifacts/profile/sandEngine.js node --import
+./scripts/sand-wasm-loader.mjs scripts/bench-adventure-actors.mjs --profile
+.sand-artifacts/adventure`. These engine timings do not measure browser FPS.
+
 `node scripts/bench-burning-wood.mjs` measures a sustained fire cutting an
 81,600-cell wood slab into moving fragments. Add `--surface` for erosion along
 its supported top edge. Save the JSON output before changing the engine, then

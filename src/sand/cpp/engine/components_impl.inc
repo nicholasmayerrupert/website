@@ -1527,7 +1527,8 @@ void ComponentSystem::trimTrailingComponentTombstones(Layer& lay) {
 // Remove only incident graph edges, discover the changed slots' new contacts,
 // and leave every untouched component index intact.
 void ComponentSystem::patchStableComponentTopology(
-    Layer& lay, const std::vector<int>& changedSlots, bool removalOnly) {
+    Layer& lay, const std::vector<int>& changedSlots, bool removalOnly,
+    const std::vector<uint64_t>* removedContacts) {
   std::vector<uint8_t>& changed = cgChangedComponents;
   changed.assign(lay.components.size(), 0);
   for (int slot : changedSlots)
@@ -1539,6 +1540,10 @@ void ComponentSystem::patchStableComponentTopology(
         bool touched = (a >= 0 && a < (int)changed.size() && changed[a])
           || (b >= 0 && b < (int)changed.size() && changed[b]);
         if (!touched || !removalOnly) return touched;
+        // An edge can disappear only if the cut removed one of its contacts.
+        // Other edges retain their existing proof, even on a large edited slot.
+        if (removedContacts && !std::binary_search(
+              removedContacts->begin(), removedContacts->end(), packed)) return false;
         // Removing cells without splitting slots can only remove graph edges.
         // One surviving contact proves an old edge; search the smaller side.
         if (lay.components[a].cells.size() > lay.components[b].cells.size())
@@ -1639,12 +1644,24 @@ bool ComponentSystem::splitRigidAfterStableErase(
 
   splitTouched.assign(lay.components.size(), 0);
   std::vector<int> touchedSlots;
+  std::vector<uint64_t> removedContacts;
   for (int k : erased) {
     if (k < 0 || k >= E.cols * E.rows) continue;
     int slot = lay.cellComp[k];
     if (slot >= 0 && slot < (int)lay.components.size() && !splitTouched[slot]) {
       splitTouched[slot] = 1;
       touchedSlots.push_back(slot);
+    }
+    if (slot >= 0) {
+      int y = k / E.cols, x = k - y * E.cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        int nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+        int other = lay.cellComp[ny * E.cols + nx];
+        if (other < 0 || other == slot) continue;
+        uint32_t lo = (uint32_t)imin(slot, other), hi = (uint32_t)imax(slot, other);
+        removedContacts.push_back(((uint64_t)lo << 32) | hi);
+      }
     }
     lay.cellComp[k] = -1;
     lay.groundedCell[k] = 0;
@@ -1764,8 +1781,12 @@ bool ComponentSystem::splitRigidAfterStableErase(
     splitPart.swap(source.cells);
   }
 
-  patchStableComponentTopology(lay, changedSlots,
-                               changedSlots.size() == touchedSlots.size());
+  bool removalOnly = changedSlots.size() == touchedSlots.size();
+  if (removalOnly) {
+    std::sort(removedContacts.begin(), removedContacts.end());
+    removedContacts.erase(std::unique(removedContacts.begin(), removedContacts.end()), removedContacts.end());
+  }
+  patchStableComponentTopology(lay, changedSlots, removalOnly, &removedContacts);
   lay.groundDirty = !groundingPreserved;
   lay.groundContentDirty = false;
   lay.blastSparseCarryReady = !lay.componentCarryDirty;

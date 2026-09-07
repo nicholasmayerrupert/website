@@ -20,6 +20,7 @@ For scenario artifacts, operation timeouts, and named WASM CPU profiles, see
 | `npm run bench:rigid-brutal:compare` | Compare blast-carved cross-layer chunks, irregular RIGID bodies, moving neutronium, active water, tail latency, and 60 Hz backlog pressure. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, two-axis cell stability, and parallax rigidity. |
 | `npm run bench:actor-rigid:compare` | Check dense player/creature cadence plus finite-mass body contacts, crushes, and actor/body determinism. |
+| `node scripts/bench-adventure-actors.mjs --json FILE` | Record adventure exploration and destructive enemy attacks; rebuild and use `--compare FILE` on the same host/runtime. |
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
 | `npm run worldgen:atlas` | Render the foreground/background topology atlas to `bench/worldgen-atlas.png`. |
 | `npm run bench:tnt` | Profile TNT chains, cave carving, grounding, debris, and aftermath. |

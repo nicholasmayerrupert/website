@@ -114,6 +114,7 @@ export const UNIT_SUITES = [
   ['worker-capture', 'worker-capture-test.mjs'],
   ['viewport-pause', 'viewport-pause-test.mjs'],
   ['players', 'player-test.mjs'],
+  ['discovery', 'discovery-test.mjs'],
   ['actor-rigid', 'actor-rigid-test.mjs'],
   ['anim', 'player-anim-test.mjs'],
   ['stream-reconcile', 'stream-reconcile-test.mjs'],

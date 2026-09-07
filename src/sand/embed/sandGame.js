@@ -601,7 +601,7 @@ class SandGameElement extends HTMLElement {
           // Survival inventory HUD wiring (the engine owns the inventory state).
           onInventory: (inv) => {
             this._hud?.update(inv);
-            this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint, mission === 'frontier' && !!inv.slots?.[inv.selected]?.isTool);
+            this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint, mission === 'frontier');
           },
           onPlayerState: (player) => this._status?.update(player),
           onMission: (rawSnapshot) => {
@@ -680,7 +680,7 @@ class SandGameElement extends HTMLElement {
           if (mission) this._missionHud = createMissionHud(root, game);
           this._hud.update(game.getInventory());
           const inventory = game.getInventory();
-          this._sizeMenu.update(game.getSurvivalFootprints(), inventory.selectedFootprint, mission === 'frontier' && !!inventory.slots?.[inventory.selected]?.isTool);
+          this._sizeMenu.update(game.getSurvivalFootprints(), inventory.selectedFootprint, mission === 'frontier');
           if (mission === 'frontier') this._adventureHud = createAdventureHud(root, game, this._hud, {
             setPaused: (paused) => game.setGameplayPaused(paused),
             closeDialogue: () => this._talkHud?.close(false),

@@ -26,7 +26,7 @@ process.exitCode=await runBrowserCases({opening:async({page,baseURL,check})=>{
   await walk(x??96);await page.waitForTimeout(150);await page.keyboard.press('t');await page.getByRole('dialog',{name:'Conversation'}).waitFor();
  }
  await osei();await page.getByRole('button',{name:'Accept: Sparks for the mill',exact:true}).click();
- await page.keyboard.press('i');await page.getByRole('combobox',{name:'Tool footprint'}).click();await page.getByRole('option',{name:'Radius 2 / 3 × 3',exact:true}).click();await page.keyboard.press('Escape');
+ await page.keyboard.press('i');await page.getByRole('combobox',{name:'Tool footprint'}).click();await page.getByRole('option',{name:'Radius 2',exact:true}).click();await page.keyboard.press('Escape');
  await walk(445);await page.keyboard.press('2');
  console.log('Reached the ore bank');
  await page.screenshot({path:'.sand-artifacts/adventure-opening/ore-bank.png'});

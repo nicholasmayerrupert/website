@@ -73,7 +73,8 @@ void ToolSystem::strokeScan(int x0, int y0, int x1, int y1, int spacing, Stamp s
 void ToolSystem::initSurvivalFootprints() {
   survivalFootprints.clear();
   survivalFootprints.reserve(SURVIVAL_FOOTPRINT_MAX_SIZE);
-  auto makeSquare = [&](int id, int size) {
+  const bool circular = E.planetId == PL_FRONTIER;
+  auto makeFootprint = [&](int id, int size) {
     SurvivalFootprint fp;
     fp.id = (uint8_t)id;
     fp.width = (uint8_t)size;
@@ -89,6 +90,7 @@ void ToolSystem::initSurvivalFootprints() {
         SurvivalFootprintCell c;
         c.ox = (int8_t)(x - fp.anchorX);
         c.oy = (int8_t)(y - fp.anchorY);
+        if (circular && c.ox*c.ox+c.oy*c.oy > id*id) continue;
         cells.push_back(c);
       }
     }
@@ -103,7 +105,8 @@ void ToolSystem::initSurvivalFootprints() {
     fp.cells = std::move(cells);
     survivalFootprints.push_back(std::move(fp));
   };
-  for (int size = 1; size <= SURVIVAL_FOOTPRINT_MAX_SIZE; size++) makeSquare(size - 1, size);
+  for (int id = 0; id < SURVIVAL_FOOTPRINT_MAX_SIZE; id++)
+    makeFootprint(id, circular ? id*2+1 : id+1);
 }
 int ToolSystem::clampSurvivalFootprintId(int id) const {
   if (survivalFootprints.empty()) return 0;
@@ -508,7 +511,7 @@ std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& laye
   if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
   uint8_t material=layer.grid[E.I(cx,cy)];
   if (material==EMPTY || E.isGasMaterial(material)) return cells;
-  const int radius = (int)fp.width - 1;
+  const int radius = (int)fp.width / 2;
   cells.push_back(E.I(cx,cy));
   for (size_t i=0;i<cells.size();i++) {
     int x=cells[i]%E.cols,y=cells[i]/E.cols;
@@ -534,7 +537,7 @@ bool ToolSystem::strikeFrontierPatch(Player& miner) {
   E.rigid.finishErasedBodies(dirtyBodies,E.L->bodyCells);
   splitComponentsAfterDestroy(erasedStructural);
   if (changed) {
-    const int radius = (int)getSurvivalFootprint(miner).width - 1;
+    const int radius = (int)getSurvivalFootprint(miner).width / 2;
     E.markDirtyRect(miner.mineX-radius,miner.mineY-radius,miner.mineX+radius,miner.mineY+radius);
   }
   if (!lastMinedCells.empty()) E.L->skyDirty=true;

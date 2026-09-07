@@ -6,6 +6,7 @@
 
 import { TOOL_IDS } from './runtimeConfig.js';
 import { ITEM_KIND, WEATHER, writeGlPlayerExtSnapshot } from '../wasmBridge/abi.generated.js';
+import { MAT_IS_PLANT_SEED } from '../materials.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
   DAY_CYCLE_MS,
@@ -289,7 +290,8 @@ export function createGameLoop(ctx, {
       const mineTarget = ctx.worldWorker?.getMineTarget();
       const usable = (!selected?.pool || selected.count > 0) &&
         (!selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL);
-      engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget, ctx.worldWorker?.getMineProgress() || 0, selected?.toolTier || 0);
+      const footprint = !erasing && MAT_IS_PLANT_SEED[selected?.material] ? 0 : inventory?.selectedFootprint ?? 2;
+      engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, footprint, erasing, mineTarget, ctx.worldWorker?.getMineProgress() || 0, selected?.toolTier || 0);
     } else {
       engine.glSetSurvivalPreview(false, 0, false, null);
     }

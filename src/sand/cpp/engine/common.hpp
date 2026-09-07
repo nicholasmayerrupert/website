@@ -498,7 +498,7 @@ static const int    P_SPAWN_SEARCH_X = 64, P_SPAWN_SEARCH_Y = 64, P_SPAWN_HAZARD
 // Player tool reach and action cadence.
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between held creative/place actions (survival mining progresses every tick)
-static constexpr double P_FRONTIER_MINE_REACH = 10.0;
+static constexpr double P_FRONTIER_MINE_REACH = 12.0;
 static constexpr int P_FRONTIER_MINE_SWING = 30, P_FRONTIER_MINE_IMPACT = 9;
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 // Eraser hits happen at this constant cadence for every material. DURABILITY[]
@@ -649,6 +649,7 @@ struct Player {
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
   int mineChestId = 0; // Transient target; in-flight mining is cancelled on restore.
+  double mineContactX = 0, mineContactY = 0; // Surface contact for the pending swing.
   // Held mining tool: a destroyed cell drops its material only when this class/tier
   // satisfies the material's MAT_TOOLCLASS/MAT_TOOLTIER gate (set from the selected
   // inventory slot in inventory.inc; defaults to a bare hand).

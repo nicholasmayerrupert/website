@@ -81,6 +81,41 @@ test('single-pixel placement creates exactly one component-backed cell',({e,id,h
  assert.equal(e.getGrid().filter(m=>m===MAT.WOOD).length,1);
 });
 
+for (const layer of [0,1]) for (const aimX of [43,44,46,50,54,58,60,61]) {
+ test(`diagonal surface strike lands on its previewed cell (layer ${layer}, aim ${aimX})`,({e,id,hold,step})=>{
+  e.eraseDisc(61,63,6);
+  if(layer)for(let x=1;x<127;x++)e.paintDiscLayer(1,x,70,0,MAT.STONE,true);
+  e.syncComponents();e.setSelectedFootprint(id,0);
+  hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,72);step();
+  const target=e.getPlayerMineTarget(id);assert.ok(target,'surface is in reach');
+  const grid=()=>layer?e.getGridBg():e.getGrid();
+  const before=Array.from(grid());
+  hold(0,100,40);step(9);
+  assert.ok(e.getPlayerMineProgress(id)>0,'contact damages the locked cell even after aim moves');
+  assert.deepEqual(Array.from(grid()),before,'the first stone strike only damages');
+  step(20);hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,72);step(10);
+  assert.equal(grid()[target.y*128+target.x],MAT.EMPTY,'the second strike finishes the same cell');
+ });
+}
+
+test('mining reaches twelve cells but cannot start beyond that',({e,id,hold,step})=>{
+ e.eraseDisc(61,63,6);e.paintDisc(63,65,0,MAT.STONE,true);e.syncComponents();
+ e.setSelectedFootprint(id,0);hold(INPUT.PRIMARY,63.5,65.5);step(10);
+ assert.deepEqual(e.getPlayerMineTarget(id),{x:63,y:65});
+ assert.ok(e.getPlayerMineProgress(id)>0,'the extended reach also lands at impact');
+ hold(0);step(25);e.eraseDisc(63,65,0);e.paintDisc(65,65,0,MAT.STONE,true);e.syncComponents();
+ hold(INPUT.PRIMARY,65.5,65.5);step(10);assert.equal(e.getPlayerMineTarget(id),null);
+});
+
+for (const obstruction of ['wall','distance']) {
+ test(`a pending mining strike respects a new ${obstruction}`,({e,id,hold,step})=>{
+  hold();step();assert.ok(e.getPlayerMineTarget(id));
+  if(obstruction==='wall') {e.paintDisc(55,65,1,MAT.WOOD,true);e.syncComponents();}
+  else e.setPlayerState(id,{...e.getPlayer(id),x:25});
+  hold(0);step(9);assert.equal(e.getPlayerMineProgress(id),0);
+ });
+}
+
 for (const radius of [1,2,4]) {
  const a=arena(MAT.DIRT,radius);
  try {
@@ -95,3 +130,27 @@ for (const radius of [1,2,4]) {
   console.log('ok: mining carves the exact circular radius',radius);
  } finally {a.e.destroy();}
 }
+
+for (const layer of [0,1]) for (const material of [MAT.WOOD,MAT.SAND,MAT.WATER]) {
+ test(`placement uses the selected circular radius (layer ${layer}, material ${material})`,({e,id,hold,step})=>{
+  const radius=4,x=40,y=58;
+  e.addToInventory(id,material,500);
+  const slot=e.getInventory(id).slots.findIndex(s=>s.material===material&&s.count>0);assert.ok(slot>=0);
+  e.setSelectedSlot(id,slot);e.setSelectedFootprint(id,radius);
+  const shape=e.getSurvivalFootprints().find(fp=>fp.id===radius);
+  assert.equal(shape.width,9);assert.equal(shape.height,9);assert.equal(shape.cellCount,49);
+  const count=e.getInventory(id).slots[slot].count;
+  hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,x,y);step();hold(0,x,y);step();
+  const grid=layer?e.getGridBg():e.getGrid();
+  for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++)
+   assert.equal(grid[(y+dy)*128+x+dx],dx*dx+dy*dy<=radius*radius?material:MAT.EMPTY,`offset ${dx},${dy}`);
+  assert.equal(count-e.getInventory(id).slots[slot].count,49,'only the circular footprint consumes material');
+ });
+}
+test('seeds place one cell even with the largest selected radius',({e,id,hold,step})=>{
+ e.addToInventory(id,MAT.OAK_SEED,10);
+ const slot=e.getInventory(id).slots.findIndex(s=>s.material===MAT.OAK_SEED&&s.count>0);assert.ok(slot>=0);
+ e.setSelectedSlot(id,slot);e.setSelectedFootprint(id,9);
+ hold(INPUT.PRIMARY,40,58);step();hold(0,40,58);step();
+ assert.equal(e.getGrid().filter(m=>m===MAT.OAK_SEED).length,1);
+});

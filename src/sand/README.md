@@ -1027,3 +1027,9 @@ Player content supports 29 named animation clips and creature content supports
 eight named clips, with up to 32 frames and optional per-frame durations. Keep
 the creature source formatted across lines: large single-line sprite literals
 are expensive for the development server to transform.
+
+Aster mining and material placement share circular radius presets, including
+single-cell precision. Seeds always place and preview one cell. Mining reaches
+12 cells and holds its selected surface contact through the swing. Weapons use
+the right hand and shields the left, with depth following player facing. Raised
+shields follow an oval around the visible body to cover overhead aim.

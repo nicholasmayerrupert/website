@@ -758,77 +758,83 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     glSolidDev(packX - cell * .49, packY + cell * .90, cell * .98, cell * .30);
   }
 
-  double rearSX = 0, rearSY = 0, rearEX = 0, rearEY = 0, rearHX = 0, rearHY = 0;
-  if (alive && !aimedWeapon) {
-    relaxedArmPose(true, rearSX, rearSY, rearEX, rearEY, rearHX, rearHY);
-    articulatedArm(rearSX, rearSY, rearEX, rearEY, rearHX, rearHY, true);
-  }
+  // Facing right exposes the right hand; facing left exposes the left hand.
+  const bool rightHandRear = E.planetId == PL_FRONTIER && facing < 0;
+  const bool hasShield = alive && E.planetId == PL_FRONTIER && equipment && equipment[6];
+  auto drawBody = [&]() {
+    double rearSX = 0, rearSY = 0, rearEX = 0, rearEY = 0, rearHX = 0, rearHY = 0;
+    if (alive && !aimedWeapon && (!hasShield || rightHandRear)) {
+      relaxedArmPose(true, rearSX, rearSY, rearEX, rearEY, rearHX, rearHY);
+      articulatedArm(rearSX, rearSY, rearEX, rearEY, rearHX, rearHY, true);
+    }
 
-  for (int r = 0; r < spriteHeight; r++) {
-    int poseFrame = animState == AS_GUARD_RAISE && !shieldActive ? art.clips[animState].count - 1 - animFrame : animFrame;
-    const uint8_t* row = art.spriteRow(animState, poseFrame, r);
-    // Merge adjacent authored pixels of the same color into one quad.
-    for (int c = 0; c < spriteWidth;) {
-      int source = facing >= 0 ? c : (spriteWidth - 1 - c);
-      int idx = row[source];
-      int run = 1;
-      while (c + run < spriteWidth) {
-        int nextSource = facing >= 0 ? c + run : (spriteWidth - 1 - c - run);
-        if (row[nextSource] != idx) break;
-        run++;
-      }
-      if (idx <= 0 || idx >= (int)art.palette.size()) {
-        c += run;
-        continue;
-      }
-      const float* col = art.palette[(size_t)idx].data();
-      float tr = col[0], tg = col[1], tb = col[2];
-      if (E.planetId == PL_FRONTIER && equipment) {
-        int part = idx == 3 || idx == 4 ? 5 : r < 12 ? 0 : r < 28 ? 1 : r < 38 ? 3 : 4;
-        const auto* armor = E.content.gear(equipment[part]);
-        if (armor && armor->style > 0 && armor->style <= 6 && idx != 1 && !(idx >= 10 && idx <= 12)) {
-          static const float colors[6][3] = {{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
-          float shade = idx == 2 || idx == 7 ? .5f : idx == 4 || idx == 6 || idx == 9 ? 1.2f : .85f;
-          tr = colors[armor->style - 1][0] * shade; tg = colors[armor->style - 1][1] * shade; tb = colors[armor->style - 1][2] * shade;
+    for (int r = 0; r < spriteHeight; r++) {
+      int poseFrame = animState == AS_GUARD_RAISE && !shieldActive ? art.clips[animState].count - 1 - animFrame : animFrame;
+      const uint8_t* row = art.spriteRow(animState, poseFrame, r);
+      // Merge adjacent authored pixels of the same color into one quad.
+      for (int c = 0; c < spriteWidth;) {
+        int source = facing >= 0 ? c : (spriteWidth - 1 - c);
+        int idx = row[source];
+        int run = 1;
+        while (c + run < spriteWidth) {
+          int nextSource = facing >= 0 ? c + run : (spriteWidth - 1 - c - run);
+          if (row[nextSource] != idx) break;
+          run++;
         }
+        if (idx <= 0 || idx >= (int)art.palette.size()) {
+          c += run;
+          continue;
+        }
+        const float* col = art.palette[(size_t)idx].data();
+        float tr = col[0], tg = col[1], tb = col[2];
+        if (E.planetId == PL_FRONTIER && equipment) {
+          int part = idx == 3 || idx == 4 ? 5 : r < 12 ? 0 : r < 28 ? 1 : r < 38 ? 3 : 4;
+          const auto* armor = E.content.gear(equipment[part]);
+          if (armor && armor->style > 0 && armor->style <= 6 && idx != 1 && !(idx >= 10 && idx <= 12)) {
+            static const float colors[6][3] = {{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
+            float shade = idx == 2 || idx == 7 ? .5f : idx == 4 || idx == 6 || idx == 9 ? 1.2f : .85f;
+            tr = colors[armor->style - 1][0] * shade; tg = colors[armor->style - 1][1] * shade; tb = colors[armor->style - 1][2] * shade;
+          }
+        }
+        if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
+        float flash = alive && hurtCooldown > 0 && hurtCooldown <= 30 && (hurtCooldown % 6 < 3) ? .65f : 0;
+        glUniform4f(glc->uColor, tr * light * (1 - flash) + flash,
+                    tg * light * (1 - flash) + flash * .65f,
+                    tb * light * (1 - flash) + flash * .65f, col[3]);
+        glSolidDev(sprX + c * pixel, sprY + r * pixel, run * pixel, pixel);
+        c += run;
       }
-      if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
-      float flash = alive && hurtCooldown > 0 && hurtCooldown <= 30 && (hurtCooldown % 6 < 3) ? .65f : 0;
-      glUniform4f(glc->uColor, tr * light * (1 - flash) + flash,
-                  tg * light * (1 - flash) + flash * .65f,
-                  tb * light * (1 - flash) + flash * .65f, col[3]);
-      glSolidDev(sprX + c * pixel, sprY + r * pixel, run * pixel, pixel);
-      c += run;
     }
-  }
-  if (alive && !aimedWeapon) {
-    double sx, sy, ex, ey, hx, hy;
-    relaxedArmPose(false, sx, sy, ex, ey, hx, hy);
-    articulatedArm(sx, sy, ex, ey, hx, hy, false);
-  }
-  if (alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
-    auto piece = [&](int x,int y,int w,int h,float r,float g,float b) {
-      int col = facing > 0 ? x : spriteWidth-x-w;
-      glUniform4f(glc->uColor,r*light,g*light,b*light,1); glSolidDev(sprX+col*pixel,sprY+y*pixel,w*pixel,h*pixel);
-    };
-    const auto* head = E.content.gear(equipment[0]);
-    if (head) {
-      bool metal = head->style == 4 || head->style == 6;
-      float r=metal?.64f:.35f,g=metal?.64f:.43f,b=metal?.57f:.30f;
-      piece(14,3,10,3,r,g,b); piece(13,5,3,8,r*.7f,g*.7f,b*.7f);
-      piece(15,2,7,1,.75f,.68f,.43f);
-      if (metal) { piece(22,5,3,2,.81f,.81f,.70f); piece(23,9,1,4,.66f,.64f,.53f); }
-      if (head->style == 2) { piece(12,1,2,4,.53f,.64f,.34f); piece(14,0,2,2,.65f,.71f,.40f); }
-      if (head->style == 3 || head->style == 5) { piece(15,0,4,3,.50f,.42f,.59f); piece(16,1,1,1,.85f,.74f,.44f); }
+    if (alive && !aimedWeapon && (!hasShield || !rightHandRear)) {
+      double sx, sy, ex, ey, hx, hy;
+      relaxedArmPose(false, sx, sy, ex, ey, hx, hy);
+      articulatedArm(sx, sy, ex, ey, hx, hy, false);
     }
-    const auto* coat = E.content.gear(equipment[1]);
-    if (coat && (coat->style == 4 || coat->style == 6)) {
-      piece(11,18,5,3,.69f,.67f,.57f); piece(11,21,4,2,.41f,.42f,.38f);
-      piece(20,18,4,3,.79f,.77f,.64f); piece(17,22,5,2,.58f,.58f,.50f);
-      piece(19,19,1,7,.87f,.73f,.43f);
+    if (alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
+      auto piece = [&](int x,int y,int w,int h,float r,float g,float b) {
+        int col = facing > 0 ? x : spriteWidth-x-w;
+        glUniform4f(glc->uColor,r*light,g*light,b*light,1); glSolidDev(sprX+col*pixel,sprY+y*pixel,w*pixel,h*pixel);
+      };
+      const auto* head = E.content.gear(equipment[0]);
+      if (head) {
+        bool metal = head->style == 4 || head->style == 6;
+        float r=metal?.64f:.35f,g=metal?.64f:.43f,b=metal?.57f:.30f;
+        piece(14,3,10,3,r,g,b); piece(13,5,3,8,r*.7f,g*.7f,b*.7f);
+        piece(15,2,7,1,.75f,.68f,.43f);
+        if (metal) { piece(22,5,3,2,.81f,.81f,.70f); piece(23,9,1,4,.66f,.64f,.53f); }
+        if (head->style == 2) { piece(12,1,2,4,.53f,.64f,.34f); piece(14,0,2,2,.65f,.71f,.40f); }
+        if (head->style == 3 || head->style == 5) { piece(15,0,4,3,.50f,.42f,.59f); piece(16,1,1,1,.85f,.74f,.44f); }
+      }
+      const auto* coat = E.content.gear(equipment[1]);
+      if (coat && (coat->style == 4 || coat->style == 6)) {
+        piece(11,18,5,3,.69f,.67f,.57f); piece(11,21,4,2,.41f,.42f,.38f);
+        piece(20,18,4,3,.79f,.77f,.64f); piece(17,22,5,2,.58f,.58f,.50f);
+        piece(19,19,1,7,.87f,.73f,.43f);
+      }
     }
-  }
-  if (alive && E.planetId == PL_FRONTIER && equipment && equipment[6]) {
+  };
+  auto drawShield = [&]() {
+    if (!hasShield) return;
     double phase = actionPhase;
     double raise = shieldActive ? 1.0 : 0.0;
     if (animState == AS_GUARD_RAISE) raise = shieldActive ? ease(phase) : 1-ease(phase);
@@ -842,10 +848,20 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double delta = std::atan2(ay,ax) - restAngle;
     double angle = restAngle + std::atan2(std::sin(delta),std::cos(delta))*raise + facing*(broken*.7-recoil*.3);
     double ux = std::cos(angle), uy = std::sin(angle), nx=-uy, ny=ux;
-    double sx = pxc+PLAYER_W*.5 + facing*(.65 + bodyLean*.35) + ax*(raise*1.65-recoil);
-    double sy = pyc+PLAYER_H*.42 - raise*.55 + ay*raise*.8 + bodyBob + broken*.65;
-    articulatedArm(pxc+PLAYER_W*.5-facing*.25, pyc+PLAYER_H*.40+bodyBob,
-      sx-ax*.65, sy+.55, sx, sy, true);
+    bool rear = !rightHandRear;
+    double shoulderX = pxc+PLAYER_W*.5 + facing*(bodyLean + (rear ? -.3 : .3));
+    double shoulderY = pyc+PLAYER_H-spriteHeight*art.pixelScale*.60+bodyBob;
+    double restX = shoulderX + facing*(rear ? 2.0 : .7), restY = shoulderY+2.4;
+    // The guard follows the visible body's oval, with room above the head.
+    double radiusX = spriteWidth*art.pixelScale*.4+.4;
+    double radiusY = spriteHeight*art.pixelScale*.5+.5;
+    double reach = 1/std::sqrt(ax*ax/(radiusX*radiusX)+ay*ay/(radiusY*radiusY));
+    double guardX = pxc+PLAYER_W*.5+facing*bodyLean+ax*(reach-recoil);
+    double guardY = pyc+PLAYER_H-spriteHeight*art.pixelScale*.5+bodyBob+ay*(reach-recoil);
+    double sx = restX+(guardX-restX)*raise;
+    double sy = restY+(guardY-restY)*raise+broken*.65;
+    articulatedArm(shoulderX, shoulderY,
+      (shoulderX+sx)*.5-facing*.5, (shoulderY+sy)*.5+.45, sx, sy, rear);
     const auto* shield = E.content.gear(equipment[6]);
     int style = shield ? shield->style : 1;
     for (int y=-7;y<=7;y++) for (int x=-4;x<=4;x++) {
@@ -865,41 +881,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       double distance=1.3+phase*3;
       worldSquare(sx+std::cos(a)*distance,sy+std::sin(a)*distance,.18,.98f,.87f,.58f,(float)(1-phase/.55));
     }
-  }
-  if (alive && E.planetId == PL_FRONTIER && (animState == AS_DASH || animState == AS_GLIDE)) {
-    for (int i=0;i<14;i++) {
-      double age=std::fmod(E.actorTick*.08+i/14.0,1.0);
-      worldSquare(pxc+PLAYER_W*.5-facing*(1+age*10),pyc+PLAYER_H*.5+std::sin(i*2.4)*2.2,.2,.83f,.89f,.70f,(float)((1-age)*.55));
-    }
-    if (animState == AS_GLIDE) for(int side:{-1,1}) for(int feather=0;feather<8;feather++) {
-      double reach=feather*.45, yy=pyc+1.7+reach*.3+std::sin(E.actorTick*.08+reach)*.15;
-      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy,.65,.39f,.54f,.39f);
-      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy-.25,.23,.78f,.77f,.48f);
-    }
-  }
-  if (alive && (animState == AS_WALK || animState == AS_RUN)) {
-    for (int mote = 0; mote < 3; mote++) {
-      double age = std::fmod(E.actorTick / 18.0 + mote / 3.0, 1.0);
-      worldSquare(pxc + PLAYER_W * .5 - facing * (1 + age * 3),
-                  pyc + PLAYER_H - .15 - std::sin(age * 3.14159) * .6,
-                  .22 + age * .15, .58f, .57f, .51f, (float)((1 - age) * .4));
-    }
-  }
-  if (alive && heldItemKind == IK_BOW) {
-    double physicalSpriteW = spriteWidth * art.pixelScale;
-    double bx = sprX + (facing > 0 ? physicalSpriteW + .3 : -1.3) * cell;
-    double by = sprY + 3.2 * cell;
-    glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
-    glSolidDev(bx, by, cell * .45, cell * 4.4);
-    glUniform4f(glc->uColor, .88f * light, .86f * light, .72f * light, 1);
-    double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
-    glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
-  }
-  if (alive && aimedWeapon) {
+  };
+  auto drawHeldWeapon = [&]() {
+    if (!alive || !aimedWeapon) return;
     // Aim from the shoulder, then extend an authored arm to a real hand anchor.
     // Weapon geometry below is grip-relative, so it rotates in the hand instead
     // of orbiting around the center of the player's torso.
-    double shoulderX = pxc + PLAYER_W * .5 + facing*bodyLean, shoulderY = pyc + PLAYER_H * .42 + bodyBob;
+    double shoulderX = pxc + PLAYER_W * .5 + facing*(bodyLean + (E.planetId == PL_FRONTIER ? (rightHandRear ? -.3 : .3) : 0));
+    double shoulderY = pyc + (E.planetId == PL_FRONTIER ? PLAYER_H-spriteHeight*art.pixelScale*.60 : PLAYER_H*.42) + bodyBob;
     double targetX=aimX,targetY=aimY;
     if (E.planetId==PL_FRONTIER && heldItemKind==IK_MINING_TOOL && animState==AS_AXE && own && glSurvivalPreviewLocked) {
       targetX=glSurvivalPreviewX+.5;targetY=glSurvivalPreviewY+.5;
@@ -932,6 +921,16 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double kick = std::max(0.0, std::min(1.0, weaponKick));
     double gripReach = mining ? 1.4 + .65 * std::sin(actionPhase * 3.14159265) : sword ? (cutting ? 1.2 + .8 * std::sin(actionPhase*3.14159265) : shieldActive ? .85 : 1.15) : 1.55 - kick * kick * .65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
+    bool carrying = E.planetId == PL_FRONTIER &&
+      ((gear && gear->family <= 3 && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
+       || (heldItemKind == IK_MINING_TOOL && animState != AS_AXE));
+    if (carrying) {
+      // Rest the right hand beside the hip, with the tool pointing toward the ground.
+      handX = shoulderX + facing*1.1;
+      handY = shoulderY + 1.9;
+      dx = facing*.42; dy = std::sqrt(1-dx*dx);
+      nx = -dy; ny = dx;
+    }
     double hx = (handX - camCol) * cell + glOffX;
     double hy = (handY - camRow) * cell + glOffY;
     // Arms and muzzle bloom follow the recoiling grip.
@@ -941,11 +940,11 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double supportEY = shoulderY + dy * .46 - ny * .52;
     double supportHX = handX + dx * .74 - nx * .38;
     double supportHY = handY + dy * .74 - ny * .38;
-    if (!sword) articulatedArm(supportSX, supportSY, supportEX, supportEY,
+    if (!sword && !hasShield) articulatedArm(supportSX, supportSY, supportEX, supportEY,
                    supportHX, supportHY, true);
     double leadEX = shoulderX + dx * .72 + nx * .25;
     double leadEY = shoulderY + dy * .72 + ny * .25;
-    articulatedArm(shoulderX, shoulderY, leadEX, leadEY, handX, handY, false);
+    articulatedArm(shoulderX, shoulderY, leadEX, leadEY, handX, handY, rightHandRear);
     auto drawPixel = [&](double forward, double side, double size,
                          float r, float g, float b, float a = 1.0f) {
       double x = hx + (dx * forward + nx * side) * cell;
@@ -1152,7 +1151,41 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       drawPixel(3.76, -.68, .62, .19f, .22f, .22f);
       drawPixel(3.94, -.68, .27, 1.0f, .55f, .10f);
     }
+  };
+  if (rightHandRear) drawHeldWeapon();
+  else drawShield();
+  drawBody();
+  if (alive && E.planetId == PL_FRONTIER && (animState == AS_DASH || animState == AS_GLIDE)) {
+    for (int i=0;i<14;i++) {
+      double age=std::fmod(E.actorTick*.08+i/14.0,1.0);
+      worldSquare(pxc+PLAYER_W*.5-facing*(1+age*10),pyc+PLAYER_H*.5+std::sin(i*2.4)*2.2,.2,.83f,.89f,.70f,(float)((1-age)*.55));
+    }
+    if (animState == AS_GLIDE) for(int side:{-1,1}) for(int feather=0;feather<8;feather++) {
+      double reach=feather*.45, yy=pyc+1.7+reach*.3+std::sin(E.actorTick*.08+reach)*.15;
+      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy,.65,.39f,.54f,.39f);
+      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy-.25,.23,.78f,.77f,.48f);
+    }
   }
+  if (alive && (animState == AS_WALK || animState == AS_RUN)) {
+    for (int mote = 0; mote < 3; mote++) {
+      double age = std::fmod(E.actorTick / 18.0 + mote / 3.0, 1.0);
+      worldSquare(pxc + PLAYER_W * .5 - facing * (1 + age * 3),
+                  pyc + PLAYER_H - .15 - std::sin(age * 3.14159) * .6,
+                  .22 + age * .15, .58f, .57f, .51f, (float)((1 - age) * .4));
+    }
+  }
+  if (alive && heldItemKind == IK_BOW) {
+    double physicalSpriteW = spriteWidth * art.pixelScale;
+    double bx = sprX + (facing > 0 ? physicalSpriteW + .3 : -1.3) * cell;
+    double by = sprY + 3.2 * cell;
+    glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
+    glSolidDev(bx, by, cell * .45, cell * 4.4);
+    glUniform4f(glc->uColor, .88f * light, .86f * light, .72f * light, 1);
+    double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
+    glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
+  }
+  if (rightHandRear) drawShield();
+  else drawHeldWeapon();
 }
 
 void GLPresenter::glDrawChests() {
@@ -2175,7 +2208,7 @@ void GLPresenter::glDrawPreview() {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
         if (sel.count > 0 && sel.itemKind != IK_MATERIAL && sel.itemKind != IK_MINING_TOOL) return;
         erasing = sel.isTool || sel.count <= 0;
-        fp = &E.tools.getSurvivalFootprint(*lp);
+        fp = &E.tools.getSurvivalFootprint(E.isSeedMaterial(sel.material) ? 0 : lp->selectedFootprint);
         // Hold-lock: dig overlay tracks the locked origin, not the cursor.
         if (erasing && lp->mineActive && lp->mineFootprint >= 0) {
           ax = lp->mineX;

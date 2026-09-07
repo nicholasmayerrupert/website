@@ -53,7 +53,8 @@ class PlayerSystem {
   bool isSolidTool(int t);
   void resetPlayerMine(Player& p);
   void resolveMineDrops(Player& p);
-  bool frontierMineTarget(const Player& p, int& x, int& y, int layer) const;
+  bool frontierMineTarget(const Player& p, int& x, int& y, int layer,
+                          double* contactX = nullptr, double* contactY = nullptr) const;
   void applyFrontierMining(Player& p, bool primary, bool secondary);
   // True if the survival footprint at (cx,cy) still has at least one non-EMPTY
   // cell in `layer` (or both layers when layer is null — dual-mine / RMB path).

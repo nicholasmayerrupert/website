@@ -739,7 +739,8 @@ void PlayerSystem::resolveMineDrops(Player& p) {
   }
 }
 // Target the first collectable surface in the selected layer along the aim ray.
-bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer) const {
+bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer,
+                                     double* contactX, double* contactY) const {
   double cx = p.px + p.w*.5, cy = p.py + p.h*.42;
   double dx = p.aimX-cx, dy = p.aimY-cy, length = std::hypot(dx,dy);
   if (!std::isfinite(length) || length < .01) return false;
@@ -750,7 +751,12 @@ bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer
     int xx=(int)std::floor(cx+dx*at), yy=(int)std::floor(cy+dy*at);
     if (xx<=0 || xx>=E.cols-1 || yy<=0 || yy>=E.rows) return false;
     int k=E.I(xx,yy);
-    if (mineable(grid[k])) { x=xx; y=yy; return true; }
+    if (mineable(grid[k])) {
+      x=xx; y=yy;
+      if (contactX) *contactX=cx+dx*at;
+      if (contactY) *contactY=cy+dy*at;
+      return true;
+    }
   }
   return false;
 }
@@ -766,7 +772,8 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
       }
       double cx=p.px+p.w*.5,cy=p.py+p.h*.42;
       int x=0,y=0;
-      Player target=p; target.aimX=p.mineX+.5;target.aimY=p.mineY+.5;
+      // Validate the same surface contact that started the swing.
+      Player target=p; target.aimX=p.mineContactX;target.aimY=p.mineContactY;
       bool reachable=std::hypot(target.aimX-cx,target.aimY-cy)<=P_FRONTIER_MINE_REACH+1
         && frontierMineTarget(target,x,y,p.mineLayer) && x==p.mineX && y==p.mineY;
       if (reachable) {
@@ -784,7 +791,7 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
   int x=0,y=0,layer=secondary&&!primary ? 1 : 0;
   int chestId=layer ? 0 : E.containers.target(p);
   if (chestId) { x=(int)std::floor(p.aimX); y=(int)std::floor(p.aimY); }
-  else if (!frontierMineTarget(p,x,y,layer)) { resetPlayerMine(p); return; }
+  else if (!frontierMineTarget(p,x,y,layer,&p.mineContactX,&p.mineContactY)) { resetPlayerMine(p); return; }
   if (!p.mineActive || p.mineX!=x || p.mineY!=y || p.mineLayer!=layer) resetPlayerMine(p);
   p.mineActive=true;p.mineX=x;p.mineY=y;p.mineLayer=layer;p.mineFootprint=-1;p.mineChestId=chestId;
   p.actionState=AS_AXE;p.actionTicks=p.actionDuration=P_FRONTIER_MINE_SWING-imin(3,(int)p.heldToolTier)*2;p.actionDefinition=0;

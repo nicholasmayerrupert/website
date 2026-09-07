@@ -21,7 +21,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${server.baseURL}/game?studio=${encodeURIComponent(scene)}${show ? '' : '&capture'}`);
+  await page.goto(`${server.baseURL}/game?studio=${encodeURIComponent(scene)}${show ? '' : '&capture'}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__gameStudio?.inspect().player, null, { timeout: 60000 });
   await page.evaluate(id => window.__gameStudio.load(id), scene);
   await page.waitForTimeout(750);

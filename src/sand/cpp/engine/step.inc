@@ -210,6 +210,8 @@
     itemsys.updateItems();
     creatures.updateCreatures();
     missions.update();
+    discovery.update();
+    containers.tick();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
     return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() ||

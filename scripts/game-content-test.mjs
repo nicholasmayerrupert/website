@@ -13,8 +13,8 @@ invalid(w => { w.quests[0].target = 'missing.anchor'; }, /missing target/);
 invalid(w => { w.quests[0].after = ['homecoming']; }, /must precede/);
 invalid(w => { w.prefabs.pine = [{ use: 'pine' }]; }, /recursive prefab/);
 invalid(w => { w.sites[0].operations[0].material = 'TYPO'; }, /unknown material/);
-invalid((w, a) => { a.clips.walk.frames[0][0] = 'short'; }, /expected 16/);
-invalid((w, a) => { a.clips.walk.frames[0][0] = '?'.repeat(16); }, /unknown pixel/);
+invalid((w, a) => { a.clips.walk.frames[0][0] = 'short'; }, /expected 32/);
+invalid((w, a) => { a.clips.walk.frames[0][0] = '?'.repeat(a.width); }, /unknown pixel/);
 invalid(w => { w.quests[0].condition.material = 'TYPO'; }, /condition material/);
 invalid(w => { w.quests[0].condition.count = 0; }, /expected integer/);
 invalid(w => { w.quests[1].condition.bounds = [0, 0, 1000, 1]; }, /construction area/);
@@ -26,7 +26,9 @@ console.log('ok: content rejects broken references, dependency cycles, recursive
 await initSandWasm();
 const create = content => createEngineWasm({ cols: 640, rows: 448, worldSeed: GAME_WORLD.seed,
   infinite: true, sinksOn: false, planetId: PLANET.FRONTIER, content });
-const e = create(GAME_CONTENT);
+const rewardFixture = structuredClone(GAME_WORLD);
+rewardFixture.quests[0].reward = { gear: 320, count: 1, name: 'Cordial' };
+const e = create(compileContent(rewardFixture, PLAYER_ART));
 try {
   e.setSurvivalInventory(true);
   const player = e.spawnPlayerAtSurface(320);
@@ -42,6 +44,7 @@ try {
   assert.equal(at(-16, 16), MAT.SANDSTONE, 'lodge foundation survives physical settling');
   assert.notEqual(at(-60, -30, true), MAT.EMPTY, 'authored background retains component membership');
   e.setPlayerState(player, { ...e.getPlayer(player), x: 96 - e.getWorldOffsetX(), y: 6 - e.getWorldOffsetY() });
+  assert.equal(e.interactFrontier(player, 0), true, 'accept the quest beside Osei');
   e.addToInventory(player, MAT.IRON_ORE, 31);
   while (e.addSpecialItem(player, ITEM_KIND.RESCUE_BEAM, 1)) { /* fill nonstacking equipment slots */ }
   const before = e.getInventory(player);

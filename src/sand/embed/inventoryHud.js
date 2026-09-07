@@ -1,10 +1,14 @@
 // Framework-free survival inventory HUD. C++ owns every slot/cursor mutation;
 // this module renders snapshots and forwards user intent.
 
+import { EQUIPMENT_BY_ID } from '../content/equipment.js';
+import { gearIcon } from './gearIcon.js';
 import { MATERIALS, MAT_CRAFT_FLAGS, MF } from '../materials.generated.js';
 import { CRAFT_INGREDIENT, ITEM_KIND, INV_HOTBAR, INV_SLOTS } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 import { createInventoryPools, POOL_NAMES, poolIcon } from './inventoryPools.js';
+import { createItemTooltip } from './itemTooltip.js';
+import { gearDetails } from './gearDetails.js';
 
 const HOTBAR = INV_HOTBAR;
 const SLOTS = INV_SLOTS;
@@ -14,7 +18,7 @@ const COLOR = {};
 const NAME = {};
 for (const m of MATERIALS) {
   COLOR[m.id] = packedToRgb(m.color >>> 0);
-  NAME[m.id] = m.name;
+  NAME[m.id] = m.name === 'TNT' ? 'TNT' : m.name.toLowerCase().replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase());
 }
 // Tool names/tier letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe,
 // 3 shovel, 5 dig). There is no hand tool item — bare hand is an empty slot.
@@ -90,7 +94,7 @@ const TOOL_HEAD = ['#c9ccd4', '#b07a44', '#9aa0a8', '#dfe4ec', '#f2c734'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const _toolIconCache = new Map();
 function buildToolIcon(toolClass, toolTier, sizePx) {
-  const grid = TOOL_ART[toolClass];
+  const grid = toolClass === 5 ? PICKAXE_ART : TOOL_ART[toolClass];
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12');
   svg.setAttribute('width', String(sizePx));
@@ -260,6 +264,10 @@ const STYLE = `
 .craft-name,.craft-cost { display:block; }.craft-name { color:inherit; }.craft-cost { margin-top:3px; color:#aeb5bc; font-size:8px; font-weight:600; }
 .craft-recipe:disabled .craft-cost { color:#686f76; }.craft-count { color:#f0d465; font-size:9px; }
 .inv-pools { grid-column:1/-1; min-width:0; padding:10px; color:#e7edf0; background:#252b31; border:2px solid #0a0c0f; }
+.pool-controls[hidden],.pool-sorting[hidden],.pool-summary[hidden],.pool-empty[hidden] { display:none; }
+.pool-heading-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.pool-sorting { margin-top:12px; font-size:12px; }.pool-sorting summary { cursor:pointer; padding:8px 0; }
+.pool-sorting label { display:inline-flex; align-items:center; gap:8px; margin-right:8px; }
 .pool-tabs,.pool-controls { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
 .inv-pools button,.inv-pools select { border:1px solid #59636c; background:#171b20; color:#e7edf0; padding:5px 7px; font:inherit; font-size:11px; cursor:pointer; }
 .pool-tabs button { display:flex; gap:5px; align-items:center; }
@@ -298,7 +306,7 @@ const STYLE = `
 @media (max-width:380px) { .inv-slot { width:30px; height:30px; } .inv-grid { gap:2px; padding:6px; } .inv-bar { gap:2px; padding:5px; } }
 `;
 
-export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor, recipes = [], craft, poolAction } = {}) {
+export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor, recipes = [], craft, poolAction, onOpenChange, managed = false } = {}) {
   injectStyleOnce(root, 'data-sand-inventory', STYLE);
 
   let open = false;
@@ -315,6 +323,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // Latest pointer position prevents a newly carried stack flashing at (0,0).
   let ptrX = 0, ptrY = 0;
   let selectedSlot = 0;
+  let snapshot = null;
+  const tooltips = createItemTooltip(root, { carrying: () => !!getCursor?.() });
   let previousFocus = null;
   const focusSurface = () => root.querySelector('.sg-sim')?.focus({ preventScroll: true });
 
@@ -343,10 +353,15 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   close.addEventListener('click', () => setOpen(false));
   header.append(back, title, close); modal.append(header);
   const craftPanel = document.createElement('div'); craftPanel.className = 'craft-panel';
-  const craftTitle = document.createElement('div'); craftTitle.className = 'craft-title'; craftTitle.textContent = 'CRAFTING';
+  const craftTitle = document.createElement('div'); craftTitle.className = 'craft-title'; craftTitle.textContent = 'Crafting';
   const craftList = document.createElement('div'); craftList.className = 'craft-list';
   craftPanel.append(craftTitle, craftList); modal.append(grid, craftPanel);
-  const pools = createInventoryPools({ poolAction }); modal.append(pools.el);
+  const pools = createInventoryPools({ root, poolAction, tooltips }); modal.append(pools.el);
+  if (managed) {
+    const bagBack = document.createElement('button'); bagBack.type = 'button'; bagBack.className = 'inv-bag-return'; bagBack.textContent = '← Back to items';
+    bagBack.addEventListener('click', () => { hud.classList.remove('bag-open'); slots[selectedSlot]?.focus(); });
+    pools.el.prepend(bagBack);
+  }
   const bar = document.createElement('div');
   bar.className = 'inv-bar';
   bar.setAttribute('aria-label', 'Player loadout');
@@ -365,11 +380,27 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const openButton = document.createElement('button'); openButton.type = 'button'; openButton.className = 'inv-open-button';
   openButton.textContent = 'Inventory · E'; openButton.addEventListener('click', () => setOpen(!open));
   hud.append(modal, toast, poolActive, bar, openButton, hint);
+  const packHeading = document.createElement('div'); packHeading.className = 'inv-pack-heading';
+  const packTitle = document.createElement('h2'); packTitle.textContent = 'Items';
+  const capacity = document.createElement('span'); capacity.className = 'inv-capacity';
+  packHeading.append(packTitle, capacity);
+  if (managed) hud.prepend(packHeading);
+  if (managed) {
+    const bags = document.createElement('div'); bags.className = 'inv-bag-shortcuts';
+    for (const [index, name] of ['Materials', 'Powders', 'Liquids'].entries()) {
+      const button = document.createElement('button'); button.type = 'button';
+      button.append(poolIcon(index + 1, 18), document.createTextNode(name));
+      button.setAttribute('aria-label', `Open ${name.toLowerCase()} bag`);
+      button.addEventListener('click', () => openBag(index + 1)); bags.append(button);
+    }
+    hud.append(bags);
+  }
 
   // Append the carried stack to document.body so fixed positioning stays relative
   // to the viewport even when the Web Component has a transformed ancestor. It
   // uses inline styles because shadow-root styles cannot reach it.
   const cursorItem = document.createElement('div');
+  cursorItem.className = 'inv-cursor'; cursorItem.setAttribute('aria-hidden', 'true');
   Object.assign(cursorItem.style, {
     position: 'fixed', left: '0', top: '0', zIndex: '2147483646', display: 'none',
     pointerEvents: 'none', width: '32px', height: '32px', marginLeft: '-16px', marginTop: '-16px',
@@ -389,6 +420,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     el.dataset.index = String(index);
     parent.appendChild(el);
     slots[index] = el;
+    tooltips.bind(el, () => describeSlot(index));
   };
   for (let i = HOTBAR; i < SLOTS; i++) makeSlot(i, grid);
   for (let i = 0; i < HOTBAR; i++) makeSlot(i, bar);
@@ -408,6 +440,11 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       if (s.count > 0) {
         const c = document.createElement('span'); c.className = 'inv-count';
         c.textContent = s.count >= 10000 ? `${Math.floor(s.count / 1000)}k` : String(s.count); el.append(c);
+      }
+    } else if (s.itemKind === ITEM_KIND.GEAR && s.count) {
+      el.append(gearIcon(s.definitionId));
+      if (s.count > 1) {
+        const count = document.createElement('span'); count.className = 'inv-count'; count.textContent = s.count; el.append(count);
       }
     } else if (isSpecialKind(s.itemKind)) {
       el.appendChild(specialIcon(s.itemKind, 32));
@@ -439,6 +476,13 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!s) return;
     if (s.pool) {
       cursorItem.append(poolIcon(s.pool));
+    } else if (s.itemKind === ITEM_KIND.GEAR && s.count) {
+      cursorItem.append(gearIcon(s.definitionId, 32));
+      if (s.count > 1) {
+        const count = document.createElement('span'); count.textContent = s.count;
+        Object.assign(count.style, { position: 'absolute', right: '-2px', bottom: '-2px', color: '#fff', font: 'bold 12px system-ui', textShadow: '0 1px 3px #000' });
+        cursorItem.append(count);
+      }
     } else if (isSpecialKind(s.itemKind)) {
       cursorItem.appendChild(specialIcon(s.itemKind, 30));
       if (s.count > 1 || isFiniteAmmoKind(s.itemKind)) {
@@ -498,6 +542,45 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   }
 
   const hasCursor = () => !!(getCursor?.());
+  function describeSlot(index) {
+    const stack = index < SLOTS ? snapshot?.slots?.[index] : snapshot?.equipment?.[index - SLOTS];
+    const equipmentSlot = index >= SLOTS ? index - SLOTS : -1;
+    const data = stack?.definitionId ? gearDetails(stack.definitionId, snapshot?.equipment, equipmentSlot) : null;
+    const holding = hasCursor();
+    const quick = equipmentSlot >= 0 ? 'Shift-click to unequip' : data && EQUIPMENT_BY_ID[stack.definitionId].slot >= 0 ? 'Shift-click to equip' : 'Shift-click to transfer';
+    const action = !open ? 'Click to select' : holding ? 'Click to place or swap\nRight-click to place one'
+      : stack?.pool ? 'Double-click to open bag\nClick or drag to move' : `Click or drag to move${stack?.count > 1 ? '\nRight-click to split' : ''}${managed ? `\n${quick}` : ''}`;
+    if (managed && stack?.isTool) return { name: slotName(stack), type: 'Pickaxe',
+      description: 'Hold to mine. Right-click to mine background walls.\nA red outline requires a stronger pickaxe.',
+      action, inspectTouch: open, touchAction: 'Tap again to pick up' };
+    if (data) return { ...data, action, inspectTouch: open, touchAction: 'Tap again to pick up' };
+    if (stack?.pool) return { name: `${POOL_NAMES[stack.pool]} bag`, type: 'Material storage',
+      stats: [{ label: 'Stored', value: (snapshot?.pools?.find(p => p.id === stack.pool)?.entries || []).reduce((sum, entry) => sum + entry.count, 0).toLocaleString() }], action, inspectTouch: open, touchAction: 'Tap again to pick up · Use the bag buttons to open' };
+    if (!stack?.count) return holding ? { name: equipmentSlot >= 0 ? 'Equipment slot' : 'Empty slot', action } : null;
+    return { name: slotName(stack), type: stack.isTool ? `${TIER_NAME[stack.toolTier]} tool` : stack.itemKind === ITEM_KIND.ARROW ? 'Ammunition' : stack.itemKind === ITEM_KIND.MATERIAL ? 'Material' : 'Equipment',
+      stats: stack.count > 1 ? [{ label: 'Quantity', value: stack.count.toLocaleString() }] : [], action, inspectTouch: open, touchAction: 'Tap again to pick up' };
+  }
+  function quickMove(index) {
+    if (!managed || hasCursor()) return false;
+    const stack = index < SLOTS ? snapshot?.slots?.[index] : snapshot?.equipment?.[index - SLOTS];
+    if (!stack?.count && !stack?.pool) return true;
+    const definition = EQUIPMENT_BY_ID[stack.definitionId];
+    let target = -1;
+    if (index < SLOTS && definition?.slot >= 0) {
+      let part = definition.slot;
+      if (part === 7 && snapshot.equipment?.[7]?.count && !snapshot.equipment?.[8]?.count) part = 8;
+      target = SLOTS + part;
+    } else {
+      const candidates = index >= SLOTS ? [...Array(SLOTS).keys()].sort((a,b) => (a < HOTBAR) - (b < HOTBAR))
+        : [...Array(index < HOTBAR ? SLOTS - HOTBAR : HOTBAR).keys()].map(i => i + (index < HOTBAR ? HOTBAR : 0));
+      target = candidates.find(i => !snapshot.slots[i]?.count && !snapshot.slots[i]?.pool) ?? -1;
+    }
+    if (target >= 0) {
+      cursorPick?.(index, false); cursorPick?.(target, false);
+      if (index < SLOTS && target >= SLOTS) cursorPick?.(index, false);
+    }
+    return true;
+  }
   const openBag = (pool, restored = false) => {
     if (!pool || (hasCursor() && !restored)) return;
     hud.classList.add('bag-open');
@@ -507,7 +590,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   };
   const onWindowKeyDown = (e) => {
     if (!open || e.repeat || (e.key !== 'Escape' && e.key.toLowerCase() !== 'e')) return;
-    if (e.composedPath().some((node) => /^(SELECT|INPUT|TEXTAREA)$/.test(node.tagName))) return;
+    if (e.composedPath().some((node) => /^(SELECT|INPUT|TEXTAREA)$/.test(node.tagName) || (node.getAttribute?.('role') === 'combobox' && (node.getAttribute('aria-expanded') === 'true' || e.key !== 'Escape')))) return;
     e.preventDefault();
     e.stopPropagation();
     setOpen(false);
@@ -538,6 +621,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       return;
     }
     e.preventDefault();
+    if (e.shiftKey && quickMove(i)) { downSlot = -1; downOnSlot = false; return; }
     downSlot = i;
     downOnSlot = true;
     dragBag = !!pressedBag;
@@ -566,6 +650,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       return;
     }
     if (e.detail !== 0) return;
+    if (e.shiftKey && quickMove(i)) return;
     cursorPick?.(i, e.shiftKey);
     refreshCursor();
   });
@@ -583,6 +668,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   hud.addEventListener('keydown', (e) => {
     if (!open) return;
+    if (e.target.getAttribute('role') === 'combobox') return;
     if (e.key === 'Escape' || (e.key.toLowerCase() === 'e' && e.target.tagName !== 'SELECT')) {
       e.preventDefault();
       e.stopPropagation();
@@ -595,7 +681,16 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       refreshCursor();
       return;
     }
-    if (e.key !== 'Tab') return;
+    const index = idxOf(e.target);
+    const stride = index >= SLOTS ? 1 : HOTBAR;
+    const offset = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -stride, ArrowDown: stride }[e.key];
+    if (index >= 0 && offset) {
+      e.preventDefault();
+      const first = index >= SLOTS ? SLOTS : 0, last = index >= SLOTS ? slots.length - 1 : SLOTS - 1;
+      slots[Math.max(first, Math.min(last, index + offset))]?.focus({ preventScroll: true });
+      return;
+    }
+    if (e.key !== 'Tab' || managed) return;
     const focusable = [...hud.querySelectorAll('button:not(:disabled), select:not(:disabled), input:not(:disabled)')].filter((el) => el.getClientRects().length);
     if (!focusable.length) return;
     const first = focusable[0];
@@ -665,6 +760,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // materials, "Hand" for an empty slot (the implicit bare hand).
   const slotName = (s) => {
     if (!s) return 'Hand';
+    if (s.itemKind === ITEM_KIND.GEAR && s.count) return EQUIPMENT_BY_ID[s.definitionId]?.name || 'Relic';
     if (s.pool) return `${POOL_NAMES[s.pool]} pool${s.count > 0 ? ` · ${(NAME[s.material] || '').toLowerCase()}` : ' · empty'}`;
     if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
     if (s.itemKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
@@ -675,7 +771,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (s.itemKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (s.itemKind === ITEM_KIND.BOW) return 'Bow';
     if (s.itemKind === ITEM_KIND.ARROW) return 'Arrow';
-    if (s.isTool) return `${TIER_NAME[s.toolTier] || ''} ${TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
+    if (s.isTool) return `${TIER_NAME[s.toolTier] || ''} ${managed ? 'Pickaxe' : TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
     if (s.count > 0) return (NAME[s.material] || '').toLowerCase();
     return 'Hand';
   };
@@ -692,8 +788,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // actually changed (selection highlight is a cheap class toggle either way).
   const slotSig = new Array(SLOTS).fill(null);
 
+  let station = 0, abilities = 0;
   const recipeName = (r) => {
-    if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} Mining Tool`.trim();
+    if (r.outputKind === ITEM_KIND.GEAR) return EQUIPMENT_BY_ID[r.outputDefinition]?.name || 'Equipment';
+    if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} ${managed ? 'Pickaxe' : 'Mining Tool'}`.trim();
     if (r.outputKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
     if (r.outputKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
     if (r.outputKind === ITEM_KIND.ACID_MORTAR) return 'Acid Mortar';
@@ -722,7 +820,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const recipeEls = recipes.map((recipe) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'craft-recipe';
     const output = document.createElement('span'); output.className = 'craft-output';
-    renderStack(output, { itemKind: recipe.outputKind, material: recipe.outputMaterial, toolClass: 5, toolTier: recipe.outputTier, isTool: recipe.outputKind === ITEM_KIND.MINING_TOOL, count: recipe.outputCount });
+    renderStack(output, { definitionId: recipe.outputDefinition, itemKind: recipe.outputKind, material: recipe.outputMaterial, toolClass: 5, toolTier: recipe.outputTier, isTool: recipe.outputKind === ITEM_KIND.MINING_TOOL, count: recipe.outputCount });
     const text = document.createElement('span');
     const name = document.createElement('span'); name.className = 'craft-name'; name.textContent = recipeName(recipe);
     const cost = document.createElement('span'); cost.className = 'craft-cost';
@@ -730,13 +828,23 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     text.append(name, cost);
     const count = document.createElement('span'); count.className = 'craft-count'; count.textContent = 'MAKE';
     button.append(output, text, count);
-    button.addEventListener('click', (event) => craft?.(recipe.id, event.shiftKey));
+    button.addEventListener('click', (event) => { if (button.getAttribute('aria-disabled') !== 'true') craft?.(recipe.id, event.shiftKey); });
+    tooltips.bind(button, () => {
+      const details = gearDetails(recipe.outputDefinition, snapshot?.equipment) || { name: recipeName(recipe), type: 'Recipe' };
+      return { ...details,
+        stats: [...(details.stats || []), ...recipe.ingredients.map(ingredient => ({ label: ingredientName(ingredient),
+          value: `${available(snapshot, ingredient)} / ${ingredient.count}`, tone: available(snapshot, ingredient) < ingredient.count ? 'negative' : 'positive' }))],
+        action: button.getAttribute('aria-disabled') === 'true' ? 'Missing materials' : 'Click to craft\nShift-click to craft all', inspectTouch: true,
+        touchAction: button.getAttribute('aria-disabled') === 'true' ? 'Missing materials' : 'Tap again to craft' };
+    });
     craftList.appendChild(button);
     return { recipe, button, count };
   });
 
   function update(inv) {
+    snapshot = inv;
     if (inv && inv.slots) {
+      capacity.textContent = `${inv.slots.filter(slot => slot.count || slot.pool).length} / ${SLOTS}`;
       const sel = inv.selected;
       selectedSlot = sel;
       if (lastSelected >= 0 && sel !== lastSelected) showToast(slotName(inv.slots[sel]));
@@ -762,7 +870,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         const countLabel = isFiniteAmmoKind(s.itemKind)
           ? `, ${s.count} ammo` : (s.count > 1 ? `, ${s.count}` : '');
         el.setAttribute('aria-label', `${i < HOTBAR ? `Hotbar ${i + 1}` : `Inventory slot ${i + 1}`}: ${contents}${countLabel}${i === inv.selected ? ', selected' : ''}`);
-        const sig = `${s.pool | 0}:${s.itemKind | 0}:${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
+        const sig = `${s.definitionId | 0}:${s.pool | 0}:${s.itemKind | 0}:${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
         if (sig === slotSig[i]) continue;
         slotSig[i] = sig;
         el.replaceChildren();
@@ -772,34 +880,21 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         }
         renderStack(el, s);
         if (s.pool) {
-          el.title = `${POOL_NAMES[s.pool]} bag — double-click to open; click or drag in inventory to move`;
           const label = document.createElement('span'); label.className = 'inv-bag-label'; label.textContent = 'BAG'; el.append(label);
-        }
-        else if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) el.title = `Dynamite Satchel — ${s.count} throws remaining`;
-        else if (s.itemKind === ITEM_KIND.BORE_CANNON) el.title = `Bore Cannon — ${s.count} beams remaining`;
-        else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = `Acid Mortar — ${s.count} shells remaining`;
-        else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = `Cluster Launcher — ${s.count} carriers remaining`;
-        else if (s.itemKind === ITEM_KIND.MINIGUN) el.title = `Minigun — ${s.count} rounds remaining`;
-        else if (s.itemKind === ITEM_KIND.RESCUE_BEAM) el.title = 'Rescue Beam — hold on a researcher to transport them';
-        else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
-        else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
-        else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;
-        else if (s.isTool) {
-          el.title = `${TIER_NAME[s.toolTier] || ''} ${TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
-        } else if (s.count > 0) {
-          el.title = `${(NAME[s.material] || '').toLowerCase()} ×${s.count}`;
-        } else {
-          el.title = '';
         }
       }
       for (const row of recipeEls) {
+        row.button.hidden = !!row.recipe.npcId && row.recipe.npcId !== station;
+        row.button.hidden ||= (abilities & row.recipe.ability) !== row.recipe.ability;
         const can = row.recipe.ingredients.every((ingredient) => available(inv, ingredient) >= ingredient.count);
-        row.button.disabled = !can;
-        row.count.textContent = can ? 'MAKE' : 'NEED';
+        row.button.disabled = !managed && !can;
+        row.button.setAttribute('aria-disabled', String(!can));
+        row.count.textContent = can ? 'Craft' : 'Missing';
       }
       pools.update(inv);
     }
     refreshCursor();
+    tooltips.refresh();
   }
 
   const setOpen = (v) => {
@@ -807,10 +902,11 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (next === open) return;
     if (next) previousFocus = root.activeElement || document.activeElement;
     open = next;
+    tooltips.hide();
     hud.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
     hint.textContent = open ? openHint : closedHint;
-    if (open) {
+    if (open && !managed) {
       hud.setAttribute('role', 'dialog');
       hud.setAttribute('aria-modal', 'true');
       hud.setAttribute('aria-label', 'Inventory and crafting');
@@ -838,14 +934,22 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       previousFocus.focus?.({ preventScroll: true });
       previousFocus = null;
     }
+    onOpenChange?.(open);
   };
 
   // cursorItem is intentionally NOT appended here — it lives on document.body.
   root.append(backdrop, hud);
   return {
     el: hud,
+    tooltips,
+    registerEquipmentSlot(index, element) {
+      element.classList.add('inv-slot'); element.dataset.index = String(SLOTS + index);
+      slots[SLOTS + index] = element;
+      tooltips.bind(element, () => describeSlot(SLOTS + index) || { name: element.getAttribute('aria-label'), action: 'Click a matching item, then this slot.' });
+    },
     update,
     setOpen,
+    setStation(id, earned = 0) { station = id; abilities = earned; craftTitle.textContent = id === 7 ? 'Barter · Copper' : id ? 'Workbench' : 'Crafting'; },
     toggleOpen() { setOpen(!open); },
     isOpen() { return open; },
     destroy() {
@@ -855,6 +959,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       backdrop.remove();
       hud.remove();
       cursorItem.remove();
+      tooltips.destroy();
+      pools.destroy();
     },
   };
 }

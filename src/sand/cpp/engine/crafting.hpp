@@ -7,6 +7,7 @@ struct CraftRecipe {
   int id = 0;
   InvSlot output;
   std::vector<CraftIngredient> ingredients;
+  int npcId = 0, ability = 0;
 };
 
 class CraftingSystem {

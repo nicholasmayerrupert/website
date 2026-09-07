@@ -1,4 +1,5 @@
 bool CreatureSystem::isProtectedNpc(const Creature& c) const {
+  if (c.npcId) return true;
   const CreatureSpecies& definition = species(c);
   return c.shelterCharge > 0 || definition.protection == CPROT_ALWAYS
     || (definition.protection == CPROT_PROTECTED_CREW
@@ -128,6 +129,7 @@ bool CreatureSystem::worldRuleAllows(
 
 bool CreatureSystem::worldRuleAllows(
     uint8_t speciesId, double wx, double wy) const {
+  if (speciesId >= CS_THORNBOUND_HART && E.planetId != PL_FRONTIER) return false;
   if (E.planetId == PL_FRONTIER && speciesId < CS_COUNT
       && CREATURE_SPECIES[speciesId].hostile
       && wx >= E.content.repairBounds[0] - 64 && wx <= E.content.repairBounds[2] + 64
@@ -140,7 +142,7 @@ bool CreatureSystem::worldRuleAllows(
 
 int CreatureSystem::worldSpawnWeight(
     uint8_t speciesId, const WorldContext& context) const {
-  if (speciesId >= CS_COUNT) return 0;
+  if (speciesId >= CS_COUNT || (speciesId >= CS_THORNBOUND_HART && E.planetId != PL_FRONTIER)) return 0;
   const CreatureWorldRule& rule = CREATURE_SPECIES[speciesId].world;
   if (!worldRuleAllows(rule, context)) return 0;
   int weight = rule.baseWeight;
@@ -1372,6 +1374,15 @@ void CreatureSystem::fireBore(Player& p) {
 }
 
 void CreatureSystem::dropWeapon(const Creature& c) {
+  if (E.planetId == PL_FRONTIER) {
+    if (!species(c).hostile) return;
+    InvSlot item; item.itemKind = IK_GEAR;
+    int roll = (c.id * 17 + c.species * 7) % 12;
+    item.definitionId = roll < 8 ? 320 + roll % 2 : 100 + (c.species % 6) * 6 + roll % 6;
+    item.count = 1;
+    E.itemsys.spawnStack(item, c.wx - E.fg.worldOffsetX + species(c).w * .5, c.wy - E.fg.worldOffsetY, 0, -.4, 12, false);
+    return;
+  }
   uint8_t itemKind = creatureBehavior(species(c)).dropItem;
   if (itemKind == IK_MATERIAL) return;
   const CreatureSpecies& s = species(c);
@@ -1446,6 +1457,7 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 }
 
 void CreatureSystem::attackTarget(Creature& c) {
+  if (E.planetId == PL_FRONTIER && species(c).hostile) { E.combat.enemyAttack(c); return; }
   const CreatureSpecies& s = species(c);
   switch (creatureBehavior(s).attack) {
     case CAH_DYNAMITEER:
@@ -1541,6 +1553,10 @@ void CreatureSystem::updateCreatures() {
       c.attackCooldown = imax(c.attackCooldown, 60);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
+    double priorX = c.wx;
+    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0) c.health -= 3; }
+    if (c.slowTicks > 0) c.slowTicks--;
+    if (c.rootTicks > 0) c.rootTicks--;
     if (species(c).locomotion == CL_AQUATIC) {
       if (fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold) {
         c.hasHabitatGoal = false;
@@ -1553,6 +1569,8 @@ void CreatureSystem::updateCreatures() {
     else if (species(c).locomotion == CL_FLYING) moveFlying(c);
     else if (species(c).locomotion == CL_AMPHIBIOUS || c.roamRadius) moveAmphibious(c);
     else { c.vx = 0; c.vy = 0; c.grounded = true; }
+    if (c.rootTicks > 0) { c.wx = priorX; c.vx = 0; }
+    else if (c.slowTicks > 0) { c.wx = priorX + (c.wx-priorX)*.35; c.vx *= .35; }
     // Terrain can settle or be placed through an entity after movement. Mere
     // floor contact is outside the AABB and harmless; sustained burial over at
     // least half the body deals one point every half-second at 60 actor Hz.
@@ -1562,7 +1580,7 @@ void CreatureSystem::updateCreatures() {
       c.wx, c.wy, species(c).w, species(c).h, E.actorTick + c.id * 7);
     if (contactHazard != CHP_NONE)
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
-    if (encounterEngaged) attackTarget(c);
+    if (encounterEngaged && !c.rootTicks) attackTarget(c);
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement
     // instead of every creature sharing the same two-frame global blink.

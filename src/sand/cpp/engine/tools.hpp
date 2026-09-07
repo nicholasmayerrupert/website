@@ -76,6 +76,8 @@ class ToolSystem {
   bool mineDamageCellStep(int k, uint8_t m, const Player& miner, bool scaledSpeed, uint32_t areaScale, uint32_t speedMultiplier,
                           std::vector<int>& erasedStructural,
                           std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies);
+  std::vector<int> frontierMinePatch(int cx, int cy, const Layer& layer) const;
+  bool strikeFrontierPatch(Player& miner);
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed);
   int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed);
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit);

@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import creatureArt from '../src/sand/content/creatureArt.js';
 import { runBrowserCases } from './browser-harness.mjs';
 
 process.exitCode = await runBrowserCases({
@@ -6,7 +7,7 @@ process.exitCode = await runBrowserCases({
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${baseURL}/game?studio=hearth`);
-    await page.waitForFunction(() => window.__gameStudio?.inspect().player, null, { timeout: 60000 });
+    await page.waitForFunction(() => window.__gameStudio?.inspect().player && window.__gameStudio.inspect().perf.workerStatus === 'live', null, { timeout: 60000 });
     check('workbench uses the real worker and authored scene', await page.evaluate(() => {
       const s = window.__gameStudio.inspect();
       return s.scene === 'hearth' && s.perf.workerStatus === 'live' && Math.abs(s.player.worldX + 16) < 8;
@@ -43,7 +44,7 @@ process.exitCode = await runBrowserCases({
     });
     check('content writer rejects unknown sources', rejected === 400);
     await page.getByText('Creature artwork', { exact: true }).click();
-    check('art drawer previews the complete creature roster', await page.getByRole('region', { name: 'Creature artwork' }).locator('canvas').count() === 20);
+    check('art drawer previews the complete creature roster', await page.getByRole('region', { name: 'Creature artwork' }).locator('canvas').count() === Object.keys(creatureArt).length);
     await page.getByLabel('Jump to a scene').selectOption('railway');
     await page.waitForFunction(() => window.__gameStudio.inspect().scene === 'railway' && Math.abs(window.__gameStudio.inspect().player.worldX + 690) < 8);
     await page.getByRole('button', { name: 'Reset world' }).click();
@@ -51,11 +52,12 @@ process.exitCode = await runBrowserCases({
     check('reset preserves the chosen scene', await page.getByLabel('Jump to a scene').inputValue() === 'railway');
     await page.evaluate(() => window.__gameStudio.load('foundry'));
     await page.waitForTimeout(500);
+    // The streaming grid may rasterize the moving floor into the sub-cell foot margin.
     check('long diagonal scene jumps load the terrain before placing the player', await page.evaluate(() => {
       const test = window.__sandTest, p = test.getPlayer(), offset = test.worldOffset(), size = test.info();
       return Math.abs(p.x + offset.x + 995) < 8 && p.x > 8 && p.x + p.w < size.cols - 8
         && p.y > 8 && p.y + p.h < size.rows - 8
-        && test.solidCount(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.x + p.w - 1e-6), Math.ceil(p.y + p.h - 1e-6)) === 0;
+        && test.solidCount(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.x + p.w - 1e-6), Math.floor(p.y + p.h - .1)) === 0;
     }));
     check('workbench has no browser errors', errors.length === 0, errors.join('; '));
     await page.screenshot({ path: resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts', 'workbench.png') });

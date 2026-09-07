@@ -87,7 +87,8 @@ export function createSandGame(container, opts = {}) {
   // Host canvas; the WASM engine owns its WebGL2 context and compositing.
   const parallax = createParallaxBackground(container, { planetId });
   const audio = createSandAudio({
-    expeditionScore: survival && (planetId === PLANET.SHIP || missionId === MISSION.GREENFALL_RECOVERY),
+    fantasyScore: planetId === PLANET.FRONTIER,
+    expeditionScore: survival && (planetId === PLANET.SHIP || planetId === PLANET.FRONTIER || missionId === MISSION.GREENFALL_RECOVERY),
   });
 
   const canvas = document.createElement('canvas');
@@ -310,7 +311,7 @@ export function createSandGame(container, opts = {}) {
 
   const updateMineProgress = () => {
     const playerId = ctx.localPlayerId;
-    if (!survival || !ctx.engine || !playerId || !ctx.inside || !(ctx.mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
+    if (ctx.planetId === PLANET.FRONTIER || !survival || !ctx.engine || !playerId || !ctx.inside || !(ctx.mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
       mineProgress.style.display = 'none';
       return;
     }
@@ -491,13 +492,25 @@ export function createSandGame(container, opts = {}) {
       return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
     },
     getMission() { return ctx.worldWorker?.getMission() || null; },
+    clearInput() { inputs.clearLatchedInput(); },
+    setGameplayPaused(paused) {
+      inputs.clearLatchedInput(); ctx.gameplayPaused = !!paused;
+      ctx.worldWorker?.config({ paused: !!paused, clearInput: true });
+    },
+    getSaveState() { return ctx.worldWorker?.getSaveState() || {}; },
+    getPlayer() { return loop.localPlayer(); },
+    getCombatActors() { return ctx.engine?.getCreatures() || []; },
+    getChests() { return ctx.worldWorker?.getChests() || []; },
+    getChestLoot() { return ctx.worldWorker?.getChestLoot() || { id: 0, slots: [] }; },
+    interactChest(chest, slot = -2) { ctx.worldWorker?.intent('chest', { chest, slot }); },
+    getDiscovery() { return ctx.worldWorker?.getDiscovery() || new Int32Array(); },
     getTalkableActors() {
       if (!ctx.engine) return [];
       const offsetX = ctx.engine.getWorldOffsetX();
       const offsetY = ctx.engine.getWorldOffsetY();
       return ctx.engine.getCreatures()
-        .filter(({ species, alive }) =>
-          alive && (species === CREATURE.SURVEYOR ||
+        .filter(({ species, alive, npcId }) =>
+          alive && (npcId || species === CREATURE.SURVEYOR ||
             species === CREATURE.IRIS_COMMANDER ||
             species === CREATURE.IRIS_ENGINEER))
         .map((actor) => ({
@@ -569,6 +582,7 @@ export function createSandGame(container, opts = {}) {
     // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
     interactQuest(objectiveId) { ctx.worldWorker?.intent('quest-interact', { objectiveId }); },
     repairBase() { ctx.worldWorker?.intent('repair-base'); },
+    getWorldSurfaceAt(worldX) { return ctx.engine?.worldSurfaceAbsAt(worldX) ?? 0; },
     setWeatherOverride(id) { loop.setWeatherOverride(id); loop.render(false); },
     getWeatherState() { return loop.getWeatherState(); },
     setViewportActive(active) {

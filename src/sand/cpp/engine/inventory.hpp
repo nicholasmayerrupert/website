@@ -22,6 +22,8 @@ class InventorySystem {
   int countMaterial(const Player& p, uint8_t material) const;
   bool consumeMaterial(Player& p, uint8_t material, int count);
 
+  bool addGear(int id, int definition, int count = 1);
+  bool acceptsEquipment(const InvSlot& item, int slot) const;
   void seedStarterTools(Player& p);
   void seedStarterTools(int id);
   void resetPlayerPlaceStroke(Player& p);

@@ -139,7 +139,10 @@ void ProjectileSystem::spawnArrow(Player& p, double charge) {
   double speed = 2.5 + 4.5 * charge;
   Projectile arrow; arrow.id = nextId++; arrow.owner = p.id; arrow.kind = PK_ARROW;
   arrow.px = sx; arrow.py = sy; arrow.vx = dx / d * speed; arrow.vy = dy / d * speed;
-  arrow.charge = charge; arrow.rotation = std::atan2(arrow.vy, arrow.vx);
+  arrow.charge = charge;
+  const auto* gear = E.content.gear(p.inv[p.selectedSlot].definitionId);
+  if (gear && gear->family == 4) arrow.fuse = gear->power + (E.combat.hasCharm(p, 225) ? 5 : 0);
+  arrow.rotation = std::atan2(arrow.vy, arrow.vx);
   projectiles.push_back(arrow);
   E.audio.emit(SE_BOW, sx, sy, 0.55 + charge * .45, EMPTY);
 }
@@ -801,6 +804,27 @@ void ProjectileSystem::updateProjectiles() {
       continue;
     }
 
+    if (p.kind == PK_RUNE_BURST) {
+      if (--p.life > 0) { p.charge = p.life / 18.0; projectiles[write++] = p; }
+      continue;
+    }
+    if (p.kind == PK_RUNE) {
+      bool hit = false;
+      int steps = imax(1, (int)std::ceil(std::hypot(p.vx,p.vy) / .25));
+      for (int j = 0; j < steps; j++) {
+        p.px += p.vx / steps; p.py += p.vy / steps;
+        if (p.px < 1 || p.py < 1 || p.px >= E.cols-1 || p.py >= E.rows-1) { hit = true; break; }
+        int mat = E.fg.grid[E.I((int)p.px,(int)p.py)];
+        const auto* rune = E.content.gear(p.fuse);
+        if (E.isBlockingForActor(mat) || (rune && rune->spell == 2 && mat == WATER) || hitsCreature(p.px,p.py,1,p.owner)) { hit = true; break; }
+      }
+      if (hit || --p.life <= 0) {
+        auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
+        if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
+        p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
+      }
+      projectiles[write++] = p; continue;
+    }
     bool hit = false;
     double distance = std::hypot(p.vx, p.vy);
     int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
@@ -816,8 +840,12 @@ void ProjectileSystem::updateProjectiles() {
             hitsPlayer(p.px, p.py, 0.8, p.owner)) hit = true;
       } else {
         if (E.isBlockingForActor(material)) { hit = true; break; }
-        int damage = 8 + (int)std::lround(22 * p.charge);
-        if (E.creatures.damageAtPoint(x, y, 1, damage)) hit = true;
+        int damage = p.fuse > 0 ? (int)std::lround(p.fuse * (.4 + .6*p.charge)) : 8 + (int)std::lround(22 * p.charge);
+        if (p.owner < 0) {
+          for (auto& hero : E.psys.players) if (hero.active && hero.alive && p.px >= hero.px && p.px <= hero.px+hero.w && p.py >= hero.py && p.py <= hero.py+hero.h) {
+            E.psys.damagePlayer(hero,damage,25,p.px-p.vx,p.py-p.vy); hit=true;
+          }
+        } else if (E.creatures.damageAtPoint(x, y, 1, damage)) hit = true;
       }
     }
     if (hit) {

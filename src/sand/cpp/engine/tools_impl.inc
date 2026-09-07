@@ -417,6 +417,8 @@ uint32_t ToolSystem::mineDurationFor(uint8_t m, uint32_t areaScale) const {
   return (uint32_t)DURABILITY[m] * 16u * imax(1, (int)areaScale);
 }
 uint32_t ToolSystem::minePowerFor(uint8_t m, const Player& miner, bool scaledSpeed, uint32_t speedMultiplier) const {
+  if (E.planetId == PL_FRONTIER && miner.mineActive && miner.actionState == AS_AXE && scaledSpeed)
+    return (2u + miner.heldToolTier) * 16u;
   uint32_t power = 16;
   if (scaledSpeed) {
     // Clamp to valid enum range (TOOL_CLASS_COUNT includes dig). Unknown classes
@@ -494,6 +496,40 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
   E.L->mineDamage[k] = 0;
   draft.erase(k);
   return true;
+}
+// A small flood fill follows the selected material rather than carving a square.
+std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& layer) const {
+  std::vector<int> cells;
+  if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
+  uint8_t material=layer.grid[E.I(cx,cy)];
+  if (material==EMPTY || E.isLiquidMaterial(material) || E.isGasMaterial(material)) return cells;
+  cells.push_back(E.I(cx,cy));
+  for (size_t i=0;i<cells.size();i++) {
+    int x=cells[i]%E.cols,y=cells[i]/E.cols;
+    for (auto [dx,dy] : {std::pair<int,int>{1,0},{-1,0},{0,1},{0,-1}}) {
+      int nx=x+dx,ny=y+dy;
+      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || (nx-cx)*(nx-cx)+(ny-cy)*(ny-cy)>P_MINE_R*P_MINE_R) continue;
+      int k=E.I(nx,ny);
+      if (layer.grid[k]==material && std::find(cells.begin(),cells.end(),k)==cells.end()) cells.push_back(k);
+    }
+  }
+  return cells;
+}
+bool ToolSystem::strikeFrontierPatch(Player& miner) {
+  lastMinedCells.clear();
+  std::vector<int> erasedStructural;
+  std::unordered_map<int,Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
+  bool changed=false;
+  for (int k : frontierMinePatch(miner.mineX,miner.mineY,*E.L)) {
+    uint8_t m=E.L->grid[k];
+    if (miner.heldToolTier < MAT_TOOLTIER[m]) continue;
+    changed |= mineDamageCellStep(k,m,miner,true,1,1,erasedStructural,bodyById,dirtyBodies);
+  }
+  E.rigid.finishErasedBodies(dirtyBodies,E.L->bodyCells);
+  splitComponentsAfterDestroy(erasedStructural);
+  if (changed) E.markDirtyRect(miner.mineX-P_MINE_R,miner.mineY-P_MINE_R,miner.mineX+P_MINE_R,miner.mineY+P_MINE_R);
+  if (!lastMinedCells.empty()) E.L->skyDirty=true;
+  return changed;
 }
 int ToolSystem::mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) {
   lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops

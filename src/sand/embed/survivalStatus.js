@@ -165,6 +165,8 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   };
   window.addEventListener('keydown', onKey, true);
 
+  const frontier = root.host?.getAttribute('mission') === 'frontier';
+  if (frontier) { shield.setAttribute('aria-label', 'Mana'); fuel.setAttribute('aria-label', 'Stamina'); }
   const update = (player) => {
     const hp = Math.max(0, Math.min(100, player?.health ?? 100));
     for (let i = 0; i < hearts.length; i++) {
@@ -174,7 +176,7 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     health.setAttribute('aria-valuenow', String(hp));
     health.classList.toggle('low', hp <= 30);
     healthStat.value.textContent = String(hp);
-    const shieldHealth = Math.max(0, Math.min(200, player?.shieldHealth ?? 200));
+    const shieldHealth = Math.max(0, Math.min(200, frontier ? (player?.mana ?? 100) * 2 : player?.shieldHealth ?? 200));
     const shieldActive = !!player && player.alive !== false && !!player.shieldActive && shieldHealth > 0;
     for (let i = 0; i < shieldCells.length; i++) {
       const fill = Math.max(0, Math.min(20, shieldHealth - i * 20)) * 5;
@@ -187,15 +189,15 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     shieldStat.value.textContent = String(shieldHealth);
     shieldLabel.classList.toggle('active', shieldActive);
     shieldLabel.querySelector('span').textContent = shieldActive ? 'WARD ACTIVE' : 'WARD · HOLD ';
-    const bow = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BOW;
+    const bow = !!player && player.alive !== false && (player.heldItemKind === ITEM_KIND.BOW || (player.heldDefinition >= 10 && player.heldDefinition <= 12));
     const bore = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BORE_CANNON;
     const level = Math.round(Math.max(0, Math.min(1, player?.bowCharge || 0)) * chargeCells.length);
     charge.classList.toggle('show', (bow || bore) && level > 0);
     charge.classList.toggle('bore', bore);
     for (let i = 0; i < chargeCells.length; i++) chargeCells[i].classList.toggle('full', i < level);
-    const fuelLevel = Math.max(0, Math.min(1, player?.jetpackFuel ?? 1));
+    const fuelLevel = Math.max(0, Math.min(1, frontier ? (player?.stamina ?? 100) / 100 : player?.jetpackFuel ?? 1));
     const filledFuel = Math.ceil(fuelLevel * fuelCells.length);
-    fuelStat.stat.classList.toggle('charged', fuelLevel >= .999);
+    fuelStat.stat.classList.toggle('charged', !frontier && fuelLevel >= .999);
     fuel.classList.toggle('active', !!player?.jetpackActive);
     fuel.classList.toggle('low', fuelLevel <= .25);
     fuel.setAttribute('aria-valuenow', String(Math.round(fuelLevel * 100)));
@@ -203,6 +205,14 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     fuelLabel.querySelector('span').textContent = player?.jetpackActive ? 'THRUST' : 'JETPACK · ';
     for (let i = 0; i < fuelCells.length; i++) fuelCells[i].classList.toggle('full', i < filledFuel);
 
+    if (frontier) {
+      shield.setAttribute('aria-valuemax', '100');
+      shield.setAttribute('aria-valuenow', String(player?.mana ?? 100));
+      shieldStat.value.textContent = String(player?.mana ?? 100);
+      shield.setAttribute('aria-valuetext', `${player?.mana ?? 100} of 100 mana`);
+      shieldLabel.querySelector('span').textContent = 'MANA';
+      fuelLabel.querySelector('span').textContent = 'STAMINA';
+    }
     const dead = !!player && player.alive === false;
     ready = dead && !!player.respawnReady;
     death.classList.toggle('show', dead);

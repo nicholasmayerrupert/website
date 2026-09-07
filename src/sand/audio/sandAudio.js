@@ -28,6 +28,10 @@ export function buildAmbienceVoiceSpecs(groups = AMBIENCE_GROUP_MIXER) {
 }
 const AMBIENCE_VOICE_SPECS = buildAmbienceVoiceSpecs();
 const EVENT_DISTANCE = Object.freeze({
+  [SOUND_EVENT.BELL]: 260,
+  [SOUND_EVENT.RUNE]: 80,
+  [SOUND_EVENT.SWING]: 60,
+  [SOUND_EVENT.GUARD]: 90,
   [SOUND_EVENT.EXPLOSION]: 190,
   [SOUND_EVENT.FUSE]: 95,
   [SOUND_EVENT.IMPACT]: 90,
@@ -221,7 +225,7 @@ function writeStoredMuted(muted) {
   catch { /* storage may be unavailable in third-party/private embeds */ }
 }
 
-export function createSandAudio({ expeditionScore = false } = {}) {
+export function createSandAudio({ expeditionScore = false, fantasyScore = false } = {}) {
   let context = null;
   let master = null;
   let effectsBus = null;
@@ -526,6 +530,13 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   // gesture unlock, mute, visibility, and teardown lifecycle.
   const playScoreBar = () => {
     if (!audible() || context?.state !== 'running' || activeVoices > MAX_VOICES - 8) return;
+    if (fantasyScore) {
+      const chord = [[50,57,62,65],[48,55,60,64],[46,53,58,62],[48,55,60,67]][scoreBar%4];
+      for (let i=0;i<8;i++) playTone({from:440*2**((chord[i%4]-69)/12),to:440*2**((chord[i%4]-69)/12)*.998,
+        duration:1.45,gain:.018,attack:.004,pan:i%2?.18:-.18,delay:i*.48,wave:'triangle'});
+      if (scoreBar%2===0) playTone({from:440*2**(([74,77,72,69][scoreBar%4]-69)/12),duration:2.6,gain:.012,attack:.18,delay:.8,wave:'sine',pan:.25});
+      scoreBar++; return;
+    }
     const root = [48, 53, 57, 55][Math.floor(scoreBar / 2) % 4];
     for (const [index, interval] of [0, 7, 14].entries()) {
       playTone({
@@ -782,6 +793,18 @@ export function createSandAudio({ expeditionScore = false } = {}) {
         delay: 0.69, attack: 0.025 });
       playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
         wave: 'sine', delay: 0.67, attack: 0.018 });
+    } else if (type === SOUND_EVENT.SWING) {
+      playNoise({duration:.15,gain:gain*.24,pan,frequency:1600*pitch,type:'bandpass',q:.5,rate:1.1});
+      playTone({from:180,to:80,duration:.1,gain:gain*.04,pan,wave:'triangle'});
+    } else if (type === SOUND_EVENT.GUARD) {
+      playNoise({duration:.09,gain:gain*.25,pan,frequency:900,type:'bandpass',q:1.2,rate:1});
+      for (const f of [330,670,1010]) playTone({from:f,to:f*.96,duration:.24,gain:gain*.07,pan,wave:'sine'});
+    } else if (type === SOUND_EVENT.RUNE) {
+      const note=[392,587,440,196,330,659][Math.max(0,Math.min(5,material-1))];
+      playTone({from:note*.5,to:note,duration:.3,gain:gain*.13,pan,wave:'sine',attack:.03});
+      playTone({from:note*2,duration:.6,gain:gain*.04,pan,wave:'triangle',delay:.06});
+    } else if (type === SOUND_EVENT.BELL) {
+      for (const [i,ratio] of [1,2.01,2.76,4.07].entries()) playTone({from:196*ratio,to:195.7*ratio,duration:3.8-i*.45,gain:gain*.12/(i+1),pan,wave:'sine',attack:.003,delay:i*.008});
     } else if (type === SOUND_EVENT.BEAM) {
       playTone({ from: 1840, to: 360, duration: 0.44, gain: gain * 0.14, pan,
         wave: 'triangle', attack: 0.004 });

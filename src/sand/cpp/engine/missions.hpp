@@ -12,6 +12,7 @@ static constexpr int MISSION_FLAG_EXTRACTION = 1 << 1;
 struct MissionObjective {
   int id = 0;
   uint8_t type = OK_CLEAR;
+  bool accepted = true;
   uint8_t state = OS_LOCKED;
   int current = 0;
   int required = 1;

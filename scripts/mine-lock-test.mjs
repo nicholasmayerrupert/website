@@ -4,6 +4,7 @@
 
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import process from 'node:process';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -23,7 +24,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 8); // empty arsenal slot -> legacy bare-hand mining
+  e.setSelectedSlot(id, 5); // empty arsenal slot -> legacy bare-hand mining
   e.setSelectedFootprint(id, 0); // 1x1
   const x0 = 55, y0 = FLOOR;
   // Neighbour cell that must stay untouched while aim wanders onto it.
@@ -48,7 +49,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 8);
+  e.setSelectedSlot(id, 5);
   e.setSelectedFootprint(id, 0);
   const x0 = 55, y0 = FLOOR;
   const x1 = 58, y1 = FLOOR;
@@ -77,7 +78,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 8);
+  e.setSelectedSlot(id, 5);
   e.setSelectedFootprint(id, 0);
   const x0 = 55, y0 = FLOOR;
   const x1 = 58, y1 = FLOOR;

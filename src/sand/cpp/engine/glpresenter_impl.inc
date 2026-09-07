@@ -163,13 +163,14 @@ void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, in
     glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
   else glExtPlayers.clear();
 }
-void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y) {
+void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y, double progress, int tier) {
   glSurvivalPreviewOn = on != 0;
   glSurvivalPreviewFootprint = E.tools.clampSurvivalFootprintId(footprint);
   glSurvivalPreviewErasing = erasing != 0;
   glSurvivalPreviewLocked = locked != 0;
   glSurvivalPreviewX = x;
   glSurvivalPreviewY = y;
+  glMineProgress = std::max(0.0,std::min(1.0,progress)); glMineTier = tier;
 }
 // Client item override: when external, glDrawItems draws these instead of the
 // engine-owned item list (a client does not simulate local item actors).
@@ -239,7 +240,8 @@ void GLPresenter::glCollectDynamicLights() {
   int minigunLights = 0;
   auto addProjectile = [&](int kind, double x, double y, double vx, double vy,
                            double charge, int fuse) {
-    if (kind == PK_BLAST_ROUND) add(x, y, 255);
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST) add(x, y, 170);
+    else if (kind == PK_BLAST_ROUND) add(x, y, 255);
     else if (kind == PK_DYNAMITE)
       add(x, y, (((fuse / 3) & 1) ? 225 : 185));
     else if (kind == PK_ACID_SHELL) add(x, y, 215);
@@ -558,7 +560,9 @@ void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, do
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
-                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow) {
+                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
+                     int heldDefinition, const int* equipment) {
+  if (!alive) animState = AS_DEATH;
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   const auto& art = E.content;
   const int spriteWidth = art.spriteWidth, spriteHeight = art.spriteHeight;
@@ -566,14 +570,26 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   if (animFrame < 0 || animFrame >= art.clips[animState].count) animFrame = 0;
   double cell = (double)glCellDev;
   double pixel = cell * art.pixelScale;
-  bool aimedWeapon = heldItemKind == IK_MINING_TOOL ||
+  const auto* gear = E.content.gear(heldDefinition);
+  bool aimedWeapon = heldItemKind == IK_GEAR || heldItemKind == IK_MINING_TOOL ||
                      heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
                      heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
                      heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN ||
                      heldItemKind == IK_RESCUE_BEAM;
 
-  // Torso follow-through stays below a quarter cell; aimed hands use the
-  // physical shoulder while the head and legs breathe through the pose.
+  // Torso follow-through and the weapon hand share the same shoulder anchor.
+  const double actionPhase = animFrame / (double)imax(1, art.clips[animState].count - 1);
+  auto ease = [](double t) { t = std::max(0.0, std::min(1.0, t)); return t*t*(3.0-2.0*t); };
+  auto swordAngle = [&](double t) {
+    if (t < .20) return -.80 - 1.25 * ease(t/.20);
+    if (t < .46) return -2.05 + 3.30 * ease((t-.20)/.26);
+    if (t < .60) return 1.25 + .15 * ease((t-.46)/.14);
+    return 1.40 - 2.20 * ease((t-.60)/.40);
+  };
+  bool sword = E.planetId == PL_FRONTIER && gear && gear->family == 1;
+  bool cutting = sword && animState == AS_SWORD;
+  double bodyLean = cutting ? (actionPhase < .20 ? -.35 * ease(actionPhase/.20)
+    : actionPhase < .46 ? -.35 + .95 * ease((actionPhase-.20)/.26) : .60 * (1-ease((actionPhase-.46)/.54))) : 0;
   double bodyBob = 0;
   if (alive) {
     static const double WALK_BOB[4] = {0.0, -0.10, 0.0, -0.06};
@@ -585,9 +601,9 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     else if (animState == AS_WADE) bodyBob = animFrame ? -0.045 : 0.0;
     else if (animState == AS_SWIM) bodyBob = SWIM_BOB[animFrame % 4];
   }
-  double sprX = (pxc + PLAYER_W * .5 - camCol) * cell + glOffX - spriteWidth * pixel * .5;
+  double sprX = (pxc + PLAYER_W * .5 + facing * bodyLean - camCol) * cell + glOffX - spriteWidth * pixel * .5;
   double sprY = (pyc + PLAYER_H - camRow + bodyBob) * cell + glOffY - spriteHeight * pixel;
-  if (alive) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
+  if (alive && E.planetId != PL_FRONTIER) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
 
   auto worldSquare = [&](double wx, double wy, double size,
                          float r, float g, float b, float a = 1.0f) {
@@ -611,9 +627,16 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                             double hx, double hy, bool rear) {
     float shade = rear ? .78f : 1.0f;
     const auto& outline = art.palette[art.limbColors[0]];
-    const auto& sleeve = art.palette[art.limbColors[1]];
-    const auto& skin = art.palette[art.limbColors[2]];
-    const auto& hand = art.palette[art.limbColors[3]];
+    auto sleeve = art.palette[art.limbColors[1]];
+    auto skin = art.palette[art.limbColors[2]];
+    auto hand = art.palette[art.limbColors[3]];
+    if (E.planetId == PL_FRONTIER && equipment) {
+      const auto* gloves = E.content.gear(equipment[2]);
+      const auto* coat = E.content.gear(equipment[1]);
+      static const float cloth[6][3]={{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
+      if (coat && coat->style > 0 && coat->style <= 6) for (int i=0;i<3;i++) sleeve[i]=cloth[coat->style-1][i];
+      if (gloves && gloves->style > 0 && gloves->style <= 6) for (int i=0;i<3;i++) skin[i]=hand[i]=cloth[gloves->style-1][i]*.8f;
+    }
     segment(sx, sy, ex, ey, .72, outline[0], outline[1], outline[2]);
     segment(ex, ey, hx, hy, .64, outline[0], outline[1], outline[2]);
     segment(sx, sy, ex, ey, .53, sleeve[0] * shade, sleeve[1] * shade, sleeve[2] * shade);
@@ -628,10 +651,10 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     static const double WALK_SWING[4] = {-0.66, -0.16, 0.66, 0.16};
     static const double RUN_SWING[4] = {-0.94, -0.24, 0.94, 0.24};
     static const double SWIM_STROKE[4] = {-0.70, 0.08, 0.78, 0.18};
-    double swing = animState == AS_WALK ? WALK_SWING[animFrame]
-                 : animState == AS_RUN ? RUN_SWING[animFrame]
-                 : animState == AS_WADE ? WALK_SWING[animFrame] * .42
-                 : animState == AS_SWIM ? SWIM_STROKE[animFrame]
+    double swing = animState == AS_WALK ? WALK_SWING[animFrame % 4]
+                 : animState == AS_RUN ? RUN_SWING[animFrame % 4]
+                 : animState == AS_WADE ? WALK_SWING[animFrame % 4] * .42
+                 : animState == AS_SWIM ? SWIM_STROKE[animFrame % 4]
                  : animState == AS_IDLE ? (animFrame ? .08 : -.08)
                  : 0.0;
     if (rear) swing = -swing;
@@ -652,7 +675,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     }
   };
 
-  if (alive) {
+  if (alive && E.planetId != PL_FRONTIER) {
     // The backpack is drawn behind the torso. Its twin nozzles alternate by
     // phase, the transparent gauge tracks authoritative fuel, and deterministic
     // exhaust motes make sustained thrust read even when the plume is partly
@@ -734,7 +757,8 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
 
   for (int r = 0; r < spriteHeight; r++) {
-    const uint8_t* row = art.spriteRow(animState, animFrame, r);
+    int poseFrame = animState == AS_GUARD_RAISE && !shieldActive ? art.clips[animState].count - 1 - animFrame : animFrame;
+    const uint8_t* row = art.spriteRow(animState, poseFrame, r);
     // Merge adjacent authored pixels of the same color into one quad.
     for (int c = 0; c < spriteWidth;) {
       int source = facing >= 0 ? c : (spriteWidth - 1 - c);
@@ -751,14 +775,21 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       }
       const float* col = art.palette[(size_t)idx].data();
       float tr = col[0], tg = col[1], tb = col[2];
+      if (E.planetId == PL_FRONTIER && equipment) {
+        int part = idx == 3 || idx == 4 ? 5 : r < 12 ? 0 : r < 28 ? 1 : r < 38 ? 3 : 4;
+        const auto* armor = E.content.gear(equipment[part]);
+        if (armor && armor->style > 0 && armor->style <= 6 && idx != 1 && !(idx >= 10 && idx <= 12)) {
+          static const float colors[6][3] = {{.51f,.56f,.42f},{.31f,.44f,.29f},{.52f,.44f,.63f},{.60f,.55f,.47f},{.40f,.55f,.59f},{.68f,.68f,.60f}};
+          float shade = idx == 2 || idx == 7 ? .5f : idx == 4 || idx == 6 || idx == 9 ? 1.2f : .85f;
+          tr = colors[armor->style - 1][0] * shade; tg = colors[armor->style - 1][1] * shade; tb = colors[armor->style - 1][2] * shade;
+        }
+      }
       if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
       float flash = alive && hurtCooldown > 0 && hurtCooldown <= 30 && (hurtCooldown % 6 < 3) ? .65f : 0;
       glUniform4f(glc->uColor, tr * light * (1 - flash) + flash,
                   tg * light * (1 - flash) + flash * .65f,
                   tb * light * (1 - flash) + flash * .65f, col[3]);
-      double drawY = alive ? sprY + r * pixel
-                           : sprY + (spriteHeight - 2) * pixel + (r / 4) * pixel * .45;
-      glSolidDev(sprX + c * pixel, drawY, run * pixel, alive ? pixel : pixel * .45);
+      glSolidDev(sprX + c * pixel, sprY + r * pixel, run * pixel, pixel);
       c += run;
     }
   }
@@ -766,6 +797,77 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double sx, sy, ex, ey, hx, hy;
     relaxedArmPose(false, sx, sy, ex, ey, hx, hy);
     articulatedArm(sx, sy, ex, ey, hx, hy, false);
+  }
+  if (alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
+    auto piece = [&](int x,int y,int w,int h,float r,float g,float b) {
+      int col = facing > 0 ? x : spriteWidth-x-w;
+      glUniform4f(glc->uColor,r*light,g*light,b*light,1); glSolidDev(sprX+col*pixel,sprY+y*pixel,w*pixel,h*pixel);
+    };
+    const auto* head = E.content.gear(equipment[0]);
+    if (head) {
+      bool metal = head->style == 4 || head->style == 6;
+      float r=metal?.64f:.35f,g=metal?.64f:.43f,b=metal?.57f:.30f;
+      piece(14,3,10,3,r,g,b); piece(13,5,3,8,r*.7f,g*.7f,b*.7f);
+      piece(15,2,7,1,.75f,.68f,.43f);
+      if (metal) { piece(22,5,3,2,.81f,.81f,.70f); piece(23,9,1,4,.66f,.64f,.53f); }
+      if (head->style == 2) { piece(12,1,2,4,.53f,.64f,.34f); piece(14,0,2,2,.65f,.71f,.40f); }
+      if (head->style == 3 || head->style == 5) { piece(15,0,4,3,.50f,.42f,.59f); piece(16,1,1,1,.85f,.74f,.44f); }
+    }
+    const auto* coat = E.content.gear(equipment[1]);
+    if (coat && (coat->style == 4 || coat->style == 6)) {
+      piece(11,18,5,3,.69f,.67f,.57f); piece(11,21,4,2,.41f,.42f,.38f);
+      piece(20,18,4,3,.79f,.77f,.64f); piece(17,22,5,2,.58f,.58f,.50f);
+      piece(19,19,1,7,.87f,.73f,.43f);
+    }
+  }
+  if (alive && E.planetId == PL_FRONTIER && equipment && equipment[6]) {
+    double phase = actionPhase;
+    double raise = shieldActive ? 1.0 : 0.0;
+    if (animState == AS_GUARD_RAISE) raise = shieldActive ? ease(phase) : 1-ease(phase);
+    if (animState == AS_GUARD_BREAK) raise = 1-ease(phase);
+    double recoil = animState == AS_GUARD_HIT ? std::sin(phase * 3.14159265) * .65 : 0;
+    double broken = animState == AS_GUARD_BREAK ? std::sin(phase * 3.14159265) : 0;
+    double ax = aimX-(pxc+PLAYER_W*.5), ay = aimY-(pyc+PLAYER_H*.5), length = std::hypot(ax,ay);
+    if (length < .01) { ax=facing; ay=0; length=1; }
+    ax/=length; ay/=length;
+    double restAngle = facing > 0 ? .30 : 2.84;
+    double delta = std::atan2(ay,ax) - restAngle;
+    double angle = restAngle + std::atan2(std::sin(delta),std::cos(delta))*raise + facing*broken*.7;
+    double ux = std::cos(angle), uy = std::sin(angle), nx=-uy, ny=ux;
+    double sx = pxc+PLAYER_W*.5 + facing*(.65 + bodyLean*.35) + ax*(raise*1.65-recoil);
+    double sy = pyc+PLAYER_H*.62 - raise*1.0 + ay*raise*.8 + bodyBob + broken*.65;
+    articulatedArm(pxc+PLAYER_W*.5-facing*.25, pyc+PLAYER_H*.40+bodyBob,
+      sx-ax*.65, sy+.55, sx, sy, true);
+    const auto* shield = E.content.gear(equipment[6]);
+    int style = shield ? shield->style : 1;
+    for (int y=-7;y<=7;y++) for (int x=-4;x<=4;x++) {
+      bool inside = style==1 ? x*x*2+y*y<=49 : std::abs(x)<=4-imax(0,y-1)/2;
+      if (!inside) continue;
+      bool rim = style==1 ? x*x*2+y*y>32 : std::abs(x)==4-imax(0,y-1)/2 || y==-7 || y==7;
+      float grain = x%3==0 ? .78f : 1.f;
+      float r = rim?.75f:style==1?.40f*grain:.36f;
+      float g = rim?.63f:style==1?.29f*grain:.44f;
+      float b = rim?.38f:style==1?.17f*grain:.40f;
+      worldSquare(sx+ux*x*.22+nx*y*.22, sy+uy*x*.22+ny*y*.22,.25,r,g,b);
+    }
+    worldSquare(sx,sy,.70,.23f,.25f,.20f);
+    worldSquare(sx-ux*.08,sy-.1,.43,.86f,.81f,.64f);
+    if (animState==AS_GUARD_HIT && phase<.55) for(int ray=0;ray<5;ray++) {
+      double a=std::atan2(ay,ax)+(ray-2)*.42;
+      double distance=1.3+phase*3;
+      worldSquare(sx+std::cos(a)*distance,sy+std::sin(a)*distance,.18,.98f,.87f,.58f,(float)(1-phase/.55));
+    }
+  }
+  if (alive && E.planetId == PL_FRONTIER && (animState == AS_DASH || animState == AS_GLIDE)) {
+    for (int i=0;i<14;i++) {
+      double age=std::fmod(E.actorTick*.08+i/14.0,1.0);
+      worldSquare(pxc+PLAYER_W*.5-facing*(1+age*10),pyc+PLAYER_H*.5+std::sin(i*2.4)*2.2,.2,.83f,.89f,.70f,(float)((1-age)*.55));
+    }
+    if (animState == AS_GLIDE) for(int side:{-1,1}) for(int feather=0;feather<8;feather++) {
+      double reach=feather*.45, yy=pyc+1.7+reach*.3+std::sin(E.actorTick*.08+reach)*.15;
+      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy,.65,.39f,.54f,.39f);
+      worldSquare(pxc+PLAYER_W*.5+side*(1+reach),yy-.25,.23,.78f,.77f,.48f);
+    }
   }
   if (alive && (animState == AS_WALK || animState == AS_RUN)) {
     for (int mote = 0; mote < 3; mote++) {
@@ -789,13 +891,37 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     // Aim from the shoulder, then extend an authored arm to a real hand anchor.
     // Weapon geometry below is grip-relative, so it rotates in the hand instead
     // of orbiting around the center of the player's torso.
-    double shoulderX = pxc + PLAYER_W * .5, shoulderY = pyc + PLAYER_H * .42;
-    double dx = aimX - shoulderX, dy = aimY - shoulderY, d = std::hypot(dx, dy);
+    double shoulderX = pxc + PLAYER_W * .5 + facing*bodyLean, shoulderY = pyc + PLAYER_H * .42 + bodyBob;
+    double targetX=aimX,targetY=aimY;
+    if (E.planetId==PL_FRONTIER && heldItemKind==IK_MINING_TOOL && animState==AS_AXE && own && glSurvivalPreviewLocked) {
+      targetX=glSurvivalPreviewX+.5;targetY=glSurvivalPreviewY+.5;
+    }
+    double dx = targetX - shoulderX, dy = targetY - shoulderY, d = std::hypot(dx, dy);
     if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
     dx /= d; dy /= d;
+    if (gear && gear->family <= 3) {
+      double phase = animFrame / (double)imax(1, art.clips[animState].count - 1);
+      double angle = std::atan2(dy, dx);
+      if (animState == AS_SWORD) angle += facing * swordAngle(actionPhase);
+      else if (animState == AS_AXE) angle += facing * (-1.6 + phase * 2.9);
+      else if (animState != AS_SPEAR) angle = facing > 0 ? -.85 : -2.29;
+      dx = std::cos(angle); dy = std::sin(angle);
+    }
+    if (E.planetId == PL_FRONTIER && heldItemKind == IK_MINING_TOOL) {
+      double angle = facing > 0 ? -.85 : -2.29;
+      if (animState == AS_AXE) {
+        double phase = actionPhase;
+        double swing = phase < .22 ? -.8-1.4*ease(phase/.22)
+          : phase < .44 ? -2.2+2.2*ease((phase-.22)/.22)
+          : phase < .60 ? .4*ease((phase-.44)/.16)
+          : .4-1.2*ease((phase-.60)/.40);
+        angle=std::atan2(dy,dx)+facing*swing;
+      }
+      dx=std::cos(angle);dy=std::sin(angle);
+    }
     double nx = -dy, ny = dx;
     double kick = std::max(0.0, std::min(1.0, weaponKick));
-    double gripReach = 1.55 - kick * kick * .65;
+    double gripReach = sword ? (cutting ? 1.2 + .8 * std::sin(actionPhase*3.14159265) : shieldActive ? .85 : 1.15) : 1.55 - kick * kick * .65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     double hx = (handX - camCol) * cell + glOffX;
     double hy = (handY - camRow) * cell + glOffY;
@@ -806,7 +932,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double supportEY = shoulderY + dy * .46 - ny * .52;
     double supportHX = handX + dx * .74 - nx * .38;
     double supportHY = handY + dy * .74 - ny * .38;
-    articulatedArm(supportSX, supportSY, supportEX, supportEY,
+    if (!sword) articulatedArm(supportSX, supportSY, supportEX, supportEY,
                    supportHX, supportHY, true);
     double leadEX = shoulderX + dx * .72 + nx * .25;
     double leadEY = shoulderY + dy * .72 + ny * .25;
@@ -833,7 +959,69 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       worldSquare(shoulderX - dx * (1 + age * 3), shoulderY - 1 - age * 3 + age * age * 6,
                   .3, .9f, .69f, .24f);
     }
-    if (heldItemKind == IK_MINING_TOOL) {
+    if (cutting && actionPhase>.23 && actionPhase<.55) {
+      double aimAngle=std::atan2(aimY-shoulderY,aimX-shoulderX);
+      for(int i=1;i<=9;i++) {
+        double past=std::max(.20,actionPhase-i*.009);
+        double angle=aimAngle+facing*swordAngle(past);
+        float alpha=(float)((1-i/10.0)*.45*(1-ease((actionPhase-.46)/.09)));
+        for(double radius:{4.7,5.0,5.3}) worldSquare(shoulderX+std::cos(angle)*(gripReach+radius),
+          shoulderY+std::sin(angle)*(gripReach+radius),.23,.91f,.94f,.83f,alpha);
+      }
+    }
+    if (heldItemKind == IK_GEAR && gear) {
+      if (gear->family == 1) {
+        // Leather grip, quillons, a tapered steel blade, and a bright cutting edge.
+        for(double at=-.65;at<.7;at+=.20) drawPixel(at,0,.36,.35f,.23f,.14f);
+        drawPixel(-.7,0,.48,.73f,.58f,.31f);
+        for(double side=-.8;side<=.8;side+=.20) drawPixel(.55,side,.28,.76f,.63f,.35f);
+        for(double at=.8;at<=5.1;at+=.20) {
+          double width=at>4.5 ? .52*(5.25-at)/.75 : .52;
+          drawPixel(at,0,width+.13,.19f,.25f,.23f);
+          drawPixel(at,-.03,width,.70f,.78f,.75f);
+          drawPixel(at,-width*.32,.12,.95f,.96f,.86f);
+        }
+        worldSquare(handX,handY,.48,.55f,.59f,.42f);
+      } else if (gear->family == 4) {
+        double pull = bowCharge * 1.4;
+        for (double side = -2.5; side <= 2.5; side += .2) {
+          double forward = 1.1 - side*side*.12;
+          drawPixel(forward,side,.3,.65f,.44f,.23f);
+          double string = .35 - pull * (1-std::fabs(side)/2.5);
+          drawPixel(string,side,.12,.83f,.83f,.65f);
+        }
+        if (bowCharge>0) for (double at = -pull; at < 3.0-pull; at+=.25) drawPixel(at,0,.16,.87f,.84f,.64f);
+      } else {
+      bool staff = gear->family == 5 || gear->family == 9;
+      double length = gear->family == 3 ? 6.5 : staff ? 4.0 : gear->family == 2 ? 3.8 : 4.5;
+      for (double at = -.65; at < length; at += .25) {
+        bool blade = !staff && gear->family != 2 && at > .7;
+        drawPixel(at, 0, blade ? .43 : .32, blade ? .77f : .43f, blade ? .83f : .29f, blade ? .77f : .15f);
+        if (blade) drawPixel(at, -.16, .16, .96f, .96f, .80f);
+      }
+      if (gear->family == 1) for (double side = -.85; side <= .85; side += .25) drawPixel(.65, side, .30, .77f, .60f, .28f);
+      if (gear->family == 2) for (double at = 2; at <= 3.75; at += .25)
+        for (double side = -.8; side <= .8; side += .25) if (at + std::fabs(side) < 4.15) drawPixel(at, side, .28, .66f, .70f, .65f);
+      if (staff) {
+        for (int i = 0; i < 8; i++) {
+          double a = i * .7854 + E.actorTick * .025;
+          drawPixel(4 + std::cos(a) * .65, std::sin(a) * .65, .24, .77f, .60f, .28f);
+        }
+        bool cold = gear->spell == 2 || gear->spell == 3;
+        drawPixel(4, 0, .7, cold ? .50f : 1.0f, cold ? .82f : .65f, cold ? .93f : .22f);
+      }
+      if (animState == AS_SWORD || animState == AS_AXE || animState == AS_SPEAR) {
+        for (int i = 0; i < 6; i++) drawPixel(2.5 + i * .4, -i * .12 * facing, .24, .96f, .88f, .61f, .6f);
+      }
+      }
+    } else if (heldItemKind == IK_MINING_TOOL && E.planetId == PL_FRONTIER) {
+      for (double at = -.7; at <= 4.2; at += .25) drawPixel(at, 0, .30, .49f, .33f, .19f);
+      for (double side = -1.7; side <= 1.7; side += .25) {
+        double head = 4.0 - std::fabs(side) * .25;
+        drawPixel(head, side, .40, .61f, .67f, .64f);
+        drawPixel(head + .18, side, .20, .86f, .87f, .74f);
+      }
+    } else if (heldItemKind == IK_MINING_TOOL) {
       bool drilling = own && glSurvivalPreviewOn && glSurvivalPreviewLocked;
       double scan = drilling ? std::fmod(E.actorTick * .12, 1.0) : 0;
       drawPixel(-.52, -.56, .94, .08f, .11f, .14f);
@@ -953,6 +1141,34 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
 }
 
+void GLPresenter::glDrawChests() {
+  glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
+  if (E.planetId != PL_FRONTIER) return;
+  for (size_t i = 0; i + 4 < chestData.size(); i += 5) {
+    double x = chestData[i+1] - E.fg.worldOffsetX, y = chestData[i+2] - E.fg.worldOffsetY;
+    double sx = (x - std::floor(glCamX)) * glCellDev + glOffX, sy = (y - std::floor(glCamY)) * glCellDev + glOffY;
+    if (sx < -40 || sy < -40 || sx > glDevW + 40 || sy > glDevH + 40) continue;
+    float light = glActorLight(x-3, y, 7, 4);
+    double pixel = glCellDev * .5;
+    auto box = [&](int bx, int by, int w, int h, float r, float g, float b) {
+      glUniform4f(glc->uColor, r*light, g*light, b*light, 1);
+      glSolidDev(sx + bx*pixel, sy + by*pixel, w*pixel, h*pixel);
+    };
+    bool opened = chestData[i+3] > .5;
+    box(-7,0,14,8,.12f,.14f,.10f); box(-6,1,12,6,.44f,.27f,.14f);
+    box(-6,4,12,1,.24f,.17f,.10f); box(-6,6,12,1,.58f,.37f,.19f);
+    for (int band : {-5,4}) { box(band,0,2,8,.70f,.57f,.30f); box(band,1,1,6,.85f,.72f,.41f); }
+    box(-7,opened ? -4 : -1,14,opened ? 3 : 2,.56f,.36f,.17f);
+    box(-6,opened ? -4 : -1,12,1,.79f,.61f,.31f);
+    if (opened) { box(-5,0,10,2,.08f,.10f,.06f); }
+    box(-1,2,3,3,.81f,.65f,.32f); box(0,3,1,1,.20f,.17f,.08f);
+    if (!opened) {
+      float glow = .6f + .3f * std::sin(E.actorTick*.04 + chestData[i]);
+      box(1,-5,1,1,glow,glow*.85f,.38f); box(-3,-3,1,1,glow*.7f,glow*.65f,.3f);
+    }
+  }
+}
+
 void GLPresenter::glDrawPlayers() {
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
@@ -962,12 +1178,14 @@ void GLPresenter::glDrawPlayers() {
     for (int i = 0; i < n; i++) {
       const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
       float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
+      int equipment[9];
+      for (int g = 0; g < 9; g++) equipment[g] = (int)p[GLP_GEAR0 + g];
       glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME],
                       p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE],
                       p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
                       (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
                       p[GLP_WEAPON_KICK], (int)p[GLP_HURT_COOLDOWN],
-                      p[GLP_OWN] > 0.5f, light, camCol, camRow);
+                      p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
@@ -975,10 +1193,12 @@ void GLPresenter::glDrawPlayers() {
       if (!p.active) continue;
       const InvSlot& held = p.inv[p.selectedSlot];
       double chargeMax = held.itemKind == IK_BORE_CANNON ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
+      int equipment[9];
+      for (int g = 0; g < 9; g++) equipment[g] = p.equipment[g].definitionId;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
                       p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
                       p.shieldHealth, p.shieldActive, p.weaponKick, p.hurtCooldown, p.id == glOwnPlayerId,
-                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
+                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -1207,6 +1427,25 @@ void GLPresenter::glDrawProjectiles() {
       kind=p.kind; fuse=p.fuse; rotation=p.rotation;
     }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST) {
+      const auto* gear = E.content.gear((int)fuse);
+      int spell = gear ? gear->spell : 1;
+      static const float colors[6][3]={{1,.47f,.15f},{.60f,.85f,1},{.78f,.90f,.72f},{.94f,.76f,.45f},{.51f,.84f,.39f},{1,.93f,.66f}};
+      const auto& tint = colors[imax(0,imin(5,spell-1))];
+      bool burst = kind == PK_RUNE_BURST;
+      double radius = burst ? (1-charge)*8 : .7;
+      for (int mote = 0; mote < (burst ? 24 : 9); mote++) {
+        double angle = mote * 2.39996 + E.actorTick * .05;
+        double mx = burst ? std::cos(angle)*radius : -vx*mote*.32;
+        double my = burst ? std::sin(angle)*radius : -vy*mote*.32 + std::sin(angle)*.35;
+        float fade = burst ? charge : 1-mote/10.f;
+        glUniform4f(glc->uColor,tint[0],tint[1],tint[2],fade*.85f);
+        double size = (burst ? .30 : .8-mote*.055)*glCellDev;
+        glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
+      }
+      if (!burst) { glUniform4f(glc->uColor,1,.98f,.83f,1); glSolidDev(cx-.2*glCellDev,cy-.2*glCellDev,.4*glCellDev,.4*glCellDev); }
+      continue;
+    }
     if (kind == PK_BORE_BEAM) {
       double speed = std::hypot(vx, vy);
       if (speed < 1e-6) continue;
@@ -1412,15 +1651,13 @@ void GLPresenter::glDrawProjectiles() {
   }
 }
 
-// Animal and combat sprites use a wide 13x7 canvas for readable tails, weapons,
-// fins, and wings. Human NPCs use a shared upright 9x10 silhouette with each
-// character's own six-color palette.
+// Named clips share the material palette; residents carry individual clothing colors.
 void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
                     int alive, int animFrame, int attackState, int attackPattern,
                     double attackProgress,
                     double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtCooldown, double shelterCharge, float light,
-                    int camCol, int camRow) {
+                    int camCol, int camRow, int npcId) {
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
   const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
@@ -1471,7 +1708,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(cx - slitW * .5, cy - slitH * .5, slitW, slitH);
     return;
   }
-  if (alive && behavior.weaponOverlay == CWO_MINIGUN && attackState == CAS_CHARGING) {
+  if (E.planetId != PL_FRONTIER) {
+  if (alive && E.planetId != PL_FRONTIER && behavior.weaponOverlay == CWO_MINIGUN && attackState == CAS_CHARGING) {
     double ox = px + speciesDef.w * .56, oy = py + speciesDef.h * .48;
     double dx = aimX - ox, dy = aimY - oy;
     int samples = imin(28, imax(2, (int)(std::hypot(dx, dy) / 3)));
@@ -1615,14 +1853,41 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                  cy + std::sin(angle) * radius - size * .5, size, size);
     }
   }
+  }
+  if (alive && E.planetId == PL_FRONTIER && speciesDef.hostile && (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    bool heavy = (speciesId >= CS_THORNBOUND_HART && speciesId <= CS_HOLLOW_BELLKEEPER) || speciesId == CS_ROOT_KNIGHT || speciesId == CS_QUARRY_FOREMAN || speciesId == CS_REACTOR_WARDEN;
+    bool chargeAttack = (speciesId == CS_THORNBOUND_HART && attackPattern == 0) || speciesId == CS_BRIAR_WOLF || speciesId == CS_FOX || speciesId == CS_BONE_GUARD;
+    bool ring = (speciesId == CS_HOLLOW_BELLKEEPER && attackPattern == 0) || (heavy && attackPattern == 2 && speciesId != CS_MIRE_MATRON);
+    auto mark = [&](double wx, double wy, double radius, float opacity) {
+      for (int i = 0; i < 64; i++) {
+        double a = i * 6.2831853 / 64;
+        glUniform4f(glc->uColor, .96f,.58f,.28f,opacity);
+        glSolidDev((wx + std::cos(a)*radius-camCol)*cell+glOffX,(wy+std::sin(a)*radius-camRow)*cell+glOffY,.32*cell,.32*cell);
+      }
+    };
+    float opacity = attackState == CAS_FIRING ? .9f : (float)(.2+attackProgress*.6);
+    if (chargeAttack) {
+      for (int i = 0; i < 40; i+=2) {
+        glUniform4f(glc->uColor,.96f,.67f,.30f,opacity);
+        glSolidDev((px+speciesDef.w*.5+facing*i-camCol)*cell+glOffX,(py+speciesDef.h-camRow)*cell+glOffY,.6*cell,.25*cell);
+      }
+    } else if (ring) {
+      double radius = attackState == CAS_FIRING ? 8+(1-attackProgress)*50*1.4 : 8;
+      mark(px+speciesDef.w*.5,py+speciesDef.h*.5,radius,opacity);
+    } else {
+      int spread = heavy && attackPattern == 1 ? 1 : 0;
+      if (speciesId == CS_MIRE_MATRON) spread = attackPattern == 1 ? 2 : 1;
+      for (int i = -spread; i <= spread; i++) mark(aimX+i*20,aimY,heavy?13:7,opacity);
+    }
+  }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
   double sy = (humanNpc || speciesDef.locomotion == CL_AMPHIBIOUS || speciesDef.locomotion == CL_STATIONARY)
     ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
-  int frame = speciesDef.stationaryCycle
-    ? (int)((E.actorTick / 8) & 3)
-    : animFrame & 3;
+  int clipState = !alive ? CC_DEATH : hurtCooldown > 0 ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : animFrame ? CC_MOVE : CC_IDLE;
+  const auto& clip = art.clips[clipState];
+  int frame = clip.offset + (alive ? clip.frameAt(E.actorTick) : clip.count - 1);
   // A little whole-sprite follow-through keeps the detailed limbs from feeling
   // like a flipbook pasted to the AABB. Walkers rise on their passing steps,
   // swimmers roll gently, and the downstroke gives the bird visible lift.
@@ -1672,7 +1937,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   double departure = departing ? std::min(1.0, rescueProgress - 1) : 0;
   if (departing) sy -= departure * departure * 16 * cell;
   if (rescueProgress > 0) {
-    frame = 3;
+    frame = art.clips[CC_SPECIAL].offset + art.clips[CC_SPECIAL].frameAt(E.actorTick);
     double scanY = sy + sh * cell * (1.0 - std::fmod(rescueProgress * 3, 1.0));
     glUniform4f(glc->uColor, .36f, 1.0f, .88f, .8f);
     glSolidDev(sx - cell, scanY, (sw + 2) * cell, cell * .3);
@@ -1689,7 +1954,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(xx, sy + (sh - phase * (sh + 6)) * cell, cell * .4, cell * .7);
     }
   }
-  double pixelH = (alive || departing) ? cell : cell * 0.42;
+  double pixelH = cell;
   double corpseBase = sy + sh * cell;
   for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width;) {
     int idx = art.pixels[(frame * art.height + r) * art.width + c];
@@ -1697,7 +1962,17 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     int run = 1;
     if (!departing) while (c + run < art.width && art.pixels[(frame * art.height + r) * art.width + c + run] == idx) run++;
     int cc = facing >= 0 ? c : art.width - c - run;
-    const float* col = art.palette[(size_t)idx].data();
+    auto tint = art.palette[(size_t)idx];
+    if (npcId > 0 && npcId <= 8 && (idx == 3 || idx == 4 || idx == 13 || idx == 14)) {
+      static const float cloth[8][3]={{.38f,.49f,.35f},{.58f,.38f,.23f},{.48f,.40f,.62f},{.61f,.29f,.20f},{.29f,.43f,.30f},{.31f,.52f,.47f},{.65f,.51f,.28f},{.65f,.67f,.79f}};
+      float shade = idx == 3 || idx == 13 ? .75f : 1.1f;
+      for (int ch = 0; ch < 3; ch++) tint[ch] = cloth[npcId-1][ch]*shade;
+    }
+    if (npcId && (idx == 10 || idx == 11 || idx == 12)) {
+      float shade = npcId == 2 || npcId == 4 ? .56f : npcId == 6 || npcId == 7 ? .76f : 1;
+      for (int ch = 0; ch < 3; ch++) tint[ch] *= shade;
+    }
+    const float* col = tint.data();
     if (departing && ((r * 7 + c * 13) % 23) / 23.0 < departure) { c++; continue; }
     float fade = (alive || departing) ? 1.0f : 0.55f;
     float flash = hurtCooldown > 0 && alive ? .6f : 0;
@@ -1711,7 +1986,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(sx + cc * cell * art.scale, drawY, run * cell * art.scale, pixelH * art.scale);
     c += run;
   }
-  if (alive && behavior.weaponOverlay == CWO_MINIGUN) {
+  if (alive && E.planetId != PL_FRONTIER && behavior.weaponOverlay == CWO_MINIGUN) {
     // Draw the active weapon over the body sprite so its grip remains attached
     // while the barrel pack follows the authoritative target in both axes.
     double gunX = px + CREATURE_SPECIES[speciesId].w * .56;
@@ -1799,7 +2074,7 @@ void GLPresenter::glDrawCreatures() {
                         (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
                         c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], (int)c[CSN_HURT_COOLDOWN], c[CSN_SHELTER_CHARGE],
-                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow);
+                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID]);
     }
   } else {
     for (const Creature& c : E.creatures.creatures) {
@@ -1810,7 +2085,7 @@ void GLPresenter::glDrawCreatures() {
                         c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
                         c.spawnProgress, c.rescueProgress, c.hurtCooldown, c.shelterCharge,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
-                        camCol, camRow);
+                        camCol, camRow, c.npcId);
     }
     for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {
       const CreatureSpecies& s = CREATURE_SPECIES[p.species];
@@ -1885,6 +2160,32 @@ void GLPresenter::glDrawPreview() {
           // is reported in pointerBtns this frame; mineLayer 2 = both.
           if (lp->mineLayer == 1) toBg = true;
         }
+      }
+      if (E.planetId == PL_FRONTIER && erasing) {
+        if (!glSurvivalPreviewLocked) return;
+        const Layer& layer = toBg ? E.bg : E.fg;
+        const auto patch = E.tools.frontierMinePatch(ax,ay,layer);
+        for (int k : patch) {
+          int x=k%E.cols,y=k/E.cols;
+          bool hard=MAT_TOOLTIER[layer.grid[k]]>glMineTier;
+          glUniform4f(glc->uColor,hard?.86f:.83f,hard?.37f:.76f,hard?.27f:.51f,.8f);
+          double sx=(x-camCol)*glCellDev+glOffX,sy=(y-camRow)*glCellDev+glOffY;
+          double edge=std::max(1.0,glCellDev*.12);
+          auto contains=[&](int xx,int yy){return std::find(patch.begin(),patch.end(),E.I(xx,yy))!=patch.end();};
+          if(!contains(x-1,y))glSolidDev(sx,sy,edge,glCellDev);
+          if(!contains(x+1,y))glSolidDev(sx+glCellDev-edge,sy,edge,glCellDev);
+          if(!contains(x,y-1))glSolidDev(sx,sy,glCellDev,edge);
+          if(!contains(x,y+1))glSolidDev(sx,sy+glCellDev-edge,glCellDev,edge);
+          if(glMineProgress>0) {
+            glUniform4f(glc->uColor,.10f,.09f,.07f,(float)(.45+glMineProgress*.4));
+            int wx=x+E.fg.worldOffsetX,wy=y+E.fg.worldOffsetY;
+            for(int chip=0;chip<2+(int)(glMineProgress*4);chip++) {
+              double cx=(chip+.5)/6,cy=((wx*3+wy*5+chip*2)&7)/8.0;
+              glSolidDev(sx+cx*glCellDev,sy+cy*glCellDev,edge,edge*1.5);
+            }
+          }
+        }
+        return;
       }
       double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
       double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
@@ -2310,6 +2611,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg
   if (glc->uTint >= 0) glUniform1f(glc->uTint, 1.0f);
   glDrawCreatures();
+  glDrawChests();
   glDrawPlayers();
   glDrawProjectiles();
   glDrawItems();

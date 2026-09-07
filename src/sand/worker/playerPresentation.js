@@ -16,7 +16,7 @@ export function mergePlayerPrediction(authoritative, predicted, id) {
     jumpReady: predicted.jumpReady,
     jetpackFuel: predicted.jetpackFuel,
     jetpackActive: predicted.jetpackActive,
-    animState: predicted.animState,
-    animFrame: predicted.animFrame,
+    animState: authoritative.actionTicks > 0 || authoritative.shieldActive || authoritative.bowCharge ? authoritative.animState : predicted.animState,
+    animFrame: authoritative.actionTicks > 0 || authoritative.shieldActive || authoritative.bowCharge ? authoritative.animFrame : predicted.animFrame,
   };
 }

@@ -8,6 +8,23 @@ void CraftingSystem::ensureRecipes() {
     {6, material(BRICK, 8),   {mat(CLAY, 8)}},
     {7, material(TNT, 4),     {mat(GUNPOWDER, 12), mat(SAND, 8)}},
   };
+  if (E.planetId == PL_FRONTIER) {
+    InvSlot pick; pick.itemKind=IK_MINING_TOOL; pick.isTool=true; pick.toolClass=TC_DIG; pick.toolTier=TT_GOLD; pick.count=1;
+    recipes.push_back({9,pick,{mat(GOLD_ORE,24),mat(IRON_ORE,48),mat(OAK_WOOD,12)},4,0});
+    InvSlot arrows; arrows.itemKind = IK_ARROW; arrows.count = 12;
+    recipes.push_back({8, arrows, {mat(OAK_WOOD, 8), mat(STONE, 4)}});
+    for (const auto& [id, gear] : E.content.equipment) {
+      if (gear.family == 8 || gear.family == 11 || id == 305) continue;
+      InvSlot output; output.itemKind = IK_GEAR; output.definitionId = id; output.count = 1;
+      bool trade = gear.family == 9 || gear.family == 10;
+      int npc = trade ? 7 : gear.style >= 4 || (gear.family <= 5 && gear.style == 3) ? 4 : 2;
+      int ability = gear.family == 6 && gear.style >= 5 ? 2 : gear.family <= 5 && gear.style == 3 ? 2 : 0;
+      std::vector<CraftIngredient> cost;
+      if (trade) cost = {mat(COPPER_ORE, gear.price)};
+      else cost = {mat(IRON_ORE, imax(8, gear.price / 2)), mat(OAK_WOOD, gear.family == 6 ? 12 : 20)};
+      recipes.push_back({1000 + id, output, cost, npc, ability});
+    }
+  }
 }
 
 bool CraftingSystem::ingredientMatches(const InvSlot& slot, const CraftIngredient& ingredient) const {
@@ -53,7 +70,13 @@ int CraftingSystem::craft(int playerId, int recipeId, bool craftMax) {
   if (!p || !p->active || !p->alive) return 0;
   const CraftRecipe* recipe = nullptr;
   for (const auto& r : recipes) if (r.id == recipeId) { recipe = &r; break; }
-  if (!recipe) return 0;
+  if (!recipe || (p->abilities & recipe->ability) != recipe->ability) return 0;
+  if (recipe->npcId) {
+    bool nearby = false;
+    for (const auto& npc : E.creatures.creatures) if (npc.alive && npc.npcId == recipe->npcId &&
+        std::hypot(npc.wx - p->px - E.fg.worldOffsetX, npc.wy - p->py - E.fg.worldOffsetY) <= 32) nearby = true;
+    if (!nearby) return 0;
+  }
   int made = 0, limit = craftMax ? INV_STACK_MAX : 1;
   while (made < limit && craftOnce(*p, *recipe)) made++;
   if (made > 0) E.audio.emit(SE_CRAFT, p->px + p->w * .5, p->py + p->h * .5, 0.7, recipe->output.material);

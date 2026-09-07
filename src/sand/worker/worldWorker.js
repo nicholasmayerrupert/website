@@ -1,3 +1,4 @@
+import { loadAdventure, saveAdventure, encodeAdventureOrigin, decodeAdventureOrigin } from './adventureSaveStore.js';
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
   ABI_FINGERPRINT,
@@ -254,13 +255,16 @@ function setLivenessStage(stage, publish = false) {
   ));
 }
 
-function shutdown() {
+async function shutdown() {
   if (closing) return;
   closing = true;
   initGeneration++;
   clearTimeout(timer);
   stopReplayBufferTimers();
   void replayBufferSession?.cache.clear();
+  clearTimeout(saveTimer); saveTimer = 0;
+  await saveCompletion;
+  await writeAdventureCheckpoint();
   const doomed = engine;
   engine = null;
   try { doomed?.destroy(); } catch { /* the worker is closing regardless */ }
@@ -342,6 +346,7 @@ function replayActorSnapshot() {
   return {
     type: 'actors', epoch, actorTick: engine.getActorTick(), localPlayerId,
     players: copyReplayValue(players),
+    discovery: engine.getDiscovery(), chests: copyReplayValue(engine.getChests()), chestLoot: copyReplayValue(engine.getChestLoot()),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: copyReplayValue(engine.getPlayerMineTarget(localPlayerId)),
@@ -643,6 +648,38 @@ function postCreatures() {
   }, [data]);
 }
 
+let lastDiscoveryRevision = -1;
+let persistAdventure = false, saveTimer = 0, saveBusy = false, saveAgain = false, lastSaveTick = 0;
+let saveCompletion = Promise.resolve();
+async function writeAdventureCheckpoint() {
+  if (!persistAdventure || !engine || !localPlayerId) return;
+  if (saveBusy) { saveAgain = true; return saveCompletion; }
+  saveBusy = true; lastSaveTick = engine.getActorTick();
+  saveCompletion = (async () => {
+    try {
+      const capturedAt = Date.now();
+      const bytes = engine.writeCheckpoint();
+      if (!bytes.length) throw new Error('Checkpoint could not be created');
+      const savedAt = await saveAdventure(bytes, capturedAt);
+      self.postMessage({ type: 'adventure-save', savedAt, error: '' });
+    } catch (error) {
+      self.postMessage({ type: 'adventure-save', error: error.message || 'Could not save this adventure' });
+    } finally {
+      saveBusy = false;
+      if (saveAgain && !closing) { saveAgain = false; scheduleAdventureSave(); }
+    }
+  })();
+  return saveCompletion;
+}
+function scheduleAdventureSave(delay = 800) {
+  if (!persistAdventure || !engine || !localPlayerId || closing) return;
+  if (saveBusy) { saveAgain = true; return; }
+  if (saveTimer) {
+    if (delay !== 0) return;
+    clearTimeout(saveTimer);
+  }
+  saveTimer = setTimeout(() => { saveTimer = 0; void writeAdventureCheckpoint(); }, delay);
+}
 function postActors(force = false) {
   if (!survival || !localPlayerId) return;
   const players = engine.getPlayers();
@@ -650,6 +687,7 @@ function postActors(force = false) {
   const inventoryChanged = force || inventoryHash !== lastInventoryHash;
   if (inventoryChanged) lastInventoryHash = inventoryHash;
   const actorTick = engine.getActorTick();
+  if (actorTick - lastSaveTick > 900) scheduleAdventureSave();
   // The browser mirror renders every authority item at actor cadence, including
   // cosmetic mining debris. A transferred packed snapshot avoids allocating an
   // object per item, including short-lived cosmetic debris.
@@ -659,8 +697,12 @@ function postActors(force = false) {
   if (replayTransportSuppressed) return;
   const itemBuffer = itemData.buffer;
   const projectileBuffer = projectileData.buffer;
+  const discoveryRevision = engine.getDiscoveryRevision();
+  const discovery = force || discoveryRevision !== lastDiscoveryRevision ? engine.getDiscovery() : undefined;
+  lastDiscoveryRevision = discoveryRevision;
   self.postMessage({
-    type: 'actors', epoch, actorTick, localPlayerId, players,
+    type: 'actors', epoch, actorTick, localPlayerId, players, discovery,
+    chests: engine.getChests(), chestLoot: engine.getChestLoot(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: engine.getPlayerMineTarget(localPlayerId),
@@ -687,6 +729,12 @@ function applyCreatureRuntime() {
 }
 
 function applyRuntimeConfig(data) {
+  if (data.clearInput && latestInput && localPlayerId) {
+    latestInput = { ...latestInput, bits: 0, moveX: 0, moveY: 0 };
+    engine.setPlayerInput(localPlayerId, { ...latestInput,
+      aimX: latestInput.worldAimX - engine.getWorldOffsetX(),
+      aimY: latestInput.worldAimY - engine.getWorldOffsetY() });
+  }
   if (data.tool !== undefined) engine.setTool(data.tool | 0);
   if (data.drawMode !== undefined) engine.setDrawMode(!!data.drawMode);
   if (data.paused !== undefined) {
@@ -1093,11 +1141,18 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
   }
   if (closing || generation !== initGeneration) return false;
   try {
+      persistAdventure = !!data.persistAdventure && scheduleRuns && (data.planetId | 0) === PLANET.FRONTIER;
+      let saved = data.checkpoint ? await decodeAdventureOrigin(data.checkpoint) : null;
+      if (persistAdventure) {
+        try { saved = await loadAdventure(); }
+        catch (error) { persistAdventure = false; self.postMessage({ type: 'adventure-save', error: error.message }); }
+      }
+      if (closing || generation !== initGeneration) return false;
       const previous = engine;
       engine = null;
       previous?.destroy();
       engine = createEngineWasm({
-        cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
+        cols: saved?.cols || data.cols, rows: saved?.rows || data.rows, worldSeed: data.worldSeed >>> 0,
         infinite: true, sinksOn: false, storageRole: 'authority',
         initialViewCols: data.survival ? 0 : data.initialViewCols,
         initialViewRows: data.survival ? 0 : data.initialViewRows,
@@ -1170,6 +1225,35 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
         engine = null;
         return false;
       }
+      let restoredWorldCenter = null;
+      if (saved) {
+        if (!engine.readCheckpoint(saved.bytes)) throw new Error('Saved adventure failed validation; the stored checkpoint has been kept.');
+        localPlayerId = engine.getPlayers()[0]?.id || localPlayerId;
+        const player = engine.getPlayer(localPlayerId);
+        if (player) {
+          restoredWorldCenter = {
+            worldCenterX: engine.getWorldOffsetX() + player.x + player.w / 2,
+            worldCenterY: engine.getWorldOffsetY() + player.y + player.h / 2,
+          };
+          engine.setViewport(1, 1, 1, 1);
+          engine.cameraSet(player.x + player.w / 2 - 0.5, player.y + player.h / 2 - 0.5);
+        }
+        // Checkpoints own their grid dimensions; the browser owns today's viewport.
+        // Resize through the chunk store so both layers and world-space progress survive.
+        if (engine.cols !== data.cols || engine.rows !== data.rows) {
+          if (!engine.resizeLoadedWindow(data.cols, data.rows))
+            throw new Error('The saved world could not fit this viewport; the stored checkpoint has been kept.');
+        }
+        if (persistAdventure) {
+          self.postMessage({ type: 'adventure-save', savedAt: saved.savedAt, restored: true, error: '' });
+          if (replayCapture) {
+            const origin = engine.cols === saved.cols && engine.rows === saved.rows ? saved.bytes : engine.writeCheckpoint();
+            replayCapture.init = normalizeReplayInit({ ...data, cols: engine.cols, rows: engine.rows, checkpoint: await encodeAdventureOrigin(origin) });
+            self.postMessage({ type: 'replay-journal-reset', init: replayCapture.init });
+          }
+        }
+      }
+      lastSaveTick = engine.getActorTick();
       latestInput = null;
       lastInventoryHash = -1;
       epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null; livenessTurn = 0;
@@ -1183,7 +1267,8 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
       if (usePending && pendingResize) {
         const resize = pendingResize;
         pendingResize = null;
-        applyResize(resize);
+        // A resize queued during restore still refers to the browser's provisional world.
+        applyResize(restoredWorldCenter ? { ...resize, ...restoredWorldCenter } : resize);
       } else {
         postFull('init');
         postActors(true);
@@ -1227,6 +1312,7 @@ function applyRuntimeMessage(data) {
     latestInput = data.input || null;
   } else if (data.type === 'intent' && survival && localPlayerId) {
     switch (data.intent) {
+      case 'chest': engine.interactChest(localPlayerId, data.chest | 0, data.slot | 0); break;
       case 'select': engine.setSelectedSlot(localPlayerId, data.slot | 0); break;
       case 'size': engine.setSelectedFootprint(localPlayerId, data.footprint | 0); break;
       case 'move': engine.inventoryMove(localPlayerId, data.from | 0, data.to | 0); break;
@@ -1273,6 +1359,7 @@ function applyRuntimeMessage(data) {
       default: break;
     }
     postActors(true);
+    scheduleAdventureSave();
   } else if (data.type === 'edge') {
     edges.push(data);
   } else if (data.type === 'config') {
@@ -2146,6 +2233,10 @@ async function seekReplayMicroscope(requestId, value, target, options = {}) {
 
 self.onmessage = async ({ data }) => {
   if (!data) return;
+  if (data.type === 'adventure-save-now') {
+    scheduleAdventureSave(0);
+    return;
+  }
   if (data.type === 'destroy') {
     shutdown();
     return;

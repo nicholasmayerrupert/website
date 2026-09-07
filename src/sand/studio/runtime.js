@@ -33,7 +33,7 @@ export function createStudioRuntime(host) {
       const scene = GAME_SCENES.find(s => s.id === id);
       if (!scene) throw new Error(`Unknown scene ${id}. Available: ${GAME_SCENES.map(s => s.id).join(', ')}`);
       sceneId = id;
-      setPaused(false);
+      setPaused(true);
       const test = window.__sandTest;
       test.setCreatureRuntime(true, false);
       host._game.resetZoom();
@@ -51,6 +51,7 @@ export function createStudioRuntime(host) {
         await new Promise(resolve => setTimeout(resolve, 50));
         const p = inspect().player;
         if (p && Math.abs(p.worldX - x) < 8 && Math.abs(p.worldY - y) < 32) {
+          setPaused(false);
           host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true });
           return inspect();
         }

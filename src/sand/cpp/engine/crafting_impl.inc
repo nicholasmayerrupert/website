@@ -16,7 +16,7 @@ void CraftingSystem::ensureRecipes() {
     InvSlot arrows; arrows.itemKind = IK_ARROW; arrows.count = 12;
     recipes.push_back({8, arrows, {mat(OAK_WOOD, 8), mat(STONE, 4)}});
     for (const auto& [id, gear] : E.content.equipment) {
-      if (gear.family == 8 || gear.family == 11 || id == 305) continue;
+      if (gear.family == 8 || gear.family >= 11 || id == 305) continue;
       InvSlot output; output.itemKind = IK_GEAR; output.definitionId = id; output.count = 1;
       bool trade = gear.family == 9 || gear.family == 10;
       int npc = trade ? 7 : gear.style >= 4 || (gear.family <= 5 && gear.style == 3) ? 4 : 2;

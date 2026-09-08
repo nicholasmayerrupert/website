@@ -80,8 +80,7 @@ try {
       && humanSprite.height > humanSprite.width * 1.2);
 
   // The survival route is the real gameplay entry point. Its encounter director
-  // should begin with one armed reservation rather than all five species popping
-  // into view at once.
+  // should begin with a paced armed population.
   await page.goto(`${baseURL}/game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   // The presentation engine installs the test hook before its independently
@@ -119,8 +118,9 @@ try {
   }));
 
 
-  // Force the director's habitat-valid visible fallback through its DEV-only
-  // test hook, then inspect the replicated warning and its portal pixels.
+  // Request an explicit scripted breach through the DEV hook, then inspect
+  // the replicated warning and its portal pixels. Natural entries are covered
+  // separately by the off-screen assertions in enemy-ecology.
   // Freeze the authority first so the short warning cannot materialize between
   // the async worker snapshot and the render probe.
   await page.evaluate(() => {
@@ -131,7 +131,7 @@ try {
     window.__sandTest.stepAuthorityActors(0);
   });
   const existingSpecies = new Set(survival.species);
-  const breachChoices = [7, 9, 10, 8, 11].filter((id) => !existingSpecies.has(id));
+  const breachChoices = [2, 7, 9, 10, 8, 11].filter((id) => !existingSpecies.has(id));
   let portal = null;
   for (let i = 0; i < breachChoices.length && !portal; i++) {
     for (let attempt = 0; attempt < 6 && !portal; attempt++) {
@@ -165,6 +165,7 @@ try {
     if (!c) {
       return { visible: false, colored: 0, id: 0, progress: 0 };
     }
+    T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);
     T.render();
     const r = T.cellRect(c.x, c.y);
     const pad = Math.ceil(r.size * 7);
@@ -186,7 +187,7 @@ try {
       rect: [Math.round(r.x), Math.round(r.y), Math.round(r.size)],
     };
   }, portal?.id || 0);
-  check(`visible fallback is replicated as a non-materialized portal (progress ${portalPixels.progress.toFixed(2)}, rect ${portalPixels.rect?.join(',') || 'none'})`,
+  check(`scripted breach is replicated as a non-materialized portal (progress ${portalPixels.progress.toFixed(2)}, rect ${portalPixels.rect?.join(',') || 'none'})`,
     !!portal && !portal.alive && portal.spawnProgress > 0 && portalPixels.visible);
   check(`breach portal renders its cyan/violet pixel animation (${portalPixels.colored} pixels)`,
     portalPixels.colored > 0);

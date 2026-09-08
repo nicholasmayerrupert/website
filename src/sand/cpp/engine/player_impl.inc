@@ -328,7 +328,8 @@ bool PlayerSystem::shieldCoversSource(const Player& p, double sourceX, double so
   double sourceLength = std::hypot(sourceDx, sourceDy);
   if (sourceLength < 1e-6) return false; // no meaningful incoming direction
   double dot = aimDx * sourceDx + aimDy * sourceDy;
-  return dot + 1e-9 >= P_SHIELD_HALF_ARC_COS * aimLength * sourceLength;
+  double halfArcCos = E.planetId == PL_FRONTIER ? 0.0 : P_SHIELD_HALF_ARC_COS;
+  return dot + 1e-9 >= halfArcCos * aimLength * sourceLength;
 }
 int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
                                double sourceX, double sourceY,
@@ -339,8 +340,16 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
   if (shieldCoversSource(p, sourceX, sourceY)) {
     if (!bypassCooldown && p.shieldHurtCooldown > 0) return 0;
     int shieldBefore = p.shieldHealth;
-    int absorbed = imin(E.planetId == PL_FRONTIER ? p.stamina : p.shieldHealth, remaining);
-    if (E.planetId == PL_FRONTIER) p.stamina -= absorbed;
+    int absorbed = imin(p.shieldHealth, remaining);
+    if (E.planetId == PL_FRONTIER) {
+      const auto* shield = E.content.gear(p.equipment[6].definitionId);
+      int efficiency = shield ? imin(75, 45 + shield->defense * 3) : 45;
+      int cost = imax(1, (remaining * (100 - efficiency) + 99) / 100);
+      // A fresh raise rewards timing without making held guard invulnerable.
+      if (p.actionState == AS_GUARD_RAISE && p.actionTicks >= 3) cost = imax(1, cost / 3);
+      absorbed = cost <= p.stamina ? remaining : remaining * p.stamina / cost;
+      p.stamina = imax(0, p.stamina - cost);
+    }
     if (E.planetId != PL_FRONTIER) p.shieldHealth -= absorbed;
     if (E.planetId == PL_FRONTIER && p.stamina <= 0) {
       p.shieldActive = false; p.actionState = AS_GUARD_BREAK; p.actionTicks = p.actionDuration = 42; p.actionDefinition = 0;
@@ -473,6 +482,10 @@ void PlayerSystem::integratePlayer(Player& p) {
   p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
   if (E.planetId == PL_FRONTIER && p.shieldActive && !wasGuarding) {
     p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
+    p.bowChargeTicks = 0;
+    p.weaponKick = 0;
+    resetPlayerMine(p);
+    E.inv.resetPlayerPlaceStroke(p);
   }
   bool wasGrounded = p.grounded;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;

@@ -123,8 +123,8 @@ if (!Array.isArray(creatureEnum?.descriptors))
   throw new Error('CreatureSpecies must use descriptor records');
 const creatureDescriptors = creatureEnum.descriptors
   .slice().sort((a, b) => a.id - b.id);
-if (creatureDescriptors.length > 32)
-  throw new Error('CreatureSpecies supports at most 32 descriptors because preyMask is uint32');
+if (creatureDescriptors.length > 64)
+  throw new Error('CreatureSpecies supports at most 64 descriptors because preyMask is uint64');
 
 const behaviorPolicySpecs = [
   { field: 'attack', macro: 'SAND_CREATURE_ATTACK_POLICY', prefix: 'CAH_', enumName: 'CreatureAttackHandler', countName: 'CAH_COUNT' },
@@ -1017,7 +1017,7 @@ const creatureRow = (descriptor) => {
   const world = descriptor.world;
   const targetMask = stats.targets.length ? stats.targets.join(' | ') : 'CT_NONE';
   const preyMask = stats.prey.length
-    ? stats.prey.map((key) => `(1u << ${creatureSymbolByKey.get(key)})`).join(' | ')
+    ? stats.prey.map((key) => `(1ull << ${creatureSymbolByKey.get(key)})`).join(' | ')
     : '0u';
   return `  {${descriptor.cSymbol}, ${JSON.stringify(descriptor.name)}, ${stats.locomotion}, ${stats.w}, ${stats.h}, ${stats.maxHealth},\n`
     + `   ${cppNumber(stats.walkSpeed)}, ${cppNumber(stats.swimSpeed)}, ${cppNumber(stats.accel)}, ${cppNumber(stats.gravity)}, ${cppNumber(stats.jumpSpeed)},\n`

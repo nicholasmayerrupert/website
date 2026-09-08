@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 49,
+  "abiVersion": 50,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -1581,7 +1581,12 @@
     "CRP_REACTOR_CORE": 16,
     "CRP_IRIS_COMMANDER": 17,
     "CRP_IRIS_ENGINEER": 18,
-    "CRP_VILLAGER": 19
+    "CRP_VILLAGER": 19,
+    "CRP_FROST_GIANT": 20,
+    "CRP_MUMMY": 21,
+    "CRP_LAVA_TOAD": 22,
+    "CRP_VILLAGE_GUARD": 23,
+    "CRP_VILLAGE_HUNTER": 24
   },
   "enums": {
     "PlayerAnimation": {
@@ -2223,7 +2228,7 @@
             "swimSpeed": 0.17,
             "accel": 0.045,
             "gravity": 0.075,
-            "jumpSpeed": 1.0,
+            "jumpSpeed": 1,
             "fluidThreshold": 0.3,
             "sightRange": 92,
             "attackRange": 72,
@@ -2263,6 +2268,10 @@
               "BIOME_DESERT",
               "BIOME_ROCKY",
               "BIOME_TUNDRA"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_PLAINS",
+              "BIOME_ROCKY"
             ]
           },
           "behaviorProfile": "CRBH_DYNAMITEER",
@@ -2334,6 +2343,10 @@
             "preferredCaveBiomes": [
               "CAVE_DEEP_GEODE",
               "CAVE_DEEP_FOSSIL"
+            ],
+            "allowedCaveBiomes": [
+              "CAVE_DEEP_GEODE",
+              "CAVE_DEEP_FOSSIL"
             ]
           },
           "behaviorProfile": "CRBH_BORE_SENTINEL",
@@ -2401,6 +2414,10 @@
             "preferredSurfaceBiomes": [
               "BIOME_DESERT",
               "BIOME_SWAMP"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_DESERT",
+              "BIOME_SWAMP"
             ]
           },
           "behaviorProfile": "CRBH_CAUSTIC_MORTARMAN",
@@ -2466,6 +2483,11 @@
               "WA_INDOOR"
             ],
             "preferredSurfaceBiomes": [
+              "BIOME_FOREST",
+              "BIOME_JUNGLE",
+              "BIOME_SWAMP"
+            ],
+            "allowedSurfaceBiomes": [
               "BIOME_FOREST",
               "BIOME_JUNGLE",
               "BIOME_SWAMP"
@@ -2539,6 +2561,11 @@
               "WA_DEEP"
             ],
             "preferredCaveBiomes": [
+              "CAVE_CRYSTAL",
+              "CAVE_DEEP_MAGMA",
+              "CAVE_DEEP_VOID"
+            ],
+            "allowedCaveBiomes": [
               "CAVE_CRYSTAL",
               "CAVE_DEEP_MAGMA",
               "CAVE_DEEP_VOID"
@@ -3169,8 +3196,8 @@
             "hostile": true
           },
           "population": {
-            "profile": "CPOP_AMBIENT",
-            "encounterCost": 0,
+            "profile": "CPOP_ENCOUNTER",
+            "encounterCost": 3,
             "countsTowardNaturalCap": true,
             "habitat": "CH_SURFACE",
             "maxActive": 1,
@@ -3190,6 +3217,11 @@
               "BIOME_PLAINS",
               "BIOME_FOREST",
               "BIOME_TUNDRA"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_FOREST",
+              "BIOME_WATCHWOOD",
+              "BIOME_JUNGLE"
             ]
           },
           "behaviorProfile": "CRBH_GENERIC",
@@ -3251,6 +3283,10 @@
               "BIOME_FOREST",
               "BIOME_JUNGLE",
               "BIOME_SWAMP"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_ROCKY",
+              "BIOME_WATCHWOOD"
             ]
           },
           "behaviorProfile": "CRBH_CLUSTER_WASP",
@@ -3272,15 +3308,15 @@
             "w": 9,
             "h": 6,
             "maxHealth": 165,
-            "walkSpeed": 0.15,
+            "walkSpeed": 0.27,
             "swimSpeed": 0.11,
             "accel": 0.03,
             "gravity": 0.075,
             "jumpSpeed": 0.76,
             "fluidThreshold": 0.34,
             "sightRange": 138,
-            "attackRange": 118,
-            "damage": 0,
+            "attackRange": 10,
+            "damage": 16,
             "attackCooldown": 270,
             "scanInterval": 6,
             "hopPeriod": 0,
@@ -3317,9 +3353,14 @@
               "CAVE_CRYSTAL",
               "CAVE_DEEP_MAGMA",
               "CAVE_DEEP_VOID"
+            ],
+            "allowedCaveBiomes": [
+              "CAVE_DEFAULT",
+              "CAVE_DEEP_FOSSIL",
+              "CAVE_DEEP_VOID"
             ]
           },
-          "behaviorProfile": "CRBH_MINIGUNNER",
+          "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_MINIGUNNER",
             "humanNpc": false,
@@ -3378,6 +3419,10 @@
               "BIOME_FOREST",
               "BIOME_JUNGLE",
               "BIOME_SWAMP"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_SWAMP",
+              "BIOME_JUNGLE"
             ]
           },
           "behaviorProfile": "CRBH_CLUSTER_WASP",
@@ -3437,6 +3482,283 @@
             "stationaryCycle": false
           },
           "protection": "CPROT_NONE"
+        },
+        {
+          "id": 29,
+          "key": "CREATURE_FROST_GIANT",
+          "cSymbol": "CS_FROST_GIANT",
+          "name": "frost giant",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 12,
+            "h": 19,
+            "maxHealth": 240,
+            "walkSpeed": 0.16,
+            "swimSpeed": 0.14,
+            "accel": 0.038,
+            "gravity": 0.075,
+            "jumpSpeed": 0.92,
+            "fluidThreshold": 0.32,
+            "sightRange": 110,
+            "attackRange": 66,
+            "damage": 26,
+            "attackCooldown": 105,
+            "scanInterval": 8,
+            "hopPeriod": 0,
+            "targets": [
+              "CT_PLAYER"
+            ],
+            "prey": [],
+            "hostile": true
+          },
+          "population": {
+            "profile": "CPOP_ENCOUNTER",
+            "encounterCost": 7,
+            "countsTowardNaturalCap": true,
+            "habitat": "CH_SURFACE",
+            "maxActive": 1,
+            "densityRadius": 160,
+            "densityCap": 1,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "requiredTags": [
+              "WA_SURFACE"
+            ],
+            "excludedTags": [
+              "WA_SETTLEMENT"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_TUNDRA"
+            ]
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_FROST_GIANT",
+            "humanNpc": false,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
+        },
+        {
+          "id": 30,
+          "key": "CREATURE_MUMMY",
+          "cSymbol": "CS_MUMMY",
+          "name": "mummy",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 5,
+            "h": 10,
+            "maxHealth": 90,
+            "walkSpeed": 0.23,
+            "swimSpeed": 0.11,
+            "accel": 0.03,
+            "gravity": 0.075,
+            "jumpSpeed": 0.76,
+            "fluidThreshold": 0.34,
+            "sightRange": 80,
+            "attackRange": 12,
+            "damage": 18,
+            "attackCooldown": 270,
+            "scanInterval": 6,
+            "hopPeriod": 0,
+            "targets": [
+              "CT_PLAYER"
+            ],
+            "prey": [],
+            "hostile": true
+          },
+          "population": {
+            "profile": "CPOP_ENCOUNTER",
+            "encounterCost": 3,
+            "countsTowardNaturalCap": true,
+            "habitat": "CH_SURFACE",
+            "maxActive": 1,
+            "densityRadius": 160,
+            "densityCap": 1,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "excludedTags": [
+              "WA_SETTLEMENT"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_DESERT"
+            ],
+            "baseWeight": 16
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_MUMMY",
+            "humanNpc": false,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
+        },
+        {
+          "id": 31,
+          "key": "CREATURE_LAVA_TOAD",
+          "cSymbol": "CS_LAVA_TOAD",
+          "name": "lava toad",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 9,
+            "h": 7,
+            "maxHealth": 125,
+            "walkSpeed": 0.18,
+            "swimSpeed": 0.14,
+            "accel": 0.038,
+            "gravity": 0.075,
+            "jumpSpeed": 0.92,
+            "fluidThreshold": 0.32,
+            "sightRange": 105,
+            "attackRange": 60,
+            "damage": 20,
+            "attackCooldown": 105,
+            "scanInterval": 8,
+            "hopPeriod": 0,
+            "targets": [
+              "CT_PLAYER"
+            ],
+            "prey": [],
+            "hostile": true
+          },
+          "population": {
+            "profile": "CPOP_ENCOUNTER",
+            "encounterCost": 5,
+            "countsTowardNaturalCap": true,
+            "habitat": "CH_CAVE",
+            "maxActive": 1,
+            "densityRadius": 160,
+            "densityCap": 1,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "requiredTags": [
+              "WA_UNDERGROUND"
+            ],
+            "excludedTags": [
+              "WA_SETTLEMENT"
+            ],
+            "allowedCaveBiomes": [
+              "CAVE_DEEP_MAGMA"
+            ]
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_LAVA_TOAD",
+            "humanNpc": false,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
+        },
+        {
+          "id": 32,
+          "key": "CREATURE_VILLAGE_GUARD",
+          "cSymbol": "CS_VILLAGE_GUARD",
+          "name": "village guard",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 4,
+            "h": 8,
+            "maxHealth": 120,
+            "walkSpeed": 0.23,
+            "swimSpeed": 0.14,
+            "accel": 0.03,
+            "gravity": 0.075,
+            "jumpSpeed": 0.7,
+            "fluidThreshold": 0.34,
+            "sightRange": 64,
+            "attackRange": 10,
+            "damage": 20,
+            "attackCooldown": 0,
+            "scanInterval": 28,
+            "hopPeriod": 0,
+            "targets": [],
+            "prey": [],
+            "hostile": false
+          },
+          "population": {
+            "profile": "CPOP_SCRIPTED",
+            "encounterCost": 0,
+            "countsTowardNaturalCap": false,
+            "habitat": "CH_SURFACE",
+            "maxActive": 0,
+            "densityRadius": 160,
+            "densityCap": 0,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "requiredTags": [
+              "WA_SETTLEMENT"
+            ]
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_VILLAGE_GUARD",
+            "humanNpc": true,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
+        },
+        {
+          "id": 33,
+          "key": "CREATURE_VILLAGE_HUNTER",
+          "cSymbol": "CS_VILLAGE_HUNTER",
+          "name": "village hunter",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 4,
+            "h": 8,
+            "maxHealth": 85,
+            "walkSpeed": 0.25,
+            "swimSpeed": 0.14,
+            "accel": 0.03,
+            "gravity": 0.075,
+            "jumpSpeed": 0.7,
+            "fluidThreshold": 0.34,
+            "sightRange": 80,
+            "attackRange": 48,
+            "damage": 15,
+            "attackCooldown": 0,
+            "scanInterval": 28,
+            "hopPeriod": 0,
+            "targets": [],
+            "prey": [],
+            "hostile": false
+          },
+          "population": {
+            "profile": "CPOP_SCRIPTED",
+            "encounterCost": 0,
+            "countsTowardNaturalCap": false,
+            "habitat": "CH_SURFACE",
+            "maxActive": 0,
+            "densityRadius": 160,
+            "densityCap": 0,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "requiredTags": [
+              "WA_SETTLEMENT"
+            ]
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_VILLAGE_HUNTER",
+            "humanNpc": true,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
         }
       ]
     },
@@ -3449,7 +3771,8 @@
       "values": {
         "CAS_IDLE": 0,
         "CAS_CHARGING": 1,
-        "CAS_FIRING": 2
+        "CAS_FIRING": 2,
+        "CAS_RECOVERING": 3
       }
     },
     "PlanetId": {
@@ -3492,7 +3815,7 @@
           "generationProfile": "PGP_EARTH",
           "offworldMaterialProfile": "OWMP_NONE",
           "presentationProfile": "PPP_EARTH",
-          "gravity": 1.0,
+          "gravity": 1,
           "gameplayFlags": [
             "villageResidents",
             "naturalSpawns"
@@ -3550,7 +3873,7 @@
           "generationProfile": "PGP_SHIP",
           "offworldMaterialProfile": "OWMP_NONE",
           "presentationProfile": "PPP_SHIP",
-          "gravity": 1.0,
+          "gravity": 1,
           "gameplayFlags": [
             "protectedCrew",
             "frameAnchor",
@@ -3572,7 +3895,7 @@
           "generationProfile": "PGP_EARTH",
           "offworldMaterialProfile": "OWMP_NONE",
           "presentationProfile": "PPP_EARTH",
-          "gravity": 1.0,
+          "gravity": 1,
           "gameplayFlags": [
             "villageResidents",
             "protectedCrew",

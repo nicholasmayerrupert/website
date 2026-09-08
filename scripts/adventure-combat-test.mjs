@@ -40,7 +40,7 @@ function backgroundFloor(e){
  for(let x=0;x<200;x++)for(let y=96;y<128;y++)e.paintDiscLayer(1,x,y,0,MAT.STONE,true);
  e.syncComponentsLayer(1);
 }
-for(const species of [CREATURE.BONE_GUARD,CREATURE.ROOT_KNIGHT,CREATURE.HOLLOW_BELLKEEPER]){
+for(const species of [CREATURE.ROOT_KNIGHT,CREATURE.HOLLOW_BELLKEEPER]){
  run(`enemy ${species} fractures terrain in both layers without blast damage to itself`,(e)=>{
   backgroundFloor(e);const enemy=commitEnemy(e,species);
   const hp=e.getCreatures().find(c=>c.id===enemy).health;

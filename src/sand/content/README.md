@@ -34,7 +34,7 @@ The development writer accepts only the three known files from local same-origin
 requests. It is absent from production. The studio is also excluded from the
 production route.
 
-`creatureArt.js` supplies four poses per species. Player clips can contain 1–16
+`creatureArt.js` supplies eight named animation clips per species. Player clips can contain 1–16
 frames with independent cadence. Palette entry zero is transparent; source pixels
 use palette symbols. `world.textures` supplies 8×8 material tiles. These tile the
 simulated cells in absolute world coordinates. `presentation` sets surface/depth
@@ -63,9 +63,9 @@ zero surface/depth ambient overrides leave the normal light field in control.
 Keep this world style when adding locations. Game text uses **Sand Pixel**,
 including menus, dialogue, the journal, prompts, and HUDs.
 
-All twenty creature sprite sets use half-cell source pixels and a shared outline
-palette. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes
-and four poses. Land creatures anchor artwork at their physical feet; swimmers
+Creature sprite sets use quarter- or half-cell source pixels and dark outline
+palettes. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes
+and distinct movement and combat poses. Land creatures anchor artwork at their physical feet; swimmers
 and flyers center it around their body. Combat dimensions remain in the species
 schema. The workbench's **Creature artwork** drawer previews the complete roster.
 
@@ -104,3 +104,11 @@ symbols, so articulated arms share the authored sprite colors.
 
 Long scene jumps load bounded, chunk-aligned bands on each axis before moving
 the player. Scene coordinates therefore refer to already loaded terrain.
+
+`enemy_attacks.def` and `enemy_drops.def` under `cpp/engine/` own adventure combat
+cadences and signature rewards. Biome exclusions, physical dimensions, and
+population costs belong to the species descriptors in `abi.schema.json`.
+`scripts/author-enemy-art.mjs` rebuilds the five elemental-enemy and village-role
+sprite sets from articulated pixel geometry. It preserves every other species.
+The compiled sprites remain editable in `creatureArt.js`; rerunning the author
+script replaces those five sets.

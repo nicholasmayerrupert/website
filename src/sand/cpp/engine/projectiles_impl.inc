@@ -454,12 +454,13 @@ void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, 
   if (distance < .01) { dx = 1; dy = 0; distance = 1; }
   double angle = std::atan2(dy, dx);
   int count = gear->spell == 7 ? (owner < 0 ? 3 : 5) : 1;
-  double speed = gear->spell == 7 ? 3.6 : owner < 0 ? 2.4 : 2.8;
+  double speed = gear->spell == 10 ? .85 : gear->spell == 11 ? 1.5 : gear->spell == 7 ? 3.6 : owner < 0 ? 2.4 : 2.8;
   for (int i = 0; i < count && (int)projectiles.size() < PROJECTILE_MAX; i++) {
     double a = angle + (i - (count - 1) * .5) * .16;
     Projectile bolt; bolt.id = nextId++; bolt.owner = owner; bolt.kind = PK_RUNE;
     bolt.fuse = gearId; bolt.px = x; bolt.py = y;
     bolt.vx = std::cos(a) * speed; bolt.vy = std::sin(a) * speed;
+    if (gear->spell == 11) bolt.vy -= .35;
     bolt.charge = damage; bolt.rotation = gear->spell == 7 ? 2 : 0;
     double reach = gear->spell == 8 ? std::min((double)gear->reach, distance) : gear->reach;
     bolt.life = imax(1, (int)std::ceil(reach / speed));
@@ -474,11 +475,18 @@ void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, 
 }
 
 void ProjectileSystem::updateProjectiles() {
+  auto friendlyOwner = [&](int owner) {
+    if (owner >= 0) return false;
+    for (const auto& c : E.creatures.creatures)
+      if (c.id == -owner) return c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER;
+    return false;
+  };
   auto hitsCreature = [&](double px, double py, double radius, int owner) {
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
     double r2 = radius * radius;
     for (const Creature& c : E.creatures.creatures) {
-      if (!c.alive || (owner < 0 && c.id == -owner)) continue;
+      if (!c.alive || (owner < 0 && c.id == -owner) || E.creatures.isProtectedNpc(c)
+          || (friendlyOwner(owner) && !E.creatures.species(c).hostile)) continue;
       const CreatureSpecies& s = E.creatures.species(c);
       double nx = std::max(c.wx, std::min(wx, c.wx + s.w));
       double ny = std::max(c.wy, std::min(wy, c.wy + s.h));
@@ -488,6 +496,7 @@ void ProjectileSystem::updateProjectiles() {
     return false;
   };
   auto hitsPlayer = [&](double px, double py, double radius, int owner) {
+    if (friendlyOwner(owner)) return false;
     double r2 = radius * radius;
     for (const Player& player : E.psys.players) {
       if (!player.active || !player.alive || player.id == owner) continue;
@@ -548,7 +557,7 @@ void ProjectileSystem::updateProjectiles() {
   auto damageSplash = [&](double px, double py, int radius, int damage, int owner, bool launch) {
     double r2 = (double)radius * radius;
     for (Player& player : E.psys.players) {
-      if (!player.active || !player.alive || (owner > 0 && player.id == owner)) continue;
+      if (!player.active || !player.alive || friendlyOwner(owner) || (owner > 0 && player.id == owner)) continue;
       double nx = std::max(player.px, std::min(px, player.px + player.w));
       double ny = std::max(player.py, std::min(py, player.py + player.h));
       double dx = px - nx, dy = py - ny;
@@ -887,6 +896,9 @@ void ProjectileSystem::updateProjectiles() {
     if (p.kind == PK_RUNE) {
       const auto* rune = E.content.gear(p.fuse);
       bool hit = false, outside = false;
+      bool frost = rune && rune->spell == 10, molten = rune && rune->spell == 11;
+      double hitRadius = frost ? 3.2 : molten ? 1.8 : 1;
+      if (molten) p.vy += E.scaledGravity(.018);
       int steps = imax(1, (int)std::ceil(std::hypot(p.vx,p.vy) / .25));
       for (int j = 0; j < steps; j++) {
         double oldX = p.px, oldY = p.py;
@@ -901,14 +913,42 @@ void ProjectileSystem::updateProjectiles() {
           p.px = oldX; p.py = oldY; p.rotation--;
           break;
         }
-        if (E.isBlockingForActor(mat) || (rune && rune->spell == 2 && mat == WATER) ||
-            (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,1,p.owner))) ||
-            hitsCreature(p.px,p.py,1,p.owner)) { hit = true; break; }
+        bool wideBlock = (frost || molten) && (blocksPoint(p.px + hitRadius, p.py) ||
+          blocksPoint(p.px - hitRadius, p.py) || blocksPoint(p.px, p.py + hitRadius) || blocksPoint(p.px, p.py - hitRadius));
+        if (wideBlock || E.isBlockingForActor(mat) || (rune && (rune->spell == 2 || frost) && mat == WATER) ||
+            (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,hitRadius,p.owner))) ||
+            hitsCreature(p.px,p.py,hitRadius,p.owner)) { hit = true; break; }
       }
       if (outside) continue;
       if (hit || --p.life <= 0) {
         auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
-        if (gear && gear->spell == 8) {
+        if (gear && (gear->spell == 10 || gear->spell == 11)) {
+          int radius = frost ? 7 : 5;
+          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, false);
+          Engine::ActiveLayerScope foreground(E, &E.fg);
+          if (frost) {
+            std::vector<int> removed;
+            CellMutationBatch frozen(E, removed);
+            for (int y = imax(1, (int)p.py - radius); y <= imin(E.rows - 2, (int)p.py + radius); y++)
+              for (int x = imax(1, (int)p.px - radius); x <= imin(E.cols - 2, (int)p.px + radius); x++)
+                if ((x-p.px)*(x-p.px)+(y-p.py)*(y-p.py) <= radius*radius && E.fg.grid[E.I(x,y)] == WATER)
+                  frozen.replaceWithStatic(E.I(x,y), ICE);
+            frozen.commitGeneral();
+            for (auto& c : E.creatures.creatures) {
+              if (!c.alive || E.creatures.isProtectedNpc(c) || (p.owner < 0 && c.id == -p.owner)) continue;
+              const auto& def = E.creatures.species(c);
+              if (std::hypot(c.wx - E.fg.worldOffsetX + def.w*.5 - p.px,
+                  c.wy - E.fg.worldOffsetY + def.h*.5 - p.py) < radius + def.w*.5) {
+                c.slowTicks = imax(c.slowTicks, 150); c.attackCooldown = imax(c.attackCooldown, 45);
+              }
+            }
+          } else {
+            E.combat.enemyTerrainImpact(p.px, p.py, 4, FIRE);
+            E.tools.paintDisc((int)p.px, (int)p.py, 2, LAVA, false);
+          }
+          for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
+          E.audio.emit(SE_SPELL_IMPACT, p.px, p.py, 1, frost ? ICE : LAVA);
+        } else if (gear && gear->spell == 8) {
           p.kind = PK_RUNE_FIELD; p.life = 72; p.rotation = p.charge; p.charge = 1; p.vx = p.vy = 0;
           E.audio.emit(SE_RUNE, p.px, p.py, 1.1, 8);
           projectiles[write++] = p; continue;
@@ -924,7 +964,7 @@ void ProjectileSystem::updateProjectiles() {
             E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);
           }
         } else if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
-        p.rotation = gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
+        p.rotation = frost ? 7 : molten ? 5 : gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
       }
       projectiles[write++] = p; continue;
@@ -945,7 +985,7 @@ void ProjectileSystem::updateProjectiles() {
       } else {
         if (E.isBlockingForActor(material)) { hit = true; break; }
         int damage = p.fuse > 0 ? (int)std::lround(p.fuse * (.4 + .6*p.charge)) : 8 + (int)std::lround(22 * p.charge);
-        if (p.owner < 0) {
+        if (p.owner < 0 && !friendlyOwner(p.owner)) {
           for (auto& hero : E.psys.players) if (hero.active && hero.alive && p.px >= hero.px && p.px <= hero.px+hero.w && p.py >= hero.py && p.py <= hero.py+hero.h) {
             E.psys.damagePlayer(hero,damage,25,p.px-p.vx,p.py-p.vy); hit=true;
           }
@@ -960,7 +1000,7 @@ void ProjectileSystem::updateProjectiles() {
         E.explosives.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner,
                    GUNPOWDER, seed, SE_WEAPON_EXPLOSION);
       } else if (p.kind == PK_ARROW) {
-        if (p.owner < 0 && E.planetId == PL_FRONTIER && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1)
+        if (p.owner < 0 && !friendlyOwner(p.owner) && E.planetId == PL_FRONTIER && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1)
           E.combat.enemyTerrainImpact(p.px, p.py, 6, STONE);
         E.itemsys.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
         E.audio.emit(SE_ARROW_HIT, p.px, p.py, 0.45 + p.charge * .55, STONE);

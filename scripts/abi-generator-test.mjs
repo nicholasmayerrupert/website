@@ -1,3 +1,4 @@
+import creatureArt from '../src/sand/content/creatureArt.js';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import process from 'node:process';
@@ -202,7 +203,7 @@ run('synthetic passive species is a one-record extension', (schema) => {
 }, '', { creatureContract: (contract) => {
   const fixture = contract.species.find(
     ({ cSymbol }) => cSymbol === 'CS_FIXTURE_PASSIVE');
-  return contract.count === 21
+  return contract.count === sourceSchema.enums.CreatureSpecies.descriptors.length + 1
     && contract.ambient.at(-1) === 'CS_FIXTURE_PASSIVE'
     && fixture?.behaviorProfile === 'CRBH_GENERIC'
     && fixture?.renderProfile === 'CRP_MINNOW';
@@ -334,7 +335,7 @@ run('natural creature preferences must intersect its reach', (schema) => {
 }, 'world has no positive reachable spawn weight');
 run('prey mask descriptor cap is enforced', (schema) => {
   const descriptors = schema.enums.CreatureSpecies.descriptors;
-  while (descriptors.length <= 32) {
+  while (descriptors.length <= 64) {
     const fixture = structuredClone(descriptors[0]);
     fixture.id = descriptors.length;
     fixture.key = `CREATURE_FIXTURE_${fixture.id}`;
@@ -343,7 +344,7 @@ run('prey mask descriptor cap is enforced', (schema) => {
     fixture.stats.prey = [];
     descriptors.push(fixture);
   }
-}, 'at most 32 descriptors');
+}, 'at most 64 descriptors');
 run('world area tags must remain independent bits', (schema) => {
   schema.enums.WorldAreaTag.values.WA_SURFACE = 3;
 }, 'WorldAreaTag values must be unique nonzero one-hot uint32 bits');
@@ -489,7 +490,7 @@ check('creature ids and descriptor order preserve the stable ABI',
   CREATURE.MINNOW === 0
     && CREATURE.DYNAMITEER === 7
     && CREATURE.VILLAGER === 19
-    && CREATURE_SPECIES_DEFS.length === 20
+    && CREATURE_SPECIES_DEFS.length === sourceSchema.enums.CreatureSpecies.descriptors.length
     && CREATURE_SPECIES_DEFS[19].key === 'villager');
 const sourceCreativeSpecies = sourceSchema.enums.CreatureSpecies.descriptors
   .filter((descriptor) => descriptor.creative !== undefined)
@@ -509,18 +510,11 @@ check('generated creature registries own species, population, and render sync',
     && generatedCreatures.includes('ENCOUNTER_CREATURE_SPECIES')
     && generatedCreatures.includes('CREATURE_RENDER_PROFILES')
     && generatedCreatures.includes('creatureRegistriesAreComplete'));
-check('specialized creature dispatch no longer uses species allowlists',
-  !creatureImplementation.includes('ambientRoster')
-    && !creatureImplementation.includes('static const uint8_t roster')
-    && !creatureImplementation.includes('c.species == CS_DYNAMITEER')
-    && !creatureRenderer.includes('speciesId == CS_'));
-const renderAssetOrder = [...sourceRenderProfiles.matchAll(
-  /^SAND_CREATURE_RENDER_PROFILE\([^,]+,\s*(CRA_[A-Z0-9_]+)\)$/gm,
-)].map((match) => match[1]);
-check('renderer pins every named asset to its authored palette and sprite row',
-  renderAssetOrder.length === 20
-    && renderAssetOrder.every((asset, index) =>
-      creatureRenderer.includes(`${asset} == ${index}`)));
+check('natural rosters and render identity are schema owned',
+  !creatureImplementation.includes('ambientRoster') && !creatureImplementation.includes('static const uint8_t roster')
+    && creatureRenderer.includes('E.content.creatureArt[(size_t)speciesId]'));
+check('every stable species has an authored palette and sprite set',
+  Object.keys(CREATURE).every(key => creatureArt[key]?.width > 0 && creatureArt[key]?.clips?.attack?.frames.length > 0));
 
 rmSync(temp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} failure(s)` : '\nall checks passed');

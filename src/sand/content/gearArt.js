@@ -40,7 +40,29 @@ export function gearPixels(id) {
       if(winding) pixels[yy*16+xx]=color(fill);
     }
   };
-  if (gear.family <= 3) {
+  if (gear.family === 12) {
+    const base = gear.color, edge = '#283333', light = '#eee4c6';
+    const shapes = {
+      fang: 'M4 2h7v4h-1v3H9v2H7v2H4l2-4V6H4Z',
+      pelt: 'M3 2h3l2 2 2-2h3v3l-2 2 1 5-3 2H7l-3-2 1-5-2-2Z',
+      shell: 'M5 2h6l3 4v5l-4 3H6l-4-3V6Z',
+      coin: 'M5 2h6l3 3v6l-3 3H5l-3-3V5Z',
+      crystal: 'M8 1l5 4-1 7-4 3-4-3-1-7Z',
+      gland: 'M7 1h3v3l3 3v5l-3 3H6l-3-3V8l3-4Z',
+      feather: 'M12 1l2 2v5l-3 4H7l-4 3 2-5V6l4-4Z',
+      antler: 'M7 15V9L3 7V2l2 3 2 1V1l2 4 1 3 3-3V2l2 4-3 5-2 1v3Z',
+      wing: 'M2 2l5 3 7-3v6l-3-1-1 5-3-2-2 4-2-5Z',
+      scarab: 'M6 1h4v2l3 2v5l-3 4H6l-3-4V5Z',
+    };
+    path(shapes[gear.shape] || shapes.crystal, edge);
+    path('M6 4h4l2 3-2 5H6L4 8Z', base);
+    if (gear.shape === 'fang' || gear.shape === 'feather' || gear.shape === 'antler') path(shapes[gear.shape], base);
+    rect(6, 4, 1, 5, light); rect(7, 3, 2, 1, light);
+    if (gear.shape === 'scarab') { rect(7, 5, 2, 8, '#d1ac64'); rect(5, 7, 6, 1, '#d1ac64'); }
+    if (gear.shape === 'coin') { rect(7, 6, 2, 5, edge); rect(5, 8, 6, 1, edge); }
+    if (gear.shape === 'gland') { rect(7, 8, 4, 3, '#e6ab66'); rect(8, 7, 2, 2, '#fff0ba'); }
+    if (gear.shape === 'shell' || gear.shape === 'pelt') { rect(7, 6, 2, 5, edge); rect(4, 7, 7, 1, edge); }
+  } else if (gear.family <= 3) {
     path('M2 13h2v-2h2V9h2V7h2V5h2V3h2V1h1v4h-2v2h-2v2H9v2H7v2H5v2H2Z', '#d6d9c4');
     path('M2 13h2v-2h2v2H4v2H2Z', '#806143');
     if (gear.family === 1) path('M4 9h2v2h2v2H6v-2H4Z', '#cba45e');
@@ -52,8 +74,10 @@ export function gearPixels(id) {
   } else if (gear.family === 5 || gear.family === 9 || gear.family === 11) {
     if (gear.family === 5) rect(7, 5, 2, 10, '#8b6540');
     path('M6 1h4v1h2v2h1v5h-2v2H5V9H3V4h1V2h2Z', '#b69a56');
-    const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57'][gear.spell - 1] || '#daca8d';
-    if (gear.spell === 7) path('M4 3h2v4H4Z M7 2h2v6H7Z M10 3h2v4h-2Z', runeColor);
+    const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57', '#b5f4ff', '#ff963c'][gear.spell - 1] || '#daca8d';
+    if (gear.spell === 10) { rect(7, 2, 2, 8, runeColor); rect(4, 5, 8, 2, runeColor); rect(5, 3, 1, 6, runeColor); rect(10, 3, 1, 6, runeColor); }
+    else if (gear.spell === 11) path('M8 2l3 4v3H5V6l2-1Z', runeColor);
+    else if (gear.spell === 7) path('M4 3h2v4H4Z M7 2h2v6H7Z M10 3h2v4h-2Z', runeColor);
     else if (gear.spell === 8) {
       path('M6 2h4v1h2v4h-2v2H6V7H4V3h2Z', runeColor);
       rect(6, 4, 4, 3, '#23133b');

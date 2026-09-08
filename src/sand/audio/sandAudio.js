@@ -860,7 +860,18 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       playNoise({duration:.09,gain:gain*.25,pan,frequency:900,type:'bandpass',q:1.2,rate:1});
       for (const f of [330,670,1010]) playTone({from:f,to:f*.96,duration:.24,gain:gain*.07,pan,wave:'sine'});
     } else if (type === SOUND_EVENT.RUNE) {
-      if (material >= 7 && material <= 9) {
+      if (material === 10 || material === 11) {
+        const frost = material === 10;
+        playNoise({ duration: frost ? .8 : .38, gain: gain * .34, pan,
+          frequency: frost ? 3600 : 580, toFrequency: frost ? 1300 : 160,
+          buffer: frost ? noiseBuffer : brownBuffer, attack: .04, q: .5 });
+        playTone({ from: frost ? 760 : 140, to: frost ? 1140 : 55,
+          duration: frost ? .65 : .32, gain: gain * .07, pan, wave: 'triangle', attack: .035 });
+        for (const [i, frequency] of (frost ? [2700, 3900, 5100] : [380, 270, 190]).entries())
+          playNoise({ duration: frost ? .14 : .08, gain: gain * .12, pan,
+            frequency, toFrequency: frequency * .55, buffer: frost ? crackleBuffer : brownBuffer,
+            delay: i * .07, attack: .008, q: frost ? .8 : 2.5 });
+      } else if (material >= 7 && material <= 9) {
         const prism = material === 7, star = material === 8;
         playNoise({ duration: star ? 1.15 : .3, gain: gain * .38, pan,
           frequency: star ? 180 : prism ? 5600 : 1400,
@@ -900,7 +911,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       const magic = type === SOUND_EVENT.SPELL_IMPACT;
       const cold = material === MAT.ICE || material === MAT.WATER;
       const acid = material === MAT.ACID;
-      const fire = material === MAT.FIRE;
+      const fire = material === MAT.FIRE || material === MAT.LAVA;
       playSample({ buffer: recordedAssets?.tntDeepExplosion, gain: gain * (fire ? .34 : .21),
         pan, rate: .9 + variation * .16, frequency: fire ? 4800 : 1500,
         duration: fire ? .65 : .35, attack: .001 });

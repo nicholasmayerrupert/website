@@ -10,7 +10,8 @@ int CombatSystem::defense(const Player& p) const {
   return imin(45, amount);
 }
 bool CombatSystem::canGuard(const Player& p) const {
-  return p.equipment[6].count && p.stamina > 0 && (p.actionTicks == 0 || p.actionState == AS_GUARD_RAISE || p.actionState == AS_GUARD_HIT);
+  return p.equipment[6].count && p.stamina > 0
+    && !(p.actionState == AS_GUARD_BREAK && p.actionTicks > 0);
 }
 void CombatSystem::tick(Player& p) {
   if (!p.alive) return;
@@ -20,7 +21,9 @@ void CombatSystem::tick(Player& p) {
     const auto* gear = E.content.gear(p.actionDefinition);
     if (gear && p.actionTicks == p.actionDuration * 2 / 3) strike(p, *gear);
   }
-  if (!p.shieldActive && p.actionTicks == 0 && E.actorTick % 3 == 0) p.stamina = imin(100, p.stamina + 2);
+  if (E.actorTick % 3 == 0 && p.actionTicks == 0 &&
+      (!p.shieldActive || E.actorTick - p.lastShieldDamageTick >= 60))
+    p.stamina = imin(100, p.stamina + (p.shieldActive ? 1 : 3));
   if (E.actorTick % (hasCharm(p, 221) ? 8 : 15) == 0) p.mana = imin(100, p.mana + 1);
   if (hasCharm(p, 220) && E.actorTick - p.lastDamageTick > 300 && E.actorTick % 120 == 0)
     p.health = imin(100, p.health + 1);
@@ -177,6 +180,10 @@ void CombatSystem::enemyTerrainImpact(double x, double y, int radius, uint8_t ma
 
 // Fantasy enemies commit to a telegraphed point before resolving their strike.
 void CombatSystem::enemyAttack(Creature& c) {
+  if (const auto* profile = enemyAttackProfile(c.species, c.attackPattern)) {
+    creatureAttack(c, *profile);
+    return;
+  }
   const auto& species = E.creatures.species(c);
   bool boss = c.species >= CS_THORNBOUND_HART && c.species <= CS_HOLLOW_BELLKEEPER;
   bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
@@ -270,4 +277,85 @@ void CombatSystem::enemyAttack(Creature& c) {
   if (std::hypot(tx-x, ty-y) > range) return;
   c.attackAimX = tx; c.attackAimY = ty; c.facing = tx >= x ? 1 : -1;
   c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+}
+
+void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
+  const auto& species = E.creatures.species(c);
+  const EnemyAttack& attack = base;
+  double x = c.wx + species.w * .5, y = c.wy + species.h * .5;
+  double lx = x - E.fg.worldOffsetX, ly = y - E.fg.worldOffsetY;
+  auto clearLine = [&](double tx, double ty) {
+    double dx = tx - x, dy = ty - y, length = std::hypot(dx, dy);
+    for (double at = 1; at < length; at += 1)
+      if (E.psys.playerCellSolid((int)(lx + dx * at / length), (int)(ly + dy * at / length))) return false;
+    return true;
+  };
+  if (c.attackState == CAS_IDLE) {
+    double tx, ty;
+    if (c.attackCooldown > 0 || !E.creatures.targetPoint(c, tx, ty, nullptr, nullptr)
+        || std::hypot(tx - x, ty - y) > attack.reach || !clearLine(tx, ty)) return;
+    c.attackAimX = tx; c.attackAimY = ty; c.facing = tx >= x ? 1 : -1;
+    c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+    return;
+  }
+  if (c.attackState == CAS_RECOVERING) {
+    c.vx *= .7;
+    c.attackProgress = ++c.attackTicks / 20.0;
+    if (c.attackTicks >= 20) { c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0; }
+    return;
+  }
+  if (c.attackState == CAS_CHARGING) {
+    c.vx *= .7;
+    c.attackProgress = ++c.attackTicks / (double)attack.windup;
+    if (c.attackTicks >= attack.windup) {
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      if (attack.move == EM_LUNGE && species.locomotion != CL_FLYING) c.vy = -.65;
+      if (attack.move <= EM_SLAM) E.audio.emit(SE_SWING, lx, ly, .85, attack.move == EM_SLAM ? 2 : 1);
+    }
+    return;
+  }
+  int tick = c.attackTicks++;
+  c.attackProgress = 1 - c.attackTicks / (double)attack.duration;
+  double dx = c.attackAimX - x, dy = c.attackAimY - y, length = std::max(1.0, std::hypot(dx, dy));
+  if (attack.move == EM_LUNGE) {
+    c.vx = c.facing * 1.35;
+    if (species.locomotion == CL_FLYING || species.locomotion == CL_AQUATIC) c.vy = dy / length * 1.35;
+  }
+  if (tick == 0 && attack.move == EM_RUNE) {
+    E.projectiles.spawnRune(-c.id, lx + dx / length * (species.w * .5 + 1),
+      ly + dy / length * (species.w * .5 + 1), c.attackAimX - E.fg.worldOffsetX,
+      c.attackAimY - E.fg.worldOffsetY, attack.rune, attack.damage);
+  }
+  if (tick == 0 && attack.move == EM_ARROW && (int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
+    Projectile arrow; arrow.id = E.projectiles.nextId++; arrow.owner = -c.id; arrow.kind = PK_ARROW;
+    arrow.px = lx + dx / length * (species.w * .5 + 1); arrow.py = ly;
+    arrow.vx = dx / length * 3.5; arrow.vy = dy / length * 3.5 - .2;
+    arrow.fuse = attack.damage; arrow.charge = 1;
+    E.projectiles.projectiles.push_back(arrow); E.audio.emit(SE_BOW, lx, ly, .8, EMPTY);
+  }
+  if (tick == attack.duration / 3 && attack.move == EM_SLAM)
+    enemyTerrainImpact(c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY, 10, STONE);
+  if (attack.move <= EM_SLAM && (attack.move == EM_LUNGE || tick == attack.duration / 3)) {
+    auto hits = [&](double tx, double ty) {
+      if (attack.move == EM_SLAM) return std::hypot(tx - c.attackAimX, ty - c.attackAimY) < 11;
+      double reach = attack.move == EM_LUNGE ? species.w * .5 + 5 : attack.reach;
+      return std::hypot(tx - x, ty - y) < reach && (tx - x) * c.facing > -2 && clearLine(tx, ty);
+    };
+    if (species.hostile) for (auto& p : E.psys.players) {
+      if (p.active && p.alive && hits(p.px + E.fg.worldOffsetX + p.w * .5, p.py + E.fg.worldOffsetY + p.h * .5))
+        E.psys.damagePlayer(p, attack.damage, 30, lx, ly);
+    }
+    else for (auto& other : E.creatures.creatures) {
+      const auto& target = E.creatures.species(other);
+      if (!other.alive || !target.hostile || other.hurtCooldown || !hits(other.wx + target.w * .5, other.wy + target.h * .5)) continue;
+      other.health -= attack.damage; other.hurtCooldown = 20; other.vx += c.facing * .7;
+      E.audio.emit(SE_MELEE_HIT, other.wx - E.fg.worldOffsetX, other.wy - E.fg.worldOffsetY, .8, STONE);
+      if (other.health <= 0) E.creatures.killCreature(other);
+    }
+  }
+  if (c.attackTicks >= attack.duration) {
+    c.attackState = CAS_RECOVERING; c.attackTicks = 0; c.attackProgress = 0;
+    c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = attack.recovery;
+    c.vx *= .3; c.vy *= .6;
+  }
 }

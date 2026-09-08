@@ -890,6 +890,15 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     }
     worldSquare(sx,sy,.70,.23f,.25f,.20f);
     worldSquare(sx-ux*.08,sy-.1,.43,.86f,.81f,.64f);
+    if (shieldActive && (animState == AS_GUARD_HIT || animState == AS_GUARD_RAISE)) {
+      float alpha = (float)((1-phase)*.65);
+      for (int i = -16; i <= 16; i++) {
+        double a = std::atan2(ay,ax) + i*3.14159265/32;
+        worldSquare(pxc+PLAYER_W*.5+std::cos(a)*(radiusX+.8),
+          pyc+PLAYER_H-spriteHeight*art.pixelScale*.5+std::sin(a)*(radiusY+.8),
+          .20,.82f,.91f,1,alpha);
+      }
+    }
     if (animState==AS_GUARD_HIT && phase<.55) for(int ray=0;ray<5;ray++) {
       double a=std::atan2(ay,ax)+(ray-2)*.42;
       double distance=1.3+phase*3;
@@ -938,7 +947,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       : 1.55-kick*kick*.65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     bool carrying = E.planetId == PL_FRONTIER &&
-      ((gear && (gear->family <= 3 || gear->family == 6 || gear->family == 7 || gear->family == 8 || gear->family == 10 || gear->family == 11) && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
+      ((gear && (gear->family <= 3 || gear->family == 6 || gear->family == 7 || gear->family == 8 || gear->family >= 10) && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
        || (heldItemKind == IK_MINING_TOOL && animState != AS_AXE));
     if (carrying) {
       // Hold the tool upright in front of a lowered elbow.
@@ -1274,7 +1283,7 @@ void GLPresenter::glDrawPlayers() {
 // vector — no JS state push, exactly like host-side player drawing.
 // Draw one dropped item/particle. Engine-owned and host-snapshot items share this
 // path, so id-keyed bob/glimmer stay in sync.
-void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
+void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, int definitionId, double px, double py, int life,
                    int camCol, int camRow) {
   uint32_t c = itemKind == IK_MATERIAL ? MAT_COLOR[material]
              : itemKind == IK_ARROW ? 0xffd6c49au
@@ -1307,6 +1316,19 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
   // py) so a resting item never sinks into the surface. x uses the float point.
   double cx = (px - camCol) * glCellDev + glOffX;
   double cy = (py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
+  if (kind == IT_ITEM && itemKind == IK_GEAR) {
+    const auto* gear = E.content.gear(definitionId);
+    if (gear) {
+      double pixel = glCellDev * .20, bottom = (py + bob - camRow) * glCellDev + glOffY;
+      for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+        uint32_t color = gear->icon[y*16+x];
+        if (!color) continue;
+        glUniform4f(glc->uColor, (color & 255)/255.f, ((color >> 8)&255)/255.f, ((color >> 16)&255)/255.f, 1);
+        glSolidDev(cx + (x-8)*pixel, bottom + (y-16)*pixel, pixel, pixel);
+      }
+      return;
+    }
+  }
   if (kind == IT_ITEM && itemKind == IK_MATERIAL) {
     double u = glCellDev;
     double bottom = (py + bob - camRow) * u + glOffY;
@@ -1463,14 +1485,14 @@ void GLPresenter::glDrawItems() {
     glUniform1i(glc->uGutter, 0);
     for (int i = 0; i < n; i++) {
       const float* it = &glExtItems[(size_t)i * IS_STRIDE];
-      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_ITEM_KIND], (int)it[IS_MATERIAL], (int)it[IS_COUNT], (int)it[IS_TOOL_TIER], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
+      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_ITEM_KIND], (int)it[IS_MATERIAL], (int)it[IS_COUNT], (int)it[IS_TOOL_TIER], (int)it[IS_DEFINITION_ID], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
     }
     return;
   }
   if (E.itemsys.items.empty()) return;
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
-  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.count, it.toolTier, it.px, it.py, it.life, camCol, camRow);
+  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.count, it.toolTier, it.definitionId, it.px, it.py, it.life, camCol, camRow);
 }
 
 void GLPresenter::glDrawProjectiles() {
@@ -1494,8 +1516,8 @@ void GLPresenter::glDrawProjectiles() {
     if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD) {
       const auto* gear = E.content.gear((int)fuse);
       int spell = gear ? gear->spell : 1;
-      static const float colors[9][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f}};
-      const auto& tint = colors[imax(0,imin(8,spell-1))];
+      static const float colors[11][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f},{.55f,.90f,1},{1,.42f,.08f}};
+      const auto& tint = colors[imax(0,imin(10,spell-1))];
       if (kind == PK_RUNE_FIELD) {
         double phase = (1 - charge) * (spell == 8 ? 72 : 36);
         if (spell == 8) {
@@ -1522,6 +1544,41 @@ void GLPresenter::glDrawProjectiles() {
             glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
           }
         }
+        continue;
+      }
+      if (kind == PK_RUNE && spell == 10) {
+        // A broad, translucent snow cloud matches the swept collision envelope.
+        for (int mote = 0; mote < 28; mote++) {
+          double angle = mote * 2.39996 + E.actorTick * .055;
+          double radius = .5 + (mote % 7) * .42;
+          double mx = std::cos(angle)*radius - vx*(mote/7)*1.1;
+          double my = std::sin(angle)*radius - vy*(mote/7)*1.1;
+          double size = (mote % 3 ? .85 : 1.4)*glCellDev;
+          glUniform4f(glc->uColor,.57f,.89f,1,mote % 3 ? .42f : .18f);
+          glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
+          if (mote % 4 == 0) {
+            glUniform4f(glc->uColor,.88f,1,1,.9f);
+            glSolidDev(cx+mx*glCellDev-.42*glCellDev,cy+my*glCellDev-.10*glCellDev,.84*glCellDev,.20*glCellDev);
+            glSolidDev(cx+mx*glCellDev-.10*glCellDev,cy+my*glCellDev-.42*glCellDev,.20*glCellDev,.84*glCellDev);
+          }
+        }
+        continue;
+      }
+      if (kind == PK_RUNE && spell == 11) {
+        for (int mote = 0; mote < 10; mote++) {
+          double t = mote*.45, size = (.6-mote*.035)*glCellDev;
+          glUniform4f(glc->uColor,1,.35f+mote*.035f,.06f,1-mote/11.f);
+          glSolidDev(cx-vx*t*glCellDev,cy-(vy*t+std::sin(mote+E.actorTick*.2)*.3)*glCellDev,size,size);
+        }
+        for (int row = -3; row <= 3; row++) {
+          double half = row == -3 || row == 3 ? 1.0 : row == -2 || row == 2 ? 1.5 : 1.8;
+          glUniform4f(glc->uColor,.26f,.14f,.17f,1);
+          glSolidDev(cx-half*glCellDev,cy+row*.5*glCellDev,half*2*glCellDev,.55*glCellDev);
+          glUniform4f(glc->uColor,1,row%2 ? .34f : .65f,.08f,1);
+          glSolidDev(cx-(half-.35)*glCellDev,cy+row*.5*glCellDev+.10*glCellDev,(half-.35)*2*glCellDev,.28*glCellDev);
+        }
+        glUniform4f(glc->uColor,1,.91f,.55f,1);
+        glSolidDev(cx-.65*glCellDev,cy-.55*glCellDev,.60*glCellDev,.60*glCellDev);
         continue;
       }
       bool burst = kind == PK_RUNE_BURST;
@@ -1961,7 +2018,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     bool chargeAttack = (speciesId == CS_THORNBOUND_HART && attackPattern == 0) || speciesId == CS_BRIAR_WOLF || speciesId == CS_FOX || speciesId == CS_BONE_GUARD;
     bool ring = (speciesId == CS_HOLLOW_BELLKEEPER && attackPattern == 0) || (heavy && attackPattern == 2 && speciesId != CS_MIRE_MATRON);
     auto mark = [&](double wx, double wy, double radius, float opacity) {
-      bool cold = speciesId == CS_MIRE_MATRON;
+      bool cold = speciesId == CS_MIRE_MATRON || speciesId == CS_FROST_GIANT;
       bool violet = speciesId == CS_HOLLOW_BELLKEEPER;
       bool green = speciesId == CS_FEN_WISP;
       for (int i = 0; i < 64; i++) {
@@ -1973,7 +2030,31 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       }
     };
     float opacity = attackState == CAS_FIRING ? .9f : (float)(.2+attackProgress*.6);
-    if (chargeAttack) {
+    const auto* profile = enemyAttackProfile((uint8_t)speciesId, attackPattern);
+    if (profile) {
+      EnemyMove move = profile->move;
+      double cx = px + speciesDef.w*.5, cy = py + speciesDef.h*.5;
+      float red = speciesId == CS_FROST_GIANT ? .55f : speciesId == CS_FEN_WISP ? .35f : 1;
+      float green = speciesId == CS_FROST_GIANT ? .90f : speciesId == CS_FEN_WISP ? 1 : .65f;
+      float blue = speciesId == CS_FROST_GIANT ? 1 : .25f;
+      if (move == EM_MELEE) {
+        for (int i = -10; i <= 10; i++) {
+          double angle = (facing > 0 ? 0 : 3.14159) + i*.12;
+          glUniform4f(glc->uColor,red,green,blue,opacity*.75f);
+          glSolidDev((cx+std::cos(angle)*profile->reach-camCol)*cell+glOffX,
+            (cy+std::sin(angle)*profile->reach-camRow)*cell+glOffY,.28*cell,.28*cell);
+        }
+      } else if (move == EM_SLAM) mark(aimX, aimY, 10, opacity);
+      else {
+        double dx = aimX-cx, dy = aimY-cy, distance = std::max(1.0, std::hypot(dx,dy));
+        for (double at = speciesDef.w*.5+2; at < distance; at += 3) {
+          glUniform4f(glc->uColor,red,green,blue,opacity*.55f);
+          glSolidDev((cx+dx*at/distance-camCol)*cell+glOffX,
+            (cy+dy*at/distance-camRow)*cell+glOffY,.30*cell,.30*cell);
+        }
+        if (move == EM_RUNE) mark(aimX, aimY, profile->rune == 309 ? 7 : profile->rune == 310 ? 5 : 4, opacity*.7f);
+      }
+    } else if (chargeAttack) {
       for (int i = 0; i < 40; i+=2) {
         glUniform4f(glc->uColor,.96f,.67f,.30f,opacity);
         glSolidDev((px+speciesDef.w*.5+facing*i-camCol)*cell+glOffX,(py+speciesDef.h-camRow)*cell+glOffY,.6*cell,.25*cell);
@@ -1992,9 +2073,14 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
-  int clipState = !alive ? CC_DEATH : hurtCooldown > 0 ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : animFrame ? CC_MOVE : CC_IDLE;
+  int clipState = !alive ? CC_DEATH : hurtCooldown > 0 ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : animFrame ? CC_MOVE : CC_IDLE;
   const auto& clip = art.clips[clipState];
-  int frame = clip.offset + (alive ? clip.frameAt(E.actorTick) : clip.count - 1);
+  int pose = !alive ? imin(clip.count - 1, animFrame) : clip.frameAt(E.actorTick);
+  if (alive && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
+    double progress = attackState == CAS_FIRING ? 1 - attackProgress : attackProgress;
+    pose = imin(clip.count - 1, imax(0, (int)(progress * clip.count)));
+  }
+  int frame = clip.offset + pose;
   // A little whole-sprite follow-through keeps the detailed limbs from feeling
   // like a flipbook pasted to the AABB. Walkers rise on their passing steps,
   // swimmers roll gently, and the downstroke gives the bird visible lift.
@@ -2015,7 +2101,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     double windup = attackState == CAS_CHARGING ? attackProgress : 0;
     sy += windup * .45 * cell;
     sx -= facing * windup * .35 * cell;
-    if (attackState == CAS_FIRING) sx -= facing * ((E.actorTick & 1) ? .35 : .12) * cell;
+    if (attackState == CAS_FIRING) sx += facing * std::sin((1-attackProgress)*3.14159) * .45 * cell;
     if (windup > .1) {
       glUniform4f(glc->uColor, 1, .72f, .18f, (float)(.4 + windup * .6));
       glSolidDev(sx + sw * cell * .5 - .2 * cell, sy - 3.5 * cell, .4 * cell, 1.4 * cell);

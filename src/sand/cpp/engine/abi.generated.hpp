@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 49;
+static const int ABI_VERSION = 50;
 
-static const uint64_t ABI_FINGERPRINT = 0x5d3f4e26076cULL;
+static const uint64_t ABI_FINGERPRINT = 0xea7d10cc5897ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -1191,6 +1191,11 @@ enum CreatureSpeciesAbi : int {
   CREATURE_BONE_GUARD = 26,
   CREATURE_FEN_WISP = 27,
   CREATURE_ROOT_KNIGHT = 28,
+  CREATURE_FROST_GIANT = 29,
+  CREATURE_MUMMY = 30,
+  CREATURE_LAVA_TOAD = 31,
+  CREATURE_VILLAGE_GUARD = 32,
+  CREATURE_VILLAGE_HUNTER = 33,
 };
 
 static constexpr bool isCreatureSpeciesAbiValue(int value) {
@@ -1224,6 +1229,11 @@ static constexpr bool isCreatureSpeciesAbiValue(int value) {
     case CREATURE_BONE_GUARD:
     case CREATURE_FEN_WISP:
     case CREATURE_ROOT_KNIGHT:
+    case CREATURE_FROST_GIANT:
+    case CREATURE_MUMMY:
+    case CREATURE_LAVA_TOAD:
+    case CREATURE_VILLAGE_GUARD:
+    case CREATURE_VILLAGE_HUNTER:
       return true;
     default: return false;
   }
@@ -1233,6 +1243,7 @@ enum CreatureAttackState : uint8_t {
   CAS_IDLE = 0,
   CAS_CHARGING = 1,
   CAS_FIRING = 2,
+  CAS_RECOVERING = 3,
 };
 
 static constexpr bool isCreatureAttackStateValue(int value) {
@@ -1240,6 +1251,7 @@ static constexpr bool isCreatureAttackStateValue(int value) {
     case CAS_IDLE:
     case CAS_CHARGING:
     case CAS_FIRING:
+    case CAS_RECOVERING:
       return true;
     default: return false;
   }

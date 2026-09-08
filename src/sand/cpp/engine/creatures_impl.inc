@@ -129,12 +129,17 @@ bool CreatureSystem::worldRuleAllows(
 
 bool CreatureSystem::worldRuleAllows(
     uint8_t speciesId, double wx, double wy) const {
-  if (speciesId >= CS_THORNBOUND_HART && E.planetId != PL_FRONTIER) return false;
+  if (speciesId >= CS_COUNT) return false;
+  if (speciesId >= CS_THORNBOUND_HART && CREATURE_SPECIES[speciesId].hostile && E.planetId != PL_FRONTIER) return false;
   if (E.planetId == PL_FRONTIER && speciesId < CS_COUNT
       && CREATURE_SPECIES[speciesId].hostile
       && wx >= E.content.repairBounds[0] - 64 && wx <= E.content.repairBounds[2] + 64
       && wy >= E.content.repairBounds[1] - 48 && wy <= E.content.repairBounds[3] + 32)
     return false;
+  if (speciesId == CS_MUMMY) {
+    auto context = spawnWorldContext(wx, wy);
+    if (context.featureKind != WF_LANDMARK || context.surfaceBiome != BIOME_DESERT) return false;
+  }
   return speciesId < CS_COUNT
     && worldRuleAllows(
       CREATURE_SPECIES[speciesId].world, spawnWorldContext(wx, wy));
@@ -142,7 +147,8 @@ bool CreatureSystem::worldRuleAllows(
 
 int CreatureSystem::worldSpawnWeight(
     uint8_t speciesId, const WorldContext& context) const {
-  if (speciesId >= CS_COUNT || (speciesId >= CS_THORNBOUND_HART && E.planetId != PL_FRONTIER)) return 0;
+  if (speciesId >= CS_COUNT || (speciesId >= CS_THORNBOUND_HART && CREATURE_SPECIES[speciesId].hostile && E.planetId != PL_FRONTIER)) return 0;
+  if (speciesId == CS_MUMMY && (context.featureKind != WF_LANDMARK || context.surfaceBiome != BIOME_DESERT)) return 0;
   const CreatureWorldRule& rule = CREATURE_SPECIES[speciesId].world;
   if (!worldRuleAllows(rule, context)) return 0;
   int weight = rule.baseWeight;
@@ -281,7 +287,17 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     double wy = fy + uy * dist - s.h * 0.5;
     int centerX = (int)std::floor(wx + s.w * 0.5);
     int surface = E.terrain.genSurfaceAbs(centerX);
-    if (r.habitat == CH_SURFACE) {
+    if (speciesId == CS_MUMMY) {
+      // Tomb floors may lie above or below the natural surface.
+      bool found = false;
+      for (int d = 0; d < 112 && !found; d++) for (int sign : {1, -1}) {
+        double cy = std::floor(fy - s.h * .5) + sign * d;
+        if (boxFitsHabitat(speciesId, wx, cy) && worldRuleAllows(speciesId, wx + s.w * .5, cy + s.h * .5)) {
+          wy = cy; found = true; break;
+        }
+      }
+      if (!found) continue;
+    } else if (r.habitat == CH_SURFACE) {
       wy = surface - s.h - 2;
       for (int down = 0; down <= 5; down++) if (boxFitsHabitat(speciesId, wx, wy + down)) { wy += down; break; }
     } else if (r.habitat == CH_AIR) {
@@ -337,6 +353,9 @@ int CreatureSystem::addCreature(uint8_t speciesId, double wx, double wy, int id)
   if (speciesId >= CS_COUNT || !hasRecordCapacity()) return 0;
   Creature c; c.id = id; c.species = speciesId; c.wx = wx; c.wy = wy;
   c.health = CREATURE_SPECIES[speciesId].maxHealth;
+  if (speciesId == CS_VILLAGE_GUARD || speciesId == CS_VILLAGE_HUNTER) {
+    c.homeX = wx; c.roamRadius = 24;
+  }
   c.facing = whash1(E.fg.worldSeed ^ 0xC4EA7u, c.id) < 0.5 ? -1 : 1;
   if (creatureBehavior(CREATURE_SPECIES[speciesId]).initializeAttackPattern)
     c.attackPattern = (uint8_t)(id % 3);
@@ -378,15 +397,13 @@ bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy
   return true;
 }
 
-// Prefer a normal off-screen entry. When terrain or buffer geometry offers no
-// such position, reserve the same population capacity and visibly telegraph the
-// best habitat-valid fallback before materializing it.
+// Natural entries require a safe off-screen habitat. A blocked entry waits
+// for another director cadence without reserving an actor or creating a portal.
 bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
   double wx = 0, wy = 0;
   if (findSpawnNearFocus(speciesId, salt, true, wx, wy))
     return spawnCreatureNatural(speciesId, wx, wy) != 0;
-  if (!findSpawnNearFocus(speciesId, salt ^ 0xB4EAC5u, false, wx, wy)) return false;
-  return queueSpawnTelegraph(speciesId, wx, wy, salt);
+  return false;
 }
 
 bool CreatureSystem::spawnVisibleBreachNearFocus(uint8_t speciesId,
@@ -494,14 +511,19 @@ int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy
   if (!worldRuleAllows(
         speciesId, wx + definition.w * 0.5, wy + definition.h * 0.5)) return 0;
   const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
-  int active = (int)pendingSpawns.size(), activeOfSpecies = 0, ambient = 0;
-  for (const CreatureSpawnTelegraph& p : pendingSpawns)
+  int active = (int)pendingSpawns.size(), activeOfSpecies = 0, ambient = 0, hostiles = 0, threat = 0;
+  for (const CreatureSpawnTelegraph& p : pendingSpawns) {
     if (p.species == speciesId) activeOfSpecies++;
+    if (CREATURE_SPECIES[p.species].hostile) { hostiles++; threat += imax(2, encounterCost(p.species)); }
+  }
   for (const Creature& c : creatures) if (c.alive) {
     if (CREATURE_SPECIES[c.species].countsTowardNaturalCap) active++;
     if (isAmbientSpecies(c.species)) ambient++;
+    if (species(c).hostile) { hostiles++; threat += imax(2, encounterCost(c.species)); }
     if (c.species == speciesId) activeOfSpecies++;
   }
+  if (definition.hostile && (hostiles >= ENCOUNTER_HOSTILE_CAP ||
+      threat + imax(2, encounterCost(speciesId)) > ENCOUNTER_ACTIVE_THREAT_CAP)) return 0;
   if (active >= NATURAL_MOB_CAP
       || (isAmbientSpecies(speciesId) && ambient >= AMBIENT_MOB_CAP)
       || activeOfSpecies >= r.maxActive ||
@@ -579,7 +601,7 @@ void CreatureSystem::updateVillageResidents() {
     return;
   int residents = 0;
   for (const Creature& c : creatures)
-    if (c.alive && c.species == CS_VILLAGER) residents++;
+    if (c.alive && (c.species == CS_VILLAGER || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER)) residents++;
   if (residents >= VILLAGE_RESIDENT_CAP) return;
 
   Engine::ActiveLayerScope layerScope(E, &E.fg);
@@ -607,7 +629,12 @@ void CreatureSystem::updateVillageResidents() {
         (int)std::floor(wy + villager.h * .5));
       if ((context.tags & WA_SETTLEMENT) == 0
           || ((context.tags & WA_INDOOR) != 0) != indoors) continue;
-      if (!addCreature(CS_VILLAGER, wx, wy, nextCreatureId)) return;
+      uint32_t role = (uint32_t)(siteKey ^ (siteKey >> 32)) * 2654435761u ^ E.fg.worldSeed;
+      uint8_t residentSpecies = !indoors || role % 4 == 0 ? CS_VILLAGE_GUARD
+        : role % 4 == 1 ? CS_VILLAGE_HUNTER : CS_VILLAGER;
+      if (!addCreature(residentSpecies, wx, wy, nextCreatureId)) return;
+      creatures.back().homeX = wx;
+      creatures.back().roamRadius = indoors ? 12 : 36;
       nextCreatureId++;
       spawnedVillageResidentSites.insert(siteKey);
       residents++;
@@ -720,7 +747,14 @@ void CreatureSystem::updateNaturalPopulation() {
   int totalWeight = 0;
   std::array<int, ENCOUNTER_CREATURE_SPECIES.size()> weights{};
   for (size_t i = 0; i < ENCOUNTER_CREATURE_SPECIES.size(); i++) {
-    weights[i] = worldSpawnWeight(ENCOUNTER_CREATURE_SPECIES[i], focusContext);
+    uint8_t sid = ENCOUNTER_CREATURE_SPECIES[i];
+    weights[i] = worldSpawnWeight(sid, focusContext);
+    double flank = (E.cam.viewportCols > 0 ? E.cam.viewportCols : E.cols * .5) * .5 + 48;
+    for (int direction : {-1, 1}) {
+      double x = focusX + direction * flank;
+      double y = (focusContext.tags & WA_UNDERGROUND) ? focusY : E.terrain.genSurfaceAbs((int)x) - 3;
+      weights[i] = imax(weights[i], worldSpawnWeight(sid, spawnWorldContext(x, y)));
+    }
     totalWeight += weights[i];
   }
   if (totalWeight <= 0) return;
@@ -750,8 +784,17 @@ void CreatureSystem::acquireTarget(Creature& c) {
   const CreatureSpecies& s = species(c);
   c.targetKind = CT_NONE; c.targetId = 0;
   double best = s.sightRange * s.sightRange;
+  if (c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) {
+    for (const Creature& other : creatures) {
+      if (!other.alive || !species(other).hostile || std::fabs(other.wx - c.homeX) > c.roamRadius + 40) continue;
+      double d = (other.wx - c.wx) * (other.wx - c.wx) + (other.wy - c.wy) * (other.wy - c.wy);
+      if (d < best) { best = d; c.targetKind = CT_PREY; c.targetId = other.id; }
+    }
+    c.scanCooldown = s.scanInterval;
+    return;
+  }
   if (s.targetMask & CT_PREY) for (Creature& other : creatures) {
-    if (!other.alive || other.id == c.id || !(s.preyMask & (1u << other.species))) continue;
+    if (!other.alive || other.id == c.id || !(s.preyMask & (1ull << other.species))) continue;
     double dx = other.wx - c.wx, dy = other.wy - c.wy, d = dx * dx + dy * dy;
     if (d < best) { best = d; c.targetKind = CT_PREY; c.targetId = other.id; }
   }
@@ -959,19 +1002,20 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     double wish;
     const CreatureBehaviorProfileDef& behavior = creatureBehavior(s);
-    bool rangedEnemy = behavior.farRange > 0;
+    const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
+    bool rangedEnemy = attack ? attack->move == EM_RUNE || attack->move == EM_ARROW : behavior.farRange > 0;
     if (hasTarget && rangedEnemy) {
       double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
       if (c.attackState != CAS_IDLE) wish = 0;
-      else if (distance > behavior.farRange) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
-      else if (distance < behavior.nearRange) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
+      else if (distance > (attack ? attack->reach * .85 : behavior.farRange)) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
+      else if (distance < (attack ? attack->reach * .35 : behavior.nearRange)) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
       else wish = 0;
     } else {
       wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
                        : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
                        : c.wanderDir * s.walkSpeed * 0.62;
     }
-    if (c.roamRadius) {
+    if (c.roamRadius && (!hasTarget || std::fabs(c.wx - c.homeX) > c.roamRadius + 12)) {
       // Residents pause near visitors and turn before an unsupported edge.
       if (c.wx < c.homeX - c.roamRadius) c.wanderDir = 1;
       if (c.wx > c.homeX + c.roamRadius) c.wanderDir = -1;
@@ -1376,11 +1420,25 @@ void CreatureSystem::fireBore(Player& p) {
 void CreatureSystem::dropWeapon(const Creature& c) {
   if (E.planetId == PL_FRONTIER) {
     if (!species(c).hostile) return;
-    InvSlot item; item.itemKind = IK_GEAR;
-    int roll = (c.id * 17 + c.species * 7) % 12;
-    item.definitionId = roll < 8 ? 320 + roll % 2 : 100 + (c.species % 6) * 6 + roll % 6;
-    item.count = 1;
-    E.itemsys.spawnStack(item, c.wx - E.fg.worldOffsetX + species(c).w * .5, c.wy - E.fg.worldOffsetY, 0, -.4, 12, false);
+    struct Drop { int trophy, reward, chance; };
+    Drop drop{};
+    switch (c.species) {
+#define SAND_ENEMY_DROP(SPECIES, TROPHY, REWARD, CHANCE) case SPECIES: drop = {TROPHY, REWARD, CHANCE}; break;
+#include "enemy_drops.def"
+#undef SAND_ENEMY_DROP
+      default: break;
+    }
+    auto scatter = [&](int definition, int count, double speed) {
+      if (!definition || !E.content.gear(definition)) return;
+      InvSlot item; item.itemKind = IK_GEAR; item.definitionId = definition; item.count = count;
+      E.itemsys.spawnStack(item, c.wx - E.fg.worldOffsetX + species(c).w * .5,
+        c.wy - E.fg.worldOffsetY + species(c).h * .5, speed, -.65, 12, false);
+    };
+    uint32_t seed = E.fg.worldSeed ^ (uint32_t)c.species * 2246822519u;
+    scatter(drop.trophy, drop.chance == 100 ? 3 : 1, -.35);
+    if (whash1(seed, c.id) * 100 < drop.chance) scatter(drop.reward, 1, .4);
+    // A short lull lets the player collect the reward before another encounter.
+    encounterNextTick = imax(encounterNextTick, E.actorTick + 300);
     return;
   }
   uint8_t itemKind = creatureBehavior(species(c)).dropItem;
@@ -1404,7 +1462,7 @@ void CreatureSystem::killCreature(Creature& c) {
   E.missions.onCreatureKilled(c);
   dropWeapon(c);
   c.alive = false;
-  c.deathTicks = 18;
+  c.deathTicks = 18; c.animFrame = 0;
 }
 
 void CreatureSystem::crushCreature(Creature& c) {
@@ -1457,7 +1515,7 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 }
 
 void CreatureSystem::attackTarget(Creature& c) {
-  if (E.planetId == PL_FRONTIER && species(c).hostile) { E.combat.enemyAttack(c); return; }
+  if ((E.planetId == PL_FRONTIER && species(c).hostile) || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) { E.combat.enemyAttack(c); return; }
   const CreatureSpecies& s = species(c);
   switch (creatureBehavior(s).attack) {
     case CAH_DYNAMITEER:
@@ -1511,6 +1569,8 @@ void CreatureSystem::updateCreatures() {
   for (Creature& c : creatures) {
     if (!c.alive) {
       c.deathTicks--;
+      const auto& death = E.content.creatureArt[c.species].clips[CC_DEATH];
+      c.animFrame = (uint8_t)imax(0, imin(death.count - 1, (18 - imax(0, c.deathTicks)) * death.count / 18));
       if (c.rescueProgress >= 1) c.rescueProgress = 2.0 - std::max(0, c.deathTicks) / 30.0;
       continue;
     }
@@ -1554,7 +1614,7 @@ void CreatureSystem::updateCreatures() {
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
     double priorX = c.wx;
-    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0) c.health -= 3; }
+    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0 && c.species != CS_LAVA_TOAD) c.health -= 3; }
     if (c.slowTicks > 0) c.slowTicks--;
     if (c.rootTicks > 0) c.rootTicks--;
     if (species(c).locomotion == CL_AQUATIC) {
@@ -1578,7 +1638,7 @@ void CreatureSystem::updateCreatures() {
         blockingCoverage(c.wx, c.wy, species(c).w, species(c).h) >= 0.5) c.health--;
     uint8_t contactHazard = contactHazardAtBox(
       c.wx, c.wy, species(c).w, species(c).h, E.actorTick + c.id * 7);
-    if (contactHazard != CHP_NONE)
+    if (contactHazard != CHP_NONE && !(c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)))
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
     if (encounterEngaged && !c.rootTicks) attackTarget(c);
     // Four authored poses per species. Tie pose selection to locomotion where

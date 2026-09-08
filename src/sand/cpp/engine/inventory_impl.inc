@@ -211,7 +211,7 @@ bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t 
 int InventorySystem::stackLimit(const InvSlot& stack) const {
   if (stack.itemKind == IK_GEAR) {
     const auto* gear=E.content.gear(stack.definitionId);
-    return gear && gear->family==10 ? 99 : 1;
+    return gear && (gear->family==10 || gear->family==12) ? 99 : 1;
   }
   return inventoryStackLimit(stack.itemKind);
 }

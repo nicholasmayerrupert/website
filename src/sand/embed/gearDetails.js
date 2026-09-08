@@ -1,6 +1,6 @@
 import { EQUIPMENT_BY_ID, EQUIPMENT_SLOTS } from '../content/equipment.js';
 
-const FAMILIES = ['', 'Sword', 'Axe', 'Spear', 'Bow', 'Staff', 'Armor', 'Shield', 'Charm', 'Rune', 'Potion', 'Quest item'];
+const FAMILIES = ['', 'Sword', 'Axe', 'Spear', 'Bow', 'Staff', 'Armor', 'Shield', 'Charm', 'Rune', 'Potion', 'Quest item', 'Creature trophy'];
 const EFFECTS = {
   220: 'Restores 1 health every 2 seconds after 5 seconds without taking damage.',
   221: 'Increases mana regeneration from 4 to 7.5 per second.',
@@ -36,6 +36,6 @@ export function gearDetails(id, equipment = [], equippedSlot = -1) {
     }
   }
   return { name: gear.name, type: `${FAMILIES[gear.family]}${gear.slot >= 0 ? ` · ${gear.slot === 7 ? 'Charm' : EQUIPMENT_SLOTS[gear.slot]}` : ''}${equippedSlot >= 0 ? ' · Equipped' : ''}`,
-    stats, comparison, description: EFFECTS[id] || (gear.family === 4 ? 'Hold attack to draw; release to fire. Requires arrows.'
+    stats, comparison, description: gear.description || EFFECTS[id] || (gear.family === 4 ? 'Hold attack to draw; release to fire. Requires arrows.'
       : gear.family === 7 ? 'Hold F to guard. Blocking costs stamina.' : '') };
 }

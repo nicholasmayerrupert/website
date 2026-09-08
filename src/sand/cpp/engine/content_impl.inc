@@ -154,9 +154,9 @@ bool ContentSystem::load(const int32_t* data, int length) {
   std::map<int, ContentGear> nextEquipment;
   int gearCount = r.bounded(1, 512);
   for (int i = 0; i < gearCount && r.valid; i++) {
-    ContentGear g{r.bounded(1, 10000), r.bounded(1, 11), r.bounded(-1, 8), r.bounded(0, 200),
+    ContentGear g{r.bounded(1, 10000), r.bounded(1, 12), r.bounded(-1, 8), r.bounded(0, 200),
       r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 100),
-      r.bounded(0, 9), r.bounded(0, 6), r.bounded(0, 10000)};
+      r.bounded(0, 11), r.bounded(0, 6), r.bounded(0, 10000)};
     for (auto& pixel : g.icon) {
       pixel=(uint32_t)r.take();
       if (pixel && (pixel>>24)!=255) return false;

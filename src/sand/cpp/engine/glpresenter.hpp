@@ -148,7 +148,7 @@ class GLPresenter {
   std::vector<float> chestData;
   void glDrawChests();
   void glDrawPlayers();
-  void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
+  void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, int definitionId, double px, double py, int life,
                      int camCol, int camRow);
   void glDrawItems();
   void glDrawProjectiles();

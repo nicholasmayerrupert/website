@@ -1,6 +1,6 @@
 // Stable item identities are shared by content compilation, authority, and UI.
 export const EQUIPMENT_SLOTS = ['Head', 'Torso', 'Hands', 'Legs', 'Boots', 'Cloak', 'Offhand', 'Charm I', 'Charm II'];
-export const GEAR_FAMILY = { sword: 1, axe: 2, spear: 3, bow: 4, staff: 5, armor: 6, shield: 7, charm: 8, spell: 9, potion: 10, relic: 11 };
+export const GEAR_FAMILY = { sword: 1, axe: 2, spear: 3, bow: 4, staff: 5, armor: 6, shield: 7, charm: 8, spell: 9, potion: 10, relic: 11, trophy: 12 };
 export const ARMOR_SETS = [
   { name: 'Wayfarer', color: '#82906a', trim: '#c4a978', defense: 1, lore: 'Waxed linen and worn leather, stitched for the long road.' },
   { name: 'Briarbound', color: '#506f49', trim: '#c7ab68', defense: 2, lore: 'Living bark carries the quiet strength of Watchwood.' },
@@ -28,7 +28,7 @@ ARMOR_SETS.forEach((set, index) => EQUIPMENT_SLOTS.slice(0, 6).forEach((slot, pa
   add(100 + index * 6 + part, `${set.name} ${['hood', 'coat', 'gloves', 'leggings', 'boots', 'cloak'][part]}`, 'armor',
     { slot: part, style: index + 1, defense: set.defense, price: 15 + index * 35, description: set.lore })));
 ['Oak buckler', 'Hearthguard shield', 'Dawnward'].forEach((name, i) => add(200 + i, name, 'shield',
-  { slot: 6, defense: 3 + i * 3, style: i + 1, price: 40 + i * 70, description: 'Face an incoming strike and hold F to guard. Blocking consumes stamina.' }));
+  { slot: 6, defense: 3 + i * 3, style: i + 1, price: 40 + i * 70, description: 'Hold F toward danger to interrupt your action and block the forward half-circle. A well-timed raise costs less stamina; stronger shields block more efficiently.' }));
 ['Amber acorn', 'Hearthstone', 'Moonlit reed', 'Iron oath', 'Swift feather', 'Bell fragment'].forEach((name, i) => add(220 + i, name, 'charm',
   { slot: 7, style: i + 1, price: 60 + i * 25, description: ['Slowly replenishes health outside combat.', 'Increases spell recovery.', 'Softens falling damage.', 'Strengthens your armor.', 'Reduces the cost of dodging.', 'Strengthens every weapon.'][i] }));
 ['Ember', 'Rime', 'Gale', 'Stonebreak', 'Briar', 'Lumen'].forEach((name, i) => add(300 + i, `${name} rune`, 'spell',
@@ -43,5 +43,37 @@ add(308, 'Faultline rune', 'spell', { spell: 9, power: 22, mana: 34, cooldown: 7
 add(320, 'Red cordial', 'potion', { power: 45, cooldown: 90, price: 15, description: 'Restores 45 health. Drink with the primary action.' });
 add(321, 'Blue cordial', 'potion', { power: 55, cooldown: 90, price: 15, description: 'Restores 55 mana. Drink with the primary action.' });
 ['Gale Step', 'Windmantle', 'The lost verse', 'Bell clapper'].forEach((name, i) => add(340 + i, name, 'relic', { style: i + 1, price: 0, description: ['An earned breath of wind. Dodge in midair to dash once before landing.', 'Hold jump while falling to ride a gentle current.', 'The words that can wake the Hollow Bell.', 'A forged heart for the silent bell.'][i] }));
+add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 26, mana: 28, cooldown: 66, reach: 64, style: 2, price: 120,
+  description: 'A broad, slow cloud of frost. Chills creatures and freezes water into lasting ice. Recovered from frost giants.' });
+add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 68, style: 3, price: 140,
+  description: 'Lob a molten glob that leaves a small pool of real lava. The lingering lava can burn anyone, including its caster.' });
+// Signature trophies are ordinary, stackable inventory items reserved for future recipes.
+const trophies = [
+  [401, 'Pike tooth', 'A hooked tooth, sharp enough to score river stone.', '#d9dec8', 'fang'],
+  [402, 'Fox pelt', 'Russet fur from a woodland fox.', '#c47b49', 'pelt'],
+  [404, 'Crawler chitin', 'A ridged plate from a cave crawler.', '#7c9671', 'shell'],
+  [407, 'Brigand insignia', 'A battered copper badge from a wandering brigand.', '#d4a76c', 'coin'],
+  [408, 'Sentinel core', 'A dense stone heart scored by the sentinel’s chisel.', '#94b4bd', 'crystal'],
+  [409, 'Caustic gland', 'A sealed bladder of caustic bile.', '#a4bd59', 'gland'],
+  [410, 'Wasp stinger', 'A barbed, amber-tipped stinger.', '#e0bd64', 'fang'],
+  [411, 'Archer fletching', 'Dark flight feathers bound with silver thread.', '#b8a29a', 'feather'],
+  [414, 'Quarry seal', 'A heavy seal carried by the quarry foreman.', '#ac956b', 'coin'],
+  [415, 'Warden heart', 'A smouldering heart behind a lattice of cold iron.', '#ed8d4e', 'crystal'],
+  [416, 'Reactor shard', 'A fragment of the silent reactor.', '#a8d5c6', 'crystal'],
+  [420, 'Thornbound antler', 'Living thorns wind around this ancient antler.', '#b9c58d', 'antler'],
+  [421, 'Mire pearl', 'A cool green pearl from the heart of the fen.', '#83bfaa', 'gland'],
+  [422, 'Castellan ember', 'An ember that remembers the heat of a ruined kingdom.', '#f4a45b', 'crystal'],
+  [423, 'Hollow bell metal', 'Pale metal that hums long after the bell falls silent.', '#b9a3da', 'coin'],
+  [424, 'Briar fang', 'A wolf’s long fang, threaded with green briar.', '#bdd19b', 'fang'],
+  [425, 'Bell bat wing', 'A translucent wing patterned like a tiny stained-glass window.', '#ae8eba', 'wing'],
+  [426, 'Grave sigil', 'An ivory token carried by a bone guard.', '#ddd0a4', 'coin'],
+  [427, 'Wisp filament', 'A strand of marshlight caught inside a glassy coil.', '#8bdac4', 'crystal'],
+  [428, 'Rootwood heart', 'The Root Knight’s tightly knotted living heart.', '#8eab70', 'antler'],
+  [429, 'Glacier heart', 'A blue crystal from a frost giant. Frost feathers gather along its edges.', '#a7e7ed', 'crystal'],
+  [430, 'Funerary scarab', 'A lapis scarab wrapped in a scrap of ancient linen.', '#64b8ba', 'scarab'],
+  [431, 'Magma bladder', 'A cooled, glassy sac from a lava toad, still glowing at its seams.', '#f09a53', 'gland'],
+];
+for (const [id, name, lore, color, shape] of trophies)
+  add(id, name, 'trophy', { price: 0, description: `${lore} Creature trophy; keep for future crafting.`, color, shape });
 export const EQUIPMENT = Object.freeze(gear);
 export const EQUIPMENT_BY_ID = Object.freeze(Object.fromEntries(gear.map(item => [item.id, item])));

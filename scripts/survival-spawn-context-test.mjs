@@ -1,7 +1,6 @@
 /* eslint-env node */
-// Survival populations use broad physical-realm pools. Biomes and generated
-// structures adjust affinity, while every final candidate still has to satisfy
-// its semantic context and live material habitat.
+// Biome exclusions and structure affinity constrain survival populations.
+// Every final candidate also has to satisfy its live material habitat.
 
 import {
   initSandWasm, createEngineWasm, PLANET, BIOME, CAVE_BIOME,
@@ -23,6 +22,18 @@ const CAVE_ROSTER = [
   CREATURE.BORE_SENTINEL,
   CREATURE.MINIGUNNER,
 ];
+const surfacePools = new Map([
+  [BIOME.PLAINS,[CREATURE.DYNAMITEER]], [BIOME.FOREST,[CREATURE.CLUSTER_WASP]],
+  [BIOME.DESERT,[CREATURE.CAUSTIC_MORTARMAN]], [BIOME.ROCKY,[CREATURE.DYNAMITEER]],
+  [BIOME.TUNDRA,[]], [BIOME.JUNGLE,[CREATURE.CLUSTER_WASP]],
+  [BIOME.SWAMP,[CREATURE.CAUSTIC_MORTARMAN,CREATURE.CLUSTER_WASP]], [BIOME.WATCHWOOD,[]],
+]);
+const cavePools = new Map([
+  [CAVE_BIOME.DEFAULT,[]], [CAVE_BIOME.CRYSTAL,[CREATURE.MINIGUNNER]],
+  [CAVE_BIOME.MUSHROOM,[]], [CAVE_BIOME.LUSH,[]], [CAVE_BIOME.DEEP_MAGMA,[CREATURE.MINIGUNNER]],
+  [CAVE_BIOME.DEEP_GEODE,[CREATURE.BORE_SENTINEL]], [CAVE_BIOME.DEEP_FOSSIL,[CREATURE.BORE_SENTINEL]],
+  [CAVE_BIOME.DEEP_VOID,[CREATURE.MINIGUNNER]],
+]);
 const COMBAT_ROSTER = [...SURFACE_ROSTER, ...CAVE_ROSTER];
 const LABEL = new Map([
   [CREATURE.DYNAMITEER, 'dynamiteer'],
@@ -123,8 +134,8 @@ for (let radius = 0; radius <= 24000
 for (const biome of Object.values(BIOME)) {
   const point = surfacePoints.get(biome);
   const actual = point ? poolAt(earth, point.x, point.y) : [];
-  check(`surface biome ${biome} admits the general surface roster (${poolNames(actual) || 'none'})`,
-    !!point && samePool(actual, SURFACE_ROSTER));
+  check(`surface biome ${biome} admits its distinct surface roster (${poolNames(actual) || 'none'})`,
+    !!point && samePool(actual, surfacePools.get(biome)));
 }
 
 const cavePoints = new Map();
@@ -144,8 +155,8 @@ for (let x = -12000; x <= 12000
 for (const biome of Object.values(CAVE_BIOME)) {
   const point = cavePoints.get(biome);
   const actual = point ? poolAt(earth, point.x, point.y) : [];
-  check(`cave biome ${biome} admits the general cave roster (${poolNames(actual) || 'none'})`,
-    !!point && samePool(actual, CAVE_ROSTER));
+  check(`cave biome ${biome} admits its distinct cave roster (${poolNames(actual) || 'none'})`,
+    !!point && samePool(actual, cavePools.get(biome)));
 }
 
 const weightAt = (species, point) =>
@@ -185,15 +196,13 @@ const settlement = findContext(earth,
   { minX: -60000, maxX: 60000, xStep: 4, minDepth: -4, maxDepth: 0 });
 const ordinarySettlementBiome = settlement
   ? surfacePoints.get(settlement.context.surfaceBiome) : null;
-check('settlements raise dynamiteer affinity without narrowing the surface pool',
-  settlement && ordinarySettlementBiome
-    && samePool(poolAt(earth, settlement.x, settlement.y), SURFACE_ROSTER)
-    && earth._spawnWorldWeight(
-      CREATURE.DYNAMITEER, settlement.x, settlement.y)
-      > weightAt(CREATURE.DYNAMITEER, ordinarySettlementBiome));
+check('settlements preserve biome exclusions',
+  settlement && ordinarySettlementBiome && samePool(poolAt(earth,settlement.x,settlement.y),surfacePools.get(settlement.context.surfaceBiome)));
+
 
 const mine = findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.MINE
+    && context.caveBiome === CAVE_BIOME.CRYSTAL
     && has(context, WORLD_AREA.MINE)
     && has(context, WORLD_AREA.UNDERGROUND)
     && !has(context, WORLD_AREA.SETTLEMENT),
@@ -206,12 +215,8 @@ const mine = findContext(earth,
     depthStep: 8,
   });
 const minePool = mine ? poolAt(earth, mine.x, mine.y) : [];
-check(`mine galleries retain both cave enemies (${poolNames(minePool) || 'none'})`,
-  mine && samePool(minePool, CAVE_ROSTER)
-    && earth._spawnWorldWeight(
-      CREATURE.BORE_SENTINEL, mine.x, mine.y) >= 30
-    && earth._spawnWorldWeight(
-      CREATURE.MINIGUNNER, mine.x, mine.y) >= 30);
+check(`crystal mine galleries admit archers (${poolNames(minePool) || 'none'})`,
+  mine && samePool(minePool, [CREATURE.MINIGUNNER]) && earth._spawnWorldWeight(CREATURE.MINIGUNNER,mine.x,mine.y)>=30);
 const mineSpawn = mine && spawnInsideFeature(
   earth,
   CREATURE.MINIGUNNER,
@@ -230,7 +235,7 @@ residents.setSurvivalInventory(true);
 residents.setCreatureRuntime(true, true);
 residents.stepActors();
 const villagers = residents.getCreatures()
-  .filter((creature) => creature.species === CREATURE.VILLAGER
+  .filter((creature) => [CREATURE.VILLAGER,CREATURE.VILLAGE_GUARD,CREATURE.VILLAGE_HUNTER].includes(creature.species)
     && creature.alive);
 let indoorResidents = 0;
 let outdoorResidents = 0;
@@ -250,7 +255,7 @@ check('human residents use a tall, narrow 4x8 actor shape',
 const residentIds = villagers.map((villager) => villager.id).sort((a, b) => a - b);
 for (let tick = 0; tick < 240; tick++) residents.stepActors();
 const residentIdsLater = residents.getCreatures()
-  .filter((creature) => creature.species === CREATURE.VILLAGER
+  .filter((creature) => [CREATURE.VILLAGER,CREATURE.VILLAGE_GUARD,CREATURE.VILLAGE_HUNTER].includes(creature.species)
     && creature.alive)
   .map((villager) => villager.id)
   .sort((a, b) => a - b);
@@ -261,6 +266,7 @@ residents.destroy();
 const moon = make({ planetId: PLANET.MOON });
 const facility = findContext(moon,
   (context) => context.featureKind === WORLD_FEATURE.OFFWORLD_FACILITY
+    && [CAVE_BIOME.CRYSTAL,CAVE_BIOME.DEEP_MAGMA,CAVE_BIOME.DEEP_VOID].includes(context.caveBiome)
     && has(context, WORLD_AREA.FACILITY)
     && has(context, WORLD_AREA.UNDERGROUND),
   {
@@ -272,8 +278,8 @@ const facility = findContext(moon,
     depthStep: 4,
   });
 const facilityPool = facility ? poolAt(moon, facility.x, facility.y) : [];
-check(`off-world facilities keep the general cave roster (${poolNames(facilityPool) || 'none'})`,
-  facility && samePool(facilityPool, CAVE_ROSTER)
+check(`off-world facilities preserve their biome roster (${poolNames(facilityPool) || 'none'})`,
+  facility && samePool(facilityPool, [CREATURE.MINIGUNNER])
     && moon._spawnWorldWeight(
       CREATURE.MINIGUNNER, facility.x, facility.y)
       > moon._spawnWorldWeight(

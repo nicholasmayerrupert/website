@@ -519,7 +519,7 @@ The extension path for each registry is explicit:
 | Specialized reaction pass | One `ReactionPassDescriptor` plus one uniformly shaped handler in `reactions.hpp` / `reactions_impl.inc` | The descriptor owns phase, priority, source selectors, cadence, layer policy, retry matching, and its callable; the handler is reserved for algorithms outside the generated trigger/effect vocabulary | `node scripts/run-tests.mjs --only acid-stuck`, `node scripts/run-tests.mjs --only structural-stress`, and a handler-specific suite |
 | Persistent loose-cell side channel | One `SAND_PERSISTENT_CELL_CHANNELS` row in `layer.hpp`, plus producer/consumer logic in the owning subsystem | The row's empty value, predicate, codec, and `PCSO_*` whitelist drive allocation, two-phase swap, clear, movement, streaming, resize, replica replacement, validation, and release | `node scripts/run-tests.mjs --only engine-contract` plus the owning subsystem suite |
 | Plant species using existing policies | One `plantSpecies` record plus any seed/wood/leaf material identity records it references, all in `materials.schema.json`; select reusable growth and worldgen profiles | Generated material/species tables drive growth, worldgen, crafting, and palette metadata | `node scripts/run-tests.mjs --only mat-generator`, `node scripts/run-tests.mjs --only flora`, and `node scripts/run-tests.mjs --only biomes` |
-| Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its named palette/sprite asset in `glpresenter_impl.inc` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
+| Creature species | Append one stable-ID `CreatureSpecies.descriptors` record in `abi.schema.json` to reuse existing simulation, population, behavior, and render profiles, then bump `abiVersion`; `cpp/engine/creature_behavior_profiles.def` composes policies from `creature_behavior_policies.def`, and a new policy selector has one registry row plus its localized runtime handler; distinct artwork adds one `cpp/engine/creature_render_profiles.def` row plus its authored palette and clips in `content/creatureArt.js` | `creatures.generated.hpp` owns species descriptors, creative availability, natural-spawn rosters, bounded replication, and exhaustive behavior/render mappings; reusable passive species require no engine allowlist edits | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only creatures`, and `node scripts/run-tests.mjs --only creatures-e2e` |
 | Biome | Append one stable-ID surface or cave record in `biomes.schema.json`; climate is optional for profile-only biomes, surface rows declare structure eligibility, and offworld records inherit `offworldMaterialDefaults`; `cave_profile_handlers.def` composes selectors from `cave_handler_policies.def`; manually bump `abiVersion` because public biome enums import these IDs | Generated C++/JS descriptors own selection, terrain, flora, hazards, structure-material constraints, policy selectors, and ABI enum imports | `node scripts/run-tests.mjs --only biome-generator`, `node scripts/run-tests.mjs --only biomes`, and the relevant prefetch/seam suite; include `--only worldgen-version` when output changes |
 | Planet using existing profiles | One explicit-ID `PlanetId.descriptors` record in `abi.schema.json`, selecting compatible generation/off-world-material and presentation profiles plus gameplay capabilities | Generated C++/JS descriptors own identity, gravity, load-bearing facility materials, capability flags, and lookup helpers | `node scripts/run-tests.mjs --only planet-selection`, `node scripts/run-tests.mjs --only planet-gravity`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generated feature/site family | One `worldgen_features.def` row plus its localized plan/query/overlap/stamp callbacks; add stable semantic enums in `abi.schema.json` only for a public identity | The row generates the family enum, callback declarations, dispatch, reach, composition, and context registration | `node scripts/run-tests.mjs --only world-context`, `node scripts/run-tests.mjs --only structures`, and `node scripts/run-tests.mjs --only worldgen-version` |
@@ -796,21 +796,30 @@ explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
 crawlers, moles, and birds enter quietly on an ambient cadence, use a three-actor
 share of the eight-actor natural cap, and retain material-aware water, surface,
 cave, or air habitat requirements.
-Survival encounters spend a shared deterministic threat budget at a paced
-two-second cadence: habitat-valid entries beyond the real viewport margin are
-preferred, while an audible, replicated 0.9–1.4 second breach portal telegraphs
-the visible fallback before its reserved enemy becomes active. All three surface
-combatants can appear in any surface biome and both cave combatants can appear
-in any cave biome. Biomes and generated structures adjust their weights:
-dynamiteers favor open terrain and settlements, mortarmen favor desert and
-swamp, wasps favor forests, jungles, and swamps, bore sentinels favor mines and
-geode/fossil depths, and minigunners favor mines, facilities, and
-crystal/magma/void depths. Village interiors remain excluded from combat
-spawning.
+Survival encounters spend a shared deterministic threat budget at a four-second
+cadence. Natural entries must clear the actual camera and all player views by
+20 cells; when there is no valid offscreen habitat the director waits. Combat
+has a four-hostile cap and a twelve-point active threat ceiling in addition to
+the eight-actor natural cap and local density limits. Defeats leave a five-second
+collection lull. Explicit development/scripted breach requests remain separate
+from natural population policy.
+
+Surface and cave biome masks are hard exclusions. Plains and rocky regions carry
+brigands; desert and swamp carry caustic casters; forests and jungles carry wasps.
+Bore sentinels inhabit geode/fossil depths and archers inhabit crystal, magma,
+and void depths. Adventure adds briar wolves in forest/Watchwood/jungle,
+bell bats in rocky/Watchwood regions, fen wisps in swamp/jungle, frost giants in
+tundra, mummies inside desert pyramid/tomb landmarks, and lava toads in magma
+caves. The director samples entering bands as well as the current biome, and
+validates each final pose against its own world context and physical habitat.
+Pyramid room searches include floors above and below the natural surface.
 
 Earth villages populate independently of the combat cap. Each material-valid
 building interior has one deterministic resident site and each village has one
-outdoor commons site, capped at twelve loaded villagers. Site identity follows
+outdoor commons site, capped at twelve loaded villagers. Stable site hashes assign
+residents as villagers, guards, or hunters; commons have guards. Guards use
+melee and hunters use bows against nearby hostiles, remain near their home,
+and cannot damage the player. Each role has its own sprite set. Site identity follows
 the immutable village/building plan, so residents hibernate and restore with
 their absolute pose instead of duplicating as the window streams. Villagers,
 surveyors, and IRIS crew render with an upright 9x10 human silhouette aligned to
@@ -1059,7 +1068,12 @@ apply. Foreground targeting looks through liquids for terrain; liquid collection
 liquids outside the player when no terrain is reached. Surrounding liquids do
 not contribute to terrain mining difficulty or get removed by excavation. Weapons use
 the right hand and shields the left, with depth following player facing. Raised
-shields follow an oval around the visible body to cover overhead aim.
+shields follow an oval around the visible body to cover overhead aim. Adventure
+shields block the forward 180 degrees. Raising guard immediately cancels weapon,
+spell, bow, mining, and placement actions; canceled actions never resolve later.
+Shield quality reduces stamina costs, timely raises reduce them further, and
+guard-hit flashes show the protected arc. Guard break has a committed recovery.
+Stamina returns while a held guard is not taking hits.
 
 Adventure enemy charges gouge terrain along their path, heavy strikes excavate
 their marked areas, and expanding shockwaves fracture radial channels. These
@@ -1091,3 +1105,25 @@ for copper, including in existing saves. Fen wisps use a three-shard choir on
 their second attack; root knights and Cinder Castellans use Faultline; the Hollow
 Bellkeeper alternates its radial toll with a Hollow Star. The original elemental
 spells remain available.
+
+Ordinary adventure attacks are declared in `cpp/engine/enemy_attacks.def`:
+physical bites/lunges, melee swings, aimed slams, arrows, and elemental casts.
+`CombatSystem` uses the same profile as locomotion and attack markers. Windup,
+attack, and recovery sprite poses follow replicated phase progress. Ordinary
+melee resolves on its contact frame and cannot damage through walls. Death clips
+advance before the corpse is removed. `scripts/author-enemy-art.mjs` rebuilds the
+five frost giant, mummy, lava toad, guard, and hunter sprite sets.
+
+Winterbreath (309) is a slow broad frost cloud that chills creatures and freezes
+water through component-aware edits. Cindermaw (310) lobs a molten glob with a
+bounded real-lava deposit; lingering lava also threatens its player caster.
+Both use the shared rune, inventory, checkpoint, and render paths and can drop
+from their associated creatures. Lava toads tolerate fire and lava contact.
+
+`cpp/engine/enemy_drops.def` assigns a guaranteed signature trophy and an optional
+weapon, rune, or cordial to each adventure hostile. Bosses guarantee their listed
+reward and three trophies. Trophies are droppable, stack to 99, persist in
+checkpoints, and are reserved for future crafting. `content/equipment.js` owns
+names and lore; `gearArt.js` supplies the shared inventory and ground-drop art.
+Use `node scripts/run-tests.mjs --only enemy-ecology,adventure-combat,spell-diversity,survival-spawn-context,enemy-combat-e2e`
+for the focused combat, ecology, loot, streaming, and browser checks.

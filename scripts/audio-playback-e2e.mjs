@@ -134,6 +134,8 @@ try {
       ['blade contact', SOUND_EVENT.MELEE_HIT, 1], ['wand', SOUND_EVENT.RUNE, 1],
       ['frost cast', SOUND_EVENT.RUNE, 2], ['briar cast', SOUND_EVENT.RUNE, 5],
       ['prism choir', SOUND_EVENT.RUNE, 7], ['hollow star', SOUND_EVENT.RUNE, 8],
+      ['winterbreath', SOUND_EVENT.RUNE, 10], ['cindermaw', SOUND_EVENT.RUNE, 11],
+      ['lava impact', SOUND_EVENT.SPELL_IMPACT, MAT.LAVA],
       ['faultline', SOUND_EVENT.RUNE, 9], ['crystal shatter', SOUND_EVENT.SPELL_IMPACT, MAT.CRYSTAL],
       ['star collapse', SOUND_EVENT.SPELL_IMPACT, MAT.NEUTRONIUM],
       ['heavy strike', SOUND_EVENT.HEAVY_IMPACT, MAT.STONE],

@@ -1012,7 +1012,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
         || !isCreatureSpeciesAbiValue((int)in[CSN_SPECIES])
         || !abiPackedIntegerInRange(in[CSN_ANIM_FRAME], 0, 255)
         || !abiPackedIntegerInRange(
-          in[CSN_ATTACK_STATE], CAS_IDLE, CAS_FIRING)
+          in[CSN_ATTACK_STATE], CAS_IDLE, CAS_RECOVERING)
         || !isCreatureAttackStateValue((int)in[CSN_ATTACK_STATE])
         || !abiPackedIntegerInRange(in[CSN_ATTACK_PATTERN], 0, 2))
       return;

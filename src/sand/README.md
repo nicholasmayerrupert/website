@@ -1031,6 +1031,10 @@ The embed owns one Map/Journal/Inventory panel controller in
 transactions and presentation. `worker/adventureSaveStore.js` stores compressed
 full checkpoints in IndexedDB. Checkpoint loading is intended for a fresh
 authority engine. `?nosave` and studio/replay sessions do not write campaign saves.
+Journal → Settings & controls → Start fresh clears adventure checkpoints and
+the local journal, then reloads. The authority disables saving and drains any
+in-progress checkpoint before deleting saves, including backups. Sound
+preferences and unrelated browser storage are preserved.
 
 Player content supports 29 named animation clips and creature content supports
 eight named clips, with up to 32 frames and optional per-frame durations. Keep

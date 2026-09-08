@@ -1,4 +1,4 @@
-import { loadAdventure, saveAdventure, encodeAdventureOrigin, decodeAdventureOrigin } from './adventureSaveStore.js';
+import { loadAdventure, saveAdventure, deleteAdventure, encodeAdventureOrigin, decodeAdventureOrigin } from './adventureSaveStore.js';
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
   ABI_FINGERPRINT,
@@ -2247,6 +2247,22 @@ self.onmessage = async ({ data }) => {
     return;
   }
   if (closing) return;
+  if (data.type === 'adventure-delete-save') {
+    const wasPersisting = persistAdventure;
+    persistAdventure = false;
+    clearTimeout(saveTimer); saveTimer = 0; saveAgain = false;
+    // Finish any captured checkpoint before clearing both the save and its backup.
+    await saveCompletion;
+    try {
+      await deleteAdventure();
+      self.postMessage({ type: 'adventure-save-deleted', error: '' });
+    } catch (error) {
+      persistAdventure = wasPersisting;
+      scheduleAdventureSave();
+      self.postMessage({ type: 'adventure-save-deleted', error: error.message || 'Could not delete this adventure' });
+    }
+    return;
+  }
   if (data.type === 'replay-export') {
     exportReplay(data.requestId, data.view);
     return;

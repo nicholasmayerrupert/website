@@ -54,6 +54,7 @@ export function createWorldWorkerClient(ctx) {
   let livenessProbePending = false;
   let failNextMirrorApply = false;
   let closed = false;
+  let deleteSaveRequest = null;
   const saveBeforeLeaving = () => {
     if (!closed) (parkedLiveWorker || worker).postMessage({ type: 'adventure-save-now' });
   };
@@ -1471,6 +1472,7 @@ export function createWorldWorkerClient(ctx) {
     },
     destroy() {
       if (closed) return;
+      deleteSaveRequest?.reject(new Error('Simulation worker was closed.'));
       globalThis.window?.removeEventListener?.('pagehide', saveBeforeLeaving);
       globalThis.document?.removeEventListener?.('visibilitychange', saveWhenHidden);
       closed = true;
@@ -1534,6 +1536,30 @@ export function createWorldWorkerClient(ctx) {
     getMission() { return mission; },
     getDiscovery() { return discovery; },
     getSaveState() { return saveState; },
+    deleteAdventureSave() {
+      if (closed) return Promise.reject(new Error('The adventure is closed.'));
+      if (deleteSaveRequest) return deleteSaveRequest.promise;
+      const target = parkedLiveWorker || worker;
+      const promise = new Promise((resolve, reject) => {
+        const finish = (error) => {
+          target.removeEventListener('message', onMessage);
+          target.removeEventListener('error', onError);
+          deleteSaveRequest = null;
+          if (error) reject(error);
+          else { saveState = { savedAt: 0, error: '' }; resolve(); }
+        };
+        const onMessage = ({ data }) => {
+          if (data?.type === 'adventure-save-deleted') finish(data.error ? new Error(data.error) : null);
+        };
+        const onError = () => finish(new Error('The adventure could not be restarted. Please reload and try again.'));
+        deleteSaveRequest = { reject: finish };
+        target.addEventListener('message', onMessage);
+        target.addEventListener('error', onError);
+        try { target.postMessage({ type: 'adventure-delete-save' }); } catch (error) { finish(error); }
+      });
+      if (deleteSaveRequest) deleteSaveRequest.promise = promise;
+      return promise;
+    },
     getChests() { return chests; },
     getChestLoot() { return chestLoot; },
     consumeMissionDirty() {
@@ -1635,6 +1661,7 @@ export function createWorldWorkerClient(ctx) {
   };
   const restartWorker = () => {
     if (closed) return;
+    deleteSaveRequest?.reject(new Error('The adventure reconnected. Please try restarting again.'));
     clearTimeout(resizeTimer);
     resizeTimer = 0;
     awaitingResizeId = 0;

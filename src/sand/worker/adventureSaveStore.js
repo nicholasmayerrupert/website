@@ -88,6 +88,19 @@ export async function saveAdventure(bytes, savedAt = Date.now()) {
   } finally { db.close(); }
 }
 
+export async function deleteAdventure() {
+  const db = await database();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('checkpoints', 'readwrite');
+      transaction.objectStore('checkpoints').clear();
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('Save deletion cancelled'));
+    });
+  } finally { db.close(); }
+}
+
 // Replay origins carry the same authoritative checkpoint as a resumed adventure.
 export async function encodeAdventureOrigin(bytes) {
   const payload = await compress(bytes);

@@ -506,6 +506,9 @@ export function createSandGame(container, opts = {}) {
       ctx.worldWorker?.config({ paused: !!paused, clearInput: true });
     },
     getSaveState() { return ctx.worldWorker?.getSaveState() || {}; },
+    deleteAdventureSave() {
+      return ctx.worldWorker?.deleteAdventureSave() || Promise.reject(new Error('The adventure is still loading.'));
+    },
     getPlayer() { return loop.localPlayer(); },
     getCombatActors() { return ctx.engine?.getCreatures() || []; },
     getChests() { return ctx.worldWorker?.getChests() || []; },

@@ -59,6 +59,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   root.append(style, nav, overlay, caption, notice, bossBar, trailHint);
   let panel = null, selected = 0, tracked = -1, mission = null, dialogueOpen = false;
   let previousFocus = null, noticeTimer = 0, lastSignature = '', destroyed = false;
+  let restarting = false;
   const completed = new Set(), seenCreatures = new Set();
   const journalKey = `aster-journal:3:${GAME_WORLD.seed}`;
   const keepJournal = !new URLSearchParams(location.search).has('nosave') && !new URLSearchParams(location.search).has('studio');
@@ -68,7 +69,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     for (const id of Array.isArray(saved.seen) ? saved.seen : []) if (BESTIARY[id]) seenCreatures.add(id);
   } catch { /* The adventure remains playable when browser storage is unavailable. */ }
   function saveJournal() {
-    if (keepJournal) try { localStorage.setItem(journalKey, JSON.stringify({ tracked: GAME_JOBS[tracked]?.key, seen: [...seenCreatures] })); } catch { /* Browser storage can be disabled. */ }
+    if (keepJournal && !restarting) try { localStorage.setItem(journalKey, JSON.stringify({ tracked: GAME_JOBS[tracked]?.key, seen: [...seenCreatures] })); } catch { /* Browser storage can be disabled. */ }
   }
   function anchorPosition(anchor) {
     return { worldX: anchor.x, worldY: anchor.y + (anchor.surface === -2147483648 ? 0 : game.getWorldSurfaceAt(anchor.surface)) };
@@ -145,7 +146,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const pause = () => { game.clearInput?.(); setPaused?.(!!panel || dialogueOpen); };
 
   function open(name) {
-    if (destroyed || panel === name) return;
+    if (destroyed || restarting || panel === name) return;
     const prior = panel;
     if (!prior && name) previousFocus = root.activeElement || document.activeElement;
     panel = name;
@@ -183,7 +184,33 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const journalLayout = el('div', 'ad-journal-layout');
   const questList = el('aside', 'ad-quest-list'), detail = el('article', 'ad-detail');
   journalLayout.append(questList, detail); pages.journal.append(journalLayout);
+  const restart = el('section', 'ad-restart');
+  const restartPrompt = el('div'); restartPrompt.hidden = true;
+  const restartStatus = el('p', 'ad-muted'); restartStatus.setAttribute('role', 'status');
+  const startFresh = button('Start fresh…', () => {
+    startFresh.hidden = true; restartPrompt.hidden = false; cancelRestart.focus();
+    restartPrompt.scrollIntoView({ block: 'nearest' });
+  });
+  const cancelRestart = button('Keep playing', () => {
+    restartPrompt.hidden = true; startFresh.hidden = false; restartStatus.textContent = ''; startFresh.focus();
+  });
+  const confirmRestart = button('Delete save & restart', async () => {
+    if (restarting) return;
+    restarting = true; sheet.inert = true; restartStatus.textContent = 'Starting a fresh adventure…';
+    try {
+      await game.deleteAdventureSave();
+      try { localStorage.removeItem(journalKey); } catch { /* Browser storage can be disabled. */ }
+      location.reload();
+    } catch (error) {
+      restarting = false; sheet.inert = false;
+      restartStatus.textContent = error.message || 'Could not restart. Please try again.';
+      cancelRestart.focus();
+    }
+  }, 'ad-danger');
+  restartPrompt.append(el('p', '', 'Delete this adventure and start again? Your world changes, inventory, quests, and journal will be lost. This cannot be undone.'), cancelRestart, confirmRestart);
+  restart.append(startFresh, restartPrompt, restartStatus);
   function renderJournal() {
+    if (restarting) return;
     questList.replaceChildren(el('div', 'ad-eyebrow', 'Your travels'));
     GAME_JOBS.forEach((quest, index) => {
       const state = mission?.objectives[index]?.state ?? OBJECTIVE_STATE.LOCKED;
@@ -221,6 +248,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     const soundLabel = el('label'); soundLabel.append(sound, document.createTextNode('Sound')); settings.append(soundLabel);
     settings.append(el('p', 'ad-muted', 'A / D move · Shift sprint · S dodge · Space jump · F guard · T talk · 1–9 quickbar'));
     settings.append(el('p', 'ad-muted', 'Left mouse uses your selected item. Right mouse works on the background with a tool.'));
+    settings.append(restart);
     const link = el('a', '', 'Return to the website'); link.href = '/'; settings.append(link); detail.append(settings);
   }
 

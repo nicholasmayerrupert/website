@@ -80,5 +80,50 @@ process.exitCode=await runBrowserCases({adventure:async({page,baseURL,check})=>{
   return restored.bytes.length===good.bytes.length&&restored.bytes.every((v,i)=>v===good.bytes[i])&&again.bytes.every((v,i)=>v===good.bytes[i]);
  });
  check('a corrupt latest checkpoint recovers and repairs from the previous save',recovered);
+ await page.getByRole('button',{name:'Journal',exact:true}).click();
+ await page.getByText('Settings & controls',{exact:true}).click();
+ await page.getByRole('button',{name:'Start fresh…',exact:true}).click();
+ await page.screenshot({path:artifacts+'/restart-mobile.png'});
+ check('restart confirmation fits on mobile',await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.getByRole('button',{name:'Keep playing',exact:true}).click();
+ check('cancelling keeps the current adventure',await page.evaluate(()=>document.querySelector('sand-game')._game.getChests()[0]?.remaining===0));
+ await page.evaluate(()=>{
+  const g=document.querySelector('sand-game')._game;
+  window.restartAdventure=g.deleteAdventureSave;
+  g.deleteAdventureSave=()=>Promise.reject(new Error('Storage is temporarily unavailable.'));
+ });
+ await page.getByRole('button',{name:'Start fresh…',exact:true}).click();
+ await page.getByRole('button',{name:'Delete save & restart',exact:true}).click();
+ await page.getByText('Storage is temporarily unavailable.',{exact:true}).waitFor();
+ check('failed deletion leaves the confirmation usable',await page.getByRole('button',{name:'Keep playing',exact:true}).isEnabled());
+ await page.evaluate(async()=>{
+  const g=document.querySelector('sand-game')._game;
+  g.setAudioMuted(true);localStorage.setItem('restart-unrelated','keep');
+  const {GAME_WORLD,GAME_JOBS}=await import('/src/sand/content/catalog.js');
+  localStorage.setItem(`aster-journal:3:${GAME_WORLD.seed}`,JSON.stringify({tracked:GAME_JOBS[0].key,seen:[]}));
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('aster-adventures',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  // Hold the checkpoint store while the worker starts a save, then release it during deletion.
+  const tx=db.transaction('checkpoints','readwrite'),store=tx.objectStore('checkpoints');
+  let release=false;setTimeout(()=>{release=true;},1500);
+  const hold=()=>{const r=store.count();r.onsuccess=()=>{if(!release)hold();};};hold();
+  tx.oncomplete=()=>db.close();
+  window.dispatchEvent(new Event('pagehide'));
+  g.deleteAdventureSave=async()=>{
+   await window.restartAdventure();
+   window.dispatchEvent(new Event('pagehide'));
+   await new Promise(resolve=>setTimeout(resolve,250));
+   const cleanDb=await new Promise(resolve=>{const r=indexedDB.open('aster-adventures',1);r.onsuccess=()=>resolve(r.result);});
+   const count=await new Promise(resolve=>{const r=cleanDb.transaction('checkpoints').objectStore('checkpoints').count();r.onsuccess=()=>resolve(r.result);});
+   cleanDb.close();sessionStorage.setItem('restart-record-count',String(count));
+  };
+ });
+ await page.waitForTimeout(250);
+ await page.getByRole('button',{name:'Delete save & restart',exact:true}).click();
+ await page.waitForFunction(()=>sessionStorage.getItem('restart-record-count')==='0',null,{timeout:30000});
+ await page.waitForFunction(()=>{const g=document.querySelector('sand-game')?._game;return g?.getPlayer()&&g.getChests()[0]?.remaining>0;},null,{timeout:60000});
+ check('restart clears current and backup saves despite pending and pagehide saves',await page.evaluate(()=>sessionStorage.getItem('restart-record-count')==='0'));
+ check('restart creates a fresh adventure',await page.evaluate(()=>!document.querySelector('sand-game')._game.getSaveState().restored));
+ check('restart preserves sound preferences and unrelated storage',await page.evaluate(()=>document.querySelector('sand-game')._game.getAudioState().muted&&localStorage.getItem('restart-unrelated')==='keep'));
+ check('restart clears journal tracking',await page.evaluate(()=>document.querySelector('sand-game').dataset.trackedObjective==='-1'));
  check('no browser errors',errors.length===0,errors.join('; '));
 }});

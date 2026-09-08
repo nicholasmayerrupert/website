@@ -322,6 +322,16 @@ component registration, and restoration. Browser presentation exposes
   until their backlog drains; smaller fronts finish atomically. Body-owned TNT
   shares a 1,200 source-cell budget with the static front.
 - Presentation diffs use validated row copies and keep only one packet in flight.
+- Moving render lights use bounded repairs without triggering the periodic
+  terrain solve. Only changed emitters enlarge those repairs, and the kept
+  region is clipped to the viewport plus face-light neighbours. Offscreen light
+  is invalidated for future camera repairs instead of solved immediately.
+- Direct skylight initializes every lit cell but queues only its boundary for
+  propagation. Equally lit neighbours cannot brighten one another.
+- Autosaves reserve their complete checkpoint buffer before atomic capture,
+  copy the captured bytes, then checksum that copy in yielding 256 KiB batches.
+  Authority turns continue during checksumming; persisted bytes and integrity
+  validation match the synchronous checkpoint path.
 - Ordinary presentation stream shifts solve lighting for the visible window
   plus its exactness margin. Direct sky rays refresh provenance in all columns,
   preserving sunlight through offscreen shafts across both streaming axes.
@@ -352,6 +362,16 @@ clipped views with larger reference crops. In a local 1366×768 Chromium probe,
 12 added offscreen creatures required 9 extra uniform calls rather than 2,310;
 with 17 loaded creatures, render submission measured 0.20 ms median / 0.30 ms
 p95. These are local DOM and render-submission measurements, not overall FPS.
+
+Mission markers retain unchanged text and placement, and hidden untracked
+objectives skip presentation writes. Chest hover projects both corners before
+changing DOM visibility. Frame diagnostics retain visible stalls over 100 ms;
+visibility transitions reset the clock to exclude tab suspension. The pan
+benchmark replaces its entire rolling frame window after synchronous pixel
+probes before sampling the held-key pan (`frameTimingVersion: 2`).
+Survival prepares a silent AudioContext during loading so audio-device creation
+does not block the first movement or shot. The graph and playback remain gated
+on activation; browsers that reject early creation retry on the gesture.
 
 These optimizations preserve deterministic output except accepted behavior
 changes. The recorded checksum uses the native foreground-plus-background grid

@@ -160,7 +160,14 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
         uint8_t v = lay->skyLight[k];
         if (v > lay->light[k]) {
           lay->light[k] = v;
-          lightBuckets[lay->light[k]].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+          // Directly lit interiors cannot brighten an equally lit neighbour.
+          // Only their boundary needs to enter the propagation queue; every
+          // direct-sky cell receives its value before the flood starts.
+          if ((x > rx0 && lay->skyLight[k - 1] < v) ||
+              (x < rx1 && lay->skyLight[k + 1] < v) ||
+              (y > ry0 && lay->skyLight[k - E.cols] < v) ||
+              (y < ry1 && lay->skyLight[k + E.cols] < v))
+            lightBuckets[v].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
         }
       }
     }

@@ -66,6 +66,15 @@ try {
   console.log('fixture: world stepped');
   const fg=e.getGrid().slice(),bg=e.getGridBg().slice();
   const saved=e.writeCheckpoint(); assert.ok(saved.length>1000);
+  const pendingSave=e.writeCheckpointAsync();
+  let saveYields=0;
+  const duringSave=setInterval(()=>{saveYields++;e.stepActors();e.stepWorld();},0);
+  let asyncSaved;
+  try { asyncSaved=await pendingSave; } finally { clearInterval(duringSave); }
+  assert.ok(saveYields>0,'checkpoint checksumming yields to authority turns');
+  assert.deepEqual(asyncSaved,saved,'async saves retain the exact captured state while authority advances');
+  // Continue the fixture from the captured turn for the restore comparisons.
+  assert.ok(e.readCheckpoint(saved));
   console.log('ok: checkpoint written');
   const restored=createEngineWasm(options); fresh.push(restored);
   assert.ok(restored.readCheckpoint(saved));

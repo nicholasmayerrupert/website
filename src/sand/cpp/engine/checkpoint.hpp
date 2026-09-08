@@ -5,7 +5,7 @@ class CheckpointSystem {
  public:
   explicit CheckpointSystem(Engine& engine) : E(engine) {}
   std::vector<uint8_t> bytes;
-  int write();
+  int write(bool seal = true);
   bool read(const uint8_t* data, int length);
  private:
   Engine& E;

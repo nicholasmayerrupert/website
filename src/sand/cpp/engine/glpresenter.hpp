@@ -68,7 +68,7 @@ class GLPresenter {
   static constexpr int GL_LIGHT_PAN_LOOKAHEAD = 32;
   static constexpr int GL_DYNAMIC_LIGHT_CAP = 32;
   // Inclusive rectangle of exact cached light, including face-light neighbours.
-  // Pan patches extend it; terrain patches invalidate its offscreen portion.
+  // Pan patches extend it; terrain/emitter repairs invalidate its offscreen portion.
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1;
   // Exact x-ranges where a presentation diff changed a structural cell or a
   // worker-tagged user edit. Replication records them before replacing mirror rows.

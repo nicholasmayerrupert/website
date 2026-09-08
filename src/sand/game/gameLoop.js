@@ -364,6 +364,7 @@ export function createGameLoop(ctx, {
   let workerPaused = null;
   let running = false;
   let viewportPaused = false;
+  const resetRafTime = () => { lastRafNow = 0; };
   let lastAmbienceSample = -Infinity;
   let lastPlayerStateSignature = '';
   const shouldPauseWorker = () => ctx.testPaused || ctx.gameplayPaused || ctx.reduced;
@@ -371,9 +372,9 @@ export function createGameLoop(ctx, {
     if (!running || viewportPaused) return;
     raf = requestAnimationFrame(loop);
     const rafDelta = lastRafNow ? now - lastRafNow : 0;
-    // Ignore tab suspension and debugger pauses while retaining ordinary slow
-    // frames below 100 ms.
-    currentRafMs = rafDelta > 0 && rafDelta < 100 ? rafDelta : 0;
+    // Visibility transitions reset the clock; visible hitches, including those
+    // over 100 ms, belong in the frame samples and peak diagnostics.
+    currentRafMs = rafDelta > 0 && !document.hidden ? rafDelta : 0;
     lastRafNow = now;
     const dayChanged = updateDayNight(now);
     const weatherChanged = updateWeatherVisual(now);
@@ -472,11 +473,15 @@ export function createGameLoop(ctx, {
   const start = () => {
     if (running) return;
     running = true;
+    document.addEventListener('visibilitychange', resetRafTime);
+    resetRafTime();
     if (!viewportPaused) raf = requestAnimationFrame(loop);
   };
   const stop = () => {
     running = false;
     cancelAnimationFrame(raf);
+    document.removeEventListener('visibilitychange', resetRafTime);
+    resetRafTime();
   };
   const setViewportPaused = (paused) => {
     const next = !!paused;

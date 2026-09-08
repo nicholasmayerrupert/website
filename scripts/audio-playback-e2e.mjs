@@ -35,10 +35,15 @@ try {
     };
     Object.defineProperty(ctx, 'state', { get: () => 'running' });
     ctx.close = async () => {};
-    window.AudioContext = function () { return ctx; };
+    let contextCreations = 0;
+    window.AudioContext = function () { contextCreations++; return ctx; };
     const mixer = createSandAudio();
     mixer.setMuted(false);
+    mixer.prepare();
+    if (contextCreations !== 1 || sources.length !== 0 || mixer.ready)
+      throw new Error('Audio preparation must create only the silent context');
     await mixer.unlock();
+    if (contextCreations !== 1) throw new Error('Gesture recreated the prepared audio device');
     const deadline = performance.now() + 10000;
     while (decoded < 8 && performance.now() < deadline)
       await new Promise(resolve => setTimeout(resolve, 20));

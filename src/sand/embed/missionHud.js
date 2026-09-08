@@ -169,11 +169,13 @@ export function createMissionHud(root, game) {
     const width = root.host?.clientWidth || 0;
     const height = root.host?.clientHeight || 0;
     if (!view || !width || !height || !view.viewCols || !view.viewRows) return;
+    const tracked = Number(root.host?.dataset.trackedObjective ?? 0);
     for (const objective of snapshot.objectives) {
       const node = markerNodes.get(objective.id);
       if (!node) continue;
-      const tracked = Number(root.host?.dataset.trackedObjective ?? 0);
-      node.marker.hidden = snapshot.missionId === MISSION.FRONTIER && objective.id !== tracked;
+      const hidden = snapshot.missionId === MISSION.FRONTIER && objective.id !== tracked;
+      if (node.marker.hidden !== hidden) node.marker.hidden = hidden;
+      if (hidden) continue;
       const rawX =
         ((objective.worldX - view.cameraWorldX) / view.viewCols) * width;
       const rawY =
@@ -183,17 +185,25 @@ export function createMissionHud(root, game) {
       const onscreen =
         rawX >= 26 && rawX <= width - 26 && rawY >= 54 && rawY <= height - 64;
       const angle = Math.atan2(rawY - height * 0.5, rawX - width * 0.5);
-      node.marker.classList.toggle('onscreen', onscreen);
-      node.marker.style.transform = `translate(${Math.round(x - 24)}px,${Math.round(y - 12)}px)`;
-      node.arrow.style.transform = `rotate(${angle}rad)`;
-      node.range.style.justifySelf = x < width / 3 ? 'start' : x > width * 2 / 3 ? 'end' : 'center';
+      const transform = `translate(${Math.round(x - 24)}px,${Math.round(y - 12)}px)`;
+      const rotation = `rotate(${angle}rad)`;
+      const alignment = x < width / 3 ? 'start' : x > width * 2 / 3 ? 'end' : 'center';
+      const signature = `${onscreen}:${transform}:${rotation}:${alignment}`;
+      if (signature !== node.signature) {
+        node.signature = signature;
+        node.marker.classList.toggle('onscreen', onscreen);
+        node.marker.style.transform = transform;
+        node.arrow.style.transform = rotation;
+        node.range.style.justifySelf = alignment;
+      }
       const dx = Number.isFinite(view.playerWorldX)
         ? objective.worldX - view.playerWorldX
         : objective.worldX - (view.cameraWorldX + view.viewCols * 0.5);
       const dy = Number.isFinite(view.playerWorldY)
         ? objective.worldY - view.playerWorldY
         : objective.worldY - (view.cameraWorldY + view.viewRows * 0.5);
-      node.range.textContent = `${snapshot.missionId === MISSION.FRONTIER ? objectiveLabel(objective, snapshot.missionId) : objective.type === OBJECTIVE_KIND.EXTRACT ? 'KESTREL' : objective.type === OBJECTIVE_KIND.RESCUE ? 'RESEARCHER' : objective.type === OBJECTIVE_KIND.ANCHOR ? 'JAMMER' : 'SENTRY'} · ${Math.round(Math.hypot(dx, dy))}m`;
+      const label = `${snapshot.missionId === MISSION.FRONTIER ? objectiveLabel(objective, snapshot.missionId) : objective.type === OBJECTIVE_KIND.EXTRACT ? 'KESTREL' : objective.type === OBJECTIVE_KIND.RESCUE ? 'RESEARCHER' : objective.type === OBJECTIVE_KIND.ANCHOR ? 'JAMMER' : 'SENTRY'} · ${Math.round(Math.hypot(dx, dy))}m`;
+      if (node.range.textContent !== label) node.range.textContent = label;
     }
   };
 

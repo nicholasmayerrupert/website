@@ -15,9 +15,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   const result = await page.evaluate(async () => {
-    const [{ initSandWasm, createEngineWasm }, { MAT }] = await Promise.all([
+    const [{ initSandWasm, createEngineWasm }, { MAT }, { OFF, STRIDES, PROJECTILE_KIND }] = await Promise.all([
       import('/src/sand/wasmBridge/engineFactory.js'),
       import('/src/sand/materials.js'),
+      import('/src/sand/wasmBridge/abi.generated.js'),
     ]);
     await initSandWasm();
     const cols = 256, rows = 256, viewCols = 128, viewRows = 128;
@@ -157,6 +158,42 @@ try {
       editPanMaxDelta = Math.max(editPanMaxDelta, Math.abs(editPanFrame[i] - editFullFrame[i]));
     }
 
+    const projectileChecks = [];
+    const setLights = sources => {
+      const data = new Float32Array(sources.length * STRIDES.projectileSnapshot);
+      sources.forEach(([x, y, kind = PROJECTILE_KIND.BLAST_ROUND], index) => {
+        const values = { id: index + 1, kind, x, y, charge: 1, life: 100 };
+        for (const [key, value] of Object.entries(values))
+          data[index * STRIDES.projectileSnapshot + OFF.projectileSnapshot[key]] = value;
+      });
+      mirror.glSetProjectiles(data);
+    };
+    const checkProjectileFrame = name => {
+      mirror.glRenderFrame(false);
+      const lightMs = mirror.getPerf().lightMs;
+      const actual = mirror.glReadPixels(0, 0, viewCols, viewRows);
+      mirror.glRenderFrame(true);
+      const expected = mirror.glReadPixels(0, 0, viewCols, viewRows);
+      let delta = 0;
+      for (let i = 0; i < actual.length; i++) delta = Math.max(delta, Math.abs(actual[i] - expected[i]));
+      projectileChecks.push({ name, delta, lightMs });
+    };
+    const terrainHash = mirror.gridHash();
+    mirror.setSkyLight(40); mirror.cameraSet(0, 0); mirror.glRenderFrame(true);
+    setLights([[63, 100]]); checkProjectileFrame('spawn');
+    setLights([[65, 99]]); checkProjectileFrame('move');
+    setLights([[65, 99, PROJECTILE_KIND.RUNE]]); checkProjectileFrame('change intensity');
+    setLights([[65, 99], [238, 100]]); checkProjectileFrame('separated lights');
+    setLights([[69, 101], [238, 100]]); checkProjectileFrame('move with unchanged distant light');
+    setLights([]); checkProjectileFrame('remove');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    setLights([[238, 100]]); checkProjectileFrame('offscreen after throttle interval');
+    mirror.cameraSet(96, 80); checkProjectileFrame('pan toward offscreen light');
+    setLights([[180, 170]]); mirror.glRenderFrame(false);
+    setLights([]); mirror.glRenderFrame(false);
+    mirror.cameraSet(128, 128); checkProjectileFrame('pan after moving light disappears');
+    const projectileTerrainUnchanged = mirror.gridHash() === terrainHash;
+
     source.destroy();
     mirror.destroy();
     canvas.remove();
@@ -164,6 +201,7 @@ try {
       open, blocked, reopened, blockLightMs, eraseLightMs, editPanMaxDelta,
       editedWaterLightMs, flowingWaterLightMs,
       panShadow, fullShadow, panFrameMaxDelta, panLightMs, panLightSolves, panLightOffsets,
+      projectileChecks, projectileTerrainUnchanged,
     };
   });
 
@@ -185,6 +223,11 @@ try {
     result.panFrameMaxDelta === 0);
   check(`panning after a shadow repair matches full lighting (max byte delta ${result.editPanMaxDelta})`,
     result.editPanMaxDelta === 0);
+  for (const { name, delta } of result.projectileChecks)
+    check(`projectile ${name} matches full lighting (max byte delta ${delta})`, delta === 0);
+  check('offscreen projectiles skip lighting even after the periodic interval',
+    result.projectileChecks.find(({ name }) => name === 'offscreen after throttle interval').lightMs === 0);
+  check('projectile lighting never changes terrain', result.projectileTerrainUnchanged);
 } finally {
   await browser?.close();
   stopServer();

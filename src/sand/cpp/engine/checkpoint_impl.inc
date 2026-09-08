@@ -8,9 +8,10 @@ uint32_t checkpointHash(const uint8_t* data, size_t size) {
   return hash;
 }
 struct CheckpointArchive {
-  explicit CheckpointArchive(std::vector<uint8_t>& output, bool read = false) : bytes(output), reading(read) {}
+  explicit CheckpointArchive(std::vector<uint8_t>& output, bool read = false, bool measure = false)
+    : bytes(output), reading(read), measuring(measure) {}
   std::vector<uint8_t>& bytes;
-  bool reading = false, valid = true;
+  bool reading = false, measuring = false, valid = true;
   size_t at = 0;
   int layerId = 0;
   uint32_t version = CHECKPOINT_VERSION;
@@ -22,7 +23,7 @@ struct CheckpointArchive {
     if (reading) {
       if (at + size > bytes.size()) { valid = false; return; }
       std::memcpy(value, bytes.data() + at, size);
-    } else {
+    } else if (!measuring) {
       const auto* p = static_cast<const uint8_t*>(value); bytes.insert(bytes.end(), p, p + size);
     }
     at += size;
@@ -98,17 +99,24 @@ static void checkpointState(CheckpointArchive& a, Engine& e) {
     m.coreDestabilized,m.objectives,m.residentIds);
   a.fields(e.containers.chests,e.discovery.cells,e.discovery.revision);
 }
-int CheckpointSystem::write() {
+int CheckpointSystem::write(bool seal) {
   bytes.clear();
   if (E.planetId != PL_FRONTIER || E.storageRole == ESR_PRESENTATION) return 0;
   for (auto& p:E.psys.players) if (E.tools.drafting && E.tools.draftOwner==p.id) E.psys.playerFinalizeSolidDraft();
-  CheckpointArchive a{bytes};
   uint32_t magic=CHECKPOINT_MAGIC, version=CHECKPOINT_VERSION, worldVersion=WORLD_GENERATION_VERSION;
   int cols=E.cols, rows=E.rows;
+  // Reserve the complete snapshot once. Large cell channels must not repeatedly
+  // grow/copy the output buffer during an atomic authority capture.
+  CheckpointArchive measure{bytes, false, true};
+  measure.fields(magic,version,cols,rows,worldVersion);
+  checkpointState(measure,E);
+  if (!measure.valid || measure.at > CHECKPOINT_MAX - sizeof(uint32_t)) return 0;
+  bytes.reserve(measure.at + sizeof(uint32_t));
+  CheckpointArchive a{bytes};
   a.fields(magic,version,cols,rows,worldVersion);
   checkpointState(a,E);
   if (!a.valid) { bytes.clear(); return 0; }
-  uint32_t checksum=checkpointHash(bytes.data(),bytes.size()); a.field(checksum);
+  uint32_t checksum=seal ? checkpointHash(bytes.data(),bytes.size()) : 0; a.field(checksum);
   return (int)bytes.size();
 }
 bool CheckpointSystem::read(const uint8_t* data, int length) {

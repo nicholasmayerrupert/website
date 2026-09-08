@@ -1251,7 +1251,7 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_set_chests(Engine* e, float* data, int count
   if (count < 0 || count > 512 || (count && !data)) return;
   e->glp.chestData.assign(data, data + count * 5);
 }
-EMSCRIPTEN_KEEPALIVE int engine_checkpoint_write(Engine* e) { return e->checkpoint.write(); }
+EMSCRIPTEN_KEEPALIVE int engine_checkpoint_write(Engine* e, int seal) { return e->checkpoint.write(seal != 0); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_checkpoint_ptr(Engine* e) { return e->checkpoint.bytes.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_checkpoint_read(Engine* e, uint8_t* data, int length) { return e->checkpoint.read(data, length) ? 1 : 0; }
 } // extern "C"

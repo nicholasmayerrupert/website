@@ -83,6 +83,19 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
+`node scripts/bench-projectile-render.mjs --json FILE` isolates main-thread
+projectile presentation on unchanged terrain: idle, arrows, glowing rounds,
+offscreen rounds, separated lights, and a 12-round volley. It reports render
+and lighting percentiles and uploaded texels, checks against full-light pixels,
+and asserts unchanged terrain. Use `--compare FILE` on the same browser/host;
+these are submission timings, not GPU completion or overall FPS.
+
+`node scripts/bench-checkpoint.mjs --json FILE` compares synchronous checkpoint
+writing with cooperative autosaves at three loaded-world widths. It reports
+atomic capture time, total completion time, event-loop gaps and yields, and
+requires byte-identical checkpoints. Repeat zero includes cold allocation;
+later repetitions reuse the output buffer.
+
 `node scripts/bench-adventure-actors.mjs --json FILE` measures quiet creative terrain, idle and walking exploration,
 enemy charges, shockwaves, spell volleys, and overlapping Prism Choir, Hollow
 Star, and Faultline casts in a generated two-layer world. It steps actors and

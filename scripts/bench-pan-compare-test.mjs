@@ -1,6 +1,6 @@
 import { comparePanResults } from './bench-pan-compare.mjs';
 
-const meta = { platform: 'test', arch: 'x64', deviceScaleFactor: 1, renderer: 'software' };
+const meta = { platform: 'test', arch: 'x64', deviceScaleFactor: 1, renderer: 'software', frameTimingVersion: 2 };
 const baseline = {
   meta,
   cursor: { worstCellErr: 0 },
@@ -32,6 +32,8 @@ check('average frame regression fails', comparePanResults(current({ perf: { avgF
 check('p95 frame regression fails', comparePanResults(current({ perf: { avgFrameMs: 2, p95FrameMs: 10 } }), baseline).failures.some((s) => s.startsWith('p95FrameMs')));
 const crossPlatform = comparePanResults(current({ meta: { ...meta, platform: 'other' }, perf: { avgFrameMs: 99, p95FrameMs: 99 } }), baseline);
 check('cross-platform timing is not compared', !crossPlatform.perfEnvironment.compatible && crossPlatform.failures.length === 0);
+const oldTiming = comparePanResults(current({ meta: { ...meta, frameTimingVersion: 1 } }), baseline);
+check('different frame sampling definitions are not compared', !oldTiming.perfEnvironment.compatible);
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

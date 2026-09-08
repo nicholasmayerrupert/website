@@ -9,7 +9,7 @@ export const PAN_COMPARE_LIMITS = Object.freeze({
   frameP95AbsoluteMs: 4,
 });
 
-const PERF_ENV_FIELDS = ['platform', 'arch', 'deviceScaleFactor', 'renderer'];
+const PERF_ENV_FIELDS = ['platform', 'arch', 'deviceScaleFactor', 'renderer', 'frameTimingVersion'];
 
 export function compatiblePerfEnvironment(current, baseline) {
   if (!current || !baseline) return { compatible: false, reason: 'baseline has no environment metadata' };

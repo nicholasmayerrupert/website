@@ -95,6 +95,7 @@ export function createSandGame(container, opts = {}) {
     fantasyScore: planetId === PLANET.FRONTIER,
     expeditionScore: survival && (planetId === PLANET.SHIP || planetId === PLANET.FRONTIER || missionId === MISSION.GREENFALL_RECOVERY),
   });
+  if (survival) audio.prepare();
 
   const canvas = document.createElement('canvas');
   canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench
@@ -410,7 +411,7 @@ export function createSandGame(container, opts = {}) {
   const onVisualViewportResize = () => lifecycle.fit();
   window.visualViewport?.addEventListener?.('resize', onVisualViewportResize);
   inputs.attach();
-  // AudioContext startup is browser-gated behind user activation. Keep the
+  // Audio playback is browser-gated behind user activation. Keep the
   // unlock hook central and idempotent so Safari can also recover after an
   // interruption on the next ordinary tap/key without UI-specific workarounds.
   const unlockAudio = () => { audio.unlock(); };

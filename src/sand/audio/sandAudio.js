@@ -243,6 +243,7 @@ function writeStoredMuted(muted) {
 
 export function createSandAudio({ expeditionScore = false, fantasyScore = false } = {}) {
   let context = null;
+  let preparedContext = null;
   let master = null;
   let effectsBus = null;
   let ambienceBus = null;
@@ -380,15 +381,28 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     if (voice.panner) voice.panner.pan.setTargetAtTime(pan, now, 0.08);
   };
 
-  const init = () => {
-    if (context || destroyed || typeof window === 'undefined') return context;
+  const createContext = () => {
+    if (typeof window === 'undefined') return null;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return null;
     // Older WebKit builds expose AudioContext but reject constructor options.
-    // Fall back to the optionless form so iOS Safari and iOS Chrome can still
-    // create the graph from the user's first gesture.
-    try { context = new AudioContext({ latencyHint: 'interactive' }); }
-    catch { context = new AudioContext(); }
+    // Fall back to the optionless form for those iOS Safari/Chrome contexts.
+    try { return new AudioContext({ latencyHint: 'interactive' }); }
+    catch { return new AudioContext(); }
+  };
+
+  // Device creation belongs to loading. Keep the graph and playback gated on
+  // unlock, and retry there if the browser requires a gesture even to create it.
+  const prepare = () => {
+    if (context || preparedContext || destroyed || !enabled || muted || hidden) return;
+    try { preparedContext = createContext(); } catch { /* gesture will retry */ }
+  };
+
+  const init = () => {
+    if (context || destroyed) return context;
+    context = preparedContext || createContext();
+    preparedContext = null;
+    if (!context) return null;
     master = context.createGain();
     master.gain.value = 0;
     const compressor = context.createDynamicsCompressor();
@@ -1148,9 +1162,12 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     const ctx = context;
     context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
     try { ctx?.close(); } catch { /* browser is already tearing down */ }
+    try { preparedContext?.close(); } catch { /* browser is already tearing down */ }
+    preparedContext = null;
   };
 
   return {
+    prepare,
     unlock,
     playEvents,
     playBeam,

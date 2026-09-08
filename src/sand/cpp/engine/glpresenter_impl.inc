@@ -295,18 +295,24 @@ void GLPresenter::glCollectDynamicLights() {
     }
   }
   if (changed) {
-    auto include = [&](const std::vector<RenderLightSource>& sources) {
+    auto include = [&](const std::vector<RenderLightSource>& sources,
+                       const std::vector<RenderLightSource>& other) {
       for (const RenderLightSource& source : sources) {
+        // Unchanged emitters do not enlarge a moving light's repair bounds.
+        bool retained = std::any_of(other.begin(), other.end(), [&](const RenderLightSource& b) {
+          return source.x == b.x && source.y == b.y && source.intensity == b.intensity;
+        });
+        if (retained) continue;
         glDynamicLightX0 = imin(glDynamicLightX0, source.x);
         glDynamicLightY0 = imin(glDynamicLightY0, source.y);
         glDynamicLightX1 = imax(glDynamicLightX1, source.x);
         glDynamicLightY1 = imax(glDynamicLightY1, source.y);
       }
     };
-    include(E.renderer.dynamicLights);
-    include(next);
+    include(E.renderer.dynamicLights, next);
+    include(next, E.renderer.dynamicLights);
     E.renderer.dynamicLights.swap(next);
-    glDynamicLightPending = true;
+    glDynamicLightPending = glDynamicLightX0 <= glDynamicLightX1;
   }
 }
 
@@ -2448,7 +2454,12 @@ void GLPresenter::glPresentWindow(int forceFull) {
                         (camCol != glLastCamCol || camRow != glLastCamRow);
     bool cameraPatchReady = windowExposed && !lightForced && glLightX0 >= 0 &&
                             E.storageRole == ESR_PRESENTATION && cacheablePan;
-    bool scheduledSolve = contentDirty && (lightForced || lightThrottleReady);
+    // Presentation repairs moving emission immediately in its finite influence
+    // region. Only terrain/skylight changes need the periodic broad solve.
+    bool scheduledContent = E.storageRole == ESR_PRESENTATION
+      ? forceFull || fgDirty || bgDirty || skyChanged || lightDirty
+      : contentDirty;
+    bool scheduledSolve = scheduledContent && (lightForced || lightThrottleReady);
     if (scheduledSolve || (windowExposed && !cameraPatchReady)) {
       double t0 = emscripten_get_now();
       int lx0 = 0, ly0 = 0, lx1 = E.cols - 1, ly1 = E.rows - 1;
@@ -2473,9 +2484,9 @@ void GLPresenter::glPresentWindow(int forceFull) {
       glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
     } else if (E.storageRole == ESR_PRESENTATION) {
       double t0 = emscripten_get_now();
-      // Terrain repairs cover the sample window and its face-light neighbours.
-      // Cached shadows outside it may still reflect the previous terrain.
-      if (!glTerrainLightIntervals.empty()) {
+      // Repairs cover the sample window and its face-light neighbours. Cached
+      // light outside it may still reflect previous terrain or emitter poses.
+      if (!glTerrainLightIntervals.empty() || glDynamicLightPending) {
         glLightX0 = ex0 = imax(ex0, imax(0, x0 - 1));
         glLightY0 = ey0 = imax(ey0, imax(0, y0 - 1));
         glLightX1 = ex1 = imin(ex1, imin(E.cols - 1, x1 + 1));
@@ -2523,15 +2534,17 @@ void GLPresenter::glPresentWindow(int forceFull) {
       // Entity/projectile emission has finite reach in both axes, so its old
       // and new positions need only one bounded repair.
       if (glDynamicLightPending && glDynamicLightX0 <= glDynamicLightX1) {
-        int keepX0 = imax(0, glDynamicLightX0 - GL_LIGHT_CHANGE_REACH);
-        int keepY0 = imax(0, glDynamicLightY0 - GL_LIGHT_CHANGE_REACH);
-        int keepX1 = imin(E.cols - 1, glDynamicLightX1 + GL_LIGHT_CHANGE_REACH);
-        int keepY1 = imin(E.rows - 1, glDynamicLightY1 + GL_LIGHT_CHANGE_REACH);
-        E.renderer.computeLightingBothPatch(
-          keepX0 - GL_LIGHT_EXACT_SHRINK, keepY0 - GL_LIGHT_EXACT_SHRINK,
-          keepX1 + GL_LIGHT_EXACT_SHRINK, keepY1 + GL_LIGHT_EXACT_SHRINK,
-          keepX0, keepY0, keepX1, keepY1);
-        markLightRefresh(keepX0, keepY0, keepX1, keepY1);
+        int keepX0 = imax(imax(0, x0 - 1), glDynamicLightX0 - GL_LIGHT_CHANGE_REACH);
+        int keepY0 = imax(imax(0, y0 - 1), glDynamicLightY0 - GL_LIGHT_CHANGE_REACH);
+        int keepX1 = imin(imin(E.cols - 1, x1 + 1), glDynamicLightX1 + GL_LIGHT_CHANGE_REACH);
+        int keepY1 = imin(imin(E.rows - 1, y1 + 1), glDynamicLightY1 + GL_LIGHT_CHANGE_REACH);
+        if (keepX0 <= keepX1 && keepY0 <= keepY1) {
+          E.renderer.computeLightingBothPatch(
+            keepX0 - GL_LIGHT_EXACT_SHRINK, keepY0 - GL_LIGHT_EXACT_SHRINK,
+            keepX1 + GL_LIGHT_EXACT_SHRINK, keepY1 + GL_LIGHT_EXACT_SHRINK,
+            keepX0, keepY0, keepX1, keepY1);
+          markLightRefresh(keepX0, keepY0, keepX1, keepY1);
+        }
         glDynamicLightPending = false;
         glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
         glDynamicLightX1 = glDynamicLightY1 = INT_MIN;

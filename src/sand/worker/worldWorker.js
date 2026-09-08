@@ -658,7 +658,7 @@ async function writeAdventureCheckpoint() {
   saveCompletion = (async () => {
     try {
       const capturedAt = Date.now();
-      const bytes = engine.writeCheckpoint();
+      const bytes = await engine.writeCheckpointAsync();
       if (!bytes.length) throw new Error('Checkpoint could not be created');
       const savedAt = await saveAdventure(bytes, capturedAt);
       self.postMessage({ type: 'adventure-save', savedAt, error: '' });

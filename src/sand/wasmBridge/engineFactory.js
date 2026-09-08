@@ -54,6 +54,11 @@ export { INPUT };
 
 const STREAM_CHUNK_SIZE = 32;
 
+function checkpointHashChunk(bytes, start, end, hash) {
+  for (let i = start; i < end; i++) hash = Math.imul(hash ^ bytes[i], 16777619) >>> 0;
+  return hash;
+}
+
 function unpackInventoryStackAt(packed, index) {
   const stack = unpackSnapshotRecordAt(packed, 'inventorySlot', index);
   if (stack) delete stack.selected;
@@ -217,7 +222,7 @@ export function initSandWasm() {
         selectedFootprint: c('engine_selected_footprint', 'number', ['number', 'number']),
         survivalFootprintSnapshot: c('engine_survival_footprint_snapshot', 'number', ['number']),
         survivalFootprintSnapshotPtr: c('engine_survival_footprint_snapshot_ptr', 'number', ['number']),
-        checkpointWrite: c('engine_checkpoint_write', 'number', ['number']),
+        checkpointWrite: c('engine_checkpoint_write', 'number', ['number', 'number']),
         checkpointPtr: c('engine_checkpoint_ptr', 'number', ['number']),
         checkpointRead: c('engine_checkpoint_read', 'number', ['number', 'number', 'number']),
         glSetChests: c('engine_gl_set_chests', null, ['number', 'number', 'number']),
@@ -1084,8 +1089,24 @@ const renderStrides = Object.freeze({
       mod.HEAPF32.set(packed, buffer >> 2); M.glSetChests(ptr, buffer, chests.length);
     },
     writeCheckpoint() {
-      const length = M.checkpointWrite(ptr);
+      const length = M.checkpointWrite(ptr, 1);
       return new Uint8Array(mod.HEAPU8.buffer, M.checkpointPtr(ptr), length).slice();
+    },
+    async writeCheckpointAsync() {
+      // Capture one coherent authority state before yielding. The checksum runs
+      // on its owned copy so simulation and later snapshots can keep advancing.
+      const length = M.checkpointWrite(ptr, 0);
+      const bytes = new Uint8Array(mod.HEAPU8.buffer, M.checkpointPtr(ptr), length).slice();
+      if (!length) return bytes;
+      let hash = 2166136261;
+      const end = length - 4;
+      for (let start = 0; start < end; start += 262144) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const stop = Math.min(end, start + 262144);
+        hash = checkpointHashChunk(bytes, start, stop, hash);
+      }
+      new DataView(bytes.buffer).setUint32(end, hash, true);
+      return bytes;
     },
     readCheckpoint(bytes) {
       if (!(bytes instanceof Uint8Array) || bytes.length < 24 || bytes.length > 192 * 1024 * 1024) return false;

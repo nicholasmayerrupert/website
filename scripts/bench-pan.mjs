@@ -280,13 +280,25 @@ try {
     surface.focus({ preventScroll: true });
     return surface.getRootNode().activeElement === surface;
   }, null, { timeout: 10000 });
+  await page.evaluate(() => window.__sandTest.setPaused(false));
   await page.keyboard.down('d');
-  await page.waitForTimeout(2500);
+  // Replace all 120 rolling samples after the synchronous pixel probes. Those
+  // deliberate readback stalls are not part of the live held-key workload.
+  await page.evaluate(() => new Promise(resolve => {
+    let frames = 0;
+    const start = performance.now();
+    const sample = now => {
+      if (++frames >= 120 && now - start >= 2500) resolve();
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }));
   const perf = await page.evaluate(() => window.__sandPerf());
   await page.keyboard.up('d');
 
   result = {
     meta: {
+      frameTimingVersion: 2,
       worldSeed: WORLD_SEED,
       platform: process.platform,
       arch: process.arch,

@@ -105,15 +105,19 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     nearChest = view && !panel && !dialogueOpen ? game.getChests().find(chest => Math.abs(wx - chest.worldX) <= 3.5
       && wy >= chest.worldY - (chest.opened ? 2 : .5) && wy <= chest.worldY + 4
       && Math.hypot(chest.worldX - view.playerWorldX, chest.worldY - view.playerWorldY) < 28) : null;
-    chestHighlight.hidden = chestPrompt.hidden = !!panel || dialogueOpen || !nearChest;
+    // Project both corners before changing visibility or layout styles.
+    const top = nearChest && view && game.worldToScreen(nearChest.worldX - 3.5, nearChest.worldY - (nearChest.opened ? 2 : .5));
+    const bottom = nearChest && view && game.worldToScreen(nearChest.worldX + 3.5, nearChest.worldY + 4);
+    const hidden = !!panel || dialogueOpen || !nearChest;
+    if (chestHighlight.hidden !== hidden) chestHighlight.hidden = hidden;
+    if (chestPrompt.hidden !== hidden) chestPrompt.hidden = hidden;
     if (nearChest && view) {
-      const top = game.worldToScreen(nearChest.worldX - 3.5, nearChest.worldY - (nearChest.opened ? 2 : .5));
-      const bottom = game.worldToScreen(nearChest.worldX + 3.5, nearChest.worldY + 4);
       chestPrompt.style.left = `${(top.x + bottom.x) / 2}px`;
       chestPrompt.style.top = `${top.y}px`;
       Object.assign(chestHighlight.style, { left: `${top.x}px`, top: `${top.y}px`, width: `${bottom.x-top.x}px`, height: `${bottom.y-top.y}px` });
       const mining = game.getPlayer()?.heldItemKind === ITEM_KIND.MINING_TOOL;
-      chestPrompt.textContent = mining ? 'E · Open / Hold pickaxe · Pick up' : 'E / Click · Open chest';
+      const label = mining ? 'E · Open / Hold pickaxe · Pick up' : 'E / Click · Open chest';
+      if (chestPrompt.textContent !== label) chestPrompt.textContent = label;
       chestPrompt.setAttribute('aria-label', 'Open chest (E)');
     }
     chestSection.hidden = panel !== 'inventory' || !shownChest;

@@ -69,9 +69,9 @@ void CombatSystem::strike(Player& p, const ContentGear& gear) {
   dx /= distance; dy /= distance;
   if (gear.family <= 3) E.audio.emit(SE_SWING, cx, cy, 1, (uint8_t)gear.family);
   if ((gear.family == 5 || gear.family == 9) && gear.spell != 6) {
-    Projectile bolt; bolt.id = E.projectiles.nextId++; bolt.owner = p.id; bolt.kind = PK_RUNE; bolt.fuse = gear.id;
-    bolt.px = cx; bolt.py = cy; bolt.vx = dx * 2.8; bolt.vy = dy * 2.8; bolt.life = imax(1, (int)std::ceil(gear.reach / 2.8));
-    E.projectiles.projectiles.push_back(bolt); E.audio.emit(SE_RUNE, cx, cy, .6, (uint8_t)gear.spell); return;
+    E.projectiles.spawnRune(p.id, cx, cy, cx + dx * distance, cy + dy * distance,
+      gear.id, gear.power + (hasCharm(p, 225) ? 5 : 0));
+    return;
   }
   double reach = gear.family <= 3 ? gear.reach : std::min((double)gear.reach, distance);
   double tx = cx, ty = cy;
@@ -213,8 +213,15 @@ void CombatSystem::enemyAttack(Creature& c) {
       for (int side = -spread; side <= spread; side++) {
         double tx = c.attackAimX - E.fg.worldOffsetX + side * 20;
         double ty = c.attackAimY - E.fg.worldOffsetY;
-        if (slam) { enemyTerrainImpact(tx, ty, 13, STONE); continue; }
+        if (slam && c.attackPattern != 1) { enemyTerrainImpact(tx, ty, 13, STONE); continue; }
         if ((int)E.projectiles.projectiles.size() >= PROJECTILE_MAX) break;
+        int variedRune = c.species == CS_HOLLOW_BELLKEEPER ? 307
+          : c.attackPattern == 1 && c.species == CS_FEN_WISP ? 306
+          : c.attackPattern == 1 && (slam || c.species == CS_CINDER_CASTELLAN) ? 308 : 0;
+        if (variedRune) {
+          if (side == 0) E.projectiles.spawnRune(-c.id, localX, localY, tx, ty, variedRune, damage);
+          continue;
+        }
         double dx = tx - localX, dy = ty - localY, d = std::max(1.0, std::hypot(dx, dy));
         Projectile bolt; bolt.id = E.projectiles.nextId++; bolt.owner = -c.id; bolt.kind = PK_RUNE;
         bolt.fuse = c.species == CS_MIRE_MATRON ? 301 : c.species == CS_FEN_WISP ? 304
@@ -233,7 +240,7 @@ void CombatSystem::enemyAttack(Creature& c) {
         double radius = 8 + tick * 1.4;
         hit = std::fabs(std::hypot(px-x, py-y) - radius) < 3 && (tick % 3 == 0);
       } else if (contact) hit = std::hypot(px-x, py-y) < species.w*.5 + 5;
-      else if (tick == 0 && slam) {
+      else if (tick == 0 && slam && c.attackPattern != 1) {
         int spread = heavy && c.attackPattern == 1 ? 1 : 0;
         if (c.species == CS_MIRE_MATRON) spread = c.attackPattern == 1 ? 2 : 1;
         for (int side = -spread; side <= spread; side++)

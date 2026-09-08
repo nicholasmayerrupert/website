@@ -156,6 +156,7 @@ void InventorySystem::seedStarterTools(Player& p) {
     p.inv[0].itemKind = IK_GEAR; p.inv[0].definitionId = 1;
     p.inv[2].itemKind = IK_GEAR; p.inv[2].definitionId = 300; p.inv[2].count = 1;
     p.inv[3].itemKind = IK_GEAR; p.inv[3].definitionId = 320; p.inv[3].count = 1;
+    p.inv[4].itemKind = IK_GEAR; p.inv[4].definitionId = 306; p.inv[4].count = 1;
     for (int i = 0; i < 7; i++) {
       p.equipment[i].itemKind = IK_GEAR; p.equipment[i].definitionId = i == 6 ? 200 : 100 + i; p.equipment[i].count = 1;
     }

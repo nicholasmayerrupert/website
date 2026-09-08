@@ -27,7 +27,13 @@ export function gearIcon(id, size = 32) {
   } else if (gear.family === 5 || gear.family === 9 || gear.family === 11) {
     if (gear.family === 5) rect(7, 5, 2, 10, '#8b6540');
     path('M6 1h4v1h2v2h1v5h-2v2H5V9H3V4h1V2h2Z', '#b69a56');
-    path('M7 2h2v2h2v3H9v2H7V7H5V4h2Z', ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1'][gear.spell - 1] || '#daca8d');
+    const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57'][gear.spell - 1] || '#daca8d';
+    if (gear.spell === 7) path('M4 3h2v4H4Z M7 2h2v6H7Z M10 3h2v4h-2Z', runeColor);
+    else if (gear.spell === 8) {
+      path('M6 2h4v1h2v4h-2v2H6V7H4V3h2Z', runeColor);
+      rect(6, 4, 4, 3, '#23133b');
+    } else if (gear.spell === 9) path('M9 2h2L8 5h3L5 10l2-4H5Z', runeColor);
+    else path('M7 2h2v2h2v3H9v2H7V7H5V4h2Z', runeColor);
     rect(7, 3, 1, 3, '#ffefc4');
   } else if (gear.family === 6) {
     const shapes = [

@@ -19,6 +19,9 @@ const scenes = {
   charges: Array(6).fill(CREATURE.BONE_GUARD),
   shockwaves: Array(3).fill(CREATURE.HOLLOW_BELLKEEPER),
   volleys: [CREATURE.MIRE_MATRON, CREATURE.CINDER_CASTELLAN, CREATURE.FEN_WISP, CREATURE.MINIGUNNER],
+  prisms: Array(3).fill(CREATURE.FEN_WISP),
+  stars: Array(3).fill(CREATURE.HOLLOW_BELLKEEPER),
+  faultlines: Array(3).fill(CREATURE.ROOT_KNIGHT),
 };
 const selected = flag('--only') ? flag('--only').split(',') : Object.keys(scenes);
 const summary = samples => {
@@ -81,7 +84,7 @@ for (const name of selected) {
         snapshot[i + o.y] = cy + 24 - snapshot[i + o.h];
         snapshot[i + o.facing] = -1;
         snapshot[i + o.attackState] = 2;
-        snapshot[i + o.attackPattern] = name === 'volleys' ? 1 : 0;
+        snapshot[i + o.attackPattern] = ['volleys', 'prisms', 'stars', 'faultlines'].includes(name) ? 1 : 0;
         snapshot[i + o.attackProgress] = 1;
         snapshot[i + o.aimX] = cx - 45;
         snapshot[i + o.aimY] = cy + 20;

@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 47;
 
-static const uint64_t ABI_FINGERPRINT = 0x1e20be2dcf93ULL;
+static const uint64_t ABI_FINGERPRINT = 0xda20dd0ba9d1ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -1071,6 +1071,7 @@ enum ProjectileKind : uint8_t {
   PK_EXTRACTION_BEAM = 8,
   PK_RUNE = 9,
   PK_RUNE_BURST = 10,
+  PK_RUNE_FIELD = 11,
 };
 
 static constexpr bool isProjectileKindValue(int value) {
@@ -1086,6 +1087,7 @@ static constexpr bool isProjectileKindValue(int value) {
     case PK_EXTRACTION_BEAM:
     case PK_RUNE:
     case PK_RUNE_BURST:
+    case PK_RUNE_FIELD:
       return true;
     default: return false;
   }

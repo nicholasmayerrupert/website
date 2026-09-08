@@ -1704,7 +1704,8 @@
         "PK_RESCUE_BEAM": 7,
         "PK_EXTRACTION_BEAM": 8,
         "PK_RUNE": 9,
-        "PK_RUNE_BURST": 10
+        "PK_RUNE_BURST": 10,
+        "PK_RUNE_FIELD": 11
       }
     },
     "CraftIngredientKind": {

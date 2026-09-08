@@ -18,6 +18,7 @@ class ProjectileSystem {
   void applyMinigunInput(Player& p);
   void applyRescueBeamInput(Player& p);
   void spawnArrow(Player& p, double charge);
+  void spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage);
   void spawnBlastRound(Player& p);
   void spawnDynamite(const Creature& thrower, double targetX, double targetY);
   void spawnDynamite(Player& thrower);

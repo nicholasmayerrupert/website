@@ -84,7 +84,8 @@ deliberately stale HTML and missing deployment assets.
 ## Stress and profiling
 
 `node scripts/bench-adventure-actors.mjs --json FILE` measures idle and walking exploration,
-enemy charges, shockwaves, and spell volleys in a generated two-layer world.
+enemy charges, shockwaves, spell volleys, and overlapping Prism Choir, Hollow
+Star, and Faultline casts in a generated two-layer world.
 After rebuilding, use `--compare FILE` on the same host/runtime to check exact
 terrain, actor, projectile, debris, and discovery checksums and report actor/world
 timing deltas. Use `--only idle,charges`, `--repeat 5`, or `--profile PREFIX` to

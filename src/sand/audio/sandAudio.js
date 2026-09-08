@@ -832,23 +832,42 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       playNoise({duration:.09,gain:gain*.25,pan,frequency:900,type:'bandpass',q:1.2,rate:1});
       for (const f of [330,670,1010]) playTone({from:f,to:f*.96,duration:.24,gain:gain*.07,pan,wave:'sine'});
     } else if (type === SOUND_EVENT.RUNE) {
-      const cold = material === 2, air = material === 3, thorn = material === 5;
-      const rate = .92 + variation * .16;
-      playNoise({ duration: .23, gain: gain * .42, pan,
-        frequency: cold ? 5100 : air ? 2300 : 1800,
-        toFrequency: cold ? 1400 : 420, q: .65, attack: .016,
-        buffer: thorn ? crackleBuffer : noiseBuffer, rate });
-      playNoise({ duration: .055, gain: gain * .30, pan, frequency: 3900,
-        type: 'highpass', q: .35, attack: .001, delay: .016 });
-      playNoise({ duration: .32, gain: gain * .28, pan, frequency: 370,
-        toFrequency: 100, type: 'lowpass', buffer: brownBuffer, attack: .006 });
-      playTone({ from: (cold ? 1260 : thorn ? 530 : 780) * rate, to: air ? 120 : 240,
-        duration: .18, gain: gain * .065, pan, wave: 'triangle', attack: .003 });
-      playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .13,
-        pan, rate: 1.65, frequency: 650, duration: .24, attack: .002 });
-      if (cold || thorn) playNoise({ duration: .38, gain: gain * .12, pan,
-        frequency: cold ? 4200 : 1800, toFrequency: 850, q: 1.1,
-        buffer: crackleBuffer, delay: .045, attack: .004 });
+      if (material >= 7 && material <= 9) {
+        const prism = material === 7, star = material === 8;
+        playNoise({ duration: star ? 1.15 : .3, gain: gain * .38, pan,
+          frequency: star ? 180 : prism ? 5600 : 1400,
+          toFrequency: star ? 2200 : 480, attack: star ? .08 : .008,
+          buffer: star ? brownBuffer : prism ? noiseBuffer : crackleBuffer, q: star ? 1.4 : .6 });
+        playTone({ from: star ? 65 : prism ? 920 : 160, to: star ? 150 : 55,
+          duration: star ? 1.1 : .3, gain: gain * .13, pan, wave: 'triangle', attack: .015 });
+        if (prism) for (const [i, f] of [1800, 2710, 3920].entries()) {
+          playNoise({ duration: .055, gain: gain * .18, pan, frequency: f,
+            type: 'highpass', delay: i * .018, attack: .001 });
+          playTone({ from: f, to: f * .62, duration: .19, gain: gain * .035,
+            pan, delay: i * .018, attack: .001 });
+        }
+        if (!prism) playSample({ buffer: recordedAssets?.tntDeepBoom,
+          gain: gain * .20, pan, rate: star ? .55 : 1.15,
+          frequency: 900, duration: star ? .9 : .35, attack: .01 });
+      } else {
+        const cold = material === 2, air = material === 3, thorn = material === 5;
+        const rate = .92 + variation * .16;
+        playNoise({ duration: .23, gain: gain * .42, pan,
+          frequency: cold ? 5100 : air ? 2300 : 1800,
+          toFrequency: cold ? 1400 : 420, q: .65, attack: .016,
+          buffer: thorn ? crackleBuffer : noiseBuffer, rate });
+        playNoise({ duration: .055, gain: gain * .30, pan, frequency: 3900,
+          type: 'highpass', q: .35, attack: .001, delay: .016 });
+        playNoise({ duration: .32, gain: gain * .28, pan, frequency: 370,
+          toFrequency: 100, type: 'lowpass', buffer: brownBuffer, attack: .006 });
+        playTone({ from: (cold ? 1260 : thorn ? 530 : 780) * rate, to: air ? 120 : 240,
+          duration: .18, gain: gain * .065, pan, wave: 'triangle', attack: .003 });
+        playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .13,
+          pan, rate: 1.65, frequency: 650, duration: .24, attack: .002 });
+        if (cold || thorn) playNoise({ duration: .38, gain: gain * .12, pan,
+          frequency: cold ? 4200 : 1800, toFrequency: 850, q: 1.1,
+          buffer: crackleBuffer, delay: .045, attack: .004 });
+      }
     } else if (type === SOUND_EVENT.HEAVY_IMPACT || type === SOUND_EVENT.SPELL_IMPACT) {
       const magic = type === SOUND_EVENT.SPELL_IMPACT;
       const cold = material === MAT.ICE || material === MAT.WATER;
@@ -872,6 +891,19 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
           delay: .035 + i * .025, attack: .001 });
       if (material === MAT.WATER) playSample({ buffer: recordedAssets?.waterFlow,
         gain: gain * .26, pan, rate: 1.25, duration: .4, attack: .006 });
+      if (magic && material === MAT.CRYSTAL) {
+        playNoise({ duration: .28, gain: gain * .28, pan, frequency: 6800,
+          toFrequency: 2900, type: 'highpass', buffer: crackleBuffer, attack: .001 });
+        for (const [i, f] of [2900, 4130, 5710].entries()) playTone({
+          from: f, to: f * .9, duration: .15, gain: gain * .035, pan,
+          delay: i * .025, attack: .001 });
+      }
+      if (magic && material === MAT.NEUTRONIUM) {
+        playTone({ from: 190, to: 28, duration: .75, gain: gain * .20, pan,
+          wave: 'sine', attack: .004 });
+        playNoise({ duration: .8, gain: gain * .28, pan, frequency: 2900,
+          toFrequency: 120, buffer: brownBuffer, attack: .003, q: 1.1 });
+      }
     } else if (type === SOUND_EVENT.SHOCKWAVE) {
       playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .32,
         pan, rate: .7 + variation * .05, frequency: 800, duration: 1.1, attack: .002 });

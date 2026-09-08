@@ -6182,7 +6182,7 @@ export default {
       "dialogue": {
         "name": "Iven",
         "role": "Trader of small wonders",
-        "text": "Copper travels farther than promises. Bring me copper ore and I will trade cordials and runes. Old coffers hold armor; Osei and Brann can forge what you are missing.",
+        "text": "Bring copper ore for runes: Prism Choir ricochets through tight rooms, Hollow Star gathers foes before collapsing, and Faultline tears a seam through stone. Try combining them. Old cellar coffers hold runes and armor.",
         "action": "Browse wares",
         "intent": "workshop"
       }
@@ -6292,6 +6292,10 @@ export default {
         {
           "gear": 301,
           "count": 1
+        },
+        {
+          "gear": 307,
+          "count": 1
         }
       ]
     },
@@ -6318,6 +6322,10 @@ export default {
         },
         {
           "gear": 220,
+          "count": 1
+        },
+        {
+          "gear": 308,
           "count": 1
         }
       ]

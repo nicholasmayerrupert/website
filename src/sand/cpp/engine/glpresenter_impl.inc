@@ -240,7 +240,7 @@ void GLPresenter::glCollectDynamicLights() {
   int minigunLights = 0;
   auto addProjectile = [&](int kind, double x, double y, double vx, double vy,
                            double charge, int fuse) {
-    if (kind == PK_RUNE || kind == PK_RUNE_BURST) add(x, y, 170);
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD) add(x, y, 170);
     else if (kind == PK_BLAST_ROUND) add(x, y, 255);
     else if (kind == PK_DYNAMITE)
       add(x, y, (((fuse / 3) & 1) ? 225 : 185));
@@ -1497,11 +1497,39 @@ void GLPresenter::glDrawProjectiles() {
       kind=p.kind; fuse=p.fuse; rotation=p.rotation;
     }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
-    if (kind == PK_RUNE || kind == PK_RUNE_BURST) {
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD) {
       const auto* gear = E.content.gear((int)fuse);
       int spell = gear ? gear->spell : 1;
-      static const float colors[6][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f}};
-      const auto& tint = colors[imax(0,imin(5,spell-1))];
+      static const float colors[9][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f}};
+      const auto& tint = colors[imax(0,imin(8,spell-1))];
+      if (kind == PK_RUNE_FIELD) {
+        double phase = (1 - charge) * (spell == 8 ? 72 : 36);
+        if (spell == 8) {
+          for (int mote = 0; mote < 36; mote++) {
+            int arm = mote / 18, along = mote % 18;
+            double a = arm * 3.14159 + along * .43 + phase * .16;
+            double r = 3 + along;
+            double size = (1.25 - along * .035) * glCellDev;
+            glUniform4f(glc->uColor, arm ? .85f : .35f, .45f, 1, .95f-along*.025f);
+            glSolidDev(cx + std::cos(a) * r * glCellDev - size * .5,
+              cy + std::sin(a) * r * .7 * glCellDev - size * .5, size, size);
+          }
+          double core = (3.5 + std::sin(phase * .3) * .35) * glCellDev;
+          glUniform4f(glc->uColor,.86f,.61f,1,1);
+          glSolidDev(cx-core,cy-core*.6,core*2,core*1.2);
+          glUniform4f(glc->uColor,.07f,.02f,.15f,1);
+          glSolidDev(cx-core*.7,cy-core*.7,core*1.4,core*1.4);
+        } else {
+          for (int mote = 0; mote < 18; mote++) {
+            double behind = mote * .7, jag = std::sin(mote * 2.4 + phase) * (1 + mote * .12);
+            double mx = -vx * behind - vy * jag, my = -vy * behind + vx * jag;
+            double size = (1.3 - mote * .045) * glCellDev;
+            glUniform4f(glc->uColor,1,mote % 3 ? .48f : .94f,.12f,1-mote/22.f);
+            glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
+          }
+        }
+        continue;
+      }
       bool burst = kind == PK_RUNE_BURST;
       double radius = burst ? (1-charge)*(rotation > 1 ? rotation : 8) : 1.1;
       for (int mote = 0; mote < (burst ? 24 : 9); mote++) {
@@ -1509,7 +1537,8 @@ void GLPresenter::glDrawProjectiles() {
         double mx = burst ? std::cos(angle)*radius : -vx*mote*.32;
         double my = burst ? std::sin(angle)*radius : -vy*mote*.32 + std::sin(angle)*.35;
         float fade = burst ? charge : 1-mote/10.f;
-        glUniform4f(glc->uColor,tint[0],tint[1],tint[2],fade*.85f);
+        if (spell == 7 && mote % 3 == 0) glUniform4f(glc->uColor,.25f,1,1,fade*.9f);
+        else glUniform4f(glc->uColor,tint[0],tint[1],tint[2],fade*.85f);
         double size = (burst ? .4 + charge * .6 : 1.1-mote*.075)*glCellDev;
         glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
         if (burst && mote % 3 == 0) {

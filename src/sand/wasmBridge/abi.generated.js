@@ -2,7 +2,7 @@
 // Mirrors abi.generated.hpp: strides, named field offsets, shared enums, ABI version.
 export const ABI_VERSION = 47;
 
-export const ABI_FINGERPRINT = 0x1e20be2dcf93;
+export const ABI_FINGERPRINT = 0xda20dd0ba9d1;
 
 export function writeGlPlayerExtSnapshot(out, offset, record, value_own, value_animState, value_animFrame, value_alive, value_heldItemKind, value_bowCharge, value_aimX, value_aimY, value_jetpackFuel, value_jetpackActive, value_shieldHealth, value_shieldActive, value_weaponKick, value_hurtCooldown) {
   if (arguments.length !== 17) throw new TypeError('writeGlPlayerExtSnapshot requires 17 arguments');
@@ -117,7 +117,7 @@ export const INPUT = Object.freeze({ LEFT: 1, RIGHT: 2, JUMP: 4, DOWN: 8, PRIMAR
 export const WEATHER = Object.freeze({ CLEAR: 0, RAIN: 1 });
 export const ITEM_KIND = Object.freeze({ MATERIAL: 0, MINING_TOOL: 1, BOW: 2, ARROW: 3, BLAST_GUN: 4, DYNAMITE_SATCHEL: 5, BORE_CANNON: 6, ACID_MORTAR: 7, CLUSTER_LAUNCHER: 8, MINIGUN: 9, RESCUE_BEAM: 10, BUILDING_POOL: 11, POWDER_POOL: 12, LIQUID_POOL: 13, GEAR: 14, CHEST: 15 });
 export const POOL_ACTION = Object.freeze({ ENABLE: 0, MOVE: 1, SELECT: 2, WITHDRAW: 3, DEPOSIT: 4 });
-export const PROJECTILE_KIND = Object.freeze({ ARROW: 0, BLAST_ROUND: 1, DYNAMITE: 2, ACID_SHELL: 3, CLUSTER_BOMB: 4, MINIGUN_ROUND: 5, BORE_BEAM: 6, RESCUE_BEAM: 7, EXTRACTION_BEAM: 8, RUNE: 9, RUNE_BURST: 10 });
+export const PROJECTILE_KIND = Object.freeze({ ARROW: 0, BLAST_ROUND: 1, DYNAMITE: 2, ACID_SHELL: 3, CLUSTER_BOMB: 4, MINIGUN_ROUND: 5, BORE_BEAM: 6, RESCUE_BEAM: 7, EXTRACTION_BEAM: 8, RUNE: 9, RUNE_BURST: 10, RUNE_FIELD: 11 });
 export const CRAFT_INGREDIENT = Object.freeze({ MATERIAL: 0, MATERIAL_FLAG: 1 });
 export const TOOL = Object.freeze({ CUBE: 0, SAND: 1, WATER: 2, STONE: 3, OIL: 4, FIRE: 5, ACID: 6, LAVA: 7, ICE: 8, SEED: 9, DRIFTWOOD: 10, ERASER: 11 });
 export const CREATIVE_KIND = Object.freeze({ MATERIAL: 0, SEED: 1, ERASER: 2, CUBE: 3, CREATURE: 4 });

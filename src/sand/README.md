@@ -1047,3 +1047,20 @@ combine a swept air discharge with low pressure and elemental crackle; heavy
 impacts, elemental bursts, and expanding shockwaves have separate semantic
 events and layered recorded/synthesized tails. The browser playback suite renders
 a combat audio preview alongside its clipping and voice-admission checks.
+
+Prism Choir (306) fires five crystal shards with two terrain-cutting ricochets
+each. Hollow Star (307) anchors at the aimed distance, attracts nearby foes,
+dropped items and small rigid debris for 72 actor ticks, then collapses into a
+crater. The caster and protected residents are exempt from its pull. Faultline
+(308) sends six consecutive eruptions along the aim direction, excavating both
+layers and launching nearby enemies. Fields use the replicated `RUNE_FIELD`
+projectile phase; their timers and ownership survive checkpoints and streaming.
+Terrain repair runs on ricochet, eruption, or collapse rather than each attraction
+tick. Casts and impacts have crystal, vacuum, and rock-fracture sound layers.
+
+New travellers carry Prism Choir in hotbar slot 5. The cellar's third and fourth
+coffers contain Hollow Star and Faultline, and the rune merchant trades all three
+for copper, including in existing saves. Fen wisps use a three-shard choir on
+their second attack; root knights and Cinder Castellans use Faultline; the Hollow
+Bellkeeper alternates its radial toll with a Hollow Star. The original elemental
+spells remain available.

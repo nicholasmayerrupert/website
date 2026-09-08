@@ -34,6 +34,12 @@ ARMOR_SETS.forEach((set, index) => EQUIPMENT_SLOTS.slice(0, 6).forEach((slot, pa
 ['Ember', 'Rime', 'Gale', 'Stonebreak', 'Briar', 'Lumen'].forEach((name, i) => add(300 + i, `${name} rune`, 'spell',
   { spell: i + 1, power: [22, 18, 12, 32, 16, 0][i], mana: [18, 20, 16, 32, 22, 28][i], cooldown: [36, 42, 30, 60, 48, 90][i], reach: [48, 44, 36, 30, 40, 0][i], style: i + 1, price: 80,
     description: ['An explosive ember blasts terrain, ignites dry wood, and scatters foes.', 'Cold gathers around the target, stilling foes and freezing water.', 'A gust pushes creatures and loose terrain.', 'Shatters a pocket of stone, opening a path through the world.', 'Roots slow enemies and mend the living world.', 'A gentle light restores health.'][i] }));
+add(306, 'Prism Choir rune', 'spell', { spell: 7, power: 14, mana: 24, cooldown: 48, reach: 90, style: 1, price: 60,
+  description: 'Five singing crystal shards fan outward. Each ricochets twice, chipping walls and catching foes around corners.' });
+add(307, 'Hollow Star rune', 'spell', { spell: 8, power: 38, mana: 42, cooldown: 100, reach: 64, style: 2, price: 100,
+  description: 'Place a hungry violet star at your aim. It draws in foes and debris for a heartbeat, then collapses into a shattering crater. Its caster is immune to the pull.' });
+add(308, 'Faultline rune', 'spell', { spell: 9, power: 22, mana: 34, cooldown: 72, reach: 48, style: 3, price: 80,
+  description: 'Six travelling eruptions tear a continuous seam along your aim, breaking both terrain layers and throwing enemies upward.' });
 add(320, 'Red cordial', 'potion', { power: 45, cooldown: 90, price: 15, description: 'Restores 45 health. Drink with the primary action.' });
 add(321, 'Blue cordial', 'potion', { power: 55, cooldown: 90, price: 15, description: 'Restores 55 mana. Drink with the primary action.' });
 ['Gale Step', 'Windmantle', 'The lost verse', 'Bell clapper'].forEach((name, i) => add(340 + i, name, 'relic', { style: i + 1, price: 0, description: ['An earned breath of wind. Dodge in midair to dash once before landing.', 'Hold jump while falling to ride a gentle current.', 'The words that can wake the Hollow Bell.', 'A forged heart for the silent bell.'][i] }));

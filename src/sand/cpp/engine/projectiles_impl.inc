@@ -447,6 +447,32 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
   projectiles.push_back(beam);
 }
 
+void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage) {
+  const auto* gear = E.content.gear(gearId);
+  if (!gear) return;
+  double dx = targetX - x, dy = targetY - y, distance = std::hypot(dx, dy);
+  if (distance < .01) { dx = 1; dy = 0; distance = 1; }
+  double angle = std::atan2(dy, dx);
+  int count = gear->spell == 7 ? (owner < 0 ? 3 : 5) : 1;
+  double speed = gear->spell == 7 ? 3.6 : owner < 0 ? 2.4 : 2.8;
+  for (int i = 0; i < count && (int)projectiles.size() < PROJECTILE_MAX; i++) {
+    double a = angle + (i - (count - 1) * .5) * .16;
+    Projectile bolt; bolt.id = nextId++; bolt.owner = owner; bolt.kind = PK_RUNE;
+    bolt.fuse = gearId; bolt.px = x; bolt.py = y;
+    bolt.vx = std::cos(a) * speed; bolt.vy = std::sin(a) * speed;
+    bolt.charge = damage; bolt.rotation = gear->spell == 7 ? 2 : 0;
+    double reach = gear->spell == 8 ? std::min((double)gear->reach, distance) : gear->reach;
+    bolt.life = imax(1, (int)std::ceil(reach / speed));
+    if (gear->spell == 9) {
+      bolt.kind = PK_RUNE_FIELD; bolt.life = 36; bolt.charge = 1; bolt.rotation = damage;
+      bolt.vx = std::cos(a) * 1.35; bolt.vy = std::sin(a) * 1.35;
+      bolt.px += std::cos(a) * 6; bolt.py += std::sin(a) * 6;
+    }
+    projectiles.push_back(bolt);
+  }
+  E.audio.emit(SE_RUNE, x, y, .8, (uint8_t)gear->spell);
+}
+
 void ProjectileSystem::updateProjectiles() {
   auto hitsCreature = [&](double px, double py, double radius, int owner) {
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
@@ -565,6 +591,17 @@ void ProjectileSystem::updateProjectiles() {
       E.tools.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
     }
     E.audio.emit(SE_ACID_DISSOLVE, x, y, 1.0, ACID, 0);
+  };
+  auto fractureRune = [&](const Projectile& p, int radius, uint8_t material, int damage) {
+    Engine::ActiveLayerScope foreground(E, &E.fg);
+    ExplosivesSystem::BlastBatch front, back;
+    front.emitGas = back.emitGas = false;
+    uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.life * 2246822519u;
+    E.explosives.carveBlastAcrossLayers((int)p.px, (int)p.py, radius,
+      material == STONE ? 30 : 24, front, &back, nullptr, material, p.owner, seed, SE_SPELL_IMPACT, 0.0);
+    E.explosives.finishBlastBatches(front, &back);
+    damageSplash(p.px, p.py, radius + 1, damage, p.owner, material == STONE);
+    for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
   };
 
   std::vector<Projectile> pendingCluster;
@@ -804,25 +841,80 @@ void ProjectileSystem::updateProjectiles() {
       continue;
     }
 
+    if (p.kind == PK_RUNE_FIELD) {
+      if (p.px < 1 || p.py < 1 || p.px >= E.cols - 1 || p.py >= E.rows - 1) continue;
+      const auto* gear = E.content.gear(p.fuse);
+      if (!gear) continue;
+      if (gear->spell == 8) {
+        // Bounded actor-clock attraction; static terrain is cut only at collapse.
+        if (p.life % 3 == 0) {
+          auto pull = [&](double x, double y, double& vx, double& vy, double strength) {
+            double dx = p.px - x, dy = p.py - y, distance = std::hypot(dx, dy);
+            if (distance < 1 || distance > 26) return false;
+            double force = strength * (1 - distance / 30);
+            vx = std::clamp(vx * .85 + dx / distance * force, -2.5, 2.5);
+            vy = std::clamp(vy * .85 + dy / distance * force, -2.5, 2.5);
+            return true;
+          };
+          for (auto& c : E.creatures.creatures) {
+            if (!c.alive || E.creatures.isProtectedNpc(c) || (p.owner < 0 && c.id == -p.owner)) continue;
+            const auto& s = E.creatures.species(c);
+            if (pull(c.wx - E.fg.worldOffsetX + s.w * .5, c.wy - E.fg.worldOffsetY + s.h * .5, c.vx, c.vy, 1.0))
+              c.slowTicks = imax(c.slowTicks, 6);
+          }
+          for (auto& hero : E.psys.players) if (hero.active && hero.alive && hero.id != p.owner)
+            pull(hero.px + hero.w * .5, hero.py + hero.h * .5, hero.vx, hero.vy, .65);
+          for (auto& item : E.itemsys.items) pull(item.px, item.py, item.vx, item.vy, 1.2);
+          for (Layer* layer : {&E.fg, &E.bg}) for (Body* body : layer->bodies)
+            if (body->jointRole != 2 && body->material != NEUTRONIUM && body->occ.size() <= 256 &&
+                pull(body->px, body->py, body->vx, body->vy, .65)) E.rigid.wakeBody(body);
+        }
+      } else if (gear->spell == 9) {
+        if (p.life % 6 == 0) fractureRune(p, 9, STONE, (int)p.rotation);
+        p.px += p.vx; p.py += p.vy;
+      }
+      if (--p.life <= 0) {
+        if (gear->spell == 8) fractureRune(p, 12, NEUTRONIUM, (int)p.rotation);
+        p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1;
+        p.rotation = gear->spell == 8 ? 16 : 8; p.vx = p.vy = 0;
+      } else p.charge = p.life / (gear->spell == 8 ? 72.0 : 36.0);
+      projectiles[write++] = p; continue;
+    }
     if (p.kind == PK_RUNE_BURST) {
       if (--p.life > 0) { p.charge = p.life / 18.0; projectiles[write++] = p; }
       continue;
     }
     if (p.kind == PK_RUNE) {
-      bool hit = false;
+      const auto* rune = E.content.gear(p.fuse);
+      bool hit = false, outside = false;
       int steps = imax(1, (int)std::ceil(std::hypot(p.vx,p.vy) / .25));
       for (int j = 0; j < steps; j++) {
+        double oldX = p.px, oldY = p.py;
         p.px += p.vx / steps; p.py += p.vy / steps;
-        if (p.px < 1 || p.py < 1 || p.px >= E.cols-1 || p.py >= E.rows-1) { hit = true; break; }
+        if (p.px < 1 || p.py < 1 || p.px >= E.cols-1 || p.py >= E.rows-1) { outside = true; break; }
         int mat = E.fg.grid[E.I((int)p.px,(int)p.py)];
-        const auto* rune = E.content.gear(p.fuse);
+        if (rune && rune->spell == 7 && E.isBlockingForActor(mat) && p.rotation > 0) {
+          bool blockX = blocksPoint(p.px, oldY), blockY = blocksPoint(oldX, p.py);
+          fractureRune(p, 3, CRYSTAL, (int)p.charge);
+          if (blockX || !blockY) p.vx = -p.vx;
+          if (blockY || !blockX) p.vy = -p.vy;
+          p.px = oldX; p.py = oldY; p.rotation--;
+          break;
+        }
         if (E.isBlockingForActor(mat) || (rune && rune->spell == 2 && mat == WATER) ||
             (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,1,p.owner))) ||
             hitsCreature(p.px,p.py,1,p.owner)) { hit = true; break; }
       }
+      if (outside) continue;
       if (hit || --p.life <= 0) {
         auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
-        if (p.owner < 0 && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1) {
+        if (gear && gear->spell == 8) {
+          p.kind = PK_RUNE_FIELD; p.life = 72; p.rotation = p.charge; p.charge = 1; p.vx = p.vy = 0;
+          E.audio.emit(SE_RUNE, p.px, p.py, 1.1, 8);
+          projectiles[write++] = p; continue;
+        } else if (gear && gear->spell == 7) {
+          fractureRune(p, 3, CRYSTAL, (int)p.charge);
+        } else if (p.owner < 0 && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1) {
           int radius = p.charge > 18 ? 12 : 8;
           uint8_t material = p.fuse == 301 ? WATER : p.fuse == 304 ? ACID : p.fuse == 302 ? ICE : FIRE;
           E.combat.enemyTerrainImpact(p.px, p.py, radius, material);
@@ -832,7 +924,7 @@ void ProjectileSystem::updateProjectiles() {
             E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);
           }
         } else if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
-        p.rotation = p.owner < 0 && p.charge > 18 ? 12 : 8;
+        p.rotation = gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
       }
       projectiles[write++] = p; continue;

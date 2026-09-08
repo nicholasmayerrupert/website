@@ -738,7 +738,7 @@ void PlayerSystem::resolveMineDrops(Player& p) {
                             IT_PARTICLE_LIFE);
   }
 }
-// Target the first collectable surface in the selected layer along the aim ray.
+// Terrain takes priority along the aim ray. Liquid collection targets water outside the player.
 bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer,
                                      double* contactX, double* contactY) const {
   double cx = p.px + p.w*.5, cy = p.py + p.h*.42;
@@ -747,16 +747,31 @@ bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer
   dx/=length; dy/=length;
   auto mineable = [&](uint8_t m) { return m != EMPTY && !E.isGasMaterial(m); };
   const auto& grid = layer ? E.bg.grid : E.fg.grid;
+  int liquidX=-1,liquidY=-1;
+  double liquidContactX=0,liquidContactY=0;
   for (double at = .5; at <= std::min(P_FRONTIER_MINE_REACH,length+1); at += .35) {
     int xx=(int)std::floor(cx+dx*at), yy=(int)std::floor(cy+dy*at);
     if (xx<=0 || xx>=E.cols-1 || yy<=0 || yy>=E.rows) return false;
     int k=E.I(xx,yy);
     if (mineable(grid[k])) {
+      if (E.isLiquidMaterial(grid[k])) {
+        bool inside = xx+1>p.px && xx<p.px+p.w && yy+1>p.py && yy<p.py+p.h;
+        if (liquidX<0 && !inside) {
+          liquidX=xx;liquidY=yy;liquidContactX=cx+dx*at;liquidContactY=cy+dy*at;
+        }
+        continue;
+      }
       x=xx; y=yy;
       if (contactX) *contactX=cx+dx*at;
       if (contactY) *contactY=cy+dy*at;
       return true;
     }
+  }
+  if (liquidX>=0) {
+    x=liquidX;y=liquidY;
+    if (contactX) *contactX=liquidContactX;
+    if (contactY) *contactY=liquidContactY;
+    return true;
   }
   return false;
 }

@@ -1043,7 +1043,12 @@ are expensive for the development server to transform.
 
 Aster mining and material placement share circular radius presets, including
 single-cell precision. Seeds always place and preview one cell. Mining reaches
-12 cells and holds its selected surface contact through the swing. Weapons use
+12 cells and holds its selected surface contact through the swing. Each strike
+damages all eligible terrain cells inside the circle, including disconnected
+fragments, using their cell-weighted average hardness. Tool-tier limits still
+apply. Targeting looks through liquids for terrain; liquid collection targets
+liquids outside the player when no terrain is reached. Surrounding liquids do
+not contribute to terrain mining difficulty or get removed by excavation. Weapons use
 the right hand and shields the left, with depth following player facing. Raised
 shields follow an oval around the visible body to cover overhead aim.
 

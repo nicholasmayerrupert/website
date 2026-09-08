@@ -444,12 +444,12 @@ double ToolSystem::playerMineProgress(int id) {
   Player* p = E.psys.findPlayer(id);
   if (!p || !p->mineActive) return 0.0;
   double best = 0.0;
-  auto consider = [&](int xx, int yy, uint32_t areaScale) {
+  auto consider = [&](int xx, int yy, uint32_t areaScale, uint32_t durationOverride = UINT32_MAX) {
     if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) return;
     int k = E.I(xx, yy);
     uint8_t m = E.L->grid[k];
     if (m == EMPTY || E.L->mineDamage[k] == 0) return;
-    uint32_t dur = mineDurationFor(m, areaScale);
+    uint32_t dur = durationOverride == UINT32_MAX ? mineDurationFor(m, areaScale) : durationOverride;
     if (dur == 0) return;
     uint32_t rem = E.L->mineDamage[k] > dur ? dur : E.L->mineDamage[k];
     double progress = 1.0 - (double)rem / (double)dur;
@@ -461,7 +461,9 @@ double ToolSystem::playerMineProgress(int id) {
       uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
       for (const SurvivalFootprintCell& o : fp.cells) consider(p->mineX + (int)o.ox, p->mineY + (int)o.oy, areaScale);
     } else if (E.planetId == PL_FRONTIER) {
-      for (int k : frontierMinePatch(p->mineX, p->mineY, *E.L, getSurvivalFootprint(*p))) consider(k % E.cols, k / E.cols, 1);
+      const auto cells = frontierMinePatch(p->mineX, p->mineY, *E.L, getSurvivalFootprint(*p));
+      const uint32_t duration = frontierMineDuration(cells, *E.L, *p);
+      for (int k : cells) if (p->heldToolTier >= MAT_TOOLTIER[E.L->grid[k]]) consider(k % E.cols, k / E.cols, 1, duration);
     } else {
       for (int oy = -P_MINE_R; oy <= P_MINE_R; oy++) {
         for (int ox = -P_MINE_R; ox <= P_MINE_R; ox++) {
@@ -486,8 +488,8 @@ double ToolSystem::playerMineProgress(int id) {
 // the draft. Returns true when anything changed (it always does for m != EMPTY).
 bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool scaledSpeed, uint32_t areaScale, uint32_t speedMultiplier,
                         std::vector<int>& erasedStructural,
-                        std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
-  uint32_t dur = mineDurationFor(m, areaScale);
+                        std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies, uint32_t durationOverride) {
+  uint32_t dur = durationOverride == UINT32_MAX ? mineDurationFor(m, areaScale) : durationOverride;
   if (dur > 0) {
     if (E.L->mineDamage[k] == 0 || E.L->mineDamage[k] > dur) E.L->mineDamage[k] = dur;
     E.L->mineDamageAny = true;
@@ -505,34 +507,41 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
   draft.erase(k);
   return true;
 }
-// A connected patch follows the selected material inside the mining radius.
+// Excavation covers every non-liquid material in the brush; liquid collection covers liquids.
 std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& layer, const SurvivalFootprint& fp) const {
   std::vector<int> cells;
   if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
   uint8_t material=layer.grid[E.I(cx,cy)];
   if (material==EMPTY || E.isGasMaterial(material)) return cells;
-  const int radius = (int)fp.width / 2;
-  cells.push_back(E.I(cx,cy));
-  for (size_t i=0;i<cells.size();i++) {
-    int x=cells[i]%E.cols,y=cells[i]/E.cols;
-    for (auto [dx,dy] : {std::pair<int,int>{1,0},{-1,0},{0,1},{0,-1}}) {
-      int nx=x+dx,ny=y+dy;
-      if (nx<=0 || nx>=E.cols-1 || ny<=0 || ny>=E.rows || (nx-cx)*(nx-cx)+(ny-cy)*(ny-cy)>radius*radius) continue;
-      int k=E.I(nx,ny);
-      if (layer.grid[k]==material && std::find(cells.begin(),cells.end(),k)==cells.end()) cells.push_back(k);
-    }
+  const bool liquid = E.isLiquidMaterial(material);
+  for (const SurvivalFootprintCell& o : fp.cells) {
+    int x=cx+o.ox,y=cy+o.oy;
+    if (x<=0 || x>=E.cols-1 || y<=0 || y>=E.rows) continue;
+    int k=E.I(x,y); uint8_t m=layer.grid[k];
+    if (m!=EMPTY && !E.isGasMaterial(m) && E.isLiquidMaterial(m)==liquid) cells.push_back(k);
   }
   return cells;
+}
+uint32_t ToolSystem::frontierMineDuration(const std::vector<int>& cells, const Layer& layer, const Player& miner) const {
+  uint32_t total=0,count=0;
+  for (int k : cells) {
+    uint8_t m=layer.grid[k];
+    if (miner.heldToolTier < MAT_TOOLTIER[m]) continue;
+    total+=mineDurationFor(m,1); count++;
+  }
+  return count ? (total+count/2)/count : 0;
 }
 bool ToolSystem::strikeFrontierPatch(Player& miner) {
   lastMinedCells.clear();
   std::vector<int> erasedStructural;
   std::unordered_map<int,Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   bool changed=false;
-  for (int k : frontierMinePatch(miner.mineX,miner.mineY,*E.L,getSurvivalFootprint(miner))) {
+  const auto cells = frontierMinePatch(miner.mineX,miner.mineY,*E.L,getSurvivalFootprint(miner));
+  const uint32_t duration = frontierMineDuration(cells,*E.L,miner);
+  for (int k : cells) {
     uint8_t m=E.L->grid[k];
     if (miner.heldToolTier < MAT_TOOLTIER[m]) continue;
-    changed |= mineDamageCellStep(k,m,miner,true,1,1,erasedStructural,bodyById,dirtyBodies);
+    changed |= mineDamageCellStep(k,m,miner,true,1,1,erasedStructural,bodyById,dirtyBodies,duration);
   }
   E.rigid.finishErasedBodies(dirtyBodies,E.L->bodyCells);
   splitComponentsAfterDestroy(erasedStructural);

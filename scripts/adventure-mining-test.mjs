@@ -50,9 +50,45 @@ test('an exposed background wall can be excavated without changing the foregroun
  const foreground=Array.from(e.getGrid());hold(INPUT.SECONDARY,60,65);step(15);
  assert.equal(e.getGridBg()[65*128+58],MAT.EMPTY);assert.deepEqual(Array.from(e.getGrid()),foreground);
 });
-test('a swing clears a broad connected patch and preserves other materials',({e,hold,step,count})=>{
+test('a swing clears the whole brush including other materials',({e,hold,step,count})=>{
  e.paintDisc(59,65,0,MAT.WOOD,true);e.syncComponents();const before=count();hold();step(37);hold(0);
- assert.ok(before-count()>30, `cleared ${before-count()} stone cells`);assert.equal(e.getGrid()[65*128+59],MAT.WOOD);
+ assert.ok(before-count()>30, `cleared ${before-count()} stone cells`);assert.equal(e.getGrid()[65*128+59],MAT.EMPTY);
+});
+
+for (const layer of [0,1]) test(`mixed fragments share their average difficulty (layer ${layer})`,({e,id,hold,step})=>{
+ e.eraseDisc(61,63,8);e.setSelectedFootprint(id,3);e.setPlayerTool(id,TC.dig,TT.iron);
+ const cells=[[58,65,MAT.DIRT],[60,65,MAT.STONE],[60,66,MAT.STONE]];
+ for(const [x,y,m] of [...cells,[62,65,MAT.WOOD],[58,63,MAT.NEUTRONIUM]])e.paintDiscLayer(layer,x,y,0,m,true);
+ e.syncComponents();const grid=()=>layer?e.getGridBg():e.getGrid();
+ const bits=layer?INPUT.SECONDARY:INPUT.PRIMARY;
+ hold(bits,58.5,65.5);step();assert.deepEqual(e.getPlayerMineTarget(id),{x:58,y:65});hold(0);step(9);
+ for(const [x,y,m] of cells)assert.equal(grid()[y*128+x],m,'soft and hard cells wait for the same averaged work');
+ const power=2+TT.iron,average=(2+8+8)/3;
+ assert.ok(Math.abs(e.getPlayerMineProgress(id)-power/average)<1e-6,'progress uses the cell-weighted average, excluding air and inaccessible material');
+ step(20);hold(bits,58.5,65.5);step(10);hold(0);
+ for(const [x,y] of cells)assert.equal(grid()[y*128+x],MAT.EMPTY,'the same strike clears detached one- and two-cell fragments');
+ assert.equal(grid()[65*128+62],MAT.WOOD,'cells outside the circle stay intact');
+ assert.equal(grid()[63*128+58],MAT.NEUTRONIUM,'averaging cannot bypass tool tiers');
+ step(30);
+ const inventory=e.getInventory(id),drops=[...inventory.slots,...inventory.pools.flatMap(p=>p.entries)];
+ assert.ok(e.getItems().length || drops.some(s=>s.material===MAT.STONE),'mixed excavation produces material drops');
+});
+
+for (const layer of [0,1]) test(`submerged mining reaches the ground through water (layer ${layer})`,({e,id,hold,step})=>{
+ e.eraseDisc(61,63,8);e.setSelectedFootprint(id,2);
+ for(let y=59;y<70;y++)for(let x=46;x<=57;x++)e.paintDisc(x,y,0,MAT.WATER,true);
+ for(let x=48;x<=56;x++)e.paintDiscLayer(layer,x,70,0,MAT.STONE,true);
+ if(layer)for(let y=59;y<70;y++)for(let x=46;x<=57;x++)e.paintDiscLayer(1,x,y,0,MAT.WATER,true);
+ e.syncComponents();const grid=()=>layer?e.getGridBg():e.getGrid();
+ const water=grid().filter(m=>m===MAT.WATER).length;
+ const bits=layer?INPUT.SECONDARY:INPUT.PRIMARY;
+ hold(bits,52,71);step();const target=e.getPlayerMineTarget(id);
+ assert.ok(target&&target.y===70,'the target is the floor, not liquid inside the player');
+ hold(0);step(9);assert.ok(e.getPlayerMineProgress(id)>0);
+ assert.equal(grid()[target.y*128+target.x],MAT.STONE,'surrounding water does not dilute stone hardness');
+ step(20);hold(bits,52,71);step(10);hold(0);
+ assert.equal(grid()[target.y*128+target.x],MAT.EMPTY,'a second underwater strike excavates the ground');
+ assert.equal(grid().filter(m=>m===MAT.WATER).length,water,'excavation leaves the surrounding water intact');
 });
 
 test('the forge offers a stronger craftable pick and enforces its workshop',({e,id})=>{

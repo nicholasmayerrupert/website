@@ -2725,6 +2725,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       size_t gj = gi + 1;
       while (gj < pending.size() && pending[gj].material == mat) gj++;
       curD = DENSITY[mat];
+      int sourceTop = pending[gi].from / E.cols;
       const int* searchOffs = E.isGasMaterial(mat) ? gasOffs : offs;
       int need = (int)(gj - gi);
       queue.clear(); targets.clear(); surfaceTargets.clear();
@@ -2795,9 +2796,13 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       auto visitCell = [&](int k) {
         if (isDropTarget(k, mat)) {
           // Liquid exits at a supported free-surface cell when one is reachable.
+          // An upward outlet resting on a body must use the pool surface;
+          // ordinary liquid can still fill empty gaps around the body.
           // Dry cells bordering the body remain a volume-preserving fallback.
           bool dryLiquidOutlet = (mixedLiquidFootprint
-              || DENSITY[mat] < DENSITY[WATER] - 1e-6)
+              || DENSITY[mat] < DENSITY[WATER] - 1e-6
+              || (k / E.cols < sourceTop && k + E.cols < gridLen
+                  && E.isBodyCell(k + E.cols)))
             && E.isLiquidMaterial(mat)
             && E.L->grid[k] == EMPTY;
           bool hasLiquidBelow = k + E.cols < gridLen
@@ -2836,30 +2841,36 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
         }
       }
       // Fill the lowest reachable surface row first, distributing a partial row
-      // across its width so repeated body motion cannot build a narrow mound.
-      std::sort(surfaceTargets.begin(), surfaceTargets.end(), [&](int a, int b) {
-        int ay = a / E.cols, by = b / E.cols;
-        return ay != by ? ay > by : a < b;
-      });
-      for (size_t first = 0; first < surfaceTargets.size()
-           && (int)targets.size() < need;) {
-        size_t last = first + 1;
-        int row = surfaceTargets[first] / E.cols;
+      // across its width. Full rows support another row above them so a large
+      // displacement can raise a narrow pool without spilling onto a dry body.
+      while (!surfaceTargets.empty() && (int)targets.size() < need) {
+        std::sort(surfaceTargets.begin(), surfaceTargets.end(), [&](int a, int b) {
+          int ay = a / E.cols, by = b / E.cols;
+          return ay != by ? ay > by : a < b;
+        });
+        size_t last = 1;
+        int row = surfaceTargets[0] / E.cols;
         while (last < surfaceTargets.size()
                && surfaceTargets[last] / E.cols == row)
           last++;
-        int take = imin(need - (int)targets.size(), (int)(last - first));
+        int take = imin(need - (int)targets.size(), (int)last);
         for (int i = 0; i < take; i++) {
-          size_t offset = ((size_t)(i * 2 + 1) * (last - first))
-                        / (size_t)(take * 2);
-          int k = surfaceTargets[first + offset];
+          size_t offset = ((size_t)(i * 2 + 1) * last) / (size_t)(take * 2);
+          int k = surfaceTargets[offset];
           E.L->rigidSpillReserved[k] = reservedGen;
           targets.push_back(k);
         }
-        first = last;
+        if ((int)targets.size() >= need) break;
+        for (size_t i = 0; i < last; i++) {
+          int above = surfaceTargets[i] - E.cols;
+          if (row > 1 && isDropTarget(above, mat))
+            surfaceTargets.push_back(above);
+        }
+        surfaceTargets.erase(surfaceTargets.begin(), surfaceTargets.begin() + last);
       }
       for (int k : fallbackTargets) {
         if ((int)targets.size() >= need) break;
+        if (!isDropTarget(k, mat)) continue;
         E.L->rigidSpillReserved[k] = reservedGen;
         targets.push_back(k);
       }

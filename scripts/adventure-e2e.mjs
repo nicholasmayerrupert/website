@@ -50,10 +50,10 @@ process.exitCode=await runBrowserCases({adventure:async({page,baseURL,check})=>{
  await page.mouse.move(chestPoint.x,chestPoint.y);await page.keyboard.press('e');
  await page.getByRole('button',{name:'Take all',exact:true}).waitFor();
  await page.screenshot({path:artifacts+'/chest.png'});
- const lootedAt=await page.evaluate(()=>Date.now());
  await page.getByRole('button',{name:'Take all',exact:true}).click();
  await page.locator('.ad-loot').getByText('Empty', { exact: true }).waitFor();
- await page.waitForFunction(time=>document.querySelector('sand-game')._game.getSaveState().savedAt>time,lootedAt,{timeout:30000});
+ const lootedAt=await page.evaluate(()=>{const time=Date.now();window.dispatchEvent(new Event('pagehide'));return time;});
+ await page.waitForFunction(time=>document.querySelector('sand-game')._game.getSaveState().savedAt>=time,lootedAt,{timeout:30000});
  const saved=await page.evaluate(()=>document.querySelector('sand-game')._game.getInventory());
  await page.reload({waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>{const g=document.querySelector('sand-game')?._game;return g?.getSaveState().restored && window.__sandPerf().mirrorWorldTick > 0 && g.getInventory()?.equipment?.length && g.getChests().length;},null,{timeout:60000});

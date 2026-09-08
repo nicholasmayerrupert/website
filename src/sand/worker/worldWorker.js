@@ -1384,6 +1384,11 @@ function applyRuntimeMessage(data) {
     postSounds();
     postCreatures();
     postActors(true);
+  } else if (data.type === 'test-combat-target') {
+    engine.setMirrorCreatures(new Float32Array(0), engine.getWorldOffsetX(), engine.getWorldOffsetY());
+    engine.spawnScriptedCreature(data.species | 0, data.worldX, data.worldY);
+    postCreatures();
+    postActors(true);
   } else if (data.type === 'test-step-actors') {
     // Test-driven actor turns own the worker clock while they run. Keeping the
     // authority paused makes the requested count exact even on a loaded host.

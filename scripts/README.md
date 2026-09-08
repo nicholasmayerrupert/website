@@ -90,6 +90,19 @@ and lighting percentiles and uploaded texels, checks against full-light pixels,
 and asserts unchanged terrain. Use `--compare FILE` on the same browser/host;
 these are submission timings, not GPU completion or overall FPS.
 
+`node scripts/bench-first-actions.mjs --json FILE` opens fresh survival sessions
+for sword, Ember, and Prism, then compares first/repeated attacks and confirmed
+stationary enemy hits with audio enabled and disabled. It records frame gaps, long tasks,
+render/worker timings, and the actual graphics renderer. Use `--only prism`,
+`--audio on` or `--audio off` to narrow the run. On macOS, `--angle metal`
+selects hardware graphics; default headless Chromium may use SwiftShader and
+spend most of each frame waiting for software rendering. Compare identical
+renderer configurations and inspect individual first-use gaps, not only p95.
+`--warm-input` clicks a temporary button outside the game before each sequence to
+separate first browser/audio activation from first use of a weapon or hit effect.
+`--trace PREFIX` writes a Chrome timeline per session for native frame delays;
+use untraced runs for timing comparisons.
+
 `node scripts/bench-checkpoint.mjs --json FILE` compares synchronous checkpoint
 writing with cooperative autosaves at three loaded-world widths. It reports
 atomic capture time, total completion time, event-loop gaps and yields, and

@@ -243,7 +243,7 @@ function writeStoredMuted(muted) {
 
 export function createSandAudio({ expeditionScore = false, fantasyScore = false } = {}) {
   let context = null;
-  let preparedContext = null;
+  let unlocked = false;
   let master = null;
   let effectsBus = null;
   let ambienceBus = null;
@@ -269,7 +269,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const MAX_VOICES = mobileVoiceBudget ? 16 : 28;
 
-  const audible = () => enabled && !muted && !hidden && !destroyed;
+  const audible = () => unlocked && enabled && !muted && !hidden && !destroyed;
 
   const makeNoise = (seconds, kind) => {
     const length = Math.ceil(context.sampleRate * seconds);
@@ -391,17 +391,21 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     catch { return new AudioContext(); }
   };
 
-  // Device creation belongs to loading. Keep the graph and playback gated on
-  // unlock, and retry there if the browser requires a gesture even to create it.
+  // Build the silent mixer and decode its recordings during loading. The master
+  // output stays closed until unlock; browsers may defer device startup too.
   const prepare = () => {
-    if (context || preparedContext || destroyed || !enabled || muted || hidden) return;
-    try { preparedContext = createContext(); } catch { /* gesture will retry */ }
+    if (context || destroyed || !enabled || muted || hidden) return;
+    try { init(); } catch {
+      const failed = context;
+      context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
+      noiseBuffer = brownBuffer = crackleBuffer = null;
+      try { failed?.close(); } catch { /* gesture will retry with a new context */ }
+    }
   };
 
   const init = () => {
     if (context || destroyed) return context;
-    context = preparedContext || createContext();
-    preparedContext = null;
+    context = createContext();
     if (!context) return null;
     master = context.createGain();
     master.gain.value = 0;
@@ -499,6 +503,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       // WebKit also exposes a non-standard `interrupted` state after an audio
       // session interruption. It needs the same resume attempt as `suspended`.
       if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
+      unlocked = ctx.state === 'running';
       applyMaster();
       if (expeditionScore && !scoreTimer && ctx.state === 'running') {
         playScoreBar();
@@ -1160,10 +1165,9 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     if (ambienceVoices) for (const voice of ambienceVoices) { try { voice.source.stop(); } catch { /* already stopped */ } }
     if (movementVoices) for (const voice of Object.values(movementVoices)) { try { voice.source.stop(); } catch { /* already stopped */ } }
     const ctx = context;
+    unlocked = false;
     context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
     try { ctx?.close(); } catch { /* browser is already tearing down */ }
-    try { preparedContext?.close(); } catch { /* browser is already tearing down */ }
-    preparedContext = null;
   };
 
   return {
@@ -1178,7 +1182,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     toggleMuted,
     get enabled() { return enabled; },
     get muted() { return muted; },
-    get ready() { return context?.state === 'running'; },
+    get ready() { return unlocked && context?.state === 'running'; },
     get playerEffects() { return { ...playerEffects }; },
     destroy,
   };

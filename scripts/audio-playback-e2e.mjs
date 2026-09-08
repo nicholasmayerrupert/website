@@ -14,6 +14,25 @@ try {
   const result = await page.evaluate(async () => {
     const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
     const { OFF, SOUND_EVENT, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
+    let failedClosed = false;
+    window.AudioContext = function () { return {
+      createGain() { throw new Error('Graph creation requires activation'); },
+      close() { failedClosed = true; },
+    }; };
+    const prepared = createSandAudio();
+    prepared.setMuted(false);
+    prepared.prepare();
+    if (!failedClosed || prepared.ready) throw new Error('Failed preparation retained its context');
+    const silentContext = new OfflineAudioContext(2, 4800, 48000);
+    Object.defineProperty(silentContext, 'state', { get: () => 'running' });
+    silentContext.close = async () => {};
+    window.AudioContext = function () { return silentContext; };
+    prepared.prepare();
+    if (prepared.ready) throw new Error('Prepared audio must wait for unlock');
+    const silence = await silentContext.startRendering();
+    prepared.destroy();
+    if ([0, 1].some(channel => silence.getChannelData(channel).some(value => value !== 0)))
+      throw new Error('Prepared mixer emitted audio before unlock');
     const ctx = new OfflineAudioContext(2, 48000 * 5, 48000);
     const originalCreateSource = ctx.createBufferSource.bind(ctx);
     const sources = [];
@@ -40,10 +59,12 @@ try {
     const mixer = createSandAudio();
     mixer.setMuted(false);
     mixer.prepare();
-    if (contextCreations !== 1 || sources.length !== 0 || mixer.ready)
-      throw new Error('Audio preparation must create only the silent context');
+    if (contextCreations !== 1 || sources.length === 0 || mixer.ready)
+      throw new Error('Audio preparation must build the locked mixer');
+    const preparedSources = sources.length;
     await mixer.unlock();
-    if (contextCreations !== 1) throw new Error('Gesture recreated the prepared audio device');
+    if (contextCreations !== 1 || sources.length !== preparedSources)
+      throw new Error('Gesture recreated the prepared audio mixer');
     const deadline = performance.now() + 10000;
     while (decoded < 8 && performance.now() < deadline)
       await new Promise(resolve => setTimeout(resolve, 20));

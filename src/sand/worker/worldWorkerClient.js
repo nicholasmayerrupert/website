@@ -782,6 +782,12 @@ export function createWorldWorkerClient(ctx) {
         forceBreach: !!forceBreach,
       });
     },
+    testSetCombatTarget(species, localX, localY) {
+      const e = ctx.engine;
+      if (!e) return;
+      post({ type: 'test-combat-target', species: species | 0,
+        worldX: e.getWorldOffsetX() + localX, worldY: e.getWorldOffsetY() + localY });
+    },
     testStepActors(steps = 1) {
       post({ type: 'test-step-actors', steps: steps | 0 });
     },

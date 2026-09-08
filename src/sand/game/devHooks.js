@@ -226,6 +226,9 @@ export function installDevHooks(ctx, {
     spawnNatural(species, salt = 0, forceBreach = false) {
       ctx.worldWorker?.testNaturalSpawn(species | 0, salt | 0, !!forceBreach);
     },
+    setCombatTarget(species, x, y) {
+      ctx.worldWorker?.testSetCombatTarget(species, x, y);
+    },
     stepAuthorityActors(steps = 1) {
       ctx.worldWorker?.testStepActors(steps | 0);
     },

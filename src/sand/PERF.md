@@ -369,9 +369,13 @@ changing DOM visibility. Frame diagnostics retain visible stalls over 100 ms;
 visibility transitions reset the clock to exclude tab suspension. The pan
 benchmark replaces its entire rolling frame window after synchronous pixel
 probes before sampling the held-key pan (`frameTimingVersion: 2`).
-Survival prepares a silent AudioContext during loading so audio-device creation
-does not block the first movement or shot. The graph and playback remain gated
-on activation; browsers that reject early creation retry on the gesture.
+Survival prepares the audio context, mixer graph, procedural noise, and recorded
+effects during loading. A closed master output keeps preparation silent until
+activation. Browsers that reject early creation retry on the gesture; the
+browser may also defer hardware startup. The local gesture setup probe takes
+about 1 ms with the prepared graph. `bench-first-actions.mjs` checks cold and
+repeated attacks and enemy hits, with audio on/off and an explicit renderer
+identity so software-GPU stalls are distinguishable from game CPU work.
 
 These optimizations preserve deterministic output except accepted behavior
 changes. The recorded checksum uses the native foreground-plus-background grid

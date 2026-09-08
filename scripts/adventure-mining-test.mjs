@@ -82,13 +82,54 @@ for (const layer of [0,1]) test(`submerged mining reaches the ground through wat
  e.syncComponents();const grid=()=>layer?e.getGridBg():e.getGrid();
  const water=grid().filter(m=>m===MAT.WATER).length;
  const bits=layer?INPUT.SECONDARY:INPUT.PRIMARY;
- hold(bits,52,71);step();const target=e.getPlayerMineTarget(id);
+ const aimY=layer?70.5:71;
+ hold(bits,52,aimY);step();const target=e.getPlayerMineTarget(id);
  assert.ok(target&&target.y===70,'the target is the floor, not liquid inside the player');
  hold(0);step(9);assert.ok(e.getPlayerMineProgress(id)>0);
  assert.equal(grid()[target.y*128+target.x],MAT.STONE,'surrounding water does not dilute stone hardness');
- step(20);hold(bits,52,71);step(10);hold(0);
+ step(20);hold(bits,52,aimY);step(10);hold(0);
  assert.equal(grid()[target.y*128+target.x],MAT.EMPTY,'a second underwater strike excavates the ground');
  assert.equal(grid().filter(m=>m===MAT.WATER).length,water,'excavation leaves the surrounding water intact');
+});
+
+for(const [x,y] of [[44,65],[52,56],[61,65]])test(`background mining follows the cursor through surrounding walls at ${x},${y}`,({e,id,hold,step})=>{
+ for(let yy=54;yy<=74;yy++)for(let xx=40;xx<=66;xx++)e.paintDiscLayer(1,xx,yy,0,MAT.WOOD,true);
+ e.syncComponentsLayer(1);e.setSelectedFootprint(id,2);
+ const foreground=e.getGrid().slice(),before=e.getGridBg().slice();
+ hold(INPUT.SECONDARY,x+.5,y+.5);step();
+ assert.deepEqual(e.getPlayerMineTarget(id),{x,y},'nearby background does not intercept the cursor');
+ hold(0,52,65);step(9);
+ const after=e.getGridBg();
+ for(let k=0;k<before.length;k++)if(before[k]===MAT.WOOD){
+  const inside=(k%128-x)**2+(Math.floor(k/128)-y)**2<=4;
+  assert.equal(after[k],inside?MAT.EMPTY:MAT.WOOD,'the swing clears exactly the cursor-centered circle');
+ }
+ assert.deepEqual(e.getGrid(),foreground,'background excavation preserves foreground');
+});
+
+test('background brushes mine around an empty cursor cell',({e,id,hold,step})=>{
+ e.setSelectedFootprint(id,2);
+ for(const [x,y] of [[58,65],[60,65],[59,64],[59,66]])e.paintDiscLayer(1,x,y,0,MAT.WOOD,true);
+ e.syncComponentsLayer(1);hold(INPUT.SECONDARY,59.5,65.5);step();
+ assert.deepEqual(e.getPlayerMineTarget(id),{x:59,y:65});hold(0);step(9);
+ assert.equal(e.getGridBg().filter(m=>m===MAT.WOOD).length,0,'an empty center does not prevent the brush from clearing nearby cells');
+});
+
+test('a completely empty background brush does not produce a mining impact',({e,id,hold,step})=>{
+ e.setSelectedFootprint(id,0);const before=e.getPlayerActionCount();
+ hold(INPUT.SECONDARY,59.5,65.5);step();hold(0);step(9);
+ assert.equal(e.getPlayerActionCount(),before);
+});
+
+test('background cursor movement stays within reach and cannot finish after walking away',({e,id,hold,step})=>{
+ e.setSelectedFootprint(id,0);
+ for(let x=40;x<100;x++)e.paintDiscLayer(1,x,65,0,MAT.WOOD,true);
+ e.syncComponentsLayer(1);hold(INPUT.SECONDARY,95,65.5);step();
+ const target=e.getPlayerMineTarget(id),p=e.getPlayer(id);
+ assert.ok(target&&target.x<70&&Math.hypot(target.x-p.x-p.w*.5,target.y-p.y-p.h*.42)<13,'far-away cursors clamp the brush center to mining reach');
+ e.setPlayerState(id,{...p,x:25});hold(0);step(9);
+ assert.equal(e.getGridBg()[target.y*128+target.x],MAT.WOOD,'walking out of reach cancels the hit');
+ assert.equal(e.getGridBg()[65*128+95],MAT.WOOD,'the distant cursor cell is never mined');
 });
 
 test('the forge offers a stronger craftable pick and enforces its workshop',({e,id})=>{
@@ -122,14 +163,15 @@ for (const layer of [0,1]) for (const aimX of [43,44,46,50,54,58,60,61]) {
   e.eraseDisc(61,63,6);
   if(layer)for(let x=1;x<127;x++)e.paintDiscLayer(1,x,70,0,MAT.STONE,true);
   e.syncComponents();e.setSelectedFootprint(id,0);
-  hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,72);step();
+  const aimY=layer?70.5:72;
+  hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,aimY);step();
   const target=e.getPlayerMineTarget(id);assert.ok(target,'surface is in reach');
   const grid=()=>layer?e.getGridBg():e.getGrid();
   const before=Array.from(grid());
   hold(0,100,40);step(9);
   assert.ok(e.getPlayerMineProgress(id)>0,'contact damages the locked cell even after aim moves');
   assert.deepEqual(Array.from(grid()),before,'the first stone strike only damages');
-  step(20);hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,72);step(10);
+  step(20);hold(layer?INPUT.SECONDARY:INPUT.PRIMARY,aimX,aimY);step(10);
   assert.equal(grid()[target.y*128+target.x],MAT.EMPTY,'the second strike finishes the same cell');
  });
 }

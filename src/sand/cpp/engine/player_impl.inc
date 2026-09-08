@@ -738,12 +738,23 @@ void PlayerSystem::resolveMineDrops(Player& p) {
                             IT_PARTICLE_LIFE);
   }
 }
-// Terrain takes priority along the aim ray. Liquid collection targets water outside the player.
+// Background brushes follow the cursor within reach; foreground targets the first terrain surface.
 bool PlayerSystem::frontierMineTarget(const Player& p, int& x, int& y, int layer,
                                      double* contactX, double* contactY) const {
   double cx = p.px + p.w*.5, cy = p.py + p.h*.42;
   double dx = p.aimX-cx, dy = p.aimY-cy, length = std::hypot(dx,dy);
-  if (!std::isfinite(length) || length < .01) return false;
+  if (!std::isfinite(length)) return false;
+  if (layer) {
+    double scale = length > P_FRONTIER_MINE_REACH ? P_FRONTIER_MINE_REACH / length : 1.0;
+    double tx=cx+dx*scale,ty=cy+dy*scale;
+    int xx=(int)std::floor(tx),yy=(int)std::floor(ty);
+    if (xx<=0 || xx>=E.cols-1 || yy<=0 || yy>=E.rows) return false;
+    x=xx;y=yy;
+    if (contactX) *contactX=tx;
+    if (contactY) *contactY=ty;
+    return true;
+  }
+  if (length < .01) return false;
   dx/=length; dy/=length;
   auto mineable = [&](uint8_t m) { return m != EMPTY && !E.isGasMaterial(m); };
   const auto& grid = layer ? E.bg.grid : E.fg.grid;
@@ -787,13 +798,18 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
       }
       double cx=p.px+p.w*.5,cy=p.py+p.h*.42;
       int x=0,y=0;
-      // Validate the same surface contact that started the swing.
+      // Validate the same target point that started the swing.
       Player target=p; target.aimX=p.mineContactX;target.aimY=p.mineContactY;
       bool reachable=std::hypot(target.aimX-cx,target.aimY-cy)<=P_FRONTIER_MINE_REACH+1
         && frontierMineTarget(target,x,y,p.mineLayer) && x==p.mineX && y==p.mineY;
       if (reachable) {
         Engine::ActiveLayerScope active(E,p.mineLayer ? &E.bg : &E.fg);
         uint8_t material=E.L->grid[E.I(p.mineX,p.mineY)];
+        if (material==EMPTY || E.isGasMaterial(material)) {
+          const auto patch=E.tools.frontierMinePatch(p.mineX,p.mineY,*E.L,E.tools.getSurvivalFootprint(p));
+          if (patch.empty()) return;
+          material=E.L->grid[patch.front()];
+        }
         E.tools.strikeFrontierPatch(p); resolveMineDrops(p);
         E.audio.emit(SE_IMPACT,p.mineX,p.mineY,.55,material,p.mineLayer);
         for (int i=0;i<5;i++) E.itemsys.spawnParticle(material,p.mineX+.5,p.mineY+.5,(i-2)*.18,-.5-(i%2)*.2,IT_PARTICLE_LIFE);

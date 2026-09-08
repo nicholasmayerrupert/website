@@ -259,8 +259,9 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
       e.glSetPlayers(true,new Float32Array(),id);
       for(let y=59;y<68;y++)for(let x=58;x<65;x++)e.paintDiscLayer(1,x,y,0,MAT.STONE,true);
       e.syncComponentsLayer(1);
-      const render=(on,buttons=0)=>{
-        e.inputPointer(360,390,buttons,true);
+      const render=(on,buttons=0,aimX=60,aimY=65)=>{
+        e.setPlayerInput(id,{bits:0,aimX,aimY});
+        e.inputPointer(aimX*6,aimY*6,buttons,true);
         e.glSetSurvivalPreview(on,2,true,null,0,3); e.glRenderFrame(true);
         return e.glReadPixels(0,0,768,600);
       };
@@ -273,10 +274,22 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
       const fgBase=render(false),fgHover=render(true),fgRight=render(true,2);
       e.eraseDiscLayer(1,61,63,8);e.syncComponentsLayer(1);
       const fgOnlyBase=render(false),fgOnly=render(true);
+      e.eraseDisc(58,65,0);e.syncComponents();
+      for(let y=54;y<=74;y++)for(let x=40;x<=66;x++)e.paintDiscLayer(1,x,y,0,MAT.STONE,true);
+      e.syncComponentsLayer(1);
+      const surroundedBase=render(false),leftHover=render(true,0,45.5,65.5),rightHover=render(true,0,60.5,65.5);
+      const outlineCenterX=pixels=>{
+        let min=768,max=-1;
+        for(let i=0;i<pixels.length;i+=4)if(pixels[i]!==surroundedBase[i]||pixels[i+1]!==surroundedBase[i+1]||pixels[i+2]!==surroundedBase[i+2]){
+          const x=(i/4)%768;min=Math.min(min,x);max=Math.max(max,x);
+        }
+        return (min+max)/2;
+      };
       return { hoverChanges:changed(bgBase,bgHover), rightMatchesHover:changed(bgHover,bgRight)===0,
         leftDoesNotPreviewBackground:changed(bgBase,bgLeft)===0,foregroundEmpty,
         foregroundChanges:changed(fgBase,fgHover),rightChangesLayer:changed(fgHover,fgRight)>0,
-        foregroundWins:fgHover.every((v,i)=>(v!==fgBase[i])===(fgOnly[i]!==fgOnlyBase[i])),previewImage };
+        foregroundWins:fgHover.every((v,i)=>(v!==fgBase[i])===(fgOnly[i]!==fgOnlyBase[i])),previewImage,
+        leftCenter:outlineCenterX(leftHover),rightCenter:outlineCenterX(rightHover) };
     } finally {e.destroy();}
   });
   writeFileSync(artifacts+'/background-preview.png',Buffer.from(result.previewImage.split(',')[1],'base64'));
@@ -286,4 +299,6 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
   check('foreground cells keep their own outline',result.foregroundChanges>0);
   check('right-click explicitly selects background behind foreground',result.rightChangesLayer);
   check('hovering foreground does not add an unrelated background outline',result.foregroundWins);
+  check('surrounding background walls let the outline follow the cursor in both directions',
+    Math.abs(result.leftCenter-45.5*6)<1.5&&Math.abs(result.rightCenter-60.5*6)<1.5,JSON.stringify([result.leftCenter,result.rightCenter]));
 } });

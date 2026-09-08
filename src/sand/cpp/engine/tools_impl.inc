@@ -512,7 +512,6 @@ std::vector<int> ToolSystem::frontierMinePatch(int cx, int cy, const Layer& laye
   std::vector<int> cells;
   if (cx<=0 || cx>=E.cols-1 || cy<=0 || cy>=E.rows) return cells;
   uint8_t material=layer.grid[E.I(cx,cy)];
-  if (material==EMPTY || E.isGasMaterial(material)) return cells;
   const bool liquid = E.isLiquidMaterial(material);
   for (const SurvivalFootprintCell& o : fp.cells) {
     int x=cx+o.ox,y=cy+o.oy;

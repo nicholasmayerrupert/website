@@ -1,5 +1,5 @@
 import { runBrowserCases } from './browser-harness.mjs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { MAT } from '../src/sand/materials.js';
 const artifacts = '.sand-artifacts/adventure-tools';
@@ -242,4 +242,48 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
   }));
   await page.screenshot({ path: artifacts + '/mobile-size.png' });
   check('tools render without browser errors', errors.length === 0, errors.join('; '));
+}, backgroundPreview: async ({ page, baseURL, check }) => {
+  await page.route('**/mining-preview-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><body></body>' }));
+  await page.goto(baseURL + '/mining-preview-fixture');
+  const result = await page.evaluate(async () => {
+    const { initSandWasm, createEngineWasm, PLANET, MAT } = await import('/src/sand/wasmBridge/engineFactory.js');
+    await initSandWasm();
+    const e = createEngineWasm({ cols: 128, rows: 100, planetId: PLANET.FRONTIER, infinite: false, sinksOn: false });
+    const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 600; document.body.append(canvas);
+    try {
+      e.glInit(canvas); e.glResize(768,600); e.setViewport(1,6,128,100); e.cameraSet(0,0);
+      e.glSetFlags(false,false,true); e.setSkyLight(200); e.setPlayMode(true);
+      e.setSurvivalInventory(true);
+      const id=e.spawnPlayer(50,62); e.setSelectedSlot(id,1);
+      e.setPlayerInput(id,{bits:0,aimX:60,aimY:65});
+      e.glSetPlayers(true,new Float32Array(),id);
+      for(let y=59;y<68;y++)for(let x=58;x<65;x++)e.paintDiscLayer(1,x,y,0,MAT.STONE,true);
+      e.syncComponentsLayer(1);
+      const render=(on,buttons=0)=>{
+        e.inputPointer(360,390,buttons,true);
+        e.glSetSurvivalPreview(on,2,true,null,0,3); e.glRenderFrame(true);
+        return e.glReadPixels(0,0,768,600);
+      };
+      const changed=(a,b)=>a.reduce((n,v,i)=>n+(v!==b[i]),0);
+      const bgBase=render(false),bgHover=render(true),bgRight=render(true,2);
+      const previewImage=canvas.toDataURL();
+      const foregroundEmpty=e.getGrid().every(m=>m===MAT.EMPTY);
+      const bgLeft=render(true,1);
+      e.paintDisc(58,65,0,MAT.STONE,true);e.syncComponents();
+      const fgBase=render(false),fgHover=render(true),fgRight=render(true,2);
+      e.eraseDiscLayer(1,61,63,8);e.syncComponentsLayer(1);
+      const fgOnlyBase=render(false),fgOnly=render(true);
+      return { hoverChanges:changed(bgBase,bgHover), rightMatchesHover:changed(bgHover,bgRight)===0,
+        leftDoesNotPreviewBackground:changed(bgBase,bgLeft)===0,foregroundEmpty,
+        foregroundChanges:changed(fgBase,fgHover),rightChangesLayer:changed(fgHover,fgRight)>0,
+        foregroundWins:fgHover.every((v,i)=>(v!==fgBase[i])===(fgOnly[i]!==fgOnlyBase[i])),previewImage };
+    } finally {e.destroy();}
+  });
+  writeFileSync(artifacts+'/background-preview.png',Buffer.from(result.previewImage.split(',')[1],'base64'));
+  check('exposed background cells show a mining outline on hover',result.foregroundEmpty && result.hoverChanges>0);
+  check('hover previews the same background patch as right-click',result.rightMatchesHover);
+  check('a left-click does not suggest it is mining background',result.leftDoesNotPreviewBackground);
+  check('foreground cells keep their own outline',result.foregroundChanges>0);
+  check('right-click explicitly selects background behind foreground',result.rightChangesLayer);
+  check('hovering foreground does not add an unrelated background outline',result.foregroundWins);
 } });

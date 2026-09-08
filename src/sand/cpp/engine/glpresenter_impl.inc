@@ -2295,13 +2295,17 @@ void GLPresenter::glDrawPreview() {
         }
       }
       if (E.planetId == PL_FRONTIER && erasing) {
-        if (!glSurvivalPreviewLocked && !E.psys.frontierMineTarget(*lp,ax,ay,toBg ? 1 : 0)) return;
+        if (!glSurvivalPreviewLocked && !E.psys.frontierMineTarget(*lp,ax,ay,toBg ? 1 : 0)) {
+          // Hovering exposed background previews the right-click excavation area.
+          if (toBg || E.cam.pointerBtns || !E.psys.frontierMineTarget(*lp,ax,ay,1)) return;
+          toBg = true;
+        }
         const Layer& layer = toBg ? E.bg : E.fg;
         const auto patch = E.tools.frontierMinePatch(ax,ay,layer,fp ? *fp : E.tools.getSurvivalFootprint(*lp));
         for (int k : patch) {
           int x=k%E.cols,y=k/E.cols;
           bool hard=MAT_TOOLTIER[layer.grid[k]]>glMineTier;
-          glUniform4f(glc->uColor,hard?.86f:.83f,hard?.37f:.76f,hard?.27f:.51f,.8f);
+          glUniform4f(glc->uColor,hard?.86f:.83f,hard?.37f:.76f,hard?.27f:.51f,toBg?.55f:.8f);
           double sx=(x-camCol)*glCellDev+glOffX,sy=(y-camRow)*glCellDev+glOffY;
           double edge=std::max(1.0,glCellDev*.12);
           auto contains=[&](int xx,int yy){return std::find(patch.begin(),patch.end(),E.I(xx,yy))!=patch.end();};

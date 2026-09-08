@@ -2069,7 +2069,11 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   }
   double pixelH = cell;
   double corpseBase = sy + sh * cell;
-  for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width;) {
+  // Effects outside the sprite keep their own draw paths. The final sprite
+  // bounds include bob, windup and rescue ascent before rejecting its pixels.
+  const bool spriteVisible = sx < glDevW && sy < glDevH &&
+    sx + sw * cell > 0 && sy + sh * cell > 0;
+  if (spriteVisible) for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width;) {
     int idx = art.pixels[(frame * art.height + r) * art.width + c];
     if (idx <= 0 || idx >= (int)art.palette.size()) { c++; continue; }
     int run = 1;

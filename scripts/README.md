@@ -83,11 +83,16 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
-`node scripts/bench-adventure-actors.mjs --json FILE` measures idle and walking exploration,
+`node scripts/bench-adventure-actors.mjs --json FILE` measures quiet creative terrain, idle and walking exploration,
 enemy charges, shockwaves, spell volleys, and overlapping Prism Choir, Hollow
-Star, and Faultline casts in a generated two-layer world.
-After rebuilding, use `--compare FILE` on the same host/runtime to check exact
-terrain, actor, projectile, debris, and discovery checksums and report actor/world
+Star, and Faultline casts in a generated two-layer world. It steps actors and
+the world together at the worker's 1:1 cadence. `--only creative,idle,crossfire
+--ticks 1800` compares settled terrain with 30 seconds of mixed enemy attacks
+and their structural aftermath. Reports include combined turn timings,
+over-budget turns, sleeping-world turns, and the eight worst active turns with
+phase timings and work counts. Phase timers can overlap; do not sum them.
+After rebuilding, use `--compare FILE` on the same host/runtime to check
+terrain, actor, projectile, item, and discovery checksums and report actor/world
 timing deltas. Use `--only idle,charges`, `--repeat 5`, or `--profile PREFIX` to
 narrow or sample the workload. Fixture construction is outside the timings.
 For named WASM profiles, build with `npm run build:sand -- --profile` and run

@@ -1376,10 +1376,17 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
     ContactCache& nextContacts = nextContactCacheScratch;
     nextContacts.clear();
     nextContacts.reserve(previousContacts.size());
+    ContactCacheKey previousStoreKey;
+    std::vector<CachedContact>* previousStoreContacts = nullptr;
     for (const Contact& contact : contacts) {
       double lax, lay, lbx, lby;
       localAnchors(contact, lax, lay, lbx, lby);
-      nextContacts[cacheKey(contact, contact.normalBucket)].push_back({
+      ContactCacheKey key = cacheKey(contact, contact.normalBucket);
+      if (!previousStoreContacts || !(key == previousStoreKey)) {
+        previousStoreContacts = &nextContacts[key];
+        previousStoreKey = key;
+      }
+      previousStoreContacts->push_back({
         lax, lay, lbx, lby, contact.nx, contact.ny,
         contact.accJn, contact.accJt, contact.dt, 0, false,
       });

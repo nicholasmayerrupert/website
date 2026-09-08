@@ -47,7 +47,7 @@ class ComponentSystem {
   // Reusable scratch for computeGroundedBoth() (sized to cols*rows once).
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgVisited;
   std::vector<int> cgIsland;
-  // Parallel x-coordinate stack for computeGrounded's flood.
+  // Inclusive right column of each run in computeGrounded's flood stack.
   std::vector<int32_t> groundStackX;
   // cellComp index -> Comp* map (rebuilt by indexComponents()).
   std::vector<Comp*> cgComps;
@@ -61,7 +61,7 @@ class ComponentSystem {
   std::vector<int> cgRemovedCells, cgBlobN, cgRemovedComp;
   struct CrossLayerBond { int fgComp = -1, bgComp = -1; };
   std::vector<CrossLayerBond> cgBonds;
-  std::vector<int> cgParent, cgGroundParent;
+  std::vector<int> cgParent;
   std::vector<int> cgAdjCounts;
   std::vector<uint64_t> cgAdjScratch, cgPatchEdges;
   std::vector<uint8_t> cgRootBonded, cgRootGrounded, cgChangedComponents;
@@ -106,7 +106,7 @@ class ComponentSystem {
   bool blobKeepsGroundingValid(const std::vector<int>& blob);
   bool removalsKeepGroundingValid(const std::vector<int>& removed);
   int compCount(Layer& lay);
-  void unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb);
+  void unionCrossBondedClusters(std::vector<int>& parent, int nf, int nb);
   void groundLayerBase(Layer* lay);
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev);
   void computeGroundedBoth();

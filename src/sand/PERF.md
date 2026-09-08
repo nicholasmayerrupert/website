@@ -115,17 +115,26 @@ component registration, and restoration. Browser presentation exposes
   component registries. Add-only plant and ice growth patches the component
   index and adjacent graph edges locally; topology changes retain the full
   rebuild fallback.
-- Component indices cache same-layer adjacency. Static interior support is
+- Component indices cache same-layer adjacency, suppressing consecutive duplicate
+  contacts before sorting the remaining edges. Static interior support is
   solved over that graph; free bodies and sentinel-touching components retain
   the cell flood.
 - Rigid grounding and loose support are cached and invalidated separately.
+- Cell-level rigid grounding traverses horizontal runs, with individual-cell
+  handling for directed top and sentinel boundaries. The forced-full diagnostic
+  path retains the cell flood as a reference. Dense loose-support refreshes walk
+  contiguous rows from bottom to top; sparse refreshes visit only dirty columns.
 - A settled cross-layer support closure can sleep during loose-only motion.
+- Cross-layer assembly membership and support share one connectivity structure;
+  both follow the same contact bonds and cached same-layer adjacency.
 - Unsupported static groups have one motion path: stable component slots are
   retired directly into same-layer or joint rigid bodies. Settled bodies that
   still have accepted rigid, powder, or liquid support remain baked; all actual
   motion, displacement, rotation, and later rebaking belong to the body solver.
 - Component adjacency edges use dense-id counting passes, so the duplicate-heavy
   edge list produced by a blast cut is sorted in linear time.
+- Consecutive contact points with the same manifold key reuse their destination
+  cache entry, preserving point order without repeating the hash lookup.
 - Joint support loss compares packed grounding bytes and expands only exact
   component/body 1-to-0 transitions into settle-band wakes.
 - Above 900,000 loaded cells, grounding and assembly motion may run at 30 Hz;
@@ -333,6 +342,16 @@ component registration, and restoration. Browser presentation exposes
 - Streaming stores only changed tiles persistently. Recent pristine bands use a
   bounded baseline cache, and both stores choose compact RLE per tile when it is
   smaller than the raw payload.
+
+`embed/talkHud.js` projects all marker positions before DOM writes and preserves
+unchanged text nodes; `GLPresenter::glDrawOneCreature` skips the pixel loop when
+its final sprite bounds miss the viewport, while portals, attacks, barriers,
+rescue effects, weapons, and health bars retain their separate draw paths.
+`talk-hud` checks read/write ordering, and `creature-render-cull-e2e` compares
+clipped views with larger reference crops. In a local 1366×768 Chromium probe,
+12 added offscreen creatures required 9 extra uniform calls rather than 2,310;
+with 17 loaded creatures, render submission measured 0.20 ms median / 0.30 ms
+p95. These are local DOM and render-submission measurements, not overall FPS.
 
 These optimizations preserve deterministic output except accepted behavior
 changes. The recorded checksum uses the native foreground-plus-background grid

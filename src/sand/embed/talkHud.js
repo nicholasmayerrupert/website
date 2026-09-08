@@ -222,16 +222,23 @@ export function createTalkHud(root, game, onAction) {
     const height = root.host?.clientHeight || 0;
     if (!view || !width || !height || !view.viewCols || !view.viewRows) return;
 
-    for (const sign of signs) {
-      const { x, y } = game.worldToScreen(sign.x, sign.y);
-      sign.node.hidden = x < 50 || x > width - 50 || y < 80 || y > height - 80;
-      sign.node.style.left = `${x}px`; sign.node.style.top = `${y}px`;
+    // Project every position before changing the DOM. Projection reads canvas
+    // and host bounds, so interleaved writes would force layout for each point.
+    const signPositions = signs.map(sign => game.worldToScreen(sign.x, sign.y));
+    const actorPositions = new Map(actors.map(actor =>
+      [actor.id, game.worldToScreen(actor.worldX, actor.headWorldY)]));
+    const recovering = recoveryBeamIsActive(game.getPlanetState?.().id, view.playerWorldY);
+    const playerPosition = recovering ? game.worldToScreen(view.playerWorldX, view.playerWorldY) : null;
+    for (let i = 0; i < signs.length; i++) {
+      const { node } = signs[i], { x, y } = signPositions[i];
+      node.hidden = x < 50 || x > width - 50 || y < 80 || y > height - 80;
+      if (!node.hidden) { node.style.left = `${x}px`; node.style.top = `${y}px`; }
     }
     const activeIds = new Set();
     nearestActor = null;
     let nearestDistance = Infinity;
     for (const actor of actors) {
-      const { x: rawX, y: rawY } = game.worldToScreen(actor.worldX, actor.headWorldY);
+      const { x: rawX, y: rawY } = actorPositions.get(actor.id);
       const distance = Number.isFinite(view.playerWorldX)
         ? Math.hypot(
             actor.worldX - view.playerWorldX,
@@ -269,7 +276,8 @@ export function createTalkHud(root, game, onAction) {
     }
     for (const [id, button] of buttons) {
       button.hidden = id !== nearestActor?.id;
-      button.textContent = id === nearestActor?.id ? 'T · Talk' : 'Talk';
+      const label = id === nearestActor?.id ? 'T · Talk' : 'Talk';
+      if (button.textContent !== label) button.textContent = label;
       if (activeIds.has(id)) continue;
       button.remove();
       buttons.delete(id);
@@ -282,7 +290,7 @@ export function createTalkHud(root, game, onAction) {
     if (!commander) {
       questMarker.hidden = true;
     } else {
-      const { x: rawX, y: rawY } = game.worldToScreen(commander.worldX, commander.headWorldY);
+      const { x: rawX, y: rawY } = actorPositions.get(commander.id);
       const distance = Number.isFinite(view.playerWorldX)
         ? Math.hypot(
             commander.worldX - view.playerWorldX,
@@ -308,14 +316,9 @@ export function createTalkHud(root, game, onAction) {
       }
     }
 
-    const recovering = recoveryBeamIsActive(
-      game.getPlanetState?.().id,
-      view.playerWorldY,
-    );
-    const { x: playerX, y: playerY } = game.worldToScreen(view.playerWorldX, view.playerWorldY);
     recoveryBeam.classList.toggle('on', recovering);
     if (recovering) {
-      recoveryBeam.style.transform = `translate(${Math.round(playerX)}px,${Math.round(playerY)}px) translate(-50%,-44%)`;
+      recoveryBeam.style.transform = `translate(${Math.round(playerPosition.x)}px,${Math.round(playerPosition.y)}px) translate(-50%,-44%)`;
     }
   };
 

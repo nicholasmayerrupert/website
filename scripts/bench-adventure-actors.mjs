@@ -13,7 +13,10 @@ const flag = name => {
 };
 const repeats = Number(flag('--repeat') || 3);
 assert.ok(Number.isInteger(repeats) && repeats > 0, '--repeat must be a positive integer');
+const ticks = Number(flag('--ticks') || 120);
+assert.ok(Number.isInteger(ticks) && ticks > 0, '--ticks must be a positive integer');
 const scenes = {
+  creative: [],
   idle: [],
   walking: [],
   charges: Array(6).fill(CREATURE.BONE_GUARD),
@@ -22,6 +25,8 @@ const scenes = {
   prisms: Array(3).fill(CREATURE.FEN_WISP),
   stars: Array(3).fill(CREATURE.HOLLOW_BELLKEEPER),
   faultlines: Array(3).fill(CREATURE.ROOT_KNIGHT),
+  crossfire: [CREATURE.BONE_GUARD, CREATURE.ROOT_KNIGHT, CREATURE.HOLLOW_BELLKEEPER,
+    CREATURE.MIRE_MATRON, CREATURE.CINDER_CASTELLAN, CREATURE.FEN_WISP, CREATURE.MINIGUNNER],
 };
 const selected = flag('--only') ? flag('--only').split(',') : Object.keys(scenes);
 const summary = samples => {
@@ -53,17 +58,18 @@ if (session) {
 }
 const result = {
   environment: { node: process.version, platform: process.platform, arch: process.arch },
-  config: { cols: 768, rows: 352, ticks: 120, repeats },
+  config: { cols: 768, rows: 352, ticks, repeats, worldStepsPerActor: 1 },
   scenes: {},
 };
 for (const name of selected) {
   assert.ok(Object.hasOwn(scenes, name), `unknown scene ${name}`);
-  const actor = [], world = [], checksums = [];
+  const actor = [], world = [], turn = [], checksums = [], worstTurns = [];
+  let overBudgetTurns = 0, sleepingWorldTurns = 0;
   for (let repeat = 0; repeat < repeats; repeat++) {
     const e = createEngineWasm({ cols: 768, rows: 352, worldSeed: 73,
       sinksOn: false, infinite: true, planetId: PLANET.FRONTIER });
     try {
-      e.setSurvivalInventory(true);
+      e.setSurvivalInventory(name !== 'creative');
       e.setCreatureRuntime(true, false);
       const cx = 384, cy = 180;
       for (let layer = 0; layer < 2; layer++) {
@@ -76,7 +82,7 @@ for (const name of selected) {
         e.syncComponentsLayer(layer);
       }
       e.stepWorld();
-      const player = e.spawnPlayer(cx - 45, cy + 16);
+      const player = name === 'creative' ? 0 : e.spawnPlayer(cx - 45, cy + 16);
       for (let i = 0; i < scenes[name].length; i++)
         e.spawnScriptedCreature(scenes[name][i], cx - 15 + i * 18 + e.getWorldOffsetX(), cy + e.getWorldOffsetY());
       const snapshot = e.getCreatureSnapshotData(), o = OFF.creatureSnapshot;
@@ -84,7 +90,7 @@ for (const name of selected) {
         snapshot[i + o.y] = cy + 24 - snapshot[i + o.h];
         snapshot[i + o.facing] = -1;
         snapshot[i + o.attackState] = 2;
-        snapshot[i + o.attackPattern] = ['volleys', 'prisms', 'stars', 'faultlines'].includes(name) ? 1 : 0;
+        snapshot[i + o.attackPattern] = ['volleys', 'prisms', 'stars', 'faultlines', 'crossfire'].includes(name) ? 1 : 0;
         snapshot[i + o.attackProgress] = 1;
         snapshot[i + o.aimX] = cx - 45;
         snapshot[i + o.aimY] = cy + 20;
@@ -96,13 +102,20 @@ for (const name of selected) {
           bits: tick < 60 ? INPUT.RIGHT : INPUT.LEFT, aimX: cx, aimY: cy,
         });
         e.stepActors();
-        actor.push(e.getPerf().actorMs);
-        if (tick % 2 === 0) {
-          e.stepWorld();
-          world.push(e.getPerf().stepMs);
+        // Match the worker's coherent actor/world turn, including quiet-world skips.
+        const worldAdvanced = e.stepWorld();
+        const perf = e.getPerf();
+        const totalMs = perf.actorMs + perf.stepMs;
+        actor.push(perf.actorMs); world.push(perf.stepMs); turn.push(totalMs);
+        if (totalMs > 1000 / 60) overBudgetTurns++;
+        if (!worldAdvanced) sleepingWorldTurns++;
+        if (worldAdvanced && (worstTurns.length < 8 || totalMs > worstTurns.at(-1).totalMs)) {
+          worstTurns.push({ repeat, tick, totalMs, ...perf });
+          worstTurns.sort((a, b) => b.totalMs - a.totalMs);
+          worstTurns.length = Math.min(8, worstTurns.length);
         }
         e.drainSoundEvents();
-        if (!e.getPlayer(player).alive) e.respawnPlayer(player);
+        if (player && !e.getPlayer(player).alive) e.respawnPlayer(player);
       }
       if (session) {
         const { profile } = await post('Profiler.stop');
@@ -112,18 +125,25 @@ for (const name of selected) {
     } finally { e.destroy(); }
   }
   assert.equal(new Set(checksums).size, 1, `${name} is deterministic`);
-  result.scenes[name] = { actor: summary(actor), world: summary(world), checksum: checksums[0] };
-  console.log(name, JSON.stringify(result.scenes[name]));
+  const scene = { actor: summary(actor), world: summary(world), turn: summary(turn),
+    overBudgetTurns, sleepingWorldTurns, checksum: checksums[0], worstTurns };
+  result.scenes[name] = scene;
+  console.log(name, JSON.stringify({ ...scene, worstTurns: undefined }));
 }
 session?.disconnect();
 if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(result, null, 2) + '\n');
 if (flag('--compare')) {
   const baseline = JSON.parse(readFileSync(flag('--compare'), 'utf8'));
+  assert.equal(result.config.worldStepsPerActor, baseline.config.worldStepsPerActor,
+    'world/actor cadence must match; record a baseline with the current benchmark');
   for (const key of ['cols', 'rows', 'ticks']) assert.equal(result.config[key], baseline.config[key], `${key} must match`);
   for (const [name, current] of Object.entries(result.scenes)) {
     const before = baseline.scenes[name];
     assert.ok(before, `baseline has no ${name} scene`);
     assert.equal(current.checksum, before.checksum, `${name} state changed`);
     console.log(`${name}: actor mean ${(current.actor.mean / before.actor.mean * 100 - 100).toFixed(1)}%, p95 ${(current.actor.p95 / before.actor.p95 * 100 - 100).toFixed(1)}%; world mean ${(current.world.mean / before.world.mean * 100 - 100).toFixed(1)}%`);
+    const beforeRate = before.overBudgetTurns / (baseline.config.ticks * baseline.config.repeats) * 100;
+    const currentRate = current.overBudgetTurns / (result.config.ticks * result.config.repeats) * 100;
+    console.log(`${name}: turn p95 ${before.turn.p95.toFixed(3)} -> ${current.turn.p95.toFixed(3)} ms; p99 ${before.turn.p99.toFixed(3)} -> ${current.turn.p99.toFixed(3)} ms; over-budget ${beforeRate.toFixed(2)}% -> ${currentRate.toFixed(2)}%`);
   }
 }

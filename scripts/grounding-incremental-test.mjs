@@ -404,5 +404,51 @@ function buildScript(seed) {
   e.destroy();
 }
 
+// Growing plants require cell-level support; compare horizontal-run flooding
+// with the independent cell flood through cuts, diagonals, and directed edges.
+for (const infinite of [false, true]) {
+  console.log(`scanline grounding: growing terrain and directed edges (infinite=${infinite})`);
+  const build = forceFull => {
+    const e = createEngineWasm({ cols: 96, rows: 80, worldSeed: 73, sinksOn: false, infinite });
+    for (const grid of [e.getGrid(), e.getGridBg()]) {
+      grid.fill(EMPTY);
+      for (let x = 0; x < 96; x++) grid[79 * 96 + x] = STONE;
+      for (let y = 1; y < 80; y++) {
+        grid[y * 96] = STONE; grid[y * 96 + 95] = STONE;
+        if (y >= 32) for (let x = 10; x < 86; x++) grid[y * 96 + x] = STONE;
+      }
+      for (let x = 0; x < 96; x++) grid[x] = x % 3 ? PLANT : STONE;
+      for (let x = 1; x < 95; x++) if (x % 2 === 0) grid[96 + x] = STONE;
+      for (let y = 8; y < 32; y++) {
+        grid[y * 96 + y - 7] = STONE;
+        grid[y * 96 + 94] = ICE;
+      }
+      for (let y = 40; y < 65; y++) for (let x = 18; x < 76; x++)
+        if ((x + y) % 7 === 0) grid[y * 96 + x] = EMPTY;
+    }
+    e.syncComponentsLayer(0); e.syncComponentsLayer(1);
+    check('growing seed is present in the support fixture', e.placeSeedTyped(42, 30, 0));
+    e.setGroundingDebug(!forceFull, forceFull);
+    return e;
+  };
+  for (const cutY of [34, 48, 62]) {
+    const a = build(false), b = build(true);
+    try {
+      for (const e of [a, b]) {
+        e.eraseDiscLayer(0, 40, cutY, 5);
+        e.eraseDiscLayer(1, 50, cutY, 3);
+        e.paintDisc(60, 20, 2, WATER, true);
+        e.paintDisc(25, 26, 2, SAND, true);
+        e.stepWorld();
+      }
+      const referenceFg = b._groundedGrid(), referenceBg = b._groundedGrid(1);
+      check(`scanline and cell-flood state agree after cuts at y=${cutY}`, a.gridHash() === b.gridHash()
+        && a._groundedGrid().every((value, k) => value === referenceFg[k])
+        && a._groundedGrid(1).every((value, k) => value === referenceBg[k]));
+      check(`scanline verifier reports no mismatches (${a.groundingMismatches()})`, a.groundingMismatches() === 0);
+    } finally { a.destroy(); b.destroy(); }
+  }
+}
+
 console.log(failures ? `\n${failures} checks FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

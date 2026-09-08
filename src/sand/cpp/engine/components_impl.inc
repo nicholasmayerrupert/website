@@ -42,7 +42,10 @@ void ComponentSystem::appendComponentAdjacencyEdge(
           || E.isIceMaterial(lay.grid[neighbour]))) return;
   uint32_t lo = (uint32_t)(component < other ? component : other);
   uint32_t hi = (uint32_t)(component < other ? other : component);
-  edges.push_back(((uint64_t)lo << 32) | hi);
+  uint64_t edge = ((uint64_t)lo << 32) | hi;
+  // Adjacent faces often discover the same pair consecutively. Keep one copy
+  // here; the sorted deduplication also removes nonconsecutive discoveries.
+  if (edges.empty() || edges.back() != edge) edges.push_back(edge);
 }
 
 // Rebuild E.L->cellComp[] (cell -> component index) and the cgComps index.
@@ -281,13 +284,28 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   }
   int sp = 0;
   int32_t* gsx = groundStackX.data();
-  // Carry x alongside k to avoid division in the flood loop.
+  // Interior support floods use horizontal runs. The reference flood and the
+  // directed top/sentinel boundaries retain individual cells. Each stack entry
+  // stores the run's first cell and its inclusive right column.
   auto groundRigidAt = [&](int k, int x) {
-    if (grounded[k]) return;
-    grounded[k] = 1;
-    int id = cc[k];
-    if (id >= 0) cgComps[id]->grounded = true;
-    gsx[sp] = x; gstack[sp++] = k;
+    if (grounded[k]) return x;
+    int left = k, right = k, endX = x;
+    if (!groundForceFull && k >= E.cols && x > 0 && x < E.cols - 1) {
+      int startX = x;
+      while (startX > 1 && !grounded[left - 1] && isGroundingRigidCell(*lay, left - 1)) {
+        --left; --startX;
+      }
+      while (endX < E.cols - 2 && !grounded[right + 1] && isGroundingRigidCell(*lay, right + 1)) {
+        ++right; ++endX;
+      }
+    }
+    for (int cell = left; cell <= right; cell++) {
+      grounded[cell] = 1;
+      int id = cc[cell];
+      if (id >= 0) cgComps[id]->grounded = true;
+    }
+    gsx[sp] = endX; gstack[sp++] = left;
+    return endX;
   };
   int floorBase = (E.rows - 1) * E.cols;
   for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (isGroundingRigidCell(*lay, k) && E.isBearingMaterial(g[k])) groundRigidAt(k, x); }
@@ -331,7 +349,28 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   }
   int gridLen = E.cols * E.rows;
   while (sp > 0) {
-    --sp; int k = gstack[sp], kx = gsx[sp];
+    --sp; int k = gstack[sp], endX = gsx[sp];
+    int kx = groundForceFull ? endX : k % E.cols;
+    if (!groundForceFull && k >= E.cols && kx > 0 && endX < E.cols - 1) {
+      const int row = k - kx;
+      if (row == E.cols) {
+        // Row zero receives only vertical bearing support, never sideways fill.
+        for (int x = kx; x <= endX; x++) {
+          int above = x;
+          if (!grounded[above] && isGroundingRigidCell(*lay, above)
+              && E.isBearingMaterial(g[above])) groundRigidAt(above, x);
+        }
+      }
+      for (int neighbourRow : {row - E.cols, row + E.cols}) {
+        if (neighbourRow < E.cols || neighbourRow >= gridLen) continue;
+        const int first = imax(1, kx - 1), last = imin(E.cols - 2, endX + 1);
+        for (int x = first; x <= last; x++) {
+          int nk = neighbourRow + x;
+          if (!grounded[nk] && isGroundingRigidCell(*lay, nk)) x = groundRigidAt(nk, x);
+        }
+      }
+      continue;
+    }
     // Handle vertical support in sentinel columns, which the clamped neighbour
     // scan excludes. Hanging materials are not bearing.
     int above = k - E.cols;
@@ -390,7 +429,24 @@ void ComponentSystem::applyLooseOverlay() {
   if (useBits) {
     for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) overlayCol(x);
   } else {
-    for (int x = x0; x <= x1; x++) overlayCol(x);
+    // Dense refreshes follow contiguous rows. Each column depends only on the
+    // completed row below; sparse dirty columns use the column path above.
+    const int floor = (rows - 1) * cols;
+    for (int x = x0; x <= x1; x++)
+      if (E.isLooseSolidMaterial(g[floor + x])) grounded[floor + x] = 1;
+    for (int y = rows - 2; y >= 0; y--) {
+      const int row = y * cols;
+      for (int x = x0; x <= x1; x++) {
+        const int k = row + x;
+        if (!E.isLooseSolidMaterial(g[k])) continue;
+        bool gnd = grounded[k + cols] != 0;
+        if (!gnd && y >= 1 && x >= 1 && x <= cols - 2) {
+          uint8_t below = g[k + cols];
+          gnd = E.isLiquidMaterial(below) && DENSITY[below] >= DENSITY[g[k]];
+        }
+        if (gnd) grounded[k] = 1;
+      }
+    }
   }
 }
 
@@ -1026,27 +1082,15 @@ bool ComponentSystem::removalsKeepGroundingValid(const std::vector<int>& removed
 
 int ComponentSystem::compCount(Layer& lay) { return (int)lay.components.size(); }
 
-// Union same-layer 8-adjacent components into `parent` (and `groundParent` when
-// non-null), restricted to the components reachable from a cross-layer bonded
-// comp. Cross-layer bond unions + the global grounded scan are done by the
-// caller; here we only add same-layer adjacency.
-//
-// We seed from each layer's UNGROUNDED cross-bonded comps and walk same-layer
-// adjacency. computeGrounded floods grounding across 8-adjacency, so an
-// ungrounded rigid cell never borders a grounded one — every comp discovered by
-// the walk is therefore ungrounded too, and the walk stays inside the floating
-// region instead of scanning the whole grounded terrain mass. A grounded bonded
-// endpoint needs no walk: its bond union (caller) + grounded scan already make
-// its class grounded; whether its same-layer neighbours get marked cross-bonded
-// is unobservable (grounded comps never move and are skipped everywhere).
-void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb) {
+// Add cached same-layer 8-adjacency to the caller's cross-layer bond unions.
+// The resulting roots identify both assembly membership and transmitted support.
+void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, int nf, int nb) {
   auto uniteCached = [&](Layer& lay, int offset, int count) {
     for (uint64_t packed : lay.compAdjPairs) {
       int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
       if (a < 0 || b < 0 || a >= count || b >= count) continue;
       int ag = offset + a, bg = offset + b;
       ufUnite(parent, ag, bg);
-      if (groundParent) ufUnite(*groundParent, ag, bg);
     }
   };
   uniteCached(E.fg, 0, nf);
@@ -1259,17 +1303,15 @@ void ComponentSystem::computeGroundedBoth() {
     return;
   }
 
-  std::vector<int>& parent = cgParent; std::vector<int>& groundParent = cgGroundParent;
-  parent.assign(nf + nb, 0); groundParent.assign(nf + nb, 0);
-  for (int i = 0; i < nf + nb; i++) parent[i] = groundParent[i] = i;
+  std::vector<int>& parent = cgParent;
+  parent.resize(nf + nb);
+  for (int i = 0; i < nf + nb; i++) parent[i] = i;
+  // Bond membership and support use the same connected-component roots.
   for (auto& b : cgBonds) {
     ufUnite(parent, b.fgComp, nf + b.bgComp);
-    // Every contact bond transmits support: if either endpoint (or any same-layer
-    // neighbour united below) is base-grounded, the whole cluster is grounded.
-    ufUnite(groundParent, b.fgComp, nf + b.bgComp);
   }
   // Apply cached same-layer adjacency to the bonded component groups.
-  unionCrossBondedClusters(parent, &groundParent, nf, nb);
+  unionCrossBondedClusters(parent, nf, nb);
   std::vector<uint8_t>& rootBonded = cgRootBonded;
   rootBonded.assign(nf + nb, 0);
   for (auto& b : cgBonds) rootBonded[ufFind(parent, b.fgComp)] = 1;
@@ -1277,13 +1319,13 @@ void ComponentSystem::computeGroundedBoth() {
   for (int i = 0; i < nb; i++) if (rootBonded[ufFind(parent, nf + i)]) E.bg.crossBondedComp[i] = 1;
   std::vector<uint8_t>& rootGrounded = cgRootGrounded;
   rootGrounded.assign(nf + nb, 0);
-  for (int i = 0; i < nf; i++) if (compById(E.fg, i)->grounded) rootGrounded[ufFind(groundParent, i)] = 1;
-  for (int i = 0; i < nb; i++) if (compById(E.bg, i)->grounded) rootGrounded[ufFind(groundParent, nf + i)] = 1;
-  for (int i = 0; i < nf; i++) if (E.fg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, i)]) {
+  for (int i = 0; i < nf; i++) if (compById(E.fg, i)->grounded) rootGrounded[ufFind(parent, i)] = 1;
+  for (int i = 0; i < nb; i++) if (compById(E.bg, i)->grounded) rootGrounded[ufFind(parent, nf + i)] = 1;
+  for (int i = 0; i < nf; i++) if (E.fg.crossBondedComp[i] && rootGrounded[ufFind(parent, i)]) {
     Comp* c = compById(E.fg, i); c->grounded = true;
     for (int k : c->cells) E.fg.groundedCell[k] = 1;
   }
-  for (int i = 0; i < nb; i++) if (E.bg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, nf + i)]) {
+  for (int i = 0; i < nb; i++) if (E.bg.crossBondedComp[i] && rootGrounded[ufFind(parent, nf + i)]) {
     Comp* c = compById(E.bg, i); c->grounded = true;
     for (int k : c->cells) E.bg.groundedCell[k] = 1;
   }
@@ -2147,7 +2189,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
         || bond.bgComp < 0 || bond.bgComp >= nb) continue;
     ufUnite(parent, bond.fgComp, nf + bond.bgComp);
   }
-  unionCrossBondedClusters(parent, nullptr, nf, nb);
+  unionCrossBondedClusters(parent, nf, nb);
 
   struct JointGroup {
     std::vector<int> fgComps, bgComps;

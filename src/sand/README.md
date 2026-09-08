@@ -1026,6 +1026,13 @@ recorded in [content/ADVENTURE.md](content/ADVENTURE.md). `CombatSystem`,
 C++ engine. Equipment definitions live in `content/equipment.js`; structures,
 NPCs, quests, and authored loot live in `content/world.js`.
 
+`content/gearArt.js` supplies the shared 16×16 gear pixels for inventory icons
+and held equipment. Swords, bows, and mining tools use articulated weapon art.
+Potions stack to 99 and support right-click splitting. Inventory → Sort items
+merges and groups pack contents while preserving the quickbar and equipment.
+Pick up an item and use Drop one / Drop stack, or drag it onto the drop area.
+Starter tools, spell abilities, and material bags stay protected from dropping.
+
 The embed owns one Map/Journal/Inventory panel controller in
 `embed/adventureHud.js`. Panel pause stops gameplay while preserving worker
 transactions and presentation. `worker/adventureSaveStore.js` stores compressed

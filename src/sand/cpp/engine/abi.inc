@@ -1067,6 +1067,7 @@ EMSCRIPTEN_KEEPALIVE int engine_selected_footprint(Engine* e, int id) { return e
 EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot(Engine* e) { return e->tools.buildSurvivalFootprintSnapshot(); }
 EMSCRIPTEN_KEEPALIVE int32_t* engine_survival_footprint_snapshot_ptr(Engine* e) { return e->tools.survivalFootprintSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_inventory_move(Engine* e, int id, int from, int to) { e->inv.moveSlot(id, from, to); }
+EMSCRIPTEN_KEEPALIVE void engine_inventory_sort(Engine* e, int id) { e->inv.sortBag(id); }
 EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, int ay) { return e->inv.placeFromSelected(id, ax, ay) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->inv.buildInventorySnapshot(id); }
 EMSCRIPTEN_KEEPALIVE float* engine_inventory_snapshot_ptr(Engine* e) { return e->inv.invSnapshot.data(); }

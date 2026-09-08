@@ -14,6 +14,36 @@ const slot = (page, index) => page.locator(`.inv-slot[data-index="${index}"]`);
 const state = (page, predicate) => page.waitForFunction(predicate, null, { timeout: 15000 });
 
 process.exitCode = await runBrowserCases({
+  heldArt: async ({ page, baseURL, check }) => {
+    await page.route('**/held-art-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><body></body>'}));
+    await page.goto(baseURL+'/held-art-fixture');
+    const colors=await page.evaluate(async()=>{
+      const {initSandWasm,createEngineWasm,PLANET,MAT}=await import('/src/sand/wasmBridge/engineFactory.js');
+      await initSandWasm();
+      const e=createEngineWasm({cols:128,rows:100,planetId:PLANET.FRONTIER,infinite:false,sinksOn:false});
+      const canvas=document.createElement('canvas');canvas.width=768;canvas.height=600;document.body.append(canvas);
+      try {
+        e.glInit(canvas);e.glResize(768,600);e.setViewport(1,6,128,100);e.cameraSet(0,0);
+        e.glSetFlags(false,false,true);e.setSkyLight(200);e.setPlayMode(true);e.setSurvivalInventory(true);
+        for(let x=1;x<127;x++)e.paintDisc(x,70,0,MAT.STONE,true);e.syncComponents();
+        const id=e.spawnPlayer(50,62);e.glSetPlayers(false,null,id);
+        return [320,321].map(definition=>{
+          e.addGear(id,definition,1);
+          e.inventoryMove(id,e.getInventory(id).slots.findIndex(s=>s.definitionId===definition),5);
+          e.setSelectedSlot(id,5);e.setPlayerInput(id,{bits:0,aimX:80,aimY:65});e.stepActors();e.glRenderFrame(true);
+          const pixels=e.glReadPixels(300,336,78,90);let red=0,blue=0;
+          for(let i=0;i<pixels.length;i+=4){
+            const [r,g,b]=pixels.subarray(i,i+3);
+            if(r>g*1.5 && r>b*1.5)red++;
+            if(b>r*1.4 && g>r)blue++;
+          }
+          return {red,blue};
+        });
+      } finally {e.destroy();}
+    });
+    check('held health potion renders its red liquid',colors[0].red>colors[1].red+10,JSON.stringify(colors));
+    check('held mana potion renders its blue liquid',colors[1].blue>colors[0].blue+10,JSON.stringify(colors));
+  },
   desktop: async ({ page, baseURL, check }) => {
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await open(page, baseURL);
@@ -61,6 +91,21 @@ process.exitCode = await runBrowserCases({
     check('right-click splits material stacks without changing the total', await page.evaluate(() => document.querySelector('sand-game')._game.getInventory().slots[9].count === 48));
     await slot(page, 10).focus(); await page.keyboard.press('ArrowRight');
     check('arrow keys move slot focus', await slot(page, 11).evaluate(node => node.getRootNode().activeElement === node));
+    await slot(page,10).click();
+    await state(page,()=>document.querySelector('sand-game')._game.getCursor()?.count===48);
+    await page.getByRole('button',{name:'Drop one',exact:true}).click();
+    await state(page,()=>document.querySelector('sand-game')._game.getCursor()?.count===47);
+    await page.getByRole('button',{name:'Drop stack',exact:true}).click();
+    await state(page,()=>!document.querySelector('sand-game')._game.getCursor());
+    check('visible drop controls release one item or the carried stack',true);
+    await slot(page,9).dragTo(page.getByRole('region',{name:'Drop items',exact:true}));
+    await state(page,()=>!document.querySelector('sand-game')._game.getCursor() && !document.querySelector('sand-game')._game.getInventory().slots[9].count);
+    check('dragging a stack onto the drop area releases it',true);
+    const quickbar=await page.evaluate(()=>document.querySelector('sand-game')._game.getInventory().slots.slice(0,9));
+    await page.getByRole('button',{name:'Sort items',exact:true}).click();
+    await page.waitForTimeout(150);
+    assert.deepEqual(await page.evaluate(()=>document.querySelector('sand-game')._game.getInventory().slots.slice(0,9)),quickbar);
+    check('sorting leaves the quickbar untouched',true);
     await page.screenshot({ path: '.sand-artifacts/adventure-browser/inventory-desktop-final.png' });
     await page.keyboard.press('Escape');
     check('equipment and tooltip close with inventory', await page.locator('.ad-equipment:visible').count() === 0 && !(await tooltip.isVisible()));
@@ -80,11 +125,16 @@ process.exitCode = await runBrowserCases({
     await slot(page, 9).tap();
     await state(page, () => document.querySelector('sand-game')._game.getInventory().slots[9].definitionId === 1);
     check('second touch picks up and a destination tap places', await page.evaluate(() => !document.querySelector('sand-game')._game.getCursor()));
+    await slot(page,9).tap();await slot(page,9).tap();
+    await state(page,()=>document.querySelector('sand-game')._game.getCursor()?.definitionId===1);
+    await page.getByRole('button',{name:'Drop stack',exact:true}).tap();
+    await state(page,()=>!document.querySelector('sand-game')._game.getCursor());
+    check('touch can drop a carried item with the visible control',true);
     await page.getByRole('combobox', { name: 'Tool footprint' }).tap();
     const menu = page.getByRole('listbox', { name: 'Tool footprint' }); await menu.waitFor();
     const menuBounds = await menu.boundingBox();
     check('touch dropdown stays inside viewport', menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 391 && menuBounds.y >= 0 && menuBounds.y + menuBounds.height <= 845);
-    await page.getByRole('option', { name: '3 × 3', exact: true }).tap();
+    await page.getByRole('option', { name: 'Radius 2', exact: true }).tap();
     check('touch selects a building footprint', await page.getByRole('combobox', { name: 'Tool footprint' }).getAttribute('data-value') === '2');
     check('mobile inventory has no horizontal overflow', await page.evaluate(() => {
       const page = document.querySelector('sand-game').shadowRoot.querySelector('.ad-inventory');

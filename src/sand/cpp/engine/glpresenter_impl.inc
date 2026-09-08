@@ -938,7 +938,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       : 1.55-kick*kick*.65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     bool carrying = E.planetId == PL_FRONTIER &&
-      ((gear && gear->family <= 3 && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
+      ((gear && (gear->family <= 3 || gear->family == 6 || gear->family == 7 || gear->family == 8 || gear->family == 10 || gear->family == 11) && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
        || (heldItemKind == IK_MINING_TOOL && animState != AS_AXE));
     if (carrying) {
       // Hold the tool upright in front of a lowered elbow.
@@ -1028,27 +1028,15 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         }
         if (bowCharge>0) for (double at = -pull; at < 3.0-pull; at+=.25) drawPixel(at,0,.16,.87f,.84f,.64f);
       } else {
-      bool staff = gear->family == 5 || gear->family == 9;
-      double length = gear->family == 3 ? 6.5 : staff ? 4.0 : gear->family == 2 ? 3.8 : 4.5;
-      for (double at = -.65; at < length; at += .25) {
-        bool blade = !staff && gear->family != 2 && at > .7;
-        drawPixel(at, 0, blade ? .43 : .32, blade ? .77f : .43f, blade ? .83f : .29f, blade ? .77f : .15f);
-        if (blade) drawPixel(at, -.16, .16, .96f, .96f, .80f);
-      }
-      if (gear->family == 1) for (double side = -.85; side <= .85; side += .25) drawPixel(.65, side, .30, .77f, .60f, .28f);
-      if (gear->family == 2) for (double at = 2; at <= 3.75; at += .25)
-        for (double side = -.8; side <= .8; side += .25) if (at + std::fabs(side) < 4.15) drawPixel(at, side, .28, .66f, .70f, .65f);
-      if (staff) {
-        for (int i = 0; i < 8; i++) {
-          double a = i * .7854 + E.actorTick * .025;
-          drawPixel(4 + std::cos(a) * .65, std::sin(a) * .65, .24, .77f, .60f, .28f);
+        const bool diagonal = gear->family == 2 || gear->family == 3;
+        const double scale = gear->family == 10 ? .26 : .30;
+        for (int y=0;y<16;y++) for (int x=0;x<16;x++) {
+          uint32_t color=gear->icon[y*16+x];
+          if (!color) continue;
+          double forward=diagonal ? (x-y+11)*scale*.70710678 : ((gear->family==5 ? 13 : 8)-y)*scale;
+          double side=diagonal ? (x+y-16)*scale*.70710678 : (x-8)*scale;
+          drawPixel(forward,side,scale,(color&255)/255.f,((color>>8)&255)/255.f,((color>>16)&255)/255.f);
         }
-        bool cold = gear->spell == 2 || gear->spell == 3;
-        drawPixel(4, 0, .7, cold ? .50f : 1.0f, cold ? .82f : .65f, cold ? .93f : .22f);
-      }
-      if (animState == AS_SWORD || animState == AS_AXE || animState == AS_SPEAR) {
-        for (int i = 0; i < 6; i++) drawPixel(2.5 + i * .4, -i * .12 * facing, .24, .96f, .88f, .61f, .6f);
-      }
       }
     } else if (heldItemKind == IK_MINING_TOOL && E.planetId == PL_FRONTIER) {
       for (double at = -.7; at <= 4.2; at += .25) drawPixel(at, 0, .30, .49f, .33f, .19f);

@@ -208,12 +208,20 @@ bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t 
   stack.plantType = plantType; stack.count = count;
   return addStack(p, stack);
 }
-bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
+int InventorySystem::stackLimit(const InvSlot& stack) const {
+  if (stack.itemKind == IK_GEAR) {
+    const auto* gear=E.content.gear(stack.definitionId);
+    return gear && gear->family==10 ? 99 : 1;
+  }
+  return inventoryStackLimit(stack.itemKind);
+}
+bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) const {
   if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
   if (a.itemKind == IK_MATERIAL)
     return a.material == b.material
       && (!MAT_IS_PLANT_SEED[a.material] || a.plantType == b.plantType);
   if (a.itemKind == IK_ARROW) return true;
+  if (a.itemKind == IK_GEAR) return a.definitionId==b.definitionId && stackLimit(a)>1;
   return isFiniteAmmoWeapon(a.itemKind);
 }
 bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
@@ -222,7 +230,7 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
   Player trial = p;
   int count = incoming.count;
   if (count <= 0) return true;
-  int limit = inventoryStackLimit(incoming.itemKind);
+  int limit = stackLimit(incoming);
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
     InvSlot& s = trial.inv[i];
     if (sameStack(s, incoming) && s.count < limit) {
@@ -306,13 +314,28 @@ void InventorySystem::moveSlot(Player& p, int from, int to) {
   if (from < 0 || from >= INV_SLOTS || to < 0 || to >= INV_SLOTS || from == to) return;
   InvSlot& a = p.inv[from]; InvSlot& b = p.inv[to];
   if (sameStack(a, b)) {
-    int mv = imin(a.count, inventoryStackLimit(b.itemKind) - b.count); b.count += mv; a.count -= mv;
+    int mv = imin(a.count, stackLimit(b) - b.count); b.count += mv; a.count -= mv;
     if (a.count <= 0) a = InvSlot();
     return;
   }
   InvSlot tmp = a; a = b; b = tmp;
 }
 void InventorySystem::moveSlot(int id, int from, int to) { Player* p = E.psys.findPlayer(id); if (p) moveSlot(*p, from, to); }
+
+void InventorySystem::sortBag(int id) {
+  Player* p=E.psys.findPlayer(id);
+  if (!p || !p->alive || p->cursor.count>0) return;
+  for (int to=INV_HOTBAR;to<INV_SLOTS;to++)
+    for (int from=to+1;from<INV_SLOTS;from++)
+      if (sameStack(p->inv[to],p->inv[from])) moveSlot(*p,from,to);
+  std::stable_sort(std::begin(p->inv)+INV_HOTBAR,std::end(p->inv),[&](const InvSlot& a,const InvSlot& b) {
+    auto key=[&](const InvSlot& s) {
+      const auto* gear=s.itemKind==IK_GEAR ? E.content.gear(s.definitionId) : nullptr;
+      return std::tuple{s.count<=0,(int)s.itemKind,gear ? gear->family : 0,s.definitionId,(int)s.material,(int)s.plantType};
+    };
+    return key(a)<key(b);
+  });
+}
 
 // ---- Minecraft cursor model (the carried stack p.cursor) ----
 // Click a slot to pick up / place / merge / swap the carried stack. half=true is the
@@ -331,18 +354,18 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   bool cEmpty = c.count <= 0, sEmpty = s.count <= 0;
   if (cEmpty) {
     if (sEmpty) return;
-    if (half && inventoryStackCanSplit(s.itemKind) && !s.isTool && s.count > 1) {
+    if (half && stackLimit(s)>1 && !isFiniteAmmoWeapon(s.itemKind) && !s.isTool && s.count > 1) {
       c = s; c.count = (s.count + 1) / 2; s.count -= c.count;
     }
     else { c = s; s = InvSlot(); }
   } else if (sEmpty) {
-    if (half && inventoryStackCanSplit(c.itemKind)) {
+    if (half && stackLimit(c)>1 && !isFiniteAmmoWeapon(c.itemKind)) {
       s = c; s.count = 1; if (--c.count <= 0) c = InvSlot();
     }
     else { s = c; c = InvSlot(); }
   } else if (sameStack(c, s)) { // merge same material/species/ammo
-    int room = inventoryStackLimit(s.itemKind) - s.count;
-    int mv = half && inventoryStackCanSplit(c.itemKind)
+    int room = stackLimit(s) - s.count;
+    int mv = half && stackLimit(c)>1 && !isFiniteAmmoWeapon(c.itemKind)
       ? imin(1, imin(room, c.count)) : imin(room, c.count);
     s.count += mv; c.count -= mv; if (c.count <= 0) c = InvSlot();
   } else if (!half) { // different contents -> swap (left-click only)
@@ -360,9 +383,9 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   if (c.count <= 0 || c.itemKind == IK_BLAST_GUN ||
       c.itemKind == IK_MINING_TOOL || c.itemKind == IK_RESCUE_BEAM) return false;
   if (c.itemKind == IK_CHEST) return false;
-  if (c.itemKind == IK_GEAR) {
-    const auto* gear = E.content.gear(c.definitionId);
-    if (!gear || gear->family == 11) return false;
+  if (c.itemKind == IK_GEAR || c.itemKind == IK_ARROW) {
+    const auto* gear = c.itemKind==IK_GEAR ? E.content.gear(c.definitionId) : nullptr;
+    if (c.itemKind==IK_GEAR && (!gear || gear->family == 11)) return false;
     InvSlot dropped = c; dropped.count = whole ? c.count : 1;
     E.itemsys.spawnStack(dropped, p.px + p.w / 2.0 + p.facing * 1.5, p.py + p.h / 2.0,
                          p.facing * IT_THROW_SPEED, IT_THROW_UP, IT_THROW_PICKUP_DELAY);

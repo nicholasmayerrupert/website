@@ -27,7 +27,7 @@ await initSandWasm();
 const create = content => createEngineWasm({ cols: 640, rows: 448, worldSeed: GAME_WORLD.seed,
   infinite: true, sinksOn: false, planetId: PLANET.FRONTIER, content });
 const rewardFixture = structuredClone(GAME_WORLD);
-rewardFixture.quests[0].reward = { gear: 320, count: 1, name: 'Cordial' };
+rewardFixture.quests[0].reward = { gear: 100, count: 1, name: 'Armor' };
 const e = create(compileContent(rewardFixture, PLAYER_ART));
 try {
   e.setSurvivalInventory(true);

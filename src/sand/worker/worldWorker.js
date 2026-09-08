@@ -1316,6 +1316,7 @@ function applyRuntimeMessage(data) {
       case 'select': engine.setSelectedSlot(localPlayerId, data.slot | 0); break;
       case 'size': engine.setSelectedFootprint(localPlayerId, data.footprint | 0); break;
       case 'move': engine.inventoryMove(localPlayerId, data.from | 0, data.to | 0); break;
+      case 'sort': engine.inventorySort(localPlayerId); break;
       case 'pick': engine.inventoryCursorPick(localPlayerId, data.slot | 0, !!data.half); break;
       case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
       case 'craft': engine.craft(localPlayerId, data.recipe | 0, !!data.max); break;

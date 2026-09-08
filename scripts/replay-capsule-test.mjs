@@ -57,6 +57,7 @@ assert.equal(normalizeReplayInit({
 }).weatherId, WEATHER.CLEAR);
 
 assert.deepEqual(normalizeReplayMessage({ type: 'intent', intent: 'repair-base' }), { type: 'intent', intent: 'repair-base' });
+assert.deepEqual(normalizeReplayMessage({ type: 'intent', intent: 'sort' }), { type: 'intent', intent: 'sort' });
 
 const events = [
   {
@@ -101,6 +102,7 @@ const events = [
   { tick: 20, message: normalizeReplayMessage({ type: 'intent', intent: 'add', material: 7, count: 25 }) },
   { tick: 20, message: normalizeReplayMessage({ type: 'intent', intent: 'move', from: 2, to: 5 }) },
   { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'pick', slot: 3, half: true }) },
+  { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'sort' }) },
   { tick: 22, message: normalizeReplayMessage({ type: 'intent', intent: 'set-player-state', state: { health: 42 } }) },
   {
     tick: 23,

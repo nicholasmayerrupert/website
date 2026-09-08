@@ -25,6 +25,11 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-inventory h2 {font:19px/1.2 'Sand Pixel',monospace;margin:0;color:#e1d7b6}
 .ad-inventory .inv-pack-heading {grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:space-between;min-height:24px}
 .ad-inventory .inv-capacity {color:#9ba794;font-size:12px;font-variant-numeric:tabular-nums}
+.ad-inventory .inv-pack-heading {gap:10px;flex-wrap:wrap}.ad-inventory .inv-pack-heading button {font-size:12px;padding:5px 8px;border:1px solid #62664a}.ad-inventory .inv-capacity {margin-left:auto}
+.inv-hud:not(.open)>.inv-drop-zone,.ad-inventory.bag-open>.inv-drop-zone {display:none}
+.ad-inventory .inv-drop-zone {grid-column:2;grid-row:4;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border:1px dashed #727351;color:#b9c1aa;font-size:12px}
+.ad-inventory .inv-drop-zone span {flex:1 1 180px}.ad-inventory .inv-drop-zone button {padding:6px 9px;border:1px solid #88805a;font-size:12px}
+.ad-inventory .inv-drop-zone button:disabled,.ad-inventory .inv-pack-heading button:disabled {opacity:.4;cursor:default}.ad-inventory .inv-drop-zone.carrying {border-color:#d8b676;background:#35402b}
 .ad-inventory .inv-grid {grid-column:2;grid-row:2;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));
   gap:5px!important;padding:8px!important;align-content:start;justify-items:stretch;background:#122019!important;
   border:1px solid #62664a!important;box-shadow:inset 0 1px 4px #0005}
@@ -53,7 +58,7 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-gear-offhand{grid-area:4/1}.ad-gear-charm1{grid-area:4/2;width:54px;justify-self:center}.ad-gear-charm2{grid-area:4/3}
 .ad-character-stats {display:grid;grid-template-columns:1fr auto;gap:9px 8px;margin:18px 0 0;padding-top:16px;border-top:1px solid #cfb98126;font-size:14px}
 .ad-character-stats dt {color:#aab69f}.ad-character-stats dd {margin:0;color:#e1d7b6;font-variant-numeric:tabular-nums}
-.ad-inventory .craft-panel {grid-column:2;grid-row:4;max-height:200px;padding:0;overflow:auto;background:none;border:0;box-shadow:none}
+.ad-inventory .craft-panel {grid-column:2;grid-row:5;max-height:200px;padding:0;overflow:auto;background:none;border:0;box-shadow:none}
 .ad-inventory .craft-title {font:17px 'Sand Pixel',monospace;letter-spacing:0;margin:3px 0 10px;padding:0;border:0;color:#e1d7b6}
 .ad-inventory .craft-list {grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .ad-inventory .craft-recipe {position:relative;grid-template-columns:32px minmax(0,1fr);padding:8px;border:1px solid #5b6349;
@@ -66,7 +71,7 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-inventory .inv-pools {display:none;grid-column:2;grid-row:2/5;padding:12px;border:1px solid #62664a;background:#17261c}
 .ad-inventory .bag-open .inv-pools {display:block}.ad-inventory .bag-open .inv-grid,.ad-inventory .bag-open .craft-panel {display:none}
 .ad-inventory .bag-open .inv-bar {grid-row:5}
-.ad-inventory .inv-bag-shortcuts {grid-column:2;grid-row:5;display:flex;flex-wrap:wrap;gap:6px}
+.ad-inventory .inv-bag-shortcuts {grid-column:2;grid-row:6;display:flex;flex-wrap:wrap;gap:6px}
 .ad-inventory .inv-bag-shortcuts button {display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #5a6449;font-size:12px;color:#c6cfb9}
 .ad-inventory .bag-open .inv-bag-shortcuts {display:none}
 .ad-inventory .inv-bag-return {margin-bottom:12px;color:#e4cc93;border:0;padding:0;font-size:12px}
@@ -74,7 +79,7 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-inventory .pool-heading {font-size:16px;margin-top:10px}.ad-inventory .pool-summary {font-size:13px;margin:5px 0 12px}
 .ad-inventory .pool-row {grid-template-columns:16px 20px 16px minmax(75px,1fr) auto 24px 24px 36px;gap:5px;font-size:11px;border-top:1px solid #ffffff08;padding:9px 0}
 .ad-inventory .pool-status span,.ad-inventory .pool-properties {display:none}.ad-inventory .pool-controls{font-size:11px}
-.ad-inventory .ad-footprint {grid-column:2;grid-row:6;margin:0;font:12px 'Sand Pixel',monospace;color:#aab69f}
+.ad-inventory .ad-footprint {grid-column:2;grid-row:7;margin:0;font:12px 'Sand Pixel',monospace;color:#aab69f}
 .ad-inventory .ad-footprint select {padding:4px 8px}
 .ad-inventory .ad-loot {grid-column:1/-1;padding:12px;margin:0 0 10px;border:1px solid #8d7c51;background:#243123}
 .ad-inventory .ad-loot h2 {font-size:18px}.ad-inventory .ad-loot>button {font:13px 'Sand Pixel',monospace}
@@ -88,10 +93,11 @@ export const ADVENTURE_INVENTORY_STYLE = `
   .ad-character{width:64px;height:88px}.ad-gear-slot{font-size:11px;gap:2px}.ad-gear-charm1{width:38px}
   .ad-character-stats{grid-column:2;grid-row:2;align-self:center;margin:0;padding:0;border:0;font-size:11px;gap:10px}
   .ad-inventory .inv-pack-heading{grid-column:1;grid-row:2}.ad-inventory .inv-grid{grid-column:1;grid-row:3;padding:6px!important;gap:3px!important}
-  .ad-inventory .inv-bar{grid-column:1;grid-row:4;padding:6px;gap:3px}.ad-inventory .craft-panel{grid-column:1;grid-row:5;max-height:none}
+  .ad-inventory .inv-bar{grid-column:1;grid-row:4;padding:6px;gap:3px}.ad-inventory .craft-panel{grid-column:1;grid-row:6;max-height:none}
+  .ad-inventory .inv-drop-zone{grid-column:1;grid-row:5}
   .ad-inventory .inv-pools{grid-column:1;grid-row:3/5}.ad-inventory .bag-open .inv-bar{grid-column:1;grid-row:5}
   .ad-inventory .ad-footprint{grid-column:1;grid-row:6}.ad-inventory .inv-count{font-size:10px}.ad-inventory .inv-num{font-size:8px}
-  .ad-inventory .inv-bag-shortcuts{grid-column:1;grid-row:6}.ad-inventory .ad-footprint{grid-row:7}
+  .ad-inventory .inv-bag-shortcuts{grid-column:1;grid-row:7}.ad-inventory .ad-footprint{grid-row:8}
   .ad-inventory .pool-row{grid-template-columns:12px 16px 12px minmax(55px,1fr) auto 22px 22px 30px;gap:3px;font-size:10px}
   .ad-inventory .pool-row button{font-size:10px;padding:3px}.ad-inventory .pool-controls{gap:8px}
   .ad-inventory .craft-list{grid-template-columns:1fr}.ad-sheet[data-page="inventory"]>footer{font-size:10px;padding:8px 16px}

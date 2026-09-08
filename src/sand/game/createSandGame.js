@@ -496,6 +496,7 @@ export function createSandGame(container, opts = {}) {
     moveSlot(from, to) {
       ctx.worldWorker?.intent('move', { from: from | 0, to: to | 0 });
     },
+    sortInventory() { ctx.worldWorker?.intent('sort'); },
     getInventory() {
       return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
     },

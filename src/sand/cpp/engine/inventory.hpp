@@ -35,7 +35,9 @@ class InventorySystem {
   bool addStack(Player& p, const InvSlot& stack);
   bool addStack(int id, const InvSlot& stack);
   bool addSpecialItem(int id, uint8_t itemKind, int count);
-  static bool sameStack(const InvSlot& a, const InvSlot& b);
+  int stackLimit(const InvSlot& stack) const;
+  bool sameStack(const InvSlot& a, const InvSlot& b) const;
+  void sortBag(int id);
   bool consumeSelectedWeaponAmmo(Player& p, uint8_t itemKind);
   bool placeFromSelected(Player& p, int ax, int ay, Layer* layer);
   bool placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer);

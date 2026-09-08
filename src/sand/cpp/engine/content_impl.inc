@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 3) return false;
+  if (r.take() != 0x41535452 || r.take() != 4) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -157,6 +157,10 @@ bool ContentSystem::load(const int32_t* data, int length) {
     ContentGear g{r.bounded(1, 10000), r.bounded(1, 11), r.bounded(-1, 8), r.bounded(0, 200),
       r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 100),
       r.bounded(0, 9), r.bounded(0, 6), r.bounded(0, 10000)};
+    for (auto& pixel : g.icon) {
+      pixel=(uint32_t)r.take();
+      if (pixel && (pixel>>24)!=255) return false;
+    }
     if (!nextEquipment.emplace(g.id, g).second) return false;
   }
   std::vector<ContentChest> nextChests;

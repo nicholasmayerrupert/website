@@ -13,6 +13,7 @@ export const UNIT_SUITES = [
   ['adventure', 'adventure-test.mjs', exclusive(120_000)],
   ['adventure-combat', 'adventure-combat-test.mjs'],
   ['adventure-mining', 'adventure-mining-test.mjs'],
+  ['adventure-inventory', 'adventure-inventory-test.mjs'],
   ['game-content', 'game-content-test.mjs', exclusive(120_000)],
   ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],

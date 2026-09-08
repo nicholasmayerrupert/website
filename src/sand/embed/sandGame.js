@@ -660,6 +660,7 @@ class SandGameElement extends HTMLElement {
             selectSlot: (i) => game.selectSlot(i),
             cursorPick: (slot, half) => game.cursorPick(slot, half),
             throwFromCursor: (whole) => game.throwFromCursor(whole),
+            sortInventory: () => game.sortInventory(),
             getCursor: () => game.getCursor(),
             recipes: game.getCraftingRecipes(),
             craft: (recipe, max) => game.craft(recipe, max),

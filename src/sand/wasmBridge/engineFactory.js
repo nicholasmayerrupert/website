@@ -234,6 +234,7 @@ export function initSandWasm() {
         chestInteract: c('engine_chest_interact', 'number', ['number', 'number', 'number', 'number']),
         addGear: c('engine_add_gear', 'number', ['number', 'number', 'number', 'number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
+        inventorySort: c('engine_inventory_sort', null, ['number', 'number']),
         inventoryPoolAction: c('engine_inventory_pool_action', null, ['number', 'number', 'number', 'number', 'number', 'number']),
         inventoryPoolSnapshot: c('engine_inventory_pool_snapshot', 'number', ['number', 'number']),
         inventoryPoolSnapshotPtr: c('engine_inventory_pool_snapshot_ptr', 'number', ['number']),
@@ -1125,6 +1126,7 @@ const renderStrides = Object.freeze({
     interactChest(id, chest, slot = -2) { return M.chestInteract(ptr, id, chest, slot) === 1; },
     addGear(id, definition, count = 1) { return M.addGear(ptr, id, definition, count) === 1; },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
+    inventorySort(id) { M.inventorySort(ptr, id | 0); },
     inventoryPoolAction(id, pool, action, material = 0, value = 0) {
       M.inventoryPoolAction(ptr, id | 0, pool | 0, action | 0, material | 0, value | 0);
     },

@@ -267,7 +267,7 @@ const STYLE = `
 @media (max-width:380px) { .inv-slot { width:30px; height:30px; } .inv-grid { gap:2px; padding:6px; } .inv-bar { gap:2px; padding:5px; } }
 `;
 
-export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor, recipes = [], craft, poolAction, onOpenChange, managed = false } = {}) {
+export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, sortInventory, getCursor, recipes = [], craft, poolAction, onOpenChange, managed = false } = {}) {
   injectStyleOnce(root, 'data-sand-inventory', STYLE);
 
   let open = false;
@@ -345,7 +345,23 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const packTitle = document.createElement('h2'); packTitle.textContent = 'Items';
   const capacity = document.createElement('span'); capacity.className = 'inv-capacity';
   packHeading.append(packTitle, capacity);
+  const sortButton=document.createElement('button');sortButton.type='button';sortButton.textContent='Sort items';
+  sortButton.title='Combine matching stacks and group items. Quickbar stays in place.';
+  sortButton.addEventListener('click',()=>{if(!hasCursor())sortInventory?.();});
+  if(managed)packHeading.append(sortButton);
   if (managed) hud.prepend(packHeading);
+  const dropZone=document.createElement('section');dropZone.className='inv-drop-zone';dropZone.setAttribute('aria-label','Drop items');
+  const dropHint=document.createElement('span');dropHint.setAttribute('role','status');
+  const dropOne=document.createElement('button'),dropStack=document.createElement('button');
+  dropOne.type=dropStack.type='button';dropOne.textContent='Drop one';dropStack.textContent='Drop stack';
+  const drop=(whole)=>{if(!dropOne.disabled){throwFromCursor?.(whole);refreshCursor();}};
+  dropOne.addEventListener('click',()=>drop(false));dropStack.addEventListener('click',()=>drop(true));
+  dropZone.addEventListener('pointerup',()=>{
+    const dragged=downOnSlot;downSlot=-1;downOnSlot=false;dragBag=false;
+    if(dragged)drop(true);
+  });
+  dropZone.append(dropHint,dropOne,dropStack);
+  if(managed)hud.append(dropZone);
   if (managed) {
     const bags = document.createElement('div'); bags.className = 'inv-bag-shortcuts';
     for (const [index, name] of ['Materials', 'Powders', 'Liquids'].entries()) {
@@ -495,6 +511,14 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // Called from update() and right after every action so the cursor stays in sync.
   function refreshCursor() {
     const c = getCursor?.() || null;
+    const gear=c?.itemKind===ITEM_KIND.GEAR ? EQUIPMENT_BY_ID[c.definitionId] : null;
+    const droppable=!!c && !c.pool && !c.isTool && (
+      c.itemKind===ITEM_KIND.MATERIAL || c.itemKind===ITEM_KIND.ARROW || (gear && gear.family!==11) ||
+      [ITEM_KIND.DYNAMITE_SATCHEL,ITEM_KIND.BORE_CANNON,ITEM_KIND.ACID_MORTAR,ITEM_KIND.CLUSTER_LAUNCHER,ITEM_KIND.MINIGUN].includes(c.itemKind));
+    dropOne.disabled=dropStack.disabled=!droppable;
+    sortButton.disabled=!!c;
+    dropZone.classList.toggle('carrying',droppable);
+    dropHint.textContent=!c ? 'Pick up an item, then drop it here.' : droppable ? `Drop ${slotName(c)} into the world` : c.itemKind===ITEM_KIND.CHEST ? 'Place this chest in the world to put it down.' : 'This item stays with you.';
     cursorItem.replaceChildren();
     if (open && c) {
       renderCursorInline(c);

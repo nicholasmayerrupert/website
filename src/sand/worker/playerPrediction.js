@@ -1,11 +1,15 @@
 // Local-player prediction and worker reconciliation. Deterministic player physics
 // allows unacknowledged inputs to be replayed after each authoritative correction
 // without advancing the world simulation.
+import { ACTOR_MAX_DEBT_MS, ACTOR_STEP_MS } from '../timing/fixedRateClock.js';
 
 export class Predictor {
   // About three seconds of 60 Hz actor inputs. A stalled authority must not
   // grow an unbounded replay queue.
   static MAX_PENDING = 180;
+  // Speculation shares the local actor clock's bounded recovery window. Inputs
+  // still reach the authority while prediction waits for a confirmed tick.
+  static MAX_PREDICTION_STEPS = Math.ceil(ACTOR_MAX_DEBT_MS / ACTOR_STEP_MS);
 
   constructor(engine, playerId) {
     this.engine = engine;
@@ -17,12 +21,16 @@ export class Predictor {
     this.smoothX = 0; this.smoothY = 0;
     this.currentInput = null;
     this.currentInputSeq = 0;
+    this.predictedSteps = 0;
   }
 
   // Apply one local input and predict forward immediately.
   predict(seq, input) {
     this.engine.setPlayerInput(this.id, { ...input, seq });
-    this.engine.stepPlayerOnly(this.id);
+    if (this.predictedSteps < Predictor.MAX_PREDICTION_STEPS) {
+      this.engine.stepPlayerOnly(this.id);
+      this.predictedSteps++;
+    }
     this.pending.push({ seq, input });
     if (this.pending.length > Predictor.MAX_PENDING)
       this.pending.splice(0, this.pending.length - Predictor.MAX_PENDING);
@@ -64,9 +72,12 @@ export class Predictor {
     this.pending = this.pending.filter((e) => e.seq > ackedSeq);
     this.engine.syncActorTick(actorTick);
     this.engine.setPlayerState(this.id, authState);
+    this.predictedSteps = 0;
     for (const e of this.pending) {
+      if (this.predictedSteps >= Predictor.MAX_PREDICTION_STEPS) break;
       this.engine.setPlayerInput(this.id, { ...e.input, seq: e.seq });
       this.engine.stepPlayerOnly(this.id);
+      this.predictedSteps++;
     }
     const after = this.engine.getPlayer(this.id);
     // accumulate the visual error into the smoothing offset (so the camera/sprite

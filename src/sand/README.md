@@ -37,14 +37,23 @@ instances:
 - A main-thread presentation engine applies backpressured world diffs and actor
   snapshots, renders WebGL, and predicts only the local survival player.
 
+Player prediction advances at most one actor-clock recovery window beyond the
+latest authority state, including unacknowledged input replay. Controls continue
+reaching the worker during a stall. Checkpoint loading clears saved input
+acknowledgements because input sequences belong to the current browser session.
+
 Only one authority packet is in flight. Full snapshots are used for startup,
 resize, and recovery. An ordinary stream shift sends its offset delta plus the
 dirty rectangles containing the entering bands; the presentation mirror slides
 both grids in place before applying them. Other turns send accumulated diffs.
 The presentation mirror does not reconstruct static components because it never simulates them.
-Local items and projectiles cross the worker boundary as packed transferable
-buffers, and unchanged render buffers are not recopied into WebAssembly between
-actor snapshots.
+Local items, projectiles, and creatures cross the worker boundary as packed
+transferable buffers. Live projectile and creature rendering interpolates between
+confirmed snapshots with one actor tick of delay; it never extrapolates past the
+authority. Collision mirrors remain at the newest snapshot. Spawns, projectile
+phase changes, removals, and discontinuous relocations take effect immediately;
+paused and replay views use exact snapshots. Unchanged render buffers are not
+recopied into WebAssembly.
 
 ## Aster: continuous Earth expedition
 

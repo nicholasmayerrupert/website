@@ -344,7 +344,7 @@ function replayActorSnapshot() {
   const players = engine.getPlayers();
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;
   return {
-    type: 'actors', epoch, actorTick: engine.getActorTick(), localPlayerId,
+    type: 'actors', epoch, actorTick: engine.getActorTick(), sampleTime: performance.timeOrigin + performance.now(), localPlayerId,
     players: copyReplayValue(players),
     discovery: engine.getDiscovery(), chests: copyReplayValue(engine.getChests()), chestLoot: copyReplayValue(engine.getChestLoot()),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
@@ -422,7 +422,7 @@ function captureReplayVisualFrame(session, turn, {
     world,
     actors: replayActorSnapshot(),
     creatures: {
-      type: 'creatures', epoch,
+      type: 'creatures', epoch, actorTick: engine.getActorTick(), sampleTime: performance.timeOrigin + performance.now(),
       worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
       data: copyViewBuffer(creatures),
     },
@@ -643,7 +643,7 @@ function postCreatures() {
   if (replayTransportSuppressed) return;
   const data = creatures.buffer;
   self.postMessage({
-    type: 'creatures', epoch,
+    type: 'creatures', epoch, actorTick: engine.getActorTick(), sampleTime: performance.timeOrigin + performance.now(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
   }, [data]);
 }
@@ -701,7 +701,7 @@ function postActors(force = false) {
   const discovery = force || discoveryRevision !== lastDiscoveryRevision ? engine.getDiscovery() : undefined;
   lastDiscoveryRevision = discoveryRevision;
   self.postMessage({
-    type: 'actors', epoch, actorTick, localPlayerId, players, discovery,
+    type: 'actors', epoch, actorTick, sampleTime: performance.timeOrigin + performance.now(), localPlayerId, players, discovery,
     chests: engine.getChests(), chestLoot: engine.getChestLoot(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),

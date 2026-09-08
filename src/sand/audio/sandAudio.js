@@ -187,15 +187,20 @@ export function buildTntExplosionBuffer(context, assets) {
       const output = mixed.getChannelData(channel);
       const layerLength = Math.ceil(input.length / layer.rate);
       const offset = Math.round(layer.delay * context.sampleRate);
+      const decayStep = Math.exp(-1 / (context.sampleRate * layer.decay));
+      const fadeLength = context.sampleRate * .04;
+      const fadeStart = layerLength - 1 - fadeLength;
+      const inverseFadeLength = 1 / fadeLength;
+      let envelope = layer.gain;
       for (let i = 0; i < layerLength; i++) {
         const sourceIndex = i * layer.rate;
         const lo = Math.floor(sourceIndex);
         const mix = sourceIndex - lo;
         const hi = Math.min(input.length - 1, lo + 1);
-        const time = i / context.sampleRate;
-        const fade = Math.min(1, (layerLength - 1 - i) / (context.sampleRate * 0.04));
+        const fade = i <= fadeStart ? 1 : (layerLength - 1 - i) * inverseFadeLength;
         output[i + offset] += (input[lo] + (input[hi] - input[lo]) * mix)
-          * layer.gain * Math.exp(-time / layer.decay) * fade;
+          * envelope * fade;
+        envelope *= decayStep;
       }
     }
   }
@@ -203,11 +208,15 @@ export function buildTntExplosionBuffer(context, assets) {
   // headroom for overlapping detonations in the master compressor.
   let peak = 0;
   for (let channel = 0; channel < channels; channel++) {
-    for (const sample of mixed.getChannelData(channel)) peak = Math.max(peak, Math.abs(sample));
-  }
-  if (peak > 0) for (let channel = 0; channel < channels; channel++) {
     const output = mixed.getChannelData(channel);
-    for (let i = 0; i < length; i++) output[i] *= 0.9 / peak;
+    for (let i = 0; i < length; i++) peak = Math.max(peak, Math.abs(output[i]));
+  }
+  if (peak > 0) {
+    const gain = 0.9 / peak;
+    for (let channel = 0; channel < channels; channel++) {
+      const output = mixed.getChannelData(channel);
+      for (let i = 0; i < length; i++) output[i] *= gain;
+    }
   }
   return mixed;
 }

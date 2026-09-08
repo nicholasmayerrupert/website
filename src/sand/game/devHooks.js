@@ -149,6 +149,8 @@ export function installDevHooks(ctx, {
       if (p) ctx.worldWorker?.intent('set-player-state', { state: { ...p, ...state } });
     },
     getCreatures() { return engine() ? engine().getCreatures() : []; },
+    renderedProjectiles() { return ctx.worldWorker?.getProjectilesForRender() || new Float32Array(0); },
+    renderedCreatures() { return ctx.worldWorker?.getCreaturesForRender() || null; },
     setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); applyCreatureRuntimePolicy(ctx); ctx.worldWorker?.config({ creatureNaturalSpawning: ctx.debugHitboxes }); render(false); },
     setSkyLight(v) { engine()?.setSkyLight(v | 0); render(true); },
     setDayPhase(v) { setDayPhase(v); render(false); },

@@ -147,7 +147,9 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     for (auto& slot:p.inv) migrateSeed(slot);
     migrateSeed(p.cursor);
     if (!std::isfinite(p.px) || !std::isfinite(p.py) || p.selectedSlot<0 || p.selectedSlot>=INV_HOTBAR) return false;
-    p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0; p.mineActive=false; p.mineChestId=0; p.placeStrokeActive=false;
+    p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0;
+    // Input acknowledgements belong to the browser session, not the saved world.
+    p.inputSeq=0; p.mineActive=false; p.mineChestId=0; p.placeStrokeActive=false;
     for (const auto& slot:p.inv) if (slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) return false;
   }
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;

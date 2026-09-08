@@ -246,6 +246,7 @@ export function createGameLoop(ctx, {
   const unsetRenderSource = Symbol('unset-render-source');
   let lastWorkerItems = unsetRenderSource;
   let lastWorkerProjectiles = unsetRenderSource;
+  let lastWorkerCreatures = unsetRenderSource;
   const render = (full = false) => {
     const engine = ctx.engine;
     if (!engine) return;
@@ -299,6 +300,7 @@ export function createGameLoop(ctx, {
     if (full || ctx.forceFullRender) {
       lastWorkerItems = unsetRenderSource;
       lastWorkerProjectiles = unsetRenderSource;
+      lastWorkerCreatures = unsetRenderSource;
     }
     const nextItems = ctx.worldWorker?.getItemsForRender() || null;
     const nextProjectiles = ctx.worldWorker?.getProjectilesForRender() || null;
@@ -310,7 +312,11 @@ export function createGameLoop(ctx, {
       engine.glSetProjectiles(nextProjectiles);
       lastWorkerProjectiles = nextProjectiles;
     }
-    engine.glSetCreatures(null);
+    const nextCreatures = ctx.worldWorker?.getCreaturesForRender() || null;
+    if (nextCreatures !== lastWorkerCreatures) {
+      engine.glSetCreatures(nextCreatures);
+      lastWorkerCreatures = nextCreatures;
+    }
     engine.glRenderFrame(full || ctx.forceFullRender);
     ctx.forceFullRender = false;
     ctx.previewDirty = false;

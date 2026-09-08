@@ -1,5 +1,6 @@
 import WorldWorker from './worldWorkerConstructor.js';
 import { Predictor } from './playerPrediction.js';
+import { createActorPresentation } from './actorPresentation.js';
 import { OFF, STRIDES, PLANET } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from './replicaCoordinates.js';
@@ -70,6 +71,21 @@ export function createWorldWorkerClient(ctx) {
   let inventoryDirty = false;
   let items = new Float32Array(0);
   let projectiles = new Float32Array(0);
+  const projectilePresentation = createActorPresentation({
+    stride: STRIDES.projectileSnapshot, fields: OFF.projectileSnapshot, kind: OFF.projectileSnapshot.kind,
+  });
+  const creaturePresentation = createActorPresentation({
+    stride: STRIDES.creatureSnapshot, fields: OFF.creatureSnapshot, kind: OFF.creatureSnapshot.species,
+    extraX: [OFF.creatureSnapshot.aimX], extraY: [OFF.creatureSnapshot.aimY],
+  });
+  const resetActorPresentation = () => { projectilePresentation.reset(); creaturePresentation.reset(); };
+  let presentationAt = performance.now();
+  const interpolateActors = () => !ctx.testPaused && !ctx.gameplayPaused && !ctx.reduced
+    && !state.replayPlaying && !replayMicroscopeOpen && !replayBufferOpen;
+  const sampleActorPresentation = (presentation) => presentation.sample(
+    presentationAt, ctx.engine?.getWorldOffsetX() || 0, ctx.engine?.getWorldOffsetY() || 0,
+    interpolateActors(),
+  );
   let mineProgress = 0;
   let mineTarget = null;
   let actionCount = 0;
@@ -237,6 +253,8 @@ export function createWorldWorkerClient(ctx) {
 
   const handleMessage = ({ data }) => {
     const receivedAt = performance.now();
+    const sampleAt = Number.isFinite(data?.sampleTime) && Number.isFinite(performance.timeOrigin)
+      ? data.sampleTime - performance.timeOrigin : receivedAt;
     if (typeof data === 'number') {
       if (liveness.noteSignal(data, receivedAt)) livenessProbePending = false;
       return;
@@ -469,7 +487,7 @@ export function createWorldWorkerClient(ctx) {
         pendingDraft = data;
     } else if (data.type === 'creatures') {
       if (isBufferedReplayFrame(data) || !data.epoch || data.epoch >= appliedEpoch)
-        pendingCreatures = data;
+        pendingCreatures = { ...data, sampleAt };
     } else if (data.type === 'actors') {
       const bufferedReplayFrame = isBufferedReplayFrame(data);
       if (!bufferedReplayFrame && data.epoch && data.epoch < appliedEpoch) return;
@@ -480,7 +498,7 @@ export function createWorldWorkerClient(ctx) {
       const prior = !bufferedReplayFrame && pendingActors?.epoch === data.epoch
         ? pendingActors : null;
       pendingActors = {
-        ...data,
+        ...data, sampleAt,
         inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
         cursor: data.cursor !== undefined ? data.cursor : prior?.cursor,
         itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
@@ -814,6 +832,7 @@ export function createWorldWorkerClient(ctx) {
       players = [];
       items = new Float32Array(0);
       projectiles = new Float32Array(0);
+      resetActorPresentation();
       ctx.worldSeed = capsule.init.worldSeed >>> 0;
       if (Number.isFinite(capsule.init.planetId)) ctx.planetId = capsule.init.planetId | 0;
       ctx.weatherId = replayWeatherId;
@@ -872,6 +891,7 @@ export function createWorldWorkerClient(ctx) {
       players = [];
       items = new Float32Array(0);
       projectiles = new Float32Array(0);
+      resetActorPresentation();
       ctx.worldSeed = capsule.init.worldSeed >>> 0;
       ctx.planetId = replayPlanetId;
       ctx.weatherId = replayWeatherId;
@@ -983,6 +1003,7 @@ export function createWorldWorkerClient(ctx) {
       players = [];
       items = new Float32Array(0);
       projectiles = new Float32Array(0);
+      resetActorPresentation();
       state = { ...state, replayPaused: true, replayBuffering: true };
       return new Promise((resolve, reject) => {
         replayRequests.set(requestId, {
@@ -1031,6 +1052,7 @@ export function createWorldWorkerClient(ctx) {
       players = [];
       items = new Float32Array(0);
       projectiles = new Float32Array(0);
+      resetActorPresentation();
       ctx.worldSeed = capsule.init.worldSeed >>> 0;
       ctx.planetId = replayPlanetId;
       ctx.weatherId = replayWeatherId;
@@ -1159,6 +1181,7 @@ export function createWorldWorkerClient(ctx) {
             };
           }
         if (packet.type === 'full') {
+          resetActorPresentation();
           const { cam, offsetX: oldOffsetX, offsetY: oldOffsetY } = mirrorFrame;
           const worldCamX = Number.isFinite(packet.replayView?.cameraWorldX)
             ? packet.replayView.cameraWorldX
@@ -1340,6 +1363,9 @@ export function createWorldWorkerClient(ctx) {
       }
       if (pendingCreatures && ctx.engine) {
         if (!pendingCreatures.epoch || pendingCreatures.epoch >= appliedEpoch) {
+          creaturePresentation.push(new Float32Array(pendingCreatures.data),
+            pendingCreatures.actorTick | 0, pendingCreatures.sampleAt ?? performance.now(),
+            pendingCreatures.worldOffsetX, pendingCreatures.worldOffsetY);
           ctx.engine.setMirrorCreatures(
             new Float32Array(pendingCreatures.data),
             pendingCreatures.worldOffsetX, pendingCreatures.worldOffsetY,
@@ -1362,7 +1388,7 @@ export function createWorldWorkerClient(ctx) {
         authoritativePlayerId = packet.localPlayerId | 0;
         players = packet.players || [];
         const own = players.find((p) => p.id === authoritativePlayerId) || null;
-        if (own?.alive !== false) {
+        if (own && own.alive !== false) {
           if (!predictor || predictorEngine !== ctx.engine) {
             if (!predictorPlayerId || predictorEngine !== ctx.engine) predictorPlayerId = ctx.engine.spawnPlayer(own.x, own.y);
             predictor = new Predictor(ctx.engine, predictorPlayerId);
@@ -1385,6 +1411,9 @@ export function createWorldWorkerClient(ctx) {
             OFF.itemSnapshot.x, OFF.itemSnapshot.y, itemDx, itemDy);
         }
         if (packet.projectileData !== undefined) {
+          projectilePresentation.push(new Float32Array(packet.projectileData),
+            packet.actorTick | 0, packet.sampleAt ?? performance.now(),
+            rawPacket.worldOffsetX ?? targetOffsetX, rawPacket.worldOffsetY ?? targetOffsetY);
           projectiles = new Float32Array(packet.projectileData);
           translatePackedPositions(projectiles, STRIDES.projectileSnapshot,
             OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, itemDx, itemDy);
@@ -1480,9 +1509,16 @@ export function createWorldWorkerClient(ctx) {
       const own = this.getOwnPlayer();
       return players.filter((p) => p.active !== false).map((p) => p.id === authoritativePlayerId && own ? own : p);
     },
-    advancePresentation() { predictor?.advanceRenderSmoothing(); },
+    advancePresentation() {
+      presentationAt = performance.now();
+      predictor?.advanceRenderSmoothing();
+    },
     getItemsForRender() { return items; },
-    getProjectilesForRender() { return projectiles; },
+    getProjectilesForRender() { return sampleActorPresentation(projectilePresentation) || projectiles; },
+    getCreaturesForRender() {
+      const packed = sampleActorPresentation(creaturePresentation);
+      return interpolateActors() ? packed : null;
+    },
     getInventory() { return inventory; },
     getCursor() { return cursor; },
     consumeInventoryDirty() { const dirty = inventoryDirty; inventoryDirty = false; return dirty; },
@@ -1621,6 +1657,7 @@ export function createWorldWorkerClient(ctx) {
     discovery = new Int32Array();
     missionSignature = ''; missionDirty = false;
     items = new Float32Array(0); projectiles = new Float32Array(0);
+    resetActorPresentation();
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;
     liveness.reset();

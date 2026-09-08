@@ -20,7 +20,15 @@ const resume = viewport => async ({ page, baseURL, check }) => {
   // Restore the checkpoint made on the other viewport, as a returning player would.
   await page.evaluate(async () => {
     const { saveAdventure } = await import('/src/sand/worker/adventureSaveStore.js');
-    await saveAdventure(window.resumeFixture.bytes);
+    const { createEngineWasm, PLANET } = await import('/src/sand/wasmBridge/engineFactory.js');
+    const fixture = window.resumeFixture;
+    const saved = createEngineWasm({ cols: fixture.cols, rows: fixture.rows, planetId: PLANET.FRONTIER });
+    try {
+      if (!saved.readCheckpoint(fixture.bytes)) throw new Error('Could not prepare resumed input fixture');
+      const player = saved.getPlayers()[0];
+      saved.setPlayerInput(player.id, { bits: 0, seq: 90000, aimX: player.aimX, aimY: player.aimY });
+      await saveAdventure(saved.writeCheckpoint());
+    } finally { saved.destroy(); }
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('sand-game')?._game?.getSaveState().restored,
@@ -42,6 +50,18 @@ const resume = viewport => async ({ page, baseURL, check }) => {
     const g = document.querySelector('sand-game')._game;
     return g.getPlayer().alive && Math.abs(g.getMissionView().playerWorldY - y) < 3;
   }, state.playerWorldY));
+  const correction = await page.evaluate(() => {
+    const g = document.querySelector('sand-game')._game, player = g.getPlayer();
+    const offset = window.__sandTest.worldOffset();
+    const x = player.x + 40, y = player.y - 20;
+    window.__sandTest.setPlayerState({ x, y, vx: 0, vy: 0, grounded: false });
+    return { x: x + offset.x, y: y + offset.y };
+  });
+  await page.waitForFunction(target => {
+    const view = document.querySelector('sand-game')._game.getMissionView();
+    return Math.abs(view.playerWorldX - target.x) < 5 && Math.abs(view.playerWorldY - target.y) < 10;
+  }, correction, { timeout: 5000 });
+  check('new-session corrections reach the visible player after a high-sequence save', true);
 };
 
 process.exitCode = await runBrowserCases({

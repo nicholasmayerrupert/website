@@ -76,6 +76,21 @@ check('beam cues have an explicit presentation cooldown',
   };
   const mixed = buildTntExplosionBuffer(context, assets);
   const samples = mixed.getChannelData(0);
+  const reference = new Float32Array(samples.length);
+  for (const layer of TNT_EXPLOSION_LAYERS) {
+    const input = assets[layer.asset].getChannelData(0);
+    const count = Math.ceil(input.length / layer.rate);
+    const delay = Math.round(layer.delay * context.sampleRate);
+    for (let i = 0; i < count; i++) {
+      const position = i * layer.rate, lo = Math.floor(position);
+      const value = input[lo] + (input[Math.min(input.length - 1, lo + 1)] - input[lo]) * (position - lo);
+      const envelope = layer.gain * Math.exp(-i / (context.sampleRate * layer.decay));
+      reference[i + delay] += value * envelope * Math.min(1, (count - 1 - i) / (context.sampleRate * .04));
+    }
+  }
+  const referencePeak = Math.max(...reference.map(Math.abs));
+  check('incremental explosion decay preserves the analytic mixed waveform',
+    samples.every((sample, i) => Math.abs(sample - reference[i] * .9 / referencePeak) < 1e-6));
   check('the shared TNT effect is finite, peak-normalized, and fades to silence',
     samples.every(Number.isFinite)
       && Math.abs(Math.max(...samples.map(Math.abs)) - 0.9) < 1e-6

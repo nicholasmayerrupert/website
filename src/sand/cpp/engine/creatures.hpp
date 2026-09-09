@@ -188,6 +188,7 @@ class CreatureSystem {
                     int immunePlayerId, int immuneCreatureId);
   void dropWeapon(const Creature& c);
   void killCreature(Creature& c);
+  void emitVoice(const Creature& c, uint8_t type, double intensity = 1);
   void crushCreature(Creature& c);
   void updateCreatures();
   bool damageAtPoint(int x, int y, int radius, int damage);

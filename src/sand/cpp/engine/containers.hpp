@@ -16,6 +16,7 @@ class ContainerSystem {
   void initialize();
   void tick();
   bool interact(int player, int chest, int slot);
+  bool moveSlot(int player, int chest, int slot, int action);
   int target(const Player& player) const;
   bool pack(Player& player, int chest);
   bool place(Player& player, int x, int y);
@@ -24,4 +25,7 @@ class ContainerSystem {
   int buildLootSnapshot();
  private:
   Engine& E;
+  static constexpr size_t SLOT_COUNT = 24;
+  bool canStore(const InvSlot& stack) const;
+  bool store(AdventureChest& chest, InvSlot& stack);
 };

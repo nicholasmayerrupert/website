@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { encodeAdventureOrigin, decodeAdventureOrigin } from '../src/sand/worker/adventureSaveStore.js';
 import { normalizeReplayInit } from '../src/sand/game/replayCapsule.js';
 import { initSandWasm, createEngineWasm, PLANET, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
-import { MISSION, ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
+import { MISSION, ITEM_KIND, CREATURE, OFF, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { GAME_WORLD } from '../src/sand/content/catalog.js';
 await initSandWasm();
 const options = { cols:640, rows:448, worldSeed:GAME_WORLD.seed, infinite:true, sinksOn:false, planetId:PLANET.FRONTIER };
@@ -43,9 +45,36 @@ try {
   const chest=e.getChests().find(c=>c.id===1);
   assert.equal(e.interactChest(id,1),false,'a chest must be within reach');
   move(chest.worldX,chest.worldY-2); assert.ok(e.interactChest(id,1));
-  const loot=e.getChestLoot().slots.length;
-  assert.ok(e.interactChest(id,1,0)); assert.equal(e.getChestLoot().slots.length,loot-1);
-  console.log('ok: chest transfers');
+  assert.equal(e.getChestLoot().slots.length,24);
+  assert.ok(e.interactChest(id,1,0)); assert.equal(e.getChestLoot().slots[0].count,0);
+  const first=e.getChestLoot().slots.findIndex(s=>s.count>0);
+  const stack=e.getChestLoot().slots[first];
+  assert.ok(e.chestSlot(id,1,first));assert.deepEqual(e.getCursor(id),stack);
+  assert.ok(e.chestSlot(id,1,23));assert.equal(e.getCursor(id),null);
+  assert.deepEqual(e.getChestLoot().slots[23],stack,'empty slots accept cursor stacks');
+  assert.ok(e.chestSlot(id,1,23));assert.ok(e.chestSlot(id,1,first));
+  e.addGear(id,320,7);
+  const potionSlot=e.getInventory(id).slots.findIndex(s=>s.definitionId===320);
+  assert.ok(e.chestSlot(id,1,potionSlot,2),'shift transfer deposits inventory stacks');
+  const potion=e.getChestLoot().slots.findIndex(s=>s.definitionId===320);
+  const count=e.getChestLoot().slots[potion].count;
+  assert.ok(e.chestSlot(id,1,potion,1));assert.equal(e.getCursor(id).count,Math.ceil(count/2));
+  assert.ok(e.chestSlot(id,1,22,1));assert.equal(e.getChestLoot().slots[22].count,1);
+  if(e.getCursor(id))assert.ok(e.chestSlot(id,1,potion));
+  assert.ok(e.interactChest(id,1,22));
+  const beforeCapacity=e.writeCheckpoint();
+  for(let index=0;index<24;index++)if(!e.getChestLoot().slots[index].count){
+    e.addGear(id,1);const sword=e.getInventory(id).slots.findIndex(s=>s.definitionId===1&&s.count>0);
+    e.inventoryCursorPick(id,sword,false);assert.ok(e.chestSlot(id,1,index));
+  }
+  e.addGear(id,1);const extra=e.getInventory(id).slots.findIndex(s=>s.definitionId===1&&s.count>0);
+  e.inventoryCursorPick(id,extra,false);const overflow=e.getCursor(id);
+  const full=e.getChestLoot().slots;
+  assert.equal(e.interactChest(id,1,-3),false,'a full chest rejects excess stacks');
+  assert.deepEqual(e.getCursor(id),overflow,'full storage leaves the carried item intact');
+  assert.deepEqual(e.getChestLoot().slots,full,'failed storage cannot change contents');
+  assert.ok(e.readCheckpoint(beforeCapacity));assert.ok(e.interactChest(id,1));
+  console.log('ok: chest transfers and full-capacity conservation');
   const keptLoot=e.getChestLoot().slots;
   const cx=Math.floor(chest.worldX-e.getWorldOffsetX()), cy=Math.floor(chest.worldY-e.getWorldOffsetY());
   e.eraseDisc(cx,cy-2,22);
@@ -65,6 +94,7 @@ try {
   e.stepWorld(); step();
   console.log('fixture: world stepped');
   const fg=e.getGrid().slice(),bg=e.getGridBg().slice();
+  e.setDayPhase(.73,false);
   const saved=e.writeCheckpoint(); assert.ok(saved.length>1000);
   const pendingSave=e.writeCheckpointAsync();
   let saveYields=0;
@@ -82,6 +112,8 @@ try {
   assert.deepEqual(restored.getGridBg(),bg,'background is restored exactly');
   assert.deepEqual(restored.getInventory(id),e.getInventory(id),'gear and pooled materials survive reload');
   assert.deepEqual(restored.getChests(),e.getChests(),'chest contents are not regenerated');
+  assert.deepEqual(restored.getDayClock(),e.getDayClock(),'time survives saves');
+  assert.deepEqual(restored.getBeds(),e.getBeds(),'bed furniture survives saves');
   assert.deepEqual(restored.getMission().objectives,e.getMission().objectives,'quest acceptance and completion persist');
   console.log('ok: checkpoint exact state round-trip');
   const chestSlot=restored.getInventory(id).slots.findIndex(s=>s.itemKind===ITEM_KIND.CHEST&&s.definitionId===1);
@@ -96,8 +128,9 @@ try {
   const storedSlot=restored.getInventory(id).slots.findIndex(s=>s.itemKind===ITEM_KIND.GEAR&&s.count>0);
   restored.inventoryCursorPick(id,storedSlot,false);const carried=restored.getCursor(id);
   assert.ok(restored.interactChest(id,1,-3));assert.equal(restored.getCursor(id),null);
-  assert.deepEqual(restored.getChestLoot().slots.at(-1),carried,'carried items can be deposited into a chest');
-  assert.ok(restored.interactChest(id,1,restored.getChestLoot().slots.length-1));
+  const deposited=restored.getChestLoot().slots.findIndex(s=>s.definitionId===carried.definitionId&&s.count===carried.count);
+  assert.ok(deposited>=0,'carried items can be deposited into a chest');
+  assert.ok(restored.interactChest(id,1,deposited));
   restored.addToInventory(id,MAT.OAK_WOOD,40);assert.equal(restored.craft(id,10),1,'new chests are craftable');
   console.log('ok: chest placement, storage, contents persistence and crafting');
   const origin=await encodeAdventureOrigin(saved);
@@ -110,5 +143,35 @@ try {
   const before=invalid.getGrid().slice();
   assert.equal(invalid.readCheckpoint(broken),false);
   assert.deepEqual(invalid.getGrid(),before,'checksum validation precedes mutation');
+  const legacy=createEngineWasm({...options,cols:160,rows:128});fresh.push(legacy);
+  assert.ok(legacy.readCheckpoint(gunzipSync(readFileSync(new URL('./fixtures/adventure-v3.checkpoint.gz',import.meta.url)))),'version 3 saves migrate');
+  assert.deepEqual(legacy.getDayClock(),{phase:5/24,held:false});
+  assert.ok(legacy.getInventory(1).slots.some(s=>s.definitionId===320&&s.count===8),'legacy inventory retained');
   console.log('ok: authoritative gear, NPC handoff, loot transactions, full checkpoint and damaged-world resume');
 } finally {e.destroy();for(const engine of fresh)engine.destroy();}
+
+const village=createEngineWasm(options);
+try {
+  village.setCreatureRuntime(true,false);village.setSurvivalInventory(true);
+  const player=village.spawnPlayerAtSurface(320);village.startMission(MISSION.FRONTIER,player);
+  const ticks=n=>{for(let i=0;i<n;i++)village.stepActors();};
+  const phase=village.getDayClock().phase;ticks(60);
+  assert.ok(village.getDayClock().phase>phase,'unforced time advances');
+  assert.ok(village.getBeds().length>=3,'most starting residents have indoor beds');
+  village.setDayPhase(.9);ticks(1000);
+  const beds=village.getBeds();
+  assert.equal(village.getDayClock().phase,.9,'pinned clock stays put');
+  assert.ok(beds.filter(b=>b.sleeper).length>=3,'residents walk to bed and sleep at night');
+  const resting=beds.find(b=>b.sleeper);
+  const resident=village.getCreatures().find(c=>c.id===resting.sleeper);
+  const actors=village.getCreatureSnapshotData().slice();
+  for(let i=0;i<actors.length;i+=STRIDES.creatureSnapshot)if(actors[i+OFF.creatureSnapshot.id]===resident.id)actors[i+OFF.creatureSnapshot.hurtCooldown]=7;
+  village.setMirrorCreatures(actors,village.getWorldOffsetX(),village.getWorldOffsetY());ticks(1);
+  assert.equal(village.getBeds().find(b=>b.id===resting.id).sleeper,0,'damage wakes a resident immediately');
+  ticks(220);assert.ok(village.getBeds().find(b=>b.id===resting.id).sleeper,'safe residents return to sleep');
+  assert.ok(village.spawnScriptedCreature(CREATURE.CRAWLER,resting.worldX+16,resting.worldY-4));ticks(1);
+  assert.equal(village.getBeds().find(b=>b.id===resting.id).sleeper,0,'nearby monsters keep residents awake');
+  village.setDayPhase(.3);ticks(1);assert.ok(village.getBeds().every(b=>!b.sleeper),'daylight wakes residents');
+  village.setDayPhase(35999/36000,false);ticks(2);assert.equal(village.getDayClock().phase,1/36000,'clock wraps at midnight');
+  console.log('ok: persistent authority clock and indoor resident sleep, danger and dawn');
+}finally{village.destroy();}

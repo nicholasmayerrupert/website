@@ -284,6 +284,10 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
   const EnemyAttack& attack = base;
   double x = c.wx + species.w * .5, y = c.wy + species.h * .5;
   double lx = x - E.fg.worldOffsetX, ly = y - E.fg.worldOffsetY;
+  if ((c.species == CS_FROST_GIANT || c.species == CS_BONE_DINOSAUR) && (c.attackState == CAS_CHARGING || c.attackState == CAS_FIRING)) {
+    if (attack.move != EM_LUNGE || c.attackState != CAS_FIRING) c.facing = c.attackAimX >= x ? 1 : -1;
+    c.vx *= .65;
+  }
   auto clearLine = [&](double tx, double ty) {
     double dx = tx - x, dy = ty - y, length = std::hypot(dx, dy);
     for (double at = 1; at < length; at += 1)
@@ -295,6 +299,14 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
     if (c.attackCooldown > 0 || !E.creatures.targetPoint(c, tx, ty, nullptr, nullptr)
         || std::hypot(tx - x, ty - y) > attack.reach || !clearLine(tx, ty)) return;
     c.attackAimX = tx; c.attackAimY = ty; c.facing = tx >= x ? 1 : -1;
+    if (c.species == CS_FROST_GIANT && attack.move == EM_SLAM) {
+      c.attackAimX = x + c.facing * 12;
+      int gx = (int)(c.attackAimX - E.fg.worldOffsetX);
+      int gy = (int)(c.wy + species.h - E.fg.worldOffsetY - 6);
+      for (int below = 0; below < 36; below++) if (E.psys.playerCellSolid(gx, gy + below)) {
+        c.attackAimY = E.fg.worldOffsetY + gy + below + 2; break;
+      }
+    }
     c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
     return;
   }
@@ -326,6 +338,16 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
       ly + dy / length * (species.w * .5 + 1), c.attackAimX - E.fg.worldOffsetX,
       c.attackAimY - E.fg.worldOffsetY, attack.rune, attack.damage);
   }
+  if ((attack.move == EM_FROST_STREAM && tick % 3 == 0) || (attack.move == EM_ICE_SHARD && tick == 3)) {
+    bool shard = attack.move == EM_ICE_SHARD;
+    double mouthX = lx + c.facing * (shard ? 7 : 3), mouthY = c.wy - E.fg.worldOffsetY + species.h * (shard ? .42 : .20);
+    E.projectiles.spawnFrost(-c.id, mouthX, mouthY, c.attackAimX - E.fg.worldOffsetX,
+      c.attackAimY - E.fg.worldOffsetY, attack.move == EM_ICE_SHARD, attack.damage, tick);
+  }
+  if (attack.move == EM_FIRE_STREAM && tick % 3 == 0) {
+    E.projectiles.spawnFireBreath(-c.id, lx + c.facing * 15.5, c.wy - E.fg.worldOffsetY + 5.75,
+      c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY, attack.damage, tick);
+  }
   if (tick == 0 && attack.move == EM_ARROW && (int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
     Projectile arrow; arrow.id = E.projectiles.nextId++; arrow.owner = -c.id; arrow.kind = PK_ARROW;
     arrow.px = lx + dx / length * (species.w * .5 + 1); arrow.py = ly;
@@ -333,11 +355,26 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
     arrow.fuse = attack.damage; arrow.charge = 1;
     E.projectiles.projectiles.push_back(arrow); E.audio.emit(SE_BOW, lx, ly, .8, EMPTY);
   }
-  if (tick == attack.duration / 3 && attack.move == EM_SLAM)
-    enemyTerrainImpact(c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY, 10, STONE);
+  if (tick == attack.duration / 3 && attack.move == EM_SLAM) {
+    bool giant = c.species == CS_FROST_GIANT;
+    double impactX = c.attackAimX - E.fg.worldOffsetX, impactY = c.attackAimY - E.fg.worldOffsetY;
+    enemyTerrainImpact(impactX, impactY, giant ? 16 : 10, giant ? ICE : STONE);
+    if (giant) {
+      E.audio.emit(SE_HEAVY_IMPACT, impactX, impactY, 1.4, STONE);
+      for (int i = 0; i < 36; i++) {
+        double vx = (i % 13 - 6) * .38, vy = -1.4 - (i % 7) * .28;
+        E.itemsys.spawnParticle(i % 3 ? STONE : ICE, impactX + vx * 2, impactY - 2, vx, vy, 40 + i % 18);
+      }
+      if ((int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
+        Projectile ring; ring.id = E.projectiles.nextId++; ring.owner = -c.id; ring.kind = PK_RUNE_BURST;
+        ring.fuse = 309; ring.px = impactX; ring.py = impactY; ring.rotation = 22; ring.charge = 1; ring.life = 18;
+        E.projectiles.projectiles.push_back(ring);
+      }
+    }
+  }
   if (attack.move <= EM_SLAM && (attack.move == EM_LUNGE || tick == attack.duration / 3)) {
     auto hits = [&](double tx, double ty) {
-      if (attack.move == EM_SLAM) return std::hypot(tx - c.attackAimX, ty - c.attackAimY) < 11;
+      if (attack.move == EM_SLAM) return std::hypot(tx - c.attackAimX, ty - c.attackAimY) < (c.species == CS_FROST_GIANT ? 18 : 11);
       double reach = attack.move == EM_LUNGE ? species.w * .5 + 5 : attack.reach;
       return std::hypot(tx - x, ty - y) < reach && (tx - x) * c.facing > -2 && clearLine(tx, ty);
     };
@@ -349,6 +386,7 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
       const auto& target = E.creatures.species(other);
       if (!other.alive || !target.hostile || other.hurtCooldown || !hits(other.wx + target.w * .5, other.wy + target.h * .5)) continue;
       other.health -= attack.damage; other.hurtCooldown = 20; other.vx += c.facing * .7;
+      if (other.health > 0) E.creatures.emitVoice(other, SE_CREATURE, .7);
       E.audio.emit(SE_MELEE_HIT, other.wx - E.fg.worldOffsetX, other.wy - E.fg.worldOffsetY, .8, STONE);
       if (other.health <= 0) E.creatures.killCreature(other);
     }

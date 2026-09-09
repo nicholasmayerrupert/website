@@ -10,6 +10,7 @@ import {
   AMBIENCE_GROUP_MIXER, AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
 } from '../materials.generated.js';
 import { loadAudioAssets, TNT_EXPLOSION_LAYERS } from './audioAssets.js';
+import { creatureSoundSpec, creatureSoundPhase } from './creatureVoices.js';
 import { createMusicDirector, scoreThreat } from './musicDirector.js';
 
 const STORAGE_KEY = 'sand-audio-muted';
@@ -117,7 +118,6 @@ const SAMPLE_FAMILIES = Object.freeze({
   cloth: ['cloth1', 'cloth2', 'cloth3'],
   splash: ['splash1', 'splash2', 'splash3'],
   pickup: ['pickup1', 'pickup2'],
-  creature: ['creature1', 'creature2'],
 });
 
 const COMBAT_EVENTS = new Set([
@@ -286,7 +286,7 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   let muted = readStoredMuted();
   let hidden = typeof document !== 'undefined' && document.hidden;
   let destroyed = false;
-  let activeVoices = 0;
+  let activeVoices = 0, activeCreatureVoices = 0;
   let noiseBuffer = null;
   let brownBuffer = null;
   let musicBus = null;
@@ -596,8 +596,9 @@ export function createSandAudio({ expeditionScore = false } = {}) {
 
   const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
     attack = 0.004, release = 0.04, frequency = 0, explosion = false, weaponExplosion = false,
-    duration: requestedDuration }) => {
+    duration: requestedDuration, creature = false, creatureBackground = false }) => {
     if (!buffer || !audible() || !context
+        || (creature && activeCreatureVoices >= (creatureBackground ? 4 : 8))
         || (!explosion && !weaponExplosion && activeVoices >= MAX_VOICES)
         || gain <= 0.001) return false;
     const now = context.currentTime + delay;
@@ -617,7 +618,9 @@ export function createSandAudio({ expeditionScore = false } = {}) {
       source.connect(filter); filter.connect(envelope);
     } else source.connect(envelope);
     const panner = connectSpatial(envelope, effectsBus, pan);
+    if (creature) activeCreatureVoices++;
     const cleanup = () => {
+      if (creature) activeCreatureVoices = Math.max(0, activeCreatureVoices - 1);
       source.disconnect(); filter?.disconnect(); envelope.disconnect(); panner?.disconnect();
     };
     if (explosion) {
@@ -679,13 +682,14 @@ export function createSandAudio({ expeditionScore = false } = {}) {
   };
 
   const chooseSample = (family) => {
-    const keys = SAMPLE_FAMILIES[family] || [family];
+    const keys = Array.isArray(family) ? family : SAMPLE_FAMILIES[family] || [family];
+    const group = Array.isArray(family) ? family.join(':') : family;
     const available = keys.filter((key) => recordedAssets?.[key]);
     if (!available.length) return null;
-    const previous = lastVariant.get(family);
+    const previous = lastVariant.get(group);
     const choices = available.length > 1 ? available.filter((key) => key !== previous) : available;
     const key = choices[Math.floor(Math.random() * choices.length)];
-    lastVariant.set(family, key);
+    lastVariant.set(group, key);
     return recordedAssets[key];
   };
 
@@ -819,8 +823,20 @@ export function createSandAudio({ expeditionScore = false } = {}) {
       sample('hit', type === SOUND_EVENT.DEATH ? .65 : .5, { rate: type === SOUND_EVENT.DEATH ? .7 : .9 });
       sample('cloth', .22, { delay: .035 });
       if (type === SOUND_EVENT.DEATH) duckMusic(.15);
-    } else if (type === SOUND_EVENT.CREATURE) {
-      sample('creature', .28, { rate: .9 + variation * .15 });
+    } else if (creatureSoundPhase(type)) {
+      const voice = creatureSoundSpec(material, type);
+      if (!voice) return;
+      const background = type === SOUND_EVENT.CREATURE_CALL || voice.phase === 'step';
+      sample(voice.phase === 'step' ? voice.samples[0] : voice.samples, voice.gain, {
+        rate: voice.rate * pitch, duration: voice.duration, release: .09,
+        frequency: Math.min(voice.cutoff, 1800 + 8500 * Math.exp(-spatial.distance / 140)),
+        creature: true, creatureBackground: background,
+      });
+      if (voice.texture) sample(voice.texture, voice.gain * .24, {
+        rate: voice.rate * .94, delay: .04, duration: voice.phase === 'death' ? .85 : .45,
+        release: .12, creature: true,
+      });
+      if (type === SOUND_EVENT.CREATURE_ATTACK || type === SOUND_EVENT.CREATURE_DEATH) duckMusic(.2);
     } else if (type === SOUND_EVENT.FLUID_FALL) {
       holdMovementVoice(material === MAT.LAVA ? 'lava' : 'water', strength, spatial,
         { volume: .115, rate: material === MAT.OIL ? .8 : pitch, hold: .35, attack: .09, release: .28 });
@@ -847,18 +863,19 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     for (let i = 0; i + STRIDES.soundEvent <= packed.length; i += STRIDES.soundEvent) {
       const type = packed[i + O.type] | 0;
       const eventX = packed[i + O.x], eventY = packed[i + O.y];
-      const spatial = spatializeSound(packed[i + O.x], packed[i + O.y], listener,
-        EVENT_DISTANCE[type] ?? 70, packed[i + O.layer] | 0);
-      if (spatial.gain <= 0.001) continue;
       const material = packed[i + O.material] | 0;
+      const creatureVoice = creatureSoundSpec(material, type);
+      const spatial = spatializeSound(packed[i + O.x], packed[i + O.y], listener,
+        creatureVoice?.reach ?? EVENT_DISTANCE[type] ?? 70, packed[i + O.layer] | 0);
+      if (spatial.gain <= 0.001) continue;
       const materialKind = MATERIAL_BY_ID[material]?.kind;
       const continuousPlace = type === SOUND_EVENT.PLACE
         && (materialKind === KIND.POWDER || materialKind === KIND.LIQUID || materialKind === KIND.GAS);
       const regional = type === SOUND_EVENT.FLUID_FALL || type === SOUND_EVENT.POWDER_MOVE
         || type === SOUND_EVENT.ACID_DISSOLVE;
-      const cooldownKey = regional
-        ? `${type}:${Math.round(spatial.pan * 2)}` : type;
-      const cooldown = semanticEventCooldownMs(type, continuousPlace);
+      const cooldownKey = creatureVoice ? `${type}:${material}:${Math.round(spatial.pan * 2)}`
+        : regional ? `${type}:${Math.round(spatial.pan * 2)}` : type;
+      const cooldown = creatureVoice?.cooldown ?? semanticEventCooldownMs(type, continuousPlace);
       if (type === SOUND_EVENT.EXPLOSION) {
         if (!admitTerrainExplosion(eventX, eventY, nowMs)) continue;
       } else if (cooldown > 0) {

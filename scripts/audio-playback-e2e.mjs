@@ -149,7 +149,7 @@ try {
       ['glass break', SOUND_EVENT.BREAK, MAT.GLASS], ['wood break', SOUND_EVENT.BREAK, MAT.WOOD],
       ['pickup', SOUND_EVENT.PICKUP, MAT.STONE], ['craft', SOUND_EVENT.CRAFT, MAT.WOOD],
       ['hurt', SOUND_EVENT.HURT, 0], ['death', SOUND_EVENT.DEATH, 0],
-      ['creature', SOUND_EVENT.CREATURE, 0], ['respawn', SOUND_EVENT.RESPAWN, 0],
+      ['fox vocal', SOUND_EVENT.CREATURE, 2], ['respawn', SOUND_EVENT.RESPAWN, 0],
       ['blast gun', SOUND_EVENT.BLAST_GUN, 0], ['bore charge', SOUND_EVENT.BORE_CHARGE, 0],
       ['bore fire', SOUND_EVENT.BORE_FIRE, 0], ['acid mortar', SOUND_EVENT.ACID_MORTAR, 0],
       ['cluster launch', SOUND_EVENT.CLUSTER_LAUNCH, 0], ['minigun', SOUND_EVENT.MINIGUN, 0],

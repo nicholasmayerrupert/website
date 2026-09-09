@@ -148,6 +148,15 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
 }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 EMSCRIPTEN_KEEPALIVE int engine_actor_tick(Engine* e) { return e->actorTick; }
+EMSCRIPTEN_KEEPALIVE double engine_day_phase(Engine* e) { return e->worldClock.phase(); }
+EMSCRIPTEN_KEEPALIVE int engine_day_held(Engine* e) { return e->worldClock.held ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_day_phase(Engine* e, double phase, int held) { e->worldClock.set(phase, held != 0); }
+EMSCRIPTEN_KEEPALIVE int engine_bed_snapshot(Engine* e) { return e->beds.buildSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_bed_snapshot_ptr(Engine* e) { return e->beds.snapshot.data(); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_beds(Engine* e, float* data, int count) {
+  if (count < 0 || count > 100000) return;
+  e->glp.bedData.assign(data, data + count * 5);
+}
 EMSCRIPTEN_KEEPALIVE void engine_set_actor_tick(Engine* e, int tick) { e->actorTick = tick < 0 ? 0 : tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods
@@ -1248,6 +1257,7 @@ EMSCRIPTEN_KEEPALIVE int engine_chest_loot_snapshot(Engine* e) { return e->conta
 EMSCRIPTEN_KEEPALIVE float* engine_chest_loot_snapshot_ptr(Engine* e) { return e->containers.lootSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_chest_active(Engine* e) { return e->containers.activeChest; }
 EMSCRIPTEN_KEEPALIVE int engine_chest_interact(Engine* e, int player, int chest, int slot) { return e->containers.interact(player, chest, slot) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_chest_slot(Engine* e, int player, int chest, int slot, int action) { return e->containers.moveSlot(player, chest, slot, action) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_chests(Engine* e, float* data, int count) {
   if (count < 0 || count > 512 || (count && !data)) return;
   e->glp.chestData.assign(data, data + count * 5);

@@ -146,12 +146,16 @@ class GLPresenter {
                      bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
                      int heldDefinition, const int* equipment, int actionTicks, int actionDuration);
   std::vector<float> chestData;
+  std::vector<float> bedData;
+  void glDrawBeds();
+  bool glDrawSleepingResident(int id, int speciesId, int npcId, int camCol, int camRow);
   void glDrawChests();
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, int definitionId, double px, double py, int life,
                      int camCol, int camRow);
   void glDrawItems();
   void glDrawProjectiles();
+  void glDrawIceShard(double x, double y, double angle, double scale, float alpha, int camCol, int camRow);
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
                          int alive, int animFrame, int attackState, int attackPattern,
                          double attackProgress,

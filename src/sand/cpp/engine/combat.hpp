@@ -1,13 +1,22 @@
 #pragma once
 struct Engine;
-enum EnemyMove : uint8_t { EM_MELEE, EM_LUNGE, EM_SLAM, EM_RUNE, EM_ARROW };
+enum EnemyMove : uint8_t { EM_MELEE, EM_LUNGE, EM_SLAM, EM_RUNE, EM_ARROW, EM_FROST_STREAM, EM_ICE_SHARD, EM_FIRE_STREAM };
 struct EnemyAttack {
   EnemyMove move;
   int rune, windup, duration, recovery, reach, damage;
 };
 inline const EnemyAttack* enemyAttackProfile(uint8_t species, int pattern = 0) {
   if (species == CS_FROST_GIANT && pattern == 1) {
-    static constexpr EnemyAttack slam{EM_SLAM, 0, 54, 24, 125, 24, 26}; return &slam;
+    static constexpr EnemyAttack slam{EM_SLAM, 0, 54, 30, 110, 34, 32}; return &slam;
+  }
+  if (species == CS_FROST_GIANT && pattern == 2) {
+    static constexpr EnemyAttack shard{EM_ICE_SHARD, 309, 72, 24, 110, 88, 30}; return &shard;
+  }
+  if (species == CS_BONE_DINOSAUR && pattern == 1) {
+    static constexpr EnemyAttack rush{EM_LUNGE, 0, 48, 30, 85, 46, 28}; return &rush;
+  }
+  if (species == CS_BONE_DINOSAUR && pattern == 2) {
+    static constexpr EnemyAttack breath{EM_FIRE_STREAM, 300, 66, 96, 125, 90, 9}; return &breath;
   }
   if (species == CS_FEN_WISP && pattern == 1) {
     static constexpr EnemyAttack choir{EM_RUNE, 306, 42, 18, 110, 58, 14}; return &choir;

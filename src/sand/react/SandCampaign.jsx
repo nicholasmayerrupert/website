@@ -7,7 +7,6 @@ import './frontierCampaign.css';
 export function SandCampaign({ onRuntimeReady }) {
   const host = useRef(null);
   const onReady = useCallback(() => {
-    host.current?._game?.setDayPhase(.2);
     onRuntimeReady?.(host.current);
   }, [onRuntimeReady]);
   return <main className="frontier-experience">

@@ -1,13 +1,10 @@
 import { BESTIARY } from '../content/bestiary.js';
-import { EQUIPMENT_BY_ID } from '../content/equipment.js';
-import { gearIcon } from './gearIcon.js';
 import { GAME_CONTENT, GAME_JOBS, GAME_WORLD } from '../content/catalog.js';
 import { MATERIAL_BY_ID } from '../materials.generated.js';
 import { OBJECTIVE_STATE, ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { ADVENTURE_STYLE } from './adventureStyle.js';
 import { ADVENTURE_INVENTORY_STYLE } from './adventureInventoryStyle.js';
 import { createAdventureEquipment } from './adventureEquipment.js';
-import { gearDetails } from './gearDetails.js';
 import { createGameSelect } from './gameSelect.js';
 
 const ICONS = {
@@ -93,6 +90,35 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const chestPrompt = button('E · Open chest', () => openChest(), 'ad-chest-prompt'); chestPrompt.hidden = true; root.append(chestPrompt);
   const chestHighlight = el('div', 'ad-chest-highlight'); chestHighlight.hidden = true; root.append(chestHighlight);
   const chestSection = el('section', 'ad-loot'); chestSection.hidden = true; pages.inventory.prepend(chestSection);
+  const chestHeading = el('h2');
+  const chestHint = el('p', 'ad-muted');
+  const chestGrid = el('div', 'ad-chest-grid'); chestGrid.setAttribute('aria-label', 'Chest storage');
+  const takeAll = button('Take all', () => game.interactChest(shownChest, -1), 'ad-primary');
+  chestSection.append(chestHeading, chestHint, chestGrid, takeAll);
+  let pressedChestSlot = -1;
+  const chestIndex = target => Number(target.closest('[data-chest-slot]')?.dataset.chestSlot ?? -1);
+  const moveChestSlot = (index, event) => {
+    if (index < 0) return;
+    if (event.shiftKey && !game.getCursor()?.count) game.interactChest(shownChest, index);
+    else game.chestSlot(shownChest, index, event.button === 2 ? 1 : 0);
+  };
+  chestGrid.addEventListener('contextmenu', event => event.preventDefault());
+  chestGrid.addEventListener('pointerdown', event => {
+    if (event.button !== 0 && event.button !== 2) return;
+    pressedChestSlot = chestIndex(event.target);
+    if (pressedChestSlot < 0) return;
+    event.preventDefault();
+    moveChestSlot(pressedChestSlot, event);
+    inventory.beginExternalDrag();
+  });
+  chestGrid.addEventListener('pointerup', event => {
+    const index = chestIndex(event.target);
+    if (index !== pressedChestSlot && game.getCursor()?.count) moveChestSlot(index, event);
+    pressedChestSlot = -1;
+  });
+  chestGrid.addEventListener('click', event => {
+    if (event.detail === 0) moveChestSlot(chestIndex(event.target), event);
+  });
   function openChest() {
     refreshChest();
     if (!nearChest) return;
@@ -128,19 +154,29 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     const signature = `${loot.id}:${JSON.stringify(loot.slots)}:${JSON.stringify(carried)}`;
     if (lootSignature === signature) return;
     lootSignature = signature;
-    chestSection.replaceChildren(el('h2', '', GAME_WORLD.chests.find(c => c.id === shownChest)?.name || (shownChest >= 8000000 ? 'Returned belongings · Hearthwood' : 'Forgotten coffer')));
-    if (carried?.count && carried.itemKind !== ITEM_KIND.CHEST) chestSection.append(button('Store carried item', () => game.interactChest(shownChest, -3)));
-    if (!loot.slots.length) chestSection.append(el('p', 'ad-muted', 'Empty'));
-    for (const [index, stack] of loot.slots.entries()) {
-      const item = stack.itemKind === ITEM_KIND.GEAR ? EQUIPMENT_BY_ID[stack.definitionId] : null;
-      const row = button('', () => game.interactChest(shownChest, index));
-      if (item) row.append(gearIcon(item.id));
-      row.append(el('span', '', `${item?.name || MATERIAL_BY_ID[stack.material]?.name || 'Arrows'}${stack.count > 1 ? ` × ${stack.count}` : ''}`), el('span', 'ad-muted', 'Take'));
-      inventory.tooltips.bind(row, () => ({ ...(gearDetails(item?.id, game.getInventory().equipment) || { name: MATERIAL_BY_ID[stack.material]?.name || 'Arrows', type: 'Material' }),
-        action: `Click to take${stack.count > 1 ? ` ${stack.count}` : ''}`, inspectTouch: true, touchAction: 'Tap again to take' }));
-      chestSection.append(row);
+    chestHeading.textContent = GAME_WORLD.chests.find(c => c.id === shownChest)?.name || (shownChest >= 8000000 ? 'Returned belongings · Hearthwood' : 'Forgotten coffer');
+    const occupied = loot.slots.filter(stack => stack.count > 0).length;
+    chestHint.textContent = `${occupied} / ${loot.slots.length} slots · Click or drag to move · Right-click to split · Shift-click to transfer`;
+    chestSection.classList.toggle('carrying', !!carried?.count);
+    takeAll.disabled = !occupied;
+    while (chestGrid.children.length < loot.slots.length) {
+      const index = chestGrid.children.length;
+      const cell = el('button', 'inv-slot'); cell.type = 'button'; cell.dataset.chestSlot = String(index);
+      inventory.tooltips.bind(cell, () => {
+        const stack = game.getChestLoot().slots[index];
+        return { name: stack?.count ? inventory.stackName(stack) : 'Empty chest slot',
+          action: 'Click to pick up, store, or swap · Right-click to split · Shift-click to take',
+          inspectTouch: true, touchAction: 'Tap again to move' };
+      });
+      chestGrid.append(cell);
     }
-    if (loot.slots.length) chestSection.append(button('Take all', () => game.interactChest(shownChest, -1), 'ad-primary'));
+    while (chestGrid.children.length > loot.slots.length) chestGrid.lastChild.remove();
+    for (const [index, stack] of loot.slots.entries()) {
+      const cell = chestGrid.children[index];
+      cell.replaceChildren();
+      if (stack.count > 0) inventory.renderStack(cell, stack);
+      cell.setAttribute('aria-label', `Chest slot ${index + 1}: ${stack.count > 0 ? `${inventory.stackName(stack)} × ${stack.count}` : 'Empty'}`);
+    }
   }
   const focusGame = () => root.querySelector('.sg-sim')?.focus({ preventScroll: true });
   const pause = () => { game.clearInput?.(); setPaused?.(!!panel || dialogueOpen); };
@@ -150,6 +186,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     const prior = panel;
     if (!prior && name) previousFocus = root.activeElement || document.activeElement;
     panel = name;
+    inventory.setChestTransfer(name === 'inventory' && shownChest ? index => game.chestSlot(shownChest, index, 2) : null);
     inventory.tooltips.hide();
     footprint.close();
     sheet.dataset.page = name || '';
@@ -345,6 +382,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     refreshChest();
   };
   const clickChest = event => {
+    pressedChestSlot = -1;
     if (panel || dialogueOpen || event.button !== 0) return;
     if (event.composedPath().includes(chestPrompt) || game.getPlayer()?.heldItemKind === ITEM_KIND.MINING_TOOL) return;
     pointAtChest(event);

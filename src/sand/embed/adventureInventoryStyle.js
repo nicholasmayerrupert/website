@@ -1,4 +1,11 @@
 export const ADVENTURE_INVENTORY_STYLE = `
+.ad-chest-grid {display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;max-width:420px;margin:10px 0}
+.ad-chest-grid .inv-slot {position:relative;display:flex;align-items:center;justify-content:center;min-width:0;aspect-ratio:1;background:#14231e;border:1px solid #738066;color:#eee0bd;cursor:pointer}
+.ad-chest-grid .inv-slot:hover,.ad-chest-grid .inv-slot:focus-visible {outline:2px solid #e4ce90;outline-offset:1px;background:#344831}
+.ad-loot.carrying .ad-chest-grid .inv-slot {border-color:#baab76}
+.ad-chest-grid .inv-swatch {width:24px;height:24px;border:1px solid #ffffff40}
+.ad-chest-grid .inv-count {position:absolute;right:3px;bottom:2px;font:12px 'Sand Pixel',monospace;text-shadow:1px 1px #000}
+@media(max-width:560px){.ad-chest-grid{grid-template-columns:repeat(6,minmax(0,1fr))}.ad-loot{padding:12px}.ad-chest-grid .inv-slot{min-height:40px}}
 .ad-chest-highlight {position:absolute;pointer-events:none;border:2px solid #f4df9a;background:#ffe7a822;box-shadow:0 0 0 1px #302b1f;z-index:75}
 .ad-chest-highlight[hidden] {display:none}
 .pool-heading-row {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}

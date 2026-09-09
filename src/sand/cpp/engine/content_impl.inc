@@ -132,7 +132,7 @@ bool ContentSystem::load(const int32_t* data, int length) {
     if (!r.valid || seen[(size_t)species]) return false;
     seen[(size_t)species] = true;
     auto& art = nextCreatureArt[(size_t)species];
-    art.width = r.bounded(1, 128); art.height = r.bounded(1, 128);
+    art.width = r.bounded(1, 192); art.height = r.bounded(1, 128);
     art.scale = r.bounded(100, 2000) / 1000.0;
     int colorCount = r.bounded(2, 32), frames = r.bounded(CC_COUNT, CC_COUNT * 32);
     expectedOffset = 0;

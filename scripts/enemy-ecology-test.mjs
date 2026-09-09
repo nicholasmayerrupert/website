@@ -60,11 +60,59 @@ arena('guard covers overhead strikes, sustains combat and recovers stamina',(e,i
  tick(e,150);assert.ok(e.getPlayer(id).stamina>after.stamina,'held guard recovers during a lull');
  e._damagePlayer(id,30,10,115);assert.ok(e.getPlayer(id).health<before.health,'unguarded rear remains vulnerable');
 });
-arena('frost giant launches a slow broad spell and then exposes a recovery window',e=>{
- const id=enemy(e,CREATURE.FROST_GIANT);tick(e);
- const shot=e.getProjectiles().find(p=>p.kind===PROJECTILE_KIND.RUNE);
- assert.equal(shot.fuse,309);assert.ok(Math.hypot(shot.vx,shot.vy)<1);
- tick(e,24);assert.equal(e.getCreatures().find(c=>c.id===id).attackState,CREATURE_ATTACK_STATE.RECOVERING);
+arena('frost giant exhales a sustained stream and then exposes a recovery window',e=>{
+ const id=enemy(e,CREATURE.FROST_GIANT),seen=new Set();
+ for(let i=0;i<90;i++){
+  tick(e);
+  const caster=e.getCreatures().find(c=>c.id===id);
+  if(i<89){assert.ok(Math.abs(caster.x-90)<.1,'the caster plants its feet');assert.equal(caster.facing,-1,'breath follows the committed facing');}
+  for(const p of e.getProjectiles())if(p.kind===PROJECTILE_KIND.FROST_BREATH){
+   seen.add(p.id);assert.equal(p.fuse,309);assert.ok(Math.hypot(p.vx,p.vy)>1.5);
+  }
+ }
+ assert.equal(seen.size,30,'breath continues throughout the active phase');
+ assert.equal(e.getCreatures().find(c=>c.id===id).attackState,CREATURE_ATTACK_STATE.RECOVERING);
+});
+arena('frost giant smash excavates the ground and ejects debris',e=>{
+ enemy(e,CREATURE.FROST_GIANT,{pattern:1,aimX:78,aimY:122});
+ const before=e.getGrid().filter(m=>m===MAT.STONE).length;tick(e,11);
+ const removed=before-e.getGrid().filter(m=>m===MAT.STONE).length;
+ assert.ok(removed>80,`smash breaks real terrain (${removed} stone cells)`);
+ assert.ok(e.getItems().length>=24,'the strike ejects a visible debris fan');
+ assert.ok(e._bodyCount()>0,'excavated chunks become physical debris');
+ assert.ok(e.getProjectiles().some(p=>p.kind===PROJECTILE_KIND.RUNE_BURST&&p.rotation===22));
+});
+function iceWall(e){
+ for(let x=130;x<138;x++)for(let y=80;y<120;y++)e.paintDisc(x,y,0,MAT.STONE,true);
+ e.syncComponents();
+}
+arena('frost breath coats dry surfaces with persistent, bounded ice',e=>{
+ iceWall(e);const giant=enemy(e,CREATURE.FROST_GIANT,{aimX:155,aimY:112});tick(e,45);
+ assert.equal(e.getCreatures().find(c=>c.id===giant).facing,1,'moving targets cannot turn a committed stream');tick(e,45);
+ const ice=e.getGrid().filter(m=>m===MAT.ICE).length;assert.ok(ice>=12,`dry wall is iced (${ice} cells)`);
+ assert.ok(ice<180,'a stream leaves a surface skin rather than filling the room');
+ for(let y=90;y<116;y++)assert.equal(e.getGrid()[y*e.cols+130],MAT.STONE,'the underlying wall is preserved');
+ for(let i=0;i<8;i++)e.stepWorld();
+ assert.ok(e.getGrid().filter(m=>m===MAT.ICE).length>=ice*.8,'component-backed ice survives simulation');
+});
+arena('frost giant launches a large shard which shatters and freezes its crater',e=>{
+ iceWall(e);enemy(e,CREATURE.FROST_GIANT,{pattern:2,aimX:155,aimY:112});tick(e,4);
+ const shot=e.getProjectiles().find(p=>p.kind===PROJECTILE_KIND.ICE_SHARD);
+ assert.ok(shot);assert.ok(Math.hypot(shot.vx,shot.vy)>3);
+ const before=e.getGrid().filter(m=>m===MAT.STONE).length;tick(e,20);
+ assert.ok(e.getGrid().filter(m=>m===MAT.STONE).length<before,'shard fractures the wall');
+ assert.ok(e.getGrid().includes(MAT.ICE),'shard impact leaves ice');
+});
+arena('frost projectiles preserve their phases and ice deposits through checkpoints',(e,id)=>{
+ e.startMission(MISSION.FRONTIER,id);iceWall(e);
+ enemy(e,CREATURE.FROST_GIANT,{aimX:155,aimY:112});
+ enemy(e,CREATURE.FROST_GIANT,{x:100,pattern:2,aimX:155,aimY:112});tick(e,4);
+ e.setCreatureRuntime(false,false);const restored=createEngineWasm(options);
+ try{
+  assert.ok(restored.readCheckpoint(e.writeCheckpoint()));restored.setCreatureRuntime(false,false);
+  assert.deepEqual(restored.getProjectiles(),e.getProjectiles());
+  tick(e,60);tick(restored,60);assert.equal(restored.gridHash(),e.gridHash());
+ }finally{restored.destroy();}
 });
 function cast(e,id,gear,aimX,aimY){
  e.addGear(id,gear,1);e.setSelectedSlot(id,e.getInventory(id).slots.findIndex(s=>s.definitionId===gear));
@@ -84,7 +132,7 @@ arena('Cindermaw creates a bounded patch of lava and preserves projectile checkp
  const lava=e.getGrid().filter(m=>m===MAT.LAVA).length;
  assert.ok(lava>0&&lava<=40,`bounded lava deposit (${lava})`);
 });
-for(const [species,trophy]of [[CREATURE.BRIAR_WOLF,424],[CREATURE.BELL_BAT,425],[CREATURE.BONE_GUARD,426],[CREATURE.FEN_WISP,427],[CREATURE.FROST_GIANT,429],[CREATURE.MUMMY,430],[CREATURE.LAVA_TOAD,431]]){
+for(const [species,trophy]of [[CREATURE.BRIAR_WOLF,424],[CREATURE.BELL_BAT,425],[CREATURE.BONE_GUARD,426],[CREATURE.FEN_WISP,427],[CREATURE.FROST_GIANT,429],[CREATURE.MUMMY,430],[CREATURE.LAVA_TOAD,431],[CREATURE.BONE_DINOSAUR,432]]){
  arena(`species ${species} guarantees its own collectable trophy`,(e,id)=>{
   assert.ok(e.startMission(MISSION.FRONTIER,id));
   const cid=enemy(e,species);e.setCreatureRuntime(false,false);

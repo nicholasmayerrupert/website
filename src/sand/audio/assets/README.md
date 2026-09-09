@@ -53,6 +53,11 @@ short descending sine body, scaled by material density. Acid dissolution uses
 high-pass white noise at 2250 Hz, a 420 ms hold, and a 300 ms release; its
 movement voice gain is 0.056. These effects are synthesized in Web Audio.
 
+## Species voices
+
+The separate [creature bank](creatures/README.md) contains the per-species voice
+performances, source credits, and reproducible processing recipe.
+
 ## Flow and weapon recordings
 
 Source and license checked 2026-07-23 as recorded for these assets.

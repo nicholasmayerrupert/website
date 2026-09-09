@@ -13,6 +13,8 @@
 #include "engine/creatures.hpp"
 #include "engine/checkpoint.hpp"
 #include "engine/containers.hpp"
+#include "engine/beds.hpp"
+#include "engine/world_clock.hpp"
 #include "engine/content.hpp"
 #include "engine/combat.hpp"
 #include "engine/discovery.hpp"
@@ -38,6 +40,8 @@ struct Engine {
   DiscoverySystem discovery{*this};
   CombatSystem combat{*this};
   ContainerSystem containers{*this};
+  BedSystem beds{*this};
+  WorldClockSystem worldClock;
   CheckpointSystem checkpoint{*this};
 #include "engine/members.inc"
 #include "engine/forces.inc"
@@ -74,6 +78,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/content_impl.inc"
 #include "engine/combat_impl.inc"
 #include "engine/containers_impl.inc"
+#include "engine/beds_impl.inc"
 #include "engine/checkpoint_impl.inc"
 #include "engine/discovery_impl.inc"
 #include "engine/replication_impl.inc"

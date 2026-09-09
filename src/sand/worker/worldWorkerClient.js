@@ -93,6 +93,7 @@ export function createWorldWorkerClient(ctx) {
   let mission = null;
   let saveState = { savedAt: 0, error: '' };
   let chests = [], chestLoot = { id: 0, slots: [] };
+  let beds = [], dayClock = null;
   let discovery = new Int32Array();
   let missionSignature = '';
   let missionDirty = false;
@@ -1123,8 +1124,9 @@ export function createWorldWorkerClient(ctx) {
     sendWeather(weatherId) {
       post({ type: 'weather', weatherId: weatherId | 0 });
     },
-    // Creative time-slider hold / Auto. Presentation-only; the worker records it.
+    // Time-slider hold / Auto is an authoritative, journaled clock command.
     sendDayPhase({ phase, overridden }) {
+      dayClock = { phase, held: !!overridden };
       post({ type: 'day-phase', phase, overridden: !!overridden });
     },
     resize(cols, rows, worldCenter) {
@@ -1412,6 +1414,8 @@ export function createWorldWorkerClient(ctx) {
         if (packet.discovery !== undefined) discovery = packet.discovery;
         if (packet.chests !== undefined) chests = packet.chests;
         if (packet.chestLoot !== undefined) chestLoot = packet.chestLoot;
+        if (packet.beds !== undefined) beds = packet.beds;
+        if (packet.dayClock !== undefined) dayClock = packet.dayClock;
         if (packet.itemData !== undefined) {
           items = new Float32Array(packet.itemData);
           translatePackedPositions(items, STRIDES.itemSnapshot,
@@ -1561,6 +1565,8 @@ export function createWorldWorkerClient(ctx) {
       return promise;
     },
     getChests() { return chests; },
+    getBeds() { return beds; },
+    getDayClock() { return dayClock; },
     getChestLoot() { return chestLoot; },
     consumeMissionDirty() {
       const dirty = missionDirty;

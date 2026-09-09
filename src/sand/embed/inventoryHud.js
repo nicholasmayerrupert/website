@@ -285,6 +285,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   let ptrX = 0, ptrY = 0;
   let selectedSlot = 0;
   let snapshot = null;
+  let chestTransfer = null;
   const tooltips = createItemTooltip(root, { carrying: () => !!getCursor?.() });
   let previousFocus = null;
   const focusSurface = () => root.querySelector('.sg-sim')?.focus({ preventScroll: true });
@@ -552,6 +553,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   }
   function quickMove(index) {
     if (!managed || hasCursor()) return false;
+    if (index < SLOTS && chestTransfer) { chestTransfer(index); return true; }
     const stack = index < SLOTS ? snapshot?.slots?.[index] : snapshot?.equipment?.[index - SLOTS];
     if (!stack?.count && !stack?.pool) return true;
     const definition = EQUIPMENT_BY_ID[stack.definitionId];
@@ -934,6 +936,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   return {
     el: hud,
     tooltips,
+    renderStack,
+    stackName: slotName,
+    setChestTransfer(callback) { chestTransfer = callback; },
+    beginExternalDrag() { downSlot = SLOTS + 9; downOnSlot = true; dragBag = false; },
     registerEquipmentSlot(index, element) {
       element.classList.add('inv-slot'); element.dataset.index = String(SLOTS + index);
       slots[SLOTS + index] = element;

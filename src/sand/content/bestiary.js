@@ -12,6 +12,8 @@ export const BESTIARY = {
   25: { name: 'Bell bat', note: 'A flutter in the rafters. Short bursts of magic work well in narrow galleries.' },
   26: { name: 'Bone guard', note: 'Clattering feet betray its approach. Break its line with a dodge.' },
   27: { name: 'Fen wisp', note: 'A wandering light above the silt. Keep dry ground beneath your feet.' },
+  34: { name: 'Cinderjaw Tyrant', note: 'A fossil king prowling the bone highlands. Evade its snapping jaws and committed rush; when its ribs kindle, get behind the sustained flame breath and punish the recovery.' },
+  29: { name: 'Frost giant', note: 'Raised fists break the ground. Sidestep its sustained breath, watch for ice underfoot, and dodge the great shard forming in its hands.' },
   14: { name: 'The Stonebound', note: 'The archive’s forgotten guardian. Its broad strikes can also reshape the room.' },
   15: { name: 'Ashen Sentinel', note: 'Living fire in a suit of old iron. Leave the marked ground before the blow.' },
   28: { name: 'Root Knight', note: 'A stubborn oath protects the shrine. Roots can hold even this warrior in place.' },

@@ -347,6 +347,7 @@ function replayActorSnapshot() {
     type: 'actors', epoch, actorTick: engine.getActorTick(), sampleTime: performance.timeOrigin + performance.now(), localPlayerId,
     players: copyReplayValue(players),
     discovery: engine.getDiscovery(), chests: copyReplayValue(engine.getChests()), chestLoot: copyReplayValue(engine.getChestLoot()),
+    beds: engine.getBeds(), dayClock: engine.getDayClock(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: copyReplayValue(engine.getPlayerMineTarget(localPlayerId)),
@@ -703,6 +704,7 @@ function postActors(force = false) {
   self.postMessage({
     type: 'actors', epoch, actorTick, sampleTime: performance.timeOrigin + performance.now(), localPlayerId, players, discovery,
     chests: engine.getChests(), chestLoot: engine.getChestLoot(),
+    beds: engine.getBeds(), dayClock: engine.getDayClock(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: engine.getPlayerMineTarget(localPlayerId),
@@ -1160,6 +1162,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
         gravityScale: data.gravityScale,
       });
       survival = !!data.survival;
+      engine.setDayPhase(data.dayPhase ?? 5 / 24, !!data.dayOverridden);
       paused = !!data.paused;
       artificialDelayMs = Math.max(0, Math.min(100, +data.artificialDelayMs || 0));
       engine.setWeather(data.weatherId | 0);
@@ -1310,9 +1313,13 @@ function applyRuntimeMessage(data) {
     }
   } else if (data.type === 'input') {
     latestInput = data.input || null;
+  } else if (data.type === 'day-phase') {
+    engine.setDayPhase(data.phase, !!data.overridden);
+    postActors(true);
   } else if (data.type === 'intent' && survival && localPlayerId) {
     switch (data.intent) {
       case 'chest': engine.interactChest(localPlayerId, data.chest | 0, data.slot | 0); break;
+      case 'chest-slot': engine.chestSlot(localPlayerId, data.chest | 0, data.slot | 0, data.action | 0); break;
       case 'select': engine.setSelectedSlot(localPlayerId, data.slot | 0); break;
       case 'size': engine.setSelectedFootprint(localPlayerId, data.footprint | 0); break;
       case 'move': engine.inventoryMove(localPlayerId, data.from | 0, data.to | 0); break;

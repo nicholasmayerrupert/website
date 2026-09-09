@@ -193,7 +193,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
   for (const key of Object.keys(CREATURE)) if (!creatureSources[key]) fail('creatureArt', `missing art for ${key}`);
   const creatures = Object.entries(creatureSources).map(([key, art]) => {
     if (!Object.hasOwn(CREATURE, key)) fail(key, 'unknown creature');
-    integer(art.width, key, 1, 128); integer(art.height, key, 1, 128);
+    integer(art.width, key, 1, 192); integer(art.height, key, 1, 128);
     if (!Number.isFinite(art.pixelScale) || art.pixelScale < .1 || art.pixelScale > 2) fail(key, 'invalid pixel scale');
     const symbols = Object.keys(art.palette);
     if (symbols.length < 2 || symbols.length > 32 || symbols.some(s => s.length !== 1) || !['0', '.'].includes(symbols[0])) fail(key, 'expected transparent first symbol and 2…32 single-character colors');

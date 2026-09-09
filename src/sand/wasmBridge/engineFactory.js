@@ -155,6 +155,12 @@ export function initSandWasm() {
         perfSnapshot: c('engine_perf_snapshot', null, ['number', 'number']),
         tick: c('engine_tick', 'number', ['number']),
         actorTick: c('engine_actor_tick', 'number', ['number']),
+        dayPhase: c('engine_day_phase', 'number', ['number']),
+        dayHeld: c('engine_day_held', 'number', ['number']),
+        setDayPhase: c('engine_set_day_phase', null, ['number', 'number', 'number']),
+        bedSnapshot: c('engine_bed_snapshot', 'number', ['number']),
+        bedSnapshotPtr: c('engine_bed_snapshot_ptr', 'number', ['number']),
+        glSetBeds: c('engine_gl_set_beds', null, ['number', 'number', 'number']),
         setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
         finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
@@ -232,6 +238,7 @@ export function initSandWasm() {
         chestLootSnapshotPtr: c('engine_chest_loot_snapshot_ptr', 'number', ['number']),
         chestActive: c('engine_chest_active', 'number', ['number']),
         chestInteract: c('engine_chest_interact', 'number', ['number', 'number', 'number', 'number']),
+        chestSlot: c('engine_chest_slot', 'number', ['number', 'number', 'number', 'number', 'number']),
         addGear: c('engine_add_gear', 'number', ['number', 'number', 'number', 'number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
         inventorySort: c('engine_inventory_sort', null, ['number', 'number']),
@@ -811,6 +818,18 @@ const renderStrides = Object.freeze({
     },
     getTick() { return M.tick(ptr); },
     getActorTick() { return M.actorTick(ptr); },
+    getDayClock() { return { phase: M.dayPhase(ptr), held: !!M.dayHeld(ptr) }; },
+    setDayPhase(phase, held = true) { M.setDayPhase(ptr, phase, held ? 1 : 0); },
+    getBeds() {
+      const n = M.bedSnapshot(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.bedSnapshotPtr(ptr), n * 5);
+      return Array.from({ length: n }, (_, i) => ({ id: f[i*5], worldX: f[i*5+1], worldY: f[i*5+2], resident: f[i*5+3], sleeper: f[i*5+4] }));
+    },
+    glSetBeds(beds) {
+      const packed = Float32Array.from(beds.flatMap(b => [b.id, b.worldX, b.worldY, b.resident, b.sleeper]));
+      const buffer = glScratch(Math.max(1, packed.length));
+      mod.HEAPF32.set(packed, buffer >> 2); M.glSetBeds(ptr, buffer, beds.length);
+    },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
     sharedGlContextCount() { return M.glContextCount(); },
@@ -1124,6 +1143,7 @@ const renderStrides = Object.freeze({
       return { id: M.chestActive(ptr), slots: Array.from({ length: n }, (_, i) => unpackInventoryStackAt(f, i)) };
     },
     interactChest(id, chest, slot = -2) { return M.chestInteract(ptr, id, chest, slot) === 1; },
+    chestSlot(id, chest, slot, action = 0) { return M.chestSlot(ptr, id, chest, slot, action) === 1; },
     addGear(id, definition, count = 1) { return M.addGear(ptr, id, definition, count) === 1; },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
     inventorySort(id) { M.inventorySort(ptr, id | 0); },

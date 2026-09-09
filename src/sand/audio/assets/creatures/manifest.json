@@ -1,0 +1,2144 @@
+[
+  {
+    "key": "cvAlien2",
+    "duration": 0.64109375,
+    "peakDb": -4.01,
+    "rmsDb": -24.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a28c192579824352a0177d71d9f2fe32560d17b00fbc16297488bddd07ddcdc9"
+      }
+    ]
+  },
+  {
+    "key": "cvAlien3",
+    "duration": 0.765375,
+    "peakDb": -4.01,
+    "rmsDb": -24.07,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "8e417706c6ca3f7eb99d9500d17bf74ef977d16c540dfa9d695db4721cc30003"
+      }
+    ]
+  },
+  {
+    "key": "cvAlien4",
+    "duration": 0.65271875,
+    "peakDb": -4.01,
+    "rmsDb": -27.29,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "0a46b3c9f1028ea251bc0aa82bb9bdaa2e6208ed48d5a4e83811be282bbe32c7"
+      }
+    ]
+  },
+  {
+    "key": "cvAlien5",
+    "duration": 0.3975,
+    "peakDb": -4.01,
+    "rmsDb": -26.95,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_05.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "7f6414bd745b244af6f24f7bd2d58b0d7cd1c670ea389e122a750bc588ce7134"
+      }
+    ]
+  },
+  {
+    "key": "cvAlien6",
+    "duration": 0.387,
+    "peakDb": -4.01,
+    "rmsDb": -22.53,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_06.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "795a25119b46ec1b0ce8e059cb75ac48386fb6db581deb9d0bfd06dc27e6e6c9"
+      }
+    ]
+  },
+  {
+    "key": "cvBark1",
+    "duration": 0.35084375,
+    "peakDb": -4.01,
+    "rmsDb": -21.12,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/barking_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f9b32cc139f0b8e7ae1f3b2409c08f374faa3d3a0935beb85b13e822d84bbb3d"
+      }
+    ]
+  },
+  {
+    "key": "cvBark2",
+    "duration": 0.321625,
+    "peakDb": -4.01,
+    "rmsDb": -21.43,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/barking_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "d0222abeebea1616996b58af320c5b08d48fd68e13d9ba85104fd64d9f8e22ba"
+      }
+    ]
+  },
+  {
+    "key": "cvBat1",
+    "duration": 1.33190625,
+    "peakDb": -4.01,
+    "rmsDb": -26.18,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bat/flac/bat_01.flac",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "71dd6dac86d9cd74480f78b521021a22d5ec4d3f7151caa7536ed2da6acf21ee"
+      }
+    ]
+  },
+  {
+    "key": "cvBat2",
+    "duration": 1.7473125,
+    "peakDb": -4.01,
+    "rmsDb": -24.73,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bat/flac/bat_02.flac",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "72d1705f4e12b1dfb7d19cc9091bb8c7f11c5aaf80154342c3a31c817cdc2a1b"
+      }
+    ]
+  },
+  {
+    "key": "cvBat3",
+    "duration": 1.34159375,
+    "peakDb": -4.01,
+    "rmsDb": -26.4,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bat/flac/bat_03.flac",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "bc7f1ac5f52fa87f33eff62e4ecb9b7e0fe42164b5830f24a4ce6471ae4d2a01"
+      }
+    ]
+  },
+  {
+    "key": "cvBird1",
+    "duration": 0.95890625,
+    "peakDb": -4.01,
+    "rmsDb": -22.39,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bird/birdchirping071414.wav",
+        "start": 0.0,
+        "seconds": 1.2,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "bc6e28bd823b653b2abf3384d4147718603af6bcd98e26166345df71a61eeb08"
+      }
+    ]
+  },
+  {
+    "key": "cvBird2",
+    "duration": 1.2,
+    "peakDb": -4.01,
+    "rmsDb": -23.39,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bird/birdchirping071414.wav",
+        "start": 0.85,
+        "seconds": 1.2,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "bc6e28bd823b653b2abf3384d4147718603af6bcd98e26166345df71a61eeb08"
+      }
+    ]
+  },
+  {
+    "key": "cvBird3",
+    "duration": 1.2,
+    "peakDb": -4.01,
+    "rmsDb": -23.27,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/bird/birdchirping071414.wav",
+        "start": 1.7,
+        "seconds": 1.2,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "bc6e28bd823b653b2abf3384d4147718603af6bcd98e26166345df71a61eeb08"
+      }
+    ]
+  },
+  {
+    "key": "cvBone1",
+    "duration": 0.37671875,
+    "peakDb": -4.01,
+    "rmsDb": -24.43,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_000.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "eb45e35b4bed784d3f120de4afec4b0d6ac09d9e143cce8cfcb7d739e1b1f3c3"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_000.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1.18,
+        "delay": 0.09,
+        "gain": 0.57,
+        "sha256": "eb45e35b4bed784d3f120de4afec4b0d6ac09d9e143cce8cfcb7d739e1b1f3c3"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_000.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.84,
+        "delay": 0.18,
+        "gain": 0.38,
+        "sha256": "eb45e35b4bed784d3f120de4afec4b0d6ac09d9e143cce8cfcb7d739e1b1f3c3"
+      }
+    ]
+  },
+  {
+    "key": "cvBone2",
+    "duration": 0.35165625,
+    "peakDb": -4.01,
+    "rmsDb": -23.12,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_001.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "4b76bf3ccc8e60d19188f3165b778a7817786faa6887c55d9049bcbeef3b425f"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_001.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1.18,
+        "delay": 0.09,
+        "gain": 0.57,
+        "sha256": "4b76bf3ccc8e60d19188f3165b778a7817786faa6887c55d9049bcbeef3b425f"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_001.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.84,
+        "delay": 0.18,
+        "gain": 0.38,
+        "sha256": "4b76bf3ccc8e60d19188f3165b778a7817786faa6887c55d9049bcbeef3b425f"
+      }
+    ]
+  },
+  {
+    "key": "cvBone3",
+    "duration": 0.37690625,
+    "peakDb": -4.01,
+    "rmsDb": -24.46,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1.18,
+        "delay": 0.09,
+        "gain": 0.57,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.84,
+        "delay": 0.18,
+        "gain": 0.38,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      }
+    ]
+  },
+  {
+    "key": "cvBoneFall",
+    "duration": 0.81396875,
+    "peakDb": -4.01,
+    "rmsDb": -26.46,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1.18,
+        "delay": 0.09,
+        "gain": 0.57,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.84,
+        "delay": 0.18,
+        "gain": 0.38,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.7,
+        "delay": 0.31,
+        "gain": 0.45,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1.12,
+        "delay": 0.47,
+        "gain": 0.3,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      },
+      {
+        "file": "audio-sources/impact-sounds/Audio/impactWood_light_002.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.9,
+        "delay": 0.65,
+        "gain": 0.18,
+        "sha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+      }
+    ]
+  },
+  {
+    "key": "cvBreath",
+    "duration": 0.55640625,
+    "peakDb": -4.01,
+    "rmsDb": -24.01,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/breath.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "d6ecfd092c261059701fe81581957ce6e67c1737978449bbd98ec6d4f30abb7f"
+      }
+    ]
+  },
+  {
+    "key": "cvBug1",
+    "duration": 0.35884375,
+    "peakDb": -4.01,
+    "rmsDb": -27.72,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/bug_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a7afae8bd3b448184e92bbb6162702e86322e5df58045715176c450ba4bbea3a"
+      }
+    ]
+  },
+  {
+    "key": "cvBug2",
+    "duration": 0.4963125,
+    "peakDb": -4.01,
+    "rmsDb": -29.06,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/bug_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "7993707dcb082c4f9f297bec44f8aa276988d848f4cf10ea6046c1c45daee518"
+      }
+    ]
+  },
+  {
+    "key": "cvBug3",
+    "duration": 0.35353125,
+    "peakDb": -4.01,
+    "rmsDb": -25.25,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/bug_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "947dad474b93a2786455b1772184f79f4881cf8bf212353638a42f662c808b7b"
+      }
+    ]
+  },
+  {
+    "key": "cvBug4",
+    "duration": 0.4319375,
+    "peakDb": -4.01,
+    "rmsDb": -25.32,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/bug_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "478418f0d70667109145ca10d82e918c5eeb95c594be40186681179a883d64be"
+      }
+    ]
+  },
+  {
+    "key": "cvBurble1",
+    "duration": 0.9418125,
+    "peakDb": -4.01,
+    "rmsDb": -23.86,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/burble_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f4c27a1839ef9e82d29e1bb175c0ebf73c65b6839b2914108d0c219fc1f42445"
+      }
+    ]
+  },
+  {
+    "key": "cvBurble2",
+    "duration": 0.8405625,
+    "peakDb": -4.01,
+    "rmsDb": -25.47,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/burble_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "7cc51b6cf28a5d0ac13f34e54cb18ebb8d2b66aa144281d321d0af826f56a85b"
+      }
+    ]
+  },
+  {
+    "key": "cvCough1",
+    "duration": 0.39459375,
+    "peakDb": -5.63,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cough_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "ab4335a796373e46114e56ea9b8f2d5e3592d7f6e76c22c8b29b3aa985e8831c"
+      }
+    ]
+  },
+  {
+    "key": "cvCough2",
+    "duration": 0.349375,
+    "peakDb": -4.01,
+    "rmsDb": -24.53,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cough_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "df56e706c69183587dbf6750bf4d5df528051456cd4a838bb1171d5dbb29fcc9"
+      }
+    ]
+  },
+  {
+    "key": "cvCough3",
+    "duration": 0.79796875,
+    "peakDb": -4.24,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cough_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1c307cd83cbda1f6860ed496e41ac27f105be801f168a22e6e359d3f9e563bb5"
+      }
+    ]
+  },
+  {
+    "key": "cvCreak1",
+    "duration": 0.60565625,
+    "peakDb": -4.01,
+    "rmsDb": -21.42,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/rpg-audio/Audio/creak1.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "8a346186fd297254248cab8e8117060a52a5cf2a84f603153a762108550ea95e"
+      }
+    ]
+  },
+  {
+    "key": "cvCreak2",
+    "duration": 0.83015625,
+    "peakDb": -4.01,
+    "rmsDb": -21.56,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/rpg-audio/Audio/creak2.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "8a990afdc03aebb91d528f5385e2f95582dbfa8e2c12c71098ab01be9142294a"
+      }
+    ]
+  },
+  {
+    "key": "cvCreak3",
+    "duration": 0.33821875,
+    "peakDb": -7.04,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/rpg-audio/Audio/creak3.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f9638787f95004b9d2d06f8eff8e99d4e594c21b51947daf562856fbcec905d1"
+      }
+    ]
+  },
+  {
+    "key": "cvCute10",
+    "duration": 0.46571875,
+    "peakDb": -9.51,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_10.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "85a53fc0b5cf400749d6bdf664f2c4e35d7b5c8621fb139640d6a723d5a76924"
+      }
+    ]
+  },
+  {
+    "key": "cvCute2",
+    "duration": 0.4610625,
+    "peakDb": -9.04,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "9b3303940f1c789b9f24e87f6f70076224d9f1398caacc7df4c0e7c4a9e60888"
+      }
+    ]
+  },
+  {
+    "key": "cvCute3",
+    "duration": 0.59509375,
+    "peakDb": -4.01,
+    "rmsDb": -21.25,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "de5b8609ffcdb6f22865c8dc696dc01bdbc54e78ca54af45cb22116a0641b6c2"
+      }
+    ]
+  },
+  {
+    "key": "cvCute4",
+    "duration": 0.50371875,
+    "peakDb": -6.46,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e9b717dffd587107f78d82e475da83513bd65dbaac2023a2f3691c34097fcc48"
+      }
+    ]
+  },
+  {
+    "key": "cvCute5",
+    "duration": 0.4873125,
+    "peakDb": -7.83,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_05.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "41d1b63ad4f006c09dbc65a686c022633825b01aa20e400b6dce0c6a22970c7c"
+      }
+    ]
+  },
+  {
+    "key": "cvCute6",
+    "duration": 0.43709375,
+    "peakDb": -8.49,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_06.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "51810bea0b961af26d3fd81b4bcc9248636e2a8e8ea9e2bc6a3d83b39eacdf71"
+      }
+    ]
+  },
+  {
+    "key": "cvCute8",
+    "duration": 0.3555625,
+    "peakDb": -8.25,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_08.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1776b641f37d0de4d51cf067c4a4b2c170ae582fc75a83c7abd42f13acdb1ce3"
+      }
+    ]
+  },
+  {
+    "key": "cvCute9",
+    "duration": 0.56675,
+    "peakDb": -9.21,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/cute_09.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "2432bc342b5688c390df41fbeb87be6af7fb686d67400d3310dfd1e2922bdbda"
+      }
+    ]
+  },
+  {
+    "key": "cvDinosaur1",
+    "duration": 2.01890625,
+    "peakDb": -6.66,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/roar/monster_roar.wav",
+        "start": 0,
+        "seconds": 2.1,
+        "rate": 0.87,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "040d2841619c732098c30a638731317d13d7647e5ce1a75a3246219ce4b162ff"
+      },
+      {
+        "file": "creature-audio-sources/creatures/roar_03.ogg",
+        "start": 0,
+        "seconds": 2.1,
+        "rate": 0.7,
+        "delay": 0.05,
+        "gain": 0.34,
+        "sha256": "983396c808eb658ed3bd223ffaf9ea7f756dba7bc45ecc3fde117083026a4556"
+      }
+    ]
+  },
+  {
+    "key": "cvDinosaur2",
+    "duration": 2.1,
+    "peakDb": -6.09,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/roar/monster_roar.wav",
+        "start": 0.65,
+        "seconds": 2.1,
+        "rate": 0.87,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "040d2841619c732098c30a638731317d13d7647e5ce1a75a3246219ce4b162ff"
+      },
+      {
+        "file": "creature-audio-sources/creatures/roar_03.ogg",
+        "start": 0,
+        "seconds": 2.1,
+        "rate": 0.7,
+        "delay": 0.05,
+        "gain": 0.34,
+        "sha256": "983396c808eb658ed3bd223ffaf9ea7f756dba7bc45ecc3fde117083026a4556"
+      }
+    ]
+  },
+  {
+    "key": "cvDinosaurDeath",
+    "duration": 2.7,
+    "peakDb": -4.65,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/roar/monster_roar.wav",
+        "start": 1.25,
+        "seconds": 2.7,
+        "rate": 0.72,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "040d2841619c732098c30a638731317d13d7647e5ce1a75a3246219ce4b162ff"
+      },
+      {
+        "file": "creature-audio-sources/creatures/roar_03.ogg",
+        "start": 0,
+        "seconds": 2.7,
+        "rate": 0.7,
+        "delay": 0.05,
+        "gain": 0.34,
+        "sha256": "983396c808eb658ed3bd223ffaf9ea7f756dba7bc45ecc3fde117083026a4556"
+      }
+    ]
+  },
+  {
+    "key": "cvEat1",
+    "duration": 0.5816875,
+    "peakDb": -4.01,
+    "rmsDb": -24.63,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/eat_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f17305072d3d0ca5556f72db8701866329d33561ca5df086e501f2a52e2022df"
+      }
+    ]
+  },
+  {
+    "key": "cvEat2",
+    "duration": 0.35334375,
+    "peakDb": -4.01,
+    "rmsDb": -21.73,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/eat_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "60226fe5e4bf5ced6457f43ef89114a91d8790634a9aebb3c5754768fe04d6ee"
+      }
+    ]
+  },
+  {
+    "key": "cvFrog1",
+    "duration": 0.70915625,
+    "peakDb": -4.01,
+    "rmsDb": -28.64,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/frog/mutant_frog-1.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "5182abf964e14186d249e4642b0749167bdfaf9a4580c91316b7c3102b1f512e"
+      }
+    ]
+  },
+  {
+    "key": "cvFrog2",
+    "duration": 0.75159375,
+    "peakDb": -4.01,
+    "rmsDb": -24.51,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/frog/mutant_frog-2.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "06e2752ba6a02d9465384341b536836c2524090e09d7c884f8a5c7254747acc6"
+      }
+    ]
+  },
+  {
+    "key": "cvGrunt1",
+    "duration": 0.757,
+    "peakDb": -6.74,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/grunt_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "73ee84f2bb3e1b371a72dd66a09f150c98c9000bcb735c3bdd7f607e59385206"
+      }
+    ]
+  },
+  {
+    "key": "cvGrunt2",
+    "duration": 0.52140625,
+    "peakDb": -12.17,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/grunt_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "76d78154f2f22b3f373bd3ec4ff0edabb459322f72adabfa285b738f37987cbb"
+      }
+    ]
+  },
+  {
+    "key": "cvGrunt3",
+    "duration": 0.6301875,
+    "peakDb": -4.01,
+    "rmsDb": -21.63,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/grunt_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f2a23b32fcf9cbdabf059339d346ce7eead018fda778067827e71b96936989f1"
+      }
+    ]
+  },
+  {
+    "key": "cvGrunt4",
+    "duration": 0.5986875,
+    "peakDb": -4.01,
+    "rmsDb": -22.03,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/grunt_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "4fbc2b361ce055a3b94d43489108582313dd999e5761d4e69d59c9c7abcec295"
+      }
+    ]
+  },
+  {
+    "key": "cvGrunt5",
+    "duration": 0.58228125,
+    "peakDb": -4.01,
+    "rmsDb": -22.41,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/grunt_05.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "164059a171a8a7d8f1a2fcfdb195a9d50da3ab67bed0b52f4c2c3409fe5df049"
+      }
+    ]
+  },
+  {
+    "key": "cvHowl",
+    "duration": 0.6285,
+    "peakDb": -8.01,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/howl.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e63e29a219dfbe64724525600f36db7aab6017145650ffbc92763f87181c7825"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack0",
+    "duration": 0.3780625,
+    "peakDb": -5.65,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "01f4adfff1d7a5f7be27b6d63041708d8fd01d43d6847f8527b991828bf6382b"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack1",
+    "duration": 0.65784375,
+    "peakDb": -4.01,
+    "rmsDb": -21.59,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack1.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "18604485719a00414f368a3eedf074666ea7d0751bd4ee6f28f5510fcc3099a4"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack2",
+    "duration": 0.2781875,
+    "peakDb": -7.13,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack2.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "9e64bb6bddee90e393ed73ba5836e34626cc157efd35ed2fc1070135a67dcbea"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack3",
+    "duration": 0.6981875,
+    "peakDb": -4.58,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack3.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "5a9544f0e44bbe82365340fda70d4b1ac3b63bb99c4f68bc67687233431c1786"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack4",
+    "duration": 0.3179375,
+    "peakDb": -5.93,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack4.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "4e67a283aba87cea4ef5a01b8c2baa353b522b0f2de66a3749a1a95123193a6a"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack5",
+    "duration": 0.5455625,
+    "peakDb": -4.01,
+    "rmsDb": -21.98,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack5.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "169f7c56e04aeb3f18e2fb9a2fc44647b09274bb232129ed0642a7165c6c1aa5"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack6",
+    "duration": 0.743625,
+    "peakDb": -6.68,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack6.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1bae8f04a042152c656c915e8fb3635860cf1099527ebafc7199eb5c75f3f02a"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack7",
+    "duration": 0.5355,
+    "peakDb": -4.01,
+    "rmsDb": -21.25,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack7.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "b198d7c1676f773fc7141a15d8c1cf2d9fa8f529874a07291b45e5944d89a8f1"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanAttack8",
+    "duration": 0.35240625,
+    "peakDb": -8.15,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attack8.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e73f668a5b9c4bfa1ea97cbbd5342bd47d503c96c92a20119694b3f27d60f1a7"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig0",
+    "duration": 1.50684375,
+    "peakDb": -4.01,
+    "rmsDb": -23.33,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "93254d118fdfb1dac17e9b76dc7f57ad847654818cd10ba5f8630c5e4a14026a"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig1",
+    "duration": 0.971,
+    "peakDb": -5.48,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig1.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a8c74fc1f04f8619263c85cf8cc32ea264ba9ef5a7122650f4a90339f694bc6b"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig2",
+    "duration": 0.72846875,
+    "peakDb": -4.59,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig2.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "7fb7582565945efd5c8722bc6a7ed858086850c0fb93c58e9ca2836a08b52930"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig3",
+    "duration": 0.52759375,
+    "peakDb": -5.25,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig3.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "026d596cbafdd730e33422243010d63cc73088746e817bd89660201ca4a2506f"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig4",
+    "duration": 0.61196875,
+    "peakDb": -6.15,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig4.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "05679adb1522e4e656d9e66fc9b6bd343538fb2968edd37492733f2f8b1255c1"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanBig5",
+    "duration": 1.30546875,
+    "peakDb": -4.01,
+    "rmsDb": -21.52,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/attackbig5.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "98c53fabbe6c7f584ee7164ed5c0407adbd4812b837c1c0ef90818025ff3ed7c"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanDeath0",
+    "duration": 2.4,
+    "peakDb": -4.01,
+    "rmsDb": -22.54,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/death0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a075132b2ad2b7f497fca18fb1bb1fb9a5bd6f75825826abeb3ff6a56d3daf52"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanDeath1",
+    "duration": 1.62603125,
+    "peakDb": -5.24,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/death1.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "2cd674ab93573b83d3dd984505137064c6407f63b21801d2f351466ab968c04b"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanGreet0",
+    "duration": 0.5653125,
+    "peakDb": -4.01,
+    "rmsDb": -21.89,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/greet0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "34b931ceef4055ba5ff776d6c819caa947c66dd914a826047e9eda0569c45518"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt0",
+    "duration": 0.55396875,
+    "peakDb": -4.71,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "fe052f0d77fa42426a2218daa7085b614c19ede12cb2e60b3bcd6db9763a0621"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt1",
+    "duration": 0.7234375,
+    "peakDb": -4.01,
+    "rmsDb": -21.79,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt1.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "53b3b3a7be3399f90915c813ef356a624bf3033382aea0a24eaf02c200225e75"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt2",
+    "duration": 0.84265625,
+    "peakDb": -4.01,
+    "rmsDb": -22.1,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt2.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "8f65c53268ed217346b0c403b0e4a2b3649af055c645f0f2d747248f58c5a162"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt3",
+    "duration": 0.3215,
+    "peakDb": -5.69,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt3.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "251f58f2e2d8ae8b5d2876fd3dea26848725b3b1fed18c196f1fceb5ed71993c"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt4",
+    "duration": 0.50078125,
+    "peakDb": -4.01,
+    "rmsDb": -23.32,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt4.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e7c94af220ea927b6da2e9dc024c530b16314252fa8f4361e70a36ae516db30b"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt5",
+    "duration": 1.14746875,
+    "peakDb": -4.01,
+    "rmsDb": -23.11,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt5.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f97f0ec95e675368da8af14029736d343ca25c2589398a37427a63a469d74f36"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt7",
+    "duration": 0.6330625,
+    "peakDb": -4.01,
+    "rmsDb": -24.99,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt7.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "fc40200918d87060a42578c240218dbfab2f4f508e6edd46075c45b9a4564f9f"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt8",
+    "duration": 0.3264375,
+    "peakDb": -4.01,
+    "rmsDb": -23.51,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt8.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "2777852ee5e29d3b95a5bcfefa2e51d156d43301460cb5d137b0369fb9df83f5"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanHurt9",
+    "duration": 0.47603125,
+    "peakDb": -6.83,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/hurt9.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1abf3050a5412a957a8dc0de702c537003a01f2a1fd59cc4c77dde299e954b71"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanYes0",
+    "duration": 0.70234375,
+    "peakDb": -4.01,
+    "rmsDb": -21.13,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/yes0.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "cce4e7a43ab9bd5e34d58f568e21e724d8aee6d058d6e3d3372079e3fcc2c113"
+      }
+    ]
+  },
+  {
+    "key": "cvHumanYes1",
+    "duration": 0.51390625,
+    "peakDb": -6.31,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/human/RPG Male Adventurer/yes1.wav",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "d6b8192091bfb95caf14cbd385b012263fe764656b0fd471cd2eb64b6afe3007"
+      }
+    ]
+  },
+  {
+    "key": "cvHurt1",
+    "duration": 0.4645625,
+    "peakDb": -4.01,
+    "rmsDb": -23.17,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/hurt_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "619f9f2b4bc6cb013b4a62d0ef515a11e4be3a73c9d78c7c12ec5669b166d2cd"
+      }
+    ]
+  },
+  {
+    "key": "cvHurt2",
+    "duration": 0.461125,
+    "peakDb": -7.05,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/hurt_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "b90ca3a0f5f48e1141ec6326f08ebf9f597efb6b2ca4ceeccc285b203c1ccbe1"
+      }
+    ]
+  },
+  {
+    "key": "cvHurt3",
+    "duration": 0.45565625,
+    "peakDb": -5.27,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/hurt_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "53e0ff510ef43f583befea63af23af1d82ddb993b981f7c3c0e7eb5f0f9d21ab"
+      }
+    ]
+  },
+  {
+    "key": "cvHurt4",
+    "duration": 0.31990625,
+    "peakDb": -10.58,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/hurt_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "65a6524d46bbf2acccb09b551fe7e3616dbd19f62266b5ea7e6313df29031df1"
+      }
+    ]
+  },
+  {
+    "key": "cvHurt5",
+    "duration": 0.4223125,
+    "peakDb": -6.87,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/hurt_05.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "4dc63fc62e8604a87baa1f5a74b75d848ccb68ce6e0e34d603dd3cbefc8519ed"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster1",
+    "duration": 0.903625,
+    "peakDb": -4.01,
+    "rmsDb": -26.41,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e8bb5c9d3d25172666c60ed302d354144b67e66170bdf039ec88f4b6b0cd879f"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster2",
+    "duration": 0.52315625,
+    "peakDb": -4.01,
+    "rmsDb": -23.94,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "2f590aec7086b2327a141ec71d5e8b8e83524a30e6b9baf3be2784f4adb153b3"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster3",
+    "duration": 0.45984375,
+    "peakDb": -5.18,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1208729886f3f66e7d8018e8880dff073275fd37b30e1016dd5b164161482df1"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster4",
+    "duration": 1.14665625,
+    "peakDb": -7.51,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "04b556b93bf3f99255ac362ebe7f905f750a8bcbb653f78ef7191adb91e71f49"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster5",
+    "duration": 0.4279375,
+    "peakDb": -4.01,
+    "rmsDb": -24.73,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_05.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e7e67dd4b5ae627dbdefcb25ee1a0fab2a5f6d0c9879eae87974a422fd83e583"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster6",
+    "duration": 0.76553125,
+    "peakDb": -8.4,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_06.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "6b8df01eb7821fb0fcf66b4683a8eb997ca728fded26b6937734b84ff05852f9"
+      }
+    ]
+  },
+  {
+    "key": "cvMonster7",
+    "duration": 0.89028125,
+    "peakDb": -5.31,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/monster_07.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "5f7d40c4899f2e2e146fe8a0207597d4daf4d304a644ad2e8629057bc49a87e9"
+      }
+    ]
+  },
+  {
+    "key": "cvNose",
+    "duration": 0.33153125,
+    "peakDb": -4.01,
+    "rmsDb": -21.52,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/nose.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "c54f2937d705bda30a9618531d62752356ba9e1cae258687131e1582b36e53ce"
+      }
+    ]
+  },
+  {
+    "key": "cvRoar1",
+    "duration": 0.3519375,
+    "peakDb": -9.16,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/roar_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "e9d44326860a1c3aba917684faccfd967a4fefa284d7df773e05ae890ec242e0"
+      }
+    ]
+  },
+  {
+    "key": "cvRoar2",
+    "duration": 0.84440625,
+    "peakDb": -6.32,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/roar_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "ceb532ee0fe775d6f86a821099b75f1790ab8022b963cb837c8c1fa4fffee5c2"
+      }
+    ]
+  },
+  {
+    "key": "cvRoar3",
+    "duration": 0.4584375,
+    "peakDb": -4.07,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/roar_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "983396c808eb658ed3bd223ffaf9ea7f756dba7bc45ecc3fde117083026a4556"
+      }
+    ]
+  },
+  {
+    "key": "cvScream1",
+    "duration": 0.9330625,
+    "peakDb": -4.01,
+    "rmsDb": -22.05,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/scream_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "54da7bba4c4272b0b77dc3fe26a91d0a26d9280797fecb8197d716b47745eb85"
+      }
+    ]
+  },
+  {
+    "key": "cvScream2",
+    "duration": 0.94228125,
+    "peakDb": -4.59,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/scream_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "73aedfbcc7e5b3004507d5a79e95ae53954026036bf8d6f65aa0a4ca298dd372"
+      }
+    ]
+  },
+  {
+    "key": "cvSpirit1",
+    "duration": 0.79328125,
+    "peakDb": -4.01,
+    "rmsDb": -25.3,
+    "effects": "highpass=f=420,aecho=0.8:0.7:83|167:0.28|0.17,lowpass=f=4800",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.86,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a725a4aef74d75bf8ddc9bc90abd49d1ba8380c62d80ee1318cf97c48c7a4124"
+      }
+    ]
+  },
+  {
+    "key": "cvSpirit2",
+    "duration": 0.8475,
+    "peakDb": -4.01,
+    "rmsDb": -24.32,
+    "effects": "highpass=f=420,aecho=0.8:0.7:83|167:0.28|0.17,lowpass=f=4800",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.86,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "a28c192579824352a0177d71d9f2fe32560d17b00fbc16297488bddd07ddcdc9"
+      }
+    ]
+  },
+  {
+    "key": "cvSpirit3",
+    "duration": 1.0021875,
+    "peakDb": -4.01,
+    "rmsDb": -24.31,
+    "effects": "highpass=f=420,aecho=0.8:0.7:83|167:0.28|0.17,lowpass=f=4800",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/alien_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 0.86,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "8e417706c6ca3f7eb99d9500d17bf74ef977d16c540dfa9d695db4721cc30003"
+      }
+    ]
+  },
+  {
+    "key": "cvSpit2",
+    "duration": 0.6635,
+    "peakDb": -4.01,
+    "rmsDb": -24.15,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/spit_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "aa65f01311e914d2861f1992a4e59f431c03edcf020e09961e422728562a2657"
+      }
+    ]
+  },
+  {
+    "key": "cvTroll1",
+    "duration": 0.57115625,
+    "peakDb": -9.89,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/troll_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "d61a6ea6ab0263406de93002ee7378abac7b33486eafc04a91eeb625938e0df1"
+      }
+    ]
+  },
+  {
+    "key": "cvTroll2",
+    "duration": 0.5983125,
+    "peakDb": -7.08,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/troll_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "d63ae3a57294b8370eb6370cc4c75f544f4a8571d893ea3a48a4564d82e078cb"
+      }
+    ]
+  },
+  {
+    "key": "cvTroll3",
+    "duration": 0.4204375,
+    "peakDb": -8.0,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/troll_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "993b97ae0ca7755b6254f02242e6da4fe9895fc06ab2e092771927caab689660"
+      }
+    ]
+  },
+  {
+    "key": "cvWater1",
+    "duration": 0.58696875,
+    "peakDb": -4.01,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/water/bubble_01.ogg",
+        "start": 0,
+        "seconds": 0.75,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1d03d72347019be889280efc6de5ca5ea439d0b24b235e6db87e5bf7583ecb2b"
+      }
+    ]
+  },
+  {
+    "key": "cvWater2",
+    "duration": 0.293625,
+    "peakDb": -7.08,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/water/bubble_02.ogg",
+        "start": 0,
+        "seconds": 0.75,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "7992a1a4637ea727b177b3edbc086ec280167d67a8fad010bb8fb58893b2e2f2"
+      }
+    ]
+  },
+  {
+    "key": "cvWater3",
+    "duration": 0.547125,
+    "peakDb": -4.01,
+    "rmsDb": -28.27,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "audio-sources/water/bubble_03.ogg",
+        "start": 0,
+        "seconds": 0.75,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "6189106305ab917f1a260b66a74380ed7d6e5be0fb4f5eba3ac93aeb89d9b7ca"
+      }
+    ]
+  },
+  {
+    "key": "cvWeird1",
+    "duration": 0.4656875,
+    "peakDb": -4.67,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/weird_01.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "f4a67e07911836cb90479e01c5a32e31627038e3227ecec7c6e029b3aa2d81ad"
+      }
+    ]
+  },
+  {
+    "key": "cvWeird2",
+    "duration": 0.3745625,
+    "peakDb": -7.47,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/weird_02.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "1d1bc049e70edaeaa31c2d87a65a05daf3f47ac317908368c245814cb649934e"
+      }
+    ]
+  },
+  {
+    "key": "cvWeird3",
+    "duration": 0.33359375,
+    "peakDb": -4.01,
+    "rmsDb": -23.45,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/weird_03.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "6db7b94df0f11eec671971f0f1ee6815400e29f99cfc42f64480f445d23e9436"
+      }
+    ]
+  },
+  {
+    "key": "cvWeird4",
+    "duration": 0.27546875,
+    "peakDb": -10.03,
+    "rmsDb": -21.0,
+    "effects": "",
+    "inputs": [
+      {
+        "file": "creature-audio-sources/creatures/weird_04.ogg",
+        "start": 0,
+        "seconds": 2.4,
+        "rate": 1,
+        "delay": 0,
+        "gain": 1,
+        "sha256": "b8365f01b7905da42997959241a6c74aa319e08ed5d210a8008b34c6985f6a0a"
+      }
+    ]
+  }
+]

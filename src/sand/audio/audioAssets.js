@@ -2,10 +2,12 @@
 // URLs are resolved by Vite in the site build and inlined by the standalone
 // embed build. Node tests can still import the audio mixer without loading them.
 
+import { CREATURE_BANK_URLS } from './creatureBank.generated.js';
 import { RECORDED_BANK_URLS } from './recordedBank.generated.js';
 
 export const AUDIO_ASSET_URLS = Object.freeze({
   ...RECORDED_BANK_URLS,
+  ...CREATURE_BANK_URLS,
   sandFlow: new URL('./assets/sand-flow.wav', import.meta.url).href,
   waterFlow: new URL('./assets/water-flow.wav', import.meta.url).href,
   blastGunReport: new URL('./assets/blast-gun-report.mp3', import.meta.url).href,

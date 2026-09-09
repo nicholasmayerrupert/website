@@ -447,6 +447,64 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
   projectiles.push_back(beam);
 }
 
+void ProjectileSystem::spawnFireBreath(int owner, double x, double y, double targetX, double targetY, int damage, int phase) {
+  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
+  double angle = std::atan2(targetY - y, targetX - x) + std::sin(phase * 1.7) * .065;
+  Projectile shot;
+  shot.id = nextId++; shot.owner = owner; shot.kind = PK_FIRE_BREATH; shot.fuse = 300;
+  shot.px = x; shot.py = y; shot.vx = std::cos(angle) * 1.55; shot.vy = std::sin(angle) * 1.55;
+  shot.charge = damage; shot.life = 58;
+  projectiles.push_back(shot);
+  if (phase % 12 == 0) E.audio.emit(SE_RUNE, x, y, .9, 1);
+}
+
+void ProjectileSystem::spawnFrost(int owner, double x, double y, double targetX, double targetY, bool shard, int damage, int phase) {
+  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
+  double angle = std::atan2(targetY - y, targetX - x);
+  if (!shard) angle += std::sin(phase * 1.7) * .075;
+  double speed = shard ? 3.1 : 1.75;
+  Projectile shot;
+  shot.id = nextId++; shot.owner = owner; shot.fuse = 309;
+  shot.kind = shard ? PK_ICE_SHARD : PK_FROST_BREATH;
+  shot.px = x; shot.py = y;
+  shot.vx = std::cos(angle) * speed; shot.vy = std::sin(angle) * speed;
+  shot.charge = damage; shot.life = shard ? 48 : 52;
+  projectiles.push_back(shot);
+  if (shard || phase % 12 == 0) E.audio.emit(SE_RUNE, x, y, shard ? 1.2 : .65, 10);
+}
+
+void ProjectileSystem::freezeSurface(double cx, double cy, int radius) {
+  Engine::ActiveLayerScope foreground(E, &E.fg);
+  std::vector<int> cells, removed;
+  for (int y = imax(2, (int)cy - radius); y <= imin(E.rows - 3, (int)cy + radius); y++)
+    for (int x = imax(2, (int)cx - radius); x <= imin(E.cols - 3, (int)cx + radius); x++) {
+      if ((x-cx)*(x-cx)+(y-cy)*(y-cy) > radius*radius) continue;
+      int k = E.I(x,y), mat = E.fg.grid[k];
+      bool coat = mat == WATER || mat == SNOW;
+      if (mat == EMPTY || mat == FIRE || mat == STEAM) {
+        // Only a two-cell skin adjoining the substrate can grow into air.
+        for (int distance = 1; distance <= 2; distance++) for (int offset : {-distance, distance, -distance*E.cols, distance*E.cols}) {
+          int neighbor = E.fg.grid[k + offset];
+          if (neighbor != ICE && E.isBlockingForActor(neighbor)) coat = true;
+        }
+      }
+      if (!coat) continue;
+      bool occupied = false;
+      for (const auto& player : E.psys.players) if (player.active && player.alive
+          && x + 1 > player.px && x < player.px + player.w && y + 1 > player.py && y < player.py + player.h) occupied = true;
+      for (const auto& creature : E.creatures.creatures) if (creature.alive) {
+        const auto& species = E.creatures.species(creature);
+        double px = creature.wx - E.fg.worldOffsetX, py = creature.wy - E.fg.worldOffsetY;
+        if (x + 1 > px && x < px + species.w && y + 1 > py && y < py + species.h) occupied = true;
+      }
+      if (!occupied) cells.push_back(k);
+    }
+  if (cells.empty()) return;
+  CellMutationBatch frozen(E, removed);
+  for (int k : cells) frozen.replaceWithStatic(k, ICE);
+  frozen.commitGeneral();
+}
+
 void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage) {
   const auto* gear = E.content.gear(gearId);
   if (!gear) return;
@@ -581,6 +639,7 @@ void ProjectileSystem::updateProjectiles() {
       if (dx * dx + dy * dy > r2) continue;
       c.health -= damage;
       c.hurtCooldown = 12;
+      if (c.health > 0) E.creatures.emitVoice(c, SE_CREATURE, .7);
       if (launch) {
         double dir = c.wx + s.w * .5 >= wx ? 1.0 : -1.0;
         c.vx += dir * .72;
@@ -893,11 +952,13 @@ void ProjectileSystem::updateProjectiles() {
       if (--p.life > 0) { p.charge = p.life / 18.0; projectiles[write++] = p; }
       continue;
     }
-    if (p.kind == PK_RUNE) {
+    if (p.kind == PK_RUNE || p.kind == PK_FROST_BREATH || p.kind == PK_ICE_SHARD || p.kind == PK_FIRE_BREATH) {
       const auto* rune = E.content.gear(p.fuse);
       bool hit = false, outside = false;
+      bool flame = p.kind == PK_FIRE_BREATH;
+      bool breath = p.kind == PK_FROST_BREATH, shard = p.kind == PK_ICE_SHARD;
       bool frost = rune && rune->spell == 10, molten = rune && rune->spell == 11;
-      double hitRadius = frost ? 3.2 : molten ? 1.8 : 1;
+      double hitRadius = flame ? 2.8 : frost ? 3.2 : molten ? 1.8 : 1;
       if (molten) p.vy += E.scaledGravity(.018);
       int steps = imax(1, (int)std::ceil(std::hypot(p.vx,p.vy) / .25));
       for (int j = 0; j < steps; j++) {
@@ -905,6 +966,12 @@ void ProjectileSystem::updateProjectiles() {
         p.px += p.vx / steps; p.py += p.vy / steps;
         if (p.px < 1 || p.py < 1 || p.px >= E.cols-1 || p.py >= E.rows-1) { outside = true; break; }
         int mat = E.fg.grid[E.I((int)p.px,(int)p.py)];
+        if (shard) {
+          double speed = std::hypot(p.vx, p.vy);
+          double tipX = p.px + p.vx / speed * 5, tipY = p.py + p.vy / speed * 5;
+          if (tipX < 1 || tipY < 1 || tipX >= E.cols-1 || tipY >= E.rows-1) { outside = true; break; }
+          if (blocksPoint(tipX, tipY)) { p.px = tipX; p.py = tipY; hit = true; break; }
+        }
         if (rune && rune->spell == 7 && E.isBlockingForActor(mat) && p.rotation > 0) {
           bool blockX = blocksPoint(p.px, oldY), blockY = blocksPoint(oldX, p.py);
           fractureRune(p, 3, CRYSTAL, (int)p.charge);
@@ -913,7 +980,7 @@ void ProjectileSystem::updateProjectiles() {
           p.px = oldX; p.py = oldY; p.rotation--;
           break;
         }
-        bool wideBlock = (frost || molten) && (blocksPoint(p.px + hitRadius, p.py) ||
+        bool wideBlock = (frost || molten || flame) && (blocksPoint(p.px + hitRadius, p.py) ||
           blocksPoint(p.px - hitRadius, p.py) || blocksPoint(p.px, p.py + hitRadius) || blocksPoint(p.px, p.py - hitRadius));
         if (wideBlock || E.isBlockingForActor(mat) || (rune && (rune->spell == 2 || frost) && mat == WATER) ||
             (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,hitRadius,p.owner))) ||
@@ -922,18 +989,25 @@ void ProjectileSystem::updateProjectiles() {
       if (outside) continue;
       if (hit || --p.life <= 0) {
         auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
-        if (gear && (gear->spell == 10 || gear->spell == 11)) {
-          int radius = frost ? 7 : 5;
+        if (flame) {
+          damageSplash(p.px, p.py, 5, (int)p.charge, p.owner, false);
+          Engine::ActiveLayerScope foreground(E, &E.fg);
+          // Fire occupies open air beside the impact; the substrate stays intact.
+          for (int fy = -4; fy <= 4; fy++) for (int fx = -4; fx <= 4; fx++) {
+            int gx = (int)p.px + fx, gy = (int)p.py + fy;
+            if (fx*fx+fy*fy > 16 || gx < 1 || gy < 1 || gx >= E.cols-1 || gy >= E.rows-1) continue;
+            int k = E.I(gx,gy);
+            if (E.fg.grid[k] == EMPTY && (gx*13+gy*7+p.id)%3 == 0) E.tools.paintDisc(gx,gy,0,FIRE,false);
+          }
+          for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
+          continue;
+        } else if (gear && (gear->spell == 10 || gear->spell == 11)) {
+          int radius = shard ? 11 : breath ? 5 : frost ? 7 : 5;
+          if (shard) E.combat.enemyTerrainImpact(p.px, p.py, 7, ICE);
           damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, false);
           Engine::ActiveLayerScope foreground(E, &E.fg);
           if (frost) {
-            std::vector<int> removed;
-            CellMutationBatch frozen(E, removed);
-            for (int y = imax(1, (int)p.py - radius); y <= imin(E.rows - 2, (int)p.py + radius); y++)
-              for (int x = imax(1, (int)p.px - radius); x <= imin(E.cols - 2, (int)p.px + radius); x++)
-                if ((x-p.px)*(x-p.px)+(y-p.py)*(y-p.py) <= radius*radius && E.fg.grid[E.I(x,y)] == WATER)
-                  frozen.replaceWithStatic(E.I(x,y), ICE);
-            frozen.commitGeneral();
+            freezeSurface(p.px, p.py, radius);
             for (auto& c : E.creatures.creatures) {
               if (!c.alive || E.creatures.isProtectedNpc(c) || (p.owner < 0 && c.id == -p.owner)) continue;
               const auto& def = E.creatures.species(c);
@@ -947,7 +1021,7 @@ void ProjectileSystem::updateProjectiles() {
             E.tools.paintDisc((int)p.px, (int)p.py, 2, LAVA, false);
           }
           for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
-          E.audio.emit(SE_SPELL_IMPACT, p.px, p.py, 1, frost ? ICE : LAVA);
+          if (!breath || p.id % 4 == 0) E.audio.emit(SE_SPELL_IMPACT, p.px, p.py, shard ? 1.2 : breath ? .45 : 1, frost ? ICE : LAVA);
         } else if (gear && gear->spell == 8) {
           p.kind = PK_RUNE_FIELD; p.life = 72; p.rotation = p.charge; p.charge = 1; p.vx = p.vy = 0;
           E.audio.emit(SE_RUNE, p.px, p.py, 1.1, 8);
@@ -964,7 +1038,7 @@ void ProjectileSystem::updateProjectiles() {
             E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);
           }
         } else if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
-        p.rotation = frost ? 7 : molten ? 5 : gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
+        p.rotation = shard ? 14 : breath ? 4 : frost ? 7 : molten ? 5 : gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
       }
       projectiles[write++] = p; continue;

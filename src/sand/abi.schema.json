@@ -1586,7 +1586,8 @@
     "CRP_MUMMY": 21,
     "CRP_LAVA_TOAD": 22,
     "CRP_VILLAGE_GUARD": 23,
-    "CRP_VILLAGE_HUNTER": 24
+    "CRP_VILLAGE_HUNTER": 24,
+    "CRP_BONE_DINOSAUR": 25
   },
   "enums": {
     "PlayerAnimation": {
@@ -1710,7 +1711,10 @@
         "PK_EXTRACTION_BEAM": 8,
         "PK_RUNE": 9,
         "PK_RUNE_BURST": 10,
-        "PK_RUNE_FIELD": 11
+        "PK_RUNE_FIELD": 11,
+        "PK_FROST_BREATH": 12,
+        "PK_ICE_SHARD": 13,
+        "PK_FIRE_BREATH": 14
       }
     },
     "CraftIngredientKind": {
@@ -3759,6 +3763,65 @@
             "stationaryCycle": false
           },
           "protection": "CPROT_NONE"
+        },
+        {
+          "id": 34,
+          "key": "CREATURE_BONE_DINOSAUR",
+          "cSymbol": "CS_BONE_DINOSAUR",
+          "name": "cinderjaw tyrant",
+          "stats": {
+            "locomotion": "CL_AMPHIBIOUS",
+            "w": 24,
+            "h": 22,
+            "maxHealth": 320,
+            "walkSpeed": 0.34,
+            "swimSpeed": 0.12,
+            "accel": 0.045,
+            "gravity": 0.075,
+            "jumpSpeed": 1.05,
+            "fluidThreshold": 0.32,
+            "sightRange": 120,
+            "attackRange": 24,
+            "damage": 34,
+            "attackCooldown": 0,
+            "scanInterval": 8,
+            "hopPeriod": 0,
+            "targets": [
+              "CT_PLAYER"
+            ],
+            "prey": [],
+            "hostile": true
+          },
+          "population": {
+            "profile": "CPOP_ENCOUNTER",
+            "encounterCost": 8,
+            "countsTowardNaturalCap": true,
+            "habitat": "CH_SURFACE",
+            "maxActive": 1,
+            "densityRadius": 220,
+            "densityCap": 1,
+            "minPlayerDistance": 48,
+            "maxPlayerDistance": 280
+          },
+          "world": {
+            "requiredTags": [
+              "WA_SURFACE"
+            ],
+            "excludedTags": [
+              "WA_SETTLEMENT"
+            ],
+            "allowedSurfaceBiomes": [
+              "BIOME_ROCKY"
+            ]
+          },
+          "behaviorProfile": "CRBH_GENERIC",
+          "render": {
+            "profile": "CRP_BONE_DINOSAUR",
+            "humanNpc": false,
+            "bob": "CRB_WALKER",
+            "stationaryCycle": false
+          },
+          "protection": "CPROT_NONE"
         }
       ]
     },
@@ -4099,7 +4162,12 @@
         "SE_HEAVY_IMPACT": 34,
         "SE_SPELL_IMPACT": 35,
         "SE_SHOCKWAVE": 36,
-        "SE_MELEE_HIT": 37
+        "SE_MELEE_HIT": 37,
+        "SE_CREATURE_CALL": 38,
+        "SE_CREATURE_ALERT": 39,
+        "SE_CREATURE_ATTACK": 40,
+        "SE_CREATURE_DEATH": 41,
+        "SE_CREATURE_MOVE": 42
       }
     }
   },

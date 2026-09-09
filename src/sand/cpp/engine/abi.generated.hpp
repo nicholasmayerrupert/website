@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 50;
 
-static const uint64_t ABI_FINGERPRINT = 0xea7d10cc5897ULL;
+static const uint64_t ABI_FINGERPRINT = 0x46fc192e70d1ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
 enum PlayerSnapshotField : int {
@@ -1072,6 +1072,9 @@ enum ProjectileKind : uint8_t {
   PK_RUNE = 9,
   PK_RUNE_BURST = 10,
   PK_RUNE_FIELD = 11,
+  PK_FROST_BREATH = 12,
+  PK_ICE_SHARD = 13,
+  PK_FIRE_BREATH = 14,
 };
 
 static constexpr bool isProjectileKindValue(int value) {
@@ -1088,6 +1091,9 @@ static constexpr bool isProjectileKindValue(int value) {
     case PK_RUNE:
     case PK_RUNE_BURST:
     case PK_RUNE_FIELD:
+    case PK_FROST_BREATH:
+    case PK_ICE_SHARD:
+    case PK_FIRE_BREATH:
       return true;
     default: return false;
   }
@@ -1196,6 +1202,7 @@ enum CreatureSpeciesAbi : int {
   CREATURE_LAVA_TOAD = 31,
   CREATURE_VILLAGE_GUARD = 32,
   CREATURE_VILLAGE_HUNTER = 33,
+  CREATURE_BONE_DINOSAUR = 34,
 };
 
 static constexpr bool isCreatureSpeciesAbiValue(int value) {
@@ -1234,6 +1241,7 @@ static constexpr bool isCreatureSpeciesAbiValue(int value) {
     case CREATURE_LAVA_TOAD:
     case CREATURE_VILLAGE_GUARD:
     case CREATURE_VILLAGE_HUNTER:
+    case CREATURE_BONE_DINOSAUR:
       return true;
     default: return false;
   }
@@ -1559,6 +1567,11 @@ enum SoundEventType : uint8_t {
   SE_SPELL_IMPACT = 35,
   SE_SHOCKWAVE = 36,
   SE_MELEE_HIT = 37,
+  SE_CREATURE_CALL = 38,
+  SE_CREATURE_ALERT = 39,
+  SE_CREATURE_ATTACK = 40,
+  SE_CREATURE_DEATH = 41,
+  SE_CREATURE_MOVE = 42,
 };
 
 static constexpr bool isSoundEventTypeValue(int value) {
@@ -1601,6 +1614,11 @@ static constexpr bool isSoundEventTypeValue(int value) {
     case SE_SPELL_IMPACT:
     case SE_SHOCKWAVE:
     case SE_MELEE_HIT:
+    case SE_CREATURE_CALL:
+    case SE_CREATURE_ALERT:
+    case SE_CREATURE_ATTACK:
+    case SE_CREATURE_DEATH:
+    case SE_CREATURE_MOVE:
       return true;
     default: return false;
   }

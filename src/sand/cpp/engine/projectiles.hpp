@@ -19,6 +19,9 @@ class ProjectileSystem {
   void applyRescueBeamInput(Player& p);
   void spawnArrow(Player& p, double charge);
   void spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage);
+  void spawnFireBreath(int owner, double x, double y, double targetX, double targetY, int damage, int phase);
+  void spawnFrost(int owner, double x, double y, double targetX, double targetY, bool shard, int damage, int phase);
+  void freezeSurface(double x, double y, int radius);
   void spawnBlastRound(Player& p);
   void spawnDynamite(const Creature& thrower, double targetX, double targetY);
   void spawnDynamite(Player& thrower);

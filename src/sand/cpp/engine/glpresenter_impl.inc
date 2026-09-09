@@ -237,10 +237,11 @@ void GLPresenter::glCollectDynamicLights() {
                 p.shieldActive);
   }
 
-  int minigunLights = 0;
+  int minigunLights = 0, flameLights = 0;
   auto addProjectile = [&](int kind, double x, double y, double vx, double vy,
                            double charge, int fuse) {
-    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD) add(x, y, 170);
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD || kind == PK_ICE_SHARD) add(x, y, 170);
+    else if (kind == PK_FIRE_BREATH && flameLights++ % 4 == 0) add(x, y, 190);
     else if (kind == PK_BLAST_ROUND) add(x, y, 255);
     else if (kind == PK_DYNAMITE)
       add(x, y, (((fuse / 3) & 1) ? 225 : 185));
@@ -1495,6 +1496,24 @@ void GLPresenter::glDrawItems() {
   for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.count, it.toolTier, it.definitionId, it.px, it.py, it.life, camCol, camRow);
 }
 
+void GLPresenter::glDrawIceShard(double x, double y, double angle, double scale, float alpha, int camCol, int camRow) {
+  double dx = std::cos(angle), dy = std::sin(angle), pixel = .5 * scale * glCellDev;
+  for (int along = -12; along <= 12; along++) {
+    int width = imax(0, (int)std::floor((1 - std::fabs(along) / 12.0) * 4));
+    for (int side = -width; side <= width; side++) {
+      bool edge = std::abs(side) == width;
+      float r = edge ? .18f : side < 0 ? .73f : .30f;
+      float g = edge ? .51f : side < 0 ? .96f : .72f;
+      float b = edge ? .69f : 1.0f;
+      if (side == 0 && along > -9 && along < 10) { r = .92f; g = 1; b = 1; }
+      glUniform4f(glc->uColor, r, g, b, alpha);
+      double wx = x + (dx * along - dy * side) * .5 * scale;
+      double wy = y + (dy * along + dx * side) * .5 * scale;
+      glSolidDev((wx-camCol)*glCellDev+glOffX-pixel*.5, (wy-camRow)*glCellDev+glOffY-pixel*.5, pixel, pixel);
+    }
+  }
+}
+
 void GLPresenter::glDrawProjectiles() {
   const std::vector<float>* external = glUseExtProjectiles ? &glExtProjectiles : nullptr;
   int n = external ? (int)(external->size() / PRS_STRIDE) : (int)E.projectiles.projectiles.size();
@@ -1513,7 +1532,36 @@ void GLPresenter::glDrawProjectiles() {
       kind=p.kind; fuse=p.fuse; rotation=p.rotation;
     }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
-    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD) {
+    if (kind == PK_FIRE_BREATH) {
+      // Overlapping flame tongues join the slow pulses into a continuous plume.
+      double speed = std::max(.1, std::hypot(vx,vy)), nx = vx/speed, ny = vy/speed;
+      for (int layer = 0; layer < 3; layer++) for (int tongue = 0; tongue < 9; tongue++) {
+        double behind = tongue * .8;
+        double curl = std::sin(tongue * 1.7 + E.actorTick * .24 + x * .15) * (layer == 0 ? 1.9 : .8);
+        double size = (layer == 0 ? 3.1 : layer == 1 ? 2.1 : 1.05) * (1-tongue*.035)*glCellDev;
+        double fx = cx + (-nx*behind-ny*curl)*glCellDev, fy = cy + (-ny*behind+nx*curl)*glCellDev;
+        glUniform4f(glc->uColor, 1, layer == 0 ? .20f : layer == 1 ? .52f : .88f,
+          layer == 2 ? .42f : .045f, layer == 0 ? .48f : .82f);
+        glSolidDev(fx-size*.5,fy-size*.5,size,size);
+      }
+      for (int spark = 0; spark < 5; spark++) {
+        double drift = std::sin(spark*4.1+E.actorTick*.11+x)*3.5;
+        glUniform4f(glc->uColor, 1, .64f, .13f, .7f);
+        glSolidDev(cx+(-nx*spark*1.9-ny*drift)*glCellDev,
+          cy+(-ny*spark*1.9+nx*drift-1.5)*glCellDev,.32*glCellDev,.6*glCellDev);
+      }
+      continue;
+    }
+    if (kind == PK_ICE_SHARD) {
+      for (int mote = 1; mote <= 12; mote++) {
+        double drift = std::sin(mote * 2.4 + E.actorTick * .3), size = (.6 - mote * .03) * glCellDev;
+        glUniform4f(glc->uColor, .45f, .85f, 1, .65f - mote * .045f);
+        glSolidDev(cx - vx*mote*.48*glCellDev, cy - (vy*mote*.48+drift)*glCellDev, size, size);
+      }
+      glDrawIceShard(x, y, std::atan2(vy, vx), 1, 1, camCol, camRow);
+      continue;
+    }
+    if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD || kind == PK_FROST_BREATH) {
       const auto* gear = E.content.gear((int)fuse);
       int spell = gear ? gear->spell : 1;
       static const float colors[11][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f},{.55f,.90f,1},{1,.42f,.08f}};
@@ -1546,7 +1594,7 @@ void GLPresenter::glDrawProjectiles() {
         }
         continue;
       }
-      if (kind == PK_RUNE && spell == 10) {
+      if ((kind == PK_RUNE || kind == PK_FROST_BREATH) && spell == 10) {
         // A broad, translucent snow cloud matches the swept collision envelope.
         for (int mote = 0; mote < 28; mote++) {
           double angle = mote * 2.39996 + E.actorTick * .055;
@@ -2044,7 +2092,27 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
           glSolidDev((cx+std::cos(angle)*profile->reach-camCol)*cell+glOffX,
             (cy+std::sin(angle)*profile->reach-camRow)*cell+glOffY,.28*cell,.28*cell);
         }
-      } else if (move == EM_SLAM) mark(aimX, aimY, 10, opacity);
+      } else if (move == EM_SLAM) mark(aimX, aimY, speciesId == CS_FROST_GIANT ? 18 : 10, opacity);
+      else if (move == EM_FROST_STREAM || move == EM_FIRE_STREAM) {
+        bool fire = move == EM_FIRE_STREAM;
+        double mx = cx + facing * (fire ? 15.5 : 3), my = py + (fire ? 5.75 : speciesDef.h * .20);
+        double angle = std::atan2(aimY-my, aimX-mx), reach = std::hypot(aimX-mx,aimY-my);
+        for (int side : {-1, 1}) for (double at = 5; at < reach; at += 3) {
+          double a = angle + side * .10;
+          glUniform4f(glc->uColor, fire ? 1 : .65f, fire ? .50f : .94f, fire ? .12f : 1, opacity * .55f);
+          glSolidDev((mx+std::cos(a)*at-camCol)*cell+glOffX, (my+std::sin(a)*at-camRow)*cell+glOffY, cell*.3, cell*.3);
+        }
+      } else if (move == EM_ICE_SHARD) {
+        double sx = cx + facing * 7, sy = py + speciesDef.h * .42;
+        if (attackState == CAS_CHARGING) {
+          glDrawIceShard(sx, sy, std::atan2(aimY-sy, aimX-sx), .15 + attackProgress * .85, opacity, camCol, camRow);
+          for (int mote = 0; mote < 12; mote++) {
+            double a = mote * 2.39996 + E.actorTick * .08, r = 3 + (1-attackProgress) * 6;
+            glUniform4f(glc->uColor, .65f, .94f, 1, opacity);
+            glSolidDev((sx+std::cos(a)*r-camCol)*cell+glOffX, (sy+std::sin(a)*r-camRow)*cell+glOffY, cell*.4, cell*.4);
+          }
+        }
+      }
       else {
         double dx = aimX-cx, dy = aimY-cy, distance = std::max(1.0, std::hypot(dx,dy));
         for (double at = speciesDef.w*.5+2; at < distance; at += 3) {
@@ -2074,9 +2142,14 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   int clipState = !alive ? CC_DEATH : hurtCooldown > 0 ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : animFrame ? CC_MOVE : CC_IDLE;
+  bool breathing = alive && !hurtCooldown && attackState == CAS_FIRING &&
+    ((speciesId == CS_FROST_GIANT && attackPattern == 0) || (speciesId == CS_BONE_DINOSAUR && attackPattern == 2));
+  if (breathing) clipState = CC_SPECIAL;
+  if (alive && !hurtCooldown && speciesId == CS_FROST_GIANT && attackPattern == 2
+      && (attackState == CAS_CHARGING || attackState == CAS_FIRING)) clipState = CC_IDLE;
   const auto& clip = art.clips[clipState];
   int pose = !alive ? imin(clip.count - 1, animFrame) : clip.frameAt(E.actorTick);
-  if (alive && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
+  if (alive && !breathing && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
     double progress = attackState == CAS_FIRING ? 1 - attackProgress : attackProgress;
     pose = imin(clip.count - 1, imax(0, (int)(progress * clip.count)));
   }
@@ -2260,12 +2333,66 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                1.0f, CREATURE_SPECIES[speciesId].hostile ? 0.24f : 0.88f, 0.20f, camCol, camRow);
 }
 
+void GLPresenter::glDrawBeds() {
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
+  for (size_t i = 0; i + 4 < bedData.size(); i += 5) {
+    double x = bedData[i + 1] - E.fg.worldOffsetX, y = bedData[i + 2] - E.fg.worldOffsetY;
+    double sx = (x - 5 - camCol) * glCellDev + glOffX, sy = (y - camRow) * glCellDev + glOffY;
+    if (sx > glDevW || sy > glDevH || sx + 11 * glCellDev < 0 || sy + 4 * glCellDev < 0) continue;
+    float light = glActorLight(x - 5, y, 11, 4);
+    auto rect = [&](double dx, double dy, double w, double h, float r, float g, float b) {
+      glUniform4f(glc->uColor, r * light, g * light, b * light, 1);
+      glSolidDev(sx + dx * glCellDev, sy + dy * glCellDev, w * glCellDev, h * glCellDev);
+    };
+    rect(0, 2.5, 11, 1, .30f, .17f, .10f);
+    rect(0, -.5, 1, 4.5, .44f, .27f, .14f);
+    rect(10, 1, 1, 3, .44f, .27f, .14f);
+    rect(1, 0, 9, 2.5, .83f, .78f, .61f);
+    rect(1, -.5, 2.5, 1.5, .94f, .90f, .74f);
+    rect(4, 0, 6, 2.5, .28f, .48f, .46f);
+    rect(4, 0, 6, .5, .48f, .66f, .57f);
+    rect(4, 2, 6, .5, .20f, .35f, .35f);
+  }
+}
+
+bool GLPresenter::glDrawSleepingResident(int id, int speciesId, int npcId, int camCol, int camRow) {
+  if (speciesId < 0 || speciesId >= CS_COUNT) return false;
+  for (size_t i = 0; i + 4 < bedData.size(); i += 5) if ((int)bedData[i + 4] == id) {
+    const auto& art = E.content.creatureArt[(size_t)speciesId];
+    if (!art.width || !art.height) return false;
+    double x = bedData[i + 1] - E.fg.worldOffsetX, y = bedData[i + 2] - E.fg.worldOffsetY;
+    double sx = (x - 4 - camCol) * glCellDev + glOffX, sy = (y - 1 - camRow) * glCellDev + glOffY;
+    float light = glActorLight(x - 5, y, 11, 4);
+    // The blanket covers the body; the resident's rotated head rests on the pillow.
+    int frame = art.clips[CC_IDLE].offset;
+    int headRows = art.height / 3, left = art.width, top = headRows;
+    for (int r = 0; r < headRows; r++) for (int c = 0; c < art.width; c++)
+      if (art.pixels[(frame * art.height + r) * art.width + c]) { left = imin(left, c); top = imin(top, r); }
+    for (int r = top; r < headRows; r++) for (int c = left; c < art.width; c++) {
+      int idx = art.pixels[(frame * art.height + r) * art.width + c];
+      if (idx <= 0 || idx >= (int)art.palette.size()) continue;
+      auto color = art.palette[(size_t)idx];
+      if (npcId && (idx == 10 || idx == 11 || idx == 12)) {
+        float shade = npcId == 2 || npcId == 4 ? .56f : npcId == 6 || npcId == 7 ? .76f : 1;
+        for (int ch = 0; ch < 3; ch++) color[ch] *= shade;
+      }
+      glUniform4f(glc->uColor, color[0] * light, color[1] * light, color[2] * light, color[3]);
+      glSolidDev(sx + (r - top) * art.scale * glCellDev, sy + (c - left) * art.scale * glCellDev,
+                 art.scale * glCellDev, art.scale * glCellDev);
+    }
+    return true;
+  }
+  return false;
+}
+
 void GLPresenter::glDrawCreatures() {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
   if (glUseExtCreatures) {
     int n = (int)(glExtCreatures.size() / CSN_STRIDE);
     for (int i = 0; i < n; i++) { const float* c = &glExtCreatures[(size_t)i * CSN_STRIDE];
+      if (c[CSN_ALIVE] && glDrawSleepingResident((int)c[CSN_ID], (int)c[CSN_SPECIES], (int)c[CSN_NPC_ID], camCol, camRow)) continue;
       glDrawOneCreature((int)c[CSN_SPECIES], c[CSN_X], c[CSN_Y], (int)c[CSN_FACING], (int)c[CSN_HEALTH],
                         (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
                         (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
@@ -2276,6 +2403,7 @@ void GLPresenter::glDrawCreatures() {
   } else {
     for (const Creature& c : E.creatures.creatures) {
       const CreatureSpecies& s = E.creatures.species(c);
+      if (c.alive && glDrawSleepingResident(c.id, c.species, c.npcId, camCol, camRow)) continue;
       glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
                         s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState,
                         c.attackPattern, c.attackProgress,
@@ -2828,6 +2956,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
   glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg
   if (glc->uTint >= 0) glUniform1f(glc->uTint, 1.0f);
+  glDrawBeds();
   glDrawCreatures();
   glDrawChests();
   glDrawPlayers();

@@ -61,6 +61,13 @@ export function createGameLoop(ctx, {
   };
 
   const updateDayNight = (now) => {
+    if (ctx.survival) {
+      const clock = ctx.worldWorker?.getDayClock();
+      if (!clock || ctx.testPaused || ctx.reduced) return false;
+      ctx.dayPhaseOverride = clock.held ? clock.phase : null;
+      if (clock.phase === ctx.dayNight.phase) return false;
+      return applyDayPhase(clock.phase, Math.floor(clock.phase * DAY_CYCLE_MS / DAY_VISUAL_STEP_MS));
+    }
     if (ctx.testPaused || ctx.reduced || ctx.dayPhaseOverride !== null) return false;
     const elapsed = Math.max(0, now - dayCycleStart);
     const bucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
@@ -148,12 +155,13 @@ export function createGameLoop(ctx, {
     ctx.dayPhaseOverride = null;
     const elapsed = Math.max(0, performance.now() - dayCycleStart);
     dayVisualBucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
-    const changed = applyDayPhase(dayPhaseAt(elapsed), dayVisualBucket);
+    const changed = applyDayPhase(ctx.survival ? ctx.dayNight.phase : dayPhaseAt(elapsed), dayVisualBucket);
     recordDayPhase(false);
     return changed;
   };
 
   const applyReplayDayPhase = ({ phase, overridden }) => {
+    if (ctx.survival) return updateDayNight();
     if (overridden) {
       const p = normalizeDayPhase(phase);
       ctx.dayPhaseOverride = p;
@@ -252,6 +260,7 @@ export function createGameLoop(ctx, {
     if (!engine) return;
     const renderStart = performance.now();
     engine.glSetChests(ctx.worldWorker?.getChests() || []);
+    engine.glSetBeds(ctx.worldWorker?.getBeds() || []);
     // Players to overlay come from authority-worker snapshots (own = blue).
     // While the bench is paused we draw none (an empty external set) so the
     // flicker probe sees only the cell grid.

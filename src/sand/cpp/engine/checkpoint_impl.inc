@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 3;
+static constexpr uint32_t CHECKPOINT_VERSION = 4;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -98,6 +98,8 @@ static void checkpointState(CheckpointArchive& a, Engine& e) {
     m.elapsedTicks,m.recoveredWeaponMask,m.pendingObjective,m.nextThreatActorTick,m.extractionThreatWave,m.extractionTicks,
     m.coreDestabilized,m.objectives,m.residentIds);
   a.fields(e.containers.chests,e.discovery.cells,e.discovery.revision);
+  if (a.version >= 4) a.fields(e.worldClock.dayTick, e.worldClock.held, e.beds.beds);
+  else if (a.reading) { e.worldClock = WorldClockSystem(); e.beds.beds.clear(); }
 }
 int CheckpointSystem::write(bool seal) {
   bytes.clear();
@@ -126,7 +128,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   bytes.assign(data,data+length-4); CheckpointArchive a{bytes,true};
   uint32_t magic=0,version=0,worldVersion=0; int cols=0,rows=0;
   a.fields(magic,version,cols,rows,worldVersion);
-  if (magic!=CHECKPOINT_MAGIC || (version!=2 && version!=CHECKPOINT_VERSION) || worldVersion!=WORLD_GENERATION_VERSION || cols!=E.cols || rows!=E.rows) return false;
+  if (magic!=CHECKPOINT_MAGIC || version < 2 || version > CHECKPOINT_VERSION || worldVersion!=WORLD_GENERATION_VERSION || cols!=E.cols || rows!=E.rows) return false;
   for (auto* layer:{&E.fg,&E.bg}) {
     for (auto* body:layer->bodies) delete body;
     for (auto& bucket:layer->bodyStore) for (auto& entry:bucket.second) delete entry.first;
@@ -135,6 +137,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   a.version=version;
   checkpointState(a,E);
   if (!a.valid || a.at!=bytes.size()) return false;
+  if (E.worldClock.dayTick < 0 || E.worldClock.dayTick >= WorldClockSystem::DAY_TICKS) return false;
   const size_t cells=(size_t)E.cols*E.rows;
   for (auto* layer:{&E.fg,&E.bg}) {
     if (layer->gridA.size()!=cells || layer->gridB.size()!=cells || layer->bodyOwner.size()!=cells || layer->cellComp.size()!=cells) return false;

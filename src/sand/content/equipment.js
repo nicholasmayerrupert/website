@@ -44,7 +44,7 @@ add(320, 'Red cordial', 'potion', { power: 45, cooldown: 90, price: 15, descript
 add(321, 'Blue cordial', 'potion', { power: 55, cooldown: 90, price: 15, description: 'Restores 55 mana. Drink with the primary action.' });
 ['Gale Step', 'Windmantle', 'The lost verse', 'Bell clapper'].forEach((name, i) => add(340 + i, name, 'relic', { style: i + 1, price: 0, description: ['An earned breath of wind. Dodge in midair to dash once before landing.', 'Hold jump while falling to ride a gentle current.', 'The words that can wake the Hollow Bell.', 'A forged heart for the silent bell.'][i] }));
 add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 26, mana: 28, cooldown: 66, reach: 64, style: 2, price: 120,
-  description: 'A broad, slow cloud of frost. Chills creatures and freezes water into lasting ice. Recovered from frost giants.' });
+  description: 'A broad cloud of frost. Chills creatures, freezes water, and coats struck surfaces in lasting ice. Recovered from frost giants.' });
 add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 68, style: 3, price: 140,
   description: 'Lob a molten glob that leaves a small pool of real lava. The lingering lava can burn anyone, including its caster.' });
 // Signature trophies are ordinary, stackable inventory items reserved for future recipes.
@@ -71,6 +71,7 @@ const trophies = [
   [428, 'Rootwood heart', 'The Root Knight’s tightly knotted living heart.', '#8eab70', 'antler'],
   [429, 'Glacier heart', 'A blue crystal from a frost giant. Frost feathers gather along its edges.', '#a7e7ed', 'crystal'],
   [430, 'Funerary scarab', 'A lapis scarab wrapped in a scrap of ancient linen.', '#64b8ba', 'scarab'],
+  [432, 'Cinderjaw fang', 'A serrated fossil tooth with an ember trapped inside its root.', '#f3c478', 'fang'],
   [431, 'Magma bladder', 'A cooled, glassy sac from a lava toad, still glowing at its seams.', '#f09a53', 'gland'],
 ];
 for (const [id, name, lore, color, shape] of trophies)

@@ -208,10 +208,12 @@
     psys.updatePlayers();
     projectiles.updateProjectiles();
     itemsys.updateItems();
+    beds.tick();
     creatures.updateCreatures();
     missions.update();
     discovery.update();
     containers.tick();
+    worldClock.tick();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
     return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() ||

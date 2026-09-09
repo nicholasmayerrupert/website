@@ -1003,7 +1003,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     double wish;
     const CreatureBehaviorProfileDef& behavior = creatureBehavior(s);
     const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
-    bool rangedEnemy = attack ? attack->move == EM_RUNE || attack->move == EM_ARROW : behavior.farRange > 0;
+    bool rangedEnemy = attack ? attack->move >= EM_RUNE : behavior.farRange > 0;
     if (hasTarget && rangedEnemy) {
       double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
       if (c.attackState != CAS_IDLE) wish = 0;
@@ -1015,6 +1015,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
                        : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
                        : c.wanderDir * s.walkSpeed * 0.62;
     }
+    if ((c.species == CS_FROST_GIANT || c.species == CS_BONE_DINOSAUR) && c.attackState != CAS_IDLE) wish = 0;
     if (c.roamRadius && (!hasTarget || std::fabs(c.wx - c.homeX) > c.roamRadius + 12)) {
       // Residents pause near visitors and turn before an unsupported edge.
       if (c.wx < c.homeX - c.roamRadius) c.wanderDir = 1;
@@ -1030,6 +1031,12 @@ void CreatureSystem::moveAmphibious(Creature& c) {
         c.wanderDir = -c.wanderDir; c.wanderTicks = 90;
       }
       wish = visitor || c.wanderTicks < 45 ? 0 : c.wanderDir * s.walkSpeed;
+    }
+    if (const auto* bed = E.beds.goal(c.id)) {
+      double dx = bed->wx - (c.wx + s.w * .5);
+      wish = std::fabs(dx) < .4 ? 0 : dx > 0 ? s.walkSpeed : -s.walkSpeed;
+      double ahead = c.wx + (dx > 0 ? 2 : -2);
+      if (c.grounded && !boxHitsSolid(ahead, c.wy + 1, s.w, s.h)) wish = 0;
     }
     // Released researchers wait for extraction instead of fleeing their rescuer.
     if (c.missionActor && c.species == CS_SURVEYOR &&
@@ -1316,7 +1323,7 @@ void CreatureSystem::updateBossAttack(Creature& c) {
   c.attackAimX = tx;
   c.attackAimY = ty;
   c.facing = dx >= 0 ? 1 : -1;
-  E.audio.emit(c.attackPattern == 2 ? SE_BORE_CHARGE : SE_CREATURE,
+  E.audio.emit(c.attackPattern == 2 ? SE_BORE_CHARGE : SE_CREATURE_ALERT,
                c.wx - E.fg.worldOffsetX + s.w * .5,
                c.wy - E.fg.worldOffsetY + s.h * .42,
                1.0, c.species, 0);
@@ -1451,6 +1458,12 @@ void CreatureSystem::dropWeapon(const Creature& c) {
                        c.facing * 0.65, -1.0, IT_PICKUP_DELAY);
 }
 
+void CreatureSystem::emitVoice(const Creature& c, uint8_t type, double intensity) {
+  const auto& s = species(c);
+  E.audio.emit(type, c.wx - E.fg.worldOffsetX + s.w * .5,
+    c.wy - E.fg.worldOffsetY + s.h * .5, intensity, c.species, 0);
+}
+
 void CreatureSystem::killCreature(Creature& c) {
   if (!c.alive) return;
   if (isProtectedNpc(c)) {
@@ -1459,6 +1472,7 @@ void CreatureSystem::killCreature(Creature& c) {
     return;
   }
   c.health = 0;
+  emitVoice(c, SE_CREATURE_DEATH);
   E.missions.onCreatureKilled(c);
   dropWeapon(c);
   c.alive = false;
@@ -1607,16 +1621,21 @@ void CreatureSystem::updateCreatures() {
         c.attackCooldown = imax(c.attackCooldown, 60);
       }
     }
+    int priorTarget = c.targetKind;
     if (c.scanCooldown > 0) c.scanCooldown--; else acquireTarget(c);
+    if (encounterEngaged && priorTarget == CT_NONE && c.targetKind != CT_NONE && species(c).hostile)
+      emitVoice(c, SE_CREATURE_ALERT, .85);
     if (c.missionActor && E.missions.missionId == MI_GREENFALL_RECOVERY &&
         c.targetKind == CT_NONE)
       c.attackCooldown = imax(c.attackCooldown, 60);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
-    double priorX = c.wx;
-    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0 && c.species != CS_LAVA_TOAD) c.health -= 3; }
+    double priorX = c.wx, priorY = c.wy;
+    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0 && c.species != CS_LAVA_TOAD && c.species != CS_BONE_DINOSAUR) c.health -= 3; }
     if (c.slowTicks > 0) c.slowTicks--;
     if (c.rootTicks > 0) c.rootTicks--;
+    bool sleeping = E.beds.rest(c);
+    if (sleeping) continue;
     if (species(c).locomotion == CL_AQUATIC) {
       if (fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold) {
         c.hasHabitatGoal = false;
@@ -1638,9 +1657,23 @@ void CreatureSystem::updateCreatures() {
         blockingCoverage(c.wx, c.wy, species(c).w, species(c).h) >= 0.5) c.health--;
     uint8_t contactHazard = contactHazardAtBox(
       c.wx, c.wy, species(c).w, species(c).h, E.actorTick + c.id * 7);
-    if (contactHazard != CHP_NONE && !(c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)))
+    if (contactHazard != CHP_NONE && !((c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)) || (c.species == CS_BONE_DINOSAUR && contactHazard == CHP_FIRE)))
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
+    int priorAttack = c.attackState, priorCooldown = c.attackCooldown;
     if (encounterEngaged && !c.rootTicks) attackTarget(c);
+    if ((priorAttack != CAS_FIRING && c.attackState == CAS_FIRING) ||
+        (priorAttack == CAS_IDLE && c.attackState == CAS_IDLE && priorCooldown == 0 && c.attackCooldown > 0))
+      emitVoice(c, SE_CREATURE_ATTACK);
+    // Sparse, staggered calls and footfalls never consume simulation randomness.
+    int callPeriod = 660 + (c.species * 31 + c.id * 17) % 420;
+    if (c.targetKind == CT_NONE && c.attackState == CAS_IDLE && (E.actorTick + c.id * 137) % callPeriod == 0)
+      emitVoice(c, SE_CREATURE_CALL, .65);
+    const auto& soundSpecies = species(c);
+    int movePeriod = soundSpecies.locomotion == CL_FLYING ? 30 : soundSpecies.locomotion == CL_AQUATIC ? 48 : 20 + soundSpecies.w;
+    bool audibleMotion = std::hypot(c.wx - priorX, c.wy - priorY) > .06;
+    if (audibleMotion && (c.grounded || soundSpecies.locomotion == CL_AQUATIC || soundSpecies.locomotion == CL_FLYING)
+        && (E.actorTick + c.id * 7) % movePeriod == 0)
+      emitVoice(c, SE_CREATURE_MOVE, .55);
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement
     // instead of every creature sharing the same two-frame global blink.

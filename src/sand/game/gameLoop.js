@@ -421,6 +421,8 @@ export function createGameLoop(ctx, {
     const listener = audioListener();
     if (listener) {
       ctx.audio.updatePlayerEffects(ctx.survival ? localPlayer() : null);
+      ctx.audio.updateScore(ctx.survival ? localPlayer() : null,
+        ctx.worldWorker?.getCreaturesForRender(), ctx.gameplayPaused || ctx.testPaused || ctx.reduced);
       const soundEvents = ctx.worldWorker?.consumeSoundEvents();
       if (soundEvents?.length) ctx.audio.playEvents(soundEvents, listener);
       if (ctx.audio.enabled && !ctx.audio.muted && now - lastAmbienceSample >= 125) {

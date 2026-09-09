@@ -1,0 +1,430 @@
+{
+  "title": "Aster \u2014 A Light Left in the Window",
+  "soundfontSHA256": "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe",
+  "tracks": [
+    {
+      "id": "hearth",
+      "title": "A Light Left in the Window",
+      "mode": "explore",
+      "bpm": 72,
+      "meter": 3,
+      "style": "hearth",
+      "form": [
+        "intro",
+        "A",
+        "Av",
+        "B",
+        "C",
+        "Ar",
+        "coda"
+      ],
+      "lead": "piano",
+      "key": "D minor / Dorian",
+      "bars": 48,
+      "seconds": 124.0,
+      "notes": 821,
+      "sections": [
+        {
+          "beat": 0,
+          "name": "intro"
+        },
+        {
+          "beat": 12,
+          "name": "A"
+        },
+        {
+          "beat": 36,
+          "name": "Av"
+        },
+        {
+          "beat": 60,
+          "name": "B"
+        },
+        {
+          "beat": 84,
+          "name": "C"
+        },
+        {
+          "beat": 108,
+          "name": "Ar"
+        },
+        {
+          "beat": 132,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -23,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-28.69",
+          "input_tp": "-14.96",
+          "input_lra": "9.90",
+          "input_thresh": "-38.87",
+          "output_i": "-22.50",
+          "output_tp": "-7.68",
+          "output_lra": "8.20",
+          "output_thresh": "-32.59",
+          "normalization_type": "dynamic",
+          "target_offset": "-0.50"
+        }
+      },
+      "bytes": 1985018
+    },
+    {
+      "id": "canopy",
+      "title": "Where the Leaves Remember",
+      "mode": "explore",
+      "bpm": 96,
+      "meter": 3,
+      "style": "canopy",
+      "form": [
+        "intro",
+        "A",
+        "B",
+        "Av",
+        "C",
+        "Br",
+        "Ar",
+        "coda"
+      ],
+      "lead": "flute",
+      "key": "D Dorian / F Lydian",
+      "bars": 56,
+      "seconds": 109.0,
+      "notes": 1041,
+      "sections": [
+        {
+          "beat": 0,
+          "name": "intro"
+        },
+        {
+          "beat": 12,
+          "name": "A"
+        },
+        {
+          "beat": 36,
+          "name": "B"
+        },
+        {
+          "beat": 60,
+          "name": "Av"
+        },
+        {
+          "beat": 84,
+          "name": "C"
+        },
+        {
+          "beat": 108,
+          "name": "Br"
+        },
+        {
+          "beat": 132,
+          "name": "Ar"
+        },
+        {
+          "beat": 156,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -23,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-25.39",
+          "input_tp": "-13.33",
+          "input_lra": "10.10",
+          "input_thresh": "-35.71",
+          "output_i": "-22.31",
+          "output_tp": "-7.99",
+          "output_lra": "8.10",
+          "output_thresh": "-32.41",
+          "normalization_type": "dynamic",
+          "target_offset": "-0.69"
+        }
+      },
+      "bytes": 1745108
+    },
+    {
+      "id": "hollows",
+      "title": "The Earth Keeps Its Stars",
+      "mode": "explore",
+      "bpm": 68,
+      "meter": 4,
+      "style": "hollows",
+      "form": [
+        "intro",
+        "A",
+        "C",
+        "B",
+        "Ar",
+        "coda"
+      ],
+      "lead": "oboe",
+      "key": "D minor / G minor",
+      "bars": 40,
+      "seconds": 145.176,
+      "notes": 566,
+      "sections": [
+        {
+          "beat": 0,
+          "name": "intro"
+        },
+        {
+          "beat": 16,
+          "name": "A"
+        },
+        {
+          "beat": 48,
+          "name": "C"
+        },
+        {
+          "beat": 80,
+          "name": "B"
+        },
+        {
+          "beat": 112,
+          "name": "Ar"
+        },
+        {
+          "beat": 144,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -23,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-32.65",
+          "input_tp": "-19.14",
+          "input_lra": "8.60",
+          "input_thresh": "-42.79",
+          "output_i": "-21.99",
+          "output_tp": "-6.88",
+          "output_lra": "7.70",
+          "output_thresh": "-32.08",
+          "normalization_type": "dynamic",
+          "target_offset": "-1.01"
+        }
+      },
+      "bytes": 2323982
+    },
+    {
+      "id": "afterglow",
+      "title": "All the Roads Lead Home",
+      "mode": "explore",
+      "bpm": 78,
+      "meter": 3,
+      "style": "afterglow",
+      "form": [
+        "intro",
+        "B",
+        "A",
+        "C",
+        "Br",
+        "Ar",
+        "coda"
+      ],
+      "lead": "cello",
+      "key": "F major / D minor / D major",
+      "bars": 48,
+      "seconds": 114.769,
+      "notes": 907,
+      "sections": [
+        {
+          "beat": 0,
+          "name": "intro"
+        },
+        {
+          "beat": 12,
+          "name": "B"
+        },
+        {
+          "beat": 36,
+          "name": "A"
+        },
+        {
+          "beat": 60,
+          "name": "C"
+        },
+        {
+          "beat": 84,
+          "name": "Br"
+        },
+        {
+          "beat": 108,
+          "name": "Ar"
+        },
+        {
+          "beat": 132,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -23,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-28.17",
+          "input_tp": "-15.37",
+          "input_lra": "8.10",
+          "input_thresh": "-38.37",
+          "output_i": "-21.93",
+          "output_tp": "-8.23",
+          "output_lra": "5.30",
+          "output_thresh": "-32.02",
+          "normalization_type": "dynamic",
+          "target_offset": "-1.07"
+        }
+      },
+      "bytes": 1837475
+    },
+    {
+      "id": "embers",
+      "title": "Carry the Flame",
+      "mode": "combat",
+      "bpm": 138,
+      "meter": 4,
+      "style": "embers",
+      "form": [
+        "intro",
+        "A",
+        "Av",
+        "B",
+        "C",
+        "Ar",
+        "Br",
+        "coda"
+      ],
+      "lead": "horn",
+      "key": "D minor / Dorian",
+      "bars": 56,
+      "seconds": 101.391,
+      "notes": 2129,
+      "sections": [
+        {
+          "beat": 0,
+          "name": "intro"
+        },
+        {
+          "beat": 16,
+          "name": "A"
+        },
+        {
+          "beat": 48,
+          "name": "Av"
+        },
+        {
+          "beat": 80,
+          "name": "B"
+        },
+        {
+          "beat": 112,
+          "name": "C"
+        },
+        {
+          "beat": 144,
+          "name": "Ar"
+        },
+        {
+          "beat": 176,
+          "name": "Br"
+        },
+        {
+          "beat": 208,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -21,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-25.63",
+          "input_tp": "-12.64",
+          "input_lra": "6.10",
+          "input_thresh": "-35.92",
+          "output_i": "-20.34",
+          "output_tp": "-4.81",
+          "output_lra": "4.40",
+          "output_thresh": "-30.44",
+          "normalization_type": "dynamic",
+          "target_offset": "-0.66"
+        }
+      },
+      "bytes": 1623472
+    },
+    {
+      "id": "bell",
+      "title": "Against the Hollow Bell",
+      "mode": "combat",
+      "bpm": 144,
+      "meter": 3.5,
+      "style": "bell",
+      "form": [
+        "intro",
+        "C",
+        "A",
+        "B",
+        "Cv",
+        "Ar",
+        "Br",
+        "coda"
+      ],
+      "lead": "strings",
+      "key": "D minor / Eb major / D major",
+      "bars": 56,
+      "seconds": 85.667,
+      "notes": 1948,
+      "sections": [
+        {
+          "beat": 0.0,
+          "name": "intro"
+        },
+        {
+          "beat": 14.0,
+          "name": "C"
+        },
+        {
+          "beat": 42.0,
+          "name": "A"
+        },
+        {
+          "beat": 70.0,
+          "name": "B"
+        },
+        {
+          "beat": 98.0,
+          "name": "Cv"
+        },
+        {
+          "beat": 126.0,
+          "name": "Ar"
+        },
+        {
+          "beat": 154.0,
+          "name": "Br"
+        },
+        {
+          "beat": 182.0,
+          "name": "coda"
+        }
+      ],
+      "mastering": {
+        "targetLUFS": -21,
+        "truePeakCeiling": -3,
+        "source": {
+          "input_i": "-26.85",
+          "input_tp": "-12.83",
+          "input_lra": "5.60",
+          "input_thresh": "-37.02",
+          "output_i": "-19.58",
+          "output_tp": "-3.84",
+          "output_lra": "3.10",
+          "output_thresh": "-29.70",
+          "normalization_type": "dynamic",
+          "target_offset": "-1.42"
+        }
+      },
+      "bytes": 1371869
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 // Browser sound renderer for the sand engine.
 //
 // C++ reports semantic events and local ambience measurements; this module is
-// the only place that knows about Web Audio, synthesis, panning, mixing, voice
+// the only place that knows about Web Audio, samples, synthesis, panning, mixing, voice
 // limits, browser activation, mute persistence, or document visibility.
 
 import { OFF, SOUND_EVENT, STRIDES } from '../wasmBridge/abi.generated.js';
@@ -10,6 +10,7 @@ import {
   AMBIENCE_GROUP_MIXER, AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
 } from '../materials.generated.js';
 import { loadAudioAssets, TNT_EXPLOSION_LAYERS } from './audioAssets.js';
+import { createMusicDirector, scoreThreat } from './musicDirector.js';
 
 const STORAGE_KEY = 'sand-audio-muted';
 export function buildAmbienceVoiceSpecs(groups = AMBIENCE_GROUP_MIXER) {
@@ -103,6 +104,40 @@ const EVENT_COOLDOWN_MS = Object.freeze({
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+
+const SAMPLE_FAMILIES = Object.freeze({
+  stone: ['stone1', 'stone2', 'stone3'],
+  wood: ['wood1', 'wood2', 'wood3'],
+  metal: ['metal1', 'metal2', 'metal3'],
+  glass: ['glass1', 'glass2', 'glass3'],
+  hit: ['hit1', 'hit2', 'hit3'],
+  step: ['step1', 'step2', 'step3'],
+  soil: ['soil1', 'soil2', 'soil3'],
+  swish: ['swish1', 'swish2', 'swish3'],
+  cloth: ['cloth1', 'cloth2', 'cloth3'],
+  splash: ['splash1', 'splash2', 'splash3'],
+  pickup: ['pickup1', 'pickup2'],
+  creature: ['creature1', 'creature2'],
+});
+
+const COMBAT_EVENTS = new Set([
+  SOUND_EVENT.SWING, SOUND_EVENT.BOW, SOUND_EVENT.MELEE_HIT, SOUND_EVENT.RUNE,
+  SOUND_EVENT.HEAVY_IMPACT, SOUND_EVENT.SPELL_IMPACT, SOUND_EVENT.SHOCKWAVE,
+  SOUND_EVENT.HURT, SOUND_EVENT.BLAST_GUN, SOUND_EVENT.BORE_CHARGE,
+  SOUND_EVENT.BORE_FIRE, SOUND_EVENT.ACID_MORTAR, SOUND_EVENT.CLUSTER_LAUNCH,
+  SOUND_EVENT.MINIGUN, SOUND_EVENT.SHIELD_HIT, SOUND_EVENT.SHIELD_BREAK,
+  SOUND_EVENT.SPAWN_BREACH,
+]);
+
+export function materialSoundFamily(material) {
+  const spec = MATERIAL_BY_ID[material];
+  if ([MAT.ICE, MAT.GLASS, MAT.CRYSTAL, MAT.LIGHT].includes(material)) return 'glass';
+  if (spec?.kind === KIND.LIQUID) return 'splash';
+  if (spec?.kind === KIND.POWDER) return 'soil';
+  if (/WOOD|LEAF|SEED|PLANT|VINE|CACTUS|MUSH|BRAMBLE|REED|FROND/.test(spec?.name || '')) return 'wood';
+  if (material === MAT.RIGID) return 'stone';
+  return 'stone';
+}
 
 export function sandMediaMetadata() {
   return {
@@ -224,9 +259,9 @@ export function buildTntExplosionBuffer(context, assets) {
 export function explosionVoiceSpec(strength, spatial, variation = 0.5) {
   const size = clamp((strength - 0.4) / 3.6);
   return {
-    gain: Math.min(1.05, Math.sqrt(clamp(strength, 0.08, 4)) * 0.65) * spatial.gain,
-    rate: 1.13 - size * 0.36 + (variation - 0.5) * 0.14,
-    frequency: 900 + 11000 * Math.exp(-spatial.distance / 100),
+    gain: Math.min(1.15, Math.sqrt(clamp(strength, 0.08, 4)) * 0.8) * spatial.gain,
+    rate: 1.03 - size * 0.20 + (variation - 0.5) * 0.10,
+    frequency: 3200 + 11000 * Math.exp(-spatial.distance / 180),
     pan: spatial.pan * 0.88,
   };
 }
@@ -241,7 +276,7 @@ function writeStoredMuted(muted) {
   catch { /* storage may be unavailable in third-party/private embeds */ }
 }
 
-export function createSandAudio({ expeditionScore = false, fantasyScore = false } = {}) {
+export function createSandAudio({ expeditionScore = false } = {}) {
   let context = null;
   let unlocked = false;
   let master = null;
@@ -254,12 +289,15 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
   let activeVoices = 0;
   let noiseBuffer = null;
   let brownBuffer = null;
-  let crackleBuffer = null;
+  let musicBus = null;
+  let musicDirector = null;
+  let scorePaused = false;
+  let scorePlayer = null;
+  let assetsReady = Promise.resolve();
   let ambienceVoices = null;
   let recordedAssets = null;
   let movementVoices = null;
-  let scoreTimer = null;
-  let scoreBar = 0;
+  const lastVariant = new Map();
   let playerEffects = { id: 0, jetpack: false, shield: false };
   const lastEventAt = new Map();
   const lastRecordedWeaponAt = new Map();
@@ -275,7 +313,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     const length = Math.ceil(context.sampleRate * seconds);
     const buffer = context.createBuffer(1, length, context.sampleRate);
     const out = buffer.getChannelData(0);
-    let seed = kind === 'brown' ? 0x51f15e : kind === 'crackle' ? 0xc9a31e : 0x7f4a7c;
+    let seed = kind === 'brown' ? 0x51f15e : 0x7f4a7c;
     let brown = 0;
     for (let i = 0; i < length; i++) {
       seed = Math.imul(seed ^ (seed >>> 15), 2246822519) >>> 0;
@@ -283,9 +321,6 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       if (kind === 'brown') {
         brown = clamp((brown + white * 0.055) / 1.045, -1, 1);
         out[i] = brown * 2.4;
-      } else if (kind === 'crackle') {
-        const impulse = (seed & 1023) < 9 ? white * (0.45 + ((seed >>> 10) & 255) / 255) : 0;
-        out[i] = white * 0.08 + impulse;
       } else out[i] = white;
     }
     return buffer;
@@ -306,24 +341,16 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
   };
 
   const createAmbienceVoice = (spec) => {
-    const source = context.createBufferSource();
-    source.loop = true;
-    source.buffer = spec.noise === 'white' ? noiseBuffer
-      : spec.noise === 'crackle' ? crackleBuffer : brownBuffer;
-    const filter = context.createBiquadFilter();
-    filter.type = spec.filterType;
-    filter.frequency.value = spec.frequency;
-    filter.Q.value = spec.q;
-    const gain = context.createGain();
-    gain.gain.value = 0;
-    source.connect(filter); filter.connect(gain);
-    const panner = connectSpatial(gain, ambienceBus, 0);
-    source.start();
-    return { source, gain, panner, volume: spec.gain };
+    const asset = { water: 'waterFlow', fire: 'fireLoop', lava: 'bubbleLoop', acid: 'bubbleLoop' }[spec.name];
+    if (!recordedAssets?.[asset] || !spec.gain) return null;
+    const voice = createMovementVoice(recordedAssets[asset], {
+      frequency: spec.name === 'fire' ? 6500 : 3000, destination: ambienceBus,
+    });
+    return { ...voice, volume: spec.gain };
   };
 
   const createMovementVoice = (buffer, {
-    filterType = 'lowpass', frequency = 7000, q = 0.2, rate = 1,
+    filterType = 'lowpass', frequency = 7000, q = 0.2, rate = 1, destination = effectsBus,
   } = {}) => {
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -336,7 +363,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     const gain = context.createGain();
     gain.gain.value = 0.0001;
     source.connect(filter); filter.connect(gain);
-    const panner = connectSpatial(gain, effectsBus, 0);
+    const panner = connectSpatial(gain, destination, 0);
     source.start();
     return { source, gain, panner, baseRate: rate };
   };
@@ -398,7 +425,8 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     try { init(); } catch {
       const failed = context;
       context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
-      noiseBuffer = brownBuffer = crackleBuffer = null;
+      musicDirector?.destroy();
+      musicBus = musicDirector = noiseBuffer = brownBuffer = null;
       try { failed?.close(); } catch { /* gesture will retry with a new context */ }
     }
   };
@@ -410,16 +438,19 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     master = context.createGain();
     master.gain.value = 0;
     const compressor = context.createDynamicsCompressor();
-    compressor.threshold.value = -15;
-    compressor.knee.value = 16;
-    compressor.ratio.value = 7;
-    compressor.attack.value = 0.004;
+    compressor.threshold.value = -12;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.008;
     compressor.release.value = 0.22;
     effectsBus = context.createGain();
     ambienceBus = context.createGain();
     effectsBus.gain.value = 0.82;
     ambienceBus.gain.value = 0.6;
-    effectsBus.connect(master); ambienceBus.connect(master);
+    musicBus = context.createGain();
+    musicBus.gain.value = 0.42;
+    effectsBus.connect(master); ambienceBus.connect(master); musicBus.connect(master);
+    if (expeditionScore) musicDirector = createMusicDirector(context, musicBus);
     // The compressor controls sustained loudness. A soft peak guard catches
     // coincident blast transients, with a linear response below the knee.
     const peakInput = context.createGain();
@@ -436,41 +467,28 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     peakInput.connect(peakGuard); peakGuard.connect(context.destination);
     noiseBuffer = makeNoise(2.1, 'white');
     brownBuffer = makeNoise(2.3, 'brown');
-    crackleBuffer = makeNoise(2.7, 'crackle');
-    ambienceVoices = AMBIENCE_VOICE_SPECS.map(createAmbienceVoice);
     movementVoices = {
-      lava: createMovementVoice(brownBuffer, { frequency: 230, q: 0.5, rate: 0.72 }),
-      gas: createMovementVoice(noiseBuffer, {
-        filterType: 'highpass', frequency: 1350, q: 0.16, rate: 0.94,
-      }),
       acid: createMovementVoice(noiseBuffer, {
-        filterType: 'highpass', frequency: 2250, q: 0.2, rate: 1.04,
-      }),
-      minigun: createMovementVoice(crackleBuffer, {
-        filterType: 'bandpass', frequency: 1750, q: 0.46, rate: 1.32,
-      }),
-      jetpackBody: createMovementVoice(brownBuffer, {
-        filterType: 'lowpass', frequency: 520, q: 0.62, rate: 0.92,
-      }),
-      jetpackHiss: createMovementVoice(noiseBuffer, {
-        filterType: 'bandpass', frequency: 1850, q: 0.48, rate: 1.08,
-      }),
-      shieldHum: createMovementVoice(crackleBuffer, {
-        filterType: 'bandpass', frequency: 1120, q: 1.9, rate: 0.64,
+        filterType: 'highpass', frequency: 2250, q: .2, rate: 1.04,
       }),
     };
     const loadingContext = context;
-    loadAudioAssets(context).then((assets) => {
+    assetsReady = loadAudioAssets(context).then((assets) => {
       if (destroyed || context !== loadingContext) return;
-      recordedAssets = {
-        ...assets,
-        tntExplosion: buildTntExplosionBuffer(context, assets),
-      };
-      movementVoices.water = createMovementVoice(assets.waterFlow, { frequency: 6800, q: 0.15 });
-      movementVoices.sand = createMovementVoice(assets.sandFlow, {
-        filterType: 'highpass', frequency: 720, q: 0.18,
-      });
-    }).catch((error) => console.warn('[sand audio] recorded assets unavailable', error));
+      recordedAssets = { ...assets, tntExplosion: buildTntExplosionBuffer(context, assets) };
+      ambienceVoices = AMBIENCE_VOICE_SPECS.map(createAmbienceVoice);
+      for (const [name, asset, options] of [
+        ['water', 'waterFlow', { frequency: 6800 }],
+        ['sand', 'sandFlow', { frequency: 6000 }],
+        ['lava', 'bubbleLoop', { frequency: 900, rate: .72 }],
+        ['gas', 'windLoop', { frequency: 4000 }],
+        ['jetpackBody', 'fireLoop', { frequency: 650, rate: .82 }],
+        ['jetpackHiss', 'windLoop', { frequency: 4300 }],
+        ['shieldHum', 'windLoop', { frequency: 1600, rate: .7 }],
+      ]) {
+        if (assets[asset]) movementVoices[name] = createMovementVoice(assets[asset], options);
+      }
+    });
     applyMaster(true);
     return context;
   };
@@ -482,9 +500,10 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     master.gain.cancelScheduledValues(now);
     if (immediate) master.gain.setValueAtTime(target, now);
     else master.gain.setTargetAtTime(target, now, target ? 0.035 : 0.025);
+    musicDirector?.setAudible(audible() && !scorePaused);
     if (!audible()) {
       if (ambienceVoices) for (const voice of ambienceVoices)
-        voice.gain.gain.setTargetAtTime(0, now, 0.04);
+        voice?.gain.gain.setTargetAtTime(0, now, 0.04);
       if (movementVoices) for (const voice of Object.values(movementVoices))
         voice.gain.gain.setTargetAtTime(0.0001, now, 0.04);
     }
@@ -500,25 +519,21 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
         navigator.audioSession.type = 'playback';
       const ctx = init();
       if (!ctx || destroyed) return false;
+      musicDirector?.activate();
       // WebKit also exposes a non-standard `interrupted` state after an audio
       // session interruption. It needs the same resume attempt as `suspended`.
       if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
       unlocked = ctx.state === 'running';
       applyMaster();
-      if (expeditionScore && !scoreTimer && ctx.state === 'running') {
-        playScoreBar();
-        scoreTimer = setInterval(playScoreBar, 4000);
-      }
       return ctx.state === 'running';
     } catch { return false; }
   };
 
-  const trackVoice = (source, weaponExplosion = false) => {
-    // Projectile fallback synthesis preserves every detonation onset.
-    if (weaponExplosion) return;
-    activeVoices++;
+  const trackVoice = (source, cleanup, weaponExplosion = false) => {
+    if (!weaponExplosion) activeVoices++;
     source.onended = () => {
-      activeVoices = Math.max(0, activeVoices - 1);
+      if (!weaponExplosion) activeVoices = Math.max(0, activeVoices - 1);
+      cleanup();
     };
   };
 
@@ -539,8 +554,11 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + Math.min(attack, duration * 0.45));
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    source.connect(filter); filter.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(source, weaponExplosion);
+    source.connect(filter); filter.connect(envelope);
+    const panner = connectSpatial(envelope, effectsBus, pan);
+    trackVoice(source, () => {
+      source.disconnect(); filter.disconnect(); envelope.disconnect(); panner?.disconnect();
+    }, weaponExplosion);
     source.start(now, (context.currentTime * 0.371) % Math.max(0.01, buffer.duration - duration), duration);
   };
 
@@ -558,38 +576,26 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + Math.min(attack, duration * 0.45));
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    osc.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(osc, weaponExplosion);
+    osc.connect(envelope);
+    const panner = connectSpatial(envelope, effectsBus, pan);
+    trackVoice(osc, () => {
+      osc.disconnect(); envelope.disconnect(); panner?.disconnect();
+    }, weaponExplosion);
     osc.start(now); osc.stop(now + duration + 0.01);
   };
 
-  // An original, quiet four-chord motif shares the sound-effects voice budget,
-  // gesture unlock, mute, visibility, and teardown lifecycle.
-  const playScoreBar = () => {
-    if (!audible() || context?.state !== 'running' || activeVoices > MAX_VOICES - 8) return;
-    if (fantasyScore) {
-      const chord = [[50,57,62,65],[48,55,60,64],[46,53,58,62],[48,55,60,67]][scoreBar%4];
-      for (let i=0;i<8;i++) playTone({from:440*2**((chord[i%4]-69)/12),to:440*2**((chord[i%4]-69)/12)*.998,
-        duration:1.45,gain:.018,attack:.004,pan:i%2?.18:-.18,delay:i*.48,wave:'triangle'});
-      if (scoreBar%2===0) playTone({from:440*2**(([74,77,72,69][scoreBar%4]-69)/12),duration:2.6,gain:.012,attack:.18,delay:.8,wave:'sine',pan:.25});
-      scoreBar++; return;
-    }
-    const root = [48, 53, 57, 55][Math.floor(scoreBar / 2) % 4];
-    for (const [index, interval] of [0, 7, 14].entries()) {
-      playTone({
-        from: 440 * 2 ** ((root + interval - 69) / 12),
-        duration: 5.8, gain: .016, attack: .9,
-        pan: (index - 1) * .35, delay: index * .09,
-      });
-    }
-    const melody = [76, 79, 81, 79, 76, 74, 72, 74][scoreBar % 8];
-    playTone({ from: 440 * 2 ** ((melody - 69) / 12),
-      duration: 3.2, gain: .019, pan: .2, delay: 1.1, attack: .025 });
-    scoreBar++;
+  const duckMusic = (amount = .45) => {
+    if (!musicBus) return;
+    const now = context.currentTime;
+    const param = musicBus.gain;
+    if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(now);
+    else param.cancelScheduledValues(now);
+    param.setTargetAtTime(.42 * Math.max(.72, amount), now, .045);
+    param.setTargetAtTime(.42, now + .6, .8);
   };
 
   const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
-    attack = 0.004, frequency = 0, explosion = false, weaponExplosion = false,
+    attack = 0.004, release = 0.04, frequency = 0, explosion = false, weaponExplosion = false,
     duration: requestedDuration }) => {
     if (!buffer || !audible() || !context
         || (!explosion && !weaponExplosion && activeVoices >= MAX_VOICES)
@@ -602,7 +608,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.linearRampToValueAtTime(gain, now + attack);
     const duration = Math.min(buffer.duration / rate, requestedDuration ?? Infinity);
-    envelope.gain.setValueAtTime(gain, now + Math.max(0.01, duration - 0.04));
+    envelope.gain.setValueAtTime(gain, now + Math.max(attack, duration - release));
     envelope.gain.linearRampToValueAtTime(0.0001, now + duration);
     let filter = null;
     if (frequency) {
@@ -610,7 +616,10 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       filter.type = 'lowpass'; filter.frequency.value = frequency; filter.Q.value = 0.5;
       source.connect(filter); filter.connect(envelope);
     } else source.connect(envelope);
-    connectSpatial(envelope, effectsBus, pan);
+    const panner = connectSpatial(envelope, effectsBus, pan);
+    const cleanup = () => {
+      source.disconnect(); filter?.disconnect(); envelope.disconnect(); panner?.disconnect();
+    };
     if (explosion) {
       // Keep fresh impacts audible during volleys; retire the oldest tail with
       // a short fade so stealing a voice never cuts its waveform abruptly.
@@ -631,9 +640,9 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       source.onended = () => {
         const index = explosionVoices.indexOf(voice);
         if (index >= 0) explosionVoices.splice(index, 1);
-        source.disconnect(); filter?.disconnect(); envelope.disconnect();
+        cleanup();
       };
-    } else trackVoice(source, weaponExplosion);
+    } else trackVoice(source, cleanup, weaponExplosion);
     source.start(now, 0, duration * rate);
     return true;
   };
@@ -663,313 +672,109 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
       });
       return;
     }
-    // The first blast can land before recorded assets finish decoding, and a
-    // failed request must not make the game's central effect silent.
-    playNoise({ duration: 0.09 / rate, gain: gain * 0.40, pan,
-      frequency: Math.min(4200, frequency), type: 'lowpass', q: 0.5,
-      rate, attack: 0.001, weaponExplosion });
-    playNoise({ duration: 0.85 / rate, gain: gain * 0.52, pan, frequency: 320 * rate,
-      type: 'lowpass', q: 0.6, rate,
-      buffer: brownBuffer, attack: 0.003, weaponExplosion });
-    playTone({ from: 112 * rate, to: 36, duration: 0.58 / rate, gain: gain * 0.48, pan,
-      wave: 'sine', delay: 0.006, attack: 0.003, weaponExplosion });
+    // A recorded gun report supplies the onset if the explosion is unavailable.
+    playSample({ buffer: recordedAssets?.explosionBurst
+      || recordedAssets?.blastGunReport, gain, pan, rate, frequency,
+      explosion: true, weaponExplosion });
   };
 
-  const renderEvent = (type, strength, material, spatial, variation = 0.5) => {
-    const gain = clamp(strength, 0.08, 2.5) * spatial.gain;
-    const pan = spatial.pan;
-    const pitch = 0.88 + ((material * 37) % 17) / 50;
-    if (type === SOUND_EVENT.BLAST_GUN) {
-      // A compact real report anchors the shot. Separate pressure, receiver,
-      // sub-body, and mechanical layers give the destructive starter gun weight
-      // without turning its automatic fire into one clipped wall of noise.
-      playRecordedWeapon('blastGunReport', {
-        gain: Math.min(0.38, gain * 0.34), pan, rate: 0.94 + variation * 0.08,
-      });
-      playNoise({ duration: 0.055, gain: gain * 0.29, pan, frequency: 3150,
-        type: 'highpass', q: 0.32, rate: 1.08 + variation * 0.12, attack: 0.0008 });
-      playNoise({ duration: 0.115, gain: gain * 0.16, pan, frequency: 760,
-        type: 'bandpass', q: 0.66, rate: 0.94 + variation * 0.09,
-        buffer: brownBuffer, delay: 0.006, attack: 0.002 });
-      playTone({ from: 158, to: 46, duration: 0.22, gain: gain * 0.22, pan,
-        wave: 'sine', attack: 0.002 });
-      playTone({ from: 690 + variation * 80, to: 210, duration: 0.11,
-        gain: gain * 0.07, pan, wave: 'sawtooth', delay: 0.008, attack: 0.0015 });
-      playNoise({ duration: 0.21, gain: gain * 0.14, pan, frequency: 245,
-        type: 'lowpass', q: 0.55, rate: 0.88 + variation * 0.08,
-        buffer: brownBuffer, delay: 0.022, attack: 0.003 });
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.11, pan, rate: 0.91 + variation * 0.14,
-        delay: 0.052, key: 'blast-action',
-      });
-    } else if (type === SOUND_EVENT.BORE_CHARGE) {
-      // A long mechanical latch feeds a rising rail-charge so the warning spans
-      // most of the wind-up instead of fading before the beam commits.
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.10, pan, rate: 0.66 + variation * 0.08,
-        key: 'bore-charge-action',
-      });
-      playTone({ from: 68, to: 520, duration: 0.92, gain: gain * 0.18, pan,
-        wave: 'sawtooth', delay: 0.018, attack: 0.07 });
-      playTone({ from: 285, to: 1680, duration: 0.86, gain: gain * 0.10, pan,
-        wave: 'triangle', delay: 0.06, attack: 0.09 });
-      playNoise({ duration: 0.82, gain: gain * 0.09, pan, frequency: 2150,
-        type: 'bandpass', q: 1.7, rate: 0.84 + variation * 0.10,
-        buffer: crackleBuffer, delay: 0.04, attack: 0.10 });
+  const chooseSample = (family) => {
+    const keys = SAMPLE_FAMILIES[family] || [family];
+    const available = keys.filter((key) => recordedAssets?.[key]);
+    if (!available.length) return null;
+    const previous = lastVariant.get(family);
+    const choices = available.length > 1 ? available.filter((key) => key !== previous) : available;
+    const key = choices[Math.floor(Math.random() * choices.length)];
+    lastVariant.set(family, key);
+    return recordedAssets[key];
+  };
+
+  const renderEvent = (type, strength, material, spatial, variation = Math.random()) => {
+    const gain = Math.sqrt(clamp(strength, .04, 2.5)) * spatial.gain;
+    const pan = spatial.pan * .82;
+    const pitch = .97 + variation * .06;
+    const sample = (family, volume, options = {}) => playSample({
+      buffer: chooseSample(family), gain: gain * volume, pan, rate: pitch,
+      frequency: 1800 + 9200 * Math.exp(-spatial.distance / 140),
+      ...options,
+    });
+    const surface = materialSoundFamily(material);
+    const rumble = (volume = .25, duration = .65) => sample('explosionBurst', volume,
+      { rate: .85, frequency: 1200, duration, release: duration * .85 });
+    if (COMBAT_EVENTS.has(type)) duckMusic();
+
+    if (type === SOUND_EVENT.EXPLOSION || type === SOUND_EVENT.WEAPON_EXPLOSION) {
+      duckMusic(.3);
+      playTntExplosionEffect(strength, spatial, variation, type === SOUND_EVENT.WEAPON_EXPLOSION);
+    } else if (type === SOUND_EVENT.BLAST_GUN) {
+      sample('blastGunReport', .65);
+      sample('weaponAction', .14, { delay: .055 });
+    } else if (type === SOUND_EVENT.BORE_CHARGE || type === SOUND_EVENT.SPAWN_BREACH) {
+      sample('windLoop', .55, { rate: .7, duration: .92, attack: .15 });
+      sample('metal', .22, { rate: .65, delay: .1 });
     } else if (type === SOUND_EVENT.BORE_FIRE) {
-      // A pitched-down recorded crack anchors a two-stage rail discharge. The
-      // bright tearing front, collapsing harmonic, and sub tail read as one
-      // enormous line-cut rather than another ordinary explosion.
-      playRecordedWeapon('blastGunReport', {
-        gain: Math.min(0.28, gain * 0.22), pan,
-        rate: 0.62 + variation * 0.05, key: 'bore-fire-report',
-      });
-      playNoise({ duration: 0.075, gain: gain * 0.25, pan, frequency: 4300,
-        type: 'highpass', q: 0.30, rate: 1.08 + variation * 0.10, attack: 0.001 });
-      playTone({ from: 1760, to: 190, duration: 0.16, gain: gain * 0.17, pan,
-        wave: 'sawtooth', attack: 0.0015 });
-      playTone({ from: 2150, to: 82, duration: 0.46, gain: gain * 0.20, pan,
-        wave: 'sawtooth', delay: 0.055, attack: 0.002 });
-      playNoise({ duration: 0.42, gain: gain * 0.22, pan, frequency: 980,
-        type: 'bandpass', q: 0.82, rate: 0.72 + variation * 0.08,
-        buffer: crackleBuffer, delay: 0.025, attack: 0.003 });
-      playTone({ from: 92, to: 34, duration: 0.62, gain: gain * 0.25, pan,
-        wave: 'sine', delay: 0.012, attack: 0.004 });
-      playNoise({ duration: 0.48, gain: gain * 0.14, pan, frequency: 205,
-        type: 'lowpass', q: 0.50, rate: 0.68 + variation * 0.07,
-        buffer: brownBuffer, delay: 0.07, attack: 0.006 });
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.08, pan, rate: 0.72 + variation * 0.09,
-        delay: 0.12, key: 'bore-fire-action',
-      });
-    } else if (type === SOUND_EVENT.ACID_MORTAR) {
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.065, pan, rate: 0.78 + variation * 0.12,
-        delay: 0.035, cooldown: 80, key: 'acid-action',
-      });
-      playTone({ from: 270, to: 92, duration: 0.22, gain: gain * 0.17, pan,
-        wave: 'square', attack: 0.004 });
-      playNoise({ duration: 0.24, gain: gain * 0.19, pan, frequency: 980,
-        type: 'bandpass', q: 0.8, rate: 0.82 + variation * 0.16, attack: 0.008 });
-      playTone({ from: 690, to: 330, duration: 0.28, gain: gain * 0.07, pan,
-        wave: 'sawtooth', delay: 0.025, attack: 0.012 });
-    } else if (type === SOUND_EVENT.CLUSTER_LAUNCH) {
-      playRecordedWeapon('blastGunReport', {
-        gain: Math.min(0.12, gain * 0.085), pan, rate: 0.78 + variation * 0.06,
-        cooldown: 90, key: 'cluster-report',
-      });
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.07, pan, rate: 0.82 + variation * 0.10,
-        delay: 0.042, cooldown: 90, key: 'cluster-action',
-      });
-      playNoise({ duration: 0.12, gain: gain * 0.25, pan, frequency: 1350,
-        type: 'highpass', q: 0.55, rate: 1.0 + variation * 0.15, attack: 0.003 });
-      playTone({ from: 190, to: 75, duration: 0.21, gain: gain * 0.17, pan,
-        wave: 'triangle', attack: 0.004 });
-      for (let i = 0; i < 3; i++) playTone({
-        from: 820 + i * 180, to: 430 + i * 70, duration: 0.08,
-        gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
-      });
-    } else if (type === SOUND_EVENT.WEAPON_EXPLOSION) {
-      // Every projectile detonation gets the complete effect and a fresh onset.
-      playTntExplosionEffect(strength, spatial, variation, true);
+      sample('blastGunReport', .65, { rate: .7 });
+      rumble(.4, .9);
+      sample('stone', .25, { delay: .08, rate: .8 });
+    } else if (type === SOUND_EVENT.ACID_MORTAR || type === SOUND_EVENT.CLUSTER_LAUNCH) {
+      sample('bow', .55, { rate: .72 });
+      sample(type === SOUND_EVENT.ACID_MORTAR ? 'splash' : 'weaponAction', .3, { delay: .035 });
     } else if (type === SOUND_EVENT.MINIGUN) {
-      // The continuous crackle supplies the actual high cyclic rate; a quiet
-      // real rifle burst periodically restores believable muzzle texture.
-      playRecordedWeapon('minigunBurst', {
-        gain: Math.min(0.15, gain * 0.11), pan, rate: 0.96 + variation * 0.08,
-        cooldown: 235, key: 'minigun-burst',
-      });
-      playRecordedWeapon('weaponAction', {
-        gain: gain * 0.045, pan, rate: 1.08 + variation * 0.16,
-        delay: 0.012, cooldown: 90, key: 'minigun-action',
-      });
-      holdMovementVoice('minigun', strength, spatial, {
-        volume: 0.105, rate: 1.18 + variation * 0.20,
-        hold: 0.075, attack: 0.008, release: 0.045,
-      });
-      playTone({ from: 142 + variation * 24, to: 72, duration: 0.055,
-        gain: gain * 0.075, pan, wave: 'square', attack: 0.002 });
-      playNoise({ duration: 0.045, gain: gain * 0.085, pan, frequency: 3200,
-        type: 'highpass', q: 0.36, rate: 1.12 + variation * 0.18, attack: 0.0015 });
-    } else if (type === SOUND_EVENT.SHIELD_HIT) {
-      // A compact glassy impact with a low magical shove. Rapid incoming fire
-      // stays readable without becoming a wall of full-volume transients.
-      playTone({ from: 760 + variation * 120, to: 1180, duration: 0.085,
-        gain: gain * 0.13, pan, wave: 'triangle', attack: 0.002 });
-      playTone({ from: 1540, to: 620 + variation * 90, duration: 0.14,
-        gain: gain * 0.075, pan, wave: 'sine', delay: 0.008, attack: 0.002 });
-      playNoise({ duration: 0.095, gain: gain * 0.11, pan, frequency: 2650,
-        type: 'bandpass', q: 1.5, rate: 1.04 + variation * 0.12, attack: 0.0015 });
-      playTone({ from: 118, to: 76, duration: 0.12, gain: gain * 0.075, pan,
-        wave: 'sine', attack: 0.003 });
-    } else if (type === SOUND_EVENT.SHIELD_BREAK) {
-      // Ward collapse is deliberately distinct from ordinary health damage:
-      // brittle high shards tear away above a descending, hollow power-down.
-      playNoise({ duration: 0.30, gain: gain * 0.24, pan, frequency: 3400,
-        type: 'highpass', q: 0.42, rate: 1.02 + variation * 0.14, attack: 0.001 });
-      playNoise({ duration: 0.24, gain: gain * 0.18, pan, frequency: 1450,
-        type: 'bandpass', q: 1.15, rate: 0.88 + variation * 0.10,
-        buffer: crackleBuffer, delay: 0.012, attack: 0.002 });
-      playTone({ from: 1280, to: 145, duration: 0.38, gain: gain * 0.18, pan,
-        wave: 'sawtooth', attack: 0.003 });
-      playTone({ from: 168, to: 46, duration: 0.42, gain: gain * 0.15, pan,
-        wave: 'sine', delay: 0.018, attack: 0.005 });
-    } else if (type === SOUND_EVENT.SPAWN_BREACH) {
-      // A slow spatial tear announces the portal before the creature exists.
-      // The climbing body, noisy seam, and final low pull are distinct from the
-      // bore cannon's mechanical charge-up.
-      playTone({ from: 66, to: 430, duration: 0.90, gain: gain * 0.15, pan,
-        wave: 'sawtooth', attack: 0.11 });
-      playTone({ from: 285 + variation * 45, to: 1160, duration: 0.82,
-        gain: gain * 0.085, pan, wave: 'triangle', delay: 0.055, attack: 0.14 });
-      playNoise({ duration: 0.78, gain: gain * 0.14, pan, frequency: 1480,
-        type: 'bandpass', q: 1.25, rate: 0.68 + variation * 0.08,
-        buffer: crackleBuffer, delay: 0.04, attack: 0.12 });
-      playNoise({ duration: 0.24, gain: gain * 0.17, pan, frequency: 2900,
-        type: 'highpass', q: 0.48, rate: 1.04 + variation * 0.10,
-        delay: 0.69, attack: 0.025 });
-      playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
-        wave: 'sine', delay: 0.67, attack: 0.018 });
+      playRecordedWeapon('minigunBurst', { gain: gain * .38, pan, rate: pitch,
+        cooldown: 160, key: 'minigun-burst' });
     } else if (type === SOUND_EVENT.SWING) {
-      const weight = material === 2 ? 1.3 : material === 3 ? .8 : 1;
-      const rate = .94 + variation * .12;
-      // A broad air rush crests at the blade's fastest point; its thin edge and
-      // brief, inharmonic steel resonance sit above the low cloth movement.
-      playNoise({ duration: .25 * weight, gain: gain * .58, pan,
-        frequency: 3300 * rate / weight, toFrequency: 480 / weight,
-        q: .45, attack: .055 * weight, rate });
-      playNoise({ duration: .12 * weight, gain: gain * .20, pan,
-        frequency: 6200, toFrequency: 2200, type: 'highpass', q: .3,
-        attack: .028, delay: .032 });
-      playNoise({ duration: .19 * weight, gain: gain * .17, pan,
-        frequency: 470, toFrequency: 180, buffer: brownBuffer,
-        q: .55, attack: .04 });
-      playTone({ from: 1850 * rate / weight, to: 1310 / weight,
-        duration: .11, gain: gain * .025, pan, delay: .055, attack: .003 });
+      sample('swish', .65, { rate: pitch * (material === 2 ? .8 : material === 3 ? 1.15 : 1) });
+      sample('cloth', .1);
     } else if (type === SOUND_EVENT.MELEE_HIT) {
-      playNoise({ duration: .045, gain: gain * .52, pan, frequency: 2500,
-        type: 'highpass', q: .4, attack: .001, buffer: crackleBuffer });
-      playNoise({ duration: .16, gain: gain * .36, pan, frequency: 680,
-        toFrequency: 220, q: .6, buffer: brownBuffer, attack: .002 });
-      playRecordedWeapon('weaponAction', { gain: gain * .16, pan,
-        rate: .68 + variation * .15, key: 'blade-contact' });
-      playTone({ from: 2240, to: 2110, duration: .16, gain: gain * .035,
-        pan, delay: .004, attack: .001 });
-    } else if (type === SOUND_EVENT.GUARD) {
-      playNoise({duration:.09,gain:gain*.25,pan,frequency:900,type:'bandpass',q:1.2,rate:1});
-      for (const f of [330,670,1010]) playTone({from:f,to:f*.96,duration:.24,gain:gain*.07,pan,wave:'sine'});
+      sample('hit', .7);
+      sample('metal', .12, { delay: .012, duration: .25 });
+    } else if (type === SOUND_EVENT.GUARD || type === SOUND_EVENT.SHIELD_HIT) {
+      sample(type === SOUND_EVENT.GUARD ? 'metal' : 'glass', .5);
+      sample('hit', .2, { rate: .82 });
+    } else if (type === SOUND_EVENT.SHIELD_BREAK) {
+      sample('glass', .65, { rate: .85 });
+      sample('windLoop', .3, { duration: .45, attack: .025 });
     } else if (type === SOUND_EVENT.RUNE) {
-      if (material === 10 || material === 11) {
-        const frost = material === 10;
-        playNoise({ duration: frost ? .8 : .38, gain: gain * .34, pan,
-          frequency: frost ? 3600 : 580, toFrequency: frost ? 1300 : 160,
-          buffer: frost ? noiseBuffer : brownBuffer, attack: .04, q: .5 });
-        playTone({ from: frost ? 760 : 140, to: frost ? 1140 : 55,
-          duration: frost ? .65 : .32, gain: gain * .07, pan, wave: 'triangle', attack: .035 });
-        for (const [i, frequency] of (frost ? [2700, 3900, 5100] : [380, 270, 190]).entries())
-          playNoise({ duration: frost ? .14 : .08, gain: gain * .12, pan,
-            frequency, toFrequency: frequency * .55, buffer: frost ? crackleBuffer : brownBuffer,
-            delay: i * .07, attack: .008, q: frost ? .8 : 2.5 });
-      } else if (material >= 7 && material <= 9) {
-        const prism = material === 7, star = material === 8;
-        playNoise({ duration: star ? 1.15 : .3, gain: gain * .38, pan,
-          frequency: star ? 180 : prism ? 5600 : 1400,
-          toFrequency: star ? 2200 : 480, attack: star ? .08 : .008,
-          buffer: star ? brownBuffer : prism ? noiseBuffer : crackleBuffer, q: star ? 1.4 : .6 });
-        playTone({ from: star ? 65 : prism ? 920 : 160, to: star ? 150 : 55,
-          duration: star ? 1.1 : .3, gain: gain * .13, pan, wave: 'triangle', attack: .015 });
-        if (prism) for (const [i, f] of [1800, 2710, 3920].entries()) {
-          playNoise({ duration: .055, gain: gain * .18, pan, frequency: f,
-            type: 'highpass', delay: i * .018, attack: .001 });
-          playTone({ from: f, to: f * .62, duration: .19, gain: gain * .035,
-            pan, delay: i * .018, attack: .001 });
-        }
-        if (!prism) playSample({ buffer: recordedAssets?.tntDeepBoom,
-          gain: gain * .20, pan, rate: star ? .55 : 1.15,
-          frequency: 900, duration: star ? .9 : .35, attack: .01 });
-      } else {
-        const cold = material === 2, air = material === 3, thorn = material === 5;
-        const rate = .92 + variation * .16;
-        playNoise({ duration: .23, gain: gain * .42, pan,
-          frequency: cold ? 5100 : air ? 2300 : 1800,
-          toFrequency: cold ? 1400 : 420, q: .65, attack: .016,
-          buffer: thorn ? crackleBuffer : noiseBuffer, rate });
-        playNoise({ duration: .055, gain: gain * .30, pan, frequency: 3900,
-          type: 'highpass', q: .35, attack: .001, delay: .016 });
-        playNoise({ duration: .32, gain: gain * .28, pan, frequency: 370,
-          toFrequency: 100, type: 'lowpass', buffer: brownBuffer, attack: .006 });
-        playTone({ from: (cold ? 1260 : thorn ? 530 : 780) * rate, to: air ? 120 : 240,
-          duration: .18, gain: gain * .065, pan, wave: 'triangle', attack: .003 });
-        playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .13,
-          pan, rate: 1.65, frequency: 650, duration: .24, attack: .002 });
-        if (cold || thorn) playNoise({ duration: .38, gain: gain * .12, pan,
-          frequency: cold ? 4200 : 1800, toFrequency: 850, q: 1.1,
-          buffer: crackleBuffer, delay: .045, attack: .004 });
+      // Element identities come from layered physical textures: air, embers,
+      // brittle glass, foliage, and a low pressure body for the larger casts.
+      sample('swish', .5, { rate: material === 8 ? .65 : pitch });
+      if ([2, 7, 10].includes(material)) {
+        sample('glass', .38, { rate: material === 10 ? .8 : 1.2, delay: .025 });
+        if (material === 10) sample('windLoop', .3, { duration: .75, attack: .04 });
+      } else if (material === 5) {
+        sample('wood', .45, { rate: 1.1 });
+        sample('cloth', .18, { delay: .04 });
+      } else if (material === 8 || material === 9) {
+        rumble(.42, material === 8 ? 1.1 : .5);
+        sample('stone', .32, { rate: .78, delay: .04 });
+      } else if (material !== 3) {
+        sample('fireLoop', .45, { duration: material === 11 ? .55 : .3, attack: .008 });
+        rumble(.18, .3);
       }
     } else if (type === SOUND_EVENT.HEAVY_IMPACT || type === SOUND_EVENT.SPELL_IMPACT) {
-      const magic = type === SOUND_EVENT.SPELL_IMPACT;
-      const cold = material === MAT.ICE || material === MAT.WATER;
-      const acid = material === MAT.ACID;
       const fire = material === MAT.FIRE || material === MAT.LAVA;
-      playSample({ buffer: recordedAssets?.tntDeepExplosion, gain: gain * (fire ? .34 : .21),
-        pan, rate: .9 + variation * .16, frequency: fire ? 4800 : 1500,
-        duration: fire ? .65 : .35, attack: .001 });
-      playNoise({ duration: .065, gain: gain * .48, pan,
-        frequency: cold ? 5600 : 2900, type: 'highpass', q: .35, attack: .001 });
-      playNoise({ duration: .42, gain: gain * .35, pan, frequency: 920,
-        toFrequency: 170, q: .55, buffer: brownBuffer, attack: .003 });
-      playTone({ from: magic ? 135 : 95, to: 36, duration: .32,
-        gain: gain * .19, pan, attack: .002 });
-      playNoise({ duration: acid ? .75 : .48, gain: gain * .24, pan,
-        frequency: cold ? 4800 : acid ? 2900 : 1900, toFrequency: cold ? 1700 : 700,
-        q: .6, buffer: crackleBuffer, delay: .035, attack: .01 });
-      if (cold) for (const [i, frequency] of [2350, 3710, 5290].entries())
-        playTone({ from: frequency, to: frequency * .93, duration: .18 + i * .06,
-          gain: gain * .027, pan: clamp(pan + (i - 1) * .12, -1, 1),
-          delay: .035 + i * .025, attack: .001 });
-      if (material === MAT.WATER) playSample({ buffer: recordedAssets?.waterFlow,
-        gain: gain * .26, pan, rate: 1.25, duration: .4, attack: .006 });
-      if (magic && material === MAT.CRYSTAL) {
-        playNoise({ duration: .28, gain: gain * .28, pan, frequency: 6800,
-          toFrequency: 2900, type: 'highpass', buffer: crackleBuffer, attack: .001 });
-        for (const [i, f] of [2900, 4130, 5710].entries()) playTone({
-          from: f, to: f * .9, duration: .15, gain: gain * .035, pan,
-          delay: i * .025, attack: .001 });
-      }
-      if (magic && material === MAT.NEUTRONIUM) {
-        playTone({ from: 190, to: 28, duration: .75, gain: gain * .20, pan,
-          wave: 'sine', attack: .004 });
-        playNoise({ duration: .8, gain: gain * .28, pan, frequency: 2900,
-          toFrequency: 120, buffer: brownBuffer, attack: .003, q: 1.1 });
-      }
+      const liquid = MATERIAL_BY_ID[material]?.kind === KIND.LIQUID;
+      sample(fire ? 'explosionBurst' : liquid ? 'splash' : surface, .65,
+        { duration: fire ? undefined : .75, explosion: type === SOUND_EVENT.SPELL_IMPACT });
+      rumble(.28, .5);
+      if (fire) sample('fireLoop', .32, { delay: .04, duration: .65 });
+      if (material === MAT.ACID) sample('bubbleLoop', .4, { duration: .65 });
+      if (material === MAT.NEUTRONIUM) rumble(.32, 1.1);
     } else if (type === SOUND_EVENT.SHOCKWAVE) {
-      playSample({ buffer: recordedAssets?.tntDeepBoom, gain: gain * .32,
-        pan, rate: .7 + variation * .05, frequency: 800, duration: 1.1, attack: .002 });
-      playNoise({ duration: .65, gain: gain * .40, pan, frequency: 2400,
-        toFrequency: 180, q: .6, attack: .008 });
-      playNoise({ duration: .8, gain: gain * .21, pan, frequency: 1200,
-        toFrequency: 340, buffer: crackleBuffer, delay: .06, attack: .015 });
-      for (const [i, ratio] of [1, 1.47, 2.09].entries())
-        playTone({ from: 116 * ratio, to: 108 * ratio, duration: 1.15 - i * .18,
-          gain: gain * .14 / (i + 1), pan, delay: i * .008, attack: .002 });
+      rumble(.55, 1.1);
+      sample('stone', .45, { rate: .7, delay: .045 });
+      sample('windLoop', .3, { duration: .7, attack: .02 });
     } else if (type === SOUND_EVENT.BELL) {
-      for (const [i,ratio] of [1,2.01,2.76,4.07].entries()) playTone({from:196*ratio,to:195.7*ratio,duration:3.8-i*.45,gain:gain*.12/(i+1),pan,wave:'sine',attack:.003,delay:i*.008});
-    } else if (type === SOUND_EVENT.BEAM) {
-      playTone({ from: 1840, to: 360, duration: 0.44, gain: gain * 0.14, pan,
-        wave: 'triangle', attack: 0.004 });
-      playTone({ from: 260, to: 1220, duration: 0.48, gain: gain * 0.105, pan,
-        wave: 'sine', delay: 0.025, attack: 0.025 });
-      playNoise({ duration: 0.43, gain: gain * 0.12, pan, frequency: 2350,
-        type: 'bandpass', q: 1.25, rate: 0.9 + variation * 0.14,
-        buffer: crackleBuffer, attack: 0.012 });
-      playTone({ from: 92, to: 42, duration: 0.50, gain: gain * 0.105, pan,
-        wave: 'sine', delay: 0.015, attack: 0.006 });
-    } else if (type === SOUND_EVENT.EXPLOSION) {
-      playTntExplosionEffect(strength, spatial, variation, false);
+      sample('bell', .45, { rate: .8, duration: 4 });
+    } else if (type === SOUND_EVENT.BEAM || type === SOUND_EVENT.RESPAWN) {
+      sample('swish', .36, { rate: .72 });
+      sample('bell', .25, { rate: 1.5, delay: .1, duration: 1.3 });
     } else if (type === SOUND_EVENT.FUSE) {
-      playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
+      sample('fireLoop', .28, { duration: .5, attack: .015 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {
+      const gain = clamp(strength, .08, 2.5) * spatial.gain;
+      const pan = spatial.pan;
+      const pitch = .88 + ((material * 37) % 17) / 50;
       const density = MATERIAL_BY_ID[material]?.density || 1.4;
       const heavy = clamp((density - 0.4) / 2.7);
       const bodyGain = type === SOUND_EVENT.SOLID_LAND ? 0.72 : 1;
@@ -981,21 +786,21 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
         duration: 0.14 + heavy * 0.08, gain: gain * 0.18 * bodyGain, pan,
         wave: 'sine', attack: 0.006 });
     } else if (type === SOUND_EVENT.JUMP) {
-      playTone({ from: 145, to: 245, duration: 0.13, gain: gain * 0.22, pan, wave: 'triangle' });
+      sample('cloth', .3);
     } else if (type === SOUND_EVENT.LAND) {
-      playNoise({ duration: 0.13, gain: gain * 0.44, pan, frequency: 410, type: 'lowpass', q: 0.55, rate: 0.9 });
+      sample(surface === 'stone' ? 'step' : surface, .48, { rate: .9 * pitch });
+      sample('cloth', .1);
     } else if (type === SOUND_EVENT.PLACE) {
       const kind = MATERIAL_BY_ID[material]?.kind;
       if (kind === KIND.POWDER || kind === KIND.LIQUID || kind === KIND.GAS) {
-        if (kind === KIND.POWDER) holdMovementVoice('sand', strength * 0.45, spatial,
-          { volume: 0.075, rate: 0.96 + variation * 0.08, hold: 0.2 });
-        else if (kind === KIND.GAS) holdMovementVoice('gas', strength * 0.4, spatial,
-          { volume: 0.06, rate: 0.92 + variation * 0.14, hold: 0.22, attack: 0.1, release: 0.24 });
-        else if (material === MAT.LAVA) holdMovementVoice('lava', strength * 0.45, spatial,
-          { volume: 0.085, rate: 0.9 + variation * 0.12, hold: 0.22, release: 0.3 });
-        else holdMovementVoice('water', strength * 0.42, spatial,
-          { volume: 0.062, rate: material === MAT.OIL ? 0.82 : 0.96 + variation * 0.08, hold: 0.2 });
+        const name = kind === KIND.POWDER ? 'sand' : kind === KIND.GAS ? 'gas'
+          : material === MAT.LAVA ? 'lava' : 'water';
+        holdMovementVoice(name, strength * .45, spatial,
+          { volume: .08, rate: pitch, hold: .22, attack: .08, release: .25 });
       } else {
+        const gain = clamp(strength, .08, 2.5) * spatial.gain;
+        const pan = spatial.pan;
+        const pitch = .88 + ((material * 37) % 17) / 50;
         const density = MATERIAL_BY_ID[material]?.density || 1.4;
         const heavy = clamp((density - 0.4) / 2.7);
         const placePitch = pitch * (0.94 - heavy * 0.22);
@@ -1006,51 +811,32 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
           duration: 0.12 + heavy * 0.05, gain: gain * 0.13, pan, wave: 'sine', attack: 0.006 });
       }
     } else if (type === SOUND_EVENT.BREAK) {
-      playNoise({ duration: 0.21, gain: gain * 0.48, pan, frequency: 1250 * pitch, type: 'bandpass', q: 0.52, rate: pitch });
-      playNoise({ duration: 0.11, gain: gain * 0.25, pan, frequency: 430 * pitch, type: 'lowpass', q: 0.7, rate: 0.8 * pitch });
+      sample(surface, .52, { rate: .92 * pitch });
+      sample('sandFlow', .14, { duration: .3, delay: .035 });
     } else if (type === SOUND_EVENT.PICKUP) {
-      playTone({ from: 520 * pitch, to: 720 * pitch, duration: 0.1, gain: gain * 0.18, pan, wave: 'sine' });
-      playTone({ from: 740 * pitch, to: 930 * pitch, duration: 0.11, gain: gain * 0.13, pan, wave: 'sine', delay: 0.055 });
-    } else if (type === SOUND_EVENT.HURT) {
-      playNoise({ duration: 0.18, gain: gain * 0.35, pan, frequency: 680, type: 'bandpass', q: 0.8, rate: 0.75 });
-      playTone({ from: 170, to: 82, duration: 0.2, gain: gain * 0.2, pan, wave: 'sawtooth' });
+      sample('pickup', .33);
+    } else if (type === SOUND_EVENT.HURT || type === SOUND_EVENT.DEATH) {
+      sample('hit', type === SOUND_EVENT.DEATH ? .65 : .5, { rate: type === SOUND_EVENT.DEATH ? .7 : .9 });
+      sample('cloth', .22, { delay: .035 });
+      if (type === SOUND_EVENT.DEATH) duckMusic(.15);
     } else if (type === SOUND_EVENT.CREATURE) {
-      playTone({ from: 280 * pitch, to: 205 * pitch, duration: 0.12, gain: gain * 0.13, pan, wave: 'triangle' });
+      sample('creature', .28, { rate: .9 + variation * .15 });
     } else if (type === SOUND_EVENT.FLUID_FALL) {
-      const lava = material === MAT.LAVA;
-      const oil = material === MAT.OIL;
-      if (lava) {
-        holdMovementVoice('lava', strength, spatial, { volume: 0.13,
-          rate: 0.88 + variation * 0.16, hold: 0.38, attack: 0.11, release: 0.34 });
-      } else {
-        holdMovementVoice('water', strength, spatial, { volume: oil ? 0.085 : 0.115,
-          rate: oil ? 0.8 : 0.95 + variation * 0.09, hold: 0.34, attack: 0.09, release: 0.25 });
-      }
+      holdMovementVoice(material === MAT.LAVA ? 'lava' : 'water', strength, spatial,
+        { volume: .115, rate: material === MAT.OIL ? .8 : pitch, hold: .35, attack: .09, release: .28 });
     } else if (type === SOUND_EVENT.POWDER_MOVE) {
-      holdMovementVoice('sand', strength, spatial, { volume: 0.105,
-        rate: 0.94 + variation * 0.12, hold: 0.3, attack: 0.085, release: 0.22 });
+      holdMovementVoice('sand', strength, spatial,
+        { volume: .105, rate: pitch, hold: .3, attack: .085, release: .22 });
     } else if (type === SOUND_EVENT.ACID_DISSOLVE) {
-      holdMovementVoice('acid', strength, spatial, { volume: 0.07,
-        rate: 0.96 + variation * 0.12, hold: 0.42, attack: 0.095, release: 0.3 });
+      holdMovementVoice('acid', strength, spatial,
+        { volume: .056, rate: .96 + variation * .12, hold: .42, attack: .095, release: .3 });
     } else if (type === SOUND_EVENT.CRAFT) {
-      playTone({ from: 430, to: 690, duration: 0.09, gain: gain * 0.16, pan, wave: 'square' });
-      playTone({ from: 620, to: 880, duration: 0.1, gain: gain * 0.11, pan, wave: 'triangle', delay: 0.06 });
+      sample('craft', .4);
+      sample('wood', .2, { delay: .1 });
     } else if (type === SOUND_EVENT.BOW) {
-      playNoise({ duration: .035, gain: gain * .46, pan, frequency: 3600,
-        type: 'highpass', q: .5, attack: .001, buffer: crackleBuffer });
-      playNoise({ duration: .19, gain: gain * .30, pan, frequency: 2400,
-        toFrequency: 600, q: .55, attack: .012 });
-      playTone({ from: 190 + variation * 20, to: 92, duration: .12,
-        gain: gain * .07, pan, wave: 'triangle', attack: .001 });
+      sample('bow', .65);
     } else if (type === SOUND_EVENT.ARROW_HIT) {
-      playNoise({ duration: .045, gain: gain * .40, pan, frequency: 2700,
-        type: 'highpass', q: .4, attack: .001 });
-      playNoise({ duration: .16, gain: gain * .28, pan, frequency: 850,
-        toFrequency: 300, buffer: brownBuffer, q: .7, attack: .002 });
-    } else if (type === SOUND_EVENT.DEATH) {
-      playTone({ from: 210, to: 58, duration: 0.5, gain: gain * 0.25, pan, wave: 'sawtooth' });
-    } else if (type === SOUND_EVENT.RESPAWN) {
-      playTone({ from: 210, to: 520, duration: 0.24, gain: gain * 0.18, pan, wave: 'triangle' });
+      sample(surface, .52, { duration: .3 });
     }
   };
 
@@ -1061,8 +847,6 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     for (let i = 0; i + STRIDES.soundEvent <= packed.length; i += STRIDES.soundEvent) {
       const type = packed[i + O.type] | 0;
       const eventX = packed[i + O.x], eventY = packed[i + O.y];
-      const variation = ((Math.imul(Math.floor(eventX), 73856093)
-        ^ Math.imul(Math.floor(eventY), 19349663)) >>> 0) / 4294967295;
       const spatial = spatializeSound(packed[i + O.x], packed[i + O.y], listener,
         EVENT_DISTANCE[type] ?? 70, packed[i + O.layer] | 0);
       if (spatial.gain <= 0.001) continue;
@@ -1082,9 +866,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
         if (nowMs - last < cooldown) continue;
         lastEventAt.set(cooldownKey, nowMs);
       }
-      const explosion = type === SOUND_EVENT.EXPLOSION || type === SOUND_EVENT.WEAPON_EXPLOSION;
-      renderEvent(type, packed[i + O.intensity], material, spatial,
-        explosion ? Math.random() : variation);
+      renderEvent(type, packed[i + O.intensity], material, spatial);
     }
   };
 
@@ -1117,6 +899,7 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
         listener, 115, 0,
       );
       const voice = ambienceVoices[group];
+      if (!voice) continue;
       const target = amount * voice.volume * Math.max(0.18, spatial.gain);
       voice.gain.gain.setTargetAtTime(target, now, target > voice.gain.gain.value ? 0.16 : 0.3);
       if (voice.panner) voice.panner.pan.setTargetAtTime(spatial.pan * 0.72, now, 0.18);
@@ -1131,20 +914,12 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     const ward = clamp((player?.shieldHealth ?? 0) / 200);
 
     if (next.jetpack && (!samePlayer || !playerEffects.jetpack) && audible()) {
-      playNoise({ duration: 0.14, gain: 0.115, pan: 0, frequency: 1450,
-        type: 'highpass', q: 0.36, rate: 0.92, attack: 0.003 });
-      playNoise({ duration: 0.20, gain: 0.10, pan: 0, frequency: 310,
-        type: 'lowpass', q: 0.58, rate: 0.78, buffer: brownBuffer, attack: 0.004 });
-      playTone({ from: 64, to: 118, duration: 0.16, gain: 0.055, pan: 0,
-        wave: 'sawtooth', attack: 0.005 });
+      playSample({ buffer: recordedAssets?.fireLoop, gain: .18, pan: 0,
+        duration: .25, attack: .008 });
     }
     if (next.shield && (!samePlayer || !playerEffects.shield) && audible()) {
-      playTone({ from: 180, to: 720, duration: 0.19, gain: 0.085, pan: 0,
-        wave: 'triangle', attack: 0.008 });
-      playTone({ from: 590, to: 980, duration: 0.22, gain: 0.052, pan: 0,
-        wave: 'sine', delay: 0.025, attack: 0.012 });
-      playNoise({ duration: 0.18, gain: 0.055, pan: 0, frequency: 2350,
-        type: 'bandpass', q: 1.55, rate: 0.88, attack: 0.012 });
+      playSample({ buffer: chooseSample('glass'), gain: .2, pan: 0, rate: .85 });
+      playSample({ buffer: chooseSample('swish'), gain: .16, pan: 0, rate: .8 });
     }
 
     const thrust = next.jetpack ? 0.82 + fuel * 0.18 : 0;
@@ -1155,6 +930,19 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     setMovementVoice('shieldHum', next.shield ? 0.68 + ward * 0.32 : 0,
       { volume: 0.048, rate: 0.92 + ward * 0.12, attack: 0.055, release: 0.16 });
     playerEffects = next;
+  };
+
+  const updateScore = (player, creatures, paused = false) => {
+    if (!musicDirector) return;
+    scorePaused = paused;
+    musicDirector.setAudible(audible() && !scorePaused);
+    if (paused) return;
+    const state = scoreThreat(player, creatures);
+    if (player && scorePlayer && player.alive !== false
+        && player.id === scorePlayer.id && player.health < scorePlayer.health)
+      state.threat = true;
+    scorePlayer = player ? { id: player.id, health: player.health } : null;
+    musicDirector.update({ ...state, alive: !!player && player.alive !== false });
   };
 
   const setEnabled = (on) => { enabled = !!on; applyMaster(); };
@@ -1171,13 +959,14 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
-    clearInterval(scoreTimer);
+    musicDirector?.destroy();
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
-    if (ambienceVoices) for (const voice of ambienceVoices) { try { voice.source.stop(); } catch { /* already stopped */ } }
-    if (movementVoices) for (const voice of Object.values(movementVoices)) { try { voice.source.stop(); } catch { /* already stopped */ } }
+    if (ambienceVoices) for (const voice of ambienceVoices) { try { voice?.source.stop(); } catch { /* already stopped */ } }
+    if (movementVoices) for (const voice of Object.values(movementVoices)) { try { voice?.source.stop(); } catch { /* already stopped */ } }
     const ctx = context;
     unlocked = false;
     context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
+    musicBus = musicDirector = noiseBuffer = brownBuffer = null;
     try { ctx?.close(); } catch { /* browser is already tearing down */ }
   };
 
@@ -1188,13 +977,16 @@ export function createSandAudio({ expeditionScore = false, fantasyScore = false 
     playBeam,
     updateAmbience,
     updatePlayerEffects,
+    updateScore,
     setEnabled,
     setMuted,
     toggleMuted,
     get enabled() { return enabled; },
     get muted() { return muted; },
+    get assetsReady() { return assetsReady; },
     get ready() { return unlocked && context?.state === 'running'; },
     get playerEffects() { return { ...playerEffects }; },
+    get scoreState() { return musicDirector?.state || null; },
     destroy,
   };
 }

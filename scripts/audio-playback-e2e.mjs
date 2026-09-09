@@ -13,6 +13,7 @@ try {
   await page.goto(`${server.baseURL}/src/sand/audio/audioAssets.js`);
   const result = await page.evaluate(async () => {
     const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
+    const { AUDIO_ASSET_URLS } = await import('/src/sand/audio/audioAssets.js');
     const { OFF, SOUND_EVENT, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
     let failedClosed = false;
     window.AudioContext = function () { return {
@@ -54,22 +55,21 @@ try {
     };
     Object.defineProperty(ctx, 'state', { get: () => 'running' });
     ctx.close = async () => {};
+    ctx.createOscillator = () => { throw new Error('Game audio must use recordings'); };
     let contextCreations = 0;
     window.AudioContext = function () { contextCreations++; return ctx; };
     const mixer = createSandAudio();
     mixer.setMuted(false);
     mixer.prepare();
-    if (contextCreations !== 1 || sources.length === 0 || mixer.ready)
+    if (contextCreations !== 1 || mixer.ready)
       throw new Error('Audio preparation must build the locked mixer');
+    await mixer.assetsReady;
     const preparedSources = sources.length;
     await mixer.unlock();
     if (contextCreations !== 1 || sources.length !== preparedSources)
       throw new Error('Gesture recreated the prepared audio mixer');
-    const deadline = performance.now() + 10000;
-    while (decoded < 8 && performance.now() < deadline)
-      await new Promise(resolve => setTimeout(resolve, 20));
-    if (decoded !== 8) throw new Error(`Only ${decoded} audio assets decoded`);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    const assetCount = Object.keys(AUDIO_ASSET_URLS).length;
+    if (decoded !== assetCount) throw new Error(`Only ${decoded}/${assetCount} audio assets decoded`);
     const listener = { x: 0, y: 0, viewWidth: 100 };
     const event = (type, x = 0, strength = 1) => {
       const values = new Float32Array(STRIDES.soundEvent);
@@ -126,6 +126,7 @@ try {
   console.log('Audio playback passed:', result);
   const combat = await page.evaluate(async () => {
     const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
+    const { AUDIO_ASSET_URLS } = await import('/src/sand/audio/audioAssets.js');
     const { OFF, SOUND_EVENT, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
     const { MAT } = await import('/src/sand/materials.js');
     const cases = [
@@ -143,18 +144,53 @@ try {
       ['water impact', SOUND_EVENT.SPELL_IMPACT, MAT.WATER],
       ['acid impact', SOUND_EVENT.SPELL_IMPACT, MAT.ACID],
       ['shockwave', SOUND_EVENT.SHOCKWAVE, MAT.ICE],
+      ['jump cloth', SOUND_EVENT.JUMP, MAT.STONE], ['landing', SOUND_EVENT.LAND, MAT.STONE],
+      ['wood placement', SOUND_EVENT.PLACE, MAT.WOOD], ['stone break', SOUND_EVENT.BREAK, MAT.STONE],
+      ['glass break', SOUND_EVENT.BREAK, MAT.GLASS], ['wood break', SOUND_EVENT.BREAK, MAT.WOOD],
+      ['pickup', SOUND_EVENT.PICKUP, MAT.STONE], ['craft', SOUND_EVENT.CRAFT, MAT.WOOD],
+      ['hurt', SOUND_EVENT.HURT, 0], ['death', SOUND_EVENT.DEATH, 0],
+      ['creature', SOUND_EVENT.CREATURE, 0], ['respawn', SOUND_EVENT.RESPAWN, 0],
+      ['blast gun', SOUND_EVENT.BLAST_GUN, 0], ['bore charge', SOUND_EVENT.BORE_CHARGE, 0],
+      ['bore fire', SOUND_EVENT.BORE_FIRE, 0], ['acid mortar', SOUND_EVENT.ACID_MORTAR, 0],
+      ['cluster launch', SOUND_EVENT.CLUSTER_LAUNCH, 0], ['minigun', SOUND_EVENT.MINIGUN, 0],
+      ['shield hit', SOUND_EVENT.SHIELD_HIT, 0], ['shield break', SOUND_EVENT.SHIELD_BREAK, 0],
+      ['breach', SOUND_EVENT.SPAWN_BREACH, 0], ['bell', SOUND_EVENT.BELL, 0],
+      ['guard', SOUND_EVENT.GUARD, 0], ['beam', SOUND_EVENT.BEAM, 0],
+      ['fuse', SOUND_EVENT.FUSE, MAT.TNT],
+      ['rigid body thud', SOUND_EVENT.IMPACT, MAT.RIGID],
+      ['stone body thud', SOUND_EVENT.IMPACT, MAT.STONE],
+      ['wood body thud', SOUND_EVENT.IMPACT, MAT.WOOD],
+      ['crystal body thud', SOUND_EVENT.IMPACT, MAT.CRYSTAL],
+      ['solid landing thud', SOUND_EVENT.SOLID_LAND, MAT.STONE],
+      ['acid dissolve', SOUND_EVENT.ACID_DISSOLVE, MAT.ACID],
+      ['TNT explosion', SOUND_EVENT.EXPLOSION, MAT.TNT],
+      ['projectile explosion', SOUND_EVENT.WEAPON_EXPLOSION, MAT.TNT],
+
     ];
     const ctx = new OfflineAudioContext(2, 48000 * (cases.length * 1.5 + 1), 48000);
+    const sampleStarts = [];
+    const createBufferSource = ctx.createBufferSource.bind(ctx);
+    ctx.createBufferSource = () => {
+      const source = createBufferSource();
+      const start = source.start.bind(source);
+      source.start = (...args) => {
+        sampleStarts.push({ source, duration: args[2] });
+        start(...args);
+      };
+      return source;
+    };
     let decoded = 0;
     const decode = ctx.decodeAudioData.bind(ctx);
     ctx.decodeAudioData = async (...args) => { const buffer = await decode(...args); decoded++; return buffer; };
     Object.defineProperty(ctx, 'state', { get: () => 'running' });
     ctx.close = async () => {};
+    let oscillators = 0;
+    const createOscillator = ctx.createOscillator.bind(ctx);
+    ctx.createOscillator = () => { oscillators++; return createOscillator(); };
     window.AudioContext = function () { return ctx; };
     const mixer = createSandAudio(); mixer.setMuted(false); await mixer.unlock();
-    const deadline = performance.now() + 10000;
-    while (decoded < 8 && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-    if (decoded !== 8) throw new Error('Combat recordings failed to load');
+    await mixer.assetsReady;
+    if (decoded !== Object.keys(AUDIO_ASSET_URLS).length) throw new Error('Combat recordings failed to load');
     const pauses = cases.map((_, i) => ctx.suspend(.2 + i * 1.5));
     const rendering = ctx.startRendering();
     for (let i = 0; i < cases.length; i++) {
@@ -165,7 +201,18 @@ try {
       values[OFF.soundEvent.type] = cases[i][1];
       values[OFF.soundEvent.material] = cases[i][2];
       values[OFF.soundEvent.intensity] = 1;
+      const before = oscillators;
+      const beforeSamples = sampleStarts.length;
       mixer.playEvents(values, { x: 0, y: 0, viewWidth: 100 });
+      if (cases[i][1] === SOUND_EVENT.SPELL_IMPACT
+          && [MAT.FIRE, MAT.LAVA].includes(cases[i][2])
+          && !sampleStarts.slice(beforeSamples).some(({ source, duration }) =>
+            !source.loop && source.buffer.duration > 3
+            && duration >= source.buffer.duration - .001))
+        throw new Error(`${cases[i][0]}: explosion tail was truncated`);
+      const thud = [SOUND_EVENT.IMPACT, SOUND_EVENT.SOLID_LAND, SOUND_EVENT.PLACE].includes(cases[i][1]);
+      if (oscillators - before !== (thud ? 1 : 0))
+        throw new Error(`${cases[i][0]}: incorrect synthesized thud admission`);
       await ctx.resume();
     }
     const rendered = await rendering;
@@ -201,4 +248,154 @@ try {
   writeFileSync(resolve(artifactDir, 'combat-audio.wav'), Buffer.concat([header, pcm]));
   writeFileSync(resolve(artifactDir, 'combat-audio.json'), JSON.stringify(combat.levels, null, 2));
   console.log('Combat playback passed:', combat.levels);
+
+  await page.route('**/assets/wood1.mp3', route => route.fulfill({ status: 404, body: '' }));
+  const lifecycle = await page.evaluate(async () => {
+    const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
+    const { loadAudioAssets } = await import('/src/sand/audio/audioAssets.js');
+    const { OFF, SOUND_EVENT, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
+    const ctx = new OfflineAudioContext(2, 48000 * 10, 48000);
+    const assets = await loadAudioAssets(ctx);
+    if (assets.wood1 || !assets.wood2 || !assets.bow || assets.piano)
+      throw new Error('An asset failure discarded unrelated audio or loaded unwanted music');
+    Object.defineProperty(ctx, 'state', { get: () => 'running' });
+    ctx.close = async () => {};
+    ctx.createOscillator = () => { throw new Error('Score must use a recording'); };
+    const sources = [], createSource = ctx.createBufferSource.bind(ctx);
+    ctx.createBufferSource = () => { const source = createSource(); sources.push(source); return source; };
+    window.AudioContext = function () { return ctx; };
+    const mixer = createSandAudio();
+    mixer.setMuted(false); await mixer.unlock(); await mixer.assetsReady;
+    const jetpack = { id: 1, alive: true, jetpackActive: true, jetpackFuel: 1 };
+    mixer.updatePlayerEffects(jetpack);
+    const variants = [];
+    const pauses = [1, 2, 3, 4, 5, 7].map(time => ctx.suspend(time));
+    const rendering = ctx.startRendering();
+    for (let i = 0; i < pauses.length; i++) {
+      await pauses[i];
+      if (i === 0) mixer.setMuted(true);
+      if (i === 1) mixer.setMuted(false);
+      if (i === 4) mixer.setEnabled(false);
+      if (i === 5) mixer.setEnabled(true);
+      mixer.updatePlayerEffects(jetpack);
+      if (i >= 1 && i <= 3) {
+        await new Promise(resolve => setTimeout(resolve, 90));
+        const values = new Float32Array(STRIDES.soundEvent);
+        values[OFF.soundEvent.type] = SOUND_EVENT.SWING;
+        values[OFF.soundEvent.intensity] = 1;
+        const before = sources.length;
+        mixer.playEvents(values, { x: 0, y: 0, viewWidth: 100 });
+        variants.push(sources[before]?.buffer);
+      }
+      await ctx.resume();
+    }
+    const rendered = await rendering;
+    const rms = (start, end) => {
+      const samples = rendered.getChannelData(0).subarray(start * 48000, end * 48000);
+      return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+    };
+    const levels = { effects: rms(.5, 1), muted: rms(1.5, 2), disabled: rms(6, 7), resumed: rms(8, 9) };
+    if (levels.effects < .001 || levels.resumed < .001 || levels.muted > 1e-6 || levels.disabled > 1e-6)
+      throw new Error(`Mixer lifecycle failed: ${JSON.stringify(levels)}`);
+    if (variants.some((buffer, i) => !buffer || (i > 0 && buffer === variants[i - 1])))
+      throw new Error('Repeated swings reused the same take consecutively');
+    mixer.destroy();
+    return levels;
+  });
+  await page.unroute('**/assets/wood1.mp3');
+  console.log('Mixer lifecycle, alternate takes, and partial asset failure passed:', lifecycle);
+
+  await page.addInitScript(() => {
+    const NativeContext = window.AudioContext;
+    window.__audioProbe = { decoded: 0, effects: 0, oscillators: 0 };
+    window.AudioContext = class extends NativeContext {
+      async decodeAudioData(...args) {
+        const buffer = await super.decodeAudioData(...args);
+        window.__audioProbe.decoded++;
+        return buffer;
+      }
+      createBufferSource() {
+        const source = super.createBufferSource(), start = source.start.bind(source);
+        source.start = (...args) => {
+          if (!source.loop) window.__audioProbe.effects++;
+          start(...args);
+        };
+        return source;
+      }
+      createOscillator() { window.__audioProbe.oscillators++; return super.createOscillator(); }
+    };
+    localStorage.setItem('sand-audio-muted', '0');
+  });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`${server.baseURL}/game?nosave`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('sand-game')?._game?.getPlayer(), null, { timeout: 60000 });
+  await page.waitForFunction(count => window.__audioProbe.decoded >= count, result.decoded);
+  await page.locator('sand-game').evaluate(host => host.shadowRoot.querySelector('.sg-sim').focus());
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => document.querySelector('sand-game')._game.getAudioState().ready);
+  await page.waitForFunction(() => document.querySelector('sand-game')._game.getAudioState().score?.playing);
+  await page.evaluate(() => document.querySelector('sand-game')._game.setAudioMuted(true));
+  await page.waitForFunction(() => !document.querySelector('sand-game')._game.getAudioState().score?.playing);
+  await page.evaluate(() => {
+    const game = document.querySelector('sand-game')._game;
+    game.setAudioMuted(false); return game.unlockAudio();
+  });
+  await page.waitForFunction(() => document.querySelector('sand-game')._game.getAudioState().score?.playing);
+  // The transition cue uses the same production mixer as authority events.
+  await page.evaluate(() => document.querySelector('sand-game')._game.playBeamSound());
+  await page.waitForFunction(() => window.__audioProbe.effects > 0);
+  const live = await page.evaluate(() => ({ ...window.__audioProbe,
+    state: document.querySelector('sand-game')._game.getAudioState() }));
+  if (errors.length) throw new Error(`Game audio failed: ${JSON.stringify({ live, errors })}`);
+  await page.screenshot({ path: resolve(artifactDir, 'game-audio.png') });
+  console.log('/game audio startup passed:', live);
+  await page.close();
+
+  const scorePage = await browser.newPage();
+  await scorePage.goto(`${server.baseURL}/src/sand/audio/musicDirector.js`);
+  await scorePage.mouse.click(20, 20);
+  await scorePage.evaluate(async () => {
+    const { createMusicDirector } = await import('/src/sand/audio/musicDirector.js');
+    const context = new AudioContext();
+    await context.resume();
+    context.decodeAudioData = () => { throw new Error('Long-form music must stream'); };
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.connect(context.destination);
+    const media = [];
+    const director = createMusicDirector(context, analyser, { createMedia() {
+      const element = new Audio(); media.push(element); return element;
+    } });
+    const samples = new Float32Array(analyser.fftSize);
+    window.__score = { context, director, media, rms() {
+      analyser.getFloatTimeDomainData(samples);
+      return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+    } };
+    director.setAudible(true);
+  });
+  await scorePage.waitForFunction(() => window.__score.director.state.track === 'hearth');
+  await scorePage.waitForFunction(() => window.__score.rms() > .001);
+  await scorePage.evaluate(() => window.__score.director.update({ threat: true }));
+  await scorePage.waitForFunction(() => window.__score.director.state.track === 'embers');
+  await scorePage.waitForFunction(() => window.__score.rms() > .001);
+  await scorePage.evaluate(() => window.__score.director.update({ threat: true, boss: true }));
+  await scorePage.waitForFunction(() => window.__score.director.state.track === 'bell');
+  await scorePage.waitForFunction(() => window.__score.rms() > .001);
+  await scorePage.evaluate(() => window.__score.director.setAudible(false));
+  await scorePage.waitForFunction(() => window.__score.rms() < 1e-7);
+  const pausedAt = await scorePage.evaluate(() => window.__score.media.at(-1).currentTime);
+  await scorePage.evaluate(() => window.__score.director.setAudible(true));
+  await scorePage.waitForFunction(time => window.__score.media.at(-1).currentTime > time + .1, pausedAt);
+  await scorePage.waitForFunction(() => window.__score.rms() > .001);
+  const music = await scorePage.evaluate(async () => {
+    const { director, context, media, rms } = window.__score;
+    const result = { ...director.state, rms: rms(), streamsCreated: media.length };
+    director.destroy();
+    if (media.some(element => !element.paused || element.getAttribute('src')))
+      throw new Error('Destroyed music retained a media stream');
+    await context.close();
+    return result;
+  });
+  console.log('Original exploration/combat/boss music streaming and lifecycle passed:', music);
 } finally { await browser?.close(); server.close(); }

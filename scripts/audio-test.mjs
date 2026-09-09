@@ -18,6 +18,7 @@ import {
 } from '../src/sand/audio/audioAssets.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { readFile } from 'node:fs/promises';
+import { testMusicDirector } from './music-director-cases.mjs';
 
 await initSandWasm();
 const { check, done } = makeChecker('semantic audio');
@@ -25,6 +26,7 @@ const mk = (storageRole = 'full') => createEngineWasm({
   cols: 96, rows: 72, worldSeed: 0x50a0d, sinksOn: false, infinite: false, storageRole,
 });
 const O = OFF.soundEvent;
+await testMusicDirector(check);
 
 {
   const metadata = sandMediaMetadata();
@@ -95,7 +97,7 @@ check('beam cues have an explicit presentation cooldown',
     samples.every(Number.isFinite)
       && Math.abs(Math.max(...samples.map(Math.abs)) - 0.9) < 1e-6
       && samples.at(-1) === 0);
-  check('missing recordings select the synthesized fallback',
+  check('missing layers leave the composite unavailable',
     buildTntExplosionBuffer(context, {}) === null);
   for (const layer of TNT_EXPLOSION_LAYERS) {
     const silent = { ...assets, [layer.asset]: {
@@ -122,6 +124,8 @@ check('beam cues have an explicit presentation cooldown',
     large.rate < small.rate && large.gain > small.gain);
   check('distant blasts are quieter and lose high-frequency crack',
     distant.gain < large.gain && distant.frequency < large.frequency);
+  check('nearby explosions retain their high-frequency attack',
+    explosionVoiceSpec(1, { ...spatial, distance: 60 }).frequency > 10000);
   check('explosion variation changes the pitch without changing position',
     explosionVoiceSpec(1, spatial, 0).rate !== explosionVoiceSpec(1, spatial, 1).rate
       && large.pan < 0 && large.pan > -1);

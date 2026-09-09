@@ -92,8 +92,7 @@ export function createSandGame(container, opts = {}) {
   // Host canvas; the WASM engine owns its WebGL2 context and compositing.
   const parallax = createParallaxBackground(container, { planetId });
   const audio = createSandAudio({
-    fantasyScore: planetId === PLANET.FRONTIER,
-    expeditionScore: survival && (planetId === PLANET.SHIP || planetId === PLANET.FRONTIER || missionId === MISSION.GREENFALL_RECOVERY),
+    expeditionScore: survival,
   });
   if (survival) audio.prepare();
 
@@ -632,6 +631,7 @@ export function createSandGame(container, opts = {}) {
       return {
         enabled: audio.enabled, muted: audio.muted, ready: audio.ready,
         effects: audio.playerEffects,
+        score: audio.scoreState,
       };
     },
     // Creative palette selection (material/seed/eraser/cube/creature).

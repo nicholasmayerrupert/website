@@ -85,3 +85,26 @@ arena('fire pulses and creature identity survive a checkpoint with deterministic
   console.log(`ok: bone-only natural spawning, large-body habitat, population cap and streaming identity (${bone})`);
  }finally{e.destroy();}
 }
+// Aster's wide view and steep interior highlands exercise the actual spawn band.
+{
+ const e=attachTestHooks(createEngineWasm({...options,cols:640,rows:384,infinite:true,worldSeed:1095980114}));
+ try{
+  const x=-2288,y=e.worldSurfaceAbsAt(x)-12,ox=Math.floor((x-320)/32)*32,oy=Math.floor((y-192)/32)*32;
+  while(e.getWorldOffsetX()!==ox){const d=ox-e.getWorldOffsetX();e.shiftWorldXY(Math.sign(d)*Math.min(320,Math.abs(d)),0);}
+  while(e.getWorldOffsetY()!==oy){const d=oy-e.getWorldOffsetY();e.shiftWorldXY(0,Math.sign(d)*Math.min(192,Math.abs(d)));}
+  e.setMirrorCreatures(new Float32Array(),ox,oy);e.setCreatureRuntime(true,false);
+  e.spawnPlayer(x-ox,y-oy);e.setViewport(1,1,320,180);e.cameraSet(x-ox-160,y-oy-90);
+  assert.equal(e.worldContextAt(x,y).surfaceBiome,BIOME.ROCKY);
+  let successes=0;
+  for(let salt=0;salt<8;salt++){
+   e.setMirrorCreatures(new Float32Array(),ox,oy);
+   if(!e._spawnNearFocus(CREATURE.BONE_DINOSAUR,salt*997+51))continue;
+   successes++;
+   const c=e.getCreatures().find(c=>c.species===CREATURE.BONE_DINOSAUR),cam=e.getCam();
+   assert.ok(c.x+c.w<=cam.x-20||c.x>=cam.x+340||c.y+c.h<=cam.y-20||c.y>=cam.y+200,'the complete body clears the visible safety margin');
+   assert.ok(e._spawnWorldAllowed(c.species,ox+c.x+c.w*.5,oy+c.y+c.h*.5));
+  }
+  assert.ok(successes>=6,`large-footprint placement should reliably find the highland ledges (${successes}/8)`);
+  console.log(`ok: Aster highland dinosaur entry with a 320-cell view (${successes}/8)`);
+ }finally{e.destroy();}
+}

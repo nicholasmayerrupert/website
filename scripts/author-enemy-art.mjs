@@ -38,51 +38,81 @@ function finish(a,state,t) {
 }
 function giant(p,c) {
   const {poly,ellipse,rect,line,limb,dot}=c;
-  const slam=p.state==='attack'?Math.min(1,p.t*2.5):0;
-  const lift=p.bob+(p.state==='attack'?slam*3:0), lean=-p.wind*3+p.strike*4-p.hurt*3;
-  const breath=p.state==='special';
-  const X=x=>x+lean,Y=y=>y+lift;
-  // Articulated feet, fur breeches, and the far arm sit behind the chest.
-  for(const [x,sign] of [[24,-1],[40,1]]) {
-    const foot=x+p.step*sign*4;
-    limb(x,64,foot,79-Math.max(0,p.step*sign)*3,5,'d','b');
-    ellipse(foot+2,81-Math.max(0,p.step*sign)*3,8,3,'o');
-    ellipse(foot+3,80-Math.max(0,p.step*sign)*3,6,2,'b');
-    for(let k=0;k<3;k++)rect(foot+k*2,81-Math.max(0,p.step*sign)*3,1,2,'w');
+  const charging=p.state==='windup', attacking=p.state==='attack', recovering=p.state==='recover';
+  const pattern=p.pattern??0, breath=p.state==='special';
+  const ease=t=>t*t*(3-2*t), release=attacking?ease(Math.min(1,p.t*2.4)):recovering?1-ease(p.t):0;
+  const ready=charging?ease(p.t):attacking?1:recovering?1-ease(p.t):0;
+  const smash=pattern===1, spear=pattern===2;
+  const crouch=(smash?release*7:breath?2:0)+(p.state==='death'?ease(p.t)*5:0);
+  const lean=(smash?-ready*3+release*7:spear?-ready*3+release*6:breath?3:ready*-2)-p.hurt*3;
+  const X=x=>x+lean,Y=y=>y+p.bob+crouch;
+  // Broad planted feet support jointed shins; the forward knee carries the weight.
+  for(const [x,sign] of [[22,-1],[39,1]]) {
+    const stride=p.step*sign,foot=x+stride*5,knee=x-stride*3,up=Math.max(0,stride)*4;
+    limb(x,Y(59),knee,70+crouch*.3,5,sign<0?'d':'b','l');
+    limb(knee,70+crouch*.3,foot,80-Math.max(0,stride)*4,4,'d','b');
+    poly([[foot-6,78-up],[foot+3,77-up],[foot+9,82-up],[foot+9,85-up],[foot-7,85-up]],'o');
+    poly([[foot-5,79-up],[foot+2,79-up],[foot+7,82-up],[foot+7,83-up],[foot-5,83-up]],'b');
+    for(let k=0;k<3;k++)rect(foot+1+k*2,82-up,1,2,'l');
+    line(knee-3,70,knee+3,69,1,'c');
   }
-  limb(X(18),Y(35),X(12)-p.wind*3,Y(55)-p.wind*12,7,'d','b');
-  const handX=X(46)+(p.state==='attack'?slam*5:p.strike*7),
-    handY=breath?Y(48):p.state==='attack'?Y(24+slam*50):Y(55)-p.wind*30;
-  const elbowX=X(48),elbowY=(Y(35)+handY)*.5;
-  // The upper arm and shoulder are behind the chest, collar, and head.
-  limb(X(45),Y(35),elbowX,elbowY,7,'b','l');
-  poly([[X(19),Y(49)],[X(46),Y(49)],[43,69],[36,65],[31,70],[23,65],[17,68]],'o');
-  poly([[X(21),Y(48)],[X(44),Y(48)],[41,64],[35,61],[30,66],[23,61],[20,64]],'f');
-  for(let k=0;k<7;k++)line(22+k*3,53,20+k*3,62+k%3,1,k%2?'d':'l');
-  ellipse(X(32),Y(39),17,20,'o');ellipse(X(32),Y(38),16,18,'b');
-  ellipse(X(29),Y(36),12,14,'l');ellipse(X(41),Y(43),7,12,'d');
-  // Rime plates, collar fringe, and a carved glacier-heart clasp.
-  poly([[X(15),Y(31)],[X(17),Y(20)],[X(22),Y(25)],[X(25),Y(16)],[X(29),Y(26)],[X(34),Y(20)],[X(40),Y(30)],[X(49),Y(26)],[X(51),Y(40)],[X(43),Y(34)],[X(34),Y(32)],[X(23),Y(35)]],'f');
-  for(let k=0;k<9;k++)line(X(17+k*3),Y(28+k%3),X(18+k*3),Y(33+k%4),1,k%2?'w':'l');
-  rect(X(19),Y(52),28,4,'o');rect(X(20),Y(52),26,2,'r');
-  poly([[X(33),Y(47)],[X(38),Y(53)],[X(33),Y(60)],[X(28),Y(53)]],'o');
-  poly([[X(33),Y(49)],[X(36),Y(53)],[X(33),Y(57)],[X(30),Y(53)]],'c');line(X(33),Y(50),X(33),Y(54),1,'e');
-  limb(elbowX,elbowY,handX,handY,6,'b','l');ellipse(handX+1,handY+2,7,7,'o');ellipse(handX+1,handY+1,6,6,'b');
-  for(let k=0;k<3;k++)line(handX-3+k*3,handY+2,handX-3+k*3,handY+5,1,'d');
-  // Bald glacial crown, long brow, tusks and braided snow beard.
-  ellipse(X(33),Y(19),11,12,'o');ellipse(X(33),Y(19),10,11,'l');
-  poly([[X(24),Y(13)],[X(22),Y(5)],[X(28),Y(10)],[X(30),Y(2)],[X(34),Y(10)],[X(39),Y(4)],[X(42),Y(14)]],'o');
-  poly([[X(25),Y(12)],[X(24),Y(7)],[X(29),Y(12)],[X(30),Y(5)],[X(34),Y(13)],[X(39),Y(7)],[X(40),Y(14)]],'c');
-  line(X(28),Y(17),X(40),Y(17),2,'d');rect(X(31),Y(18),3,2,'e');rect(X(39),Y(18),2,2,'e');
-  poly([[X(36),Y(19)],[X(43),Y(22)],[X(37),Y(24)]],'b');
-  ellipse(X(37),Y(27),6,breath?4:2+p.wind*2,'o');
-  if(breath){ellipse(X(39),Y(27),4,2,'d');rect(X(41),Y(26),2,2,'c');}
-  line(X(32),Y(25),X(32),Y(30),1,'w');line(X(41),Y(25),X(40),Y(30),1,'w');
-  poly([[X(24),Y(23)],[X(31),Y(28)],[X(40),Y(29)],[X(38),Y(36)],[X(33),Y(39)],[X(25),Y(34)]],'f');
-  for(let k=0;k<4;k++)line(X(26+k*3),Y(29),X(27+k*2),Y(35+k%2),1,k%2?'w':'b');
-  rect(X(30),Y(34),4,2,'r');
-  for(let k=0;k<7;k++)dot(X(20+k*4),Y(39+(k*7)%10),k%2?'c':'w');
-  if(breath)for(let k=0;k<5;k++){const x=X(46)+k*2,y=Y(24)+Math.sin(k*3+p.wind*5)*4;line(x-1,y,x+1,y,0.6,'e');line(x,y-1,x,y+1,0.6,'c');}
+  const farHand=smash?[X(19)-ready*8+release*15,Y(55)-ready*38+release*58]:spear?[X(12)+ready*32+release*6,Y(53)-ready*10]:[X(12),Y(53)-ready*8];
+  limb(X(16),Y(32),X(10),Y(42)-ready*8,6,'d','b');
+  limb(X(10),Y(42)-ready*8,...farHand,5,'d','b');ellipse(...farHand,6,6,'o');ellipse(farHand[0],farHand[1]-1,5,5,'d');
+  // A tapered torso and hanging pelt leave the waist and legs readable.
+  poly([[X(17),Y(27)],[X(43),Y(26)],[X(49),Y(39)],[X(41),Y(57)],[X(23),Y(58)],[X(15),Y(42)]],'o');
+  poly([[X(19),Y(29)],[X(42),Y(28)],[X(46),Y(39)],[X(39),Y(55)],[X(25),Y(55)],[X(18),Y(41)]],'b');
+  poly([[X(20),Y(31)],[X(32),Y(31)],[X(30),Y(43)],[X(23),Y(46)],[X(19),Y(39)]],'l');
+  poly([[X(34),Y(32)],[X(41),Y(30)],[X(45),Y(40)],[X(39),Y(48)],[X(33),Y(43)]],'d');
+  line(X(24),Y(45),X(31),Y(46),1,'d');line(X(32),Y(38),X(32),Y(50),.6,'d');
+  poly([[X(20),Y(53)],[X(43),Y(53)],[X(45),Y(65)],[X(40),Y(62)],[X(36),Y(68)],[X(31),Y(64)],[X(25),Y(68)],[X(18),Y(64)]],'o');
+  for(let k=0;k<8;k++)poly([[X(21+k*3),Y(54)],[X(24+k*3),Y(55)],[X(21+k*3),Y(63+k%3)]],k%2?'f':'l');
+  rect(X(21),Y(53),22,3,'r');line(X(22),Y(53),X(41),Y(53),.6,'f');
+  poly([[X(32),Y(51)],[X(36),Y(55)],[X(32),Y(60)],[X(28),Y(55)]],'o');
+  poly([[X(32),Y(53)],[X(34),Y(55)],[X(32),Y(58)],[X(30),Y(55)]],'c');dot(X(32),Y(54),'e');
+  // Layered glacier plates form an asymmetric shoulder mantle.
+  for(const [x,y,ww,hh]of [[13,30,10,14],[17,23,10,15],[23,25,9,11],[40,26,10,11],[47,31,8,12]]){
+    poly([[X(x-ww/2),Y(y+4)],[X(x-2),Y(y-hh/2)],[X(x+ww/2),Y(y+3)],[X(x+2),Y(y+hh/2)]],'o');
+    poly([[X(x-ww/2+2),Y(y+3)],[X(x-2),Y(y-hh/2+2)],[X(x+ww/2-1),Y(y+3)],[X(x+1),Y(y+hh/2-2)]],'c');
+    line(X(x-2),Y(y-hh/2+2),X(x-1),Y(y+3),.7,'e');
+  }
+  const hx=smash?X(47)-ready*7+release*8:spear?X(49)-ready*15+release*19:X(49)-ready*3;
+  const hy=smash?Y(54)-ready*42+release*58:spear?Y(54)-ready*18+release*3:Y(54)-ready*10;
+  const ex=smash?X(51)-ready*2:X(49),ey=smash?(Y(33)+hy)*.5:Y(43)-ready*6;
+  limb(X(45),Y(33),ex,ey,6,'b','l');limb(ex,ey,hx,hy,5,'b','l');
+  ellipse(hx,hy,7,7,'o');ellipse(hx,hy-1,6,6,'b');line(hx-3,hy-3,hx+3,hy-3,1,'l');
+  for(let k=0;k<3;k++)line(hx-3+k*3,hy+1,hx-3+k*3,hy+4,.6,'d');
+  // A low brow, projecting nose and split beard make the face read in profile.
+  ellipse(X(32),Y(18),10,12,'o');ellipse(X(32),Y(18),9,11,'b');
+  poly([[X(25),Y(12)],[X(35),Y(10)],[X(40),Y(17)],[X(37),Y(24)],[X(26),Y(25)]],'l');
+  poly([[X(23),Y(14)],[X(20),Y(4)],[X(27),Y(9)],[X(29),Y(1)],[X(33),Y(9)],[X(40),Y(3)],[X(41),Y(14)]],'o');
+  poly([[X(24),Y(12)],[X(23),Y(7)],[X(28),Y(12)],[X(29),Y(4)],[X(33),Y(12)],[X(38),Y(7)],[X(39),Y(13)]],'c');
+  line(X(29),Y(5),X(30),Y(10),.6,'e');
+  line(X(27),Y(17),X(33),Y(18),1.5,'o');line(X(36),Y(17),X(40),Y(16),1.3,'o');
+  rect(X(30),Y(19),3,1,'e');rect(X(38),Y(18),2,1,'e');
+  poly([[X(35),Y(19)],[X(44),Y(23)],[X(43),Y(25)],[X(36),Y(24)]],'d');line(X(37),Y(21),X(42),Y(23),.7,'l');
+  const open=breath?4:charging&&!smash&&!spear?ready*3:1;
+  ellipse(X(38),Y(28),6,open+1,'o');if(breath)ellipse(X(40),Y(28),3,2,'c');
+  for(const [x,end]of [[31,37],[40,39]])poly([[X(x-1),Y(27)],[X(x+2),Y(27)],[X(end),Y(34)]],'w');
+  poly([[X(24),Y(23)],[X(30),Y(29)],[X(34),Y(32)],[X(31),Y(42)],[X(27),Y(37)],[X(24),Y(39)],[X(21),Y(29)]],'f');
+  poly([[X(34),Y(32)],[X(40),Y(32)],[X(38),Y(40)],[X(34),Y(42)]],'f');
+  for(let k=0;k<4;k++)line(X(23+k*3),Y(29+k%2*3),X(26+k*2),Y(36+k%2*3),.7,k%2?'w':'b');
+  rect(X(27),Y(36),3,2,'r');rect(X(35),Y(38),3,2,'r');
+  if(breath)for(let k=0;k<6;k++){const x=X(47+k*2),y=Y(26)+Math.sin(k*2+p.t*6.28)*3;dot(x,y,k%2?'c':'e');}
+}
+function giantDeath(a,t) {
+  const h=a.length,w=a[0].length,b=Array.from({length:h},()=>Array(w).fill('.'));
+  // Frost plates fracture into solid chunks that tumble onto the planted feet.
+  for(let y=h-1;y>=0;y--)for(let x=0;x<w;x++)if(a[y][x]!=='.') {
+    const bx=Math.floor(x/8),by=Math.floor(y/8),hash=(bx*13+by*7)%17;
+    const fall=Math.min(1,Math.max(0,(t-hash*.008)/.84));
+    const dx=Math.round((hash%7-3)*fall*3),dy=Math.round(Math.max(0,77-by*8)*fall*fall);
+    const xx=x+dx,yy=y+dy;
+    if(xx<1||xx>=w-1||yy<0||yy>=h-2)continue;
+    if(t>.9&&hash%5===0)continue;
+    b[yy][xx]=t>.3&&(x%8===0||y%8===0)&&a[y][x]!=='o'?'c':a[y][x];
+  }
+  return b.map(row=>row.join(''));
 }
 function mummy(p,c) {
   const {poly,ellipse,rect,line,limb}=c;
@@ -320,9 +350,17 @@ const chosen=only<0?sets:sets.filter(([key])=>key===process.argv[only+1]);
 if(!chosen.length)throw new Error('Unknown enemy sprite set');
 for(const [key,width,height,palette,draw] of chosen) {
   const record={width,height,pixelScale:.25,palette,clips:{}};
-  for(const [state,[n,ticks]]of Object.entries(clips))record.clips[state]={ticks,frames:Array.from({length:n},(_,f)=>{
-    const c=canvas(width,height),p=pose(state,f,n);draw(p,c);return key==='BONE_DINOSAUR'&&state==='death'?dinosaurDeath(c.a,p.t):finish(c.a,state,p.t);
+  for(const [state,[n,ticks]]of Object.entries(clips)) {
+    const grouped=key==='FROST_GIANT'&&['windup','attack','recover'].includes(state);
+    record.clips[state]={ticks,frames:Array.from({length:grouped?n*3:n},(_,f)=>{
+    const c=canvas(width,height),p=pose(state,grouped?f%n:f,n);
+    if(grouped)p.pattern=Math.floor(f/n);
+    draw(p,c);
+    if(state==='death'&&key==='BONE_DINOSAUR')return dinosaurDeath(c.a,p.t);
+    if(state==='death'&&key==='FROST_GIANT')return giantDeath(c.a,p.t);
+    return finish(c.a,state,p.t);
   })};
+  }
   art[key]=record;
 }
 writeFileSync(output, '// Editable native-resolution creature clips.\nexport default '+JSON.stringify(art,null,2)+';\n');

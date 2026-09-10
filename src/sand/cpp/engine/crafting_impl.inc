@@ -16,14 +16,14 @@ void CraftingSystem::ensureRecipes() {
     InvSlot arrows; arrows.itemKind = IK_ARROW; arrows.count = 12;
     recipes.push_back({8, arrows, {mat(OAK_WOOD, 8), mat(STONE, 4)}});
     for (const auto& [id, gear] : E.content.equipment) {
-      if (gear.family == 8 || gear.family >= 11 || id == 305) continue;
+      if (gear.family == GF_CHARM || gear.family == GF_RELIC || gear.family == GF_TROPHY || id == 305) continue;
       InvSlot output; output.itemKind = IK_GEAR; output.definitionId = id; output.count = 1;
-      bool trade = gear.family == 9 || gear.family == 10;
-      int npc = trade ? 7 : gear.style >= 4 || (gear.family <= 5 && gear.style == 3) ? 4 : 2;
-      int ability = gear.family == 6 && gear.style >= 5 ? 2 : gear.family <= 5 && gear.style == 3 ? 2 : 0;
+      bool trade = gear.family == GF_SPELL || gear.family == GF_POTION || gear.family == GF_UPGRADE;
+      int npc = trade ? 7 : gear.style >= 4 || (gear.family <= GF_WAND && gear.style == 3) ? 4 : 2;
+      int ability = gear.family == GF_ARMOR && gear.style >= 5 ? 2 : gear.family <= GF_WAND && gear.style == 3 ? 2 : 0;
       std::vector<CraftIngredient> cost;
       if (trade) cost = {mat(COPPER_ORE, gear.price)};
-      else cost = {mat(IRON_ORE, imax(8, gear.price / 2)), mat(OAK_WOOD, gear.family == 6 ? 12 : 20)};
+      else cost = {mat(IRON_ORE, imax(8, gear.price / 2)), mat(OAK_WOOD, gear.family == GF_ARMOR ? 12 : 20)};
       recipes.push_back({1000 + id, output, cost, npc, ability});
     }
   }

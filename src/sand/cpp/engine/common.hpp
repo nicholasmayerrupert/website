@@ -426,6 +426,23 @@ static const double IT_COAGULATE_R = 4.0;    // nearby identical material drops 
 static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (steps)
 static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
 // Item snapshot layout: IS_* offsets / IS_STRIDE in abi.generated.hpp.
+static constexpr int WAND_MAX_SPELLS = 5, WAND_MAX_UPGRADES = 4;
+static constexpr int PLAYER_MANA_MAX = 100, WAND_CHARGE_TICKS = 60;
+struct WandState {
+  int spells[WAND_MAX_SPELLS]{};
+  int upgrades[WAND_MAX_UPGRADES]{};
+  int links[WAND_MAX_UPGRADES]{};
+  int cursor = 0;
+  bool initialized = false;
+};
+// A paid cast owns its recipe until every carried spell has resolved.
+struct SpellCast {
+  int spells[WAND_MAX_SPELLS]{};
+  int connections[WAND_MAX_SPELLS]{};
+  int count = 0, nextSlot = 0, power = 100, shots = 1, bounces = 0, bonusDamage = 0;
+  int homing = 0, lifetime = 100, manaCost = 0, cooldown = 36;
+  bool charged = false;
+};
 struct Item {
   int definitionId = 0;
   int id = 0;
@@ -439,6 +456,7 @@ struct Item {
   double vx = 0, vy = 0;   // cells per step
   int life = 0;            // PARTICLE: steps remaining
   int pickupDelay = 0;     // ITEM: steps before it can be vacuumed (and homed)
+  WandState wand;
 };
 
 // Projectiles are lightweight actor-clock entities. Fast rounds use swept
@@ -463,6 +481,8 @@ struct Projectile {
   uint8_t kind = PK_ARROW;
   int fuse = 0;
   double rotation = 0;
+  SpellCast cast;
+  int spellNode = 0, spellTimer = 0, spellBounces = 0;
 };
 
 // Player state and deterministic platformer physics.
@@ -562,6 +582,7 @@ struct InvSlot {
   uint8_t toolTier = 0;   // ToolTier when isTool
   uint8_t plantType = PT_STANDARD; // species carried by seed stacks
   int count = 0;          // stack size (tools = 1); 0 = empty
+  WandState wand;
 };
 struct InventoryPoolEntry {
   uint8_t material = EMPTY;
@@ -657,7 +678,9 @@ struct Player {
   // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
   InvSlot inv[INV_SLOTS];
   InvSlot equipment[9];
-  int mana = 100, stamina = 100, actionTicks = 0, actionState = AS_IDLE;
+  int mana = PLAYER_MANA_MAX, stamina = 100, actionTicks = 0, actionState = AS_IDLE;
+  int manaRecoveryTicks = 0, wandChargeTicks = 0;
+  SpellCast pendingCast;
   int actionDuration = 0, actionDefinition = 0, dodgeCooldown = 0, abilities = 0;
   bool airDashUsed = false;
   int movementPrevInput = 0;

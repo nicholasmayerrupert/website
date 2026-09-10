@@ -50,6 +50,7 @@ class InventorySystem {
   bool throwFromCursor(int id, int whole);
   void dropAll(Player& p);
   int buildCursorSnapshot(int playerId);
+  void writeSlotSnapshot(float* out, const InvSlot& item, bool selected = false, int pool = -1);
   int buildInventorySnapshot(int playerId);
   void applyInventoryPlayer(Player& p);
 

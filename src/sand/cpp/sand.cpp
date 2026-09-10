@@ -17,6 +17,7 @@
 #include "engine/world_clock.hpp"
 #include "engine/content.hpp"
 #include "engine/combat.hpp"
+#include "engine/magic.hpp"
 #include "engine/discovery.hpp"
 #include "engine/missions.hpp"
 #include "engine/glpresenter.hpp"
@@ -39,6 +40,7 @@ struct Engine {
   ContentSystem content{*this};
   DiscoverySystem discovery{*this};
   CombatSystem combat{*this};
+  MagicSystem magic{*this};
   ContainerSystem containers{*this};
   BedSystem beds{*this};
   WorldClockSystem worldClock;
@@ -77,6 +79,8 @@ const int Engine::DIRS_RF[2] = {1, -1};
 // Subsystem method bodies require the complete Engine definition.
 #include "engine/content_impl.inc"
 #include "engine/combat_impl.inc"
+#include "engine/magic_recipes.inc"
+#include "engine/magic_impl.inc"
 #include "engine/containers_impl.inc"
 #include "engine/beds_impl.inc"
 #include "engine/checkpoint_impl.inc"

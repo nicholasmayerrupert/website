@@ -298,8 +298,19 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
       }
       if (!found) continue;
     } else if (r.habitat == CH_SURFACE) {
-      wy = surface - s.h - 2;
-      for (int down = 0; down <= 5; down++) if (boxFitsHabitat(speciesId, wx, wy + down)) { wy += down; break; }
+      // The whole footprint must clear a slope or fossil ledge. Search the
+      // loaded surface band for grounded poses, including above the center height.
+      int highestSurface = surface;
+      for (int x = (int)std::floor(wx); x < (int)std::ceil(wx + s.w); x++)
+        highestSurface = imin(highestSurface, E.terrain.genSurfaceAbs(x));
+      double baseY = highestSurface - s.h;
+      bool found = false;
+      for (int d = 0; d <= 32 && !found; d++) for (int sign : {-1, 1}) {
+        double cy = baseY + sign * d;
+        if (!boxInsideLoadedWindow(wx, cy, s.w, s.h, 2)) continue;
+        if (boxFitsHabitat(speciesId, wx, cy)) { wy = cy; found = true; break; }
+      }
+      if (!found) continue;
     } else if (r.habitat == CH_AIR) {
       double altitude = 10 + whash2(seed ^ 0x33u, attempt, centerX) * 34;
       wy = surface - s.h - altitude;

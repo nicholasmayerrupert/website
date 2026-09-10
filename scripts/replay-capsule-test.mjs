@@ -103,6 +103,7 @@ const events = [
   { tick: 20, message: normalizeReplayMessage({ type: 'intent', intent: 'move', from: 2, to: 5 }) },
   { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'pick', slot: 3, half: true }) },
   { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'sort' }) },
+  { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'wand-socket', slot: 5, kind: 2, index: 1, value: 3 }) },
   { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'chest-slot', chest: 1, slot: 23, action: 1 }) },
   { tick: 22, message: normalizeReplayMessage({ type: 'intent', intent: 'set-player-state', state: { health: 42 } }) },
   {

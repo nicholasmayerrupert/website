@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 50;
+static const int ABI_VERSION = 51;
 
-static const uint64_t ABI_FINGERPRINT = 0x46fc192e70d1ULL;
+static const uint64_t ABI_FINGERPRINT = 0x377f09a76d7fULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -57,8 +57,11 @@ enum PlayerSnapshotField : int {
   PS_DODGE_COOLDOWN = 45,
   PS_AIR_DASH_USED = 46,
   PS_MOVEMENT_PREV_INPUT = 47,
+  PS_MANA_MAX = 48,
+  PS_MANA_CAST_COST = 49,
+  PS_SPELL_CHARGE = 50,
 };
-static const int PS_STRIDE = 48;
+static const int PS_STRIDE = 51;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -125,6 +128,21 @@ struct WritePlayerSnapshotGear8 {
   WritePlayerSnapshotGear8() = delete;
   constexpr explicit WritePlayerSnapshotGear8(int input) : value(input) {}
 };
+struct WritePlayerSnapshotManaMax {
+  int value;
+  WritePlayerSnapshotManaMax() = delete;
+  constexpr explicit WritePlayerSnapshotManaMax(int input) : value(input) {}
+};
+struct WritePlayerSnapshotManaCastCost {
+  int value;
+  WritePlayerSnapshotManaCastCost() = delete;
+  constexpr explicit WritePlayerSnapshotManaCastCost(int input) : value(input) {}
+};
+struct WritePlayerSnapshotSpellCharge {
+  float value;
+  WritePlayerSnapshotSpellCharge() = delete;
+  constexpr explicit WritePlayerSnapshotSpellCharge(float input) : value(input) {}
+};
 struct WritePlayerSnapshotParameters {
   WritePlayerSnapshotRespawnReady respawnReady;
   WritePlayerSnapshotBowCharge bowCharge;
@@ -139,6 +157,9 @@ struct WritePlayerSnapshotParameters {
   WritePlayerSnapshotGear6 gear6;
   WritePlayerSnapshotGear7 gear7;
   WritePlayerSnapshotGear8 gear8;
+  WritePlayerSnapshotManaMax manaMax;
+  WritePlayerSnapshotManaCastCost manaCastCost;
+  WritePlayerSnapshotSpellCharge spellCharge;
 };
 template <class Record>
 inline void writePlayerSnapshot(float* out, const Record& record, const WritePlayerSnapshotParameters& values) {
@@ -190,6 +211,9 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_DODGE_COOLDOWN] = static_cast<float>(record.dodgeCooldown);
   out[PS_AIR_DASH_USED] = (record.airDashUsed ? 1.0f : 0.0f);
   out[PS_MOVEMENT_PREV_INPUT] = static_cast<float>(record.movementPrevInput);
+  out[PS_MANA_MAX] = static_cast<float>(values.manaMax.value);
+  out[PS_MANA_CAST_COST] = static_cast<float>(values.manaCastCost.value);
+  out[PS_SPELL_CHARGE] = static_cast<float>(values.spellCharge.value);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId
@@ -391,7 +415,7 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_NPC_ID] = static_cast<float>(0);
 }
 
-// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool, definitionId
+// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool, definitionId, wandSpellSlots, wandUpgradeSlots, wandManaCost, wandNextSpell, wandSpell0, wandSpell1, wandSpell2, wandSpell3, wandSpell4, wandUpgrade0, wandUpgrade1, wandUpgrade2, wandUpgrade3, wandLink0, wandLink1, wandLink2, wandLink3
 enum InventorySlotField : int {
   IVS_MATERIAL = 0,
   IVS_IS_TOOL = 1,
@@ -403,8 +427,25 @@ enum InventorySlotField : int {
   IVS_SELECTED = 7,
   IVS_POOL = 8,
   IVS_DEFINITION_ID = 9,
+  IVS_WAND_SPELL_SLOTS = 10,
+  IVS_WAND_UPGRADE_SLOTS = 11,
+  IVS_WAND_MANA_COST = 12,
+  IVS_WAND_NEXT_SPELL = 13,
+  IVS_WAND_SPELL0 = 14,
+  IVS_WAND_SPELL1 = 15,
+  IVS_WAND_SPELL2 = 16,
+  IVS_WAND_SPELL3 = 17,
+  IVS_WAND_SPELL4 = 18,
+  IVS_WAND_UPGRADE0 = 19,
+  IVS_WAND_UPGRADE1 = 20,
+  IVS_WAND_UPGRADE2 = 21,
+  IVS_WAND_UPGRADE3 = 22,
+  IVS_WAND_LINK0 = 23,
+  IVS_WAND_LINK1 = 24,
+  IVS_WAND_LINK2 = 25,
+  IVS_WAND_LINK3 = 26,
 };
-static const int IVS_STRIDE = 10;
+static const int IVS_STRIDE = 27;
 
 struct WriteInventorySlotSnapshotSelected {
   bool value;
@@ -416,9 +457,27 @@ struct WriteInventorySlotSnapshotPool {
   WriteInventorySlotSnapshotPool() = delete;
   constexpr explicit WriteInventorySlotSnapshotPool(int input) : value(input) {}
 };
+struct WriteInventorySlotSnapshotWandSpellSlots {
+  int value;
+  WriteInventorySlotSnapshotWandSpellSlots() = delete;
+  constexpr explicit WriteInventorySlotSnapshotWandSpellSlots(int input) : value(input) {}
+};
+struct WriteInventorySlotSnapshotWandUpgradeSlots {
+  int value;
+  WriteInventorySlotSnapshotWandUpgradeSlots() = delete;
+  constexpr explicit WriteInventorySlotSnapshotWandUpgradeSlots(int input) : value(input) {}
+};
+struct WriteInventorySlotSnapshotWandManaCost {
+  int value;
+  WriteInventorySlotSnapshotWandManaCost() = delete;
+  constexpr explicit WriteInventorySlotSnapshotWandManaCost(int input) : value(input) {}
+};
 struct WriteInventorySlotSnapshotParameters {
   WriteInventorySlotSnapshotSelected selected;
   WriteInventorySlotSnapshotPool pool;
+  WriteInventorySlotSnapshotWandSpellSlots wandSpellSlots;
+  WriteInventorySlotSnapshotWandUpgradeSlots wandUpgradeSlots;
+  WriteInventorySlotSnapshotWandManaCost wandManaCost;
 };
 template <class Record>
 inline void writeInventorySlotSnapshot(float* out, const Record& record, const WriteInventorySlotSnapshotParameters& values) {
@@ -432,6 +491,23 @@ inline void writeInventorySlotSnapshot(float* out, const Record& record, const W
   out[IVS_SELECTED] = (values.selected.value ? 1.0f : 0.0f);
   out[IVS_POOL] = static_cast<float>(values.pool.value);
   out[IVS_DEFINITION_ID] = static_cast<float>(record.definitionId);
+  out[IVS_WAND_SPELL_SLOTS] = static_cast<float>(values.wandSpellSlots.value);
+  out[IVS_WAND_UPGRADE_SLOTS] = static_cast<float>(values.wandUpgradeSlots.value);
+  out[IVS_WAND_MANA_COST] = static_cast<float>(values.wandManaCost.value);
+  out[IVS_WAND_NEXT_SPELL] = static_cast<float>(record.wand.cursor);
+  out[IVS_WAND_SPELL0] = static_cast<float>(record.wand.spells[0]);
+  out[IVS_WAND_SPELL1] = static_cast<float>(record.wand.spells[1]);
+  out[IVS_WAND_SPELL2] = static_cast<float>(record.wand.spells[2]);
+  out[IVS_WAND_SPELL3] = static_cast<float>(record.wand.spells[3]);
+  out[IVS_WAND_SPELL4] = static_cast<float>(record.wand.spells[4]);
+  out[IVS_WAND_UPGRADE0] = static_cast<float>(record.wand.upgrades[0]);
+  out[IVS_WAND_UPGRADE1] = static_cast<float>(record.wand.upgrades[1]);
+  out[IVS_WAND_UPGRADE2] = static_cast<float>(record.wand.upgrades[2]);
+  out[IVS_WAND_UPGRADE3] = static_cast<float>(record.wand.upgrades[3]);
+  out[IVS_WAND_LINK0] = static_cast<float>(record.wand.links[0]);
+  out[IVS_WAND_LINK1] = static_cast<float>(record.wand.links[1]);
+  out[IVS_WAND_LINK2] = static_cast<float>(record.wand.links[2]);
+  out[IVS_WAND_LINK3] = static_cast<float>(record.wand.links[3]);
 }
 
 // inventoryPool: pool, material, count, enabled, exactMaterial
@@ -1619,6 +1695,136 @@ static constexpr bool isSoundEventTypeValue(int value) {
     case SE_CREATURE_ATTACK:
     case SE_CREATURE_DEATH:
     case SE_CREATURE_MOVE:
+      return true;
+    default: return false;
+  }
+}
+
+enum GearFamily : uint8_t {
+  GF_SWORD = 1,
+  GF_AXE = 2,
+  GF_SPEAR = 3,
+  GF_BOW = 4,
+  GF_WAND = 5,
+  GF_ARMOR = 6,
+  GF_SHIELD = 7,
+  GF_CHARM = 8,
+  GF_SPELL = 9,
+  GF_POTION = 10,
+  GF_RELIC = 11,
+  GF_TROPHY = 12,
+  GF_UPGRADE = 13,
+};
+
+static constexpr bool isGearFamilyValue(int value) {
+  switch (value) {
+    case GF_SWORD:
+    case GF_AXE:
+    case GF_SPEAR:
+    case GF_BOW:
+    case GF_WAND:
+    case GF_ARMOR:
+    case GF_SHIELD:
+    case GF_CHARM:
+    case GF_SPELL:
+    case GF_POTION:
+    case GF_RELIC:
+    case GF_TROPHY:
+    case GF_UPGRADE:
+      return true;
+    default: return false;
+  }
+}
+
+enum WandUpgrade : int {
+  WU_AMPLIFY = 500,
+  WU_BOUNCE = 501,
+  WU_CHARGE = 502,
+  WU_DOUBLE_SHOT = 503,
+  WU_TOGETHER = 504,
+  WU_IMPACT = 505,
+  WU_TIMER = 506,
+  WU_HOMING = 507,
+  WU_LINGER = 508,
+};
+
+static constexpr bool isWandUpgradeValue(int value) {
+  switch (value) {
+    case WU_AMPLIFY:
+    case WU_BOUNCE:
+    case WU_CHARGE:
+    case WU_DOUBLE_SHOT:
+    case WU_TOGETHER:
+    case WU_IMPACT:
+    case WU_TIMER:
+    case WU_HOMING:
+    case WU_LINGER:
+      return true;
+    default: return false;
+  }
+}
+
+enum WandSocket : uint8_t {
+  WS_SPELL = 0,
+  WS_UPGRADE = 1,
+  WS_CONNECTION = 2,
+};
+
+static constexpr bool isWandSocketValue(int value) {
+  switch (value) {
+    case WS_SPELL:
+    case WS_UPGRADE:
+    case WS_CONNECTION:
+      return true;
+    default: return false;
+  }
+}
+
+enum SpellConnection : uint8_t {
+  SC_SEQUENCE = 0,
+  SC_TOGETHER = 1,
+  SC_IMPACT = 2,
+  SC_TIMER = 3,
+};
+
+static constexpr bool isSpellConnectionValue(int value) {
+  switch (value) {
+    case SC_SEQUENCE:
+    case SC_TOGETHER:
+    case SC_IMPACT:
+    case SC_TIMER:
+      return true;
+    default: return false;
+  }
+}
+
+enum SpellEffect : uint8_t {
+  SP_EMBER = 1,
+  SP_RIME = 2,
+  SP_GALE = 3,
+  SP_STONEBREAK = 4,
+  SP_BRIAR = 5,
+  SP_LUMEN = 6,
+  SP_PRISM = 7,
+  SP_HOLLOW_STAR = 8,
+  SP_FAULTLINE = 9,
+  SP_WINTERBREATH = 10,
+  SP_CINDERMAW = 11,
+};
+
+static constexpr bool isSpellEffectValue(int value) {
+  switch (value) {
+    case SP_EMBER:
+    case SP_RIME:
+    case SP_GALE:
+    case SP_STONEBREAK:
+    case SP_BRIAR:
+    case SP_LUMEN:
+    case SP_PRISM:
+    case SP_HOLLOW_STAR:
+    case SP_FAULTLINE:
+    case SP_WINTERBREATH:
+    case SP_CINDERMAW:
       return true;
     default: return false;
   }

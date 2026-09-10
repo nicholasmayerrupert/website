@@ -29,15 +29,22 @@ try {
         return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
       });
       await page.evaluate(id => {
-        const t = window.__sandTest;
-        t.setCreatureRuntime(true, false);
-        const slot = t.getInventory().slots.findIndex(s => s.definitionId === id);
-        if (slot < 0) throw new Error(`missing equipment ${id}`);
-        t.selectSlot(slot);
+        window.__sandTest.setCreatureRuntime(true, false);
+        const game = document.querySelector('sand-game')._game;
+        const inventory = game.getInventory();
+        if (id === 1) { game.selectSlot(inventory.slots.findIndex(item => item.definitionId === id)); return; }
+        const wand = inventory.slots.findIndex(item => item.wand);
+        if (wand < 0) throw new Error('missing starter wand');
+        if (inventory.slots[wand].wand.spells[0] !== id) {
+          const rune = inventory.slots.findIndex(item => item.definitionId === id);
+          if (rune < 0) throw new Error(`missing spell rune ${id}`);
+          game.cursorPick(rune, false); game.wandSocket(wand, 0, 0); game.cursorPick(rune, false);
+        }
+        game.selectSlot(wand);
       }, definitions[action]);
       await page.waitForFunction(id => {
-        const inv = window.__sandTest.getInventory();
-        return inv.slots[inv.selected]?.definitionId === id;
+        const inventory = window.__sandTest.getInventory(), item = inventory.slots[inventory.selected];
+        return id === 1 ? item?.definitionId === id : item?.wand?.spells[0] === id;
       }, definitions[action]);
       if (args.includes('--warm-input')) {
         await page.evaluate(() => {

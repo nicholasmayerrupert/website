@@ -1,3 +1,4 @@
+import { equipWandSpell } from './magic-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE, MISSION, PROJECTILE_KIND, OFF, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
@@ -16,8 +17,7 @@ function arena(fn) {
 }
 const tick = (e, n = 1) => { for (let i = 0; i < n; i++) e.stepActors(); };
 function cast(e, id, gear, aimX, aimY) {
-  if (!e.getInventory(id).slots.some(s => s.definitionId === gear)) e.addGear(id, gear, 1);
-  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex(s => s.definitionId === gear));
+  equipWandSpell(e, id, gear);
   e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX, aimY }); tick(e);
   e.setPlayerInput(id, { bits: 0, aimX, aimY });
   for (let i = 0; i < 40 && !e.getProjectiles().length; i++) tick(e);

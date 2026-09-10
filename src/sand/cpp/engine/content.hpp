@@ -9,7 +9,7 @@ struct ContentQuest {
   int material, count, species;
   std::vector<int> prerequisites;
 };
-struct ContentGear { int id, family, slot, power, defense, stamina, mana, cooldown, reach, spell, style, price; std::array<uint32_t,256> icon{}; };
+struct ContentGear { int id, family, slot, power, defense, stamina, mana, cooldown, reach, spell, style, price; int spellSlots = 0, upgradeSlots = 0, initialSpell = 0; std::array<uint32_t,256> icon{}; };
 struct ContentResident { int id, species, x, y, surface, roamRadius; };
 struct ContentClip {
   int count = 1, ticks = 8, offset = 0, duration = 8;

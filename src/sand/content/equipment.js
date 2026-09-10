@@ -1,6 +1,8 @@
+import { GEAR_FAMILY, WAND_UPGRADE } from '../wasmBridge/abi.generated.js';
+export { GEAR_FAMILY };
+
 // Stable item identities are shared by content compilation, authority, and UI.
 export const EQUIPMENT_SLOTS = ['Head', 'Torso', 'Hands', 'Legs', 'Boots', 'Cloak', 'Offhand', 'Charm I', 'Charm II'];
-export const GEAR_FAMILY = { sword: 1, axe: 2, spear: 3, bow: 4, staff: 5, armor: 6, shield: 7, charm: 8, spell: 9, potion: 10, relic: 11, trophy: 12 };
 export const ARMOR_SETS = [
   { name: 'Wayfarer', color: '#82906a', trim: '#c4a978', defense: 1, lore: 'Waxed linen and worn leather, stitched for the long road.' },
   { name: 'Briarbound', color: '#506f49', trim: '#c7ab68', defense: 2, lore: 'Living bark carries the quiet strength of Watchwood.' },
@@ -11,7 +13,7 @@ export const ARMOR_SETS = [
 ];
 const gear = [];
 function add(id, name, family, details = {}) {
-  gear.push({ id, name, family: GEAR_FAMILY[family], slot: -1, power: 0, defense: 0, stamina: 0, mana: 0,
+  gear.push({ id, name, family: GEAR_FAMILY[family.toUpperCase()], slot: -1, power: 0, defense: 0, stamina: 0, mana: 0,
     cooldown: 30, reach: 10, spell: 0, style: 0, price: 20, description: '', ...details });
 }
 [
@@ -19,11 +21,16 @@ function add(id, name, family, details = {}) {
   ['axe', ['Woodcutter’s axe', 'Cinder cleaver', 'Kingsfall'], [25, 36, 48], 28, 44, 10],
   ['spear', ['Ashwood spear', 'Reedwarden’s pike', 'Dawn lance'], [16, 25, 34], 16, 34, 18],
   ['bow', ['Yew bow', 'Thornstring', 'Starfall bow'], [20, 30, 42], 10, 34, 60],
-  ['staff', ['Hearth staff', 'Tideglass staff', 'Bellwood staff'], [16, 25, 34], 0, 36, 52],
 ].forEach(([family, names, powers, stamina, cooldown, reach], familyIndex) => names.forEach((name, tier) =>
   add(1 + familyIndex * 3 + tier, name, family, { power: powers[tier], stamina, cooldown, reach,
-    mana: family === 'staff' ? 12 : 0, spell: family === 'staff' ? tier + 1 : 0, style: tier + 1,
-    price: 30 + tier * 90, description: `${name}. ${family === 'axe' ? 'A weighty, sweeping blow; breaks timber and brittle stone.' : family === 'spear' ? 'A precise thrust with generous reach.' : family === 'bow' ? 'Hold to draw, release to loose an arrow.' : family === 'staff' ? (tier === 0 ? 'Fires an explosive ember that blasts terrain and nearby foes.' : 'Channels a spell toward your aim.') : 'A quick, dependable cutting edge.'}` })));
+    style: tier + 1,
+    price: 30 + tier * 90, description: `${name}. ${family === 'axe' ? 'A weighty, sweeping blow; breaks timber and brittle stone.' : family === 'spear' ? 'A precise thrust with generous reach.' : family === 'bow' ? 'Hold to draw, release to loose an arrow.' : 'A quick, dependable cutting edge.'}` })));
+[
+  { id: 13, name: 'Hearth wand', spellSlots: 3, upgradeSlots: 2, initialSpell: 300, cooldown: 36, style: 1, price: 30 },
+  { id: 14, name: 'Tideglass wand', spellSlots: 4, upgradeSlots: 3, initialSpell: 301, cooldown: 30, style: 2, price: 120 },
+  { id: 15, name: 'Bellwood wand', spellSlots: 5, upgradeSlots: 4, initialSpell: 302, cooldown: 24, style: 3, price: 210 },
+].forEach(({ id, name, ...wand }) => add(id, name, 'wand', { ...wand,
+  description: `${wand.spellSlots} spell sockets and ${wand.upgradeSlots} upgrade sockets. Casts in order using your mana. Arrange its runes in Wandcraft.` }));
 ARMOR_SETS.forEach((set, index) => EQUIPMENT_SLOTS.slice(0, 6).forEach((slot, part) =>
   add(100 + index * 6 + part, `${set.name} ${['hood', 'coat', 'gloves', 'leggings', 'boots', 'cloak'][part]}`, 'armor',
     { slot: part, style: index + 1, defense: set.defense, price: 15 + index * 35, description: set.lore })));
@@ -47,6 +54,17 @@ add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 26, mana: 28, cooldow
   description: 'A broad cloud of frost. Chills creatures, freezes water, and coats struck surfaces in lasting ice. Recovered from frost giants.' });
 add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 68, style: 3, price: 140,
   description: 'Lob a molten glob that leaves a small pool of real lava. The lingering lava can burn anyone, including its caster.' });
+[
+  [WAND_UPGRADE.AMPLIFY, 'Amplify', 'Doubles spell damage and mana cost. Multiple Amplify upgrades multiply together.'],
+  [WAND_UPGRADE.BOUNCE, 'Bounce', 'Travelling spells ricochet twice more from solid terrain. Adds 25% of the base mana cost.'],
+  [WAND_UPGRADE.CHARGE, 'Charge', 'Hold to gather up to twice the power and mana cost over one second; release to cast. Charging stops at what your mana can afford.'],
+  [WAND_UPGRADE.DOUBLE_SHOT, 'Double Shot', 'Fires two copies of each spell and doubles its mana cost. Stacks with other Double Shot upgrades.'],
+  [WAND_UPGRADE.TOGETHER, 'Cast Together', 'Joins a spell to the next occupied spell socket, casting both at once. Choose the first socket below this upgrade.'],
+  [WAND_UPGRADE.IMPACT, 'On Impact', 'The linked spell carries the next spell and releases it on contact or when its effect ends. Every carried copy is paid for at launch.'],
+  [WAND_UPGRADE.TIMER, 'After Delay', 'The linked spell releases the next spell after 0.4 seconds, or when it ends sooner. Every carried copy is paid for at launch.'],
+  [WAND_UPGRADE.HOMING, 'Homing', 'Travelling spells curve toward nearby creatures. Adds 25% of the base mana cost.'],
+  [WAND_UPGRADE.LINGER, 'Linger', 'Adds one base lifetime to spells and fields. Adds 50% of the base mana cost.'],
+].forEach(([id, name, description], index) => add(id, name, 'upgrade', { price: 25 + index * 5, description }));
 // Signature trophies are ordinary, stackable inventory items reserved for future recipes.
 const trophies = [
   [401, 'Pike tooth', 'A hooked tooth, sharp enough to score river stone.', '#d9dec8', 'fang'],

@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 4) return false;
+  if (r.take() != 0x41535452 || r.take() != 5) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -154,14 +154,24 @@ bool ContentSystem::load(const int32_t* data, int length) {
   std::map<int, ContentGear> nextEquipment;
   int gearCount = r.bounded(1, 512);
   for (int i = 0; i < gearCount && r.valid; i++) {
-    ContentGear g{r.bounded(1, 10000), r.bounded(1, 12), r.bounded(-1, 8), r.bounded(0, 200),
+    ContentGear g{r.bounded(1, 10000), r.bounded(GF_SWORD, GF_UPGRADE), r.bounded(-1, 8), r.bounded(0, 200),
       r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 100),
-      r.bounded(0, 11), r.bounded(0, 6), r.bounded(0, 10000)};
+      r.bounded(0, SP_CINDERMAW), r.bounded(0, 6), r.bounded(0, 10000)};
+    g.spellSlots = r.bounded(0, WAND_MAX_SPELLS);
+    g.upgradeSlots = r.bounded(0, WAND_MAX_UPGRADES);
+    g.initialSpell = r.bounded(0, 10000);
+    if (g.family == GF_WAND) {
+      if (g.spellSlots == 0 || g.initialSpell == 0 || g.spell || g.mana || g.power) return false;
+    } else if (g.spellSlots || g.upgradeSlots || g.initialSpell) return false;
     for (auto& pixel : g.icon) {
       pixel=(uint32_t)r.take();
       if (pixel && (pixel>>24)!=255) return false;
     }
     if (!nextEquipment.emplace(g.id, g).second) return false;
+  }
+  for (const auto& [id, gear] : nextEquipment) if (gear.family == GF_WAND) {
+    auto spell = nextEquipment.find(gear.initialSpell);
+    if (spell == nextEquipment.end() || spell->second.family != GF_SPELL) return false;
   }
   std::vector<ContentChest> nextChests;
   std::unordered_set<int> chestIds;

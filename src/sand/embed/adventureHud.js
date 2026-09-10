@@ -5,6 +5,7 @@ import { OBJECTIVE_STATE, ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { ADVENTURE_STYLE } from './adventureStyle.js';
 import { ADVENTURE_INVENTORY_STYLE } from './adventureInventoryStyle.js';
 import { createAdventureEquipment } from './adventureEquipment.js';
+import { createWandEditor } from './wandEditor.js';
 import { createGameSelect } from './gameSelect.js';
 
 const ICONS = {
@@ -86,6 +87,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   const equipment = createAdventureEquipment(game, inventory);
   inventory.el.prepend(equipment.el);
   const refreshEquipment = equipment.refresh;
+  const wands = createWandEditor(root, game, inventory); inventory.el.append(wands.el);
   let nearChest = null, shownChest = 0, lootSignature = '', chestPointer = null;
   const chestPrompt = button('E · Open chest', () => openChest(), 'ad-chest-prompt'); chestPrompt.hidden = true; root.append(chestPrompt);
   const chestHighlight = el('div', 'ad-chest-highlight'); chestHighlight.hidden = true; root.append(chestHighlight);
@@ -207,7 +209,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     if (name) {
       sheet.setAttribute('aria-label', LABELS[name]);
       if (name === 'journal') renderJournal();
-      if (name === 'inventory') { refreshEquipment(); footprint.value = game.getInventory().selectedFootprint; }
+      if (name === 'inventory') { refreshEquipment(); wands.refresh(); footprint.value = game.getInventory().selectedFootprint; }
       if (name === 'map' && prior !== 'map') centerMap();
       pause(); tabButtons[name].focus({ preventScroll: true });
     } else {
@@ -418,7 +420,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
       completed.add('chapter'); notice.replaceChildren(el('small', '', 'THE HOLLOW BELL'), el('span', '', 'Its song returns. Hearthwood remembers your kindness.'));
       notice.hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { notice.hidden = true; }, 12000);
     }
-    if (panel === 'inventory') refreshEquipment();
+    if (panel === 'inventory') { refreshEquipment(); wands.refresh(); } else wands.close();
     const next = game.getMission(); if (next) mission = next;
     const signature = mission ? `${mission.revision}:${mission.phase}` : '';
     if (signature !== lastSignature) {
@@ -437,6 +439,6 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     openWorkshop(actor) { open('inventory'); inventory.setStation(actor?.npcId || 0, game.getPlayer()?.abilities || 0); inventory.update(game.getInventory()); },
     isOpen: () => !!panel,
     inventoryChanged(value) { if (value && panel !== 'inventory') open('inventory'); else if (!value && panel === 'inventory') open(null); },
-    destroy() { footprint.destroy(); destroyed = true; cancelAnimationFrame(chestFrame); clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); chestHighlight.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
+    destroy() { footprint.destroy(); wands.destroy(); destroyed = true; cancelAnimationFrame(chestFrame); clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); chestHighlight.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
   };
 }

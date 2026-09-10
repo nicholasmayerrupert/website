@@ -22,7 +22,7 @@ export function createAdventureEquipment(game, inventory) {
   let signature = '';
   function refresh() {
     const gear = game.getInventory().equipment || [], hero = game.getPlayer(), carried = game.getCursor();
-    const next = JSON.stringify([gear.map(item => item.definitionId), hero?.health, hero?.mana, carried]);
+    const next = JSON.stringify([gear.map(item => item.definitionId), hero?.health, hero?.mana, hero?.manaMax, carried]);
     if (signature === next) return; signature = next;
     buttons.forEach((button, index) => {
       const definition = EQUIPMENT_BY_ID[gear[index]?.definitionId];
@@ -35,7 +35,7 @@ export function createAdventureEquipment(game, inventory) {
     const defense = Math.min(45, gear.reduce((sum, item) => sum + (EQUIPMENT_BY_ID[item.definitionId]?.defense || 0), 0)
       + (gear.slice(7).some(item => item.definitionId === 223) ? 4 : 0));
     stats.replaceChildren();
-    for (const [label, value] of [['Health', `${Math.ceil(hero?.health || 0)} / 100`], ['Mana', `${Math.floor(hero?.mana || 0)} / 100`], ['Damage reduction', `${defense}%`]]) {
+    for (const [label, value] of [['Health', `${Math.ceil(hero?.health || 0)} / 100`], ['Mana', `${Math.floor(hero?.mana || 0)} / ${hero?.manaMax || 100}`], ['Damage reduction', `${defense}%`]]) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; stats.append(dt, dd);
     }
     const ctx = preview.getContext('2d'); ctx.clearRect(0, 0, preview.width, preview.height);

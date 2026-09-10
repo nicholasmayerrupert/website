@@ -40,7 +40,7 @@ async function decode(record) {
   } else bytes = new Uint8Array(record.bytes);
   if (bytes.length < 24 || bytes.length > 192 * 1024 * 1024) throw new Error('Invalid checkpoint size');
   const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (header.getUint32(0, true) !== 0x52455453 || ![2, 3, 4].includes(header.getUint32(4, true))) throw new Error('Unsupported checkpoint');
+  if (header.getUint32(0, true) !== 0x52455453 || ![2, 3, 4, 5].includes(header.getUint32(4, true))) throw new Error('Unsupported checkpoint');
   let hash = 2166136261;
   for (let i = 0; i < bytes.length - 4; i++) hash = Math.imul(hash ^ bytes[i], 16777619) >>> 0;
   if (hash !== header.getUint32(bytes.length - 4, true)) throw new Error('Checkpoint checksum mismatch');

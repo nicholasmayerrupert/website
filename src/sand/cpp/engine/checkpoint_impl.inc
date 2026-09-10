@@ -1,12 +1,14 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 4;
+static constexpr uint32_t CHECKPOINT_VERSION = 5;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
   for (size_t i = 0; i < size; i++) hash = (hash ^ data[i]) * 16777619u;
   return hash;
 }
+template<class T> static constexpr bool CHECKPOINT_STRUCTURED =
+  std::is_same_v<T, InvSlot> || std::is_same_v<T, Item> || std::is_same_v<T, Projectile>;
 struct CheckpointArchive {
   explicit CheckpointArchive(std::vector<uint8_t>& output, bool read = false, bool measure = false)
     : bytes(output), reading(read), measuring(measure) {}
@@ -29,7 +31,7 @@ struct CheckpointArchive {
     at += size;
   }
   template<class T> std::enable_if_t<std::is_trivially_copyable_v<T>> field(T& value) { raw(&value, sizeof(T)); }
-  template<class T, size_t N> std::enable_if_t<!std::is_trivially_copyable_v<T>> field(T (&value)[N]) { for (auto& item : value) field(item); }
+  template<class T, size_t N> std::enable_if_t<!std::is_trivially_copyable_v<T> || CHECKPOINT_STRUCTURED<T>> field(T (&value)[N]) { for (auto& item : value) field(item); }
   template<class... T> void fields(T&... value) { (field(value), ...); }
   template<class A, class B> void field(std::pair<A,B>& value) { fields(value.first,value.second); }
   uint32_t count(size_t size) {
@@ -40,7 +42,7 @@ struct CheckpointArchive {
   template<class T> void field(std::vector<T>& value) {
     uint32_t n = count(value.size()); if (!valid) return;
     if (reading) value.resize(n);
-    if constexpr (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>) { if (n) raw(value.data(), n * sizeof(T)); }
+    if constexpr (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !CHECKPOINT_STRUCTURED<T>) { if (n) raw(value.data(), n * sizeof(T)); }
     else for (auto& item : value) { if (!valid) break; field(item); }
   }
   template<class K, class V, class H> void field(std::unordered_map<K,V,H>& value) { map(value); }
@@ -60,7 +62,29 @@ struct CheckpointArchive {
   void field(Comp& v) { fields(v.id,v.plantType,v.cells,v.yMax,v.woodCount,v.leafCount,v.age,v.cacheDirty,v.gravityGrowth,v.grounded,v.bakedAssemblyId,v.growing,v.woodCells,v.seedWoodCells); }
   void field(StoredCompFragment& v) { fields(v.id,v.cellOffsets); }
   void field(InventoryPool& v) { fields(v.entries,v.exactMaterial); }
-  void field(Player& v) { fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame); }
+  void field(WandState& v) { fields(v.spells,v.upgrades,v.links,v.cursor,v.initialized); }
+  void field(SpellCast& v) { fields(v.spells,v.connections,v.count,v.nextSlot,v.power,v.shots,v.bounces,v.bonusDamage,v.homing,v.lifetime,v.manaCost,v.cooldown,v.charged); }
+  void field(InvSlot& v) {
+    static_assert(offsetof(InvSlot,wand) == 16);
+    raw(&v,16);
+    if (version >= 5) field(v.wand); else if (reading) v.wand = WandState();
+  }
+  void field(Item& v) {
+    static_assert(offsetof(Item,wand) == 64);
+    raw(&v,64);
+    if (version >= 5) field(v.wand); else if (reading) v.wand = WandState();
+  }
+  void field(Projectile& v) {
+    static_assert(offsetof(Projectile,cast) == 72);
+    raw(&v,72);
+    if (version >= 5) fields(v.cast,v.spellNode,v.spellTimer,v.spellBounces);
+    else if (reading) { v.cast = SpellCast(); v.spellNode = v.spellTimer = v.spellBounces = 0; }
+  }
+  void field(Player& v) {
+    fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame);
+    if (version >= 5) fields(v.manaRecoveryTicks,v.wandChargeTicks,v.pendingCast);
+    else if (reading) { v.manaRecoveryTicks = v.wandChargeTicks = 0; v.pendingCast = SpellCast(); }
+  }
   void field(AdventureChest& v) { fields(v.id,v.wx,v.wy,v.opened,v.loot); if (version>=3) field(v.packed); else if (reading) v.packed=false; }
   void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); }
   void field(Body*& body) {
@@ -152,7 +176,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     auto found=a.bodies.find({peer.layer,peer.id}); if (found==a.bodies.end()) return false;
     peer.body->jointPeer=found->second;
   }
-  auto migrateSeed=[&](InvSlot& slot){ E.canonicalizeSeed(slot.material,slot.plantType); };
+  auto migrateSeed=[&](InvSlot& slot){ E.canonicalizeSeed(slot.material,slot.plantType); E.magic.initializeWand(slot); };
   for (auto& chest:E.containers.chests) for (auto& slot:chest.loot) migrateSeed(slot);
   for (auto& p:E.psys.players) {
     for (auto& slot:p.inv) migrateSeed(slot);
@@ -161,8 +185,25 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0;
     // Input acknowledgements belong to the browser session, not the saved world.
     p.inputSeq=0; p.mineActive=false; p.mineChestId=0; p.placeStrokeActive=false;
-    for (const auto& slot:p.inv) if (slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) return false;
+    p.wandChargeTicks=0;
+    if (p.mana < 0 || p.mana > PLAYER_MANA_MAX || p.manaRecoveryTicks < 0 || p.manaRecoveryTicks >= 15) return false;
+    for (const auto& slot:p.inv) if ((slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) || !E.magic.validItem(slot)) return false;
+    for (const auto& slot:p.equipment) if (!E.magic.validItem(slot)) return false;
+    if (!E.magic.validItem(p.cursor) || !E.magic.validCast(p.pendingCast)) return false;
+    if (version < 5 && p.actionState == AS_CAST && p.actionTicks > p.actionDuration * 2 / 3) {
+      InvSlot item; item.itemKind=IK_GEAR; item.definitionId=p.actionDefinition; item.count=1;
+      p.pendingCast=E.magic.compileCast(item);
+    }
   }
+  for (const auto& dropped:E.itemsys.items) {
+    InvSlot item; item.itemKind=dropped.itemKind; item.definitionId=dropped.definitionId;
+    item.count=dropped.count; item.wand=dropped.wand;
+    if (!E.magic.validItem(item)) return false;
+  }
+  for (const auto& projectile:E.projectiles.projectiles)
+    if (!E.magic.validCast(projectile.cast) || projectile.spellNode < 0 || projectile.spellNode >= WAND_MAX_SPELLS ||
+        projectile.spellTimer < 0 || projectile.spellTimer > 24 || projectile.spellBounces < 0 || projectile.spellBounces > 8) return false;
+  for (const auto& chest:E.containers.chests) for (const auto& slot:chest.loot) if (!E.magic.validItem(slot)) return false;
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;
   E.rigid.clearContactCaches(); E.containers.activeChest=0; E.discovery.revision++;
   return true;

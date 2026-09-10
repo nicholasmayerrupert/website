@@ -1,4 +1,4 @@
-import { ARMOR_SETS, EQUIPMENT_BY_ID } from './equipment.js';
+import { ARMOR_SETS, EQUIPMENT_BY_ID, GEAR_FAMILY } from './equipment.js';
 
 // Pixel-center rasterization of the shared 16×16 gear silhouettes.
 const cache = new Map();
@@ -40,7 +40,7 @@ export function gearPixels(id) {
       if(winding) pixels[yy*16+xx]=color(fill);
     }
   };
-  if (gear.family === 12) {
+  if (gear.family === GEAR_FAMILY.TROPHY) {
     const base = gear.color, edge = '#283333', light = '#eee4c6';
     const shapes = {
       fang: 'M4 2h7v4h-1v3H9v2H7v2H4l2-4V6H4Z',
@@ -62,17 +62,40 @@ export function gearPixels(id) {
     if (gear.shape === 'coin') { rect(7, 6, 2, 5, edge); rect(5, 8, 6, 1, edge); }
     if (gear.shape === 'gland') { rect(7, 8, 4, 3, '#e6ab66'); rect(8, 7, 2, 2, '#fff0ba'); }
     if (gear.shape === 'shell' || gear.shape === 'pelt') { rect(7, 6, 2, 5, edge); rect(4, 7, 7, 1, edge); }
-  } else if (gear.family <= 3) {
+  } else if (gear.family === GEAR_FAMILY.UPGRADE) {
+    path('M4 1h8v2h2v10h-2v2H4v-2H2V3h2Z', '#7a91aa');
+    rect(4, 3, 8, 10, '#293848');
+    const tint = ['#f0c77e','#99e0c4','#d6b4f0','#9bc9fa','#dbd49b','#f2a57e','#a7c7e8','#c8b0ea','#a1d9c8'][gear.id-500];
+    const symbol = [
+      'M5 5h2v2h2V5h2v2H9v2h2v2H9V9H7v2H5V9h2V7H5Z',
+      'M5 10V7h3V4h3v2H9v3H7v3H5Z',
+      'M8 3h3L9 7h2l-5 6 1-5H5Z',
+      'M5 4h2v7H5Z M9 4h2v7H9Z',
+      'M4 7h3V4h2v3h3v2H9v3H7V9H4Z',
+      'M4 7h4V4l4 4-4 4V9H4Z',
+      'M5 3h6v2H9v2h2v3H9v2h2v2H5v-2h2v-2H5V7h2V5H5Z',
+      'M5 11V7h3V4h3v2H9v3H7v3Z',
+      'M5 4h6v2H9v4h2v2H5v-2h2V6H5Z',
+    ][gear.id-500];
+    path(symbol, tint); rect(4, 2, 5, 1, '#d4e3e8');
+  } else if (gear.family <= GEAR_FAMILY.SPEAR) {
     path('M2 13h2v-2h2V9h2V7h2V5h2V3h2V1h1v4h-2v2h-2v2H9v2H7v2H5v2H2Z', '#d6d9c4');
     path('M2 13h2v-2h2v2H4v2H2Z', '#806143');
-    if (gear.family === 1) path('M4 9h2v2h2v2H6v-2H4Z', '#cba45e');
-    if (gear.family === 2) path('M8 3h5v1h2v6h-2V8H9V6H7V4Z', '#8c9a90');
-    if (gear.family === 3) path('M10 1h5v5h-2V4h-3Z', '#f0e6be');
-  } else if (gear.family === 4) {
+    if (gear.family === GEAR_FAMILY.SWORD) path('M4 9h2v2h2v2H6v-2H4Z', '#cba45e');
+    if (gear.family === GEAR_FAMILY.AXE) path('M8 3h5v1h2v6h-2V8H9V6H7V4Z', '#8c9a90');
+    if (gear.family === GEAR_FAMILY.SPEAR) path('M10 1h5v5h-2V4h-3Z', '#f0e6be');
+  } else if (gear.family === GEAR_FAMILY.BOW) {
     path('M4 1h3v1h3v2h2v3h1v3h-1v2h-2v2H7v1H4v-2h3v-1h2v-2h1V6H9V4H7V3H4Z', '#947044');
     rect(4, 2, 1, 12, '#d9cd9d'); rect(2, 7, 12, 1, '#c4a569');
-  } else if (gear.family === 5 || gear.family === 9 || gear.family === 11) {
-    if (gear.family === 5) rect(7, 5, 2, 10, '#8b6540');
+  } else if (gear.family === GEAR_FAMILY.WAND) {
+    // A long diagonal handle and a small crystal distinguish wands from runes.
+    path('M2 13l9-9 2 2-9 9H2Z', '#49372a');
+    path('M3 12l8-8 1 1-8 8Z', '#bc8c56');
+    path('M5 10l2-2 2 2-2 2Z', '#e1c58d');
+    path('M10 1h4v1h1v4h-1v2h-4V6H8V3h2Z', '#4e625f');
+    path('M11 2h3v3l-3 2-2-3Z', ['#ffc477', '#9ce3ed', '#c7e8a2'][gear.style - 1]);
+    rect(11, 2, 1, 3, '#fff4d7');
+  } else if (gear.family === GEAR_FAMILY.SPELL || gear.family === GEAR_FAMILY.RELIC) {
     path('M6 1h4v1h2v2h1v5h-2v2H5V9H3V4h1V2h2Z', '#b69a56');
     const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57', '#b5f4ff', '#ff963c'][gear.spell - 1] || '#daca8d';
     if (gear.spell === 10) { rect(7, 2, 2, 8, runeColor); rect(4, 5, 8, 2, runeColor); rect(5, 3, 1, 6, runeColor); rect(10, 3, 1, 6, runeColor); }
@@ -84,7 +107,7 @@ export function gearPixels(id) {
     } else if (gear.spell === 9) path('M9 2h2L8 5h3L5 10l2-4H5Z', runeColor);
     else path('M7 2h2v2h2v3H9v2H7V7H5V4h2Z', runeColor);
     rect(7, 3, 1, 3, '#ffefc4');
-  } else if (gear.family === 6) {
+  } else if (gear.family === GEAR_FAMILY.ARMOR) {
     const shapes = [
       'M5 2h6v1h2v10H3V3h2Z M5 5v6h6V5Z',
       'M5 2h6v2h3v8h-3v3H5v-3H2V4h3Z',
@@ -96,14 +119,14 @@ export function gearPixels(id) {
     path(shapes[gear.slot], cloth); rect(5, 3, 6, 1, trim);
     if (gear.slot === 1) { rect(5, 10, 6, 2, '#483d2d'); rect(7, 10, 2, 2, trim); }
     if (gear.style >= 4 && gear.slot === 0) { rect(4, 6, 8, 2, '#29342c'); rect(7, 3, 2, 10, trim); }
-  } else if (gear.family === 7) {
+  } else if (gear.family === GEAR_FAMILY.SHIELD) {
     path('M2 2h12v7h-1v2h-2v2H9v2H7v-2H5v-2H3V9H2Z', trim);
     path('M4 4h8v5h-1v2H9v2H7v-2H5V9H4Z', '#51694b');
     rect(7, 4, 2, 8, '#b39759'); rect(5, 7, 6, 2, '#b39759');
-  } else if (gear.family === 8) {
+  } else if (gear.family === GEAR_FAMILY.CHARM) {
     path('M4 1h8v2h2v6h-2v2h-1v3H5v-3H4V9H2V3h2Z', '#bea568');
     path('M5 2h6v1h2v5h-2v2H5V8H3V3h2Z', '#24382c'); rect(6, 9, 4, 5, '#d4c886'); rect(7, 10, 2, 3, '#80a999');
-  } else if (gear.family === 10) {
+  } else if (gear.family === GEAR_FAMILY.POTION) {
     rect(6, 1, 4, 3, '#b19360'); rect(5, 4, 6, 2, '#cec5a2');
     path('M5 5h6v2h2v7H3V7h2Z', '#becac0'); rect(4, 9, 8, 4, id === 320 ? '#ad5742' : '#548aa8'); rect(5, 7, 1, 4, '#e9e1b5');
   }

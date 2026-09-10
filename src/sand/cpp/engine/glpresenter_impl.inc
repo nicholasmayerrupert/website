@@ -595,7 +595,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     if (t < .50) return 1.65 * ease((t-.34)/.16);
     return 1.65 - 2.45 * ease((t-.50)/.50);
   };
-  bool sword = E.planetId == PL_FRONTIER && gear && gear->family == 1;
+  bool sword = E.planetId == PL_FRONTIER && gear && gear->family == GF_SWORD;
   bool cutting = sword && animState == AS_SWORD;
   double bodyLean = cutting ? (actionPhase < .20 ? -.35 * ease(actionPhase/.20)
     : actionPhase < .46 ? -.35 + .95 * ease((actionPhase-.20)/.26) : .60 * (1-ease((actionPhase-.46)/.54))) : 0;
@@ -920,7 +920,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double dx = targetX - shoulderX, dy = targetY - shoulderY, d = std::hypot(dx, dy);
     if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
     dx /= d; dy /= d;
-    if (gear && gear->family <= 3) {
+    if (gear && gear->family <= GF_SPEAR) {
       double phase = actionPhase;
       double angle = std::atan2(dy, dx);
       if (animState == AS_SWORD) angle += facing * swordAngle(actionPhase);
@@ -948,14 +948,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       : 1.55-kick*kick*.65;
     double handX = shoulderX + dx * gripReach, handY = shoulderY + dy * gripReach;
     bool carrying = E.planetId == PL_FRONTIER &&
-      ((gear && (gear->family <= 3 || gear->family == 6 || gear->family == 7 || gear->family == 8 || gear->family >= 10) && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
+      ((gear && (gear->family <= GF_SPEAR || gear->family == GF_ARMOR || gear->family == GF_SHIELD || gear->family >= GF_CHARM) && animState != AS_SWORD && animState != AS_AXE && animState != AS_SPEAR)
        || (heldItemKind == IK_MINING_TOOL && animState != AS_AXE));
     if (carrying) {
       // Hold the tool upright in front of a lowered elbow.
       handX = shoulderX+facing*2.25; handY = shoulderY+1.55;
       dx = facing*.12; dy = -std::sqrt(1-dx*dx);
       nx = -dy; ny = dx;
-    } else if (E.planetId == PL_FRONTIER && gear && (gear->family == 5 || gear->family == 9)) {
+    } else if (E.planetId == PL_FRONTIER && gear && gear->family == GF_WAND) {
       // The wand turns in a raised hand while the upper arm stays lowered.
       handX = shoulderX+facing*2.35; handY = shoulderY+1.35+dy*.9;
       double aimLength = std::hypot(targetX-handX,targetY-handY);
@@ -1017,7 +1017,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       }
     }
     if (heldItemKind == IK_GEAR && gear) {
-      if (gear->family == 1) {
+      if (gear->family == GF_SWORD) {
         // Leather grip, quillons, a tapered steel blade, and a bright cutting edge.
         for(double at=-.65;at<.7;at+=.20) drawPixel(at,0,.36,.35f,.23f,.14f);
         drawPixel(-.7,0,.48,.73f,.58f,.31f);
@@ -1028,7 +1028,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
           drawPixel(at,-.03,width,.70f,.78f,.75f);
           drawPixel(at,-width*.32,.12,.95f,.96f,.86f);
         }
-      } else if (gear->family == 4) {
+      } else if (gear->family == GF_BOW) {
         double pull = bowCharge * 1.4;
         for (double side = -2.5; side <= 2.5; side += .2) {
           double forward = 1.1 - side*side*.12;
@@ -1038,12 +1038,12 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         }
         if (bowCharge>0) for (double at = -pull; at < 3.0-pull; at+=.25) drawPixel(at,0,.16,.87f,.84f,.64f);
       } else {
-        const bool diagonal = gear->family == 2 || gear->family == 3;
-        const double scale = gear->family == 10 ? .26 : .30;
+        const bool diagonal = gear->family == GF_AXE || gear->family == GF_SPEAR;
+        const double scale = gear->family == GF_POTION ? .26 : .30;
         for (int y=0;y<16;y++) for (int x=0;x<16;x++) {
           uint32_t color=gear->icon[y*16+x];
           if (!color) continue;
-          double forward=diagonal ? (x-y+11)*scale*.70710678 : ((gear->family==5 ? 13 : 8)-y)*scale;
+          double forward=diagonal ? (x-y+11)*scale*.70710678 : ((gear->family==GF_WAND ? 13 : 8)-y)*scale;
           double side=diagonal ? (x+y-16)*scale*.70710678 : (x-8)*scale;
           drawPixel(forward,side,scale,(color&255)/255.f,((color>>8)&255)/255.f,((color>>16)&255)/255.f);
         }
@@ -2145,13 +2145,15 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   bool breathing = alive && !hurtCooldown && attackState == CAS_FIRING &&
     ((speciesId == CS_FROST_GIANT && attackPattern == 0) || (speciesId == CS_BONE_DINOSAUR && attackPattern == 2));
   if (breathing) clipState = CC_SPECIAL;
-  if (alive && !hurtCooldown && speciesId == CS_FROST_GIANT && attackPattern == 2
-      && (attackState == CAS_CHARGING || attackState == CAS_FIRING)) clipState = CC_IDLE;
   const auto& clip = art.clips[clipState];
   int pose = !alive ? imin(clip.count - 1, animFrame) : clip.frameAt(E.actorTick);
   if (alive && !breathing && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
     double progress = attackState == CAS_FIRING ? 1 - attackProgress : attackProgress;
-    pose = imin(clip.count - 1, imax(0, (int)(progress * clip.count)));
+    // Each frost attack owns a windup, release and recovery segment.
+    int segmentCount = speciesId == CS_FROST_GIANT && !hurtCooldown ? clip.count / 3 : clip.count;
+    int pattern = attackState == CAS_RECOVERING ? (attackPattern + 2) % 3 : imin(2, (int)attackPattern);
+    int segmentOffset = speciesId == CS_FROST_GIANT && !hurtCooldown ? pattern * segmentCount : 0;
+    pose = segmentOffset + imin(segmentCount - 1, imax(0, (int)(progress * segmentCount)));
   }
   int frame = clip.offset + pose;
   // A little whole-sprite follow-through keeps the detailed limbs from feeling

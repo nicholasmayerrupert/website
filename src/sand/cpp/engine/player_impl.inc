@@ -288,7 +288,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   // Death drops the old loadout into the world; always restore the starter gun
   // so respawning cannot leave the combat mode soft-locked with empty hands.
   if (E.survivalInventory && E.planetId != PL_FRONTIER) E.inv.seedStarterTools(p);
-  p.stamina = p.mana = 100; p.actionTicks = p.dodgeCooldown = 0; p.airDashUsed = false;
+  p.stamina = 100; E.magic.resetMana(p); p.actionTicks = p.dodgeCooldown = 0; p.airDashUsed = false;
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
   return true;
 }
@@ -307,6 +307,7 @@ void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
   p.animState = AS_DEATH; p.animFrame = 0;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
+  E.magic.cancelCharge(p); p.pendingCast = SpellCast();
   p.respawnPending = false; p.jetpackActive = false; p.shieldActive = false;
   resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
@@ -379,6 +380,7 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
 void PlayerSystem::updatePlayerVitals(Player& p) {
   if (!p.alive) { p.deathTicks++; return; }
   if (E.planetId == PL_FRONTIER) E.combat.tick(p);
+  if (p.input & PI_SHIELD) E.magic.cancelCharge(p);
   p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
   if (p.shieldHealth < P_SHIELD_MAX_HEALTH &&
       E.actorTick - p.lastShieldDamageTick >= P_SHIELD_RECHARGE_DELAY)
@@ -623,6 +625,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (E.planetId == PL_FRONTIER) {
     if (p.actionTicks) as = (uint8_t)p.actionState;
     else if (p.shieldActive) as = AS_GUARD;
+    else if (p.wandChargeTicks) as = AS_CAST;
     else if (p.bowChargeTicks) as = AS_BOW;
     else if ((p.abilities & 2) && wantJump && !p.grounded && p.vy > 0) as = AS_GLIDE;
     else if (!wasGrounded && p.grounded) as = AS_LAND;
@@ -1086,7 +1089,9 @@ int PlayerSystem::buildPlayerSnapshot() {
       .gear6 = WritePlayerSnapshotGear6{p.equipment[6].definitionId},
       .gear7 = WritePlayerSnapshotGear7{p.equipment[7].definitionId},
       .gear8 = WritePlayerSnapshotGear8{p.equipment[8].definitionId},
-
+      .manaMax = WritePlayerSnapshotManaMax{PLAYER_MANA_MAX},
+      .manaCastCost = WritePlayerSnapshotManaCastCost{E.magic.compileCast(held,p.wandChargeTicks).manaCost},
+      .spellCharge = WritePlayerSnapshotSpellCharge{p.wandChargeTicks / (float)(WAND_CHARGE_TICKS + 1)},
     });
   }
   return (int)players.size();

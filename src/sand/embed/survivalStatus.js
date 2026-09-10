@@ -31,6 +31,12 @@ const STYLE = `
 .survival-shield.active { filter:drop-shadow(0 0 4px rgba(89,213,255,.8)); }
 .survival-shield.active > i::before { background:#65d9f4; box-shadow:inset 3px 3px 0 #e1fbff,inset -2px -2px 0 #3598b8; }
 .survival-shield.depleted > i { background:#352d3b; }
+.survival-shield.mana > i {background:#232b4b;clip-path:polygon(50% 0,85% 25%,100% 55%,50% 100%,0 55%,15% 25%)}
+.survival-shield.mana > i::before {background:#677ee2;box-shadow:inset 3px 3px #b5dcff,inset -2px -2px #3c4099}
+.survival-shield.mana > i::after {left:0;top:auto;bottom:var(--cost-bottom,0%);width:100%;height:var(--cost-fill,0%);background:#e2eaff88}
+.survival-mana-caption {position:absolute;right:0;bottom:-16px;white-space:nowrap;font:10px/1.2 'Sand Pixel',monospace;color:#c6d8ff;text-shadow:1px 1px #101727}
+.survival-mana-caption.blocked {color:#ffb19c}
+.survival-mana-caption[hidden] {display:none}
 .survival-fuel { grid-template-columns:repeat(12,11px); gap:1.5px; }
 .survival-fuel > i { position:relative; display:block; width:11px; height:14px; overflow:hidden; background:#39372e;
   filter:drop-shadow(1px 1px 0 #080a0c);
@@ -47,6 +53,7 @@ const STYLE = `
   clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
 .survival-charge > i.full { background:#e9c75b; filter:drop-shadow(0 0 2px #fff0a0); }
 .survival-charge.bore > i.full { background:#43d3c9; filter:drop-shadow(0 0 2px #c9fff5); }
+.survival-charge.spell > i.full {background:#a0b7ff;filter:drop-shadow(0 0 2px #b9ddff)}
 .survival-death { position:fixed; inset:0; z-index:76; display:none; place-items:center; pointer-events:auto;
   background:radial-gradient(circle,rgba(52,9,12,.38),rgba(18,3,5,.82)); color:#fff;
   font-family:ui-monospace,"SFMono-Regular",Menlo,monospace; backdrop-filter:blur(2px); }
@@ -120,6 +127,8 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const shieldCells = Array.from({ length: 10 }, () => {
     const el = document.createElement('i'); shield.appendChild(el); return el;
   });
+  const manaCaption = document.createElement('div'); manaCaption.className = 'survival-mana-caption';
+  shieldStat.stat.append(manaCaption);
   const charge = document.createElement('div'); charge.className = 'survival-charge';
   const chargeCells = Array.from({ length: 12 }, () => {
     const el = document.createElement('i'); charge.appendChild(el); return el;
@@ -166,6 +175,8 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   window.addEventListener('keydown', onKey, true);
 
   const frontier = root.host?.getAttribute('mission') === 'frontier';
+  manaCaption.hidden = !frontier;
+  shield.classList.toggle('mana', frontier);
   if (frontier) { shield.setAttribute('aria-label', 'Mana'); fuel.setAttribute('aria-label', 'Stamina'); }
   const update = (player) => {
     const hp = Math.max(0, Math.min(100, player?.health ?? 100));
@@ -176,11 +187,19 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     health.setAttribute('aria-valuenow', String(hp));
     health.classList.toggle('low', hp <= 30);
     healthStat.value.textContent = String(hp);
-    const shieldHealth = Math.max(0, Math.min(200, frontier ? (player?.mana ?? 100) * 2 : player?.shieldHealth ?? 200));
-    const shieldActive = !!player && player.alive !== false && !!player.shieldActive && shieldHealth > 0;
+    const manaMax = Math.max(1, player?.manaMax ?? 100), mana = Math.max(0, Math.min(manaMax, player?.mana ?? manaMax));
+    const castCost = Math.max(0, player?.manaCastCost ?? 0);
+    const shieldHealth = Math.max(0, Math.min(200, frontier ? mana / manaMax * 200 : player?.shieldHealth ?? 200));
+    const shieldActive = !frontier && !!player && player.alive !== false && !!player.shieldActive && shieldHealth > 0;
     for (let i = 0; i < shieldCells.length; i++) {
       const fill = Math.max(0, Math.min(20, shieldHealth - i * 20)) * 5;
       shieldCells[i].style.setProperty('--fill', `${fill}%`);
+      if (frontier) {
+        const unit = manaMax / 10, bottom = Math.max(0, Math.min(unit, mana - castCost - i * unit));
+        const top = Math.max(0, Math.min(unit, mana - i * unit));
+        shieldCells[i].style.setProperty('--cost-bottom', `${bottom / unit * 100}%`);
+        shieldCells[i].style.setProperty('--cost-fill', `${Math.max(0, top-bottom) / unit * 100}%`);
+      }
     }
     shield.classList.toggle('active', shieldActive);
     shield.classList.toggle('depleted', shieldHealth <= 0);
@@ -191,8 +210,10 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     shieldLabel.querySelector('span').textContent = shieldActive ? 'WARD ACTIVE' : 'WARD · HOLD ';
     const bow = !!player && player.alive !== false && (player.heldItemKind === ITEM_KIND.BOW || (player.heldDefinition >= 10 && player.heldDefinition <= 12));
     const bore = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BORE_CANNON;
-    const level = Math.round(Math.max(0, Math.min(1, player?.bowCharge || 0)) * chargeCells.length);
-    charge.classList.toggle('show', (bow || bore) && level > 0);
+    const spellCharge = frontier && (player?.spellCharge || 0) > 0;
+    const level = Math.round(Math.max(0, Math.min(1, spellCharge ? player.spellCharge : player?.bowCharge || 0)) * chargeCells.length);
+    charge.classList.toggle('show', (bow || bore || spellCharge) && level > 0);
+    charge.classList.toggle('spell', spellCharge);
     charge.classList.toggle('bore', bore);
     for (let i = 0; i < chargeCells.length; i++) chargeCells[i].classList.toggle('full', i < level);
     const fuelLevel = Math.max(0, Math.min(1, frontier ? (player?.stamina ?? 100) / 100 : player?.jetpackFuel ?? 1));
@@ -206,10 +227,12 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     for (let i = 0; i < fuelCells.length; i++) fuelCells[i].classList.toggle('full', i < filledFuel);
 
     if (frontier) {
-      shield.setAttribute('aria-valuemax', '100');
-      shield.setAttribute('aria-valuenow', String(player?.mana ?? 100));
-      shieldStat.value.textContent = String(player?.mana ?? 100);
-      shield.setAttribute('aria-valuetext', `${player?.mana ?? 100} of 100 mana`);
+      shield.setAttribute('aria-valuemax', String(manaMax));
+      shield.setAttribute('aria-valuenow', String(mana));
+      shieldStat.value.textContent = String(mana);
+      shield.setAttribute('aria-valuetext', `${mana} of ${manaMax} mana${castCost ? `; next cast costs ${castCost}${castCost > mana ? '; insufficient mana' : ''}` : ''}`);
+      manaCaption.textContent = `Mana ${mana}/${manaMax}${castCost ? ` · ${spellCharge ? 'Release' : 'Cast'} ${castCost}` : ''}`;
+      manaCaption.classList.toggle('blocked', castCost > mana);
       shieldLabel.querySelector('span').textContent = 'MANA';
       fuelLabel.querySelector('span').textContent = 'STAMINA';
     }

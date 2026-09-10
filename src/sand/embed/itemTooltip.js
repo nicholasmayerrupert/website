@@ -89,13 +89,18 @@ export function createItemTooltip(root, { carrying = () => false } = {}) {
   };
   const events = { pointerover: over, pointermove: move, pointerout: out, focusin: focus, focusout: hide, pointerdown: down, click };
   for (const [name, handler] of Object.entries(events)) root.addEventListener(name, handler, true);
-  root.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
+  const scroll = () => {
+    const focused = root.activeElement;
+    if (focused && entries.has(focused) && focused.matches(':focus-visible') && !carrying()) show(focused);
+    else hide();
+  };
+  root.addEventListener('scroll', scroll, true); window.addEventListener('resize', hide);
   return {
     bind(target, describe) { entries.set(target, describe); target.removeAttribute('title'); },
     refresh, hide,
     destroy() {
       hide(); for (const [name, handler] of Object.entries(events)) root.removeEventListener(name, handler, true);
-      root.removeEventListener('scroll', hide, true); window.removeEventListener('resize', hide); tip.remove(); style.remove();
+      root.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', hide); tip.remove(); style.remove();
     },
   };
 }

@@ -536,7 +536,7 @@ const contractOnly = (value) => {
 
 const FIELD_KINDS = new Set(['i32', 'u32', 'number', 'boolean', 'point']);
 const identifier = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const cppMemberPath = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+const cppMemberPath = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*$/;
 const SNAPSHOT_STORAGE = Object.freeze({
   float: { cpp: 'float', one: '1.0f', zero: '0.0f' },
   double: { cpp: 'double', one: '1.0', zero: '0.0' },

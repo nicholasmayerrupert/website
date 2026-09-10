@@ -85,8 +85,7 @@ int ContainerSystem::buildLootSnapshot() {
   for (auto& c : chests) if (c.id == activeChest && !c.packed) {
     c.loot.resize(std::max(SLOT_COUNT, c.loot.size()));
     lootSnapshot.resize(c.loot.size() * IVS_STRIDE);
-    for (size_t i = 0; i < c.loot.size(); i++) writeInventorySlotSnapshot(lootSnapshot.data() + i * IVS_STRIDE, c.loot[i], {
-      .selected = WriteInventorySlotSnapshotSelected{false}, .pool = WriteInventorySlotSnapshotPool{0}});
+    for (size_t i = 0; i < c.loot.size(); i++) E.inv.writeSlotSnapshot(lootSnapshot.data() + i * IVS_STRIDE, c.loot[i]);
     return (int)c.loot.size();
   }
   return 0;

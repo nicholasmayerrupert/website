@@ -61,7 +61,16 @@ function checkpointHashChunk(bytes, start, end, hash) {
 
 function unpackInventoryStackAt(packed, index) {
   const stack = unpackSnapshotRecordAt(packed, 'inventorySlot', index);
-  if (stack) delete stack.selected;
+  if (stack) {
+    delete stack.selected;
+    if (stack.wandSpellSlots > 0) stack.wand = {
+      spells: Array.from({ length: stack.wandSpellSlots }, (_, i) => stack[`wandSpell${i}`]),
+      upgrades: Array.from({ length: stack.wandUpgradeSlots }, (_, i) => stack[`wandUpgrade${i}`]),
+      links: Array.from({ length: stack.wandUpgradeSlots }, (_, i) => stack[`wandLink${i}`]),
+      next: stack.wandNextSpell, manaCost: stack.wandManaCost,
+    };
+    for (const key of Object.keys(stack)) if (key.startsWith('wand') && key !== 'wand') delete stack[key];
+  }
   return stack;
 }
 
@@ -243,6 +252,7 @@ export function initSandWasm() {
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
         inventorySort: c('engine_inventory_sort', null, ['number', 'number']),
         inventoryPoolAction: c('engine_inventory_pool_action', null, ['number', 'number', 'number', 'number', 'number', 'number']),
+        wandSocket: c('engine_wand_socket', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         inventoryPoolSnapshot: c('engine_inventory_pool_snapshot', 'number', ['number', 'number']),
         inventoryPoolSnapshotPtr: c('engine_inventory_pool_snapshot_ptr', 'number', ['number']),
         placeFromSelected: c('engine_place_from_selected', 'number', ['number', 'number', 'number', 'number']),
@@ -1149,6 +1159,9 @@ const renderStrides = Object.freeze({
     inventorySort(id) { M.inventorySort(ptr, id | 0); },
     inventoryPoolAction(id, pool, action, material = 0, value = 0) {
       M.inventoryPoolAction(ptr, id | 0, pool | 0, action | 0, material | 0, value | 0);
+    },
+    wandSocket(id, slot, kind, index, value = 0) {
+      return M.wandSocket(ptr, id | 0, slot | 0, kind | 0, index | 0, value | 0) === 1;
     },
     getInventoryPools(id) {
       const n = M.inventoryPoolSnapshot(ptr, id | 0);

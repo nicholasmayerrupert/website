@@ -133,6 +133,7 @@ int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx
   Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.itemKind = canonical.itemKind; it.definitionId = canonical.definitionId; it.material = canonical.material;
   it.isTool = canonical.isTool; it.toolClass = canonical.toolClass; it.toolTier = canonical.toolTier; it.plantType = canonical.plantType;
   it.count = incoming;
+  it.wand = canonical.wand;
   it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = std::max(0, delay);
   items.push_back(it); return it.id;
 }
@@ -221,9 +222,10 @@ void ItemSystem::pickupItems() {
     }
     InvSlot stack; stack.itemKind = it.itemKind; stack.definitionId = it.definitionId; stack.material = it.material; stack.isTool = it.isTool;
     stack.toolClass = it.toolClass; stack.toolTier = it.toolTier; stack.plantType = it.plantType; stack.count = it.count;
+    stack.wand = it.wand;
     if (best && E.inv.addStack(*best, stack)) {
       E.audio.emit(SE_PICKUP, it.px, it.py, std::min(1.2, 0.5 + it.count * 0.04), it.material, 0);
-      it.count = 0;
+      it.count = 0; it.wand = WandState();
     }
   }
 }

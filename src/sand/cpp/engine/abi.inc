@@ -1082,6 +1082,9 @@ EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e
 EMSCRIPTEN_KEEPALIVE float* engine_inventory_snapshot_ptr(Engine* e) { return e->inv.invSnapshot.data(); }
 // Minecraft cursor model: pick/place/half + throw-out + the carried-stack snapshot.
 EMSCRIPTEN_KEEPALIVE void engine_inventory_cursor_pick(Engine* e, int id, int slot, int half) { e->inv.cursorPick(id, slot, half); }
+EMSCRIPTEN_KEEPALIVE int engine_wand_socket(Engine* e, int id, int slot, int kind, int index, int value) {
+  return e->magic.socket(id, slot, kind, index, value) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_inventory_throw_from_cursor(Engine* e, int id, int whole) { return e->inv.throwFromCursor(id, whole) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_cursor_snapshot(Engine* e, int id) { return e->inv.buildCursorSnapshot(id); }
 EMSCRIPTEN_KEEPALIVE float* engine_cursor_snapshot_ptr(Engine* e) { return e->inv.cursorSnap.data(); }

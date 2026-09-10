@@ -589,6 +589,9 @@ export function createSandGame(container, opts = {}) {
     poolAction(pool, action, material = 0, value = 0) {
       ctx.worldWorker?.intent('pool', { pool, action, material, value });
     },
+    wandSocket(slot, kind, index, value = 0) {
+      ctx.worldWorker?.intent('wand-socket', { slot, kind, index, value });
+    },
     respawn() {
       ctx.worldWorker?.intent('respawn');
     },

@@ -154,9 +154,14 @@ void InventorySystem::seedStarterTools(Player& p) {
   p.inv[1].count = 1;
   if (E.planetId == PL_FRONTIER) {
     p.inv[0].itemKind = IK_GEAR; p.inv[0].definitionId = 1;
-    p.inv[2].itemKind = IK_GEAR; p.inv[2].definitionId = 300; p.inv[2].count = 1;
+    p.inv[2].itemKind = IK_GEAR; p.inv[2].definitionId = 13; p.inv[2].count = 1;
     p.inv[3].itemKind = IK_GEAR; p.inv[3].definitionId = 320; p.inv[3].count = 1;
-    p.inv[4].itemKind = IK_GEAR; p.inv[4].definitionId = 306; p.inv[4].count = 1;
+    p.inv[INV_SLOTS - 3].itemKind = IK_GEAR; p.inv[INV_SLOTS - 3].definitionId = 306; p.inv[INV_SLOTS - 3].count = 1;
+    E.magic.initializeWand(p.inv[2]);
+    for (int i = 0; i < 2; i++) {
+      auto& item = p.inv[INV_SLOTS - 2 + i]; item.itemKind = IK_GEAR; item.count = 1;
+      item.definitionId = i == 0 ? 501 : 503;
+    }
     for (int i = 0; i < 7; i++) {
       p.equipment[i].itemKind = IK_GEAR; p.equipment[i].definitionId = i == 6 ? 200 : 100 + i; p.equipment[i].count = 1;
     }
@@ -187,6 +192,8 @@ void InventorySystem::setSelectedSlot(Player& p, int slot) {
   E.psys.resetPlayerMine(p);
   InvSlot& s = p.inv[slot];
   p.bowChargeTicks = 0;
+  E.magic.cancelCharge(p);
+  E.magic.initializeWand(s);
   if (s.itemKind == IK_MINING_TOOL && s.count > 0) { p.heldToolClass = TC_DIG; p.heldToolTier = s.toolTier; }
   else { p.heldToolClass = TC_HAND; p.heldToolTier = TT_HAND; }
 }
@@ -242,6 +249,7 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
     if (s.count == 0) {
       s = incoming;
       int add = imin(count, limit); s.count = add; count -= add;
+      E.magic.initializeWand(s);
     }
   }
   if (count > 0) return false;
@@ -312,6 +320,7 @@ bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.
 // slots swap.
 void InventorySystem::moveSlot(Player& p, int from, int to) {
   if (from < 0 || from >= INV_SLOTS || to < 0 || to >= INV_SLOTS || from == to) return;
+  if (from == p.selectedSlot || to == p.selectedSlot) E.magic.cancelCharge(p);
   InvSlot& a = p.inv[from]; InvSlot& b = p.inv[to];
   if (sameStack(a, b)) {
     int mv = imin(a.count, stackLimit(b) - b.count); b.count += mv; a.count -= mv;
@@ -452,14 +461,21 @@ void InventorySystem::dropAll(Player& p) {
 }
 
 // Pack the carried cursor stack (one slot record) for the HUD's floating item.
+void InventorySystem::writeSlotSnapshot(float* out, const InvSlot& item, bool selected, int pool) {
+  InvSlot s = item; E.magic.initializeWand(s);
+  writeInventorySlotSnapshot(out, s, {
+    .selected = WriteInventorySlotSnapshotSelected{selected},
+    .pool = WriteInventorySlotSnapshotPool{pool >= 0 ? pool : inventoryPoolId(s.itemKind)},
+    .wandSpellSlots = WriteInventorySlotSnapshotWandSpellSlots{E.magic.spellCapacity(s)},
+    .wandUpgradeSlots = WriteInventorySlotSnapshotWandUpgradeSlots{E.magic.upgradeCapacity(s)},
+    .wandManaCost = WriteInventorySlotSnapshotWandManaCost{E.magic.compileCast(s).manaCost},
+  });
+}
 int InventorySystem::buildCursorSnapshot(int playerId) {
   cursorSnap.assign(IVS_STRIDE, 0.0f);
   Player* p = E.psys.findPlayer(playerId); if (!p) return 0;
   InvSlot& s = p->cursor;
-  writeInventorySlotSnapshot(cursorSnap.data(), s, {
-    .selected = WriteInventorySlotSnapshotSelected{false},
-    .pool = WriteInventorySlotSnapshotPool{inventoryPoolId(s.itemKind)},
-  });
+  writeSlotSnapshot(cursorSnap.data(), s);
   return s.count > 0 ? 1 : 0;
 }
 
@@ -471,10 +487,7 @@ int InventorySystem::buildInventorySnapshot(int playerId) {
   for (int i = 0; i < INV_SLOTS + 9; i++) {
     InvSlot s = i < INV_SLOTS ? resolveSlot(*p, p->inv[i]) : p->equipment[i - INV_SLOTS];
     float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
-    writeInventorySlotSnapshot(o, s, {
-      .selected = WriteInventorySlotSnapshotSelected{i == p->selectedSlot},
-      .pool = WriteInventorySlotSnapshotPool{i < INV_SLOTS ? inventoryPoolId(p->inv[i].itemKind) : 0},
-    });
+    writeSlotSnapshot(o, s, i == p->selectedSlot, i < INV_SLOTS ? inventoryPoolId(p->inv[i].itemKind) : 0);
   }
   return INV_SLOTS + 9;
 }

@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 50,
+  "abiVersion": 51,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -245,6 +245,21 @@
           "name": "movementPrevInput",
           "kind": "i32",
           "snapshotMember": "movementPrevInput"
+        },
+        {
+          "name": "manaMax",
+          "kind": "i32",
+          "snapshotParameter": true
+        },
+        {
+          "name": "manaCastCost",
+          "kind": "i32",
+          "snapshotParameter": true
+        },
+        {
+          "name": "spellCharge",
+          "kind": "number",
+          "snapshotParameter": true
         }
       ],
       "snapshotStorage": "float",
@@ -581,6 +596,108 @@
           "default": 0,
           "min": 0,
           "snapshotMember": "definitionId"
+        },
+        {
+          "name": "wandSpellSlots",
+          "kind": "i32",
+          "default": 0,
+          "snapshotParameter": true
+        },
+        {
+          "name": "wandUpgradeSlots",
+          "kind": "i32",
+          "default": 0,
+          "snapshotParameter": true
+        },
+        {
+          "name": "wandManaCost",
+          "kind": "i32",
+          "default": 0,
+          "snapshotParameter": true
+        },
+        {
+          "name": "wandNextSpell",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.cursor"
+        },
+        {
+          "name": "wandSpell0",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.spells[0]"
+        },
+        {
+          "name": "wandSpell1",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.spells[1]"
+        },
+        {
+          "name": "wandSpell2",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.spells[2]"
+        },
+        {
+          "name": "wandSpell3",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.spells[3]"
+        },
+        {
+          "name": "wandSpell4",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.spells[4]"
+        },
+        {
+          "name": "wandUpgrade0",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.upgrades[0]"
+        },
+        {
+          "name": "wandUpgrade1",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.upgrades[1]"
+        },
+        {
+          "name": "wandUpgrade2",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.upgrades[2]"
+        },
+        {
+          "name": "wandUpgrade3",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.upgrades[3]"
+        },
+        {
+          "name": "wandLink0",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.links[0]"
+        },
+        {
+          "name": "wandLink1",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.links[1]"
+        },
+        {
+          "name": "wandLink2",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.links[2]"
+        },
+        {
+          "name": "wandLink3",
+          "kind": "i32",
+          "default": 0,
+          "snapshotMember": "wand.links[3]"
         }
       ],
       "snapshotStorage": "float",
@@ -4168,6 +4285,86 @@
         "SE_CREATURE_ATTACK": 40,
         "SE_CREATURE_DEATH": 41,
         "SE_CREATURE_MOVE": 42
+      }
+    },
+    "GearFamily": {
+      "cName": "GearFamily",
+      "cType": "uint8_t",
+      "jsName": "GEAR_FAMILY",
+      "jsPrefix": "GF",
+      "values": {
+        "GF_SWORD": 1,
+        "GF_AXE": 2,
+        "GF_SPEAR": 3,
+        "GF_BOW": 4,
+        "GF_WAND": 5,
+        "GF_ARMOR": 6,
+        "GF_SHIELD": 7,
+        "GF_CHARM": 8,
+        "GF_SPELL": 9,
+        "GF_POTION": 10,
+        "GF_RELIC": 11,
+        "GF_TROPHY": 12,
+        "GF_UPGRADE": 13
+      }
+    },
+    "WandUpgrade": {
+      "cName": "WandUpgrade",
+      "cType": "int",
+      "jsName": "WAND_UPGRADE",
+      "jsPrefix": "WU",
+      "values": {
+        "WU_AMPLIFY": 500,
+        "WU_BOUNCE": 501,
+        "WU_CHARGE": 502,
+        "WU_DOUBLE_SHOT": 503,
+        "WU_TOGETHER": 504,
+        "WU_IMPACT": 505,
+        "WU_TIMER": 506,
+        "WU_HOMING": 507,
+        "WU_LINGER": 508
+      }
+    },
+    "WandSocket": {
+      "cName": "WandSocket",
+      "cType": "uint8_t",
+      "jsName": "WAND_SOCKET",
+      "jsPrefix": "WS",
+      "values": {
+        "WS_SPELL": 0,
+        "WS_UPGRADE": 1,
+        "WS_CONNECTION": 2
+      }
+    },
+    "SpellConnection": {
+      "cName": "SpellConnection",
+      "cType": "uint8_t",
+      "jsName": "SPELL_CONNECTION",
+      "jsPrefix": "SC",
+      "values": {
+        "SC_SEQUENCE": 0,
+        "SC_TOGETHER": 1,
+        "SC_IMPACT": 2,
+        "SC_TIMER": 3
+      }
+    },
+    "SpellEffect": {
+      "cName": "SpellEffect",
+      "cType": "uint8_t",
+      "jsName": "SPELL_EFFECT",
+      "jsPrefix": "SP",
+      "values": {
+        "SP_EMBER": 1,
+        "SP_RIME": 2,
+        "SP_GALE": 3,
+        "SP_STONEBREAK": 4,
+        "SP_BRIAR": 5,
+        "SP_LUMEN": 6,
+        "SP_PRISM": 7,
+        "SP_HOLLOW_STAR": 8,
+        "SP_FAULTLINE": 9,
+        "SP_WINTERBREATH": 10,
+        "SP_CINDERMAW": 11
       }
     }
   },

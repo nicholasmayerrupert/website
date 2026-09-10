@@ -59,8 +59,8 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
     const g = document.querySelector('sand-game')._game;
     g.selectSlot(g.getInventory().slots.findIndex(s => definition === 'pick' ? s.isTool : s.definitionId === definition));
   }, definition);
-  await select(300);
-  await page.waitForFunction(() => document.querySelector('sand-game')._game.getPlayer().heldDefinition === 300);
+  await select(13);
+  await page.waitForFunction(() => document.querySelector('sand-game')._game.getPlayer().heldDefinition === 13);
   await page.mouse.down();
   await page.waitForFunction(() => document.querySelector('sand-game')._game.getPlayer().mana < 75);
   await page.mouse.up();
@@ -114,7 +114,7 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
     await capturePlayer(name);
     if (guarding) await page.keyboard.up('f');
   }
-  for (const [definition, name] of [[300, 'wand'], ['pick', 'pickaxe']]) {
+  for (const [definition, name] of [[13, 'wand'], ['pick', 'pickaxe']]) {
     await select(definition);
     await page.waitForFunction(definition => {
       const p = document.querySelector('sand-game')._game.getPlayer();

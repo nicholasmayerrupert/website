@@ -403,7 +403,7 @@ body bounds faintly visible for context.
 - `cpp/engine/`: composed subsystem classes (most use a header plus an
   implementation include):
   audio, camera, components, crafting, creatures, explosives, spatial forces, GL presentation,
-  growth, inventory, items, missions, replication, player, projectiles, reactions,
+  growth, inventory, items, magic, missions, replication, player, projectiles, reactions,
   renderer, rigid bodies, terrain, tools, and semantic world context.
 - `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
   feature hierarchy and absolute-coordinate semantic queries.
@@ -1118,6 +1118,52 @@ impacts, elemental bursts, and expanding shockwaves have separate semantic
 events and layered recorded tails. The browser playback suite renders
 a combat audio preview alongside its clipping and voice-admission checks.
 
+`MagicSystem` owns player mana, wand recipes, charging, and paid spell chains.
+`magic_recipes.inc` validates item/socket ownership and compiles a wand into an
+immutable cast; `magic_impl.inc` runs mana recovery, charging, and payload emission.
+Only wands cast. Spell runes and upgrades are leaf inventory items: neither can
+own sockets or activate from the quickbar. `GEAR_FAMILY`, `WAND_UPGRADE`,
+`WAND_SOCKET`, `SPELL_CONNECTION`, and `SPELL_EFFECT` are shared generated enums
+from `abi.schema.json`. Authored wands declare `spellSlots`, `upgradeSlots`, and
+`initialSpell` in `content/equipment.js`; the content compiler and engine reader
+validate those fields and reject socket metadata on other item families.
+The content wire format is v5; source world/art documents remain v3.
+Every player has one 100-point mana pool across all wands, regenerating one point
+per 15 living actor ticks (one per eight with Hearthstone). Full mana does not
+bank recovery ticks. Mana cordials restore 55, capped at the player's maximum.
+Wands have no mana storage: Hearth, Tideglass, and Bellwood have 3/4/5 spell
+sockets, 2/3/4 separate upgrade sockets, and 36/30/24-tick casting cadences.
+They always select the next occupied spell from left to right and wrap at the
+end. An unaffordable spell blocks that position without spending or skipping.
+
+Open Inventory → Wandcraft to swap spell runes and upgrades using the carried
+inventory cursor. New travellers have a Hearth wand with Ember in quickbar slot 3, and Prism
+Choir, Bounce, and Double Shot in their pack. The rune merchant sells
+all nine upgrades (500–508). Amplify multiplies damage and mana, Bounce adds two
+terrain ricochets, Charge gathers up to twice the power over one second, Double
+Shot doubles each spell's copies, Homing steers travelling spells, and Linger
+extends projectile and field lifetimes. Cast Together, On Impact, and After
+Delay connect an occupied spell socket to the next occupied socket; choose the
+source beneath the upgrade. Impact fires on contact or effect completion;
+delay fires after 24 actor ticks or earlier completion. Lumen is instantaneous
+healing and supports Cast Together as its outgoing connection.
+
+The mana display previews the full next cast, including every triggered copy.
+Connections form bounded, forward-only chains. The engine pays once, captures
+an immutable `SpellCast`, and advances the wand's cursor only after payment.
+Charge pays on release and stops at an affordable strength; switching or guarding
+cancels unpaid charge. A paid windup and its projectiles keep their recipe when
+the held item changes. Socket edits are locked during casting. Queued payloads
+emit after projectile compaction and share the 256-projectile limit.
+
+Wand recipes and sequence positions belong to inventory items, including cursor,
+chest, and dropped-item transfers. Checkpoint v5 stores those recipes, player
+mana recovery, paid windups, and projectile payloads; v2–v4 remain readable.
+The `wand-socket` intent passes through the worker journal and replay codec.
+`magic` covers mana, sequencing, charge, payload payment, save/load, transfers,
+and terrain ricochets; `magic-e2e` exercises the real worker and desktop/touch
+editor. The UI reads authoritative cost and capacity snapshots.
+
 Prism Choir (306) fires five crystal shards with two terrain-cutting ricochets
 each. Hollow Star (307) anchors at the aimed distance, attracts nearby foes,
 dropped items and small rigid debris for 72 actor ticks, then collapses into a
@@ -1128,7 +1174,7 @@ projectile phase; their timers and ownership survive checkpoints and streaming.
 Terrain repair runs on ricochet, eruption, or collapse rather than each attraction
 tick. Casts and impacts have crystal, vacuum, and rock-fracture sound layers.
 
-New travellers carry Prism Choir in hotbar slot 5. The cellar's third and fourth
+New travellers carry a loose Prism Choir rune in their pack. The cellar's third and fourth
 coffers contain Hollow Star and Faultline, and the rune merchant trades all three
 for copper, including in existing saves. Fen wisps use a three-shard choir on
 their second attack; root knights and Cinder Castellans use Faultline; the Hollow
@@ -1149,12 +1195,16 @@ and a twelve-cell ice spear that fractures and freezes its impact site. The
 stream emits thirty overlapping frost pulses. Each attack has a distinct windup
 and recovery; the spear visibly grows in the giant's hands before launch. Sprite
 shoulders sit behind the head and collar, and the smash reaches the ground on
-its contact frame. `node scripts/author-enemy-art.mjs --only FROST_GIANT` rebuilds
+its contact frame. Windup, attack, and recovery clips contain three ordered
+segments for breath, smash, and spear; the renderer selects the matching segment.
+The giant steps through its weight shift and fractures into falling ice plates on death. `node scripts/author-enemy-art.mjs --only FROST_GIANT` rebuilds
 just this sprite set. `frost-giant-e2e` captures the attacks through the WebGL
 presentation path.
 
 Cinderjaw tyrants are large skeletal theropods confined to bone-highlands surface
-habitats. Their cycle favors a crushing bite and a committed rush, followed by
+habitats. Surface entry checks the entire actor footprint and scans nearby
+loaded ground heights so broad creatures can stand on slopes and fossil ledges.
+Their cycle favors a crushing bite and a committed rush, followed by
 a 96-tick fire stream (32 slow, overlapping pulses) and a long recovery. The
 168×112 quarter-cell sprite articulates its jaw, eight ribs, vertebral tail,
 legs and claws; its furnace glows through the skeleton. Fire pulses emerge from

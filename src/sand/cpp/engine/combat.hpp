@@ -41,7 +41,7 @@ class CombatSystem {
   void tick(Player& player);
   void apply(Player& player, int previousInput);
   void strike(Player& player, const ContentGear& gear);
-  void impact(Player& player, const ContentGear& gear, double cx, double cy, double tx, double ty, double dx, double dy);
+  void impact(Player& player, const ContentGear& gear, double cx, double cy, double tx, double ty, double dx, double dy, int spellDamage = -1);
  private:
   Engine& E;
 };

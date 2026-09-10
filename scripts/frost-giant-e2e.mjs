@@ -11,9 +11,23 @@ try{
  page.on('pageerror',error=>errors.push(error.message));
  await page.route('**/frost-fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><body style="margin:0;background:#17262d;color:#ddf5ef;font:16px monospace"></body>'}));
  await page.goto(`${server.baseURL}/frost-fixture`);
- const results=await page.evaluate(async()=>{
-  const [{initSandWasm,createEngineWasm,MAT,PLANET},{CREATURE,CREATURE_ATTACK_STATE:A,OFF,STRIDES,PROJECTILE_KIND:K}]=await Promise.all([import('/src/sand/wasmBridge/engineFactory.js'),import('/src/sand/wasmBridge/abi.generated.js')]);
+ const captures=await page.evaluate(async()=>{
+  const [{initSandWasm,createEngineWasm,MAT,PLANET},{CREATURE,CREATURE_ATTACK_STATE:A,OFF,STRIDES,PROJECTILE_KIND:K},{default:art}]=await Promise.all([import('/src/sand/wasmBridge/engineFactory.js'),import('/src/sand/wasmBridge/abi.generated.js'),import('/src/sand/content/creatureArt.js')]);
   await initSandWasm();const results=[],pictures=[];
+  const sprite=art.FROST_GIANT, rows=[];
+  for(const [state,clip]of Object.entries(sprite.clips)) {
+   const grouped=['windup','attack','recover'].includes(state),count=grouped?clip.frames.length/3:clip.frames.length;
+   for(let group=0;group<(grouped?3:1);group++)rows.push({label:state.toUpperCase()+(grouped?' · '+['BREATH','SMASH','SPEAR'][group]:''),frames:clip.frames.slice(group*count,(group+1)*count)});
+  }
+  const sheet=document.createElement('canvas');sheet.width=1088;sheet.height=rows.length*208;const ctx=sheet.getContext('2d');
+  ctx.fillStyle='#202e39';ctx.fillRect(0,0,sheet.width,sheet.height);
+  for(let row=0;row<rows.length;row++){
+   ctx.fillStyle='#c7e8ef';ctx.font='14px monospace';ctx.fillText(rows[row].label,12,row*208+18);
+   for(let f=0;f<rows[row].frames.length;f++)for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
+    const pixel=rows[row].frames[f][y][x];if(pixel==='.')continue;ctx.fillStyle=sprite.palette[pixel];ctx.fillRect(f*136+x*2,row*208+26+y*2,2,2);
+   }
+  }
+  const atlas=sheet.toDataURL();
   for(const [pattern,label]of [[0,'WINTERBREATH'],[1,'GLACIER SMASH'],[2,'ICE SPEAR']]){
    const e=createEngineWasm({cols:192,rows:140,worldSeed:73,sinksOn:false,planetId:PLANET.FRONTIER});
    e.setCreatureRuntime(false,false);e.setSurvivalInventory(true);
@@ -44,12 +58,14 @@ try{
   }
   document.body.innerHTML='<h1 style="margin:24px 28px 8px;font-size:24px">THE FROST GIANT</h1><p style="margin:0 28px 20px;color:#8faeb7">Windup, impact, and the terrain left behind · live engine captures</p><main style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 24px 24px"></main>';
   for(const picture of pictures){const figure=document.createElement('figure');figure.style='margin:0;background:#223740;border:1px solid #395560';const caption=document.createElement('figcaption');caption.style='padding:12px;color:#c3e8eb;font-size:13px';caption.textContent=picture.label;const image=document.createElement('img');image.src=picture.image;image.style='display:block;width:100%;image-rendering:pixelated';figure.append(caption,image);document.querySelector('main').append(figure);}
-  return results;
+  return {results,atlas};
  });
+ const {results,atlas}=captures;
  assert.ok(results.find(r=>r.pattern===0).breath>=8,'a continuous stream is replicated and rendered');
  assert.ok(results.find(r=>r.pattern===1).particles>=24,'the smash produces a debris fan');
  assert.ok(results.find(r=>r.pattern===2).shards===1,'a full-size spear is replicated and rendered');
  assert.deepEqual(errors,[]);await page.screenshot({path:resolve(dir,'frost-giant.png'),fullPage:true});
+ writeFileSync(resolve(dir,'sprite-atlas.png'),Buffer.from(atlas.split(',')[1],'base64'));
  writeFileSync(resolve(dir,'state.json'),JSON.stringify({results,errors},null,2));
  console.log(`ok: frost giant windups, stream, ground smash, ice spear and aftermath (${dir})`);
 }finally{await browser?.close();await server.close();}

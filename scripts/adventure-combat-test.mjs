@@ -1,3 +1,4 @@
+import { equipWandSpell } from './magic-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
@@ -94,7 +95,7 @@ run('sword catches distant and off-axis foes in one swing',(e,id)=>{
  health().forEach((hp,i)=>assert.ok(hp<before[i],`target ${i} is inside the sword sweep`));
 });
 run('starter wand spends mana and blasts a cavity in stone',(e,id)=>{
- const slot=e.getInventory(id).slots.findIndex(s=>s.definitionId===300);assert.ok(slot>=0);e.setSelectedSlot(id,slot);
+ equipWandSpell(e,id,300);
  for(let y=78;y<96;y++)for(let x=80;x<95;x++)e.paintDisc(x,y,0,MAT.STONE,true);
  e.syncComponents();const before=e.getGrid().filter(m=>m===MAT.STONE).length;
  hold(e,id,INPUT.PRIMARY,85,91);tick(e,1);assert.equal(e.getPlayer(id).mana,82);hold(e,id,0);tick(e,32);
@@ -123,7 +124,7 @@ run('dodge immunity and earned air movement',(e,id)=>{
  e.setPlayerState(id,{...e.getPlayer(id),actionTicks:0,vy:2});hold(e,id,INPUT.JUMP);tick(e,4);assert.ok(e.getPlayer(id).vy<.5,'Windmantle limits falling speed');
 });
 run('Rime travels and freezes water using persistent components',(e,id)=>{
- e.addGear(id,301,1);const slot=e.getInventory(id).slots.findIndex(s=>s.definitionId===301);e.setSelectedSlot(id,slot);
+ equipWandSpell(e,id,301);
  for(let x=78;x<88;x++)for(let y=86;y<96;y++)e.paintDisc(x,y,0,MAT.WATER,true);
  hold(e,id,INPUT.PRIMARY,82,91);tick(e,1);hold(e,id,0);tick(e,30);
  assert.ok(e.getPlayer(id).mana<100);assert.ok(e.getGrid().some(m=>m===MAT.ICE),'the spell freezes water');

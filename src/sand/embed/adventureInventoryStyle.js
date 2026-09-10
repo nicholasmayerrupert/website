@@ -65,7 +65,30 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-gear-offhand{grid-area:4/1}.ad-gear-charm1{grid-area:4/2;width:54px;justify-self:center}.ad-gear-charm2{grid-area:4/3}
 .ad-character-stats {display:grid;grid-template-columns:1fr auto;gap:9px 8px;margin:18px 0 0;padding-top:16px;border-top:1px solid #cfb98126;font-size:14px}
 .ad-character-stats dt {color:#aab69f}.ad-character-stats dd {margin:0;color:#e1d7b6;font-variant-numeric:tabular-nums}
-.ad-inventory .craft-panel {grid-column:2;grid-row:5;max-height:200px;padding:0;overflow:auto;background:none;border:0;box-shadow:none}
+.ad-inventory .craft-panel {grid-column:2;grid-row:8;max-height:200px;padding:0;overflow:auto;background:none;border:0;box-shadow:none}
+.ad-wands {display:none}
+.ad-inventory .ad-wands {display:block;grid-column:2;grid-row:5;padding:14px;border:1px solid #667087;background:linear-gradient(135deg,#202e35,#192720)}
+.ad-inventory .ad-wands[hidden],.ad-inventory.bag-open .ad-wands,.ad-wands [hidden] {display:none!important}
+.wand-header {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.wand-header .game-select {max-width:100%}.wand-header .game-select>button {font-size:12px!important}
+.ad-wands .wand-mana {margin:12px 0 7px;color:#bfd5ff;font-size:13px;font-variant-numeric:tabular-nums}
+.ad-wands .wand-mana.blocked {color:#efad93}
+.ad-wands .wand-help {margin:0 0 15px;font-size:11px;line-height:1.6;color:#aab9b5}
+.ad-wands h3 {margin:14px 0 7px;font:12px 'Sand Pixel',monospace;color:#d8d6b9}
+.wand-spells,.wand-upgrades {display:flex;gap:7px;align-items:start}
+.wand-place {flex:1;min-width:0}
+.wand-socket {position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:82px;padding:8px 3px;border:1px solid #74795e;background:#293629;color:#e0dcc4;cursor:pointer;font:11px/1.3 'Sand Pixel',monospace}
+.wand-socket.upgrade {border-color:#697c99;background:#253344;color:#cedaf1}
+.wand-socket.empty {border-style:dashed;background:#172620;color:#81978f}
+.wand-socket small {position:absolute;top:3px;left:4px;color:#919e92;font-size:10px}
+.wand-socket .wand-icon {height:34px;display:grid;place-items:center}.wand-socket .wand-socket-name {margin-top:5px;min-height:14px;text-align:center}
+.wand-socket.next {border-color:#f2d390;box-shadow:inset 0 -2px #f2d390}
+.wand-socket.accepts {border-color:#bde1a6;background:#344d37}
+.wand-socket:disabled {opacity:.45;cursor:default}
+.wand-socket:hover:not(:disabled),.wand-socket:focus-visible {outline:2px solid #d6d8a0;outline-offset:1px}
+.wand-place .game-select {display:block;min-width:0;margin-top:6px}
+.wand-place .game-select>button {font-size:9px!important;padding:6px 4px!important;gap:4px}
+.ad-wands .wand-preview {margin:14px 0 0;padding-top:10px;border-top:1px solid #849c8d33;font-size:11px;line-height:1.7;color:#d1dcbf}
 .ad-inventory .craft-title {font:17px 'Sand Pixel',monospace;letter-spacing:0;margin:3px 0 10px;padding:0;border:0;color:#e1d7b6}
 .ad-inventory .craft-list {grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .ad-inventory .craft-recipe {position:relative;grid-template-columns:32px minmax(0,1fr);padding:8px;border:1px solid #5b6349;
@@ -102,6 +125,9 @@ export const ADVENTURE_INVENTORY_STYLE = `
   .ad-inventory .inv-pack-heading{grid-column:1;grid-row:2}.ad-inventory .inv-grid{grid-column:1;grid-row:3;padding:6px!important;gap:3px!important}
   .ad-inventory .inv-bar{grid-column:1;grid-row:4;padding:6px;gap:3px}.ad-inventory .craft-panel{grid-column:1;grid-row:6;max-height:none}
   .ad-inventory .inv-drop-zone{grid-column:1;grid-row:5}
+  .ad-inventory .ad-wands{grid-column:1;grid-row:6;padding:10px}.ad-inventory .craft-panel{grid-row:9}
+  .wand-socket{min-height:76px;font-size:9px}.wand-spells,.wand-upgrades{gap:4px}
+  .wand-header .game-select{width:100%}.wand-place .game-select>button{font-size:8px!important}
   .ad-inventory .inv-pools{grid-column:1;grid-row:3/5}.ad-inventory .bag-open .inv-bar{grid-column:1;grid-row:5}
   .ad-inventory .ad-footprint{grid-column:1;grid-row:6}.ad-inventory .inv-count{font-size:10px}.ad-inventory .inv-num{font-size:8px}
   .ad-inventory .inv-bag-shortcuts{grid-column:1;grid-row:7}.ad-inventory .ad-footprint{grid-row:8}

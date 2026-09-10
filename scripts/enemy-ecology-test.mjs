@@ -1,3 +1,4 @@
+import { equipWandSpell } from './magic-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT, BIOME, CAVE_BIOME, WORLD_FEATURE } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE, MISSION, CREATURE_ATTACK_STATE, PLAYER_ANIMATION, PROJECTILE_KIND, OFF, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
@@ -43,7 +44,7 @@ arena('shield cancels a committed sword before its damage frame',(e,id)=>{
  tick(e,24);assert.equal(e.getCreatures().find(c=>c.id===foe).health,hp,'cancelled sword never lands');
 });
 arena('shield cancels spells and bows without releasing stored attacks',(e,id)=>{
- e.setSelectedSlot(id,e.getInventory(id).slots.findIndex(s=>s.definitionId===300));
+ equipWandSpell(e,id,300);
  hold(e,id,INPUT.PRIMARY);tick(e,2);hold(e,id,INPUT.SHIELD);tick(e,30);
  assert.equal(e.getProjectiles().length,0,'cancelled spell never launches');
  hold(e,id,0);tick(e,12);e.addGear(id,10,1);
@@ -115,7 +116,7 @@ arena('frost projectiles preserve their phases and ice deposits through checkpoi
  }finally{restored.destroy();}
 });
 function cast(e,id,gear,aimX,aimY){
- e.addGear(id,gear,1);e.setSelectedSlot(id,e.getInventory(id).slots.findIndex(s=>s.definitionId===gear));
+ equipWandSpell(e,id,gear);
  hold(e,id,INPUT.PRIMARY,aimX,aimY);tick(e);hold(e,id,0,aimX,aimY);tick(e,24);
 }
 arena('Winterbreath freezes real water and the ice survives a world tick',(e,id)=>{

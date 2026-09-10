@@ -505,27 +505,34 @@ void ProjectileSystem::freezeSurface(double cx, double cy, int radius) {
   frozen.commitGeneral();
 }
 
-void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage) {
+void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage,
+                                 const SpellCast* cast, int node) {
   const auto* gear = E.content.gear(gearId);
   if (!gear) return;
   double dx = targetX - x, dy = targetY - y, distance = std::hypot(dx, dy);
   if (distance < .01) { dx = 1; dy = 0; distance = 1; }
   double angle = std::atan2(dy, dx);
-  int count = gear->spell == 7 ? (owner < 0 ? 3 : 5) : 1;
-  double speed = gear->spell == 10 ? .85 : gear->spell == 11 ? 1.5 : gear->spell == 7 ? 3.6 : owner < 0 ? 2.4 : 2.8;
+  int count = gear->spell == SP_PRISM ? (owner < 0 ? 3 : 5) : 1;
+  if (cast) count *= cast->shots;
+  double speed = gear->spell == SP_WINTERBREATH ? .85 : gear->spell == SP_CINDERMAW ? 1.5 : gear->spell == SP_PRISM ? 3.6 : owner < 0 ? 2.4 : 2.8;
   for (int i = 0; i < count && (int)projectiles.size() < PROJECTILE_MAX; i++) {
     double a = angle + (i - (count - 1) * .5) * .16;
     Projectile bolt; bolt.id = nextId++; bolt.owner = owner; bolt.kind = PK_RUNE;
     bolt.fuse = gearId; bolt.px = x; bolt.py = y;
     bolt.vx = std::cos(a) * speed; bolt.vy = std::sin(a) * speed;
-    if (gear->spell == 11) bolt.vy -= .35;
-    bolt.charge = damage; bolt.rotation = gear->spell == 7 ? 2 : 0;
-    double reach = gear->spell == 8 ? std::min((double)gear->reach, distance) : gear->reach;
+    if (gear->spell == SP_CINDERMAW) bolt.vy -= .35;
+    bolt.charge = damage; bolt.rotation = gear->spell == SP_PRISM ? 2 : 0;
+    double reach = gear->spell == SP_HOLLOW_STAR ? std::min((double)gear->reach, distance) : gear->reach;
     bolt.life = imax(1, (int)std::ceil(reach / speed));
-    if (gear->spell == 9) {
+    if (gear->spell == SP_FAULTLINE) {
       bolt.kind = PK_RUNE_FIELD; bolt.life = 36; bolt.charge = 1; bolt.rotation = damage;
       bolt.vx = std::cos(a) * 1.35; bolt.vy = std::sin(a) * 1.35;
       bolt.px += std::cos(a) * 6; bolt.py += std::sin(a) * 6;
+    }
+    if (cast) {
+      bolt.cast = *cast; bolt.spellNode = node; bolt.spellBounces = cast->bounces;
+      bolt.spellTimer = cast->connections[node] == SC_TIMER ? 24 : 0;
+      bolt.life = bolt.life * cast->lifetime / 100;
     }
     projectiles.push_back(bolt);
   }
@@ -913,7 +920,8 @@ void ProjectileSystem::updateProjectiles() {
       if (p.px < 1 || p.py < 1 || p.px >= E.cols - 1 || p.py >= E.rows - 1) continue;
       const auto* gear = E.content.gear(p.fuse);
       if (!gear) continue;
-      if (gear->spell == 8) {
+      if (p.spellTimer > 0 && --p.spellTimer == 0) E.magic.trigger(p);
+      if (gear->spell == SP_HOLLOW_STAR) {
         // Bounded actor-clock attraction; static terrain is cut only at collapse.
         if (p.life % 3 == 0) {
           auto pull = [&](double x, double y, double& vx, double& vy, double strength) {
@@ -937,15 +945,16 @@ void ProjectileSystem::updateProjectiles() {
             if (body->jointRole != 2 && body->material != NEUTRONIUM && body->occ.size() <= 256 &&
                 pull(body->px, body->py, body->vx, body->vy, .65)) E.rigid.wakeBody(body);
         }
-      } else if (gear->spell == 9) {
+      } else if (gear->spell == SP_FAULTLINE) {
         if (p.life % 6 == 0) fractureRune(p, 9, STONE, (int)p.rotation);
         p.px += p.vx; p.py += p.vy;
       }
       if (--p.life <= 0) {
-        if (gear->spell == 8) fractureRune(p, 12, NEUTRONIUM, (int)p.rotation);
+        E.magic.trigger(p);
+        if (gear->spell == SP_HOLLOW_STAR) fractureRune(p, 12, NEUTRONIUM, (int)p.rotation);
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1;
-        p.rotation = gear->spell == 8 ? 16 : 8; p.vx = p.vy = 0;
-      } else p.charge = p.life / (gear->spell == 8 ? 72.0 : 36.0);
+        p.rotation = gear->spell == SP_HOLLOW_STAR ? 16 : 8; p.vx = p.vy = 0;
+      } else p.charge = p.life / ((gear->spell == SP_HOLLOW_STAR ? 72.0 : 36.0) * p.cast.lifetime / 100);
       projectiles[write++] = p; continue;
     }
     if (p.kind == PK_RUNE_BURST) {
@@ -957,7 +966,25 @@ void ProjectileSystem::updateProjectiles() {
       bool hit = false, outside = false;
       bool flame = p.kind == PK_FIRE_BREATH;
       bool breath = p.kind == PK_FROST_BREATH, shard = p.kind == PK_ICE_SHARD;
-      bool frost = rune && rune->spell == 10, molten = rune && rune->spell == 11;
+      bool frost = rune && rune->spell == SP_WINTERBREATH, molten = rune && rune->spell == SP_CINDERMAW;
+      if (p.spellTimer > 0 && --p.spellTimer == 0) E.magic.trigger(p);
+      if (p.cast.homing > 0) {
+        double nearest = 36 * 36, tx = 0, ty = 0;
+        for (const auto& c : E.creatures.creatures) {
+          if (!c.alive || E.creatures.isProtectedNpc(c) || (p.owner < 0 && c.id == -p.owner)) continue;
+          const auto& species = E.creatures.species(c);
+          double x = c.wx - E.fg.worldOffsetX + species.w * .5, y = c.wy - E.fg.worldOffsetY + species.h * .5;
+          double d = (x-p.px)*(x-p.px) + (y-p.py)*(y-p.py);
+          if (d < nearest) { nearest = d; tx = x; ty = y; }
+        }
+        if (nearest < 36 * 36 && nearest > .01) {
+          double speed = std::hypot(p.vx,p.vy), turn = std::min(.3, .07 * p.cast.homing);
+          double vx = p.vx * (1-turn) + (tx-p.px)/std::sqrt(nearest)*speed*turn;
+          double vy = p.vy * (1-turn) + (ty-p.py)/std::sqrt(nearest)*speed*turn;
+          double length = std::hypot(vx,vy);
+          if (length > .01) { p.vx = vx/length*speed; p.vy = vy/length*speed; }
+        }
+      }
       double hitRadius = flame ? 2.8 : frost ? 3.2 : molten ? 1.8 : 1;
       if (molten) p.vy += E.scaledGravity(.018);
       int steps = imax(1, (int)std::ceil(std::hypot(p.vx,p.vy) / .25));
@@ -972,22 +999,28 @@ void ProjectileSystem::updateProjectiles() {
           if (tipX < 1 || tipY < 1 || tipX >= E.cols-1 || tipY >= E.rows-1) { outside = true; break; }
           if (blocksPoint(tipX, tipY)) { p.px = tipX; p.py = tipY; hit = true; break; }
         }
-        if (rune && rune->spell == 7 && E.isBlockingForActor(mat) && p.rotation > 0) {
-          bool blockX = blocksPoint(p.px, oldY), blockY = blocksPoint(oldX, p.py);
-          fractureRune(p, 3, CRYSTAL, (int)p.charge);
+        auto blocksRune = [&](double x, double y) {
+          return blocksPoint(x, y) || ((frost || molten || flame) &&
+            (blocksPoint(x + hitRadius, y) || blocksPoint(x - hitRadius, y) ||
+             blocksPoint(x, y + hitRadius) || blocksPoint(x, y - hitRadius)));
+        };
+        bool terrainHit = blocksRune(p.px, p.py);
+        if (rune && terrainHit && ((rune->spell == SP_PRISM && p.rotation > 0) || p.spellBounces > 0)) {
+          bool blockX = blocksRune(p.px, oldY), blockY = blocksRune(oldX, p.py);
+          if (rune->spell == SP_PRISM) fractureRune(p, 3, CRYSTAL, (int)p.charge);
           if (blockX || !blockY) p.vx = -p.vx;
           if (blockY || !blockX) p.vy = -p.vy;
-          p.px = oldX; p.py = oldY; p.rotation--;
+          p.px = oldX; p.py = oldY;
+          if (p.spellBounces > 0) p.spellBounces--; else p.rotation--;
           break;
         }
-        bool wideBlock = (frost || molten || flame) && (blocksPoint(p.px + hitRadius, p.py) ||
-          blocksPoint(p.px - hitRadius, p.py) || blocksPoint(p.px, p.py + hitRadius) || blocksPoint(p.px, p.py - hitRadius));
-        if (wideBlock || E.isBlockingForActor(mat) || (rune && (rune->spell == 2 || frost) && mat == WATER) ||
+        if (terrainHit || (rune && (rune->spell == SP_RIME || frost) && mat == WATER) ||
             (p.owner < 0 && (materialStopsPoint(p.px,p.py) || hitsPlayer(p.px,p.py,hitRadius,p.owner))) ||
             hitsCreature(p.px,p.py,hitRadius,p.owner)) { hit = true; break; }
       }
       if (outside) continue;
       if (hit || --p.life <= 0) {
+        if (!rune || rune->spell != SP_HOLLOW_STAR || p.cast.connections[p.spellNode] == SC_TIMER) E.magic.trigger(p);
         auto* owner = E.psys.findPlayer(p.owner); const auto* gear = E.content.gear(p.fuse);
         if (flame) {
           damageSplash(p.px, p.py, 5, (int)p.charge, p.owner, false);
@@ -1001,7 +1034,7 @@ void ProjectileSystem::updateProjectiles() {
           }
           for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
           continue;
-        } else if (gear && (gear->spell == 10 || gear->spell == 11)) {
+        } else if (gear && (gear->spell == SP_WINTERBREATH || gear->spell == SP_CINDERMAW)) {
           int radius = shard ? 11 : breath ? 5 : frost ? 7 : 5;
           if (shard) E.combat.enemyTerrainImpact(p.px, p.py, 7, ICE);
           damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, false);
@@ -1022,11 +1055,12 @@ void ProjectileSystem::updateProjectiles() {
           }
           for (auto& c : E.creatures.creatures) if (c.alive && c.health <= 0) E.creatures.killCreature(c);
           if (!breath || p.id % 4 == 0) E.audio.emit(SE_SPELL_IMPACT, p.px, p.py, shard ? 1.2 : breath ? .45 : 1, frost ? ICE : LAVA);
-        } else if (gear && gear->spell == 8) {
-          p.kind = PK_RUNE_FIELD; p.life = 72; p.rotation = p.charge; p.charge = 1; p.vx = p.vy = 0;
+        } else if (gear && gear->spell == SP_HOLLOW_STAR) {
+          if (hit) E.magic.trigger(p);
+          p.kind = PK_RUNE_FIELD; p.life = 72 * p.cast.lifetime / 100; p.rotation = p.charge; p.charge = 1; p.vx = p.vy = 0;
           E.audio.emit(SE_RUNE, p.px, p.py, 1.1, 8);
           projectiles[write++] = p; continue;
-        } else if (gear && gear->spell == 7) {
+        } else if (gear && gear->spell == SP_PRISM) {
           fractureRune(p, 3, CRYSTAL, (int)p.charge);
         } else if (p.owner < 0 && p.px >= 1 && p.py >= 1 && p.px < E.cols-1 && p.py < E.rows-1) {
           int radius = p.charge > 18 ? 12 : 8;
@@ -1037,8 +1071,11 @@ void ProjectileSystem::updateProjectiles() {
             Engine::ActiveLayerScope foreground(E, &E.fg);
             E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);
           }
-        } else if (owner && gear) E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/2.8,p.vy/2.8);
-        p.rotation = shard ? 14 : breath ? 4 : frost ? 7 : molten ? 5 : gear && gear->spell == 7 ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
+        } else if (owner && gear) {
+          double length = std::max(.01, std::hypot(p.vx,p.vy));
+          E.combat.impact(*owner,*gear,owner->px+owner->w*.5,owner->py+owner->h*.42,p.px,p.py,p.vx/length,p.vy/length,(int)p.charge);
+        }
+        p.rotation = shard ? 14 : breath ? 4 : frost ? 7 : molten ? 5 : gear && gear->spell == SP_PRISM ? 4 : p.owner < 0 && p.charge > 18 ? 12 : 8;
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1; p.vx = p.vy = 0;
       }
       projectiles[write++] = p; continue;
@@ -1093,6 +1130,7 @@ void ProjectileSystem::updateProjectiles() {
     if ((int)projectiles.size() >= PROJECTILE_MAX) break;
     projectiles.push_back(child);
   }
+  E.magic.flush();
 }
 
 int ProjectileSystem::buildSnapshot() {

@@ -167,6 +167,7 @@ export function initSandWasm() {
         dayPhase: c('engine_day_phase', 'number', ['number']),
         dayHeld: c('engine_day_held', 'number', ['number']),
         setDayPhase: c('engine_set_day_phase', null, ['number', 'number', 'number']),
+        useBed: c('engine_use_bed', 'number', ['number', 'number', 'number']),
         bedSnapshot: c('engine_bed_snapshot', 'number', ['number']),
         bedSnapshotPtr: c('engine_bed_snapshot_ptr', 'number', ['number']),
         glSetBeds: c('engine_gl_set_beds', null, ['number', 'number', 'number']),
@@ -830,6 +831,7 @@ const renderStrides = Object.freeze({
     getActorTick() { return M.actorTick(ptr); },
     getDayClock() { return { phase: M.dayPhase(ptr), held: !!M.dayHeld(ptr) }; },
     setDayPhase(phase, held = true) { M.setDayPhase(ptr, phase, held ? 1 : 0); },
+    useBed(id, bed) { return M.useBed(ptr, id | 0, bed | 0); },
     getBeds() {
       const n = M.bedSnapshot(ptr);
       const f = new Float32Array(mod.HEAPF32.buffer, M.bedSnapshotPtr(ptr), n * 5);

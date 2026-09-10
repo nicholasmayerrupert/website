@@ -269,10 +269,18 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   // pose at the absolute anchor makes the existing worker camera streaming and
   // authority-window synchronization loads the right chunks without a destructive,
   // synchronous global shift here.
-  double localAnchorX = p.spawnWorldX - E.fg.worldOffsetX;
-  double localAnchorY = p.spawnWorldY - E.fg.worldOffsetY;
+  double anchor[2]; E.beds.respawnAnchor(p, anchor);
+  double localAnchorX = anchor[0] - E.fg.worldOffsetX;
+  double localAnchorY = anchor[1] - E.fg.worldOffsetY;
   if (!spawnAreaLoaded(localAnchorX, localAnchorY, P_SPAWN_HAZARD_MARGIN + 1)) return false;
-  if (!findSafeSpawnNearWorld(p.spawnWorldX, p.spawnWorldY, out, &p) &&
+  if (p.respawnBed) {
+    const auto* bed = E.beds.find(p.respawnBed);
+    if (!bed || !E.beds.supported(*bed) || !findSafeSpawnNearWorld(anchor[0], anchor[1], out, &p)) {
+      p.respawnBed = 0; p.bedStatus = BR_SPAWN_LOST; p.bedRevision++;
+      p.px = p.spawnWorldX - E.fg.worldOffsetX; p.py = p.spawnWorldY - E.fg.worldOffsetY;
+      return respawnPlayer(p);
+    }
+  } else if (!findSafeSpawnNearWorld(p.spawnWorldX, p.spawnWorldY, out, &p) &&
       !buildSafeSpawnPad(p.spawnWorldX, p.spawnWorldY, out, &p)) return false;
   p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
   p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
@@ -297,15 +305,17 @@ bool PlayerSystem::requestRespawn(int id) {
   Player* p = findPlayer(id);
   if (!p || p->alive || p->respawnPending) return false;
   p->respawnPending = true;
-  p->px = p->spawnWorldX - E.fg.worldOffsetX;
-  p->py = p->spawnWorldY - E.fg.worldOffsetY;
+  double anchor[2]; E.beds.respawnAnchor(*p, anchor);
+  p->px = anchor[0] - E.fg.worldOffsetX;
+  p->py = anchor[1] - E.fg.worldOffsetY;
   p->aimX = p->px + p->w * 0.5;
   p->aimY = p->py + p->h * 0.5;
-  respawnPlayer(*p); // immediate when the original spawn neighborhood is loaded
+  respawnPlayer(*p); // immediate when the chosen spawn neighborhood is loaded
   return true;       // request accepted; otherwise streaming completes it later
 }
 void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
+  if (p.sleepingBed) E.beds.wake(p);
   p.animState = AS_DEATH; p.animFrame = 0;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
   p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
@@ -947,6 +957,7 @@ void PlayerSystem::applyPlayerTools() {
   for (auto& p : players) {
     // Survival inventory drives the controls (selected slot = mine-tool or place-
     // material). Creative keeps the classic tool flow below.
+    if (p.sleepingBed) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (E.survivalInventory) { E.inv.applyInventoryPlayer(p); continue; }
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
@@ -1013,7 +1024,7 @@ void PlayerSystem::updatePlayers() {
     if (p.active && !p.alive && p.respawnPending) respawnPlayer(p);
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.shieldHurtCooldown > 0) p.shieldHurtCooldown--;
-    if (p.active && p.alive) integratePlayer(p);
+    if (p.active && p.alive && !p.sleepingBed) integratePlayer(p);
     if (p.active && p.alive
         && planetHasGameplayFlag(E.planetId, PGF_VOID_RECOVERY)) {
       double worldY = E.fg.worldOffsetY + p.py + p.h * .5;

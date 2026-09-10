@@ -62,6 +62,7 @@ const INTENT = Object.freeze({
   sort: 14,
   'chest-slot': 15,
   'wand-socket': 16,
+  bed: 17,
 });
 const INTENT_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(INTENT).map(([name, code]) => [code, name]),
@@ -172,6 +173,7 @@ export function normalizeReplayMessage(data, survival = false) {
       if (!hasOwn(INTENT, data.intent)) return null;
       const intent = { type: 'intent', intent: data.intent };
       switch (data.intent) {
+        case 'bed': intent.bed = data.bed | 0; break;
         case 'chest': intent.chest = data.chest | 0; intent.slot = data.slot | 0; break;
         case 'chest-slot': intent.chest = data.chest | 0; intent.slot = data.slot | 0; intent.action = data.action | 0; break;
         case 'quest-interact':
@@ -410,6 +412,7 @@ function unpackChangedState(row, start, previous, fields, booleanFields) {
 function packIntent(message) {
   const code = INTENT[message.intent];
   switch (message.intent) {
+    case 'bed': return [code, message.bed];
     case 'chest': return [code, message.chest, message.slot];
     case 'chest-slot': return [code, message.chest, message.slot, message.action];
     case 'quest-interact': return [code, message.objectiveId];
@@ -435,6 +438,7 @@ function unpackIntent(row) {
   const name = INTENT_NAMES[row[2]];
   if (!name) throw new Error('Replay contains an unknown intent.');
   switch (name) {
+    case 'bed': return { type: 'intent', intent: name, bed: row[3] };
     case 'chest': return { type: 'intent', intent: name, chest: row[3], slot: row[4] };
     case 'chest-slot': return { type: 'intent', intent: name, chest: row[3], slot: row[4], action: row[5] };
     case 'quest-interact': return { type: 'intent', intent: name, objectiveId: row[3] };

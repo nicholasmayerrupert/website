@@ -4,7 +4,9 @@ import { MATERIAL_BY_ID } from '../materials.generated.js';
 import { OBJECTIVE_STATE, ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { ADVENTURE_STYLE } from './adventureStyle.js';
 import { ADVENTURE_INVENTORY_STYLE } from './adventureInventoryStyle.js';
+import { createBedHud } from './bedHud.js';
 import { createAdventureEquipment } from './adventureEquipment.js';
+import { createInventoryWorkspace } from './inventoryWorkspace.js';
 import { createWandEditor } from './wandEditor.js';
 import { createGameSelect } from './gameSelect.js';
 
@@ -79,6 +81,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     return resident ? anchorPosition(GAME_CONTENT.anchors[resident.anchor]) : objective;
   }
   const captionTimer = setTimeout(() => caption.classList.add('faded'), 7000);
+  const bedHud = createBedHud(root, game, { blocked: () => !!panel || dialogueOpen });
   const inventoryHome = inventory.el.parentNode;
   const footprintLabel = el('label', 'ad-muted ad-footprint', 'Mining / placement radius ');
   const footprint = createGameSelect(root, { label: 'Tool footprint', options: game.getSurvivalFootprints().map(shape => ({ value: shape.id, label: shape.width === 1 ? '1 pixel' : `Radius ${(shape.width - 1) / 2}` })), onChange: value => game.setSelectedFootprint(Number(value)) });
@@ -91,7 +94,8 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   let nearChest = null, shownChest = 0, lootSignature = '', chestPointer = null;
   const chestPrompt = button('E · Open chest', () => openChest(), 'ad-chest-prompt'); chestPrompt.hidden = true; root.append(chestPrompt);
   const chestHighlight = el('div', 'ad-chest-highlight'); chestHighlight.hidden = true; root.append(chestHighlight);
-  const chestSection = el('section', 'ad-loot'); chestSection.hidden = true; pages.inventory.prepend(chestSection);
+  const chestSection = el('section', 'ad-loot'); chestSection.hidden = true;
+  const workspace = createInventoryWorkspace(inventory, game, { equipment: equipment.el, wands: wands.el, footprint: footprintLabel, chest: chestSection });
   const chestHeading = el('h2');
   const chestHint = el('p', 'ad-muted');
   const chestGrid = el('div', 'ad-chest-grid'); chestGrid.setAttribute('aria-label', 'Chest storage');
@@ -198,6 +202,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     if (name) closeDialogue?.();
     dialogueOpen = false;
     if (name === 'inventory') pages.inventory.append(inventory.el);
+    workspace.setChest(name === 'inventory' && !!shownChest);
     inventory.setOpen(name === 'inventory');
     if (name !== 'inventory') inventoryHome.append(inventory.el);
     inventory.el.hidden = !!name && name !== 'inventory';
@@ -209,7 +214,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     if (name) {
       sheet.setAttribute('aria-label', LABELS[name]);
       if (name === 'journal') renderJournal();
-      if (name === 'inventory') { refreshEquipment(); wands.refresh(); footprint.value = game.getInventory().selectedFootprint; }
+      if (name === 'inventory') { workspace.refresh(); refreshEquipment(); wands.refresh(); footprint.value = game.getInventory().selectedFootprint; }
       if (name === 'map' && prior !== 'map') centerMap();
       pause(); tabButtons[name].focus({ preventScroll: true });
     } else {
@@ -436,9 +441,9 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   root.host.dataset.trackedObjective = String(tracked);
   return {
     open,
-    openWorkshop(actor) { open('inventory'); inventory.setStation(actor?.npcId || 0, game.getPlayer()?.abilities || 0); inventory.update(game.getInventory()); },
+    openWorkshop(actor) { open('inventory'); inventory.setStation(actor?.npcId || 0, game.getPlayer()?.abilities || 0); inventory.update(game.getInventory()); workspace.show('craft'); },
     isOpen: () => !!panel,
     inventoryChanged(value) { if (value && panel !== 'inventory') open('inventory'); else if (!value && panel === 'inventory') open(null); },
-    destroy() { footprint.destroy(); wands.destroy(); destroyed = true; cancelAnimationFrame(chestFrame); clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); chestHighlight.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
+    destroy() { bedHud.destroy(); workspace.destroy(); footprint.destroy(); wands.destroy(); destroyed = true; cancelAnimationFrame(chestFrame); clearInterval(refresh); clearTimeout(noticeTimer); clearTimeout(captionTimer); observer.disconnect(); window.removeEventListener('pointermove', pointAtChest, true); window.removeEventListener('pointerdown', clickChest, true); window.removeEventListener('blur', leaveChests); window.removeEventListener('pointerout', leaveWindow); root.removeEventListener('keydown', onKey, true); root.removeEventListener('sand:dialogue', onDialogue); inventoryHome.append(inventory.el); style.remove(); chestPrompt.remove(); chestHighlight.remove(); nav.remove(); overlay.remove(); caption.remove(); notice.remove(); bossBar.remove(); trailHint.remove(); },
   };
 }

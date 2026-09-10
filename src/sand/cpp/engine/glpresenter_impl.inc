@@ -1270,6 +1270,7 @@ void GLPresenter::glDrawPlayers() {
     int n = (int)(glExtPlayers.size() / GLP_STRIDE);
     for (int i = 0; i < n; i++) {
       const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
+      if (p[GLP_ALIVE] > .5f && p[GLP_SLEEPING_BED] && glDrawSleepingPlayer((int)p[GLP_SLEEPING_BED], camCol, camRow)) continue;
       float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
       int equipment[9];
       for (int g = 0; g < 9; g++) equipment[g] = (int)p[GLP_GEAR0 + g];
@@ -1284,6 +1285,7 @@ void GLPresenter::glDrawPlayers() {
   } else {
     for (auto& p : E.psys.players) {
       if (!p.active) continue;
+      if (p.alive && p.sleepingBed && glDrawSleepingPlayer(p.sleepingBed, camCol, camRow)) continue;
       const InvSlot& held = p.inv[p.selectedSlot];
       double chargeMax = held.itemKind == IK_BORE_CANNON ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
       int equipment[9];
@@ -2375,6 +2377,29 @@ void GLPresenter::glDrawBeds() {
     rect(4, 0, 6, .5, .48f, .66f, .57f);
     rect(4, 2, 6, .5, .20f, .35f, .35f);
   }
+}
+
+bool GLPresenter::glDrawSleepingPlayer(int bedId, int camCol, int camRow) {
+  for (size_t i = 0; i + 4 < bedData.size(); i += 5) if ((int)bedData[i] == bedId) {
+    const auto& art = E.content;
+    if (!art.spriteWidth || !art.spriteHeight) return false;
+    double x = bedData[i + 1] - E.fg.worldOffsetX, y = bedData[i + 2] - E.fg.worldOffsetY;
+    double sx = (x - 4 - camCol) * glCellDev + glOffX, sy = (y - 1 - camRow) * glCellDev + glOffY;
+    float light = glActorLight(x - 5, y, 11, 4);
+    int headRows = art.spriteHeight / 3, left = art.spriteWidth, top = headRows;
+    for (int r = 0; r < headRows; r++) for (int c = 0; c < art.spriteWidth; c++)
+      if (art.spriteRow(AS_IDLE, 0, r)[c]) { left = imin(left, c); top = imin(top, r); }
+    for (int r = top; r < headRows; r++) for (int c = left; c < art.spriteWidth; c++) {
+      int idx = art.spriteRow(AS_IDLE, 0, r)[c];
+      if (idx <= 0 || idx >= (int)art.palette.size()) continue;
+      const auto& color = art.palette[(size_t)idx];
+      glUniform4f(glc->uColor, color[0] * light, color[1] * light, color[2] * light, color[3]);
+      glSolidDev(sx + (r - top) * art.pixelScale * glCellDev, sy + (c - left) * art.pixelScale * glCellDev,
+                 art.pixelScale * glCellDev, art.pixelScale * glCellDev);
+    }
+    return true;
+  }
+  return false;
 }
 
 bool GLPresenter::glDrawSleepingResident(int id, int speciesId, int npcId, int camCol, int camRow) {

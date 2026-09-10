@@ -89,7 +89,11 @@ Foreground and background structures remain destructible. Osei’s “Mend the l
 restores only the lodge. Essential NPCs recover near their homes when buried or
 lost below their region, including dormant actors. Death keeps equipment,
 weapons, and relics. One quarter of pooled materials moves to a recoverable coffer
-at the player’s Hearthwood spawn.
+at the player’s Hearthwood spawn. Nearby resident beds accept `E` or a click to
+set a persistent respawn point. At night, two seconds of uninterrupted sleep
+advances the world to morning; occupied beds and nearby danger prevent rest.
+Players can leave early. Death returns the player to the chosen bed, with the
+Hearthwood spawn as a fallback when the bed is missing or obstructed.
 
 Versioned binary checkpoints store both grids and their persistent cell channels,
 components, rigid bodies and joint links, streamed stores, players, equipment,

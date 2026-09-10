@@ -744,7 +744,7 @@ before saturating that line with long bursts of rapid, pinprick explosive rounds
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
 the articulated player animation, an airborne rechargeable jetpack, and
-immediate manual respawning at a safe original-spawn location are
+immediate manual respawning at a chosen bed or a safe original-spawn location are
 authoritative in the engine. The rendered
 jetpack exposes its fuel level and animates twin thrust plumes without changing
 that authority. Holding `F` raises a cursor-facing 120-degree ward with 200
@@ -821,7 +821,9 @@ Pyramid room searches include floors above and below the natural surface.
 
 Earth villages populate independently of the combat cap. Each material-valid
 building interior has one deterministic resident site and each village has one
-outdoor commons site, capped at twelve loaded villagers. Stable site hashes assign
+outdoor commons site. Homes populate within one second of loading, independently
+of natural enemy spawning and the number of other residents. Floor searches account
+for furniture and door thresholds. Stable site hashes assign
 residents as villagers, guards, or hunters; commons have guards. Guards use
 melee and hunters use bows against nearby hostiles, remain near their home,
 and cannot damage the player. Each role has its own sprite set. Site identity follows
@@ -906,6 +908,13 @@ beds. Beds are entity furniture, outside both material grids, replicated to the
 WebGL presenter and saved with the world. At night residents walk to their beds
 and rest under a blanket; daylight, nearby monsters, damage, fire, flooding, or
 lost support keep them awake. Existing saves acquire beds as residents load.
+Players can click a nearby bed or press `E` to set their respawn point. At night
+an unoccupied, safe bed lets the player rest under its blanket and advance to
+morning after two seconds. Leave bed, `E`, `Escape`, movement, and danger interrupt
+rest. Bed choices survive saving and world streaming; missing or blocked beds
+fall back to the original spawn. `embed/bedHud.js` presents the interaction and
+sleep controls, while `BedSystem` owns eligibility, time, occupancy, and respawn
+anchors. Exercise these paths with the `beds`, `beds-e2e`, and `village-residents` suites.
 Chests retain at least 24 stable storage slots, including empty slots. Inventory
 and chest slots support cursor pickup, placement, swapping, splitting, dragging,
 and Shift-click transfers; mining and placing a chest preserves its contents.
@@ -1075,6 +1084,17 @@ Potions stack to 99 and support right-click splitting. Inventory → Sort items
 merges and groups pack contents while preserving the quickbar and equipment.
 Pick up an item and use Drop one / Drop stack, or drag it onto the drop area.
 Starter tools, spell abilities, and material bags stay protected from dropping.
+
+`embed/inventoryWorkspace.js` arranges the adventure inventory into a persistent
+pack and Equipment/Wands/Crafting/Materials workspaces, with a Chest workspace
+while looting. On narrow screens, Pack is its own section. Search and category
+filters highlight matching items without changing engine slot positions. The
+fixed item inspector provides equip/transfer, pickup, and split actions; recipe
+search and a ready-to-craft filter operate on recipes available at the current
+station. All item mutations still go through `inventoryHud.js` engine intents.
+`embed/adventureInventoryStyle.js` owns the responsive presentation. Exercise
+these flows with `node scripts/run-tests.mjs --only
+adventure-inventory-e2e,magic-e2e,adventure-e2e`.
 
 The embed owns one Map/Journal/Inventory panel controller in
 `embed/adventureHud.js`. Panel pause stops gameplay while preserving worker

@@ -52,11 +52,23 @@ void BedSystem::tick() {
   for (auto& bed : beds) {
     bed.seeking = false;
     bed.sleeper = 0;
+    for (const auto& p : E.psys.players) if (p.active && p.alive && p.sleepingBed == bed.id) bed.sleeper = -p.id;
     int x = (int)bed.wx - E.fg.worldOffsetX, y = (int)bed.wy - E.fg.worldOffsetY;
     if (x < 6 || x >= E.cols - 6 || y < 8 || y >= E.rows - 5) continue;
     bool floor = false;
     for (int dx : {-4, 0, 4}) if (E.psys.playerCellSolid(x + dx, y + 4)) floor = true;
     if (!floor) { bed.wy += .25; bed.sleeper = 0; }
+  }
+  for (auto& p : E.psys.players) if (p.sleepingBed) {
+    const auto* bed = find(p.sleepingBed);
+    if (!p.alive || !bed || !supported(*bed)) { wake(p, BR_OBSTRUCTED); continue; }
+    if (playerDanger(p, *bed)) { wake(p, BR_UNSAFE); continue; }
+    if (p.input || std::fabs(p.inputX) > .1 || std::fabs(p.inputY) > .1) { wake(p); continue; }
+    if (!E.worldClock.night()) { wake(p, BR_MORNING); continue; }
+    if (++p.sleepTicks >= 120) {
+      E.worldClock.set(7500.0 / WorldClockSystem::DAY_TICKS, false);
+      wake(p, BR_MORNING);
+    }
   }
 }
 
@@ -79,6 +91,7 @@ bool BedSystem::rest(Creature& resident) {
   auto it = std::find_if(beds.begin(), beds.end(), [&](const auto& bed) { return bed.resident == resident.id; });
   if (it == beds.end()) return false;
   auto& bed = *it;
+  if (bed.sleeper < 0) return false;
   bed.sleeper = 0;
   if (danger(resident)) bed.wakeUntil = E.actorTick + 180;
   if (!E.worldClock.night() || E.actorTick < bed.wakeUntil || !supported(bed)) return false;
@@ -107,4 +120,67 @@ int BedSystem::buildSnapshot() {
       (float)bed.resident, (float)bed.sleeper});
   }
   return (int)snapshot.size() / 5;
+}
+
+const AdventureBed* BedSystem::find(int id) const {
+  for (const auto& bed : beds) if (bed.id == id) return &bed;
+  return nullptr;
+}
+
+bool BedSystem::playerDanger(const Player& p, const AdventureBed& bed) const {
+  if (p.hurtCooldown || E.psys.samplePlayerFluidCoverage(p) > .2) return true;
+  if (E.creatures.fluidCoverage(bed.wx - 4, bed.wy - 2, 9, 5) > .2
+      || E.creatures.contactHazardAtBox(bed.wx - 4, bed.wy - 2, 9, 5, 0) != CHP_NONE) return true;
+  for (const auto& c : E.creatures.creatures) {
+    if (!c.alive || !E.creatures.species(c).hostile) continue;
+    double dx = c.wx - bed.wx, dy = c.wy - bed.wy;
+    if (dx * dx + dy * dy < 52 * 52 && std::fabs(dy) < 24) return true;
+  }
+  return false;
+}
+
+void BedSystem::wake(Player& p, int result) {
+  for (auto& bed : beds) if (bed.sleeper == -p.id) bed.sleeper = 0;
+  p.sleepingBed = p.sleepTicks = 0;
+  p.bedStatus = result; p.bedRevision++;
+  p.vx = p.vy = 0; p.prevInput = p.input;
+}
+
+int BedSystem::use(int player, int id) {
+  Player* p = E.psys.findPlayer(player);
+  if (!p || !p->active || !p->alive || E.planetId != PL_FRONTIER) return BR_NONE;
+  if (!id) { if (p->sleepingBed) wake(*p); return p->bedStatus; }
+  auto result = [&](int value) { p->bedStatus = value; p->bedRevision++; return value; };
+  const auto* bed = find(id);
+  if (!bed) return result(BR_OBSTRUCTED);
+  double wx = E.fg.worldOffsetX + p->px + p->w * .5, wy = E.fg.worldOffsetY + p->py + p->h * .5;
+  if (std::hypot(wx - bed->wx, wy - bed->wy) > 18) return result(BR_TOO_FAR);
+  if (!supported(*bed)) return result(BR_OBSTRUCTED);
+  if (bed->sleeper && bed->sleeper != -p->id) return result(BR_OCCUPIED);
+  // A player must be able to reach the pillow through open room space.
+  int steps = imax(1, (int)std::ceil(std::hypot(wx - bed->wx, wy - bed->wy)));
+  for (int i = 1; i < steps; i++) {
+    double t = i / (double)steps;
+    if (E.psys.playerCellSolid((int)std::floor(wx + (bed->wx - wx) * t) - E.fg.worldOffsetX,
+                              (int)std::floor(wy + (bed->wy - wy) * t) - E.fg.worldOffsetY)) return result(BR_OBSTRUCTED);
+  }
+  p->respawnBed = bed->id;
+  if (!E.worldClock.night()) return result(BR_DAYTIME);
+  if (playerDanger(*p, *bed)) return result(BR_UNSAFE);
+  p->sleepingBed = bed->id; p->sleepTicks = 0;
+  p->px = bed->wx - p->w * .5 - E.fg.worldOffsetX;
+  p->py = bed->wy + 4 - p->h - E.fg.worldOffsetY;
+  p->vx = p->vy = 0; p->grounded = true;
+  p->input = p->prevInput = 0; p->inputX = p->inputY = 0;
+  p->shieldActive = false; p->actionTicks = 0; p->actionState = AS_IDLE;
+  E.magic.cancelCharge(*p); E.psys.resetPlayerMine(*p); E.inv.resetPlayerPlaceStroke(*p);
+  for (auto& b : beds) if (b.id == id) { b.sleeper = -p->id; b.seeking = false; }
+  return result(BR_SLEEPING);
+}
+
+void BedSystem::respawnAnchor(Player& p, double* out) {
+  const auto* bed = find(p.respawnBed);
+  if (p.respawnBed && !bed) { p.respawnBed = 0; p.bedStatus = BR_SPAWN_LOST; p.bedRevision++; }
+  out[0] = bed ? bed->wx - p.w * .5 : p.spawnWorldX;
+  out[1] = bed ? bed->wy + 4 - p.h : p.spawnWorldY;
 }

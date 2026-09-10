@@ -151,6 +151,7 @@ EMSCRIPTEN_KEEPALIVE int engine_actor_tick(Engine* e) { return e->actorTick; }
 EMSCRIPTEN_KEEPALIVE double engine_day_phase(Engine* e) { return e->worldClock.phase(); }
 EMSCRIPTEN_KEEPALIVE int engine_day_held(Engine* e) { return e->worldClock.held ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_set_day_phase(Engine* e, double phase, int held) { e->worldClock.set(phase, held != 0); }
+EMSCRIPTEN_KEEPALIVE int engine_use_bed(Engine* e, int player, int bed) { return e->beds.use(player, bed); }
 EMSCRIPTEN_KEEPALIVE int engine_bed_snapshot(Engine* e) { return e->beds.buildSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_bed_snapshot_ptr(Engine* e) { return e->beds.snapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_beds(Engine* e, float* data, int count) {

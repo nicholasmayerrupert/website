@@ -148,6 +148,7 @@ class GLPresenter {
   std::vector<float> chestData;
   std::vector<float> bedData;
   void glDrawBeds();
+  bool glDrawSleepingPlayer(int bedId, int camCol, int camRow);
   bool glDrawSleepingResident(int id, int speciesId, int npcId, int camCol, int camRow);
   void glDrawChests();
   void glDrawPlayers();

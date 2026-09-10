@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 6;
+static constexpr uint32_t CHECKPOINT_VERSION = 7;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -88,6 +88,8 @@ struct CheckpointArchive {
     else if (reading) v.navigation = CreatureNavigation();
   }
   void field(Player& v) {
+    if (version >= 7) fields(v.respawnBed,v.sleepingBed,v.sleepTicks,v.bedStatus,v.bedRevision);
+    else if (reading) v.respawnBed = v.sleepingBed = v.sleepTicks = v.bedStatus = v.bedRevision = 0;
     fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame);
     if (version >= 6) fields(v.swordCombo,v.swordComboWindow,v.swordComboQueued);
     else if (reading) { v.swordCombo = v.swordComboWindow = 0; v.swordComboQueued = false; }

@@ -60,6 +60,7 @@ export function createItemTooltip(root, { carrying = () => false } = {}) {
   }
   function show(target, position = null) {
     if (anchor !== target) { hide(); anchor = target; }
+    target.dispatchEvent(new CustomEvent('item:inspect', { bubbles: true }));
     point = position; anchor.setAttribute('aria-describedby', tip.id); refresh();
   }
   const targetOf = event => event.composedPath().find(target => entries.has(target));

@@ -608,13 +608,8 @@ void CreatureSystem::updateSpawnTelegraphs() {
 
 void CreatureSystem::updateVillageResidents() {
   if (!planetHasGameplayFlag(E.planetId, PGF_VILLAGE_RESIDENTS)
-      || E.actorTick % ENCOUNTER_CADENCE_TICKS != 0)
+      || E.actorTick % 60 != 0)
     return;
-  int residents = 0;
-  for (const Creature& c : creatures)
-    if (c.alive && (c.species == CS_VILLAGER || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER)) residents++;
-  if (residents >= VILLAGE_RESIDENT_CAP) return;
-
   Engine::ActiveLayerScope layerScope(E, &E.fg);
   auto floorDiv = [](int value, int divisor) {
     int q = value / divisor, r = value % divisor;
@@ -628,7 +623,7 @@ void CreatureSystem::updateVillageResidents() {
 
   auto placeResident = [&](uint64_t siteKey, const int* candidates,
                            int candidateCount, bool indoors) {
-    if (residents >= VILLAGE_RESIDENT_CAP
+    if (!hasRecordCapacity()
         || spawnedVillageResidentSites.count(siteKey)) return;
     for (int i = 0; i < candidateCount; i += 2) {
       double wx = candidates[i] - villager.w * .5;
@@ -648,12 +643,11 @@ void CreatureSystem::updateVillageResidents() {
       creatures.back().roamRadius = indoors ? 12 : 36;
       nextCreatureId++;
       spawnedVillageResidentSites.insert(siteKey);
-      residents++;
       return;
     }
   };
 
-  for (int q = q0; q <= q1 && residents < VILLAGE_RESIDENT_CAP; q++) {
+  for (int q = q0; q <= q1 && hasRecordCapacity(); q++) {
     VillagePlan village;
     if (!E.worldContext.villagePlan(q, village)
         || village.right < E.fg.worldOffsetX
@@ -674,30 +668,33 @@ void CreatureSystem::updateVillageResidents() {
                   outdoorCandidates, outdoorCount, false);
 
     for (int ordinal = 0;
-         ordinal < village.buildingCount && residents < VILLAGE_RESIDENT_CAP;
+         ordinal < village.buildingCount && hasRecordCapacity();
          ordinal++) {
       VillageBuildingPlan building;
       if (!E.worldContext.villageBuildingPlan(village, ordinal, building))
         continue;
       int quarter = imax(5, building.width / 4);
-      int indoorCandidates[] = {
+      std::vector<int> indoorCandidates = {
         building.center, building.floorY,
         building.center - quarter, building.floorY,
         building.center + quarter, building.floorY,
         building.left + 6, building.floorY,
         building.left + building.width - 6, building.floorY,
       };
+      // Furniture and door thresholds can change the usable floor within a room.
+      for (int dx = 0; dx < building.width / 2 - 4; dx += 2)
+        for (int side : {-1, 1}) for (int dy : {1, -1, 2, -2, 3, 0}) {
+          indoorCandidates.push_back(building.center + side * dx);
+          indoorCandidates.push_back(building.floorY + dy);
+        }
       placeResident(((uint64_t)building.id << 1) | 1u,
-                    indoorCandidates,
-                    (int)(sizeof(indoorCandidates) / sizeof(int)), true);
+                    indoorCandidates.data(), (int)indoorCandidates.size(), true);
     }
   }
 }
 
 void CreatureSystem::updateNaturalPopulation() {
   if (!E.survivalInventory) return;
-  updateVillageResidents();
-
   double focusX = E.fg.worldOffsetX + E.cam.camX
     + (E.cam.viewportCols > 0 ? E.cam.viewportCols : E.cols * .5) * .5;
   double focusY = E.fg.worldOffsetY + E.cam.camY
@@ -1594,6 +1591,7 @@ void CreatureSystem::updateCreatures() {
   if (!E.creaturesEnabled) return;
   maintainPopulation();
   updateSpawnTelegraphs();
+  if (E.survivalInventory) updateVillageResidents();
   if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
     if (!c.alive) {

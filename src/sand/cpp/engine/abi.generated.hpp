@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 52;
+static const int ABI_VERSION = 53;
 
-static const uint64_t ABI_FINGERPRINT = 0xbc1998f9ba00ULL;
+static const uint64_t ABI_FINGERPRINT = 0xff8407b36b1dULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -61,8 +61,12 @@ enum PlayerSnapshotField : int {
   PS_MANA_CAST_COST = 49,
   PS_SPELL_CHARGE = 50,
   PS_SWORD_COMBO = 51,
+  PS_SLEEPING_BED = 52,
+  PS_RESPAWN_BED = 53,
+  PS_BED_STATUS = 54,
+  PS_BED_REVISION = 55,
 };
-static const int PS_STRIDE = 52;
+static const int PS_STRIDE = 56;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -216,6 +220,10 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_MANA_CAST_COST] = static_cast<float>(values.manaCastCost.value);
   out[PS_SPELL_CHARGE] = static_cast<float>(values.spellCharge.value);
   out[PS_SWORD_COMBO] = static_cast<float>(record.swordCombo);
+  out[PS_SLEEPING_BED] = static_cast<float>(record.sleepingBed);
+  out[PS_RESPAWN_BED] = static_cast<float>(record.respawnBed);
+  out[PS_BED_STATUS] = static_cast<float>(record.bedStatus);
+  out[PS_BED_REVISION] = static_cast<float>(record.bedRevision);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId
@@ -661,7 +669,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration, swordCombo
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration, swordCombo, sleepingBed
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -695,8 +703,9 @@ enum GlPlayerExtField : int {
   GLP_ACTION_TICKS = 29,
   GLP_ACTION_DURATION = 30,
   GLP_SWORD_COMBO = 31,
+  GLP_SLEEPING_BED = 32,
 };
-static const int GLP_STRIDE = 32;
+static const int GLP_STRIDE = 33;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -1828,6 +1837,38 @@ static constexpr bool isSpellEffectValue(int value) {
     case SP_FAULTLINE:
     case SP_WINTERBREATH:
     case SP_CINDERMAW:
+      return true;
+    default: return false;
+  }
+}
+
+enum BedResult : int {
+  BR_NONE = 0,
+  BR_SPAWN_SET = 1,
+  BR_SLEEPING = 2,
+  BR_DAYTIME = 3,
+  BR_OCCUPIED = 4,
+  BR_UNSAFE = 5,
+  BR_OBSTRUCTED = 6,
+  BR_TOO_FAR = 7,
+  BR_AWAKE = 8,
+  BR_MORNING = 9,
+  BR_SPAWN_LOST = 10,
+};
+
+static constexpr bool isBedResultValue(int value) {
+  switch (value) {
+    case BR_NONE:
+    case BR_SPAWN_SET:
+    case BR_SLEEPING:
+    case BR_DAYTIME:
+    case BR_OCCUPIED:
+    case BR_UNSAFE:
+    case BR_OBSTRUCTED:
+    case BR_TOO_FAR:
+    case BR_AWAKE:
+    case BR_MORNING:
+    case BR_SPAWN_LOST:
       return true;
     default: return false;
   }

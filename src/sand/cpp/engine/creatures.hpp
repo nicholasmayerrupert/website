@@ -129,7 +129,6 @@ class CreatureSystem {
   static constexpr int ENCOUNTER_HOSTILE_CAP = 4;
   static constexpr int ENCOUNTER_ACTIVE_THREAT_CAP = 12;
   static constexpr int AMBIENT_MOB_CAP = 3;
-  static constexpr int VILLAGE_RESIDENT_CAP = 12;
   static constexpr int MIXED_DENSITY_RADIUS = 96;
   static constexpr int MIXED_DENSITY_CAP = 3;
   static constexpr int SPAWN_VIEW_MARGIN = 20;

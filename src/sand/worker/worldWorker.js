@@ -1318,6 +1318,7 @@ function applyRuntimeMessage(data) {
     postActors(true);
   } else if (data.type === 'intent' && survival && localPlayerId) {
     switch (data.intent) {
+      case 'bed': engine.useBed(localPlayerId, data.bed | 0); break;
       case 'chest': engine.interactChest(localPlayerId, data.chest | 0, data.slot | 0); break;
       case 'chest-slot': engine.chestSlot(localPlayerId, data.chest | 0, data.slot | 0, data.action | 0); break;
       case 'select': engine.setSelectedSlot(localPlayerId, data.slot | 0); break;

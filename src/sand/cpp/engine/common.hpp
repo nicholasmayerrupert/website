@@ -637,6 +637,7 @@ struct Player {
   // deliberately not translated when the streamed window moves or resizes.
   double spawnWorldX = 0, spawnWorldY = 0;
   bool respawnPending = false;
+  int respawnBed = 0, sleepingBed = 0, sleepTicks = 0, bedStatus = BR_NONE, bedRevision = 0;
   double vx = 0, vy = 0;   // cells per step (+y is down, matching the grid)
   int w = PLAYER_W, h = PLAYER_H;
   int facing = 1;          // +1 right, -1 left

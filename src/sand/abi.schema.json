@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 52,
+  "abiVersion": 53,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -265,6 +265,26 @@
           "name": "swordCombo",
           "kind": "i32",
           "snapshotMember": "swordCombo"
+        },
+        {
+          "name": "sleepingBed",
+          "kind": "i32",
+          "snapshotMember": "sleepingBed"
+        },
+        {
+          "name": "respawnBed",
+          "kind": "i32",
+          "snapshotMember": "respawnBed"
+        },
+        {
+          "name": "bedStatus",
+          "kind": "i32",
+          "snapshotMember": "bedStatus"
+        },
+        {
+          "name": "bedRevision",
+          "kind": "i32",
+          "snapshotMember": "bedRevision"
         }
       ],
       "snapshotStorage": "float",
@@ -1105,6 +1125,11 @@
           "name": "swordCombo",
           "kind": "i32",
           "snapshotMember": "swordCombo"
+        },
+        {
+          "name": "sleepingBed",
+          "kind": "i32",
+          "snapshotMember": "sleepingBed"
         }
       ],
       "snapshotStorage": "float",
@@ -4375,6 +4400,25 @@
         "SP_FAULTLINE": 9,
         "SP_WINTERBREATH": 10,
         "SP_CINDERMAW": 11
+      }
+    },
+    "BedResult": {
+      "cName": "BedResult",
+      "cType": "int",
+      "jsName": "BED_RESULT",
+      "jsPrefix": "BR",
+      "values": {
+        "BR_NONE": 0,
+        "BR_SPAWN_SET": 1,
+        "BR_SLEEPING": 2,
+        "BR_DAYTIME": 3,
+        "BR_OCCUPIED": 4,
+        "BR_UNSAFE": 5,
+        "BR_OBSTRUCTED": 6,
+        "BR_TOO_FAR": 7,
+        "BR_AWAKE": 8,
+        "BR_MORNING": 9,
+        "BR_SPAWN_LOST": 10
       }
     }
   },

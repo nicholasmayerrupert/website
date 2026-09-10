@@ -8,6 +8,7 @@ async function open(page, baseURL) {
   await page.goto(baseURL + '/game?nosave', { waitUntil: 'domcontentloaded' });
   await state(page, () => document.querySelector('sand-game')?._game?.getInventory()?.slots?.[2]?.wand);
   await page.getByRole('button', { name: 'Inventory (I)', exact: true }).click();
+  await page.getByRole('button', { name: 'Wands', exact: true }).click();
   await page.getByRole('heading', { name: 'Wandcraft', exact: true }).waitFor();
 }
 process.exitCode = await runBrowserCases({
@@ -60,12 +61,22 @@ process.exitCode = await runBrowserCases({
   touch: async ({ page, baseURL, check }) => {
     await open(page, baseURL);
     await page.locator('.ad-wands').scrollIntoViewIfNeeded();
+    const sockets = await page.locator('.wand-socket.spell:visible').evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { x: box.x, y: box.y, width: box.width, height: box.height }; }));
+    check('mobile spell order reads left to right with usable touch targets', sockets.every((box, index) => box.width >= 44 && box.height >= 44 && box.y === sockets[0].y && (!index || box.x > sockets[index - 1].x)));
     check('mobile wand editor fits inside the inventory', await page.locator('.ad-inventory').evaluate(el => el.scrollWidth <= el.clientWidth));
     await page.getByRole('button', { name: 'Spell socket 1: Ember', exact: true }).tap();
     await state(page, () => document.querySelector('sand-game')._game.getCursor()?.definitionId === 300);
     await page.getByRole('button', { name: 'Spell socket 2: Empty', exact: true }).tap();
     await state(page, () => document.querySelector('sand-game')._game.getInventory().slots[2].wand.spells[1] === 300);
     check('touch can move a spell between sockets', true);
+    await page.getByRole('button', { name: 'Pack', exact: true }).tap();
+    await page.locator('.inv-slot[data-index="34"]').tap();
+    await page.getByRole('button', { name: 'Pick up', exact: true }).tap();
+    await state(page, () => document.querySelector('sand-game')._game.getCursor()?.definitionId === 501);
+    await page.getByRole('button', { name: 'Wands', exact: true }).tap();
+    await page.getByRole('button', { name: 'Upgrade socket 1: Empty', exact: true }).tap();
+    await state(page, () => document.querySelector('sand-game')._game.getInventory().slots[2].wand.upgrades[0] === 501);
+    check('touch carries a rune from the pack across sections into a wand', true);
     await page.getByRole('button', { name: 'Spell socket 2: Ember', exact: true }).waitFor();
     await page.screenshot({ path: '.sand-artifacts/magic/wand-editor-mobile.png' });
   },

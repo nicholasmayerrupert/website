@@ -1,5 +1,5 @@
 export const ADVENTURE_INVENTORY_STYLE = `
-.ad-chest-grid {display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;max-width:420px;margin:10px 0}
+.ad-chest-grid {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;max-width:420px;margin:10px 0}
 .ad-chest-grid .inv-slot {position:relative;display:flex;align-items:center;justify-content:center;min-width:0;aspect-ratio:1;background:#14231e;border:1px solid #738066;color:#eee0bd;cursor:pointer}
 .ad-chest-grid .inv-slot:hover,.ad-chest-grid .inv-slot:focus-visible {outline:2px solid #e4ce90;outline-offset:1px;background:#344831}
 .ad-loot.carrying .ad-chest-grid .inv-slot {border-color:#baab76}
@@ -18,57 +18,7 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-inventory .pool-tabs button {border:0;border-bottom:2px solid transparent}.ad-inventory .pool-tabs button[aria-pressed=true]{border-bottom-color:#d1b979;color:#e4d4a4}
 .ad-inventory .pool-heading-row button:disabled {visibility:hidden}
 .ad-inventory .inv-pools {padding:16px!important}.ad-inventory .pool-summary {margin:8px 0 18px!important}
-.inv-hud:not(.open)>.ad-equipment,.inv-hud:not(.open)>.inv-pack-heading,.inv-hud:not(.open)>.ad-footprint,.inv-hud:not(.open)>.inv-bag-shortcuts {display:none}
-:host([mission="frontier"]) .ad-inventory *,:host([mission="frontier"]) .item-tooltip * {font-family:'Sand Pixel',monospace!important}
-:host([mission="frontier"]) .ad-inventory h2,:host([mission="frontier"]) .ad-inventory .craft-title,:host([mission="frontier"]) .item-tooltip strong {font-family:'Sand Pixel',monospace!important}
-.ad-sheet[data-page="inventory"] {width:min(900px,100%);height:min(720px,calc(100dvh - 56px))}
-.ad-sheet[data-page="inventory"]>header {padding:14px 22px}
-.ad-sheet[data-page="inventory"] .ad-wordmark {font:22px 'Sand Pixel',monospace;color:#e3d4ac}
-.ad-inventory {padding:22px;scrollbar-color:#706b50 #16221c}
-.ad-inventory .inv-hud {display:grid;grid-template-columns:224px minmax(0,1fr);gap:10px 22px;
-  align-items:start;max-width:none;max-height:none;font:14px/1.4 'Sand Pixel',monospace;color:#d9dece;pointer-events:auto}
-.ad-inventory .inv-modal {display:contents!important;overflow:visible!important}
-.ad-inventory .inv-modal-header,.ad-inventory .inv-toast,.ad-inventory .inv-pool-active {display:none}
-.ad-inventory h2 {font:19px/1.2 'Sand Pixel',monospace;margin:0;color:#e1d7b6}
-.ad-inventory .inv-pack-heading {grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:space-between;min-height:24px}
-.ad-inventory .inv-capacity {color:#9ba794;font-size:12px;font-variant-numeric:tabular-nums}
-.ad-inventory .inv-pack-heading {gap:10px;flex-wrap:wrap}.ad-inventory .inv-pack-heading button {font-size:12px;padding:5px 8px;border:1px solid #62664a}.ad-inventory .inv-capacity {margin-left:auto}
-.inv-hud:not(.open)>.inv-drop-zone,.ad-inventory.bag-open>.inv-drop-zone {display:none}
-.ad-inventory .inv-drop-zone {grid-column:2;grid-row:4;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border:1px dashed #727351;color:#b9c1aa;font-size:12px}
-.ad-inventory .inv-drop-zone span {flex:1 1 180px}.ad-inventory .inv-drop-zone button {padding:6px 9px;border:1px solid #88805a;font-size:12px}
-.ad-inventory .inv-drop-zone button:disabled,.ad-inventory .inv-pack-heading button:disabled {opacity:.4;cursor:default}.ad-inventory .inv-drop-zone.carrying {border-color:#d8b676;background:#35402b}
-.ad-inventory .inv-grid {grid-column:2;grid-row:2;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));
-  gap:5px!important;padding:8px!important;align-content:start;justify-items:stretch;background:#122019!important;
-  border:1px solid #62664a!important;box-shadow:inset 0 1px 4px #0005}
-.ad-inventory .inv-slot,.ad-inventory .inv-grid .inv-slot {width:100%;height:auto;aspect-ratio:1;min-width:0;
-  padding:0;border:1px solid #58604a;background:linear-gradient(145deg,#29372a,#18271e);box-shadow:inset 1px 1px #8c99721a;
-  transform:none;border-radius:2px;overflow:hidden}
-.ad-inventory .inv-slot:hover {background:#384633;border-color:#b4bd8b;transform:none}
-.ad-inventory .inv-slot.selected {border-color:#e4c782;box-shadow:inset 0 0 0 1px #e4c78277;background:#414b2d;transform:none}
-.ad-inventory .inv-slot svg {width:70%;height:70%;max-width:40px;max-height:40px;filter:drop-shadow(1px 2px 0 #0007)}
-.ad-inventory .inv-slot:focus-visible {outline:2px solid #f1d59a;outline-offset:2px}
-.ad-inventory .inv-slot::after,.ad-inventory .inv-bar::after {display:none}
-.ad-inventory .inv-bag-label {display:none}.ad-inventory .inv-pool-mark {font-size:11px;color:#bcccaa}
-.ad-inventory .inv-num {font:12px 'Sand Pixel',monospace;left:3px;top:2px;background:none;color:#c6c9ad}
-.ad-inventory .inv-count {font:bold 14px 'Sand Pixel',monospace;right:3px;bottom:1px;text-shadow:1px 1px 2px #000,-1px -1px #000}
-.ad-inventory .inv-tier {font:12px 'Sand Pixel',monospace}
-.ad-inventory .inv-bar {grid-column:2;grid-row:3;order:0;grid-template-columns:repeat(9,minmax(0,1fr));gap:5px;padding:8px;
-  width:100%;box-sizing:border-box;margin:0;background:#19281e;border:1px solid #9f8853;box-shadow:none}
-.ad-inventory .ad-equipment {grid-column:1;grid-row:1/6;margin:0;padding:0 16px 0 0;border-right:1px solid #cfb98126;align-self:stretch}
-.ad-paperdoll {display:grid;grid-template-columns:54px minmax(0,1fr) 54px;grid-template-rows:repeat(3,76px) 76px;gap:8px;margin:18px 0}
-.ad-character {grid-column:2;grid-row:1/4;align-self:center;justify-self:center;width:80px;height:110px;image-rendering:pixelated;filter:drop-shadow(0 6px 5px #0005)}
-.ad-gear-slot {display:flex;flex-direction:column;align-items:center;gap:5px;font:12px 'Sand Pixel',monospace;color:#aab69f}
-.ad-gear-slot button {flex-shrink:0}.ad-gear-slot .ad-empty-gear svg {opacity:.18;filter:grayscale(1)}
-.ad-gear-slot .ad-can-equip {border-color:#c3d696!important;box-shadow:inset 0 0 0 1px #c3d69688!important;background:#3b4e2c!important}
-.ad-gear-head{grid-area:1/1}.ad-gear-torso{grid-area:2/1}.ad-gear-legs{grid-area:3/1}
-.ad-gear-hands{grid-area:1/3}.ad-gear-boots{grid-area:2/3}.ad-gear-cloak{grid-area:3/3}
-.ad-gear-offhand{grid-area:4/1}.ad-gear-charm1{grid-area:4/2;width:54px;justify-self:center}.ad-gear-charm2{grid-area:4/3}
-.ad-character-stats {display:grid;grid-template-columns:1fr auto;gap:9px 8px;margin:18px 0 0;padding-top:16px;border-top:1px solid #cfb98126;font-size:14px}
-.ad-character-stats dt {color:#aab69f}.ad-character-stats dd {margin:0;color:#e1d7b6;font-variant-numeric:tabular-nums}
-.ad-inventory .craft-panel {grid-column:2;grid-row:8;max-height:200px;padding:0;overflow:auto;background:none;border:0;box-shadow:none}
-.ad-wands {display:none}
-.ad-inventory .ad-wands {display:block;grid-column:2;grid-row:5;padding:14px;border:1px solid #667087;background:linear-gradient(135deg,#202e35,#192720)}
-.ad-inventory .ad-wands[hidden],.ad-inventory.bag-open .ad-wands,.ad-wands [hidden] {display:none!important}
+
 .wand-header {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .wand-header .game-select {max-width:100%}.wand-header .game-select>button {font-size:12px!important}
 .ad-wands .wand-mana {margin:12px 0 7px;color:#bfd5ff;font-size:13px;font-variant-numeric:tabular-nums}
@@ -77,62 +27,126 @@ export const ADVENTURE_INVENTORY_STYLE = `
 .ad-wands h3 {margin:14px 0 7px;font:12px 'Sand Pixel',monospace;color:#d8d6b9}
 .wand-spells,.wand-upgrades {display:flex;gap:7px;align-items:start}
 .wand-place {flex:1;min-width:0}
-.wand-socket {position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:82px;padding:8px 3px;border:1px solid #74795e;background:#293629;color:#e0dcc4;cursor:pointer;font:11px/1.3 'Sand Pixel',monospace}
-.wand-socket.upgrade {border-color:#697c99;background:#253344;color:#cedaf1}
-.wand-socket.empty {border-style:dashed;background:#172620;color:#81978f}
-.wand-socket small {position:absolute;top:3px;left:4px;color:#919e92;font-size:10px}
-.wand-socket .wand-icon {height:34px;display:grid;place-items:center}.wand-socket .wand-socket-name {margin-top:5px;min-height:14px;text-align:center}
-.wand-socket.next {border-color:#f2d390;box-shadow:inset 0 -2px #f2d390}
-.wand-socket.accepts {border-color:#bde1a6;background:#344d37}
-.wand-socket:disabled {opacity:.45;cursor:default}
-.wand-socket:hover:not(:disabled),.wand-socket:focus-visible {outline:2px solid #d6d8a0;outline-offset:1px}
+.ad-inventory .wand-socket {position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:82px;padding:8px 3px;border:1px solid #74795e;background:#293629;color:#e0dcc4;cursor:pointer;font:11px/1.3 'Sand Pixel',monospace}
+.ad-inventory .wand-socket.upgrade {border-color:#697c99;background:#253344;color:#cedaf1}
+.ad-inventory .wand-socket.empty {border-style:dashed;background:#172620;color:#81978f}
+.ad-inventory .wand-socket small {position:absolute;top:3px;left:4px;color:#919e92;font-size:10px}
+.ad-inventory .wand-socket .wand-icon {height:34px;display:grid;place-items:center}.ad-inventory .wand-socket .wand-socket-name {margin-top:5px;min-height:14px;text-align:center}
+.ad-inventory .wand-socket.next {border-color:#f2d390;box-shadow:inset 0 -2px #f2d390}
+.ad-inventory .wand-socket.accepts {border-color:#bde1a6;background:#344d37}
+.ad-inventory .wand-socket:disabled {opacity:.45;cursor:default}
+.ad-inventory .wand-socket:hover:not(:disabled),.ad-inventory .wand-socket:focus-visible {outline:2px solid #d6d8a0;outline-offset:1px}
 .wand-place .game-select {display:block;min-width:0;margin-top:6px}
 .wand-place .game-select>button {font-size:9px!important;padding:6px 4px!important;gap:4px}
 .ad-wands .wand-preview {margin:14px 0 0;padding-top:10px;border-top:1px solid #849c8d33;font-size:11px;line-height:1.7;color:#d1dcbf}
-.ad-inventory .craft-title {font:17px 'Sand Pixel',monospace;letter-spacing:0;margin:3px 0 10px;padding:0;border:0;color:#e1d7b6}
-.ad-inventory .craft-list {grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-.ad-inventory .craft-recipe {position:relative;grid-template-columns:32px minmax(0,1fr);padding:8px;border:1px solid #5b6349;
-  background:#233125;box-shadow:none;font:12px/1.35 'Sand Pixel',monospace;gap:9px;color:#dce2d0}
-.ad-inventory .craft-recipe:hover {border-color:#afad76;background:#30412b}
-.ad-inventory .craft-recipe[aria-disabled="true"] {background:#1a281f;border-color:#3c4938;color:#b5bdac}
-.ad-inventory .craft-output {position:relative;width:30px;height:30px;border:0;background:transparent}
-.ad-inventory .craft-output svg {width:28px;height:28px}.ad-inventory .craft-cost {font-size:10px;color:#9eab93;line-height:1.3}
-.ad-inventory .craft-name {font-size:12px}.ad-inventory .craft-count {display:none}
-.ad-inventory .inv-pools {display:none;grid-column:2;grid-row:2/5;padding:12px;border:1px solid #62664a;background:#17261c}
-.ad-inventory .bag-open .inv-pools {display:block}.ad-inventory .bag-open .inv-grid,.ad-inventory .bag-open .craft-panel {display:none}
-.ad-inventory .bag-open .inv-bar {grid-row:5}
-.ad-inventory .inv-bag-shortcuts {grid-column:2;grid-row:6;display:flex;flex-wrap:wrap;gap:6px}
-.ad-inventory .inv-bag-shortcuts button {display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #5a6449;font-size:12px;color:#c6cfb9}
-.ad-inventory .bag-open .inv-bag-shortcuts {display:none}
-.ad-inventory .inv-bag-return {margin-bottom:12px;color:#e4cc93;border:0;padding:0;font-size:12px}
-.ad-inventory .pool-tabs button {font-size:13px;padding:5px}.ad-inventory .pool-tabs svg {width:16px}
-.ad-inventory .pool-heading {font-size:16px;margin-top:10px}.ad-inventory .pool-summary {font-size:13px;margin:5px 0 12px}
-.ad-inventory .pool-row {grid-template-columns:16px 20px 16px minmax(75px,1fr) auto 24px 24px 36px;gap:5px;font-size:11px;border-top:1px solid #ffffff08;padding:9px 0}
-.ad-inventory .pool-status span,.ad-inventory .pool-properties {display:none}.ad-inventory .pool-controls{font-size:11px}
-.ad-inventory .ad-footprint {grid-column:2;grid-row:7;margin:0;font:12px 'Sand Pixel',monospace;color:#aab69f}
-.ad-inventory .ad-footprint select {padding:4px 8px}
-.ad-inventory .ad-loot {grid-column:1/-1;padding:12px;margin:0 0 10px;border:1px solid #8d7c51;background:#243123}
-.ad-inventory .ad-loot h2 {font-size:18px}.ad-inventory .ad-loot>button {font:13px 'Sand Pixel',monospace}
-.ad-sheet[data-page="inventory"]>footer {font:12px/1.5 'Sand Pixel',monospace;padding:10px 22px}
-:host([mission="frontier"]) .ad-sheet[data-page="inventory"]>footer * {font-family:'Sand Pixel',monospace!important}
+
+:host([mission="frontier"]) .ad-inventory * {font-family:'Sand Pixel',monospace!important}
+.inv-hud:not(.open) .inv-pack {display:contents}
+.inv-hud:not(.open) .inv-pack>:not(.inv-bar),.inv-hud:not(.open)>.inv-work-tabs,.inv-hud:not(.open)>.inv-work,.inv-hud:not(.open)>.inv-inspector,.inv-hud:not(.open)>.inv-drop-zone {display:none}
+.ad-sheet[data-page="inventory"] {width:min(1080px,100%);height:min(820px,calc(100dvh - 56px))}
+.ad-sheet[data-page="inventory"]>header {padding:16px 24px}
+.ad-sheet[data-page="inventory"] .ad-wordmark {font:22px 'Sand Pixel',monospace;color:#eadbb4}
+.ad-inventory {padding:0!important;scrollbar-color:#706b50 #16221c}
+.ad-inventory .inv-hud {display:grid!important;grid-template-columns:minmax(0,1.45fr) minmax(330px,1fr);grid-template-rows:auto minmax(0,1fr) auto;height:100%;gap:0;align-items:start;max-width:none;max-height:none;font:13px/1.5 'Sand Pixel',monospace;color:#d9dece;pointer-events:auto}
+.ad-inventory .inv-modal {display:contents!important}
+.ad-inventory .inv-modal-header,.ad-inventory .inv-toast,.ad-inventory .inv-pool-active,.ad-inventory .inv-hint {display:none!important}
+.ad-inventory [hidden] {display:none!important}
+.ad-inventory h2 {font:20px/1.2 'Sand Pixel',monospace;margin:0;color:#eadbb4}
+.ad-inventory h3 {font:14px 'Sand Pixel',monospace}
+.ad-inventory button {border-radius:2px;transition:background .12s,border-color .12s}
+.ad-inventory button:focus-visible,.ad-inventory input:focus-visible {outline:2px solid #f1d59a;outline-offset:2px}
+.ad-inventory .inv-work-tabs {grid-column:1/-1;display:flex;gap:4px;padding:10px 24px 0;background:#122019;border-bottom:1px solid #8c815d55;position:sticky;top:0;z-index:4}
+.ad-inventory .inv-work-tabs button {padding:12px 18px;border:0;border-bottom:3px solid transparent;font-size:13px;color:#acb9a7;background:none}
+.ad-inventory .inv-work-tabs button[aria-pressed=true] {color:#f1d59a;border-color:#d6b879;background:#a79d6810}
+.ad-inventory .inv-work-tabs button[data-section=pack] {display:none}
+.ad-inventory .inv-pack {grid-column:1;grid-row:2;padding:18px 24px;min-width:0;min-height:0;max-height:100%;overflow:auto;box-sizing:border-box}
+.ad-inventory .inv-work {grid-column:2;grid-row:2;align-self:stretch;min-width:0;min-height:0;overflow:auto;padding:18px 22px 20px;border-left:1px solid #a79d6833;background:#111f194d}
+.ad-inventory .inv-pack-heading {display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ad-inventory .inv-capacity {margin-left:auto;font-size:12px;color:#a4b29d}
+.ad-inventory .inv-pack-heading button {padding:7px 10px;border:1px solid #67714e;font-size:12px;background:#293729}
+.ad-inventory .inv-search-row {display:flex;gap:8px;position:relative}
+.ad-inventory .inv-search {box-sizing:border-box;width:100%;min-width:0;padding:8px 34px 8px 12px;border:1px solid #56634c;background:#0f1c16;color:#e1e4d7;border-radius:2px;font:13px 'Sand Pixel',monospace}
+.ad-inventory .inv-search-row .inv-search::-webkit-search-cancel-button {-webkit-appearance:none}
+.ad-inventory .inv-search::placeholder {color:#93a38f;opacity:1}
+.ad-inventory .inv-search-row>button {position:absolute;right:4px;top:3px;padding:6px 9px;border:0;font-size:18px}
+.ad-inventory .inv-filters {display:flex;align-items:center;gap:6px;margin:7px 0 10px}
+.ad-inventory .inv-filters button {font-size:12px;padding:5px 10px;border:1px solid transparent;color:#a7b79d}
+.ad-inventory .inv-filters button[aria-pressed=true] {color:#e9dfba;border-color:#8c8e61;background:#35422c}
+.ad-inventory .inv-search-result {margin-left:auto;color:#d6c58f;font-size:11px}
+.ad-inventory .inv-grid {display:grid!important;grid-template-columns:repeat(9,minmax(0,1fr));gap:5px!important;padding:8px!important;background:#0e1a14!important;border:1px solid #586349!important;box-shadow:inset 0 1px 5px #0005;max-width:none!important}
+.ad-inventory .inv-slot,.ad-inventory .inv-grid .inv-slot {position:relative;display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%!important;height:auto!important;aspect-ratio:1;min-width:0;padding:0;border:1px solid #49563f;background:linear-gradient(145deg,#29372a,#1b291f);box-shadow:inset 1px 1px #9fae7812;transform:none;border-radius:2px;overflow:hidden}
+.ad-inventory .inv-slot:hover,.ad-inventory .inv-slot.inv-inspected {background:#3d4931;border-color:#c6bb83;transform:none}
+.ad-inventory .inv-slot.selected {border-color:#e4c782;box-shadow:inset 0 -3px #e4c782;background:#414b2d;transform:none}
+.ad-inventory .inv-slot svg {width:72%;height:72%;max-width:40px;max-height:40px;filter:drop-shadow(1px 2px 0 #0007)}
+.ad-inventory .inv-slot::after,.ad-inventory .inv-bar::after {display:none}
+.ad-inventory .inv-slot.inv-filter-dim>svg,.ad-inventory .inv-slot.inv-filter-dim>.inv-swatch {opacity:.22}
+.ad-inventory .inv-slot.inv-filter-match {border-color:#d1c681;background:#485031}
+.ad-inventory .inv-bag-label {display:none}.ad-inventory .inv-pool-mark {font-size:11px;color:#bcccaa}
+.ad-inventory .inv-num {font:11px 'Sand Pixel',monospace;left:3px;top:1px;background:none;color:#c6c9ad}
+.ad-inventory .inv-count {position:absolute;font:12px 'Sand Pixel',monospace;right:3px;bottom:1px;text-shadow:1px 1px 2px #000,-1px -1px #000}
+.ad-inventory .inv-tier {font:11px 'Sand Pixel',monospace}
+.ad-inventory .inv-quick-heading {display:flex;justify-content:space-between;align-items:center;margin:12px 0 6px;color:#bcb691}
+.ad-inventory .inv-quick-heading h3 {margin:0;color:#e4d5ad}.ad-inventory .inv-quick-heading span {font-size:11px;color:#9da993}
+.ad-inventory .inv-bar {display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:5px;padding:8px;width:100%;box-sizing:border-box;margin:0;background:#1e2c20;border:1px solid #9f8853;box-shadow:none}
+.ad-inventory .inv-bag-shortcuts {display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 0}
+.ad-inventory .inv-bag-shortcuts>span {width:100%;font-size:11px;color:#9dac96;margin-bottom:2px}
+.ad-inventory .inv-bag-shortcuts button {display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #566348;font-size:11px;color:#c6cfb9;background:#233224}
+.ad-inventory .inv-inspector {grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:15px 24px;background:#253225;border-top:1px solid #8d845d55;min-height:70px;box-sizing:border-box}
+.ad-inventory .inv-inspect-icon {position:relative;display:grid;place-items:center;width:42px;min-width:42px;height:42px;border:1px solid #66704d;background:#18271c}
+.ad-inventory .inv-inspect-text {flex:1;min-width:0}.ad-inventory .inv-inspect-text strong {font-size:15px;color:#ead4a2}.ad-inventory .inv-inspect-text p {font-size:11px;color:#b1bea6;margin:5px 0 0}
+.ad-inventory .inv-item-actions {display:flex;gap:6px;flex-wrap:wrap}.ad-inventory .inv-item-actions button {font-size:11px;padding:8px 10px;border:1px solid #879366;background:#34462f}
+.ad-inventory .inv-inspector.carrying {background:#39422a}
+.ad-inventory .inv-drop-zone:not(.carrying) {display:none}
+.ad-inventory .inv-drop-zone {grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:10px 24px;border-top:1px solid #8d845d33;font-size:11px;color:#9dac96;background:#16241b}
+.ad-inventory .inv-drop-zone span {flex:1}.ad-inventory .inv-drop-zone button {font-size:11px;padding:7px 10px;border:1px solid #8b7657;color:#d5c39f}
+.ad-inventory .inv-drop-zone button:disabled,.ad-inventory .inv-pack-heading button:disabled {opacity:.35;cursor:default}.ad-inventory .inv-drop-zone.carrying {background:#3a3524;border-color:#b49a65}
+.ad-inventory .ad-equipment {margin:0;padding:0;border:0}
+.ad-paperdoll {display:grid;grid-template-columns:64px minmax(0,1fr) 64px;grid-template-rows:repeat(4,68px);gap:8px;margin:14px 14px}
+.ad-character {grid-column:2;grid-row:1/4;align-self:center;justify-self:center;width:96px;height:132px;image-rendering:pixelated;filter:drop-shadow(0 10px 6px #0006)}
+.ad-gear-slot {display:flex;flex-direction:column;align-items:center;gap:4px;font:11px 'Sand Pixel',monospace;color:#aab69f}
+.ad-gear-slot button {flex-shrink:0;max-width:54px}.ad-gear-slot .ad-empty-gear svg {opacity:.18;filter:grayscale(1)}
+.ad-gear-slot .ad-can-equip {border-color:#c3d696!important;box-shadow:inset 0 0 0 1px #c3d69688!important;background:#3b4e2c!important}
+.ad-gear-head{grid-area:1/1}.ad-gear-torso{grid-area:2/1}.ad-gear-legs{grid-area:3/1}.ad-gear-hands{grid-area:1/3}.ad-gear-boots{grid-area:2/3}.ad-gear-cloak{grid-area:3/3}.ad-gear-offhand{grid-area:4/1}.ad-gear-charm1{grid-area:4/2;width:64px;justify-self:center}.ad-gear-charm2{grid-area:4/3}
+.ad-character-stats {display:grid;grid-template-columns:1fr auto;gap:8px;margin:12px 0 0;padding:14px 0 0;border-top:1px solid #cfb98126;font-size:12px}.ad-character-stats dt {color:#aab69f}.ad-character-stats dd {margin:0;color:#e1d7b6}
+.ad-inventory .ad-wands {display:block;padding:0;margin:0;border:0;background:none}.ad-wands {display:none}
+.ad-inventory .ad-wands .wand-mana {margin:16px 0 8px;color:#bfd5ff;font-size:12px}.ad-inventory .ad-wands .wand-mana.blocked {color:#efad93}
+.ad-inventory .ad-wands .wand-help {margin:0 0 18px;font-size:11px;line-height:1.7;color:#aab9b5}
+.ad-inventory .ad-wands h3 {margin:12px 0 6px;color:#d8d6b9}
+.ad-inventory .craft-panel {display:block!important;padding:0;max-height:none;overflow:visible;background:none;border:0;box-shadow:none}
+.ad-inventory .craft-title {font:20px 'Sand Pixel',monospace;letter-spacing:0;margin:0 0 16px;padding:0;border:0;color:#eadbb4}
+.ad-inventory .inv-craft-controls label {display:flex;align-items:center;gap:8px;font-size:12px;color:#bac6ad;margin:12px 0 16px}.ad-inventory input[type=checkbox] {accent-color:#b9be83}
+.ad-inventory .craft-list {display:grid;grid-template-columns:1fr;gap:7px;max-height:360px;overflow:auto;padding:2px}
+.ad-inventory .craft-recipe {position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;padding:10px;border:1px solid #71815a;background:#2f402b;box-shadow:none;font:12px/1.5 'Sand Pixel',monospace;gap:10px;color:#e0e6d4;text-align:left}
+.ad-inventory .craft-recipe:hover {border-color:#bfbb80;background:#3a4b31}.ad-inventory .craft-recipe[aria-disabled=true] {background:#1a281f;border-color:#3c4938;color:#b5bdac}
+.ad-inventory .craft-output {position:relative;width:32px;height:32px;border:0;background:none}.ad-inventory .craft-output svg {width:30px;height:30px}.ad-inventory .craft-cost {display:block;font-size:10px;color:#9eab93}.ad-inventory .craft-name {font-size:12px}.ad-inventory .craft-count {display:block;font-size:10px;align-self:center;color:#c6cb9a}
+.ad-inventory .inv-work-empty {padding:24px 14px;border:1px dashed #687454;color:#a6b69b;line-height:1.8;font-size:13px}
+.ad-inventory .inv-pools {display:block!important;padding:0!important;background:none;border:0}.ad-inventory .inv-bag-return {font-size:11px;padding:0 0 14px;border:0;color:#dec995}
+.ad-inventory .pool-tabs {display:flex;flex-wrap:wrap;gap:4px}.ad-inventory .pool-tabs button {font-size:11px;padding:6px 4px}.ad-inventory .pool-tabs svg {width:16px}
+.ad-inventory .pool-heading {font-size:17px}.ad-inventory .pool-row {grid-template-columns:14px 18px 14px minmax(48px,1fr) auto 22px 22px 32px;gap:4px;font-size:10px;padding:10px 0;border-top:1px solid #ffffff0c}
+.ad-inventory .pool-properties,.ad-inventory .pool-status span {display:none}.ad-inventory .pool-row button {font-size:10px;padding:4px}.ad-inventory .pool-controls {font-size:11px;flex-wrap:wrap;gap:8px}
+.ad-inventory .ad-footprint {display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:20px 0 0;padding-top:16px;border-top:1px solid #cfb98126;font-size:12px}
+.ad-inventory .ad-loot {padding:0;margin:0;border:0;background:none}.ad-inventory .ad-loot h2 {font-size:18px}
+.ad-sheet[data-page="inventory"]>footer {font:11px/1.5 'Sand Pixel',monospace;padding:10px 24px}.ad-sheet[data-page="inventory"]>footer * {font-family:'Sand Pixel',monospace!important}
 @media(max-width:760px) {
-  .ad-sheet[data-page="inventory"] {height:calc(100dvh - 20px)}.ad-inventory{padding:16px}
-  .ad-inventory .inv-hud{grid-template-columns:minmax(0,1fr);gap:12px}
-  .ad-inventory .ad-equipment{grid-column:1;grid-row:1;display:grid;grid-template-columns:1fr 1fr;column-gap:20px;padding:0 0 14px;border-right:0;border-bottom:1px solid #cfb98126}
-  .ad-inventory .ad-equipment h2{grid-column:1/-1}.ad-paperdoll{grid-column:1;grid-row:2;grid-template-columns:38px minmax(44px,1fr) 38px;grid-template-rows:repeat(3,53px) 53px;gap:4px;margin:12px 0 0}
-  .ad-character{width:64px;height:88px}.ad-gear-slot{font-size:11px;gap:2px}.ad-gear-charm1{width:38px}
-  .ad-character-stats{grid-column:2;grid-row:2;align-self:center;margin:0;padding:0;border:0;font-size:11px;gap:10px}
-  .ad-inventory .inv-pack-heading{grid-column:1;grid-row:2}.ad-inventory .inv-grid{grid-column:1;grid-row:3;padding:6px!important;gap:3px!important}
-  .ad-inventory .inv-bar{grid-column:1;grid-row:4;padding:6px;gap:3px}.ad-inventory .craft-panel{grid-column:1;grid-row:6;max-height:none}
-  .ad-inventory .inv-drop-zone{grid-column:1;grid-row:5}
-  .ad-inventory .ad-wands{grid-column:1;grid-row:6;padding:10px}.ad-inventory .craft-panel{grid-row:9}
-  .wand-socket{min-height:76px;font-size:9px}.wand-spells,.wand-upgrades{gap:4px}
-  .wand-header .game-select{width:100%}.wand-place .game-select>button{font-size:8px!important}
-  .ad-inventory .inv-pools{grid-column:1;grid-row:3/5}.ad-inventory .bag-open .inv-bar{grid-column:1;grid-row:5}
-  .ad-inventory .ad-footprint{grid-column:1;grid-row:6}.ad-inventory .inv-count{font-size:10px}.ad-inventory .inv-num{font-size:8px}
-  .ad-inventory .inv-bag-shortcuts{grid-column:1;grid-row:7}.ad-inventory .ad-footprint{grid-row:8}
-  .ad-inventory .pool-row{grid-template-columns:12px 16px 12px minmax(55px,1fr) auto 22px 22px 30px;gap:3px;font-size:10px}
-  .ad-inventory .pool-row button{font-size:10px;padding:3px}.ad-inventory .pool-controls{gap:8px}
-  .ad-inventory .craft-list{grid-template-columns:1fr}.ad-sheet[data-page="inventory"]>footer{font-size:10px;padding:8px 16px}
+ .ad-sheet[data-page="inventory"] {height:calc(100dvh - 20px)}.ad-sheet[data-page="inventory"]>header {padding:10px 12px}
+ .ad-inventory .inv-hud {grid-template-columns:minmax(0,1fr)}
+ .ad-inventory .inv-drop-zone:not(.carrying) {display:none}
+ .ad-inventory .wand-spells,.ad-inventory .wand-upgrades {gap:4px}
+ .ad-inventory .wand-socket {font-size:10px;min-height:82px}
+ .ad-inventory .wand-place .game-select>button {font-size:8px!important}
+ .ad-inventory .inv-work-tabs {padding:4px 6px 0;gap:0;justify-content:space-between;overflow-x:auto;scrollbar-width:thin}
+ .ad-inventory .inv-work-tabs button {flex-shrink:0}
+ .ad-inventory .inv-work-tabs button,.ad-inventory .inv-work-tabs button[data-section=pack] {display:block;padding:13px 6px;font-size:11px}
+ .ad-inventory .inv-pack,.ad-inventory .inv-work {grid-column:1;grid-row:2;padding:16px;min-width:0;border:0}
+ .ad-inventory .inv-hud:not([data-section=pack]) .inv-pack,.ad-inventory .inv-hud[data-section=pack] .inv-work {display:none}
+ .ad-inventory .inv-grid {grid-template-columns:repeat(6,minmax(0,1fr))}
+ .ad-inventory .inv-bar {grid-template-columns:repeat(9,44px);overflow-x:auto;scrollbar-width:thin;scrollbar-color:#8e8257 #1e2c20;padding-bottom:10px}
+ .ad-inventory .inv-pack-heading {margin-bottom:12px}.ad-inventory .inv-filters {gap:2px}.ad-inventory .inv-filters button {padding:6px 9px}
+ .ad-inventory .inv-quick-heading span {font-size:10px}.ad-inventory .inv-inspector {padding:12px 16px;gap:10px;flex-wrap:wrap}
+ .ad-inventory .inv-inspect-text {flex-basis:calc(100% - 56px)}.ad-inventory .inv-item-actions {margin-left:52px}
+ .ad-inventory .inv-item-actions button {min-height:38px}.ad-inventory .inv-drop-zone {padding:10px 16px;flex-wrap:wrap}.ad-inventory .inv-drop-zone span {flex-basis:100%}
+ .ad-inventory .inv-drop-zone button {min-height:38px}.ad-inventory .craft-list {max-height:none}.ad-inventory .ad-footprint {margin-bottom:10px}
+ .ad-inventory .ad-paperdoll {margin:18px 28px}.ad-inventory .ad-character-stats {margin:14px 10px}
+ .ad-sheet[data-page="inventory"]>footer {font-size:10px;padding:8px 16px}.ad-sheet[data-page="inventory"] .ad-shortcuts {max-width:80%}
 }
 `;

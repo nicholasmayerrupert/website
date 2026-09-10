@@ -321,7 +321,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const pools = createInventoryPools({ root, poolAction, tooltips }); modal.append(pools.el);
   if (managed) {
     const bagBack = document.createElement('button'); bagBack.type = 'button'; bagBack.className = 'inv-bag-return'; bagBack.textContent = '← Back to items';
-    bagBack.addEventListener('click', () => { hud.classList.remove('bag-open'); slots[selectedSlot]?.focus(); });
+    bagBack.addEventListener('click', () => { hud.classList.remove('bag-open'); hud.dispatchEvent(new CustomEvent('inventory:pack')); slots[selectedSlot]?.focus(); });
     pools.el.prepend(bagBack);
   }
   const bar = document.createElement('div');
@@ -343,7 +343,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   openButton.textContent = 'Inventory · E'; openButton.addEventListener('click', () => setOpen(!open));
   hud.append(modal, toast, poolActive, bar, openButton, hint);
   const packHeading = document.createElement('div'); packHeading.className = 'inv-pack-heading';
-  const packTitle = document.createElement('h2'); packTitle.textContent = 'Items';
+  const packTitle = document.createElement('h2'); packTitle.textContent = 'Pack';
   const capacity = document.createElement('span'); capacity.className = 'inv-capacity';
   packHeading.append(packTitle, capacity);
   const sortButton=document.createElement('button');sortButton.type='button';sortButton.textContent='Sort items';
@@ -404,7 +404,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   for (let i = 0; i < HOTBAR; i++) makeSlot(i, bar);
 
   const idxOf = (target) => {
-    const el = target && target.closest && target.closest('.inv-slot');
+    const el = target && target.closest && target.closest('.inv-slot[data-index]');
     return el ? (el.dataset.index | 0) : -1;
   };
 
@@ -578,6 +578,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     hud.classList.add('bag-open');
     title.textContent = 'MATERIAL BAG';
     setOpen(true);
+    hud.dispatchEvent(new CustomEvent('inventory:bag'));
     pools.open(pool);
   };
   const onWindowKeyDown = (e) => {
@@ -660,7 +661,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   hud.addEventListener('keydown', (e) => {
     if (!open) return;
-    if (e.target.getAttribute('role') === 'combobox') return;
+    if (e.target.getAttribute('role') === 'combobox' || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (e.key === 'Escape' || (e.key.toLowerCase() === 'e' && e.target.tagName !== 'SELECT')) {
       e.preventDefault();
       e.stopPropagation();
@@ -674,12 +675,12 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       return;
     }
     const index = idxOf(e.target);
-    const stride = index >= SLOTS ? 1 : HOTBAR;
+    const stride = index >= SLOTS ? 1 : index >= HOTBAR && managed ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : HOTBAR;
     const offset = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -stride, ArrowDown: stride }[e.key];
     if (index >= 0 && offset) {
       e.preventDefault();
       const first = index >= SLOTS ? SLOTS : 0, last = index >= SLOTS ? slots.length - 1 : SLOTS - 1;
-      slots[Math.max(first, Math.min(last, index + offset))]?.focus({ preventScroll: true });
+      slots[Math.max(first, Math.min(last, index + offset))]?.focus();
       return;
     }
     if (e.key !== 'Tab' || managed) return;
@@ -838,7 +839,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function update(inv) {
     snapshot = inv;
     if (inv && inv.slots) {
-      capacity.textContent = `${inv.slots.filter(slot => slot.count || slot.pool).length} / ${SLOTS}`;
+      capacity.textContent = managed ? `${inv.slots.slice(HOTBAR).filter(slot => slot.count || slot.pool).length} / ${SLOTS - HOTBAR} slots` : `${inv.slots.filter(slot => slot.count || slot.pool).length} / ${SLOTS}`;
       const sel = inv.selected;
       selectedSlot = sel;
       if (lastSelected >= 0 && sel !== lastSelected) showToast(slotName(inv.slots[sel]));
@@ -889,6 +890,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     }
     refreshCursor();
     tooltips.refresh();
+    if (managed && open) hud.dispatchEvent(new CustomEvent('inventory:update'));
   }
 
   const setOpen = (v) => {
@@ -938,6 +940,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     tooltips,
     renderStack,
     stackName: slotName,
+    describeSlot,
+    quickMove,
+    openBag,
+    pickSlot(index, half = false) { cursorPick?.(index, half); refreshCursor(); },
     setChestTransfer(callback) { chestTransfer = callback; },
     beginExternalDrag() { downSlot = SLOTS + 9; downOnSlot = true; dragBag = false; },
     registerEquipmentSlot(index, element) {

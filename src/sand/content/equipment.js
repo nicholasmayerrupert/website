@@ -24,7 +24,7 @@ function add(id, name, family, details = {}) {
 ].forEach(([family, names, powers, stamina, cooldown, reach], familyIndex) => names.forEach((name, tier) =>
   add(1 + familyIndex * 3 + tier, name, family, { power: powers[tier], stamina, cooldown, reach,
     style: tier + 1,
-    price: 30 + tier * 90, description: `${name}. ${family === 'axe' ? 'A weighty, sweeping blow; breaks timber and brittle stone.' : family === 'spear' ? 'A precise thrust with generous reach.' : family === 'bow' ? 'Hold to draw, release to loose an arrow.' : 'A quick, dependable cutting edge.'}` })));
+    price: 30 + tier * 90, description: `${name}. ${family === 'axe' ? 'A weighty, sweeping blow; breaks timber and brittle stone.' : family === 'spear' ? 'A precise thrust with generous reach.' : family === 'bow' ? 'Hold to draw, release to loose an arrow.' : 'Hold or time three cuts in sequence; the finishing blow deals extra damage and knockback.'}` })));
 [
   { id: 13, name: 'Hearth wand', spellSlots: 3, upgradeSlots: 2, initialSpell: 300, cooldown: 36, style: 1, price: 30 },
   { id: 14, name: 'Tideglass wand', spellSlots: 4, upgradeSlots: 3, initialSpell: 301, cooldown: 30, style: 2, price: 120 },

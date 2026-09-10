@@ -41,6 +41,15 @@ function cast(e, id, aimX = 180, aimY = 92) {
 }
 const wand = (e, id, slot = 5) => e.getInventory(id).slots[slot].wand;
 
+arena('new travellers carry elemental, healing and crystal options plus mana cordials', (e, id) => {
+  const inventory = e.getInventory(id);
+  assert.deepEqual(wand(e, id).spells, [300, 0, 0], 'Ember is ready to cast');
+  for (const definition of [301, 302, 305, 306, 501, 503])
+    assert.ok(inventory.slots.some(item => item.definitionId === definition && item.count === 1), `starter item ${definition} is available in the pack`);
+  assert.equal(inventory.slots[4].definitionId, 321);
+  assert.equal(inventory.slots[4].count, 3, 'three mana cordials are on the quickbar');
+});
+
 arena('one player mana pool pays both wands; switching cannot refill it', (e, id) => {
   assert.equal(e.getPlayer(id).manaMax, 100);
   assert.equal(e.getPlayer(id).manaCastCost, 18);

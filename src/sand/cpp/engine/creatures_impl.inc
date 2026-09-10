@@ -793,30 +793,42 @@ void CreatureSystem::updateNaturalPopulation() {
 
 void CreatureSystem::acquireTarget(Creature& c) {
   const CreatureSpecies& s = species(c);
+  uint8_t priorKind = c.targetKind;
+  int priorId = c.targetId;
   c.targetKind = CT_NONE; c.targetId = 0;
   double best = s.sightRange * s.sightRange;
-  if (c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) {
-    for (const Creature& other : creatures) {
-      if (!other.alive || !species(other).hostile || std::fabs(other.wx - c.homeX) > c.roamRadius + 40) continue;
-      double d = (other.wx - c.wx) * (other.wx - c.wx) + (other.wy - c.wy) * (other.wy - c.wy);
-      if (d < best) { best = d; c.targetKind = CT_PREY; c.targetId = other.id; }
+  double cx = c.wx + s.w * .5, cy = c.wy + s.h * .5;
+  auto consider = [&](uint8_t kind, int id, double x, double y) {
+    bool incumbent = kind == priorKind && id == priorId;
+    double distance = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+    // A retained target has a wider release radius and a twenty-percent
+    // distance advantage, preventing near-equal targets from trading priority.
+    if (distance > s.sightRange * s.sightRange * (incumbent ? 1.5625 : 1.0)) return;
+    double score = distance * (incumbent ? .64 : 1.0);
+    if (score < best || (score == best && id < c.targetId)) {
+      best = score; c.targetKind = kind; c.targetId = id;
     }
-    c.scanCooldown = s.scanInterval;
-    return;
+  };
+  bool villageDefender = c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER;
+  if (villageDefender || (s.targetMask & CT_PREY)) for (const Creature& other : creatures) {
+    if (!other.alive || other.id == c.id) continue;
+    if (villageDefender) {
+      if (!species(other).hostile || std::fabs(other.wx - c.homeX) > c.roamRadius + 40) continue;
+    } else if (!(s.preyMask & (1ull << other.species))) continue;
+    consider(CT_PREY, other.id, other.wx + species(other).w * .5, other.wy + species(other).h * .5);
   }
-  if (s.targetMask & CT_PREY) for (Creature& other : creatures) {
-    if (!other.alive || other.id == c.id || !(s.preyMask & (1ull << other.species))) continue;
-    double dx = other.wx - c.wx, dy = other.wy - c.wy, d = dx * dx + dy * dy;
-    if (d < best) { best = d; c.targetKind = CT_PREY; c.targetId = other.id; }
-  }
-  if (s.targetMask & CT_PLAYER) for (Player& p : E.psys.players) {
+  if (!villageDefender && (s.targetMask & CT_PLAYER)) for (const Player& p : E.psys.players) {
     if (!p.active || !p.alive) continue;
     double px = E.fg.worldOffsetX + p.px, py = E.fg.worldOffsetY + p.py;
     if (s.locomotion == CL_AQUATIC && fluidCoverage(px, py, p.w, p.h) < P_LIQUID_SWIM_COVERAGE) continue;
-    double dx = px - c.wx, dy = py - c.wy, d = dx * dx + dy * dy;
-    if (d < best) { best = d; c.targetKind = CT_PLAYER; c.targetId = p.id; }
+    consider(CT_PLAYER, p.id, px + p.w * .5, py + p.h * .5);
   }
-  c.scanCooldown = s.scanInterval;
+  if (c.targetKind != priorKind || c.targetId != priorId) {
+    c.navigation.arrived = false;
+    c.navigation.planTicks = 0;
+    c.navigation.escapeTicks = 0;
+  }
+  c.scanCooldown = s.scanInterval + c.id % 5;
 }
 
 bool CreatureSystem::targetPoint(const Creature& c, double& tx, double& ty, Creature** prey, Player** player) {
@@ -909,6 +921,8 @@ static bool moveCreatureAxis(Creature& c, double& position, double delta,
   return true;
 }
 
+#include "creature_navigation.inc"
+
 void CreatureSystem::steerAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
   double tx = 0, ty = 0; Creature* prey = nullptr; Player* player = nullptr;
@@ -916,16 +930,17 @@ void CreatureSystem::steerAquatic(Creature& c) {
   double desiredX, desiredY;
   if (hasTarget) {
     double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5), d = std::sqrt(dx * dx + dy * dy);
-    desiredX = d > 1e-6 ? dx / d * s.swimSpeed : 0; desiredY = d > 1e-6 ? dy / d * s.swimSpeed : 0;
+    double speed = s.swimSpeed * std::min(1.0, std::max(0.0, d - s.attackRange * .55) / 4);
+    desiredX = d > 1e-6 ? dx / d * speed : 0; desiredY = d > 1e-6 ? dy / d * speed : 0;
   } else {
     // Smooth deterministic wander; no shared sim RNG draws.
     double phase = (E.actorTick + c.id * 47) * 0.031;
     desiredX = std::cos(phase) * s.swimSpeed * 0.72;
     desiredY = std::sin(phase * 0.63 + c.id) * s.swimSpeed * 0.42;
   }
+  steerFree(c, desiredX, desiredY, true, false);
   c.vx = accelerateToward(c.vx, desiredX, s.accel);
   c.vy = accelerateToward(c.vy, desiredY, s.accel);
-  if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
 }
 
 void CreatureSystem::moveAquatic(Creature& c) {
@@ -937,8 +952,8 @@ void CreatureSystem::moveAquatic(Creature& c) {
     return boxHitsSolid(nextX, nextY, s.w, s.h)
       || fluidCoverage(nextX, nextY, s.w, s.h) < s.fluidThreshold;
   };
-  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx *= -0.45;
-  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy *= -0.45;
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx = 0;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy = 0;
 }
 
 void CreatureSystem::moveBeachedAquatic(Creature& c) {
@@ -1012,21 +1027,9 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       if (d2 < avoidD2) { avoidD2 = d2; avoidX = px; avoidsPlayer = true; }
     }
     double wish;
-    const CreatureBehaviorProfileDef& behavior = creatureBehavior(s);
-    const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
-    bool rangedEnemy = attack ? attack->move >= EM_RUNE : behavior.farRange > 0;
-    if (hasTarget && rangedEnemy) {
-      double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
-      if (c.attackState != CAS_IDLE) wish = 0;
-      else if (distance > (attack ? attack->reach * .85 : behavior.farRange)) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
-      else if (distance < (attack ? attack->reach * .35 : behavior.nearRange)) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
-      else wish = 0;
-    } else {
-      wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
-                       : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
-                       : c.wanderDir * s.walkSpeed * 0.62;
-    }
-    if ((c.species == CS_FROST_GIANT || c.species == CS_BONE_DINOSAUR) && c.attackState != CAS_IDLE) wish = 0;
+    if (hasTarget) wish = targetWalkWish(c, s, tx, ty);
+    else wish = avoidsPlayer ? (avoidX > c.wx + s.w * .5 ? -s.walkSpeed : s.walkSpeed)
+                            : c.wanderDir * s.walkSpeed * .62;
     if (c.roamRadius && (!hasTarget || std::fabs(c.wx - c.homeX) > c.roamRadius + 12)) {
       // Residents pause near visitors and turn before an unsupported edge.
       if (c.wx < c.homeX - c.roamRadius) c.wanderDir = 1;
@@ -1035,11 +1038,11 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       for (const Player& p : E.psys.players) {
         if (!p.active || !p.alive) continue;
         double dx = E.fg.worldOffsetX + p.px - c.wx, dy = E.fg.worldOffsetY + p.py - c.wy;
-        if (dx * dx + dy * dy < 24 * 24) { visitor = true; c.facing = dx > 0 ? 1 : -1; }
+        if (dx * dx + dy * dy < 24 * 24) { visitor = true; if (std::fabs(dx) > 2 && c.navigation.turnCooldown == 0) { c.facing = dx > 0 ? 1 : -1; c.navigation.turnCooldown = 12; } }
       }
       double ahead = c.wx + c.wanderDir * 3;
       if (c.grounded && !boxHitsSolid(ahead, c.wy + 1, s.w, s.h)) {
-        c.wanderDir = -c.wanderDir; c.wanderTicks = 90;
+        if (c.navigation.escapeTicks == 0) { c.wanderDir = -c.wanderDir; c.wanderTicks = 90; c.navigation.escapeTicks = 45; }
       }
       wish = visitor || c.wanderTicks < 45 ? 0 : c.wanderDir * s.walkSpeed;
     }
@@ -1052,12 +1055,12 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     // Released researchers wait for extraction instead of fleeing their rescuer.
     if (c.missionActor && c.species == CS_SURVEYOR &&
         E.missions.missionId == MI_GREENFALL_RECOVERY) wish = 0;
+    wish = navigateGround(c, s, wish, tx, ty, hasTarget);
     c.vx = accelerateToward(c.vx, wish, s.accel);
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += E.scaledGravity(s.gravity); if (c.vy > 2.4) c.vy = 2.4;
   }
   applySpatialForce(c);
-  if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
   auto blocked = [&](double nextX, double nextY) {
     return boxHitsSolid(nextX, nextY, s.w, s.h);
   };
@@ -1075,13 +1078,8 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     if (!climbed) {
       c.wx = blockedX; c.wy = startY;
-      bool supported = c.grounded || boxHitsSolid(c.wx, c.wy + 0.35, s.w, s.h);
-      if ((wet < s.fluidThreshold && supported) || c.hasHabitatGoal)
-        c.vy = std::min(c.vy, -s.jumpSpeed * (c.hasHabitatGoal ? 0.85 : 1.0));
-      if (!hasTarget && wet < s.fluidThreshold) {
-        c.wanderDir = c.facing > 0 ? -1 : 1;
-        c.wanderTicks = 75;
-      }
+      if (c.hasHabitatGoal)
+        c.vy = std::min(c.vy, -s.jumpSpeed * .85);
       c.vx = 0;
     }
   }
@@ -1112,22 +1110,28 @@ void CreatureSystem::moveFlying(Creature& c) {
   int surface = E.terrain.genSurfaceAbs((int)std::floor(c.wx + s.w * 0.5));
   double altitude = surface - (c.wy + s.h);
   if (submerged) { desiredX *= 0.25; desiredY = -1; }
-  else if (altitude < 8) desiredY = -1;
-  else if (altitude > 52) desiredY = 1;
+  else if (!hasTarget && altitude < 8) desiredY = -1;
+  else if (!hasTarget && altitude > 52) desiredY = 1;
   double d = std::sqrt(desiredX * desiredX + desiredY * desiredY); if (d < 1e-6) d = 1;
-  desiredX = desiredX / d * s.swimSpeed; desiredY = desiredY / d * s.swimSpeed;
+  double speed = s.swimSpeed;
+  if (hasTarget && !submerged && creatureBehavior(s).flyingMovement != CFM_CLUSTER) {
+    const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
+    double reach = attack ? attack->reach : s.attackRange;
+    speed *= std::min(1.0, std::max(0.0, d - reach * .55) / 4);
+  }
+  desiredX = desiredX / d * speed; desiredY = desiredY / d * speed;
+  steerFree(c, desiredX, desiredY, false, submerged);
   c.vx = accelerateToward(c.vx, desiredX, s.accel);
   c.vy = accelerateToward(c.vy, desiredY, s.accel);
   applySpatialForce(c);
-  if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
   auto blocked = [&](double nextX, double nextY) {
     // Water is an entry barrier for a flying bird, but not an exit barrier.
     // If water engulfs one, let it climb through the fluid until clear.
     return boxHitsSolid(nextX, nextY, s.w, s.h)
       || (!submerged && boxTouchesLiquid(nextX, nextY, s.w, s.h));
   };
-  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx *= -0.55;
-  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy *= -0.55;
+  if (!moveCreatureAxis(c, c.wx, c.vx, true, blocked)) c.vx = 0;
+  if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy = 0;
 }
 
 static constexpr int DYNAMITE_CHARGE_TICKS = 30;
@@ -1641,6 +1645,11 @@ void CreatureSystem::updateCreatures() {
       c.attackCooldown = imax(c.attackCooldown, 60);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
+    auto& navigation = c.navigation;
+    if (navigation.planTicks > 0) navigation.planTicks--;
+    if (navigation.jumpCooldown > 0) navigation.jumpCooldown--;
+    if (navigation.escapeTicks > 0) navigation.escapeTicks--;
+    if (navigation.turnCooldown > 0) navigation.turnCooldown--;
     double priorX = c.wx, priorY = c.wy;
     if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0 && c.species != CS_LAVA_TOAD && c.species != CS_BONE_DINOSAUR) c.health -= 3; }
     if (c.slowTicks > 0) c.slowTicks--;
@@ -1661,6 +1670,7 @@ void CreatureSystem::updateCreatures() {
     else { c.vx = 0; c.vy = 0; c.grounded = true; }
     if (c.rootTicks > 0) { c.wx = priorX; c.vx = 0; }
     else if (c.slowTicks > 0) { c.wx = priorX + (c.wx-priorX)*.35; c.vx *= .35; }
+    updateFacing(c, c.wx - priorX);
     // Terrain can settle or be placed through an entity after movement. Mere
     // floor contact is outside the AABB and harmless; sustained burial over at
     // least half the body deals one point every half-second at 60 actor Hz.

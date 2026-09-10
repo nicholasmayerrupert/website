@@ -4,7 +4,44 @@ import process from 'node:process';
 import { MAT } from '../src/sand/materials.js';
 const artifacts = '.sand-artifacts/adventure-tools';
 mkdirSync(artifacts, { recursive: true });
-process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, check }) => {
+process.exitCode = await runBrowserCases({ weaponFrames: async ({page,baseURL,check}) => {
+  await page.route('**/weapon-frames', route => route.fulfill({contentType:'text/html',body:'<!doctype html><body style="margin:0;background:#171d25"></body>'}));
+  await page.goto(baseURL+'/weapon-frames');
+  const frames=await page.evaluate(async()=>{
+    const {initSandWasm,createEngineWasm,PLANET,MAT,INPUT}=await import('/src/sand/wasmBridge/engineFactory.js');
+    await initSandWasm();
+    const e=createEngineWasm({cols:100,rows:72,worldSeed:73,planetId:PLANET.FRONTIER,infinite:false,sinksOn:false});
+    const canvas=document.createElement('canvas');canvas.width=800;canvas.height=576;document.body.append(canvas);
+    const frames=[];
+    try{
+      e.glInit(canvas);e.glResize(800,576);e.setViewport(1,8,100,72);e.cameraSet(0,0);
+      e.glSetFlags(false,false,true);e.setSkyLight(220);e.setPlayMode(true);e.setSurvivalInventory(true);e.setCreatureRuntime(false,false);
+      for(let x=0;x<100;x++)e.paintDisc(x,54,0,MAT.STONE,true);e.syncComponents();
+      const id=e.spawnPlayer(45,46);
+      const frame=name=>{e.glRenderFrame(true);frames.push({name,p:e.getPlayer(id),image:canvas.toDataURL()});};
+      e.setSelectedSlot(id,2);
+      for(const [name,x,y] of [['wand-right',80,49],['wand-left',15,49],['wand-up',48,15],['wand-down',48,68]]){
+        e.setPlayerInput(id,{bits:0,aimX:x,aimY:y});e.stepActors();frame(name);
+      }
+      e.setSelectedSlot(id,0);e.setPlayerInput(id,{bits:INPUT.PRIMARY,aimX:82,aimY:49});
+      const seen=new Set();
+      for(let i=0;i<76;i++){
+        e.stepActors();const p=e.getPlayer(id),elapsed=p.actionDuration-p.actionTicks;
+        for(const [name,phase] of [['windup',.18],['contact',.34],['follow',.47]]){
+          const key=`combo-${p.swordCombo}-${name}`;
+          if(p.swordCombo&&elapsed>=Math.floor(p.actionDuration*phase)&&!seen.has(key)){frame(key);seen.add(key);}
+        }
+        if(seen.size>=9)break;
+      }
+    }finally{e.destroy();}
+    return frames;
+  });
+  for(const frame of frames)writeFileSync(`${artifacts}/${frame.name}.png`,Buffer.from(frame.image.split(',')[1],'base64'));
+  writeFileSync(`${artifacts}/weapon-frames.json`,JSON.stringify(frames.map(({name,p})=>({name,p})),null,2));
+  check('WebGL renders all three authoritative sword cuts',new Set(frames.filter(f=>f.name.startsWith('combo')).map(f=>f.p.swordCombo)).size===3);
+  check('return slash differs from the opening cut',frames.find(f=>f.name==='combo-1-follow').image!==frames.find(f=>f.name==='combo-2-follow').image);
+  check('wand grip renders in both facings and overhead',frames.filter(f=>f.name.startsWith('wand')).length===4);
+}, prompts: async ({ page, baseURL, check }) => {
   await page.goto(baseURL + '/game?nosave', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('sand-game')?._game?.getPlayer(), null, { timeout: 60000 });
   await page.locator('sand-game').evaluate(host => host.shadowRoot.querySelector('.sg-sim').focus());
@@ -86,6 +123,12 @@ process.exitCode = await runBrowserCases({ prompts: async ({ page, baseURL, chec
   await page.waitForTimeout(170);
   await page.screenshot({ path: artifacts + '/sword.png' });
   await capturePlayer('sword-arm-swing');
+  await page.waitForFunction(() => {
+    const p=document.querySelector('sand-game')._game.getPlayer();
+    return p.swordCombo===3 && p.actionTicks>0;
+  });
+  check('worker replicates the third sword cut and its action timing',true);
+  await capturePlayer('sword-worker-finisher');
   await page.mouse.up();
   await page.waitForFunction(() => {
     const host = document.querySelector('sand-game'), p = host._game.getPlayer();

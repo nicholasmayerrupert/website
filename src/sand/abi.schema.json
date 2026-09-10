@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 51,
+  "abiVersion": 52,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -260,6 +260,11 @@
           "name": "spellCharge",
           "kind": "number",
           "snapshotParameter": true
+        },
+        {
+          "name": "swordCombo",
+          "kind": "i32",
+          "snapshotMember": "swordCombo"
         }
       ],
       "snapshotStorage": "float",
@@ -1095,6 +1100,11 @@
           "name": "actionDuration",
           "kind": "i32",
           "snapshotMember": "actionDuration"
+        },
+        {
+          "name": "swordCombo",
+          "kind": "i32",
+          "snapshotMember": "swordCombo"
         }
       ],
       "snapshotStorage": "float",
@@ -3885,7 +3895,7 @@
           "id": 34,
           "key": "CREATURE_BONE_DINOSAUR",
           "cSymbol": "CS_BONE_DINOSAUR",
-          "name": "cinderjaw tyrant",
+          "name": "cinderjaw dragon",
           "stats": {
             "locomotion": "CL_AMPHIBIOUS",
             "w": 24,

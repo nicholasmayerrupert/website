@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 51;
+static const int ABI_VERSION = 52;
 
-static const uint64_t ABI_FINGERPRINT = 0x377f09a76d7fULL;
+static const uint64_t ABI_FINGERPRINT = 0xbc1998f9ba00ULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -60,8 +60,9 @@ enum PlayerSnapshotField : int {
   PS_MANA_MAX = 48,
   PS_MANA_CAST_COST = 49,
   PS_SPELL_CHARGE = 50,
+  PS_SWORD_COMBO = 51,
 };
-static const int PS_STRIDE = 51;
+static const int PS_STRIDE = 52;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -214,6 +215,7 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_MANA_MAX] = static_cast<float>(values.manaMax.value);
   out[PS_MANA_CAST_COST] = static_cast<float>(values.manaCastCost.value);
   out[PS_SPELL_CHARGE] = static_cast<float>(values.spellCharge.value);
+  out[PS_SWORD_COMBO] = static_cast<float>(record.swordCombo);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId
@@ -659,7 +661,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration, swordCombo
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -692,8 +694,9 @@ enum GlPlayerExtField : int {
   GLP_GEAR8 = 28,
   GLP_ACTION_TICKS = 29,
   GLP_ACTION_DURATION = 30,
+  GLP_SWORD_COMBO = 31,
 };
-static const int GLP_STRIDE = 31;
+static const int GLP_STRIDE = 32;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {

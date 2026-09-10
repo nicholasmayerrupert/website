@@ -288,6 +288,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   // Death drops the old loadout into the world; always restore the starter gun
   // so respawning cannot leave the combat mode soft-locked with empty hands.
   if (E.survivalInventory && E.planetId != PL_FRONTIER) E.inv.seedStarterTools(p);
+  p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
   p.stamina = 100; E.magic.resetMana(p); p.actionTicks = p.dodgeCooldown = 0; p.airDashUsed = false;
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
   return true;
@@ -307,6 +308,7 @@ void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
   p.animState = AS_DEATH; p.animFrame = 0;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
+  p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
   E.magic.cancelCharge(p); p.pendingCast = SpellCast();
   p.respawnPending = false; p.jetpackActive = false; p.shieldActive = false;
   resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
@@ -345,9 +347,9 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
     if (E.planetId == PL_FRONTIER) {
       const auto* shield = E.content.gear(p.equipment[6].definitionId);
       int efficiency = shield ? imin(75, 45 + shield->defense * 3) : 45;
-      int cost = imax(1, (remaining * (100 - efficiency) + 99) / 100);
+      int cost = imax(1, (remaining * (100 - efficiency) * 3 + 99) / 100);
       // A fresh raise rewards timing without making held guard invulnerable.
-      if (p.actionState == AS_GUARD_RAISE && p.actionTicks >= 3) cost = imax(1, cost / 3);
+      if (p.actionState == AS_GUARD_RAISE && p.actionTicks >= 3) cost = imax(1, (cost + 1) / 2);
       absorbed = cost <= p.stamina ? remaining : remaining * p.stamina / cost;
       p.stamina = imax(0, p.stamina - cost);
     }
@@ -485,6 +487,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (E.planetId == PL_FRONTIER && p.shieldActive && !wasGuarding) {
     p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
     p.bowChargeTicks = 0;
+    p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
     p.weaponKick = 0;
     resetPlayerMine(p);
     E.inv.resetPlayerPlaceStroke(p);

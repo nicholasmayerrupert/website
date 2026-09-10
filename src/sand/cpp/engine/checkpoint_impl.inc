@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 5;
+static constexpr uint32_t CHECKPOINT_VERSION = 6;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -8,7 +8,7 @@ uint32_t checkpointHash(const uint8_t* data, size_t size) {
   return hash;
 }
 template<class T> static constexpr bool CHECKPOINT_STRUCTURED =
-  std::is_same_v<T, InvSlot> || std::is_same_v<T, Item> || std::is_same_v<T, Projectile>;
+  std::is_same_v<T, InvSlot> || std::is_same_v<T, Item> || std::is_same_v<T, Projectile> || std::is_same_v<T, Creature>;
 struct CheckpointArchive {
   explicit CheckpointArchive(std::vector<uint8_t>& output, bool read = false, bool measure = false)
     : bytes(output), reading(read), measuring(measure) {}
@@ -80,8 +80,17 @@ struct CheckpointArchive {
     if (version >= 5) fields(v.cast,v.spellNode,v.spellTimer,v.spellBounces);
     else if (reading) { v.cast = SpellCast(); v.spellNode = v.spellTimer = v.spellBounces = 0; }
   }
+  void field(Creature& v) {
+    static_assert(offsetof(Creature, navigation) == 200);
+    raw(&v, offsetof(Creature, navigation));
+    auto& n = v.navigation;
+    if (version >= 6) fields(n.planTicks,n.moveDir,n.jumpCooldown,n.blockedTicks,n.escapeTicks,n.turnCooldown,n.avoidTurn,n.airborneDir,n.arrived);
+    else if (reading) v.navigation = CreatureNavigation();
+  }
   void field(Player& v) {
     fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame);
+    if (version >= 6) fields(v.swordCombo,v.swordComboWindow,v.swordComboQueued);
+    else if (reading) { v.swordCombo = v.swordComboWindow = 0; v.swordComboQueued = false; }
     if (version >= 5) fields(v.manaRecoveryTicks,v.wandChargeTicks,v.pendingCast);
     else if (reading) { v.manaRecoveryTicks = v.wandChargeTicks = 0; v.pendingCast = SpellCast(); }
   }

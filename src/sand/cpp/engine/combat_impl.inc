@@ -16,10 +16,17 @@ bool CombatSystem::canGuard(const Player& p) const {
 void CombatSystem::tick(Player& p) {
   if (!p.alive) return;
   if (p.dodgeCooldown > 0) p.dodgeCooldown--;
+  if (p.actionState != AS_SWORD || (!p.actionTicks && p.swordComboWindow > 0 && !--p.swordComboWindow)) {
+    p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
+  }
   if (p.actionTicks > 0) {
     p.actionTicks--;
     const auto* gear = E.content.gear(p.actionDefinition);
     if (gear && p.actionTicks == p.actionDuration * 2 / 3) strike(p, *gear);
+    if (!p.actionTicks && p.actionState == AS_SWORD && p.swordCombo) {
+      if (p.swordComboWindow < 0) p.swordCombo = p.swordComboWindow = 0;
+      else p.swordComboWindow = 18;
+    }
   }
   if (E.actorTick % 3 == 0 && p.actionTicks == 0 &&
       (!p.shieldActive || E.actorTick - p.lastShieldDamageTick >= 60))
@@ -31,7 +38,18 @@ void CombatSystem::tick(Player& p) {
 void CombatSystem::apply(Player& p, int previousInput) {
   const auto& held = p.inv[p.selectedSlot];
   const auto* gear = E.content.gear(held.definitionId);
-  if (!gear || held.count <= 0 || p.actionTicks || p.shieldActive) return;
+  const bool sword = gear && held.count > 0 && gear->family == GF_SWORD;
+  if (!sword || held.definitionId != p.actionDefinition || p.shieldActive) {
+    p.swordComboWindow = p.actionTicks && p.actionState == AS_SWORD ? -1 : 0; p.swordComboQueued = false;
+    if (!p.actionTicks || p.actionState != AS_SWORD) p.swordCombo = 0;
+  }
+  if (!gear || held.count <= 0 || p.shieldActive) return;
+  if (p.actionTicks) {
+    // A fresh press in recovery queues one cut; holding also chains at recovery's end.
+    if (sword && p.swordComboWindow >= 0 && p.actionState == AS_SWORD && p.actionTicks <= p.actionDuration / 2
+        && (p.input & PI_PRIMARY) && !(previousInput & PI_PRIMARY)) p.swordComboQueued = true;
+    return;
+  }
   if (E.magic.isWand(held)) { E.magic.apply(p, previousInput); return; }
   bool primary = (p.input & PI_PRIMARY) != 0;
   if (gear->family == GF_BOW) {
@@ -48,13 +66,17 @@ void CombatSystem::apply(Player& p, int previousInput) {
     }
     return;
   }
-  if (!primary || p.stamina < gear->stamina || p.mana < gear->mana) return;
+  const int combo = sword && p.swordComboWindow > 0 && p.swordCombo < 3 ? p.swordCombo + 1 : 1;
+  const int staminaCost = sword && combo == 3 ? (gear->stamina * 5 + 3) / 4 : gear->stamina;
+  if ((!primary && !(sword && p.swordComboQueued)) || p.stamina < staminaCost || p.mana < gear->mana) return;
   if (gear->family > GF_SPEAR && gear->family != GF_POTION) return;
   if (gear->family == GF_POTION && (previousInput & PI_PRIMARY)) return;
   if (!E.magic.spendMana(p, gear->mana)) return;
-  p.stamina -= gear->stamina;
+  p.stamina -= staminaCost;
+  p.swordCombo = sword ? combo : 0;
+  p.swordComboWindow = 0; p.swordComboQueued = false;
   p.actionDefinition = gear->id;
-  p.actionTicks = p.actionDuration = gear->cooldown;
+  p.actionTicks = p.actionDuration = sword ? imax(18, gear->cooldown * (combo == 1 ? 80 : combo == 2 ? 70 : 115) / 100) : gear->cooldown;
   p.actionState = gear->family == GF_SWORD ? AS_SWORD : gear->family == GF_AXE ? AS_AXE : gear->family == GF_SPEAR ? AS_SPEAR : gear->family == GF_POTION ? AS_DRINK : AS_CAST;
   p.weaponKick = 1;
   E.playerActionCount++;
@@ -85,6 +107,7 @@ void CombatSystem::strike(Player& p, const ContentGear& gear) {
 }
 void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double cy, double tx, double ty, double dx, double dy, int spellDamage) {
   int damage = spellDamage >= 0 ? spellDamage : gear.power + (hasCharm(p, 225) ? 5 : 0);
+  if (gear.family == GF_SWORD && p.swordCombo == 3) damage = (damage * 3 + 1) / 2;
   int spell = gear.spell;
   for (auto& creature : E.creatures.creatures) {
     if (spell == SP_LUMEN || !creature.alive || E.creatures.isProtectedNpc(creature) || creature.hurtCooldown > 0) continue;
@@ -108,7 +131,7 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     if (spell == SP_EMBER) creature.burnTicks = 120;
     if (spell == SP_RIME) creature.slowTicks = 150;
     if (spell == SP_BRIAR) creature.rootTicks = 90;
-    creature.vx += dx * (spell == SP_GALE ? 3.5 : gear.family == GF_AXE ? 1.5 : .6);
+    creature.vx += dx * (spell == SP_GALE ? 3.5 : gear.family == GF_AXE ? 1.5 : gear.family == GF_SWORD && p.swordCombo == 3 ? 1.8 : .6);
     creature.vy -= spell == SP_GALE ? 1.6 : .35;
     if (spell == SP_RIME || spell == SP_BRIAR) { creature.attackCooldown = imax(60, creature.attackCooldown); creature.vx *= .15; }
     E.audio.emit(SE_CREATURE, x, y, .8, creature.species);
@@ -188,7 +211,7 @@ void CombatSystem::enemyAttack(Creature& c) {
   bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
   bool enraged = c.health * 2 < species.maxHealth;
   int damage = heavy ? (enraged ? 28 : 22) : imax(10, imin(18, species.damage));
-  int windup = heavy ? (enraged ? 42 : 60) : 26;
+  int windup = heavy ? (enraged ? 34 : 48) : 21;
   bool ring = (c.species == CS_HOLLOW_BELLKEEPER && c.attackPattern == 0) || (heavy && c.attackPattern == 2 && c.species != CS_MIRE_MATRON);
   int duration = ring ? 50 : 18;
   bool contact = (c.species == CS_THORNBOUND_HART && c.attackPattern == 0) || c.species == CS_BRIAR_WOLF || c.species == CS_FOX || c.species == CS_BONE_GUARD;
@@ -256,7 +279,7 @@ void CombatSystem::enemyAttack(Creature& c) {
     }
     if (c.attackTicks >= duration) {
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-      c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = heavy ? 72 : 58;
+      c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = heavy ? 54 : 44;
     }
     return;
   }

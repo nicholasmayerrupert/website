@@ -682,6 +682,8 @@ struct Player {
   int manaRecoveryTicks = 0, wandChargeTicks = 0;
   SpellCast pendingCast;
   int actionDuration = 0, actionDefinition = 0, dodgeCooldown = 0, abilities = 0;
+  int swordCombo = 0, swordComboWindow = 0; // -1 cancels chaining after the committed cut.
+  bool swordComboQueued = false;
   bool airDashUsed = false;
   int movementPrevInput = 0;
   InventoryPool pools[INV_POOL_COUNT];

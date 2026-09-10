@@ -167,132 +167,121 @@ function toad(p,c) {
   for(let k=0;k<3;k++)line(X(37)+p.step*2,37-Math.max(0,p.step)*2,X(39+k*3),39-Math.max(0,p.step)*2,1,'b');
   for(let k=0;k<7;k++)dot(X(15+k*4),Y(24+(k*3)%9),k%2?'r':'a');
 }
-function dinosaur(p,c) {
-  const {poly,ellipse,line,dot,rect}=c;
-  const breath=p.state==='special', walking=p.state==='move';
-  const cycle=p.t*Math.PI*2, recoil=p.wind*5, snap=p.state==='attack'?Math.sin(Math.min(1,p.t*1.5)*Math.PI):0;
-  const lean=-recoil+snap*9, bob=walking?Math.abs(p.step)*2:p.bob;
+function dragon(p,c) {
+  const {poly,line,rect,dot}=c;
+  const walking=p.state==='move',breath=p.state==='special';
+  const wave=Math.sin(p.t*Math.PI*2),wind=p.state==='windup'?p.t:p.state==='recover'?(1-p.t)*.3:0;
+  const snap=p.state==='attack'?Math.sin(Math.min(1,p.t*2)*Math.PI):0;
+  const lean=Math.round(-wind+snap-p.hurt),bob=walking?Math.round(Math.abs(p.step)):p.bob;
   const X=x=>x+lean,Y=y=>y+bob;
-  const bone=(x,y,xx,yy,r=2,far=false)=>{
-    line(x,y,xx,yy,r+1,'o');line(x,y,xx,yy,r,far?'d':'b');
-    line(x-.5,y-1,xx-.5,yy-1,Math.max(.5,r*.38),far?'b':'l');
-    for(const [bx,by]of[[x,y],[xx,yy]]){ellipse(bx,by,r+1,r,'o');ellipse(bx,by-1,r,r-1,far?'b':'l');}
+  const shape=(points,color)=>poly(points.map(([x,y])=>[X(x),Y(y)]),color);
+  // Angular shafts, broad ivory planes and single-pixel joints share the roster's scale.
+  const bone=(x,y,xx,yy,far=false,wide=1)=>{
+    line(x,y,xx,yy,wide+1,'o');line(x,y,xx,yy,wide,far?'d':'b');
+    line(x,y-1,xx,yy-1,wide===1?.4:.5,far?'b':'l');
+    rect(x-1,y-1,2,2,far?'d':'l');rect(xx-1,yy-1,2,2,far?'d':'l');
   };
-  const leg=(far)=>{
-    const sign=far?-1:1, stride=walking?p.step*sign:0;
-    const hip=X(far?70:77),hy=Y(far?61:62),knee=X(far?73:86)+stride*7,ky=83-Math.max(0,stride)*3;
-    const ankle=(far?54:73)-stride*9,ay=102-Math.max(0,stride)*7;
-    bone(hip,hy,knee,ky,3,far);bone(knee,ky,ankle,ay,2.3,far);
-    bone(knee-3,ky+2,ankle-3,ay-2,.8,far);
-    for(let toe=0;toe<3;toe++){
-      const tx=ankle+10+toe*3,ty=108-Math.max(0,stride)*7-toe;
-      bone(ankle,ay,tx-3,ty,1.2,far);
-      poly([[tx-4,ty-2],[tx+3,ty+1],[tx-3,ty+1]],'o');line(tx-3,ty-1,tx+1,ty,.6,far?'d':'w');
-    }
-    ellipse(knee,ky,3,2,'d');dot(knee-1,ky-1,'w');
+  const link=(a,b,far=false,wide=1)=>bone(X(a[0]),Y(a[1]),X(b[0]),Y(b[1]),far,wide);
+  const leg=(front,far)=>{
+    const stride=walking?p.step*(front!==far?1:-1):0;
+    const hip=front?[54,32]:[34,34];
+    const knee=[(front?55:40)+(far?-5:1)+Math.round(stride*2),front?42:43];
+    const foot=[(front?61:33)+(far?-5:1)-Math.round(stride*3),53-Math.round(Math.max(0,stride)*3)];
+    link(hip,knee,far,1.4);bone(X(knee[0]),Y(knee[1]),foot[0],foot[1]-2,far,1);
+    line(foot[0]-2,foot[1],foot[0]+5,foot[1],1,'o');
+    rect(foot[0]-1,foot[1]-1,6,1,far?'d':'b');
+    for(let toe=0;toe<3;toe++)dot(foot[0]+toe*2+1,foot[1],far?'b':'l');
+    dot(X(knee[0]),Y(knee[1]),far?'b':'w');
   };
-  // The far leg and ribs are visible through the open fossil cage.
-  leg(true);
-  for(let k=0;k<7;k++){
-    const x=X(63+k*5),top=Y(43-Math.sin(k/6*Math.PI)*5),bottom=Y(62+Math.sin(k/6*Math.PI)*5);
-    line(x,top,x+7,Y(54),1.3,'o');line(x+7,Y(54),x+2,bottom,1.3,'d');
+  leg(false,true);leg(true,true);
+  // The far wing stays below the near wing so the open fingers read separately.
+  const flare=Math.round(wind*2+(breath?1:0)+wave);
+  const shoulder=[48,29],elbow=[42,13-flare],wrist=[28,8-flare];
+  link([47,29],[49,12],true);link([49,12],[38,5],true);
+  for(const tip of [[34,17],[40,23],[45,28]])link([38,5],tip,true);
+  // Scalloped scraps hang between exposed finger bones, leaving the wing mostly hollow.
+  shape([[28,8-flare],[14,18],[20,15],[20,24],[27,17],[29,30],[34,23],[39,33],[42,25]],'o');
+  shape([[29,12-flare],[22,18],[24,18],[28,15],[31,26],[33,21],[37,27],[38,22]],'m');
+  link(shoulder,elbow,false,1.4);link(elbow,wrist,false,1.4);
+  for(const [joint,tip]of [[[20,12],[14,18]],[[25,18],[20,26]],[[33,18],[29,31]],[[39,21],[39,33]]]){
+    link(wrist,joint);link(joint,tip);
   }
-  // A jointed counterweight tail narrows into individual chevrons at its tip.
-  const tail=[];
-  for(let k=0;k<15;k++){
-    const t=k/14,x=X(66-t*59),y=Y(51-t*20+Math.sin(t*4+cycle)*(walking?3:1.4)*t);
-    tail.push([x,y]);
+  link(wrist,[25,Math.max(4,6-flare)]);dot(X(25),Y(Math.max(3,5-flare)),'w');
+  // The tail is a chain of blocky vertebrae with a hooked, barbed tip.
+  const tail=[[33,32],[26,33],[20,32],[14,29],[9,25],[6,21],[5,17+Math.round(wave)]];
+  for(let k=tail.length-1;k>0;k--){
+    link(tail[k],tail[k-1],false,k<3?1.3:.8);
+    const [x,y]=tail[k];shape([[x-2,y],[x-2,y-4],[x+2,y]],k<3?'l':'b');
+    dot(X(x+1),Y(y+1),'d');
   }
-  for(let k=14;k>0;k--){
-    const [x,y]=tail[k],[xx,yy]=tail[k-1],r=2.9-k*.15;
-    bone(x,y,xx,yy,r);
-    line(x,y-r,x+1,y-r-3+(k>9?1:0),.7,'l');
-    if(k<10)line(x,y+r,x+2,y+r+3,.6,'d');
-    dot(x+1,y,'d');
+  // Far ribs show through the empty cage; the ember heart is deliberately small.
+  for(let k=0;k<5;k++){
+    const x=35+k*4;
+    link([x,28],[x-2,34],true,.5);link([x-2,34],[x+1,39],true,.5);
   }
-  // The furnace is suspended between the ribs, with sparks escaping upward.
-  const heat=breath?1:p.state==='windup'?p.t:.35;
-  ellipse(X(85),Y(54),9+heat*2,10,'r');ellipse(X(86),Y(55),7+heat,8,'a');
-  poly([[X(79),Y(61)],[X(78),Y(52)],[X(82),Y(55)],[X(83),Y(44-heat*4)],[X(87),Y(54)],[X(86),Y(61)]],'e');
-  line(X(82),Y(58),X(84),Y(51),1,'w');
-  for(let k=0;k<5;k++){const up=(p.t*14+k*5)%18;dot(X(78+k*3+Math.sin(k+cycle)),Y(45-up),k%2?'a':'e');}
-  // Closely spaced vertebrae and neural spines give the back its broken saw edge.
-  const spine=[[59,49],[65,43],[72,39],[79,37],[86,36],[93,35],[100,34+snap*7],[105,30+snap*14],[109,26+snap*20],[114,24+snap*26]];
-  for(let k=0;k<spine.length;k++){
-    const [x,y]=spine[k],next=spine[Math.min(k+1,spine.length-1)];
-    bone(X(x),Y(y),X(next[0]),Y(next[1]),2.1);
-    poly([[X(x-2),Y(y-2)],[X(x-3),Y(y-9-(k%3))],[X(x+1),Y(y-6)],[X(x+3),Y(y)]],'o');
-    line(X(x-1),Y(y-3),X(x-2),Y(y-8),.7,'l');dot(X(x+1),Y(y),'d');
+  const heat=breath||wind>.4;
+  shape([[44,30],[47,33],[49,29],[50,36],[47,39],[44,36]],'r');
+  shape([[46,32],[48,35],[48,38],[46,37]],heat?'e':'a');
+  if(heat)dot(X(47),Y(35),'w');
+  // The spine rises into an S-shaped neck beneath the narrow horned skull.
+  const neckX=-Math.round(wind),neckY=Math.round(snap*7-wind);
+  const spine=[[30,32],[34,28],[40,26],[46,26],[51,27],[55,25+neckY*.3],[56+neckX*.5,21+neckY*.6],[60+neckX,18+neckY],[64+neckX,18+neckY]];
+  for(let k=0;k<spine.length-1;k++){
+    link(spine[k],spine[k+1]);
+    const [x,y]=spine[k];
+    if(k<6)shape([[x-1,y-1],[x-2,y-5],[x+2,y-2]],'l');
+    dot(X(x+1),Y(y),'d');
   }
-  for(let k=0;k<8;k++){
-    const x=X(62+k*4.8),top=Y(44-Math.sin(k/7*Math.PI)*8),wide=6+Math.sin(k/7*Math.PI)*3;
-    const bottom=Y(61+Math.sin(k/7*Math.PI)*9);
-    line(x,top,x+wide,Y(53),2,'o');line(x+wide,Y(53),x+wide-2,bottom-3,2,'o');line(x+wide-2,bottom-3,x+2,bottom,1.5,'o');
-    line(x,top,x+wide,Y(53),1,'l');line(x+wide,Y(53),x+wide-2,bottom-3,1,'b');line(x+wide-2,bottom-3,x+2,bottom,.7,'l');
-    dot(x+wide,Y(54+k%3),'d');
+  for(let k=0;k<5;k++){
+    const x=34+k*4,top=28-(k>0&&k<4?1:0),bottom=38+(k>0&&k<4?2:0);
+    link([x,top],[x+3,33],false,.7);link([x+3,33],[x+2,bottom],false,.7);
+    link([x+2,bottom],[x,bottom+1],false,.5);
   }
-  // A perforated pelvis and forked pubis anchor the powerful near thigh.
-  poly([[X(58),Y(47)],[X(72),Y(43)],[X(81),Y(49)],[X(77),Y(65)],[X(69),Y(67)],[X(61),Y(57)]],'o');
-  poly([[X(60),Y(49)],[X(72),Y(46)],[X(78),Y(50)],[X(74),Y(63)],[X(69),Y(64)],[X(64),Y(56)]],'b');
-  line(X(62),Y(49),X(73),Y(47),1,'w');ellipse(X(70),Y(54),4,5,'o');ellipse(X(69),Y(53),2,3,'d');
-  bone(X(73),Y(63),X(82),Y(72),1.6);bone(X(74),Y(64),X(71),Y(75),1.2);
-  leg(false);
-  // Vestigial arms have a distinct elbow, wrist and two long hook claws.
-  for(const far of [true,false]){
-    const x=X(far?98:94),y=Y(far?46:48),ex=x+5-p.wind*3,ey=y+9;
-    const hx=ex+7+snap*4,hy=ey-2-p.wind*3;
-    bone(x,y,ex,ey,1.4,far);bone(ex,ey,hx,hy,1,far);
-    for(let k=0;k<2;k++){line(hx,hy+k*3,hx+5,hy+1+k*3,1,'o');line(hx+5,hy+1+k*3,hx+3,hy+5+k*3,.7,far?'d':'w');}
+  shape([[30,30],[35,29],[38,33],[37,37],[32,38],[29,35]],'o');
+  shape([[31,31],[35,31],[36,33],[35,36],[32,36]],'b');dot(X(33),Y(33),'o');
+  leg(false,false);leg(true,false);
+  // Swept horns and an elongated muzzle distinguish the dragon from a theropod.
+  const hx=lean+neckX,hy=bob+neckY;
+  const H=([x,y])=>[x+hx,y+hy];
+  const head=(points,color)=>poly(points.map(H),color);
+  head([[65,16],[57,13],[54,6],[59,10],[67,12],[69,17]],'o');
+  head([[64,14],[59,12],[57,9],[61,12],[67,13]],'b');
+  head([[70,14],[65,9],[60,8],[62,5],[68,8],[74,14]],'o');
+  head([[70,13],[66,10],[63,8],[65,8],[70,10]],'l');
+  line(...H([66,11]),...H([71,16]),.7,'b');line(...H([60,12]),...H([65,17]),.7,'b');
+  head([[61,17],[64,13],[70,13],[73,17],[80,19],[81,23],[77,26],[68,25],[62,23]],'o');
+  head([[63,17],[65,15],[70,15],[72,19],[79,20],[79,23],[75,24],[67,23],[64,21]],'b');
+  head([[64,16],[67,14],[70,15],[72,19],[77,20],[70,20],[68,18]],'l');
+  head([[64,19],[67,18],[70,20],[68,23],[65,22]],'o');
+  line(...H([66,20]),...H([69,20]),.7,'r');dot(...H([68,20]),'e');
+  head([[72,21],[75,21],[75,23],[72,23]],'d');dot(...H([78,21]),'o');
+  line(...H([64,17]),...H([69,17]),.5,'w');
+  // The lower jaw opens during the tell and stream, then closes at bite contact.
+  const open=breath?6+Math.round(wave):p.state==='attack'?Math.round(Math.max(0,1-p.t*3)*7):Math.round(1+wind*6);
+  const J=([x,y])=>H([x,y+Math.round((x-65)/14*open)]);
+  poly([[64,23],[69,25],[79,24],[79,26],[73,28],[66,26],[63,24]].map(J),'o');
+  poly([[65,24],[70,26],[78,25],[74,27],[67,25]].map(J),'b');
+  for(const x of [69,73,77]){
+    head([[x,24],[x+2,24],[x+1,27]],'l');
+    poly([[x+1,26],[x+3,26],[x+2,24]].map(J),'l');
   }
-  // Skull fenestrae remain transparent-dark between the brow, cheek and muzzle.
-  const hx=lean+(breath?0:-p.wind*2+snap*2),hy=bob+(breath?0:-p.wind*3+snap*26);
-  const H=(x,y)=>[x+hx,y+hy];
-  poly([[109,22],[114,15],[126,14],[133,18],[145,19],[154,24],[157,33],[153,39],[132,40],[121,43],[110,37],[106,29]].map(([x,y])=>H(x,y)),'o');
-  poly([[110,23],[115,17],[125,16],[132,20],[144,21],[152,25],[154,32],[150,36],[130,37],[120,40],[112,35],[109,29]].map(([x,y])=>H(x,y)),'b');
-  poly([[112,23],[116,18],[125,18],[132,22],[145,23],[151,26],[134,25],[128,24],[122,21]].map(([x,y])=>H(x,y)),'l');
-  line(...H(134,25),...H(151,27),.8,'w');
-  // Temple, orbital and antorbital windows are different shapes, like real bone.
-  poly([[112,26],[117,22],[120,26],[117,33],[112,32]].map(([x,y])=>H(x,y)),'o');
-  poly([[122,25],[128,24],[131,29],[127,35],[121,34]].map(([x,y])=>H(x,y)),'o');
-  poly([[134,28],[143,29],[146,33],[136,34]].map(([x,y])=>H(x,y)),'d');
-  line(...H(123,29),...H(128,28),1.3,'r');line(...H(124,29),...H(128,28),.6,'e');dot(...H(127,28),'w');
-  ellipse(...H(150,30),2,1.5,'o');dot(...H(151,29),'d');
-  line(...H(120,23),...H(130,25),1.2,'w');line(...H(110,35),...H(122,39),1,'l');
-  // Sutures, chipped snout, and asymmetrical horn remnants break the clean edges.
-  line(...H(137,21),...H(136,25),.5,'d');line(...H(136,25),...H(140,27),.5,'d');
-  poly([[114,18],[110,9],[117,13],[120,18]].map(([x,y])=>H(x,y)),'o');line(...H(114,15),...H(113,11),.8,'l');
-  poly([[125,16],[129,8],[132,13],[130,19]].map(([x,y])=>H(x,y)),'o');line(...H(129,15),...H(130,11),.8,'l');
-  // The lower jaw rotates around its cheek hinge; the bite closes on the hit frame.
-  const open=breath?12+Math.sin(cycle)*1.2:p.state==='attack'?Math.max(0,1-p.t*3)*16:p.state==='windup'?3+p.t*13:3;
-  const J=(x,y)=>H(x,y+(x-116)/38*open);
-  poly([[114,37],[121,40],[149,39],[153,41],[148,45],[129,46],[118,43],[112,39]].map(([x,y])=>J(x,y)),'o');
-  poly([[116,38],[122,42],[149,41],[147,43],[130,44],[119,41]].map(([x,y])=>J(x,y)),'b');
-  line(...J(122,43),...J(146,43),.8,'l');ellipse(...H(116,38),2,2,'l');dot(...H(116,38),'d');
-  for(let k=0;k<9;k++){
-    const x=122+k*3.5,len=3+(k%3===0?2:0);
-    poly([H(x,37),H(x+2.5,37),H(x+1,37+len)],'o');line(...H(x+1,38),...H(x+1,36+len),.55,'w');
-    if(k<8)poly([J(x+1,41),J(x+3,41),J(x+2,38)],'l');
-  }
-  if(breath){
-    line(...H(124,43),...H(150,47),2,'r');line(...H(131,44),...H(153,47),1.1,'a');line(...H(142,46),...H(155,47),.6,'e');
-  }
-  // Sparse mineral staining and hairline fractures stay on the bone surfaces.
-  for(const [x,y]of[[65,48],[72,46],[88,36],[100,34]]){dot(X(x),Y(y),'d');dot(X(x+1),Y(y+1),'d');}
+  dot(...H([64,23]),'w');
+  if(breath){line(...H([68,26]),...H([79,27]),1,'r');line(...H([74,26]),...H([80,27]),.5,'e');}
 }
 
-function dinosaurDeath(a,t) {
+function dragonDeath(a,t) {
   const h=a.length,w=a[0].length,out=Array.from({length:h},()=>Array(w).fill('.'));
+  // The skull tips forward while ribs, wing fingers and vertebrae fall into a bone heap.
   for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(a[y][x]!=='.') {
     let xx=x,yy=y;
-    if(x>108&&y<63){
-      // The skull tumbles as a rigid piece while the rib cage comes apart.
-      const angle=t*.55,dx=x-132,dy=y-33;
-      xx=132+dx*Math.cos(angle)-dy*Math.sin(angle)-t*8;
-      yy=33+dx*Math.sin(angle)+dy*Math.cos(angle)+t*53;
+    if(x>60&&y<34){
+      const angle=t*.65,dx=x-70,dy=y-20;
+      xx=70+dx*Math.cos(angle)-dy*Math.sin(angle)-t*3;
+      yy=20+dx*Math.sin(angle)+dy*Math.cos(angle)+t*27;
     }else{
-      yy=h-5-(h-5-y)*(1-t*.91);
-      xx=x+Math.sin(Math.floor(x/6)*2.3)*t*5;
-      if(t>.5)yy-=Math.sin(Math.floor(x/7)*1.7)*t*3;
+      yy=h-3-(h-3-y)*(1-t*.91);
+      xx=x+Math.sin(Math.floor(x/4)*2.3)*t*3;
+      if(t>.5)yy-=Math.sin(Math.floor(x/5)*1.7)*t*2;
     }
     xx=Math.round(xx);yy=Math.round(yy);
     if(xx>=0&&xx<w&&yy>=0&&yy<h)out[yy][xx]=['r','a','e'].includes(a[y][x])&&t>.55?'d':a[y][x];
@@ -338,7 +327,7 @@ function resident(p,c,hunter) {
   }
 }
 const sets = [
- ['BONE_DINOSAUR',168,112,{'.':'#000000',o:'#29252a',d:'#6c584f',b:'#bcaa83',l:'#e4d5aa',w:'#fff0ce',r:'#a93824',a:'#f77829',e:'#ffce65'},dinosaur],
+ ['BONE_DINOSAUR',84,56,{'.':'#000000',o:'#29272b',d:'#706454',b:'#b7a581',l:'#ded3ac',w:'#f4e8c5',m:'#514049',r:'#9f4633',a:'#d97e43',e:'#f4bc62'},dragon],
  ['FROST_GIANT',64,88,{'.':'#000000',o:'#192934',d:'#3f6474',b:'#759da5',l:'#b3d6d5',w:'#f2f3de',f:'#d0dcca',r:'#6a5747',c:'#54bbd2',e:'#d2ffff'},giant],
  ['MUMMY',48,56,{'.':'#000000',o:'#302c27',d:'#70644c',b:'#ab9870',l:'#d7c69b',w:'#f1e4b8',r:'#7a5334',a:'#d1a44c',c:'#45949d',e:'#baf5dc'},mummy],
  ['LAVA_TOAD',60,44,{'.':'#000000',o:'#29242a',d:'#4b3c41',b:'#7d5550',l:'#c3a385',w:'#fff0b9',r:'#d35c35',a:'#ffb85a'},toad],
@@ -349,14 +338,17 @@ const only=process.argv.indexOf('--only');
 const chosen=only<0?sets:sets.filter(([key])=>key===process.argv[only+1]);
 if(!chosen.length)throw new Error('Unknown enemy sprite set');
 for(const [key,width,height,palette,draw] of chosen) {
-  const record={width,height,pixelScale:.25,palette,clips:{}};
+  const record={width,height,pixelScale:key==='BONE_DINOSAUR'?.5:.25,palette,clips:{}};
   for(const [state,[n,ticks]]of Object.entries(clips)) {
     const grouped=key==='FROST_GIANT'&&['windup','attack','recover'].includes(state);
     record.clips[state]={ticks,frames:Array.from({length:grouped?n*3:n},(_,f)=>{
     const c=canvas(width,height),p=pose(state,grouped?f%n:f,n);
     if(grouped)p.pattern=Math.floor(f/n);
     draw(p,c);
-    if(state==='death'&&key==='BONE_DINOSAUR')return dinosaurDeath(c.a,p.t);
+    if(key==='BONE_DINOSAUR'){
+      if(state==='death')return dragonDeath(c.a,p.t);
+      return c.a.map(row=>row.join(''));
+    }
     if(state==='death'&&key==='FROST_GIANT')return giantDeath(c.a,p.t);
     return finish(c.a,state,p.t);
   })};

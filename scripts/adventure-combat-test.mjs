@@ -2,7 +2,7 @@ import { equipWandSpell } from './magic-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { CREATURE, PLAYER_ANIMATION, OFF, STRIDES, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
+import { CREATURE, PLAYER_ANIMATION, OFF, STRIDES, SOUND_EVENT, MISSION } from '../src/sand/wasmBridge/abi.generated.js';
 await initSandWasm();
 const arena=()=>{
  const e=attachTestHooks(createEngineWasm({cols:200,rows:128,worldSeed:73,sinksOn:false,planetId:PLANET.FRONTIER}));
@@ -93,6 +93,62 @@ run('sword catches distant and off-axis foes in one swing',(e,id)=>{
  const health=()=>ids.map(id=>e.getCreatures().find(c=>c.id===id).health);
  const before=health();hold(e,id,INPUT.PRIMARY,100,91);tick(e,1);hold(e,id,0);tick(e,12);
  health().forEach((hp,i)=>assert.ok(hp<before[i],`target ${i} is inside the sword sweep`));
+});
+run('sword holds chain three cuts with a heavier finisher and then restart',(e,id)=>{
+ const target=e.spawnScriptedCreature(CREATURE.FROST_GIANT,66+e.getWorldOffsetX(),66+e.getWorldOffsetY());
+ const health=()=>e.getCreatures().find(c=>c.id===target).health;
+ const stages=[],damage=[];let previous=health();
+ hold(e,id,INPUT.PRIMARY,85,86);
+ for(let i=0;i<95;i++){
+  tick(e);const p=e.getPlayer(id);
+  if(p.actionTicks===p.actionDuration){
+   stages.push(p.swordCombo);
+   // The frozen training dummy does not advance its ordinary hurt timer.
+   const snapshot=e.getCreatureSnapshotData();snapshot[OFF.creatureSnapshot.hurtCooldown]=0;
+   e.setMirrorCreatures(snapshot,e.getWorldOffsetX(),e.getWorldOffsetY());
+  }
+  const hp=health();if(hp<previous){damage.push(previous-hp);previous=hp;}
+  if(stages.length===4)break;
+ }
+ assert.deepEqual(stages,[1,2,3,1]);
+ assert.deepEqual(damage.slice(0,3),[18,18,27],'the finisher hits once for 150% damage');
+});
+run('a recovery click buffers exactly one cut and an idle gap resets the combo',(e,id)=>{
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);tick(e,13);
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);
+ for(let i=0;i<30 && e.getPlayer(id).swordCombo!==2;i++)tick(e);
+ assert.equal(e.getPlayer(id).swordCombo,2,'a released recovery click starts the return cut');
+ tick(e,60);assert.equal(e.getPlayer(id).actionTicks,0);assert.equal(e.getPlayer(id).swordCombo,0);
+ hold(e,id,INPUT.PRIMARY);tick(e);assert.equal(e.getPlayer(id).swordCombo,1);
+});
+run('guard discards a buffered sword cut',(e,id)=>{
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);tick(e,13);
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,INPUT.SHIELD);tick(e);
+ assert.equal(e.getPlayer(id).swordCombo,0);
+ hold(e,id,0);tick(e,40);assert.equal(e.getPlayer(id).actionTicks,0);
+ hold(e,id,INPUT.PRIMARY);tick(e);assert.equal(e.getPlayer(id).swordCombo,1);
+});
+run('switching to a mining tool clears buffered chaining without canceling the current cut',(e,id)=>{
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);tick(e,13);
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);
+ const remaining=e.getPlayer(id).actionTicks;e.setSelectedSlot(id,1);e.setSelectedSlot(id,0);
+ assert.equal(e.getPlayer(id).actionTicks,remaining);
+ tick(e,35);assert.equal(e.getPlayer(id).actionTicks,0);assert.equal(e.getPlayer(id).swordCombo,0);
+ hold(e,id,INPUT.PRIMARY);tick(e);assert.equal(e.getPlayer(id).swordCombo,1);
+});
+run('a checkpoint preserves the pending combo input and every later strike',(e,id)=>{
+ assert.ok(e.startMission(MISSION.FRONTIER,id));
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);tick(e,13);
+ hold(e,id,INPUT.PRIMARY);tick(e);hold(e,id,0);
+ const restored=attachTestHooks(createEngineWasm({cols:200,rows:128,worldSeed:73,sinksOn:false,planetId:PLANET.FRONTIER}));
+ try{
+  assert.ok(restored.readCheckpoint(e.writeCheckpoint()));
+  for(let i=0;i<55;i++){
+   tick(e);tick(restored);
+   const a=e.getPlayer(id),b=restored.getPlayer(id);
+   for(const field of ['swordCombo','actionTicks','actionDuration','stamina'])assert.equal(b[field],a[field],field);
+  }
+ }finally{restored.destroy();}
 });
 run('starter wand spends mana and blasts a cavity in stone',(e,id)=>{
  equipWandSpell(e,id,300);

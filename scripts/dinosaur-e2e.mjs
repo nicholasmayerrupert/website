@@ -20,11 +20,11 @@ try {
   for(const [row,[state,clip]]of Object.entries(Object.entries(sprite.clips))){
    ctx.fillStyle='#e9d4a6';ctx.font='14px monospace';ctx.fillText(state.toUpperCase(),12,Number(row)*150+18);
    for(let f=0;f<clip.frames.length;f++)for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
-    const pixel=clip.frames[f][y][x];if(pixel==='.')continue;ctx.fillStyle=sprite.palette[pixel];ctx.fillRect(f*168+x,Number(row)*150+28+y,1,1);
+    const pixel=clip.frames[f][y][x];if(pixel==='.')continue;ctx.fillStyle=sprite.palette[pixel];const scale=sprite.pixelScale/.25;ctx.fillRect(f*168+x*scale,Number(row)*150+28+y*scale,scale,scale);
    }
   }
   const atlas=sheet.toDataURL();
-  for(const [pattern,label]of [[0,'BONECRUSHER BITE'],[1,'PREDATOR RUSH'],[2,'FURNACE BREATH']]){
+  for(const [pattern,label]of [[0,'BONECRUSHER BITE'],[1,'DRAGON RUSH'],[2,'FURNACE BREATH']]){
    const e=createEngineWasm({cols:240,rows:160,worldSeed:73,sinksOn:false,planetId:PLANET.FRONTIER});
    e.setCreatureRuntime(false,false);e.setSurvivalInventory(true);
    for(let x=0;x<240;x++)for(let y=120;y<160;y++)e.paintDisc(x,y,0,MAT.STONE,true);
@@ -52,7 +52,7 @@ try {
    if(pattern===2){for(let i=0;i<52;i++){e.stepActors();e.stepWorld();}present();pictures.push({label:'FURNACE BREATH · BURNING TERRAIN',image:canvas.toDataURL()});}
    e.destroy();canvas.remove();
   }
-  document.body.innerHTML='<h1 style="margin:24px 28px 8px;font-size:26px">CINDERJAW TYRANT</h1><p style="margin:0 28px 20px;color:#ae9680">The fossil king of the bone highlands · live engine captures</p><main style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 24px 24px"></main>';
+  document.body.innerHTML='<h1 style="margin:24px 28px 8px;font-size:26px">CINDERJAW DRAGON</h1><p style="margin:0 28px 20px;color:#ae9680">The winged skeleton of the bone highlands · live engine captures</p><main style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 24px 24px"></main>';
   for(const picture of pictures){const figure=document.createElement('figure');figure.style='margin:0;background:#25272b;border:1px solid #51483c';const caption=document.createElement('figcaption');caption.style='padding:12px;color:#e8c689;font-size:13px';caption.textContent=picture.label;const image=document.createElement('img');image.src=picture.image;image.style='display:block;width:100%;image-rendering:pixelated';figure.append(caption,image);document.querySelector('main').append(figure);}
   return {results,atlas};
  });

@@ -54,12 +54,30 @@ arena('shield cancels spells and bows without releasing stored attacks',(e,id)=>
  assert.equal(e.getPlayer(id).bowCharge,0);assert.ok(e.getPlayer(id).shieldActive);
  hold(e,id,0);tick(e,12);assert.equal(e.getProjectiles().length,0);
 });
-arena('guard covers overhead strikes, sustains combat and recovers stamina',(e,id)=>{
+arena('held guard spends substantial stamina and recovers during a lull',(e,id)=>{
  hold(e,id,INPUT.SHIELD,90,115);tick(e,12);
  const before=e.getPlayer(id);e._damagePlayer(id,30,38,90);
- const after=e.getPlayer(id);assert.equal(after.health,before.health);assert.ok(before.stamina-after.stamina<=15);
+ const after=e.getPlayer(id);assert.equal(after.health,before.health);
+ assert.ok(before.stamina-after.stamina>=30 && before.stamina-after.stamina<=45,'a normal blow consumes about a third of the starter stamina bar');
  tick(e,150);assert.ok(e.getPlayer(id).stamina>after.stamina,'held guard recovers during a lull');
  e._damagePlayer(id,30,10,115);assert.ok(e.getPlayer(id).health<before.health,'unguarded rear remains vulnerable');
+});
+arena('timely guard raises discount the cost without making blocks free',(e,id)=>{
+ hold(e,id,INPUT.SHIELD,90,115);tick(e);
+ e._damagePlayer(id,30,90,115);
+ const cost=100-e.getPlayer(id).stamina;
+ assert.ok(cost>=15 && cost<=22,'a timed block still pays a meaningful stamina cost');
+ assert.equal(e.getPlayer(id).health,100);
+});
+arena('an exhausted guard breaks, leaks damage and cannot immediately re-raise',(e,id)=>{
+ hold(e,id,INPUT.SHIELD,90,115);tick(e,12);
+ e.setPlayerState(id,{...e.getPlayer(id),stamina:20});
+ e._damagePlayer(id,30,90,115);
+ const broken=e.getPlayer(id);
+ assert.equal(broken.stamina,0);assert.equal(broken.shieldActive,false);
+ assert.equal(broken.actionState,PLAYER_ANIMATION.GUARD_BREAK);
+ assert.ok(broken.health<100,'insufficient stamina only absorbs part of the blow');
+ tick(e,20);assert.equal(e.getPlayer(id).shieldActive,false,'held input respects the committed break recovery');
 });
 arena('frost giant exhales a sustained stream and then exposes a recovery window',e=>{
  const id=enemy(e,CREATURE.FROST_GIANT),seen=new Set();

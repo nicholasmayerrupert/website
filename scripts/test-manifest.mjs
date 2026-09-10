@@ -24,6 +24,7 @@ export const UNIT_SUITES = [
   ['tooltier', 'tooltier-test.mjs'],
   ['items', 'item-test.mjs'],
   ['creatures', 'creature-test.mjs'],
+  ['creature-ai', 'creature-ai-test.mjs'],
   ['mining', 'mining-drop-test.mjs'],
   ['mining-speed', 'mining-speed-test.mjs'],
   ['mine-lock', 'mine-lock-test.mjs'],

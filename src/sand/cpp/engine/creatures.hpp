@@ -61,6 +61,13 @@ struct CreatureSpecies {
 
 #include "creatures.generated.hpp"
 
+struct CreatureNavigation {
+  int planTicks = 0, moveDir = 0, jumpCooldown = 0;
+  int blockedTicks = 0, escapeTicks = 0, turnCooldown = 0;
+  int avoidTurn = 0, airborneDir = 0;
+  bool arrived = false;
+};
+
 struct Creature {
   int burnTicks = 0, slowTicks = 0, rootTicks = 0;
   int npcId = 0;
@@ -96,6 +103,7 @@ struct Creature {
   int rescueLastTick = -1;
   int missionObjective = -1;
   bool missionActor = false;
+  alignas(8) CreatureNavigation navigation;
 };
 
 struct CreatureSpawnTelegraph {
@@ -173,6 +181,11 @@ class CreatureSystem {
   bool findNearbyHabitat(const Creature& c, int maxRadius, double& tx, double& ty) const;
   void applySpatialForce(Creature& c);
   void refreshWander(Creature& c);
+  bool clearTargetLine(const Creature& c, double tx, double ty) const;
+  double targetWalkWish(Creature& c, const CreatureSpecies& s, double tx, double ty);
+  double navigateGround(Creature& c, const CreatureSpecies& s, double wish, double tx, double ty, bool hasTarget);
+  void steerFree(Creature& c, double& desiredX, double& desiredY, bool aquatic, bool submerged);
+  void updateFacing(Creature& c, double movedX);
   void steerAquatic(Creature& c);
   void moveAquatic(Creature& c);
   void moveBeachedAquatic(Creature& c);

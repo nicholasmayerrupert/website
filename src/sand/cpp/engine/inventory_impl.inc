@@ -156,6 +156,12 @@ void InventorySystem::seedStarterTools(Player& p) {
     p.inv[0].itemKind = IK_GEAR; p.inv[0].definitionId = 1;
     p.inv[2].itemKind = IK_GEAR; p.inv[2].definitionId = 13; p.inv[2].count = 1;
     p.inv[3].itemKind = IK_GEAR; p.inv[3].definitionId = 320; p.inv[3].count = 1;
+    p.inv[4].itemKind = IK_GEAR; p.inv[4].definitionId = 321; p.inv[4].count = 3;
+    const int starterRunes[] = {301, 302, 305};
+    for (int i = 0; i < 3; i++) {
+      auto& rune = p.inv[INV_SLOTS - 6 + i];
+      rune.itemKind = IK_GEAR; rune.definitionId = starterRunes[i]; rune.count = 1;
+    }
     p.inv[INV_SLOTS - 3].itemKind = IK_GEAR; p.inv[INV_SLOTS - 3].definitionId = 306; p.inv[INV_SLOTS - 3].count = 1;
     E.magic.initializeWand(p.inv[2]);
     for (int i = 0; i < 2; i++) {
@@ -186,6 +192,11 @@ void InventorySystem::resetPlayerPlaceStroke(Player& p) {
 // from the slot don't accidentally gate mining.
 void InventorySystem::setSelectedSlot(Player& p, int slot) {
   if (slot < 0) slot = 0; if (slot >= INV_HOTBAR) slot = INV_HOTBAR - 1;
+  if (p.selectedSlot != slot) {
+    p.swordComboQueued = false;
+    p.swordComboWindow = p.actionTicks && p.actionState == AS_SWORD ? -1 : 0;
+    if (!p.actionTicks || p.actionState != AS_SWORD) p.swordCombo = 0;
+  }
   p.selectedSlot = slot;
   if (!(p.input & PI_PRIMARY)) p.emptyWeaponTriggerLatch = false;
   resetPlayerPlaceStroke(p);

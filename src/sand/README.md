@@ -796,6 +796,11 @@ explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
 crawlers, moles, and birds enter quietly on an ambient cadence, use a three-actor
 share of the eight-actor natural cap, and retain material-aware water, surface,
 cave, or air habitat requirements.
+Target retention, attack-distance arrival, facing stability and bounded physical
+navigation are shared across species. Ground movement probes safe jumps against
+the live terrain; swimmers and flyers steer around blocked headings. See
+[`CREATURE_AI.md`](CREATURE_AI.md) for responsibilities, tuning, research, and
+the local planner's limits. `creature-ai` covers navigation regressions.
 Survival encounters spend a shared deterministic threat budget at a four-second
 cadence. Natural entries must clear the actual camera and all player views by
 20 cells; when there is no valid offscreen habitat the director waits. Combat
@@ -1100,9 +1105,17 @@ the right hand and shields the left, with depth following player facing. Raised
 shields follow an oval around the visible body to cover overhead aim. Adventure
 shields block the forward 180 degrees. Raising guard immediately cancels weapon,
 spell, bow, mining, and placement actions; canceled actions never resolve later.
-Shield quality reduces stamina costs, timely raises reduce them further, and
-guard-hit flashes show the protected arc. Guard break has a committed recovery.
+Shield quality reduces stamina costs, and timely raises halve the cost. An
+ordinary 30-damage hit costs the starter buckler 38 stamina when held, or 19
+when timed. Guard-hit flashes show the protected arc. Guard break has a committed recovery.
 Stamina returns while a held guard is not taking hits.
+
+Swords chain an opening slash, return cut, and heavy finisher. Hold the primary
+action or press during recovery to buffer the next cut; an 18-tick idle window
+keeps the chain open. The finisher deals 150% damage with stronger knockback and
+costs 125% stamina. Guarding or switching weapons clears the chain. The renderer
+uses the authoritative combo stage for the blade, body lean, and slash arcs.
+
 
 Adventure enemy charges gouge terrain along their path, heavy strikes excavate
 their marked areas, and expanding shockwaves fracture radial channels. These
@@ -1138,7 +1151,8 @@ end. An unaffordable spell blocks that position without spending or skipping.
 
 Open Inventory → Wandcraft to swap spell runes and upgrades using the carried
 inventory cursor. New travellers have a Hearth wand with Ember in quickbar slot 3, and Prism
-Choir, Bounce, and Double Shot in their pack. The rune merchant sells
+Choir, Rime, Gale, Lumen, Bounce, and Double Shot in their pack. Three Blue
+cordials occupy quickbar slot 5. The rune merchant sells
 all nine upgrades (500–508). Amplify multiplies damage and mana, Bounce adds two
 terrain ricochets, Charge gathers up to twice the power over one second, Double
 Shot doubles each spell's copies, Homing steers travelling spells, and Linger
@@ -1157,8 +1171,9 @@ the held item changes. Socket edits are locked during casting. Queued payloads
 emit after projectile compaction and share the 256-projectile limit.
 
 Wand recipes and sequence positions belong to inventory items, including cursor,
-chest, and dropped-item transfers. Checkpoint v5 stores those recipes, player
-mana recovery, paid windups, and projectile payloads; v2–v4 remain readable.
+chest, and dropped-item transfers. Checkpoint v6 stores those recipes, player
+mana recovery, paid windups, projectile payloads, sword chains, and creature
+navigation state; v2–v5 remain readable.
 The `wand-socket` intent passes through the worker journal and replay codec.
 `magic` covers mana, sequencing, charge, payload payment, save/load, transfers,
 and terrain ricochets; `magic-e2e` exercises the real worker and desktop/touch
@@ -1187,7 +1202,7 @@ physical bites/lunges, melee swings, aimed slams, arrows, and elemental casts.
 attack, and recovery sprite poses follow replicated phase progress. Ordinary
 melee resolves on its contact frame and cannot damage through walls. Death clips
 advance before the corpse is removed. `scripts/author-enemy-art.mjs` rebuilds the
-frost giant, cinderjaw tyrant, mummy, lava toad, guard, and hunter sprite sets.
+frost giant, cinderjaw dragon, mummy, lava toad, guard, and hunter sprite sets.
 
 Frost giants plant their feet for three committed attacks: a ninety-tick frost
 stream, a ground-targeted smash with a sixteen-cell crater and physical debris,
@@ -1201,15 +1216,15 @@ The giant steps through its weight shift and fractures into falling ice plates o
 just this sprite set. `frost-giant-e2e` captures the attacks through the WebGL
 presentation path.
 
-Cinderjaw tyrants are large skeletal theropods confined to bone-highlands surface
+Cinderjaw dragons are large grounded skeletal dragons confined to bone-highlands surface
 habitats. Surface entry checks the entire actor footprint and scans nearby
 loaded ground heights so broad creatures can stand on slopes and fossil ledges.
 Their cycle favors a crushing bite and a committed rush, followed by
 a 96-tick fire stream (32 slow, overlapping pulses) and a long recovery. The
-168×112 quarter-cell sprite articulates its jaw, eight ribs, vertebral tail,
-legs and claws; its furnace glows through the skeleton. Fire pulses emerge from
+84×56 half-cell sprite articulates four legs, swept skull horns, open finger-bone
+wings, ribs and a vertebral tail; an ember heart glows within the cage. Fire pulses emerge from
 the mouth, retain ownership through checkpoints, and ignite open air at impact
-without excavating stone. The tyrant tolerates fire and drops a cinderjaw fang.
+without excavating stone. The dragon tolerates fire and drops a cinderjaw fang.
 `node scripts/author-enemy-art.mjs --only BONE_DINOSAUR` rebuilds its eight clips;
 `dinosaur` checks habitat, combat and persistence, and `dinosaur-e2e` captures
 both melee attacks, the flame stream, burning terrain, and a full sprite atlas.

@@ -622,7 +622,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, false, CRBH_GENERIC,
    CRP_VILLAGE_HUNTER, true, CRB_WALKER, false, CPROT_NONE},
-  {CS_BONE_DINOSAUR, "cinderjaw tyrant", CL_AMPHIBIOUS, 24, 22, 320,
+  {CS_BONE_DINOSAUR, "cinderjaw dragon", CL_AMPHIBIOUS, 24, 22, 320,
    0.34, 0.12, 0.045, 0.075, 1.05,
    0.32, 120, 24,
    34, 0, 8, 0,

@@ -1,4 +1,4 @@
-import { BED_RESULT } from '../wasmBridge/abi.generated.js';
+import { BED_RESULT, ITEM_KIND } from '../wasmBridge/abi.generated.js';
 
 const MESSAGES = {
   [BED_RESULT.DAYTIME]: 'Respawn point set. You can sleep here at night.',
@@ -10,7 +10,7 @@ const MESSAGES = {
   [BED_RESULT.TOO_FAR]: 'Move closer to the bed.',
   [BED_RESULT.AWAKE]: 'You left the bed.',
   [BED_RESULT.MORNING]: 'A new morning. Your respawn point is set.',
-  [BED_RESULT.SPAWN_LOST]: 'Your bed is missing or obstructed. Returned to the starting area.',
+  [BED_RESULT.SPAWN_LOST]: 'Your bed is missing or obstructed. Respawn point reset to the starting area.',
 };
 
 export function createBedHud(root, game, { blocked }) {
@@ -82,6 +82,7 @@ export function createBedHud(root, game, { blocked }) {
   };
   const clickWorld = event => {
     if (!bounds || event.button !== 0 || blocked() || event.composedPath().some(node => /^(BUTTON|INPUT|A)$/.test(node.tagName))) return;
+    if (game.getPlayer()?.heldItemKind === ITEM_KIND.MINING_TOOL) return;
     const canvas = root.host.getBoundingClientRect();
     if (!canvas) return;
     const x = event.clientX - canvas.left, y = event.clientY - canvas.top;

@@ -508,7 +508,7 @@ struct Projectile {
 static const int    PLAYER_W = 4, PLAYER_H = 8;
 // Soft gravity and capped acceleration keep movement readable at sand-cell scale.
 static const double P_GRAVITY = 0.078125, P_MAX_FALL = 6.0;
-static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.875, P_RUN_MULT = 1.7;
+static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.7875, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.035;
 static const double P_AIM_FACING_DEADZONE = 0.2; // retain side while aiming almost exactly vertical
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
@@ -687,6 +687,7 @@ struct Player {
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
   int mineChestId = 0; // Transient target; in-flight mining is cancelled on restore.
+  int mineBedId = 0;
   double mineContactX = 0, mineContactY = 0; // Surface contact for the pending swing.
   // Held mining tool: a destroyed cell drops its material only when this class/tier
   // satisfies the material's MAT_TOOLCLASS/MAT_TOOLTIER gate (set from the selected

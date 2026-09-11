@@ -707,7 +707,7 @@ bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD 
 // (dig ignores material type — flat class speed so only hardness + tier matter).
 void PlayerSystem::resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
-  if (E.planetId == PL_FRONTIER) { p.mineChestId=0; p.mineActive=false; p.mineFootprint=-1; return; }
+  if (E.planetId == PL_FRONTIER) { p.mineChestId=p.mineBedId=0; p.mineActive=false; p.mineFootprint=-1; return; }
   auto clearLayer = [&](Layer* layer) {
     Engine::ActiveLayerScope active(E, layer);
     if (p.mineFootprint >= 0) E.tools.clearMineDamageFootprint(p.mineX, p.mineY, E.tools.getSurvivalFootprint(p.mineFootprint));
@@ -829,6 +829,10 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
         if (E.containers.pack(p,p.mineChestId)) E.playerActionCount++;
         return;
       }
+      if (p.mineBedId) {
+        if (E.beds.dismantle(p,p.mineBedId)) E.playerActionCount++;
+        return;
+      }
       double cx=p.px+p.w*.5,cy=p.py+p.h*.42;
       int x=0,y=0;
       // Validate the same target point that started the swing.
@@ -854,10 +858,12 @@ void PlayerSystem::applyFrontierMining(Player& p, bool primary, bool secondary) 
   if (!primary && !secondary) { resetPlayerMine(p); return; }
   int x=0,y=0,layer=secondary&&!primary ? 1 : 0;
   int chestId=layer ? 0 : E.containers.target(p);
-  if (chestId) { x=(int)std::floor(p.aimX); y=(int)std::floor(p.aimY); }
+  int bedId=layer || chestId ? 0 : E.beds.target(p);
+  if (chestId || bedId) { x=(int)std::floor(p.aimX); y=(int)std::floor(p.aimY); }
   else if (!frontierMineTarget(p,x,y,layer,&p.mineContactX,&p.mineContactY)) { resetPlayerMine(p); return; }
   if (!p.mineActive || p.mineX!=x || p.mineY!=y || p.mineLayer!=layer) resetPlayerMine(p);
   p.mineActive=true;p.mineX=x;p.mineY=y;p.mineLayer=layer;p.mineFootprint=-1;p.mineChestId=chestId;
+  p.mineBedId=bedId;
   p.actionState=AS_AXE;p.actionTicks=p.actionDuration=P_FRONTIER_MINE_SWING-imin(3,(int)p.heldToolTier)*2;p.actionDefinition=0;
   E.audio.emit(SE_SWING,p.px,p.py,.35,EMPTY);
 }

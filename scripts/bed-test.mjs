@@ -1,6 +1,6 @@
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import assert from 'node:assert/strict';
-import { initSandWasm, createEngineWasm, PLANET, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm, PLANET, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { MISSION, BED_RESULT, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { GAME_WORLD } from '../src/sand/content/catalog.js';
 await initSandWasm();
@@ -49,4 +49,30 @@ try {
   assert.equal(e.getPlayer(id).respawnBed,0);assert.equal(e.getPlayer(id).bedStatus,BED_RESULT.SPAWN_LOST);
   assert.ok(Math.hypot(e.getPlayer(id).x-home.x,e.getPlayer(id).y-home.y)<24);
   console.log('ok: bed respawn and obstructed-bed fallback');
+  assert.ok(e.readCheckpoint(saved)); move(); e.setDayPhase(.9);
+  assert.equal(e.useBed(id,bed.id),BED_RESULT.SLEEPING);
+  const miner=e.spawnPlayer(bed.worldX-2-ox,bed.worldY-4-oy);
+  e.setSelectedSlot(miner,1);
+  e.setPlayerInput(miner,{bits:INPUT.PRIMARY,aimX:bed.worldX-ox,aimY:bed.worldY+1-oy});
+  ticks(2); assert.ok(e.getBeds().some(b=>b.id===bed.id),'bed survives the mining windup');
+  ticks(10); e.setPlayerInput(miner,{bits:0,aimX:0,aimY:0});
+  assert.ok(!e.getBeds().some(b=>b.id===bed.id),'pickaxe dismantles the targeted bed');
+  assert.equal(e.getPlayer(id).sleepingBed,0,'breaking an occupied bed wakes the sleeper');
+  assert.equal(e.getPlayer(id).respawnBed,0,'breaking a bed clears its respawn point');
+  assert.equal(e.getPlayer(id).bedStatus,BED_RESULT.SPAWN_LOST);
+  assert.equal(e.useBed(id,bed.id),BED_RESULT.OBSTRUCTED,'a dismantled bed cannot be used');
+  const wood=e.getItems().filter(item=>item.material===MAT.OAK_WOOD&&item.count>0).reduce((sum,item)=>sum+item.count,0)
+    +[id,miner].flatMap(player=>e.getInventory(player).pools.flatMap(pool=>pool.entries))
+      .filter(stack=>stack.material===MAT.OAK_WOOD).reduce((sum,stack)=>sum+stack.count,0);
+  assert.ok(wood>=8,'dismantling returns wood');
+  ticks(120);assert.ok(!e.getBeds().some(b=>b.id===bed.id),'resident furnishing does not recreate the bed');
+  const broken=createEngineWasm(options);
+  try {
+    assert.ok(broken.readCheckpoint(e.writeCheckpoint()));
+    broken.shiftWorldXY(320,0);broken.shiftWorldXY(-320,0);
+    for(let i=0;i<120;i++)broken.stepActors();
+    assert.ok(!broken.getBeds().some(b=>b.id===bed.id),'bed stays removed through checkpoints and streaming');
+    assert.equal(broken.getPlayer(id).respawnBed,0);
+  } finally {broken.destroy();}
+  console.log('ok: pickaxe dismantles beds, returns wood, wakes sleepers, and persists removal');
 } finally {e.destroy();}

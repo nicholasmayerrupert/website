@@ -1,6 +1,7 @@
 import { runBrowserCases } from './browser-harness.mjs';
 import { mkdirSync } from 'node:fs';
 import process from 'node:process';
+import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 const artifacts='.sand-artifacts/adventure-browser';mkdirSync(artifacts,{recursive:true});
 const bedCase=async({page,baseURL,check},touch)=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -32,6 +33,24 @@ const bedCase=async({page,baseURL,check},touch)=>{
  await page.reload({waitUntil:'domcontentloaded'});
  await page.waitForFunction(id=>{const g=document.querySelector('sand-game')?._game;return g?.getSaveState().restored&&g.getPlayer()?.respawnBed===id;},bed,{timeout:60000});
  check('reload restores the selected bed',true);
+ await page.evaluate(()=>document.querySelector('sand-game')._game.selectSlot(1));
+ await page.waitForFunction(kind=>document.querySelector('sand-game')._game.getPlayer().heldItemKind===kind,ITEM_KIND.MINING_TOOL);
+ // Keep the held pickaxe aimed at the mattress while the restored camera settles.
+ for(let i=0;i<30;i++){
+  const point=await page.evaluate(id=>{
+   const host=document.querySelector('sand-game'),g=host._game,b=g.getBeds().find(b=>b.id===id),r=host.getBoundingClientRect();
+   if(!b)return null;
+   const p=g.worldToScreen(b.worldX,b.worldY+1);return {x:r.left+p.x,y:r.top+p.y};
+  },bed);
+  if(!point)break;
+  await page.mouse.move(point.x,point.y);
+  if(!i)await page.mouse.down();
+  await page.waitForTimeout(100);
+ }
+ await page.mouse.up();
+ await page.waitForFunction(id=>!document.querySelector('sand-game')._game.getBeds().some(b=>b.id===id),bed);
+ check('clicking a bed with a pickaxe mines it instead of using it',true);
+ check('mining clears the bed respawn point',await page.evaluate(()=>document.querySelector('sand-game')._game.getPlayer().respawnBed===0));
  check('no browser errors',errors.length===0,errors.join('; '));
 };
 process.exitCode=await runBrowserCases({desktop:args=>bedCase(args,false),mobile:args=>bedCase(args,true)},undefined,{mobile:{viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2}});

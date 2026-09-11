@@ -937,7 +937,9 @@ Players can click a nearby bed or press `E` to set their respawn point. At night
 an unoccupied, safe bed lets the player rest under its blanket and advance to
 morning after two seconds. Leave bed, `E`, `Escape`, movement, and danger interrupt
 rest. Bed choices survive saving and world streaming; missing or blocked beds
-fall back to the original spawn. `embed/bedHud.js` presents the interaction and
+fall back to the original spawn. Mine beds with a pickaxe to dismantle them into
+wood and clear their respawn points; dismantled beds stay removed through saves
+and streaming. `embed/bedHud.js` presents the interaction and
 sleep controls, while `BedSystem` owns eligibility, time, occupancy, and respawn
 anchors. Exercise these paths with the `beds`, `beds-e2e`, and `village-residents` suites.
 Chests retain at least 24 stable storage slots, including empty slots. Inventory

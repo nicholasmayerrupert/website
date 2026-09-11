@@ -3,11 +3,42 @@ bool BedSystem::eligible(const Creature& c) const {
     || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER);
 }
 
+int BedSystem::target(const Player& p) const {
+  double wx = p.aimX + E.fg.worldOffsetX, wy = p.aimY + E.fg.worldOffsetY;
+  for (const auto& bed : beds) {
+    if (!bed.id || wx < bed.wx - 5 || wx > bed.wx + 6 || wy < bed.wy - 1 || wy > bed.wy + 4) continue;
+    double dx = bed.wx - (p.px + E.fg.worldOffsetX + p.w * .5);
+    double dy = bed.wy + 2 - (p.py + E.fg.worldOffsetY + p.h * .5);
+    if (dx * dx + dy * dy <= 28 * 28) return bed.id;
+  }
+  return 0;
+}
+
 bool BedSystem::supported(const AdventureBed& bed) const {
   int x = (int)bed.wx - E.fg.worldOffsetX, y = (int)bed.wy - E.fg.worldOffsetY;
   if (x < 6 || x >= E.cols - 6 || y < 8 || y >= E.rows - 5) return false;
   for (int dx : {-4, 0, 4}) if (!E.psys.playerCellSolid(x + dx, y + 4)) return false;
   return !E.creatures.boxHitsSolid(bed.wx - 2, bed.wy - 4, 4, 8);
+}
+
+bool BedSystem::dismantle(Player& p, int id) {
+  if (!id || target(p) != id) return false;
+  for (auto& bed : beds) if (bed.id == id) {
+    for (auto& player : E.psys.players) {
+      if (player.sleepingBed == id) wake(player, BR_OBSTRUCTED);
+      if (player.respawnBed == id) {
+        player.respawnBed = 0; player.bedStatus = BR_SPAWN_LOST; player.bedRevision++;
+      }
+    }
+    double x = bed.wx - E.fg.worldOffsetX, y = bed.wy - E.fg.worldOffsetY;
+    E.itemsys.spawnItem(OAK_WOOD, 8, x, y, 0, -.4);
+    E.audio.emit(SE_BREAK, x, y, .8, OAK_WOOD);
+    for (int i = 0; i < 8; i++)
+      E.itemsys.spawnParticle(OAK_WOOD, x + i - 4, y + 2, (i - 3.5) * .15, -.6, IT_PARTICLE_LIFE);
+    bed.id = bed.sleeper = 0; bed.seeking = false;
+    return true;
+  }
+  return false;
 }
 
 void BedSystem::furnish(const Creature& resident) {
@@ -34,7 +65,7 @@ void BedSystem::furnish(const Creature& resident) {
     for (const auto& chest : E.containers.chests) if (!chest.packed
         && std::fabs(chest.wx - bed.wx) < 9 && std::fabs(chest.wy - bed.wy) < 5) overlap = true;
     for (const auto& other : beds)
-      if (std::fabs(other.wx - bed.wx) < 12 && std::fabs(other.wy - bed.wy) < 5) overlap = true;
+      if (other.id && std::fabs(other.wx - bed.wx) < 12 && std::fabs(other.wy - bed.wy) < 5) overlap = true;
     if (overlap) continue;
     double score = dx * dx + dy * dy * 4;
     if (score < best) { best = score; chosen = bed; }
@@ -50,6 +81,7 @@ void BedSystem::tick() {
   if (E.actorTick % 60 == 0)
     for (const auto& resident : E.creatures.creatures) if (eligible(resident)) furnish(resident);
   for (auto& bed : beds) {
+    if (!bed.id) continue;
     bed.seeking = false;
     bed.sleeper = 0;
     for (const auto& p : E.psys.players) if (p.active && p.alive && p.sleepingBed == bed.id) bed.sleeper = -p.id;
@@ -89,7 +121,7 @@ bool BedSystem::danger(const Creature& resident) const {
 bool BedSystem::rest(Creature& resident) {
   if (!eligible(resident)) return false;
   auto it = std::find_if(beds.begin(), beds.end(), [&](const auto& bed) { return bed.resident == resident.id; });
-  if (it == beds.end()) return false;
+  if (it == beds.end() || !it->id) return false;
   auto& bed = *it;
   if (bed.sleeper < 0) return false;
   bed.sleeper = 0;
@@ -109,13 +141,14 @@ bool BedSystem::rest(Creature& resident) {
 }
 
 const AdventureBed* BedSystem::goal(int resident) const {
-  for (const auto& bed : beds) if (bed.resident == resident && bed.seeking) return &bed;
+  for (const auto& bed : beds) if (bed.id && bed.resident == resident && bed.seeking) return &bed;
   return nullptr;
 }
 
 int BedSystem::buildSnapshot() {
   snapshot.clear();
   for (const auto& bed : beds) {
+    if (!bed.id) continue;
     snapshot.insert(snapshot.end(), {(float)bed.id, (float)bed.wx, (float)bed.wy,
       (float)bed.resident, (float)bed.sleeper});
   }
@@ -123,6 +156,7 @@ int BedSystem::buildSnapshot() {
 }
 
 const AdventureBed* BedSystem::find(int id) const {
+  if (!id) return nullptr;
   for (const auto& bed : beds) if (bed.id == id) return &bed;
   return nullptr;
 }

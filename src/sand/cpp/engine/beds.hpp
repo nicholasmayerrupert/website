@@ -4,6 +4,7 @@ struct Creature;
 struct Player;
 
 struct AdventureBed {
+  // A zero id retains the resident's dismantled furniture record.
   int id = 0, resident = 0, sleeper = 0, wakeUntil = 0;
   double wx = 0, wy = 0; // center x and mattress top in absolute world cells
   bool seeking = false;
@@ -23,6 +24,8 @@ class BedSystem {
   const AdventureBed* find(int id) const;
   void respawnAnchor(Player& player, double* out);
   bool supported(const AdventureBed& bed) const;
+  int target(const Player& player) const;
+  bool dismantle(Player& player, int bed);
  private:
   Engine& E;
   bool eligible(const Creature& resident) const;

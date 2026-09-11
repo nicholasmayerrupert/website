@@ -246,7 +246,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     if (!std::isfinite(p.px) || !std::isfinite(p.py) || p.selectedSlot<0 || p.selectedSlot>=INV_HOTBAR) return false;
     p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0;
     // Input acknowledgements belong to the browser session, not the saved world.
-    p.inputSeq=0; p.mineActive=false; p.mineChestId=0; p.placeStrokeActive=false;
+    p.inputSeq=0; p.mineActive=false; p.mineChestId=p.mineBedId=0; p.placeStrokeActive=false;
     p.wandChargeTicks=0;
     if (p.mana < 0 || p.mana > PLAYER_MANA_MAX || p.manaRecoveryTicks < 0 || p.manaRecoveryTicks >= 15) return false;
     for (const auto& slot:p.inv) if ((slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) || !E.magic.validItem(slot)) return false;

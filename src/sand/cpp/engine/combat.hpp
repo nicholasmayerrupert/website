@@ -7,19 +7,19 @@ struct EnemyAttack {
 };
 inline const EnemyAttack* enemyAttackProfile(uint8_t species, int pattern = 0) {
   if (species == CS_FROST_GIANT && pattern == 1) {
-    static constexpr EnemyAttack slam{EM_SLAM, 0, 43, 30, 82, 34, 32}; return &slam;
+    static constexpr EnemyAttack slam{EM_SLAM, 0, 32, 30, 62, 34, 32}; return &slam;
   }
   if (species == CS_FROST_GIANT && pattern == 2) {
-    static constexpr EnemyAttack shard{EM_ICE_SHARD, 309, 58, 24, 82, 88, 30}; return &shard;
+    static constexpr EnemyAttack shard{EM_ICE_SHARD, 309, 44, 24, 62, 88, 30}; return &shard;
   }
   if (species == CS_BONE_DINOSAUR && pattern == 1) {
-    static constexpr EnemyAttack rush{EM_LUNGE, 0, 38, 30, 64, 46, 28}; return &rush;
+    static constexpr EnemyAttack rush{EM_LUNGE, 0, 29, 30, 48, 46, 28}; return &rush;
   }
   if (species == CS_BONE_DINOSAUR && pattern == 2) {
-    static constexpr EnemyAttack breath{EM_FIRE_STREAM, 300, 53, 96, 94, 90, 9}; return &breath;
+    static constexpr EnemyAttack breath{EM_FIRE_STREAM, 300, 40, 96, 71, 90, 9}; return &breath;
   }
   if (species == CS_FEN_WISP && pattern == 1) {
-    static constexpr EnemyAttack choir{EM_RUNE, 306, 34, 18, 82, 58, 14}; return &choir;
+    static constexpr EnemyAttack choir{EM_RUNE, 306, 26, 18, 62, 58, 14}; return &choir;
   }
   switch (species) {
 #define SAND_ENEMY_ATTACK(SPECIES, MOVE, RUNE, WINDUP, ACTIVE, RECOVERY, REACH, DAMAGE) \

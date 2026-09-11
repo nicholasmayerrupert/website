@@ -212,7 +212,7 @@ void CombatSystem::enemyAttack(Creature& c) {
   bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
   bool enraged = c.health * 2 < species.maxHealth;
   int damage = heavy ? (enraged ? 28 : 22) : imax(10, imin(18, species.damage));
-  int windup = heavy ? (enraged ? 34 : 48) : 21;
+  int windup = heavy ? (enraged ? 26 : 36) : 16;
   bool ring = (c.species == CS_HOLLOW_BELLKEEPER && c.attackPattern == 0) || (heavy && c.attackPattern == 2 && c.species != CS_MIRE_MATRON);
   int duration = ring ? 50 : 18;
   bool contact = (c.species == CS_THORNBOUND_HART && c.attackPattern == 0) || c.species == CS_BRIAR_WOLF || c.species == CS_FOX || c.species == CS_BONE_GUARD;
@@ -280,7 +280,7 @@ void CombatSystem::enemyAttack(Creature& c) {
     }
     if (c.attackTicks >= duration) {
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-      c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = heavy ? 54 : 44;
+      c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = heavy ? 41 : 33;
     }
     return;
   }
@@ -335,8 +335,8 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
   }
   if (c.attackState == CAS_RECOVERING) {
     c.vx *= .7;
-    c.attackProgress = ++c.attackTicks / 20.0;
-    if (c.attackTicks >= 20) { c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0; }
+    c.attackProgress = ++c.attackTicks / 15.0;
+    if (c.attackTicks >= 15) { c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0; }
     return;
   }
   if (c.attackState == CAS_CHARGING) {

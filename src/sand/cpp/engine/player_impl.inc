@@ -283,6 +283,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   } else if (!findSafeSpawnNearWorld(p.spawnWorldX, p.spawnWorldY, out, &p) &&
       !buildSafeSpawnPad(p.spawnWorldX, p.spawnWorldY, out, &p)) return false;
   p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
+  E.status.clear(p.effects);
   p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
   p.deathTicks = 0; p.buriedTicks = 0; p.bowChargeTicks = 0; p.lastDamageTick = E.actorTick;
   p.respawnPending = false;
@@ -316,6 +317,7 @@ bool PlayerSystem::requestRespawn(int id) {
 void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
   if (p.sleepingBed) E.beds.wake(p);
+  E.status.clear(p.effects);
   p.animState = AS_DEATH; p.animFrame = 0;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
   p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
@@ -393,7 +395,7 @@ void PlayerSystem::updatePlayerVitals(Player& p) {
   if (!p.alive) { p.deathTicks++; return; }
   if (E.planetId == PL_FRONTIER) E.combat.tick(p);
   if (p.input & PI_SHIELD) E.magic.cancelCharge(p);
-  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
+  p.shieldActive = !(p.effects.controls & SC_DISARM) && (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
   if (p.shieldHealth < P_SHIELD_MAX_HEALTH &&
       E.actorTick - p.lastShieldDamageTick >= P_SHIELD_RECHARGE_DELAY)
     p.shieldHealth = imin(P_SHIELD_MAX_HEALTH,
@@ -493,7 +495,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (E.planetId == PL_FRONTIER && !(p.input & PI_SHIELD) && wasGuarding) {
     p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
   }
-  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
+  p.shieldActive = !(p.effects.controls & SC_DISARM) && (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0 && (E.planetId != PL_FRONTIER || E.combat.canGuard(p));
   if (E.planetId == PL_FRONTIER && p.shieldActive && !wasGuarding) {
     p.actionState = AS_GUARD_RAISE; p.actionTicks = p.actionDuration = 8; p.actionDefinition = 0;
     p.bowChargeTicks = 0;
@@ -503,12 +505,14 @@ void PlayerSystem::integratePlayer(Player& p) {
     E.inv.resetPlayerPlaceStroke(p);
   }
   bool wasGrounded = p.grounded;
+  bool rooted = (p.effects.controls & SC_ROOT) != 0;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   double moveX = p.analogInput ? p.inputX : ((right ? 1.0 : 0.0) - (left ? 1.0 : 0.0));
+  if (rooted) moveX = 0;
   double moveStrength = std::fabs(moveX);
   bool run = (p.input & PI_RUN) != 0;
-  bool wantJump = (p.input & PI_JUMP) != 0;
-  bool wantJetpack = E.planetId != PL_FRONTIER && (p.input & PI_JETPACK) != 0;
+  bool wantJump = !rooted && (p.input & PI_JUMP) != 0;
+  bool wantJetpack = !rooted && E.planetId != PL_FRONTIER && (p.input & PI_JETPACK) != 0;
   p.jetpackActive = false;
   // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
   // run); past the higher SWIM threshold he can also swim upward with jump/up.
@@ -518,7 +522,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   double forceX = 0, forceY = 0;
   bool spatialForce = E.forces.sampleActor(
     p.px + p.w * 0.5, p.py + p.h * 0.5, forceX, forceY);
-  double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
+  double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0) * p.effects.movementScale;
   if (p.analogInput) maxRun *= moveStrength;
   if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
 
@@ -558,7 +562,7 @@ void PlayerSystem::integratePlayer(Player& p) {
 
   if (E.planetId == PL_FRONTIER) {
     if (p.grounded) p.airDashUsed = false;
-    bool dodge = (p.input & PI_DOWN) && !(p.movementPrevInput & PI_DOWN);
+    bool dodge = !rooted && (p.input & PI_DOWN) && !(p.movementPrevInput & PI_DOWN);
     int cost = E.combat.hasCharm(p, 224) ? 16 : 24;
     bool canDash = p.grounded || ((p.abilities & 1) && !p.airDashUsed);
     if (dodge && canDash && !p.dodgeCooldown && p.stamina >= cost) {
@@ -567,7 +571,7 @@ void PlayerSystem::integratePlayer(Player& p) {
       p.dodgeCooldown = 36; p.stamina -= cost;
       if (!p.grounded) { p.airDashUsed = true; p.vy = 0; }
     }
-    if (p.actionTicks > 0 && (p.actionState == AS_DODGE || p.actionState == AS_DASH)) {
+    if (!rooted && p.actionTicks > 0 && (p.actionState == AS_DODGE || p.actionState == AS_DASH)) {
       p.vx = p.facing * 2.4;
       if (p.actionState == AS_DASH) p.vy = -.08;
     }
@@ -957,7 +961,7 @@ void PlayerSystem::applyPlayerTools() {
   for (auto& p : players) {
     // Survival inventory drives the controls (selected slot = mine-tool or place-
     // material). Creative keeps the classic tool flow below.
-    if (p.sleepingBed) { resetPlayerMine(p); p.prevInput = p.input; continue; }
+    if (p.sleepingBed || (p.effects.controls & SC_DISARM)) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (E.survivalInventory) { E.inv.applyInventoryPlayer(p); continue; }
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
@@ -1022,6 +1026,7 @@ void PlayerSystem::applyPlayerTools() {
 void PlayerSystem::updatePlayers() {
   for (auto& p : players) {
     if (p.active && !p.alive && p.respawnPending) respawnPlayer(p);
+    if (p.active && p.alive) E.status.tick(p);
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.shieldHurtCooldown > 0) p.shieldHurtCooldown--;
     if (p.active && p.alive && !p.sleepingBed) integratePlayer(p);
@@ -1066,7 +1071,7 @@ void PlayerSystem::stepPlayerOnly(int id) {
 // Snap a player to an authoritative state (reconciliation), before replaying its
 // unacknowledged inputs.
 void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
-                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput) {
+                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls) {
   Player* p = findPlayer(id);
   if (!p) return;
   p->px = x; p->py = y; p->vx = vx; p->vy = vy;
@@ -1074,6 +1079,9 @@ void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double 
   p->jetpackFuel = std::isfinite(jetpackFuel) ? std::max(0.0, std::min(1.0, jetpackFuel)) : 0.0;
   p->jetpackActive = jetpackActive != 0 && p->jetpackFuel > 0;
   p->abilities = abilities; p->stamina = stamina; p->actionTicks = actionTicks; p->actionState = actionState;
+  p->effects.movementScale = std::isfinite(statusMoveScale) ? std::clamp(statusMoveScale, .1, 3.0) : 1;
+  p->effects.controls = statusControls & (SC_ROOT | SC_DISARM);
+  if (!p->effects.instances.empty()) E.status.rebuild(p->effects);
   p->dodgeCooldown = dodgeCooldown; p->airDashUsed = airDashUsed != 0; p->movementPrevInput = movementPrevInput;
 }
 
@@ -1106,6 +1114,8 @@ int PlayerSystem::buildPlayerSnapshot() {
       .manaMax = WritePlayerSnapshotManaMax{PLAYER_MANA_MAX},
       .manaCastCost = WritePlayerSnapshotManaCastCost{E.magic.compileCast(held,p.wandChargeTicks).manaCost},
       .spellCharge = WritePlayerSnapshotSpellCharge{p.wandChargeTicks / (float)(WAND_CHARGE_TICKS + 1)},
+      .statusMoveScale = WritePlayerSnapshotStatusMoveScale{(float)p.effects.movementScale},
+      .statusControls = WritePlayerSnapshotStatusControls{p.effects.controls},
     });
   }
   return (int)players.size();

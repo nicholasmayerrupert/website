@@ -13,6 +13,11 @@ workers, and the ship/debrief presentation.
 The runtime ships as a framework-free `<sand-game>` Web Component. React only
 mounts that element on this site.
 
+Timed buffs and debuffs share the C++ `StatusEffectSystem`, with data-defined
+stacking, periodic damage/healing, movement, control, immunity and cleansing.
+See [STATUS_EFFECTS.md](STATUS_EFFECTS.md) for ownership, save/prediction rules,
+design research, and how to add effects and gear sources.
+
 Weather defaults to pinned `clear`. `weather="auto"` runs a deterministic
 wall-clock cycle that fades the presentation between clear and rain (sky tint,
 cloud count, precipitation, and skylight interpolate on a continuous mix) and
@@ -404,7 +409,7 @@ body bounds faintly visible for context.
   implementation include):
   audio, camera, components, crafting, creatures, explosives, spatial forces, GL presentation,
   growth, inventory, items, magic, missions, replication, player, projectiles, reactions,
-  renderer, rigid bodies, terrain, tools, and semantic world context.
+  renderer, rigid bodies, status effects, terrain, tools, and semantic world context.
 - `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
   feature hierarchy and absolute-coordinate semantic queries.
 - `cpp/engine/missions.hpp`, `missions.inc`, and `missions_impl.inc`: authored
@@ -791,7 +796,8 @@ those authoritative snapshots rather than duplicating weapon or enemy policy in
 JavaScript.
 
 Creatures use absolute-world poses so they survive streaming. Off-window
-creatures hibernate, natural populations are capped locally and globally, and
+creatures hibernate, nearby dormant creatures count toward local spawn density,
+natural populations are capped locally and globally, and
 explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
 crawlers, moles, and birds enter quietly on an ambient cadence, use a three-actor
 share of the eight-actor natural cap, and retain material-aware water, surface,

@@ -93,7 +93,7 @@ export function createWorldWorkerClient(ctx) {
   let mission = null;
   let saveState = { savedAt: 0, error: '' };
   let chests = [], chestLoot = { id: 0, slots: [] };
-  let beds = [], dayClock = null;
+  let beds = [], dayClock = null, statusEffects = [];
   let discovery = new Int32Array();
   let missionSignature = '';
   let missionDirty = false;
@@ -778,6 +778,9 @@ export function createWorldWorkerClient(ctx) {
     testCreatureRuntime(simulate, naturalSpawn = false) {
       post({ type: 'test-creature-runtime', simulate: !!simulate, naturalSpawn: !!naturalSpawn });
     },
+    testStatusEffect(kind, id, effect, ticks) {
+      post({ type: 'test-status-effect', kind, id, effect, ticks });
+    },
     testNaturalSpawn(species, salt = 0, forceBreach = false) {
       post({
         type: 'test-natural-spawn', species: species | 0, salt: salt | 0,
@@ -1415,6 +1418,7 @@ export function createWorldWorkerClient(ctx) {
         if (packet.chests !== undefined) chests = packet.chests;
         if (packet.chestLoot !== undefined) chestLoot = packet.chestLoot;
         if (packet.beds !== undefined) beds = packet.beds;
+        if (packet.statusEffects !== undefined) statusEffects = packet.statusEffects;
         if (packet.dayClock !== undefined) dayClock = packet.dayClock;
         if (packet.itemData !== undefined) {
           items = new Float32Array(packet.itemData);
@@ -1566,6 +1570,7 @@ export function createWorldWorkerClient(ctx) {
     },
     getChests() { return chests; },
     getBeds() { return beds; },
+    getStatusEffects() { return statusEffects; },
     getDayClock() { return dayClock; },
     getChestLoot() { return chestLoot; },
     consumeMissionDirty() {

@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 7;
+static constexpr uint32_t CHECKPOINT_VERSION = 8;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -80,14 +80,33 @@ struct CheckpointArchive {
     if (version >= 5) fields(v.cast,v.spellNode,v.spellTimer,v.spellBounces);
     else if (reading) { v.cast = SpellCast(); v.spellNode = v.spellTimer = v.spellBounces = 0; }
   }
+  void field(StatusState& state) {
+    uint32_t n = count(state.instances.size());
+    if (!valid || n > STATUS_MAX_INSTANCES) { valid = false; return; }
+    if (reading) state.instances.resize(n);
+    for (auto& v : state.instances) fields(v.effect,v.remainingTicks,v.durationTicks,v.periodTicks,v.strength,v.sourceKind,v.sourceId);
+  }
   void field(Creature& v) {
     static_assert(offsetof(Creature, navigation) == 200);
     raw(&v, offsetof(Creature, navigation));
     auto& n = v.navigation;
     if (version >= 6) fields(n.planTicks,n.moveDir,n.jumpCooldown,n.blockedTicks,n.escapeTicks,n.turnCooldown,n.avoidTurn,n.airborneDir,n.arrived);
     else if (reading) v.navigation = CreatureNavigation();
+    if (version >= 8) field(v.effects);
+    else if (reading) {
+      v.effects = StatusState();
+      const int ids[] = {STATUS_BURNING, STATUS_CHILLED, STATUS_ROOTED};
+      for (int i = 0; i < 3; i++) if (v.checkpointStatusPrefix[i] > 0) {
+        const auto& def = STATUS_DEFINITIONS[ids[i]];
+        int ticks = imin(v.checkpointStatusPrefix[i], def.maxTicks);
+        int period = def.periodTicks ? (ticks % def.periodTicks ? ticks % def.periodTicks : def.periodTicks) : 0;
+        v.effects.instances.push_back({ids[i],ticks,ticks,period,1,SA_NONE,0});
+      }
+    }
+    if (reading) for (int& reserved : v.checkpointStatusPrefix) reserved = 0;
   }
   void field(Player& v) {
+    if (version >= 8) field(v.effects); else if (reading) v.effects = StatusState();
     if (version >= 7) fields(v.respawnBed,v.sleepingBed,v.sleepTicks,v.bedStatus,v.bedRevision);
     else if (reading) v.respawnBed = v.sleepingBed = v.sleepTicks = v.bedStatus = v.bedRevision = 0;
     fields(v.id,v.active,v.alive,v.px,v.py,v.spawnWorldX,v.spawnWorldY,v.respawnPending,v.vx,v.vy,v.w,v.h,v.facing,v.grounded,v.selectedTool,v.aimX,v.aimY,v.input,v.inputX,v.inputY,v.analogInput,v.prevInput,v.jumpReady,v.inputSeq,v.health,v.hurtCooldown,v.lastDamageTick,v.shieldHealth,v.shieldHurtCooldown,v.lastShieldDamageTick,v.shieldActive,v.deathTicks,v.buriedTicks,v.bowChargeTicks,v.jetpackFuel,v.jetpackActive,v.landingImpact,v.weaponKick,v.toolCooldown,v.emptyWeaponTriggerLatch,v.mineActive,v.mineLayer,v.mineX,v.mineY,v.mineFootprint,v.heldToolClass,v.heldToolTier,v.inv,v.equipment,v.mana,v.stamina,v.actionTicks,v.actionState,v.actionDuration,v.actionDefinition,v.dodgeCooldown,v.abilities,v.airDashUsed,v.movementPrevInput,v.pools,v.selectedSlot,v.selectedFootprint,v.placeStrokeActive,v.placeStrokeX,v.placeStrokeY,v.placeStrokeLayer,v.placeStrokeFootprint,v.placeStrokeMaterial,v.cursor,v.animState,v.animFrame);
@@ -190,6 +209,8 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   auto migrateSeed=[&](InvSlot& slot){ E.canonicalizeSeed(slot.material,slot.plantType); E.magic.initializeWand(slot); };
   for (auto& chest:E.containers.chests) for (auto& slot:chest.loot) migrateSeed(slot);
   for (auto& p:E.psys.players) {
+    if (!E.status.valid(p.effects)) return false;
+    E.status.rebuild(p.effects);
     for (auto& slot:p.inv) migrateSeed(slot);
     migrateSeed(p.cursor);
     if (!std::isfinite(p.px) || !std::isfinite(p.py) || p.selectedSlot<0 || p.selectedSlot>=INV_HOTBAR) return false;
@@ -216,6 +237,13 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
         projectile.spellTimer < 0 || projectile.spellTimer > 24 || projectile.spellBounces < 0 || projectile.spellBounces > 8) return false;
   for (const auto& chest:E.containers.chests) for (const auto& slot:chest.loot) if (!E.magic.validItem(slot)) return false;
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;
+  auto restoreEffects = [&](Creature& c) {
+    if (!E.status.valid(c.effects)) return false;
+    E.status.rebuild(c.effects);
+    return true;
+  };
+  for (auto& c:E.creatures.creatures) if (!restoreEffects(c)) return false;
+  for (auto& bucket:E.creatures.dormantRegions) for (auto& c:bucket.second) if (!restoreEffects(c)) return false;
   E.rigid.clearContactCaches(); E.containers.activeChest=0; E.discovery.revision++;
   return true;
 }

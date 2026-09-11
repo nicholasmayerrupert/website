@@ -714,5 +714,29 @@ for (const [species, label] of [
     results.every(Boolean));
 }
 
+
+// A nearby hibernating animal still occupies its habitat across a stream edge.
+{
+  const e = attachTestHooks(createEngineWasm({cols:448,rows:320,worldSeed:0xD1EC70,sinksOn:false,infinite:true}));
+  try {
+    const ox=e.getWorldOffsetX(),oy=e.getWorldOffsetY();
+    const platform=(wx,wy)=>{
+      for(let y=wy-8;y<wy+4;y++)for(let x=wx-3;x<wx+12;x++)e.eraseDisc(x-e.getWorldOffsetX(),y-oy,0);
+      for(let x=wx-3;x<wx+12;x++)e.paintDisc(x-e.getWorldOffsetX(),wy+4-oy,0,MAT.STONE,true);
+      e.syncComponents();
+    };
+    const wx=ox+80,wy=e.worldSurfaceAbsAt(wx)-4;platform(wx,wy);
+    const id=e._spawnNaturalAt(CREATURE.FOX,wx,wy);
+    check('stream density fixture starts with a naturally spawned fox',id>0);
+    e.shiftWorldXY(96,0);e.setCreatureRuntime(true,false);e.stepActors();
+    check('the original fox hibernates outside the loaded window',!e.getCreatures().some(c=>c.id===id));
+    const nextX=wx+64,nextY=e.worldSurfaceAbsAt(nextX)-4;platform(nextX,nextY);
+    check('dormant fox prevents a nearby natural replacement',e._spawnNaturalAt(CREATURE.FOX,nextX,nextY)===0);
+    e.shiftWorldXY(-96,0);e.stepActors();
+    const foxes=e.getCreatures().filter(c=>c.alive&&c.species===CREATURE.FOX);
+    check('returning restores exactly the original fox',foxes.length===1&&foxes[0].id===id);
+  } finally { e.destroy(); }
+}
+
 if (done()) process.exit(1);
 console.log('creature tests passed');

@@ -1,3 +1,11 @@
+namespace {
+void applyStatusMovement(const Creature& c, CreatureSpecies& s) {
+  double scale = (c.effects.controls & SC_ROOT) ? 0 : c.effects.movementScale;
+  s.walkSpeed *= scale; s.swimSpeed *= scale;
+  if (c.effects.controls & SC_ROOT) s.jumpSpeed = 0;
+}
+}
+
 bool CreatureSystem::isProtectedNpc(const Creature& c) const {
   if (c.npcId) return true;
   const CreatureSpecies& definition = species(c);
@@ -173,8 +181,29 @@ int CreatureSystem::worldSpawnWeight(
     ? worldSpawnWeight(speciesId, spawnWorldContext(wx, wy)) : 0;
 }
 
+int CreatureSystem::dormantDensity(int speciesId, double wx, double wy, int radius) const {
+  int n = 0;
+  double r2 = (double)radius * radius;
+  int x0 = (int)std::floor((wx - radius) / HIBERNATE_REGION);
+  int x1 = (int)std::floor((wx + radius) / HIBERNATE_REGION);
+  int y0 = (int)std::floor((wy - radius) / HIBERNATE_REGION);
+  int y1 = (int)std::floor((wy + radius) / HIBERNATE_REGION);
+  // Nearby sleeping populations reserve their habitat even across a window edge.
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    uint64_t key = ((uint64_t)(uint32_t)x << 32) | (uint32_t)y;
+    auto found = dormantRegions.find(key);
+    if (found == dormantRegions.end()) continue;
+    for (const Creature& c : found->second) {
+      if (!c.alive || (speciesId >= 0 ? c.species != speciesId : !species(c).countsTowardNaturalCap)) continue;
+      double dx = c.wx - wx, dy = c.wy - wy;
+      if (dx * dx + dy * dy <= r2) n++;
+    }
+  }
+  return n;
+}
+
 int CreatureSystem::localDensity(uint8_t speciesId, double wx, double wy, int radius) const {
-  double r2 = (double)radius * radius; int n = 0;
+  double r2 = (double)radius * radius; int n = dormantDensity(speciesId, wx, wy, radius);
   for (const Creature& c : creatures) {
     if (!c.alive || c.species != speciesId) continue;
     double dx = c.wx - wx, dy = c.wy - wy;
@@ -189,7 +218,7 @@ int CreatureSystem::localDensity(uint8_t speciesId, double wx, double wy, int ra
 }
 
 int CreatureSystem::localDensityAll(double wx, double wy, int radius) const {
-  double r2 = (double)radius * radius; int n = 0;
+  double r2 = (double)radius * radius; int n = dormantDensity(-1, wx, wy, radius);
   for (const Creature& c : creatures) {
     if (!c.alive || !species(c).countsTowardNaturalCap) continue;
     double dx = c.wx - wx, dy = c.wy - wy;
@@ -544,7 +573,6 @@ int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy
 }
 
 void CreatureSystem::maintainPopulation() {
-  const int HIBERNATE_REGION = 128;
   auto regionKey = [&](int rx, int ry) {
     return ((uint64_t)(uint32_t)rx << 32) | (uint32_t)ry;
   };
@@ -921,7 +949,8 @@ static bool moveCreatureAxis(Creature& c, double& position, double delta,
 #include "creature_navigation.inc"
 
 void CreatureSystem::steerAquatic(Creature& c) {
-  const CreatureSpecies& s = species(c);
+  CreatureSpecies s = species(c);
+  applyStatusMovement(c, s);
   double tx = 0, ty = 0; Creature* prey = nullptr; Player* player = nullptr;
   bool hasTarget = targetPoint(c, tx, ty, &prey, &player);
   double desiredX, desiredY;
@@ -967,14 +996,16 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
   refreshWander(c);
   double desiredX = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 0.24 : -0.24)
                                      : c.wanderDir * 0.12;
+  double movementScale = c.effects.controls & SC_ROOT ? 0 : c.effects.movementScale;
+  desiredX *= movementScale;
   c.vx = accelerateToward(c.vx, desiredX, 0.025);
   c.vy = std::min(2.4, c.vy + E.scaledGravity(0.075));
   c.vx *= c.grounded ? 0.90 : 0.995;
   int flopPeriod = 32 + (c.id % 17);
-  if (c.grounded && ((E.actorTick + c.id * 11) % flopPeriod) == 0) {
+  if (movementScale && c.grounded && ((E.actorTick + c.id * 11) % flopPeriod) == 0) {
     double kick = 0.20 + whash1(E.fg.worldSeed ^ 0xF10F00u, c.id + E.actorTick) * 0.18;
     c.facing = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 1 : -1) : c.wanderDir;
-    c.vx = c.facing * kick;
+    c.vx = c.facing * kick * movementScale;
     c.vy = -0.58 - whash1(E.fg.worldSeed ^ 0xF10F22u, c.id + E.actorTick) * 0.28;
   }
   applySpatialForce(c);
@@ -992,6 +1023,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     s.walkSpeed = .10; s.swimSpeed = .18; s.accel = .025;
     s.gravity = .065; s.jumpSpeed = .7; s.fluidThreshold = .35;
   }
+  applyStatusMovement(c, s);
   double wet = fluidCoverage(c.wx, c.wy, s.w, s.h);
   double tx = 0, ty = 0; bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (wet >= s.fluidThreshold) {
@@ -1085,7 +1117,8 @@ void CreatureSystem::moveAmphibious(Creature& c) {
 }
 
 void CreatureSystem::moveFlying(Creature& c) {
-  const CreatureSpecies& s = species(c);
+  CreatureSpecies s = species(c);
+  applyStatusMovement(c, s);
   const bool submerged = fluidCoverage(c.wx, c.wy, s.w, s.h) > 0;
   double tx = 0, ty = 0;
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
@@ -1483,6 +1516,7 @@ void CreatureSystem::killCreature(Creature& c) {
     c.deathTicks = 0;
     return;
   }
+  E.status.clear(c.effects);
   c.health = 0;
   emitVoice(c, SE_CREATURE_DEATH);
   E.missions.onCreatureKilled(c);
@@ -1649,9 +1683,8 @@ void CreatureSystem::updateCreatures() {
     if (navigation.escapeTicks > 0) navigation.escapeTicks--;
     if (navigation.turnCooldown > 0) navigation.turnCooldown--;
     double priorX = c.wx, priorY = c.wy;
-    if (c.burnTicks > 0) { c.burnTicks--; if (c.burnTicks % 30 == 0 && c.species != CS_LAVA_TOAD && c.species != CS_BONE_DINOSAUR) c.health -= 3; }
-    if (c.slowTicks > 0) c.slowTicks--;
-    if (c.rootTicks > 0) c.rootTicks--;
+    E.status.tick(c);
+    if (!c.alive) continue;
     bool sleeping = E.beds.rest(c);
     if (sleeping) continue;
     if (species(c).locomotion == CL_AQUATIC) {
@@ -1666,8 +1699,6 @@ void CreatureSystem::updateCreatures() {
     else if (species(c).locomotion == CL_FLYING) moveFlying(c);
     else if (species(c).locomotion == CL_AMPHIBIOUS || c.roamRadius) moveAmphibious(c);
     else { c.vx = 0; c.vy = 0; c.grounded = true; }
-    if (c.rootTicks > 0) { c.wx = priorX; c.vx = 0; }
-    else if (c.slowTicks > 0) { c.wx = priorX + (c.wx-priorX)*.35; c.vx *= .35; }
     updateFacing(c, c.wx - priorX);
     // Terrain can settle or be placed through an entity after movement. Mere
     // floor contact is outside the AABB and harmless; sustained burial over at
@@ -1679,7 +1710,7 @@ void CreatureSystem::updateCreatures() {
     if (contactHazard != CHP_NONE && !((c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)) || (c.species == CS_BONE_DINOSAUR && contactHazard == CHP_FIRE)))
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
     int priorAttack = c.attackState, priorCooldown = c.attackCooldown;
-    if (encounterEngaged && !c.rootTicks) attackTarget(c);
+    if (encounterEngaged && !(c.effects.controls & SC_DISARM)) attackTarget(c);
     if ((priorAttack != CAS_FIRING && c.attackState == CAS_FIRING) ||
         (priorAttack == CAS_IDLE && c.attackState == CAS_IDLE && priorCooldown == 0 && c.attackCooldown > 0))
       emitVoice(c, SE_CREATURE_ATTACK);

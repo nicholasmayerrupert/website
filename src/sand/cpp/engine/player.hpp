@@ -69,7 +69,7 @@ class PlayerSystem {
   void stepPlayerOnly(int id);
   void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
                       double jetpackFuel = 1.0, int jetpackActive = 0, int abilities = 0, int stamina = 100,
-                      int actionTicks = 0, int actionState = 0, int dodgeCooldown = 0, int airDashUsed = 0, int movementPrevInput = 0);
+                      int actionTicks = 0, int actionState = 0, int dodgeCooldown = 0, int airDashUsed = 0, int movementPrevInput = 0, double statusMoveScale = 1, int statusControls = 0);
   int buildPlayerSnapshot();
 
  private:

@@ -11,6 +11,7 @@
 #include "engine/world_context.hpp"
 #include "engine/renderer.hpp"
 #include "engine/creatures.hpp"
+#include "engine/status.hpp"
 #include "engine/checkpoint.hpp"
 #include "engine/containers.hpp"
 #include "engine/beds.hpp"
@@ -40,6 +41,7 @@ struct Engine {
   ContentSystem content{*this};
   DiscoverySystem discovery{*this};
   CombatSystem combat{*this};
+  StatusEffectSystem status{*this};
   MagicSystem magic{*this};
   ContainerSystem containers{*this};
   BedSystem beds{*this};
@@ -79,6 +81,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 // Subsystem method bodies require the complete Engine definition.
 #include "engine/content_impl.inc"
 #include "engine/combat_impl.inc"
+#include "engine/status_impl.inc"
 #include "engine/magic_recipes.inc"
 #include "engine/magic_impl.inc"
 #include "engine/containers_impl.inc"

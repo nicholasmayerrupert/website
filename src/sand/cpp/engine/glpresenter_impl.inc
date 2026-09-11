@@ -1262,6 +1262,8 @@ void GLPresenter::glDrawChests() {
   }
 }
 
+#include "gl_status_effects.inc"
+
 void GLPresenter::glDrawPlayers() {
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
@@ -1280,6 +1282,7 @@ void GLPresenter::glDrawPlayers() {
                       (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
                       p[GLP_WEAPON_KICK], (int)p[GLP_HURT_COOLDOWN],
                       p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment, (int)p[GLP_ACTION_TICKS], (int)p[GLP_ACTION_DURATION], (int)p[GLP_SWORD_COMBO]);
+      if (p[GLP_ALIVE] > .5f) glDrawStatusEffects((int)p[GLP_STATUS_VISUALS], p[GLP_X], p[GLP_Y], p[GLP_W], p[GLP_H], i * .37);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
@@ -1294,6 +1297,7 @@ void GLPresenter::glDrawPlayers() {
                       p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
                       p.shieldHealth, p.shieldActive, p.weaponKick, p.hurtCooldown, p.id == glOwnPlayerId,
                       glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment, p.actionTicks, p.actionDuration, p.swordCombo);
+      if (p.alive) glDrawStatusEffects(p.effects.visuals, p.px, p.py, p.w, p.h, p.id * .37);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -2445,6 +2449,7 @@ void GLPresenter::glDrawCreatures() {
                         c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], (int)c[CSN_HURT_COOLDOWN], c[CSN_SHELTER_CHARGE],
                         glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID]);
+      if (c[CSN_ALIVE] && !c[CSN_SPAWN_PROGRESS]) glDrawStatusEffects((int)c[CSN_STATUS_VISUALS], c[CSN_X], c[CSN_Y], c[CSN_W], c[CSN_H], c[CSN_ID] * .37, (int)c[CSN_SPECIES]);
     }
   } else {
     for (const Creature& c : E.creatures.creatures) {
@@ -2457,6 +2462,7 @@ void GLPresenter::glDrawCreatures() {
                         c.spawnProgress, c.rescueProgress, c.hurtCooldown, c.shelterCharge,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
                         camCol, camRow, c.npcId);
+      if (c.alive) glDrawStatusEffects(c.effects.visuals, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h, c.id * .37, c.species);
     }
     for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {
       const CreatureSpecies& s = CREATURE_SPECIES[p.species];

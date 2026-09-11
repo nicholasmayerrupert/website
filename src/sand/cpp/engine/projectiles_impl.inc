@@ -619,7 +619,7 @@ void ProjectileSystem::updateProjectiles() {
       if (materialStopsPoint(px + offset[0], py + offset[1])) return true;
     return false;
   };
-  auto damageSplash = [&](double px, double py, int radius, int damage, int owner, bool launch) {
+  auto damageSplash = [&](double px, double py, int radius, int damage, int owner, bool launch, const ContentGear* effectGear = nullptr) {
     double r2 = (double)radius * radius;
     for (Player& player : E.psys.players) {
       if (!player.active || !player.alive || friendlyOwner(owner) || (owner > 0 && player.id == owner)) continue;
@@ -627,7 +627,9 @@ void ProjectileSystem::updateProjectiles() {
       double ny = std::max(player.py, std::min(py, player.py + player.h));
       double dx = px - nx, dy = py - ny;
       if (dx * dx + dy * dy > r2) continue;
-      E.psys.damagePlayer(player, damage, 16, px, py);
+      int dealt = E.psys.damagePlayer(player, damage, 16, px, py);
+      if (dealt && effectGear) for (const auto& effect : effectGear->statusEffects)
+        E.status.apply(player, effect.effect, effect.durationTicks, 1, owner > 0 ? SA_PLAYER : owner < 0 ? SA_CREATURE : SA_NONE, std::abs(owner));
       if (launch) {
         double dir = player.px + player.w * .5 >= px ? 1.0 : -1.0;
         player.vx += dir * .72;
@@ -645,6 +647,8 @@ void ProjectileSystem::updateProjectiles() {
       double dx = wx - nx, dy = wy - ny;
       if (dx * dx + dy * dy > r2) continue;
       c.health -= damage;
+      if (effectGear) for (const auto& effect : effectGear->statusEffects)
+        E.status.apply(c, effect.effect, effect.durationTicks, 1, owner > 0 ? SA_PLAYER : owner < 0 ? SA_CREATURE : SA_NONE, std::abs(owner));
       c.hurtCooldown = 12;
       if (c.health > 0) E.creatures.emitVoice(c, SE_CREATURE, .7);
       if (launch) {
@@ -936,7 +940,7 @@ void ProjectileSystem::updateProjectiles() {
             if (!c.alive || E.creatures.isProtectedNpc(c) || (p.owner < 0 && c.id == -p.owner)) continue;
             const auto& s = E.creatures.species(c);
             if (pull(c.wx - E.fg.worldOffsetX + s.w * .5, c.wy - E.fg.worldOffsetY + s.h * .5, c.vx, c.vy, 1.0))
-              c.slowTicks = imax(c.slowTicks, 6);
+              E.status.apply(c, STATUS_CHILLED, 6, 1, p.owner > 0 ? SA_PLAYER : p.owner < 0 ? SA_CREATURE : SA_NONE, std::abs(p.owner));
           }
           for (auto& hero : E.psys.players) if (hero.active && hero.alive && hero.id != p.owner)
             pull(hero.px + hero.w * .5, hero.py + hero.h * .5, hero.vx, hero.vy, .65);
@@ -1037,7 +1041,7 @@ void ProjectileSystem::updateProjectiles() {
         } else if (gear && (gear->spell == SP_WINTERBREATH || gear->spell == SP_CINDERMAW)) {
           int radius = shard ? 11 : breath ? 5 : frost ? 7 : 5;
           if (shard) E.combat.enemyTerrainImpact(p.px, p.py, 7, ICE);
-          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, false);
+          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, false, gear);
           Engine::ActiveLayerScope foreground(E, &E.fg);
           if (frost) {
             freezeSurface(p.px, p.py, radius);
@@ -1046,7 +1050,7 @@ void ProjectileSystem::updateProjectiles() {
               const auto& def = E.creatures.species(c);
               if (std::hypot(c.wx - E.fg.worldOffsetX + def.w*.5 - p.px,
                   c.wy - E.fg.worldOffsetY + def.h*.5 - p.py) < radius + def.w*.5) {
-                c.slowTicks = imax(c.slowTicks, 150); c.attackCooldown = imax(c.attackCooldown, 45);
+                c.attackCooldown = imax(c.attackCooldown, 45);
               }
             }
           } else {
@@ -1066,7 +1070,7 @@ void ProjectileSystem::updateProjectiles() {
           int radius = p.charge > 18 ? 12 : 8;
           uint8_t material = p.fuse == 301 ? WATER : p.fuse == 304 ? ACID : p.fuse == 302 ? ICE : FIRE;
           E.combat.enemyTerrainImpact(p.px, p.py, radius, material);
-          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, true);
+          damageSplash(p.px, p.py, radius, (int)p.charge, p.owner, true, gear);
           if (material == WATER || material == ACID || material == FIRE) {
             Engine::ActiveLayerScope foreground(E, &E.fg);
             E.tools.paintDisc((int)p.px, (int)p.py, material == WATER ? 4 : 2, material, false);

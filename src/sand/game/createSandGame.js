@@ -517,6 +517,7 @@ export function createSandGame(container, opts = {}) {
     chestSlot(chest, slot, action = 0) { ctx.worldWorker?.intent('chest-slot', { chest, slot, action }); },
     useBed(bed) { ctx.worldWorker?.intent('bed', { bed }); },
     getBeds() { return ctx.worldWorker?.getBeds() || []; },
+    getStatusEffects() { return ctx.worldWorker?.getStatusEffects() || []; },
     getDiscovery() { return ctx.worldWorker?.getDiscovery() || new Int32Array(); },
     getTalkableActors() {
       if (!ctx.engine) return [];

@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readSchemaJson } from './schema-json.mjs';
+import { compileStatusEffects } from './status-effect-schema.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -1235,6 +1236,10 @@ for (const [k, v] of Object.entries(constants)) {
   if (k.startsWith('$')) continue;
   js += `export const ${k} = ${v};\n`;
 }
+
+const statusTables = compileStatusEffects(schema);
+hpp += statusTables.hpp;
+js += statusTables.js;
 
 // ---------------- emit / check ----------------
 const check = process.argv.includes('--check');

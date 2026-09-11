@@ -170,6 +170,11 @@ export function initSandWasm() {
         useBed: c('engine_use_bed', 'number', ['number', 'number', 'number']),
         bedSnapshot: c('engine_bed_snapshot', 'number', ['number']),
         bedSnapshotPtr: c('engine_bed_snapshot_ptr', 'number', ['number']),
+        applyStatus: c('engine_apply_status', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        removeStatus: c('engine_remove_status', 'number', ['number', 'number', 'number', 'number']),
+        cleanseStatus: c('engine_cleanse_status', 'number', ['number', 'number', 'number', 'number']),
+        statusCount: c('engine_status_count', 'number', ['number']),
+        statusData: c('engine_status_data', 'number', ['number']),
         glSetBeds: c('engine_gl_set_beds', null, ['number', 'number', 'number']),
         setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
@@ -206,7 +211,7 @@ export function initSandWasm() {
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         playerMineTarget: c('engine_player_mine_target', 'number', ['number', 'number', 'number']),
-        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
@@ -832,6 +837,15 @@ const renderStrides = Object.freeze({
     getDayClock() { return { phase: M.dayPhase(ptr), held: !!M.dayHeld(ptr) }; },
     setDayPhase(phase, held = true) { M.setDayPhase(ptr, phase, held ? 1 : 0); },
     useBed(id, bed) { return M.useBed(ptr, id | 0, bed | 0); },
+    applyStatusEffect(kind, id, effect, ticks = 0, strength = 1, sourceKind = 0, sourceId = 0) {
+      return M.applyStatus(ptr, kind, id, effect, ticks, strength, sourceKind, sourceId);
+    },
+    removeStatusEffect(kind, id, effect) { return M.removeStatus(ptr, kind, id, effect); },
+    cleanseStatusEffects(kind, id, tags = 0) { return M.cleanseStatus(ptr, kind, id, tags); },
+    getStatusEffects() {
+      const count = M.statusCount(ptr), start = M.statusData(ptr) >> 2;
+      return unpackSnapshotRecords(mod.HEAPF32.subarray(start, start + count * STRIDES.statusSnapshot), 'statusSnapshot');
+    },
     getBeds() {
       const n = M.bedSnapshot(ptr);
       const f = new Float32Array(mod.HEAPF32.buffer, M.bedSnapshotPtr(ptr), n * 5);
@@ -1306,10 +1320,10 @@ const renderStrides = Object.freeze({
     },
     setPlayerState(id, {
       x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false,
-      jetpackFuel = 1, jetpackActive = false, abilities = 0, stamina = 100, actionTicks = 0, actionState = 0, dodgeCooldown = 0, airDashUsed = false, movementPrevInput = 0,
+      jetpackFuel = 1, jetpackActive = false, abilities = 0, stamina = 100, actionTicks = 0, actionState = 0, dodgeCooldown = 0, airDashUsed = false, movementPrevInput = 0, statusMoveScale = 1, statusControls = 0,
     }) {
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0,
-        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed ? 1 : 0, movementPrevInput);
+        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed ? 1 : 0, movementPrevInput, statusMoveScale, statusControls);
     },
 
     // Authority snapshots are copied out of the serialization scratch blob;

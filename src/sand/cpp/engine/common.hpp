@@ -29,6 +29,7 @@
 // Generated from src/sand/abi.schema.json; run `npm run generate:abi` after
 // editing it and bump abiVersion on any layout change.
 #include "abi.generated.hpp"
+#include "status_types.hpp"
 
 // WebGL presentation: per-canvas context + shader program registry.
 // GLPresenter uploads the CPU-generated pixel buffer and composites.
@@ -630,6 +631,7 @@ static const double AS_MOVE_EPS = 0.10;            // |vx| below -> idle
 static const double AS_RUN_SPEED = P_MAX_RUN * 0.95; // run only past ~walk top speed
 static const double AS_RISE_EPS = 0.05;            // airborne |vy| below -> treat as fall (apex)
 struct Player {
+  StatusState effects;
   int id = 0;
   bool active = true, alive = true;
   double px = 0, py = 0;   // AABB top-left, cell coords (world-local to the buffer)

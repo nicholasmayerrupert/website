@@ -1,12 +1,12 @@
 // The same content compiler runs in Node, the browser, and the authority worker.
 import { MAT } from '../materials.js';
-import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION } from '../wasmBridge/abi.generated.js';
+import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
 import creatureArt from './creatureArt.js';
 import { EQUIPMENT } from './equipment.js';
 import { gearPixels } from './gearArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 5;
+export const CONTENT_WIRE_VERSION = 6;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
 export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special'];
@@ -256,6 +256,13 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
   });
   if (chests.length > 512) fail('chests', 'too many chests');
   for (const gear of EQUIPMENT) {
+    const effects = gear.statusEffects || [];
+    if (!Array.isArray(effects) || effects.length > 4) fail('equipment.statusEffects', 'expected at most four effects');
+    for (const effect of effects) {
+      integer(effect.effect, 'status effect', 1, STATUS_EFFECT_DEFS.length - 1);
+      integer(effect.durationTicks ?? 0, 'status duration', 0, STATUS_EFFECT_DEFS[effect.effect].maxTicks);
+    }
+    integer(gear.cleanseTags ?? 0, 'cleanseTags', 0, 255);
     if (gear.family === GEAR_FAMILY.WAND) {
       integer(gear.spellSlots, 'wand.spellSlots', 1, 5);
       integer(gear.upgradeSlots, 'wand.upgradeSlots', 0, 4);
@@ -272,6 +279,6 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     Math.round(world.presentation.backgroundTint * 1000),
     ...rects.flat(), ...jobs.flat(), ...clips, ...palette, ...pixels, textures.length, ...textures.flat(),
     creatures.length, ...creatures.flat(), residents.length, ...residents.flat(), ...limbColors, EQUIPMENT.length,
-    ...EQUIPMENT.flatMap(g => [g.id, g.family, g.slot, g.power, g.defense, g.stamina, g.mana, g.cooldown, g.reach, g.spell, g.style, g.price, g.spellSlots || 0, g.upgradeSlots || 0, g.initialSpell || 0, ...gearPixels(g.id)]), chests.length, ...chests.flat()]);
+    ...EQUIPMENT.flatMap(g => [g.id, g.family, g.slot, g.power, g.defense, g.stamina, g.mana, g.cooldown, g.reach, g.spell, g.style, g.price, g.spellSlots || 0, g.upgradeSlots || 0, g.initialSpell || 0, (g.statusEffects || []).length, ...(g.statusEffects || []).flatMap(effect => [effect.effect, effect.durationTicks ?? 0]), g.cleanseTags ?? 0, ...gearPixels(g.id)]), chests.length, ...chests.flat()]);
   return { packed, hash, anchors, scenes, rectangles: rects, world, sprite };
 }

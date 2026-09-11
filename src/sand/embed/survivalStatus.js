@@ -1,3 +1,4 @@
+import { createStatusEffectHud } from './statusEffectHud.js';
 import { ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, swallowEvents } from './uiShared.js';
 
@@ -79,7 +80,8 @@ const STYLE = `
 }
 `;
 
-export function createSurvivalStatus(root, { respawn } = {}) {
+export function createSurvivalStatus(root, { respawn, getEffects = () => [] } = {}) {
+  const effects = createStatusEffectHud(root);
   injectStyleOnce(root, 'data-sand-survival-status', STYLE);
   const vitals = document.createElement('div');
   vitals.className = 'survival-vitals';
@@ -179,6 +181,7 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   shield.classList.toggle('mana', frontier);
   if (frontier) { shield.setAttribute('aria-label', 'Mana'); fuel.setAttribute('aria-label', 'Stamina'); }
   const update = (player) => {
+    effects.update(player, getEffects());
     const hp = Math.max(0, Math.min(100, player?.health ?? 100));
     for (let i = 0; i < hearts.length; i++) {
       const fill = Math.max(0, Math.min(10, hp - i * 10)) * 10;
@@ -259,6 +262,6 @@ export function createSurvivalStatus(root, { respawn } = {}) {
 
   return {
     update,
-    destroy() { window.removeEventListener('keydown', onKey, true); vitals.remove(); death.remove(); },
+    destroy() { effects.destroy(); window.removeEventListener('keydown', onKey, true); vitals.remove(); death.remove(); },
   };
 }

@@ -69,7 +69,7 @@ struct CreatureNavigation {
 };
 
 struct Creature {
-  int burnTicks = 0, slowTicks = 0, rootTicks = 0;
+  int checkpointStatusPrefix[3]{};
   int npcId = 0;
   int id = 0;
   uint8_t species = CS_MINNOW;
@@ -104,6 +104,7 @@ struct Creature {
   int missionObjective = -1;
   bool missionActor = false;
   alignas(8) CreatureNavigation navigation;
+  StatusState effects;
 };
 
 struct CreatureSpawnTelegraph {
@@ -126,6 +127,7 @@ class CreatureSystem {
   std::vector<float> snapshot;
   int nextCreatureId = 1;
   static constexpr int NATURAL_MOB_CAP = 8;
+  static constexpr int HIBERNATE_REGION = 128;
   static constexpr int ENCOUNTER_HOSTILE_CAP = 4;
   static constexpr int ENCOUNTER_ACTIVE_THREAT_CAP = 12;
   static constexpr int AMBIENT_MOB_CAP = 3;
@@ -156,6 +158,7 @@ class CreatureSystem {
   bool worldRuleAllows(uint8_t speciesId, double wx, double wy) const;
   int worldSpawnWeight(uint8_t speciesId, double wx, double wy) const;
   int localDensity(uint8_t speciesId, double wx, double wy, int radius) const;
+  int dormantDensity(int speciesId, double wx, double wy, int radius) const;
   int localDensityAll(double wx, double wy, int radius) const;
   bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
   bool spawnNearFocus(uint8_t speciesId, uint32_t salt);

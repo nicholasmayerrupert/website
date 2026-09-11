@@ -934,8 +934,8 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) 
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy,
                                                   int facing, int grounded, int jumpReady,
-                                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput) {
-  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed, movementPrevInput);
+                                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls) {
+  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed, movementPrevInput, statusMoveScale, statusControls);
 }
 
 // Dropped-item and particle hooks plus the packed replication/render snapshot.
@@ -1046,6 +1046,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.hurtCooldown = (int)in[CSN_HURT_COOLDOWN];
     c.shelterCharge = in[CSN_SHELTER_CHARGE];
     c.npcId = (int)in[CSN_NPC_ID];
+    c.effects.visuals = (int)in[CSN_STATUS_VISUALS];
     e->creatures.creatures.push_back(c);
   }
 }
@@ -1269,4 +1270,9 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_set_chests(Engine* e, float* data, int count
 EMSCRIPTEN_KEEPALIVE int engine_checkpoint_write(Engine* e, int seal) { return e->checkpoint.write(seal != 0); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_checkpoint_ptr(Engine* e) { return e->checkpoint.bytes.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_checkpoint_read(Engine* e, uint8_t* data, int length) { return e->checkpoint.read(data, length) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_apply_status(Engine* e, int kind, int id, int effect, int ticks, int strength, int sourceKind, int sourceId) { return e->status.apply(kind,id,effect,ticks,strength,sourceKind,sourceId); }
+EMSCRIPTEN_KEEPALIVE int engine_remove_status(Engine* e, int kind, int id, int effect) { return e->status.remove(kind,id,effect); }
+EMSCRIPTEN_KEEPALIVE int engine_cleanse_status(Engine* e, int kind, int id, int tags) { return e->status.cleanse(kind,id,tags); }
+EMSCRIPTEN_KEEPALIVE int engine_status_count(Engine* e) { return e->status.buildSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_status_data(Engine* e) { return e->status.snapshot.data(); }
 } // extern "C"

@@ -73,7 +73,7 @@ void BedSystem::tick() {
 }
 
 bool BedSystem::danger(const Creature& resident) const {
-  if (resident.hurtCooldown || resident.burnTicks || resident.attackState != CAS_IDLE) return true;
+  if (resident.hurtCooldown || E.status.harmful(resident.effects) || resident.attackState != CAS_IDLE) return true;
   const auto& species = E.creatures.species(resident);
   if (E.creatures.fluidCoverage(resident.wx, resident.wy, species.w, species.h) > .2) return true;
   if (E.creatures.contactHazardAtBox(resident.wx, resident.wy, species.w, species.h, E.actorTick) != CHP_NONE) return true;
@@ -128,7 +128,7 @@ const AdventureBed* BedSystem::find(int id) const {
 }
 
 bool BedSystem::playerDanger(const Player& p, const AdventureBed& bed) const {
-  if (p.hurtCooldown || E.psys.samplePlayerFluidCoverage(p) > .2) return true;
+  if (p.hurtCooldown || E.status.harmful(p.effects) || E.psys.samplePlayerFluidCoverage(p) > .2) return true;
   if (E.creatures.fluidCoverage(bed.wx - 4, bed.wy - 2, 9, 5) > .2
       || E.creatures.contactHazardAtBox(bed.wx - 4, bed.wy - 2, 9, 5, 0) != CHP_NONE) return true;
   for (const auto& c : E.creatures.creatures) {

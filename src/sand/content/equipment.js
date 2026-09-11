@@ -1,4 +1,4 @@
-import { GEAR_FAMILY, WAND_UPGRADE } from '../wasmBridge/abi.generated.js';
+import { GEAR_FAMILY, WAND_UPGRADE, STATUS_EFFECT, STATUS_TAG } from '../wasmBridge/abi.generated.js';
 export { GEAR_FAMILY };
 
 // Stable item identities are shared by content compilation, authority, and UI.
@@ -65,6 +65,15 @@ add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 
   [WAND_UPGRADE.HOMING, 'Homing', 'Travelling spells curve toward nearby creatures. Adds 25% of the base mana cost.'],
   [WAND_UPGRADE.LINGER, 'Linger', 'Adds one base lifetime to spells and fields. Adds 50% of the base mana cost.'],
 ].forEach(([id, name, description], index) => add(id, name, 'upgrade', { price: 25 + index * 5, description }));
+// Spell contact effects and consumable buffs use the same immutable definitions.
+for (const [id, effect] of [[300, STATUS_EFFECT.BURNING], [301, STATUS_EFFECT.CHILLED], [304, STATUS_EFFECT.ROOTED], [309, STATUS_EFFECT.CHILLED], [310, STATUS_EFFECT.BURNING]])
+  gear.find(item => item.id === id).statusEffects = [{ effect }];
+add(322, 'Mending tonic', 'potion', { cooldown: 60, price: 12, style: 3,
+  statusEffects: [{ effect: STATUS_EFFECT.REGENERATION }], description: 'Recover 2 health per second for 5 seconds. More doses extend the duration, up to 30 seconds.' });
+add(323, 'Swiftness tonic', 'potion', { cooldown: 60, price: 20, style: 4,
+  statusEffects: [{ effect: STATUS_EFFECT.HASTE }], description: 'Move 25% faster for 10 seconds. More doses extend the duration, up to 30 seconds.' });
+add(324, 'Cleansing tonic', 'potion', { cooldown: 60, price: 18, style: 5,
+  cleanseTags: STATUS_TAG.HARMFUL, description: 'Removes all harmful status effects, including every poison and bleeding stack. Ongoing hazards can apply them again.' });
 // Signature trophies are ordinary, stackable inventory items reserved for future recipes.
 const trophies = [
   [401, 'Pike tooth', 'A hooked tooth, sharp enough to score river stone.', '#d9dec8', 'fang'],

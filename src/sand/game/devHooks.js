@@ -4,7 +4,7 @@
 // import.meta.env.DEV; every dependency is passed in explicitly so the hooks
 // can't silently reach into shell closures.
 
-import { STRIDES, SURFACE_BIOME_COUNT } from '../wasmBridge/abi.generated.js';
+import { STRIDES, SURFACE_BIOME_COUNT, STATUS_ACTOR } from '../wasmBridge/abi.generated.js';
 import { TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createReplayMicroscopeDev } from './replayMicroscopeDev.js';
@@ -228,6 +228,10 @@ export function installDevHooks(ctx, {
     },
     setCombatTarget(species, x, y) {
       ctx.worldWorker?.testSetCombatTarget(species, x, y);
+    },
+    applyStatusEffect(effect, ticks = 600) {
+      const player = localPlayer();
+      if (player) ctx.worldWorker?.testStatusEffect(STATUS_ACTOR.PLAYER, player.id, effect, ticks);
     },
     stepAuthorityActors(steps = 1) {
       ctx.worldWorker?.testStepActors(steps | 0);

@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 53;
+static const int ABI_VERSION = 55;
 
-static const uint64_t ABI_FINGERPRINT = 0xff8407b36b1dULL;
+static const uint64_t ABI_FINGERPRINT = 0x16e31c743db8ULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -65,8 +65,11 @@ enum PlayerSnapshotField : int {
   PS_RESPAWN_BED = 53,
   PS_BED_STATUS = 54,
   PS_BED_REVISION = 55,
+  PS_STATUS_MOVE_SCALE = 56,
+  PS_STATUS_CONTROLS = 57,
+  PS_STATUS_VISUALS = 58,
 };
-static const int PS_STRIDE = 56;
+static const int PS_STRIDE = 59;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -148,6 +151,16 @@ struct WritePlayerSnapshotSpellCharge {
   WritePlayerSnapshotSpellCharge() = delete;
   constexpr explicit WritePlayerSnapshotSpellCharge(float input) : value(input) {}
 };
+struct WritePlayerSnapshotStatusMoveScale {
+  float value;
+  WritePlayerSnapshotStatusMoveScale() = delete;
+  constexpr explicit WritePlayerSnapshotStatusMoveScale(float input) : value(input) {}
+};
+struct WritePlayerSnapshotStatusControls {
+  int value;
+  WritePlayerSnapshotStatusControls() = delete;
+  constexpr explicit WritePlayerSnapshotStatusControls(int input) : value(input) {}
+};
 struct WritePlayerSnapshotParameters {
   WritePlayerSnapshotRespawnReady respawnReady;
   WritePlayerSnapshotBowCharge bowCharge;
@@ -165,6 +178,8 @@ struct WritePlayerSnapshotParameters {
   WritePlayerSnapshotManaMax manaMax;
   WritePlayerSnapshotManaCastCost manaCastCost;
   WritePlayerSnapshotSpellCharge spellCharge;
+  WritePlayerSnapshotStatusMoveScale statusMoveScale;
+  WritePlayerSnapshotStatusControls statusControls;
 };
 template <class Record>
 inline void writePlayerSnapshot(float* out, const Record& record, const WritePlayerSnapshotParameters& values) {
@@ -224,6 +239,9 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_RESPAWN_BED] = static_cast<float>(record.respawnBed);
   out[PS_BED_STATUS] = static_cast<float>(record.bedStatus);
   out[PS_BED_REVISION] = static_cast<float>(record.bedRevision);
+  out[PS_STATUS_MOVE_SCALE] = static_cast<float>(values.statusMoveScale.value);
+  out[PS_STATUS_CONTROLS] = static_cast<float>(values.statusControls.value);
+  out[PS_STATUS_VISUALS] = static_cast<float>(record.effects.visuals);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId
@@ -261,7 +279,7 @@ inline void writeItemSnapshot(float* out, const Record& record) {
   out[IS_DEFINITION_ID] = static_cast<float>(record.definitionId);
 }
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge, npcId
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge, npcId, statusVisuals
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -286,8 +304,9 @@ enum CreatureSnapshotField : int {
   CSN_HURT_COOLDOWN = 20,
   CSN_SHELTER_CHARGE = 21,
   CSN_NPC_ID = 22,
+  CSN_STATUS_VISUALS = 23,
 };
-static const int CSN_STRIDE = 23;
+static const int CSN_STRIDE = 24;
 
 struct WriteCreatureSnapshotX {
   float value;
@@ -358,6 +377,7 @@ inline void writeCreatureSnapshot(float* out, const Record& record, const WriteC
   out[CSN_HURT_COOLDOWN] = static_cast<float>(record.hurtCooldown);
   out[CSN_SHELTER_CHARGE] = static_cast<float>(record.shelterCharge);
   out[CSN_NPC_ID] = static_cast<float>(record.npcId);
+  out[CSN_STATUS_VISUALS] = static_cast<float>(record.effects.visuals);
 }
 
 struct WriteCreatureTelegraphSnapshotX {
@@ -423,6 +443,7 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_HURT_COOLDOWN] = static_cast<float>(0);
   out[CSN_SHELTER_CHARGE] = static_cast<float>(0);
   out[CSN_NPC_ID] = static_cast<float>(0);
+  out[CSN_STATUS_VISUALS] = static_cast<float>(0);
 }
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool, definitionId, wandSpellSlots, wandUpgradeSlots, wandManaCost, wandNextSpell, wandSpell0, wandSpell1, wandSpell2, wandSpell3, wandSpell4, wandUpgrade0, wandUpgrade1, wandUpgrade2, wandUpgrade3, wandLink0, wandLink1, wandLink2, wandLink3
@@ -669,7 +690,7 @@ inline void writeSurvivalFootprintSnapshot(int32_t* out, const Record& record, c
   out[FP_ANCHOR_Y] = static_cast<int32_t>(record.anchorY);
 }
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration, swordCombo, sleepingBed
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionTicks, actionDuration, swordCombo, sleepingBed, statusVisuals
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -704,8 +725,9 @@ enum GlPlayerExtField : int {
   GLP_ACTION_DURATION = 30,
   GLP_SWORD_COMBO = 31,
   GLP_SLEEPING_BED = 32,
+  GLP_STATUS_VISUALS = 33,
 };
-static const int GLP_STRIDE = 33;
+static const int GLP_STRIDE = 34;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -971,6 +993,29 @@ inline void writeTestBodyStateSnapshot(double* out, const Record& record, const 
   out[TBS_STAMP_PRECLAIM_MOVED_OUTSIDE] = static_cast<double>(record.stampPreclaimMovedOutside);
   out[TBS_STAMP_PRECLAIM_STARTED_OUTSIDE] = static_cast<double>(record.stampPreclaimStartedOutside);
   out[TBS_WORLD_STILL_TICKS] = static_cast<double>(record.worldStillTicks);
+}
+
+// statusSnapshot: actorKind, actorId, effect, remainingTicks, durationTicks, stacks, strength
+enum StatusSnapshotField : int {
+  STS_ACTOR_KIND = 0,
+  STS_ACTOR_ID = 1,
+  STS_EFFECT = 2,
+  STS_REMAINING_TICKS = 3,
+  STS_DURATION_TICKS = 4,
+  STS_STACKS = 5,
+  STS_STRENGTH = 6,
+};
+static const int STS_STRIDE = 7;
+
+template <class Record>
+inline void writeStatusSnapshot(float* out, const Record& record) {
+  out[STS_ACTOR_KIND] = static_cast<float>(record.actorKind);
+  out[STS_ACTOR_ID] = static_cast<float>(record.actorId);
+  out[STS_EFFECT] = static_cast<float>(record.effect);
+  out[STS_REMAINING_TICKS] = static_cast<float>(record.remainingTicks);
+  out[STS_DURATION_TICKS] = static_cast<float>(record.durationTicks);
+  out[STS_STACKS] = static_cast<float>(record.stacks);
+  out[STS_STRENGTH] = static_cast<float>(record.strength);
 }
 
 enum AnimState : uint8_t {
@@ -1874,6 +1919,158 @@ static constexpr bool isBedResultValue(int value) {
   }
 }
 
+enum StatusActor : int {
+  SA_NONE = 0,
+  SA_PLAYER = 1,
+  SA_CREATURE = 2,
+};
+
+static constexpr bool isStatusActorValue(int value) {
+  switch (value) {
+    case SA_NONE:
+    case SA_PLAYER:
+    case SA_CREATURE:
+      return true;
+    default: return false;
+  }
+}
+
+enum StatusStackPolicy : int {
+  SSP_REFRESH = 0,
+  SSP_EXTEND = 1,
+  SSP_INDEPENDENT = 2,
+};
+
+static constexpr bool isStatusStackPolicyValue(int value) {
+  switch (value) {
+    case SSP_REFRESH:
+    case SSP_EXTEND:
+    case SSP_INDEPENDENT:
+      return true;
+    default: return false;
+  }
+}
+
+enum StatusTag : int {
+  ST_HARMFUL = 1,
+  ST_BENEFICIAL = 2,
+  ST_FIRE = 4,
+  ST_COLD = 8,
+  ST_POISON = 16,
+  ST_BLEED = 32,
+  ST_CONTROL = 64,
+  ST_WATER = 128,
+};
+
+static constexpr bool isStatusTagValue(int value) {
+  switch (value) {
+    case ST_HARMFUL:
+    case ST_BENEFICIAL:
+    case ST_FIRE:
+    case ST_COLD:
+    case ST_POISON:
+    case ST_BLEED:
+    case ST_CONTROL:
+    case ST_WATER:
+      return true;
+    default: return false;
+  }
+}
+
+enum StatusControl : int {
+  SC_ROOT = 1,
+  SC_DISARM = 2,
+};
+
+static constexpr bool isStatusControlValue(int value) {
+  switch (value) {
+    case SC_ROOT:
+    case SC_DISARM:
+      return true;
+    default: return false;
+  }
+}
+
+enum StatusApplyResult : int {
+  SAR_INVALID = 0,
+  SAR_APPLIED = 1,
+  SAR_REFRESHED = 2,
+  SAR_IMMUNE = 3,
+  SAR_FULL = 4,
+  SAR_WEAKER = 5,
+};
+
+static constexpr bool isStatusApplyResultValue(int value) {
+  switch (value) {
+    case SAR_INVALID:
+    case SAR_APPLIED:
+    case SAR_REFRESHED:
+    case SAR_IMMUNE:
+    case SAR_FULL:
+    case SAR_WEAKER:
+      return true;
+    default: return false;
+  }
+}
+
+enum StatusEffect : int {
+  STATUS_NONE = 0,
+  STATUS_BURNING = 1,
+  STATUS_CHILLED = 2,
+  STATUS_ROOTED = 3,
+  STATUS_POISONED = 4,
+  STATUS_BLEEDING = 5,
+  STATUS_REGENERATION = 6,
+  STATUS_HASTE = 7,
+  STATUS_WET = 8,
+};
+
+static constexpr bool isStatusEffectValue(int value) {
+  switch (value) {
+    case STATUS_NONE:
+    case STATUS_BURNING:
+    case STATUS_CHILLED:
+    case STATUS_ROOTED:
+    case STATUS_POISONED:
+    case STATUS_BLEEDING:
+    case STATUS_REGENERATION:
+    case STATUS_HASTE:
+    case STATUS_WET:
+      return true;
+    default: return false;
+  }
+}
+
+static const int STATUS_EFFECT_COUNT = 9;
+
+enum StatusVisual : int {
+  SV_NONE = 0,
+  SV_FIRE = 1,
+  SV_FROST = 2,
+  SV_VINES = 4,
+  SV_POISON = 8,
+  SV_BLEED = 16,
+  SV_HEAL = 32,
+  SV_SPEED = 64,
+  SV_WATER = 128,
+};
+
+static constexpr bool isStatusVisualValue(int value) {
+  switch (value) {
+    case SV_NONE:
+    case SV_FIRE:
+    case SV_FROST:
+    case SV_VINES:
+    case SV_POISON:
+    case SV_BLEED:
+    case SV_HEAL:
+    case SV_SPEED:
+    case SV_WATER:
+      return true;
+    default: return false;
+  }
+}
+
 enum PlanetGenerationProfile : uint8_t {
   PGP_EARTH = 0,
   PGP_MOON = 1,
@@ -1961,3 +2158,22 @@ static const int INV_SLOTS = 36;
 static const int CREATURE_MAX_DIMENSION = 32;
 static const int CREATURE_MAX_RECORDS = 128;
 static const int SOUND_EVENT_MAX_RECORDS = 192;
+static const int STATUS_MAX_INSTANCES = 32;
+
+struct StatusDefinition {
+  int id, stacking, defaultTicks, maxTicks, maxStacks, periodTicks, healthDelta;
+  double movementScale;
+  int tags, controls, immunityTags, removeTags, visual;
+};
+inline constexpr StatusDefinition STATUS_DEFINITIONS[] = {
+  {STATUS_NONE, SSP_REFRESH, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, SV_NONE},
+  {STATUS_BURNING, SSP_REFRESH, 120, 3600, 1, 30, -3, 1, 5, 0, 0, 0, SV_FIRE},
+  {STATUS_CHILLED, SSP_REFRESH, 150, 3600, 1, 0, 0, 0.35, 9, 0, 0, 0, SV_FROST},
+  {STATUS_ROOTED, SSP_REFRESH, 90, 3600, 1, 0, 0, 1, 65, 3, 0, 0, SV_VINES},
+  {STATUS_POISONED, SSP_INDEPENDENT, 300, 3600, 5, 60, -2, 1, 17, 0, 0, 0, SV_POISON},
+  {STATUS_BLEEDING, SSP_INDEPENDENT, 180, 3600, 5, 30, -1, 1, 33, 0, 0, 0, SV_BLEED},
+  {STATUS_REGENERATION, SSP_EXTEND, 300, 1800, 1, 60, 2, 1, 2, 0, 0, 0, SV_HEAL},
+  {STATUS_HASTE, SSP_EXTEND, 600, 1800, 1, 0, 0, 1.25, 2, 0, 0, 0, SV_SPEED},
+  {STATUS_WET, SSP_REFRESH, 120, 3600, 1, 0, 0, 1, 128, 0, 4, 4, SV_WATER},
+};
+inline constexpr int STATUS_CREATURE_IMMUNITIES[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 4};

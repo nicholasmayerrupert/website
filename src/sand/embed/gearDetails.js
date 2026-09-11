@@ -1,3 +1,4 @@
+import { STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
 import { EQUIPMENT_BY_ID, EQUIPMENT_SLOTS, GEAR_FAMILY } from '../content/equipment.js';
 
 const FAMILIES = ['', 'Sword', 'Axe', 'Spear', 'Bow', 'Wand', 'Armor', 'Shield', 'Charm', 'Spell rune', 'Potion', 'Quest item', 'Creature trophy', 'Wand upgrade'];
@@ -27,7 +28,12 @@ export function gearDetails(id, equipment = [], equippedSlot = -1) {
   }
   if (gear.family === GEAR_FAMILY.WAND) stats.push({ label: 'Spell sockets', value: gear.spellSlots }, { label: 'Upgrade sockets', value: gear.upgradeSlots });
   if (gear.defense) stats.push({ label: 'Defense', value: `+${gear.defense}` });
-  if (gear.family === GEAR_FAMILY.POTION) stats.push({ label: id === 320 ? 'Health restored' : 'Mana restored', value: gear.power });
+  if (gear.family === GEAR_FAMILY.POTION && gear.power) stats.push({ label: id === 320 ? 'Health restored' : 'Mana restored', value: gear.power });
+  for (const effect of gear.statusEffects || []) {
+    const def = STATUS_EFFECT_DEFS[effect.effect];
+    stats.push({ label: def.name, value: `${(effect.durationTicks || def.defaultTicks) / 60} s` });
+  }
+  if (gear.cleanseTags) stats.push({ label: 'Cleanses', value: 'Harmful effects' });
   let comparison = null;
   if (gear.slot >= 0 && equippedSlot < 0) {
     const other = EQUIPMENT_BY_ID[equipment[gear.slot]?.definitionId];

@@ -15,6 +15,7 @@ bool CombatSystem::canGuard(const Player& p) const {
 }
 void CombatSystem::tick(Player& p) {
   if (!p.alive) return;
+  if (p.effects.controls & SC_DISARM) { p.actionTicks = 0; p.actionState = AS_IDLE; p.actionDefinition = 0; }
   if (p.dodgeCooldown > 0) p.dodgeCooldown--;
   if (p.actionState != AS_SWORD || (!p.actionTicks && p.swordComboWindow > 0 && !--p.swordComboWindow)) {
     p.swordCombo = p.swordComboWindow = 0; p.swordComboQueued = false;
@@ -43,7 +44,7 @@ void CombatSystem::apply(Player& p, int previousInput) {
     p.swordComboWindow = p.actionTicks && p.actionState == AS_SWORD ? -1 : 0; p.swordComboQueued = false;
     if (!p.actionTicks || p.actionState != AS_SWORD) p.swordCombo = 0;
   }
-  if (!gear || held.count <= 0 || p.shieldActive) return;
+  if (!gear || held.count <= 0 || p.shieldActive || (p.effects.controls & SC_DISARM)) return;
   if (p.actionTicks) {
     // A fresh press in recovery queues one cut; holding also chains at recovery's end.
     if (sword && p.swordComboWindow >= 0 && p.actionState == AS_SWORD && p.actionTicks <= p.actionDuration / 2
@@ -88,7 +89,9 @@ void CombatSystem::strike(Player& p, const ContentGear& gear) {
     auto& held = p.inv[p.selectedSlot];
     if (held.definitionId != gear.id || held.count <= 0) return;
     if (gear.id == 320) p.health = imin(100, p.health + gear.power);
-    else E.magic.restoreMana(p, gear.power);
+    else if (gear.id == 321) E.magic.restoreMana(p, gear.power);
+    if (gear.cleanseTags) E.status.cleanse(p.effects, gear.cleanseTags);
+    for (const auto& effect : gear.statusEffects) E.status.apply(p, effect.effect, effect.durationTicks, 1, SA_PLAYER, p.id);
     if (!--held.count) held = InvSlot();
     return;
   }
@@ -128,9 +131,7 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     }
     if (gear.family <= GF_SPEAR) E.audio.emit(SE_MELEE_HIT, x, y, .85, (uint8_t)gear.family);
     creature.health -= damage; creature.hurtCooldown = 15;
-    if (spell == SP_EMBER) creature.burnTicks = 120;
-    if (spell == SP_RIME) creature.slowTicks = 150;
-    if (spell == SP_BRIAR) creature.rootTicks = 90;
+    for (const auto& effect : gear.statusEffects) E.status.apply(creature, effect.effect, effect.durationTicks, 1, SA_PLAYER, p.id);
     creature.vx += dx * (spell == SP_GALE ? 3.5 : gear.family == GF_AXE ? 1.5 : gear.family == GF_SWORD && p.swordCombo == 3 ? 1.8 : .6);
     creature.vy -= spell == SP_GALE ? 1.6 : .35;
     if (spell == SP_RIME || spell == SP_BRIAR) { creature.attackCooldown = imax(60, creature.attackCooldown); creature.vx *= .15; }

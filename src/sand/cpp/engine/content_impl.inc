@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 5) return false;
+  if (r.take() != 0x41535452 || r.take() != 6) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -160,6 +160,14 @@ bool ContentSystem::load(const int32_t* data, int length) {
     g.spellSlots = r.bounded(0, WAND_MAX_SPELLS);
     g.upgradeSlots = r.bounded(0, WAND_MAX_UPGRADES);
     g.initialSpell = r.bounded(0, 10000);
+    int effectCount = r.bounded(0, 4);
+    for (int j = 0; j < effectCount && r.valid; j++) {
+      int effect = r.bounded(1, STATUS_EFFECT_COUNT - 1);
+      int duration = r.bounded(0, 216000);
+      if (!r.valid || duration > STATUS_DEFINITIONS[effect].maxTicks) return false;
+      g.statusEffects.push_back({effect, duration});
+    }
+    g.cleanseTags = r.bounded(0, 255);
     if (g.family == GF_WAND) {
       if (g.spellSlots == 0 || g.initialSpell == 0 || g.spell || g.mana || g.power) return false;
     } else if (g.spellSlots || g.upgradeSlots || g.initialSpell) return false;

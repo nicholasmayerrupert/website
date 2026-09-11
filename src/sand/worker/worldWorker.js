@@ -347,7 +347,7 @@ function replayActorSnapshot() {
     type: 'actors', epoch, actorTick: engine.getActorTick(), sampleTime: performance.timeOrigin + performance.now(), localPlayerId,
     players: copyReplayValue(players),
     discovery: engine.getDiscovery(), chests: copyReplayValue(engine.getChests()), chestLoot: copyReplayValue(engine.getChestLoot()),
-    beds: engine.getBeds(), dayClock: engine.getDayClock(),
+    statusEffects: engine.getStatusEffects(), beds: engine.getBeds(), dayClock: engine.getDayClock(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: copyReplayValue(engine.getPlayerMineTarget(localPlayerId)),
@@ -704,7 +704,7 @@ function postActors(force = false) {
   self.postMessage({
     type: 'actors', epoch, actorTick, sampleTime: performance.timeOrigin + performance.now(), localPlayerId, players, discovery,
     chests: engine.getChests(), chestLoot: engine.getChestLoot(),
-    beds: engine.getBeds(), dayClock: engine.getDayClock(),
+    statusEffects: engine.getStatusEffects(), beds: engine.getBeds(), dayClock: engine.getDayClock(),
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: engine.getPlayerMineTarget(localPlayerId),
@@ -1398,6 +1398,9 @@ function applyRuntimeMessage(data) {
     engine.setMirrorCreatures(new Float32Array(0), engine.getWorldOffsetX(), engine.getWorldOffsetY());
     engine.spawnScriptedCreature(data.species | 0, data.worldX, data.worldY);
     postCreatures();
+    postActors(true);
+  } else if (data.type === 'test-status-effect') {
+    engine.applyStatusEffect(data.kind, data.id, data.effect, data.ticks);
     postActors(true);
   } else if (data.type === 'test-step-actors') {
     // Test-driven actor turns own the worker clock while they run. Keeping the

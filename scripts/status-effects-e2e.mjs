@@ -1,0 +1,26 @@
+import { runBrowserCases } from './browser-harness.mjs';
+import { mkdirSync } from 'node:fs';
+import process from 'node:process';
+const artifacts='.sand-artifacts/status-browser';mkdirSync(artifacts,{recursive:true});
+const statusCase=async({page,baseURL,check},touch)=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(baseURL+'/game',{waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>document.querySelector('sand-game')?._game?.getPlayer()?.alive,null,{timeout:60000});
+ await page.evaluate(()=>{window.__sandTest.setCreatureRuntime(false,false);window.__sandTest.applyStatusEffect(7,1800);window.__sandTest.applyStatusEffect(4,1200);});
+ const haste=page.getByRole('button',{name:/^Haste, \d+ seconds remaining$/});
+ await haste.waitFor();await page.getByRole('button',{name:/^Poisoned, \d+ seconds remaining$/}).waitFor();
+ check('authority effects reach HUD, movement and entity visuals',await page.evaluate(()=>{const p=document.querySelector('sand-game')._game.getPlayer();return p.statusMoveScale===1.25&&p.statusVisuals===72;}));
+ if(touch)await haste.tap();else await haste.hover();
+ await page.getByRole('tooltip').waitFor();
+ check('tooltip explains the effect',await page.getByRole('tooltip').innerText().then(t=>t.includes('movement')||t.includes('speed')||t.includes('Move')));
+ const bounds=await haste.boundingBox();check('status badge fits viewport and touch target',bounds.x>=0&&bounds.x+bounds.width<=page.viewportSize().width&&(!touch||bounds.height>=44));
+ await page.screenshot({path:`${artifacts}/status-${touch?'mobile':'desktop'}.png`});
+ await page.keyboard.press('Escape');await page.getByRole('tooltip').waitFor({state:'hidden'});
+ const savedAt=await page.evaluate(()=>{const now=Date.now();window.dispatchEvent(new Event('pagehide'));return now;});
+ await page.waitForFunction(t=>document.querySelector('sand-game')._game.getSaveState().savedAt>=t,savedAt,{timeout:30000});
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>document.querySelector('sand-game')?._game?.getSaveState().restored,null,{timeout:60000});
+ await haste.waitFor();check('saved effects survive browser reload',true);
+ check('no browser errors',errors.length===0,errors.join('; '));
+};
+process.exitCode=await runBrowserCases({desktop:args=>statusCase(args,false),mobile:args=>statusCase(args,true)},undefined,{mobile:{viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2}});

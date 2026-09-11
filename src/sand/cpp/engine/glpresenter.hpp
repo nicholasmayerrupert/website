@@ -164,6 +164,7 @@ class GLPresenter {
                     double rescueProgress, int hurtCooldown, double shelterCharge, float light,
                          int camCol, int camRow, int npcId = 0);
   void glDrawCreatures();
+  void glDrawStatusEffects(int visuals, double x, double y, double w, double h, double phase, int species = -1);
   void glDrawPreview();
   void glPresentWindow(int forceFull);
   int glRenderFrame(int forceFull);

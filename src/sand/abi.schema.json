@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 53,
+  "abiVersion": 55,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -285,6 +285,21 @@
           "name": "bedRevision",
           "kind": "i32",
           "snapshotMember": "bedRevision"
+        },
+        {
+          "name": "statusMoveScale",
+          "kind": "number",
+          "snapshotParameter": true
+        },
+        {
+          "name": "statusControls",
+          "kind": "i32",
+          "snapshotParameter": true
+        },
+        {
+          "name": "statusVisuals",
+          "kind": "i32",
+          "snapshotMember": "effects.visuals"
         }
       ],
       "snapshotStorage": "float",
@@ -491,6 +506,11 @@
           "name": "npcId",
           "kind": "i32",
           "snapshotMember": "npcId"
+        },
+        {
+          "name": "statusVisuals",
+          "kind": "i32",
+          "snapshotMember": "effects.visuals"
         }
       ],
       "snapshotStorage": "float",
@@ -547,6 +567,9 @@
               "literal": 0
             },
             "npcId": {
+              "literal": 0
+            },
+            "statusVisuals": {
               "literal": 0
             }
           }
@@ -1130,6 +1153,11 @@
           "name": "sleepingBed",
           "kind": "i32",
           "snapshotMember": "sleepingBed"
+        },
+        {
+          "name": "statusVisuals",
+          "kind": "i32",
+          "snapshotMember": "statusVisuals"
         }
       ],
       "snapshotStorage": "float",
@@ -1699,6 +1727,52 @@
       "snapshotWriters": [
         {
           "name": "writeTestBodyStateSnapshot"
+        }
+      ]
+    },
+    "statusSnapshot": {
+      "cPrefix": "STS",
+      "snapshotStorage": "float",
+      "fields": [
+        {
+          "name": "actorKind",
+          "kind": "i32",
+          "snapshotMember": "actorKind"
+        },
+        {
+          "name": "actorId",
+          "kind": "i32",
+          "snapshotMember": "actorId"
+        },
+        {
+          "name": "effect",
+          "kind": "i32",
+          "snapshotMember": "effect"
+        },
+        {
+          "name": "remainingTicks",
+          "kind": "i32",
+          "snapshotMember": "remainingTicks"
+        },
+        {
+          "name": "durationTicks",
+          "kind": "i32",
+          "snapshotMember": "durationTicks"
+        },
+        {
+          "name": "stacks",
+          "kind": "i32",
+          "snapshotMember": "stacks"
+        },
+        {
+          "name": "strength",
+          "kind": "i32",
+          "snapshotMember": "strength"
+        }
+      ],
+      "snapshotWriters": [
+        {
+          "name": "writeStatusSnapshot"
         }
       ]
     }
@@ -4420,6 +4494,304 @@
         "BR_MORNING": 9,
         "BR_SPAWN_LOST": 10
       }
+    },
+    "StatusActor": {
+      "cName": "StatusActor",
+      "cType": "int",
+      "jsName": "STATUS_ACTOR",
+      "jsPrefix": "SA",
+      "values": {
+        "SA_NONE": 0,
+        "SA_PLAYER": 1,
+        "SA_CREATURE": 2
+      }
+    },
+    "StatusStackPolicy": {
+      "cName": "StatusStackPolicy",
+      "cType": "int",
+      "jsName": "STATUS_STACK",
+      "jsPrefix": "SSP",
+      "values": {
+        "SSP_REFRESH": 0,
+        "SSP_EXTEND": 1,
+        "SSP_INDEPENDENT": 2
+      }
+    },
+    "StatusTag": {
+      "cName": "StatusTag",
+      "cType": "int",
+      "jsName": "STATUS_TAG",
+      "jsPrefix": "ST",
+      "values": {
+        "ST_HARMFUL": 1,
+        "ST_BENEFICIAL": 2,
+        "ST_FIRE": 4,
+        "ST_COLD": 8,
+        "ST_POISON": 16,
+        "ST_BLEED": 32,
+        "ST_CONTROL": 64,
+        "ST_WATER": 128
+      }
+    },
+    "StatusControl": {
+      "cName": "StatusControl",
+      "cType": "int",
+      "jsName": "STATUS_CONTROL",
+      "jsPrefix": "SC",
+      "values": {
+        "SC_ROOT": 1,
+        "SC_DISARM": 2
+      }
+    },
+    "StatusApplyResult": {
+      "cName": "StatusApplyResult",
+      "cType": "int",
+      "jsName": "STATUS_RESULT",
+      "jsPrefix": "SAR",
+      "values": {
+        "SAR_INVALID": 0,
+        "SAR_APPLIED": 1,
+        "SAR_REFRESHED": 2,
+        "SAR_IMMUNE": 3,
+        "SAR_FULL": 4,
+        "SAR_WEAKER": 5
+      }
+    },
+    "StatusEffect": {
+      "cName": "StatusEffect",
+      "cType": "int",
+      "jsName": "STATUS_EFFECT",
+      "jsPrefix": "STATUS",
+      "derived": {
+        "count": "STATUS_EFFECT_COUNT"
+      },
+      "descriptors": [
+        {
+          "id": 0,
+          "key": "STATUS_NONE",
+          "name": "None",
+          "description": "No effect.",
+          "tags": [],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 0,
+          "maxTicks": 0,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#b9c49b",
+          "glyph": "NO",
+          "visual": "SV_NONE"
+        },
+        {
+          "id": 1,
+          "key": "STATUS_BURNING",
+          "name": "Burning",
+          "description": "Lose 3 health every half second. Water extinguishes burning.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_FIRE"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 120,
+          "maxTicks": 3600,
+          "maxStacks": 1,
+          "periodTicks": 30,
+          "healthDelta": -3,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#ed9158",
+          "glyph": "Fi",
+          "visual": "SV_FIRE"
+        },
+        {
+          "id": 2,
+          "key": "STATUS_CHILLED",
+          "name": "Chilled",
+          "description": "Move at 35% speed.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_COLD"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 150,
+          "maxTicks": 3600,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 0.35,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#92d2dc",
+          "glyph": "Ic",
+          "visual": "SV_FROST"
+        },
+        {
+          "id": 3,
+          "key": "STATUS_ROOTED",
+          "name": "Rooted",
+          "description": "Cannot move voluntarily or attack. Gravity and external forces still apply.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_CONTROL"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 90,
+          "maxTicks": 3600,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 1,
+          "controls": [
+            "SC_ROOT",
+            "SC_DISARM"
+          ],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#abbc70",
+          "glyph": "Rt",
+          "visual": "SV_VINES"
+        },
+        {
+          "id": 4,
+          "key": "STATUS_POISONED",
+          "name": "Poisoned",
+          "description": "Each stack deals 2 damage per second. Stacks expire separately.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_POISON"
+          ],
+          "stacking": "SSP_INDEPENDENT",
+          "defaultTicks": 300,
+          "maxTicks": 3600,
+          "maxStacks": 5,
+          "periodTicks": 60,
+          "healthDelta": -2,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#a4c66b",
+          "glyph": "Po",
+          "visual": "SV_POISON"
+        },
+        {
+          "id": 5,
+          "key": "STATUS_BLEEDING",
+          "name": "Bleeding",
+          "description": "Each stack deals 1 damage every half second. Stacks expire separately.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_BLEED"
+          ],
+          "stacking": "SSP_INDEPENDENT",
+          "defaultTicks": 180,
+          "maxTicks": 3600,
+          "maxStacks": 5,
+          "periodTicks": 30,
+          "healthDelta": -1,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#e47d80",
+          "glyph": "Bl",
+          "visual": "SV_BLEED"
+        },
+        {
+          "id": 6,
+          "key": "STATUS_REGENERATION",
+          "name": "Regeneration",
+          "description": "Recover 2 health per second. Reapplying extends the duration.",
+          "tags": [
+            "ST_BENEFICIAL"
+          ],
+          "stacking": "SSP_EXTEND",
+          "defaultTicks": 300,
+          "maxTicks": 1800,
+          "maxStacks": 1,
+          "periodTicks": 60,
+          "healthDelta": 2,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#96ce9a",
+          "glyph": "Re",
+          "visual": "SV_HEAL"
+        },
+        {
+          "id": 7,
+          "key": "STATUS_HASTE",
+          "name": "Haste",
+          "description": "Move 25% faster. Reapplying extends the duration.",
+          "tags": [
+            "ST_BENEFICIAL"
+          ],
+          "stacking": "SSP_EXTEND",
+          "defaultTicks": 600,
+          "maxTicks": 1800,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 1.25,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#e5c885",
+          "glyph": "Ha",
+          "visual": "SV_SPEED"
+        },
+        {
+          "id": 8,
+          "key": "STATUS_WET",
+          "name": "Wet",
+          "description": "Extinguishes burning and prevents ignition while wet.",
+          "tags": [
+            "ST_WATER"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 120,
+          "maxTicks": 3600,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 1,
+          "controls": [],
+          "immunityTags": [
+            "ST_FIRE"
+          ],
+          "removeTags": [
+            "ST_FIRE"
+          ],
+          "color": "#8dbed2",
+          "glyph": "Wt",
+          "visual": "SV_WATER"
+        }
+      ]
+    },
+    "StatusVisual": {
+      "cName": "StatusVisual",
+      "cType": "int",
+      "jsName": "STATUS_VISUAL",
+      "jsPrefix": "SV",
+      "values": {
+        "SV_NONE": 0,
+        "SV_FIRE": 1,
+        "SV_FROST": 2,
+        "SV_VINES": 4,
+        "SV_POISON": 8,
+        "SV_BLEED": 16,
+        "SV_HEAL": 32,
+        "SV_SPEED": 64,
+        "SV_WATER": 128
+      }
     }
   },
   "constants": {
@@ -4428,6 +4800,15 @@
     "INV_SLOTS": 36,
     "CREATURE_MAX_DIMENSION": 32,
     "CREATURE_MAX_RECORDS": 128,
-    "SOUND_EVENT_MAX_RECORDS": 192
+    "SOUND_EVENT_MAX_RECORDS": 192,
+    "STATUS_MAX_INSTANCES": 32
+  },
+  "statusCreatureImmunities": {
+    "CREATURE_LAVA_TOAD": [
+      "ST_FIRE"
+    ],
+    "CREATURE_BONE_DINOSAUR": [
+      "ST_FIRE"
+    ]
   }
 }

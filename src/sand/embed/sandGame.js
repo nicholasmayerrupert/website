@@ -666,7 +666,7 @@ class SandGameElement extends HTMLElement {
             craft: (recipe, max) => game.craft(recipe, max),
             poolAction: (pool, action, material, value) => game.poolAction(pool, action, material, value),
           });
-          this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
+          this._status = createSurvivalStatus(root, { respawn: () => game.respawn(), getEffects: () => game.getStatusEffects() });
           this._talkHud = createTalkHud(root, game, (detail) => {
             if (this._adventureHud && detail.action === 'mission-console') this._adventureHud.open('journal');
             if (this._adventureHud && detail.action === 'workshop') this._adventureHud.openWorkshop(detail.actor);

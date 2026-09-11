@@ -544,6 +544,7 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         c.bakedAssemblyId = comp.bakedAssemblyId;
         c.cacheDirty = comp.cacheDirty;
         c.cells = splitPart; c.yMax = 0;
+        E.renderer.captureComponentTextures(c, *lay);
         bool plant = false, hasSeed = false;
         for (int k : c.cells) {
           c.yMax = imax(c.yMax, k / E.cols);
@@ -1756,6 +1757,7 @@ bool ComponentSystem::splitRigidAfterStableErase(
       fragment.cacheDirty = source.cacheDirty;
       fragment.grounded = baseGrounded;
       fragment.cells = std::move(cells);
+      E.renderer.captureComponentTextures(fragment, lay);
       bool plant = false, hasSeed = false;
       for (int k : fragment.cells) {
         fragment.yMax = imax(fragment.yMax, k / E.cols);
@@ -2442,7 +2444,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
         E.L->myceliumActive = true;
         E.L->myceliumSporePresent = true;
       }
-      E.L->components.push_back(std::move(c));
+      E.renderer.captureComponentTextures(c, *E.L); E.L->components.push_back(std::move(c));
     }
   }
   // Plant-family materials are unbounded so a whole tree is one partition.
@@ -2455,7 +2457,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       // Re-derive species from encoded seed/trunk/foliage materials and count cells.
       for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; if (E.materialEncodesPlantType(m)) c.plantType = E.plantTypeFromMaterial(m); }
       E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
-      c.cells = std::move(cells); E.L->components.push_back(std::move(c));
+      c.cells = std::move(cells); E.renderer.captureComponentTextures(c, *E.L); E.L->components.push_back(std::move(c));
     }
   }
   // Ice is unbounded so material-specific freezing can extend one partition.
@@ -2465,7 +2467,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       std::vector<int> cells; int yMax;
       floodComponent(sx, sy, seen, gen, false, cells, yMax, &ComponentSystem::isIceMat);
       E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
-      Comp c; c.id = E.L->nextComponentId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; E.L->components.push_back(std::move(c));
+      Comp c; c.id = E.L->nextComponentId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; E.renderer.captureComponentTextures(c, *E.L); E.L->components.push_back(std::move(c));
     }
   }
 }
@@ -2520,6 +2522,7 @@ int ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId,
     Comp component;
     component.id = nextId++;
     component.cells.assign(cells.begin(), cells.end());
+    E.renderer.captureComponentTextures(component, *E.L);
     component.yMax = yMax;
     component.cacheDirty = iceCache;
     int index = (int)list.size();
@@ -2535,6 +2538,7 @@ int ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId,
     component.yMax = imax(component.yMax, yMax);
     component.cacheDirty = component.cacheDirty || iceCache;
     component.grounded = false;
+    E.renderer.captureComponentTextures(component, *E.L);
     for (int k : cells) E.L->cellComp[k] = survivor;
     return survivor;
   }
@@ -2549,6 +2553,7 @@ int ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId,
   merged.yMax = imax(merged.yMax, yMax);
   merged.cacheDirty = merged.cacheDirty || iceCache;
   merged.grounded = false;
+  E.renderer.captureComponentTextures(merged, *E.L);
 
   std::vector<Comp> keep;
   keep.reserve(list.size() - touching.size() + 1);
@@ -2674,6 +2679,7 @@ void ComponentSystem::registerBakedCells(
         stack.push_back(nk);
       }
     }
+    E.renderer.captureComponentTextures(component, lay);
     component.cacheDirty = component.cacheDirty || hasPlant;
     component.growing = hasSeed || hasSpore;
     component.gravityGrowth = hasSeed && component.woodCount > 0;
@@ -2840,7 +2846,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       if (splitErased.empty()) { updated.push_back(std::move(comp)); continue; }
       if (comp.grounded && componentRemovalLocallyConnected(splitErased, splitSurvivors,
                                                              indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
-        comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true; comp.growing = false;
+        comp.cells.swap(splitSurvivors); E.renderer.captureComponentTextures(comp, *E.L); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true; comp.growing = false;
         for (int k : comp.cells) { uint8_t m = E.L->grid[k]; int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(m)) comp.woodCount++; else if (E.isPlantLeaf(m)) comp.leafCount++; else if (E.isSeedMaterial(m)) comp.growing = true; }
         if (comp.growing && comp.woodCount == 0) comp.gravityGrowth = false;
         updated.push_back(std::move(comp)); continue;
@@ -2869,7 +2875,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       for (int k : part) { uint8_t m = E.L->grid[k]; int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(m)) c.woodCount++; else if (E.isPlantLeaf(m)) c.leafCount++; else if (E.isSeedMaterial(m)) hasSeed = true; }
       if (componentChanged) c.growing = hasSeed;
       if (hasSeed && c.woodCount == 0) c.gravityGrowth = false;
-      c.cells = part; updated.push_back(std::move(c)); reused = true;
+      c.cells = part; E.renderer.captureComponentTextures(c, *E.L); updated.push_back(std::move(c)); reused = true;
     }
     if (!reused) E.L->compsReshaped = true;
   }
@@ -2981,6 +2987,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       if (std::find(deferred.begin(), deferred.end(), comp.id) == deferred.end())
         deferred.push_back(comp.id);
       comp.cells.swap(survivors);
+      E.renderer.captureComponentTextures(comp, *E.L);
       comp.yMax = 0;
       comp.cacheDirty = iceCache;
       bool plantComponent = false;
@@ -3029,7 +3036,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
         c.growing = hasSeed;
         if (hasSeed && c.woodCount == 0) c.gravityGrowth = false;
       }
-      c.cells = part; updated.push_back(std::move(c));
+      c.cells = part; E.renderer.captureComponentTextures(c, *E.L); updated.push_back(std::move(c));
       reused = true;
     }
   }

@@ -1,16 +1,16 @@
 import { isValidWorldDiff, maxWorldDiffBytes } from '../worldPacketValidation.js';
 
-function shiftGridInPlace(grid, cols, rows, dx, dy) {
+function shiftGridInPlace(grid, cols, rows, dx, dy, empty = 0) {
   if (dx) {
     const amount = Math.abs(dx);
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       if (dx > 0) {
         grid.copyWithin(row, row + amount, row + cols);
-        grid.fill(0, row + cols - amount, row + cols);
+        grid.fill(empty, row + cols - amount, row + cols);
       } else {
         grid.copyWithin(row + amount, row, row + cols - amount);
-        grid.fill(0, row, row + amount);
+        grid.fill(empty, row, row + amount);
       }
     }
   }
@@ -19,10 +19,10 @@ function shiftGridInPlace(grid, cols, rows, dx, dy) {
     const cells = cols * rows;
     if (dy > 0) {
       grid.copyWithin(0, band, cells);
-      grid.fill(0, cells - band, cells);
+      grid.fill(empty, cells - band, cells);
     } else {
       grid.copyWithin(band, 0, cells - band);
-      grid.fill(0, 0, band);
+      grid.fill(empty, 0, band);
     }
   }
 }
@@ -42,6 +42,8 @@ export function prepareMirrorShift(engine, packet, bytes) {
       || !isValidWorldDiff(bytes, cols, rows)) return false;
   shiftGridInPlace(engine.getGrid(), cols, rows, dx, dy);
   shiftGridInPlace(engine.getGridBg(), cols, rows, dx, dy);
+  shiftGridInPlace(engine.getTextureTexels(), cols, rows, dx, dy, 0xffff);
+  shiftGridInPlace(engine.getTextureTexels(true), cols, rows, dx, dy, 0xffff);
   engine.setMirrorWorldOffset(packet.worldOffsetX, packet.worldOffsetY);
   return true;
 }

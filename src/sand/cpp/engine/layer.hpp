@@ -278,6 +278,9 @@ struct Layer {
   std::unordered_map<int64_t, std::vector<StoredFuse>> fuseStore;
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;
+  // Authority projection of component/body texture ownership. Presentation
+  // mirrors receive this alongside materials and do not reconstruct topology.
+  std::vector<uint16_t> textureTexels;
 
   // The material grid and motion state are one ping-pong unit. Keeping their
   // phase change and reset operations here prevents a newly-added side buffer
@@ -308,6 +311,7 @@ struct Layer {
   // already be absent at the call site.
   void clearVacatedCellPhases(size_t index) {
     if (!grid || !next || index >= gridA.size()) return;
+    textureTexels[index] = WORLD_TEXTURE;
     grid[index] = next[index] = EMPTY;
 #define SAND_CLEAR_VACATED_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
     if (name.current) { \
@@ -321,6 +325,7 @@ struct Layer {
 
   template <class Shift>
   void shiftPersistentCellState(Shift&& shift) {
+    shift(textureTexels.data(), WORLD_TEXTURE);
     shift(grid, (uint8_t)EMPTY); shift(next, (uint8_t)EMPTY);
 #define SAND_SHIFT_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
     shift(name.current, name.emptyValue); shift(name.next, name.emptyValue);
@@ -380,7 +385,7 @@ struct Layer {
   }
 
   void releaseCellBufferCapacity() {
-    releaseBuffer(gridA); releaseBuffer(gridB);
+    releaseBuffer(gridA); releaseBuffer(gridB); releaseBuffer(textureTexels);
 #define SAND_RELEASE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.release();
     SAND_PERSISTENT_CELL_CHANNELS(SAND_RELEASE_CELL_CHANNEL)
 #undef SAND_RELEASE_CELL_CHANNEL
@@ -424,6 +429,7 @@ struct Layer {
     storageRole = role;
     size_t n = (size_t)cols * rows;
     gridA.assign(n, EMPTY);
+    textureTexels.assign(n, WORLD_TEXTURE);
     grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
     rowMarkSpans.clear(); rowMarkSpans.resize(rows);
@@ -527,7 +533,9 @@ struct Layer {
                           int newChunkCols, int newChunkRows,
                           int oldOffX, int oldOffY, int newOffX, int newOffY) {
     std::vector<uint8_t> oldGrid = std::move(gridA);
+    std::vector<uint16_t> oldTextures = std::move(textureTexels);
     gridA.assign((size_t)newCols * newRows, EMPTY);
+    textureTexels.assign((size_t)newCols * newRows, WORLD_TEXTURE);
     int wx0 = imax(oldOffX, newOffX), wy0 = imax(oldOffY, newOffY);
     int wx1 = imin(oldOffX + oldCols, newOffX + newCols);
     int wy1 = imin(oldOffY + oldRows, newOffY + newRows);
@@ -537,6 +545,7 @@ struct Layer {
         size_t src = (size_t)(wy - oldOffY) * oldCols + (wx0 - oldOffX);
         size_t dst = (size_t)(wy - newOffY) * newCols + (wx0 - newOffX);
         memcpy(gridA.data() + dst, oldGrid.data() + src, width);
+        memcpy(textureTexels.data() + dst, oldTextures.data() + src, width * sizeof(uint16_t));
       }
     }
     gridB.clear(); grid = gridA.data(); next = grid;

@@ -50,7 +50,7 @@ acknowledgements because input sequences belong to the current browser session.
 Only one authority packet is in flight. Full snapshots are used for startup,
 resize, and recovery. An ordinary stream shift sends its offset delta plus the
 dirty rectangles containing the entering bands; the presentation mirror slides
-both grids in place before applying them. Other turns send accumulated diffs.
+both material grids and their texture-coordinate projections in place before applying them. Other turns send accumulated diffs.
 The presentation mirror does not reconstruct static components because it never simulates them.
 Local items, projectiles, and creatures cross the worker boundary as packed
 transferable buffers. Live projectile and creature rendering interpolates between
@@ -90,7 +90,10 @@ Repairs preserve field terrain, inventory, and quest progress. The journaled
 
 `content/player.js` owns the player palette, seven animation clips, frame timing,
 and source pixels. `content/creatureArt.js` owns all creature sprites and palettes.
-Authored material tiles and ambient-light presentation live in `world.js`.
+Authored material tiles live in `content/materialArt.js`; `world.js` owns tile
+overrides and ambient-light presentation. Continuous textured surfaces have no
+cell gutters. Rigid bodies carry texture coordinates through rotation, baking,
+fracture, welding, streaming, and checkpoints. See `content/README.md` for the material-art authoring loop.
 The WebGL presenter reads this data; character pixels are not embedded in C++.
 
 `react/SandCampaign.jsx` presents the journal, tracked destination, pause menu,
@@ -1166,7 +1169,7 @@ own sockets or activate from the quickbar. `GEAR_FAMILY`, `WAND_UPGRADE`,
 from `abi.schema.json`. Authored wands declare `spellSlots`, `upgradeSlots`, and
 `initialSpell` in `content/equipment.js`; the content compiler and engine reader
 validate those fields and reject socket metadata on other item families.
-The content wire format is v5; source world/art documents remain v3.
+The content wire format is v7; source world/art documents remain v3.
 Every player has one 100-point mana pool across all wands, regenerating one point
 per 15 living actor ticks (one per eight with Hearthstone). Full mana does not
 bank recovery ticks. Mana cordials restore 55, capped at the player's maximum.

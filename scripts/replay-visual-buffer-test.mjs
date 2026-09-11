@@ -10,51 +10,55 @@ import {
 } from '../src/sand/worker/replaySegmentCache.js';
 
 const pushU16 = (out, value) => out.push(value & 0xff, (value >>> 8) & 0xff);
-const encodeLayer = (grid, out) => {
+const encodeLayer = (grid, out, textures = false) => {
   let start = 0;
   while (start < grid.length) {
     let end = start + 1;
     while (end < grid.length && grid[end] === grid[start]) end++;
     const run = end - start;
     out.push(run & 0xff, (run >>> 8) & 0xff, (run >>> 16) & 0xff,
-      (run >>> 24) & 0xff, grid[start]);
+      (run >>> 24) & 0xff, grid[start] & 0xff);
+    if (textures) out.push(grid[start] >>> 8);
     start = end;
   }
 };
-const full = (foreground, background) => {
+const full = (foreground, background, fgTexels = foreground.map(() => 0xffff), bgTexels = background.map(() => 0xffff)) => {
   const out = [];
   encodeLayer(foreground, out);
   encodeLayer(background, out);
+  encodeLayer(fgTexels, out, true);
+  encodeLayer(bgTexels, out, true);
   return Uint8Array.from(out).buffer;
 };
 const diff = (foregroundRects, backgroundRects) => {
   const out = [];
   for (const rects of [foregroundRects, backgroundRects]) {
     pushU16(out, rects.length);
-    for (const { x0, y0, x1, y1, cells } of rects) {
+    for (const { x0, y0, x1, y1, cells, texels = cells.map(() => 0xffff) } of rects) {
       pushU16(out, x0); pushU16(out, y0); pushU16(out, x1); pushU16(out, y1);
       out.push(...cells);
+      for (const texel of texels) pushU16(out, texel);
     }
   }
   return Uint8Array.from(out).buffer;
 };
-const decode = (buffer, cells) => {
+const decode = (buffer, cells, textures = false) => {
   const bytes = new Uint8Array(buffer);
   const grids = [];
   let offset = 0;
-  for (let layer = 0; layer < 2; layer++) {
+  for (let layer = 0; layer < 4; layer++) {
     const grid = [];
     while (grid.length < cells) {
       const run = (bytes[offset] | (bytes[offset + 1] << 8)
         | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
-      const value = bytes[offset + 4];
-      offset += 5;
+      const value = layer < 2 ? bytes[offset + 4] : bytes[offset + 4] | (bytes[offset + 5] << 8);
+      offset += layer < 2 ? 5 : 6;
       for (let i = 0; i < run; i++) grid.push(value);
     }
     grids.push(grid);
   }
   assert.equal(offset, bytes.length);
-  return grids;
+  return textures ? grids.slice(2) : grids.slice(0, 2);
 };
 
 const frames = [
@@ -226,3 +230,12 @@ await overlapCache.add({ ...cacheSegment(60), end: 89 });
 assert.equal(overlapCache.getByTurn(100)?.start, 0);
 
 console.log('replay visual buffer checks passed');
+
+const texturedFrames = [
+  { world: { type: 'full', cols: 2, rows: 2, data: full([1, 1, 1, 1], [0, 0, 0, 0], [12, 13, 44, 45]) } },
+  { world: { type: 'shift', cols: 2, rows: 2, shiftDx: 1, shiftDy: 0,
+    data: diff([{ x0: 0, y0: 0, x1: 1, y1: 1, cells: [1], texels: [777] }], []) } },
+];
+assert.deepEqual(decode(reconstructReplayWorld(texturedFrames, 1).data, 4, true), [
+  [777, 0xffff, 45, 0xffff], [0xffff, 0xffff, 0xffff, 0xffff],
+]);

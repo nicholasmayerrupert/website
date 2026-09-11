@@ -157,6 +157,13 @@ static __attribute__((noinline)) double wridged2(uint32_t seed, double x, double
   return norm > 0 ? sum / norm : 0;
 }
 
+static constexpr uint16_t WORLD_TEXTURE = 0xffffu;
+struct RasterTexture { int worldX = 0, worldY = 0; uint16_t texel = WORLD_TEXTURE; };
+struct CellTexture {
+  int cell = 0;
+  uint16_t texel = WORLD_TEXTURE;
+};
+
 struct Comp {
   int id = 0;
   uint8_t plantType = PT_STANDARD; // flora species (plant comps only); survives shifts/splits/streaming
@@ -166,6 +173,9 @@ struct Comp {
   // pan stutter). Inserts are dedup'd by construction at every call site (an
   // EMPTY/seen guard precedes each push_back), so no cell is ever added twice.
   std::vector<int> cells;
+  // Sparse source-texel overrides keyed by cell identity, independent of the
+  // membership vector's flood order. Unmoved terrain uses world coordinates.
+  std::vector<CellTexture> textures;
   int yMax = 0;
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
@@ -199,6 +209,7 @@ struct StoredCompState {
 struct StoredCompFragment {
   int id = 0;
   std::vector<uint16_t> cellOffsets;
+  std::vector<CellTexture> textures; // cell is a tile-local offset
 };
 
 enum BodyCollisionFace : uint8_t {
@@ -252,6 +263,9 @@ struct Body {
   // occ-sized material map so stone, ore, timber, and foliage remain one rigid
   // shape without losing their individual cell identities.
   std::vector<uint8_t> cellMaterials;
+  std::vector<uint16_t> textures;
+  // Accepted samples when a tiny shape falls between raster sample centres.
+  std::vector<RasterTexture> placeholderTextures; // occupancy-local source texels, including rotation
   // A blast-detached foreground/background pair shares one physical occupancy
   // and pose. Each body stores only its own layer's materials in cellMaterials;
   // this inverse map supplies the peer layer for combined mass/collision.

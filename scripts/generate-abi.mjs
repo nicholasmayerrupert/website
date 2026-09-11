@@ -466,7 +466,7 @@ const cwrapType = (cppType, isReturn = false) => {
   if (!isReturn && cppType === 'const char*') return 'string';
   const numeric = new Set([
     'Engine*', 'double', 'double*', 'float', 'float*', 'int', 'int*',
-    'int32_t*', 'uint32_t', 'uint32_t*', 'uint8_t*',
+    'int32_t*', 'uint32_t', 'uint32_t*', 'uint8_t*', 'uint16_t*',
   ]);
   if (numeric.has(cppType)) return 'number';
   throw new Error(`Unsupported exported ABI type: ${cppType}`);

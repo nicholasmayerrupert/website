@@ -385,6 +385,7 @@ class RigidBodySystem {
     std::vector<MovePose> movePreviousPoses;
     std::vector<std::vector<int>> movePreviousFootprints;
     std::vector<std::vector<uint8_t>> movePreviousMaterials;
+    std::vector<std::vector<uint16_t>> movePreviousTextures;
     std::vector<std::vector<Disp>> moveDisplaced;
     std::vector<std::vector<int>> moveStamped;
     std::vector<uint8_t> movePreviousMaterialGrid;

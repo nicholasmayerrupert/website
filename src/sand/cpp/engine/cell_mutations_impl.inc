@@ -20,7 +20,7 @@ void CellMutationBatch::detachOldTopology(int cell, uint8_t oldMaterial) {
     if (bodyById.empty())
       for (Body* body : E.L->bodies) bodyById[body->id] = body;
     if (!E.rigid.eraseBodyCellIndex(cell, bodyById, dirtyBodies)) {
-      E.L->grid[cell] = EMPTY;
+      E.writeGridIndexUnsafe(cell, EMPTY);
       E.L->bodyOwner[cell] = -1;
     }
     return;
@@ -195,7 +195,9 @@ bool CellMutationBatch::replaceAttached(int cell, uint8_t material,
     canceledRemovals.insert(cell);
     removedMaterialByCell.erase(cell);
   }
+  uint16_t texel = owner == componentIndex ? E.L->textureTexels[cell] : WORLD_TEXTURE;
   E.writeGridIndexUnsafe(cell, material);
+  E.renderer.setTextureAt(*E.L, cell, texel);
   changed = true;
   if (owner < 0) {
     component.cells.push_back(cell);

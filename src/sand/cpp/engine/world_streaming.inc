@@ -88,6 +88,14 @@
       }
       if (cw == 0) continue;
       cs.resize(cw); comp.yMax = yMax; comp.cacheDirty = true;
+      size_t textureCount = 0;
+      for (CellTexture source : comp.textures) {
+        int x = source.cell % cols - dx, y = source.cell / cols - dy;
+        if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+        source.cell = y * cols + x;
+        comp.textures[textureCount++] = source;
+      }
+      comp.textures.resize(textureCount);
       // The carry history is coordinate-bearing state for the ping-pong
       // buffers. Rebuild its staying footprint from these already-translated
       // cells instead of performing a second full index-translation pass.
@@ -223,7 +231,7 @@
 #undef SAND_COUNT_CELL_STORE
       for (const auto& entry : lay.componentStore)
         for (const StoredCompFragment& fragment : entry.second)
-          total += sizeof(StoredCompFragment)
+          total += fragment.textures.capacity() * sizeof(CellTexture) + sizeof(StoredCompFragment)
             + fragment.cellOffsets.size() * sizeof(uint16_t);
       total += lay.componentStateStore.size()
         * sizeof(std::pair<const int, StoredCompState>);
@@ -401,7 +409,7 @@
   bool wholeTile(int tx, int ty) { return tx >= 0 && ty >= 0 && tx + CHUNK_SIZE <= cols && ty + CHUNK_SIZE <= rows; }
   bool componentHasStreamState(const Comp& component) const {
     return component.age != 0 || component.gravityGrowth
-      || component.bakedAssemblyId != 0 || component.growing;
+      || component.bakedAssemblyId != 0 || component.growing || !component.textures.empty();
   }
   struct ComponentStreamTraits {
     bool plant = false;
@@ -523,6 +531,9 @@
         }
         found->cellOffsets.push_back(
           (uint16_t)((y - ty) * CHUNK_SIZE + x - tx));
+        uint16_t texel = L->textureTexels[(size_t)k];
+        if (texel != WORLD_TEXTURE)
+          found->textures.push_back({(y - ty) * CHUNK_SIZE + x - tx, texel});
       }
       bool growthComponent = traits.plant || traits.mycelium;
       bool hasGrowthOrigin = traits.seed || traits.spore;
@@ -563,6 +574,13 @@
         for (const StoredCompFragment& fragment : stored->second) {
           auto storedState = L->componentStateStore.find(fragment.id);
           if (storedState == L->componentStateStore.end()) continue;
+          for (const CellTexture& source : fragment.textures) {
+            int x = tx + source.cell % CHUNK_SIZE, y = ty + source.cell / CHUNK_SIZE;
+            if (x < bx0 || x >= bx0 + w || y < by0 || y >= by0 + h) continue;
+            int k = y * cols + x;
+            if (isComponentMaterial(L->grid[k]) && !isBodyCell(k))
+              renderer.setTextureAt(*L, k, source.texel);
+          }
           auto foundGroup = groupById.find(fragment.id);
           if (foundGroup == groupById.end()) {
             size_t index = groups.size();
@@ -686,6 +704,7 @@
         piece.grounded = source.grounded;
         piece.cacheDirty = true;
         piece.cells = std::move(islands[i]);
+        renderer.captureComponentTextures(piece, *L);
         bool plant = false, mycelium = false, hasSeed = false, hasSpore = false;
         for (int k : piece.cells) {
           piece.yMax = imax(piece.yMax, k / cols);

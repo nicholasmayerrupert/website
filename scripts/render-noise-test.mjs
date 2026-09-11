@@ -62,7 +62,7 @@ console.log('schema-driven animated textures');
   }
 }
 
-console.log('stationary shimmer');
+console.log('animated liquid currents');
 {
   const size = 64;
   const e = createEngineWasm({ cols: size, rows: size, worldSeed: SEED, sinksOn: false, infinite: false });
@@ -76,7 +76,7 @@ console.log('stationary shimmer');
     if (before[i] === after[i]) unchanged++;
     else changed++;
   }
-  check('water shimmers in place instead of replacing the whole texture', changed > size && unchanged > size,
+  check('water currents animate while retaining quiet interior areas', changed > size && unchanged > size,
     `(${changed} changed, ${unchanged} retained)`);
   e.destroy();
 }
@@ -92,21 +92,29 @@ console.log('lava texture');
   for (const c of px) colors.set(c, (colors.get(c) || 0) + 1);
   check('lava uses a layered molten palette', colors.size >= 3, `(${colors.size} colors)`);
 
-  // A modulo stripe makes nearly every highlighted cell continue along the same
-  // diagonal. The mottled texture should have varied local directions instead.
-  const base = [...colors].sort((a, b) => b[1] - a[1])[0][0];
-  let highlighted = 0, diagonalContinuation = 0, orthogonalNeighbour = 0;
-  for (let y = 1; y < size - 1; y++) for (let x = 1; x < size - 1; x++) {
-    const k = y * size + x;
-    if (px[k] === base) continue;
-    highlighted++;
-    if (px[k - size - 1] !== base || px[k + size + 1] !== base) diagonalContinuation++;
-    if (px[k - 1] !== base || px[k + 1] !== base || px[k - size] !== base || px[k + size] !== base) orthogonalNeighbour++;
+  let repeated = 0, compared = 0;
+  for (let y = 8; y < 56; y++) for (let x = 4; x < 28; x++) {
+    if (px[y * size + x] === px[y * size + x + 32]) repeated++;
+    compared++;
   }
-  check('lava highlights form local patches', highlighted > 0 && orthogonalNeighbour / highlighted > 0.55,
-    `(${orthogonalNeighbour}/${highlighted} touch orthogonally)`);
-  check('lava highlights do not resolve into diagonal stripes', highlighted > 0 && diagonalContinuation / highlighted < 0.85,
-    `(${diagonalContinuation}/${highlighted} continue diagonally)`);
+  check('lava does not repeat a 32-cell stencil', repeated < compared / 4,
+    `(${repeated}/${compared} repeat)`);
+  const brightness = color => ((color & 255) + ((color >>> 8) & 255) + ((color >>> 16) & 255)) / 3;
+  const center = 32 * size + 32;
+  const bank = createEngineWasm({ cols:size, rows:size, worldSeed:SEED, sinksOn:false, infinite:false });
+  bank.getGrid().fill(MAT.LAVA);
+  for (let y = 0; y < size; y++) bank.getGrid()[y * size + 31] = MAT.STONE;
+  bank.renderFull();
+  const bankPixel = new Uint32Array(bank.getRenderPixels().slice().buffer)[center];
+  check('lava cooling crust follows a solid bank', brightness(bankPixel) + 25 < brightness(px[center]));
+  bank.destroy();
+  const hash = e.gridHash();
+  for (let frame = 0; frame < 6; frame++) e.renderFull();
+  const next = new Uint32Array(e.getRenderPixels().slice().buffer);
+  let changed = 0;
+  for (let i = 0; i < px.length; i++) if (next[i] !== px[i]) changed++;
+  check('molten currents visibly evolve within half a second', changed > px.length / 3);
+  check('fluid animation leaves simulation state unchanged', hash === e.gridHash());
   e.destroy();
 }
 

@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 8;
+static constexpr uint32_t CHECKPOINT_VERSION = 9;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -8,7 +8,7 @@ uint32_t checkpointHash(const uint8_t* data, size_t size) {
   return hash;
 }
 template<class T> static constexpr bool CHECKPOINT_STRUCTURED =
-  std::is_same_v<T, InvSlot> || std::is_same_v<T, Item> || std::is_same_v<T, Projectile> || std::is_same_v<T, Creature>;
+  std::is_same_v<T, RasterTexture> || std::is_same_v<T, CellTexture> || std::is_same_v<T, InvSlot> || std::is_same_v<T, Item> || std::is_same_v<T, Projectile> || std::is_same_v<T, Creature>;
 struct CheckpointArchive {
   explicit CheckpointArchive(std::vector<uint8_t>& output, bool read = false, bool measure = false)
     : bytes(output), reading(read), measuring(measure) {}
@@ -59,8 +59,10 @@ struct CheckpointArchive {
     if (reading) { value.clear(); for (uint32_t i=0;i<n && valid;i++) { T item{}; field(item); value.insert(item); } }
     else for (auto item:value) field(item);
   }
-  void field(Comp& v) { fields(v.id,v.plantType,v.cells,v.yMax,v.woodCount,v.leafCount,v.age,v.cacheDirty,v.gravityGrowth,v.grounded,v.bakedAssemblyId,v.growing,v.woodCells,v.seedWoodCells); }
-  void field(StoredCompFragment& v) { fields(v.id,v.cellOffsets); }
+  void field(RasterTexture& v) { fields(v.worldX,v.worldY,v.texel); }
+  void field(CellTexture& v) { fields(v.cell,v.texel); }
+  void field(Comp& v) { fields(v.id,v.plantType,v.cells,v.yMax,v.woodCount,v.leafCount,v.age,v.cacheDirty,v.gravityGrowth,v.grounded,v.bakedAssemblyId,v.growing,v.woodCells,v.seedWoodCells); if (version >= 9) field(v.textures); else if (reading) v.textures.clear(); }
+  void field(StoredCompFragment& v) { fields(v.id,v.cellOffsets); if (version >= 9) field(v.textures); else if (reading) v.textures.clear(); }
   void field(InventoryPool& v) { fields(v.entries,v.exactMaterial); }
   void field(WandState& v) { fields(v.spells,v.upgrades,v.links,v.cursor,v.initialized); }
   void field(SpellCast& v) { fields(v.spells,v.connections,v.count,v.nextSlot,v.power,v.shots,v.bounces,v.bonusDamage,v.homing,v.lifetime,v.manaCost,v.cooldown,v.charged); }
@@ -116,7 +118,7 @@ struct CheckpointArchive {
     else if (reading) { v.manaRecoveryTicks = v.wandChargeTicks = 0; v.pendingCast = SpellCast(); }
   }
   void field(AdventureChest& v) { fields(v.id,v.wx,v.wy,v.opened,v.loot); if (version>=3) field(v.packed); else if (reading) v.packed=false; }
-  void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); }
+  void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); if (version >= 9) fields(v.textures,v.placeholderTextures); else if (reading) { v.textures.clear(); v.placeholderTextures.clear(); } }
   void field(Body*& body) {
     if (reading) body = new Body();
     field(*body);
@@ -205,6 +207,34 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   for (const auto& peer:a.peers) {
     auto found=a.bodies.find({peer.layer,peer.id}); if (found==a.bodies.end()) return false;
     peer.body->jointPeer=found->second;
+  }
+  for (auto& entry : a.bodies) {
+    Body* body = entry.second;
+    if (version < 9) {
+      body->textures.assign(body->occ.size(), WORLD_TEXTURE);
+      Layer& layer = entry.first.first == 0 ? E.fg : E.bg;
+      for (int j = 0; j < body->h; j++) for (int i = 0; i < body->w; i++) {
+        size_t local = (size_t)j * body->w + i;
+        if (local >= body->occ.size()) return false;
+        int x = (int)std::floor(body->px + (i + body->offsetX) * body->cs - (j + body->offsetY) * body->sn);
+        int y = (int)std::floor(body->py + (i + body->offsetX) * body->sn + (j + body->offsetY) * body->cs);
+        body->textures[local] = (uint16_t)((((y + layer.worldOffsetY) & 31) << 5) | ((x + layer.worldOffsetX) & 31));
+      }
+    }
+    for (const RasterTexture& source : body->placeholderTextures) if (source.texel >= 1024) return false;
+    if (body->textures.size() != body->occ.size()) return false;
+    for (uint16_t texel : body->textures) if (texel != WORLD_TEXTURE && texel >= 1024) return false;
+  }
+  for (Layer* layer : {&E.fg, &E.bg}) {
+    for (const Comp& comp : layer->components) {
+      std::unordered_set<int> members(comp.cells.begin(), comp.cells.end());
+      for (const CellTexture& source : comp.textures)
+        if (!members.count(source.cell) || source.texel >= 1024) return false;
+    }
+    for (const auto& bucket : layer->componentStore) for (const StoredCompFragment& fragment : bucket.second)
+      for (const CellTexture& source : fragment.textures)
+        if (source.cell < 0 || source.cell >= CHUNK_SIZE * CHUNK_SIZE || source.texel >= 1024) return false;
+    E.renderer.rebuildTextureProjection(*layer);
   }
   auto migrateSeed=[&](InvSlot& slot){ E.canonicalizeSeed(slot.material,slot.plantType); E.magic.initializeWand(slot); };
   for (auto& chest:E.containers.chests) for (auto& slot:chest.loot) migrateSeed(slot);

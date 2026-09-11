@@ -1131,6 +1131,7 @@
     }
     clearPersistentCurrentState(L, k);
     uint8_t old = L->grid[k];
+    renderer.setTextureAt(*L, k, WORLD_TEXTURE);
     if (m == NEUTRONIUM) L->forceSourcePresent = true;
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
       forces.noteNeutroniumWrite(L, k, old, m);

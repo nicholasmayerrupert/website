@@ -36,9 +36,12 @@ production route.
 
 `creatureArt.js` supplies eight named animation clips per species. Player clips can contain 1–16
 frames with independent cadence. Palette entry zero is transparent; source pixels
-use palette symbols. `world.textures` supplies 8×8 material tiles. These tile the
-simulated cells in absolute world coordinates. `presentation` sets surface/depth
-ambient light and background tint. Art edits affect both the renderer and the
+use palette symbols. `materialArt.js` supplies 32×32 material tiles for every
+non-empty material on every planet. `world.textures` can override individual
+tiles with 8×8 or 32×32 palette-indexed rows. Fresh terrain and loose solids tile
+in absolute world coordinates. Liquids use the tile palette for animated currents, surface crests and contact rims.
+Rigid shapes carry source texel addresses as they move and rotate.
+`presentation` sets surface/depth ambient light and background tint. Art edits affect both the renderer and the
 content fingerprint used to guard replay compatibility.
 
 The workbench currently resets simulation on save. It does not preserve a running
@@ -57,11 +60,35 @@ revisions use the content fingerprint and content integration checks.
 
 ## Visual direction
 
-The world uses the material schema's original colors and noise shading, darker
-background layers, cell gutters, and simulated lighting. `world.textures` is empty;
-zero surface/depth ambient overrides leave the normal light field in control.
-Keep this world style when adding locations. Game text uses **Sand Pixel**,
+The world uses continuous material surfaces without cell gutters, hand-authored
+pixel textures, darker background layers, and simulated lighting. Opaque terrain
+preserves the texture palette; opacity and light transmission remain
+schema-defined. Zero surface/depth ambient overrides leave the normal light
+field in control. Game text uses **Sand Pixel**,
 including menus, dialogue, the journal, prompts, and HUDs.
+
+`scripts/author-material-art.mjs` contains the hand-placed motif recipes and
+individual palettes; it writes the editable pixel rows in `materialArt.js`.
+There is no random texture generation. Each material has an art-direction note.
+Use clustered pixels, quiet base areas, upper-left highlights, and deliberate
+material-specific forms. Keep highlights sparse enough that actors remain clear.
+Neighboring cells sample one continuous tile; physics and the destructible cell
+silhouette remain exact. Fluid interiors use evolving noise without a short
+repeating tile. Exposed surfaces carry moving highlights; lava cools visually along solid contact edges.
+Liquid animation is presentation-only and preserves the simulated material mask.
+Bodies carry occupancy-aligned source texel addresses. Baked components retain
+sparse cell-address records, and splitting, welding, freezing, saves, and streamed
+fragments preserve them. Repeated rotation and welding resample the artwork on
+the same cell lattice as the geometry. The layer projection feeds rendering and
+worker/replay packets; presentation mirrors do not reconstruct topology.
+
+Run `node scripts/author-material-art.mjs` after editing recipes, then
+`node scripts/material-art-preview.mjs` to inspect the repeated tiles, palettes,
+and notes in `.sand-artifacts/material-art/index.html` and two PNG contact sheets.
+The preview repeats tiles across both axes at integer pixel scale. Inspect them
+in `npm run game:capture -- hearth` and other scenes too: source swatches do not
+include the runtime lighting and transparency. `game-content` checks complete
+static tiles against actual WASM pixels; `render` checks animation and streaming.
 
 Creature sprite sets use quarter- or half-cell source pixels and dark outline
 palettes. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes

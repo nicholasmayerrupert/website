@@ -91,6 +91,7 @@ EMSCRIPTEN_KEEPALIVE int engine_step_world(Engine* e) { return e->stepWorld() ? 
 EMSCRIPTEN_KEEPALIVE int engine_sound_event_snapshot(Engine* e) { return e->audio.buildAndDrainSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_sound_event_snapshot_ptr(Engine* e) { return e->audio.snapshotData(); }
 EMSCRIPTEN_KEEPALIVE void engine_audio_ambience(Engine* e, double x, double y, int radius, float* out) { e->audio.sampleAmbience(x, y, radius, out); }
+EMSCRIPTEN_KEEPALIVE uint16_t* engine_texture_texels(Engine* e, int background) { return (background ? e->bg : e->fg).textureTexels.data(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->fg.grid; }
 EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->fg.dirtyRenderCount; }
 EMSCRIPTEN_KEEPALIVE int engine_cols(Engine* e) { return e->cols; }

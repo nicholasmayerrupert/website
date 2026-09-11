@@ -26,9 +26,9 @@ class ReplicationSystem {
   void blobPush32(uint32_t v) { blobPush16(v & 0xffff); blobPush16((v >> 16) & 0xffff); }
   static int readLE16(const uint8_t* buf, int p) { return (int)buf[p] | ((int)buf[p + 1] << 8); }
 
-  void rleEncode(const uint8_t* g);
-  int rleDecode(const uint8_t* buf, int len, int p, uint8_t* g);
-  int rleValidate(const uint8_t* buf, int len, int p) const;
+  template<class T> void rleEncode(const T* g);
+  template<class T> int rleDecode(const uint8_t* buf, int len, int p, T* g);
+  int rleValidate(const uint8_t* buf, int len, int p, bool textures = false) const;
   bool decodeWorldGrids(const uint8_t* buf, int len);
   // Layer is Engine-nested (incomplete here), so the per-layer halves take a
   // background flag and resolve E.fg/E.bg in the impl.

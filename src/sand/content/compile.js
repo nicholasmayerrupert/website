@@ -4,9 +4,10 @@ import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STA
 import creatureArt from './creatureArt.js';
 import { EQUIPMENT } from './equipment.js';
 import { gearPixels } from './gearArt.js';
+import materialArt from './materialArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 6;
+export const CONTENT_WIRE_VERSION = 7;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
 export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special'];
@@ -189,7 +190,8 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
       frameCount++;
     }
   }
-  const hash = contentHash({ world, sprite, creatureArt: creatureSources, equipment: EQUIPMENT });
+  const textureSources = { ...materialArt, ...world.textures };
+  const hash = contentHash({ world, sprite, creatureArt: creatureSources, equipment: EQUIPMENT, textures: textureSources });
   for (const key of Object.keys(CREATURE)) if (!creatureSources[key]) fail('creatureArt', `missing art for ${key}`);
   const creatures = Object.entries(creatureSources).map(([key, art]) => {
     if (!Object.hasOwn(CREATURE, key)) fail(key, 'unknown creature');
@@ -224,17 +226,20 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     return [CREATURE[key], art.width, art.height, Math.round(art.pixelScale * 1000), colors.length,
       frameOffset, ...clipRecords, ...colors, ...pixels];
   });
-  const textures = Object.entries(world.textures || {}).map(([material, texture]) => {
-    if (!Object.hasOwn(MAT, material) || texture.rows?.length !== 8 || texture.rows.some(row => row.length !== 8)) fail(`textures.${material}`, 'expected a known material and 8×8 tile');
+  const textures = Object.entries(textureSources).map(([material, texture]) => {
+    const size = texture?.rows?.length;
+    if (!Object.hasOwn(MAT, material) || ![8, 32].includes(size) || texture.rows.some(row => typeof row !== 'string' || row.length !== size)) fail(`textures.${material}`, 'expected a known material and 8×8 or 32×32 tile');
+    if (!Array.isArray(texture.palette) || texture.palette.length < 1 || texture.palette.length > 10) fail(`textures.${material}`, 'expected 1…10 palette colors');
     const colors = texture.palette.map(hex => {
       if (!/^#[0-9a-f]{6}$/i.test(hex)) fail(`textures.${material}`, 'invalid color');
       const rgb = parseInt(hex.slice(1), 16);
       return ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >>> 16);
     });
-    return [MAT[material], ...texture.rows.flatMap(row => [...row].map(symbol => {
+    const pixels = texture.rows.flatMap(row => [...row].map(symbol => {
       if (!/^\d$/.test(symbol) || colors[Number(symbol)] === undefined) fail(`textures.${material}`, 'invalid palette index');
       return colors[Number(symbol)];
-    }))];
+    }));
+    return [MAT[material], ...Array.from({ length: 32 * 32 }, (_, i) => pixels[(Math.floor(i / 32) % size) * size + (i % 32) % size])];
   });
   if (!Number.isFinite(world.presentation.backgroundTint) || world.presentation.backgroundTint < .1 || world.presentation.backgroundTint > 1) fail('backgroundTint', 'expected .1…1');
   if (world.presentation.fadeTop >= world.presentation.fadeBottom) fail('presentation', 'fadeTop must precede fadeBottom');

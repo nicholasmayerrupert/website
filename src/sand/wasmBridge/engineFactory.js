@@ -139,6 +139,7 @@ export function initSandWasm() {
         soundEventSnapshotPtr: c('engine_sound_event_snapshot_ptr', 'number', ['number']),
         audioAmbience: c('engine_audio_ambience', null, ['number', 'number', 'number', 'number', 'number']),
         grid: c('engine_grid', 'number', ['number']),
+        textureTexels: c('engine_texture_texels', 'number', ['number', 'number']),
         dirtyCount: c('engine_dirty_count', 'number', ['number']),
         cols: c('engine_cols', 'number', ['number']),
         rows: c('engine_rows', 'number', ['number']),
@@ -1378,6 +1379,7 @@ const renderStrides = Object.freeze({
     },
 
     // ---- two-layer access (background = layer 1) ----
+    getTextureTexels(background = false) { return new Uint16Array(mod.HEAPU8.buffer, M.textureTexels(ptr, background ? 1 : 0), cellCount); },
     getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },
     setBgEnabled(on) { M.setBgEnabled(ptr, on ? 1 : 0); },
     paintDiscLayer(layer, cx, cy, r, material, overwrite = false) { return M.paintDiscLayer(ptr, layer | 0, cx, cy, r, material, overwrite ? 1 : 0); },

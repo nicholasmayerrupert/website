@@ -1,18 +1,68 @@
 // Material -> RGBA pixel generation (the engine's render hot path).
 //
 // Writes one RGBA pixel per cell into renderPixels (little-endian uint32, so the
-// bytes land as R,G,B,A for an ImageData). Each material gets a fixed set of 8
-// brightness-shifted shades; a stable 64x64 noise tile picks one per cell by
-// ABSOLUTE WORLD position (worldOffset+buffer), so the grain stays locked to the
-// terrain across frames AND across world shifts. Keying on buffer position instead
-// makes the grain visibly "reapply" on a vertical shift, because WORLD_SHIFT_ROWS
-// (96) is not a multiple of the 64-tile, so the slid texture and the re-rendered
-// cells would disagree on the tile phase. It is identical on the full and per-rect
-// paths. MAT_RENDER_ANIM selects a render-only moving texture; simulation state and
-// the lighting solve remain untouched.
+// bytes land as R,G,B,A for an ImageData). Authored 32x32 material tiles and the
+// fallback 64x64 grain use world coordinates; rigid tiles use owned source texels.
+// MAT_RENDER_ANIM pulses brightness in place without changing simulation state.
 //
 // GLPresenter uploads these pixels into foreground/background textures and
 // composites the final frame.
+
+uint16_t Renderer::textureAt(const Layer& layer, int cell) const {
+  uint16_t texel = layer.textureTexels[(size_t)cell];
+  if (texel != WORLD_TEXTURE) return texel;
+  int y = cell / E.cols, x = cell - y * E.cols;
+  return (uint16_t)((((y + layer.worldOffsetY) & 31) << 5)
+                    | ((x + layer.worldOffsetX) & 31));
+}
+
+void Renderer::setTextureAt(Layer& layer, int cell, uint16_t texel) {
+  if (layer.textureTexels[(size_t)cell] == texel) return;
+  layer.textureTexels[(size_t)cell] = texel;
+  // Texture-only movement must reach the renderer without waking simulation.
+  int y = cell / E.cols, x = cell - y * E.cols;
+  int chunk = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
+  if (!layer.dirtyRender[chunk]) {
+    layer.dirtyRender[chunk] = 1;
+    layer.dirtyRenderCount++;
+  }
+}
+
+void Renderer::captureComponentTextures(Comp& component, const Layer& layer) {
+  component.textures.clear();
+  for (int cell : component.cells) {
+    uint16_t texel = layer.textureTexels[(size_t)cell];
+    if (texel != WORLD_TEXTURE) component.textures.push_back({cell, texel});
+  }
+}
+
+void Renderer::restoreComponentTextures(const Comp& component, Layer& layer) {
+  for (const CellTexture& source : component.textures)
+    setTextureAt(layer, source.cell, source.texel);
+}
+
+void Renderer::stampBodyTexture(Body* body, int local, int cell) {
+  if (local >= 0 && (size_t)local < body->textures.size())
+    setTextureAt(*E.L, cell, body->textures[(size_t)local]);
+}
+
+void Renderer::rebuildTextureProjection(Layer& layer) {
+  std::fill(layer.textureTexels.begin(), layer.textureTexels.end(), WORLD_TEXTURE);
+  for (const Comp& component : layer.components) restoreComponentTextures(component, layer);
+  Engine::ActiveLayerScope active(E, &layer);
+  for (Body* body : layer.bodies) {
+    E.rigid.forEachBodyCell(body, [&](int x, int y, int local) {
+      int cell = y * E.cols + x;
+      if (layer.bodyOwner[cell] == body->id) stampBodyTexture(body, local, cell);
+    });
+    for (const RasterTexture& source : body->placeholderTextures) {
+      int x = source.worldX - layer.worldOffsetX, y = source.worldY - layer.worldOffsetY;
+      if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+      int cell = y * E.cols + x;
+      if (layer.bodyOwner[cell] == body->id) setTextureAt(layer, cell, source.texel);
+    }
+  }
+}
 
 bool Renderer::topRayStartsInSky(Layer* lay, int x) {
   if (!lay->infinite) return true;
@@ -380,13 +430,71 @@ void Renderer::buildRenderTables() {
   }
 }
 
+// Evolving liquid currents use a non-repeating field; material boundaries place
+// the surface highlights and cooling banks. Liquid art supplies colors, not UVs.
+uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const {
+  auto mix = [](uint32_t a, uint32_t b, int t) {
+    uint32_t out = 0;
+    for (int shift : {0, 8, 16})
+      out |= (((((a >> shift) & 255u) * (256 - t)) + (((b >> shift) & 255u) * t)) >> 8) << shift;
+    return out;
+  };
+  auto noise = [](int x, int y) {
+    int ix = x >> 3, iy = y >> 3, fx = x & 7, fy = y & 7;
+    int tx = fx * fx * (12 - fx), ty = fy * fy * (12 - fy);
+    int a = (int)(renderCellHash(ix, iy) & 255u);
+    int b = (int)(renderCellHash(ix + 1, iy) & 255u);
+    int c = (int)(renderCellHash(ix, iy + 1) & 255u);
+    int d = (int)(renderCellHash(ix + 1, iy + 1) & 255u);
+    int top = a + ((b - a) * tx >> 8), bottom = c + ((d - c) * tx >> 8);
+    return top + ((bottom - top) * ty >> 8);
+  };
+  const auto& colors = E.content.fluidColors[material];
+  int wx = x + E.L->worldOffsetX, wy = y + E.L->worldOffsetY;
+  uint8_t kind = MAT_RENDER_ANIM[material];
+  int time = kind == RA_OIL || kind == RA_LAVA ? frame / 2 : frame;
+  int warp = noise(wx + time, wy * 2 - time);
+  int flow = noise(wx - time + ((warp - 128) >> 4), wy * (kind == RA_LAVA ? 2 : 4) + time);
+  int band = flow & ~15;
+  uint32_t color;
+  if (kind == RA_LAVA) {
+    // Hot currents occupy the melt; dark crust belongs to solid contact edges.
+    color = mix(colors[1], colors[2], imin(224, band));
+    if (flow > 174) color = mix(color, colors[3], imin(224, (flow - 174) * 3));
+  } else if (kind == RA_OIL) {
+    color = mix(colors[0], colors[1], 192);
+    if (flow > 135) color = mix(color, colors[2], imin(200, (flow - 135) * 3));
+    if (warp > 165) color = mix(color, colors[3], imin(192, (warp - 165) * 3));
+  } else {
+    color = mix(colors[1], colors[2], imax(0, band - 112));
+    if (kind == RA_ACID && flow > 172 && flow < 204)
+      color = mix(color, colors[3], 144);
+    else if (flow > 185)
+      color = mix(color, colors[3], imin(176, (flow - 185) * 4));
+  }
+  auto air = [&](int cell) { return grid[cell] == EMPTY || MAT_CLASS[grid[cell]] == MC_GAS; };
+  auto bank = [&](int cell) { return MAT_CLASS[grid[cell]] == MC_RIGID || MAT_CLASS[grid[cell]] == MC_SOLID; };
+  int k = y * E.cols + x;
+  bool surface = y > 0 && air(k - E.cols);
+  bool belowSurface = y > 1 && grid[k - E.cols] == material && air(k - 2 * E.cols);
+  bool solidContact = (x > 0 && bank(k - 1)) || (x + 1 < E.cols && bank(k + 1))
+    || (y + 1 < E.rows && bank(k + E.cols));
+  if (solidContact) color = mix(color, colors[0], kind == RA_LAVA ? 176 : 48);
+  if (surface || belowSurface) {
+    int crest = noise(wx * 2 - time * 2, wy + time / 3);
+    int strength = surface ? 112 + (crest >> 1) : crest > 144 ? 80 : 0;
+    color = mix(color, colors[3], strength);
+  }
+  return color;
+}
+
 // Fill `out` (RGBA over uint32) for an INCLUSIVE cell rect [x0,x1] x [y0,y1] from
 // `g` (a layer's grid). Parameterized so it serves either layer's renderPixels.
 bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1) {
   // Index the noise/sparkle by absolute world coords so the grain is locked to the
   // terrain, not the buffer. worldOffset is 0 for bounded worlds (no-op there);
-  // for infinite worlds it advances per shift. `& 63`/`& 7` stay in range for
-  // negative offsets too (two's-complement low bits == value mod 64/8).
+  // for infinite worlds it advances per shift. The power-of-two masks stay in
+  // range for negative offsets too.
   int woX = E.L->worldOffsetX, woY = E.L->worldOffsetY;
   // Skip the per-cell mineDamage load + crack-shading branch entirely unless this
   // layer actually has live mining damage (almost never). mineDamage is a matching
@@ -427,13 +535,19 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       uint8_t animKind = MAT_RENDER_ANIM[m];
       hasAnimated = hasAnimated || animKind != RA_NONE;
       uint8_t shade = noiseRow[wx & 63];
-      uint8_t shimmer = animKind == RA_NONE ? 0 : shimmerAt(wx, wy, shimmerPhase(animKind));
+      const bool textured = E.content.hasTexture[m];
+      uint8_t shimmer = animKind == RA_NONE ? 0 : shimmerAt(textured ? wx >> 2 : wx, textured ? wy >> 2 : wy, shimmerPhase(animKind));
       if (animKind == RA_WATER) shade = (uint8_t)(((int)shade * 2 + shimmer) / 3);
       else if (animKind == RA_OIL) shade = (uint8_t)(((int)shade * 3 + shimmer) / 4);
       else if (animKind == RA_ACID) shade = (uint8_t)(((int)shade + shimmer) / 2);
       uint32_t c = renderVariants[((int)m << 3) + shade];
-      if (E.planetId == PL_FRONTIER && E.content.hasTexture[m])
-        c = E.content.textures[m][((wy & 7) << 3) | (wx & 7)];
+      const bool fluid = textured && MAT_CLASS[m] == MC_LIQUID;
+      if (fluid) {
+        c = fluidColor(g, x, y, m, frame - frame / 4);
+      } else if (textured) {
+        uint16_t texel = E.L->textureTexels[(size_t)k];
+        c = E.content.textures[m][texel == WORLD_TEXTURE ? ((wy & 31) << 5) | (wx & 31) : texel];
+      }
       uint32_t alphaMask = renderAlphaMask[m];
       if (dmg) {
         uint32_t rem = dmg[k];
@@ -445,7 +559,19 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           }
         }
       }
-      if (animKind == RA_FIRE) {
+      if (fluid) {
+        // Fluid animation is resolved with its boundary-aware color above.
+      } else if (textured) {
+        // Pulse small groups in place, preserving the tile's designed shapes.
+        if (animKind == RA_METHANE) {
+          alphaMask = (uint32_t)(48 + shimmer * 8) << 24;
+          c = jitterShade(c, ((int)shimmer - 3) * 2);
+        } else if (animKind == RA_FIRE || (animKind == RA_LAVA && (c & 255u) >= 220u)) {
+          c = jitterShade(c, ((int)shimmer - 3) * 3);
+        } else if (animKind != RA_NONE && animKind != RA_LAVA && shimmer >= 5) {
+          c = jitterShade(c, (int)(shimmer - 4) * 2);
+        }
+      } else if (animKind == RA_FIRE) {
         if (shimmer >= 5) c = PACKED_FIRE_HOT;
       } else if (animKind == RA_STEAM || animKind == RA_SMOKE) {
         c = jitterShade(c, ((int)shimmer - 3) * 2);

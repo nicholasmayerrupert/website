@@ -3,6 +3,8 @@ import { GAME_CONTENT, GAME_WORLD, PLAYER_ART } from '../src/sand/content/catalo
 import { compileContent } from '../src/sand/content/compile.js';
 import { initSandWasm, createEngineWasm, PLANET, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { MISSION, ITEM_KIND, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import materialArt from '../src/sand/content/materialArt.js';
+import { MATERIAL_BY_ID } from '../src/sand/materials.generated.js';
 
 const invalid = (mutate, expected) => {
   const world = structuredClone(GAME_WORLD), art = structuredClone(PLAYER_ART);
@@ -20,10 +22,40 @@ invalid(w => { w.quests[0].condition.count = 0; }, /expected integer/);
 invalid(w => { w.quests[1].condition.bounds = [0, 0, 1000, 1]; }, /construction area/);
 invalid(w => { w.quests[4].condition.species = 'TYPO'; }, /encounter species/);
 invalid(w => { w.residents[0].roamRadius = -1; }, /expected integer/);
+invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: ['0'] }; }, /tile/);
+invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: Array(32).fill('9'.repeat(32)) }; }, /palette index/);
 assert.deepEqual(compileContent(GAME_WORLD, PLAYER_ART).packed, GAME_CONTENT.packed);
 console.log('ok: content rejects broken references, dependency cycles, recursive prefabs and malformed art');
 
 await initSandWasm();
+// Read the entire authored tile back through the packet and real WASM renderer.
+// Full ambient removes lighting from this source-pixel fidelity check.
+const artWorld = structuredClone(GAME_WORLD);
+artWorld.presentation.surfaceLight = artWorld.presentation.deepLight = 255;
+const artEngine = createEngineWasm({ cols: 32, rows: 32, infinite: false, sinksOn: false,
+  planetId: PLANET.FRONTIER, content: compileContent(artWorld, PLAYER_ART) });
+try {
+  assert.deepEqual(Object.keys(materialArt).sort(), Object.keys(MAT).filter(name => name !== 'EMPTY').sort());
+  for (const [name, tile] of Object.entries(materialArt)) {
+    if (MATERIAL_BY_ID[MAT[name]].renderAnim !== 'none') continue;
+    // Render-only fixture: no world step consumes these component cells.
+    artEngine.getGrid().fill(MAT[name]);
+    artEngine.renderFull();
+    const rgba = artEngine.getRenderPixels();
+    for (let i = 0; i < 1024; i++) {
+      const hex = tile.palette[Number(tile.rows[i >> 5][i & 31])];
+      const rgb = parseInt(hex.slice(1), 16);
+      assert.equal((rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2], rgb, `${name} texel ${i}`);
+    }
+    const alpha = rgba[3];
+    assert.equal(alpha, Math.round((1 - MATERIAL_BY_ID[MAT[name]].transparency) * 255), `${name} schema opacity`);
+  }
+  artEngine.getGrid().fill(MAT.EMPTY);
+  artEngine.renderFull();
+  assert.ok(artEngine.getRenderPixels().every(value => value === 0), 'empty cells remain transparent');
+} finally { artEngine.destroy(); }
+console.log('ok: every static material preserves its complete authored tile and optical opacity');
+
 const create = content => createEngineWasm({ cols: 640, rows: 448, worldSeed: GAME_WORLD.seed,
   infinite: true, sinksOn: false, planetId: PLANET.FRONTIER, content });
 const rewardFixture = structuredClone(GAME_WORLD);

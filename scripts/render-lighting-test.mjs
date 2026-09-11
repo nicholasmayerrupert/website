@@ -7,14 +7,20 @@ import { INPUT, PROJECTILE_KIND } from '../src/sand/wasmBridge/abi.generated.js'
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { NIGHT_SKY_LIGHT, NOON_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { GAME_WORLD, PLAYER_ART } from '../src/sand/content/catalog.js';
+import { compileContent } from '../src/sand/content/compile.js';
 
 const COLS = 96, ROWS = 96;
 const k = (x, y) => y * COLS + x;
 
 await initSandWasm();
 const { check, done } = makeChecker('render-only lighting');
-const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: false });
-const mkInfinite = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: true });
+// Equal stone albedo isolates light transport from the authored fracture pattern.
+const lightingWorld = structuredClone(GAME_WORLD);
+lightingWorld.textures.STONE = { palette: ['#8c8c96'], rows: Array(8).fill('00000000') };
+const lightingContent = compileContent(lightingWorld, PLAYER_ART);
+const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: false, content: lightingContent });
+const mkInfinite = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: true, content: lightingContent });
 
 function brightness(e, x, y) {
   const p = e.getRenderPixels();

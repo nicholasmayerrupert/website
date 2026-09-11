@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 6) return false;
+  if (r.take() != 0x41535452 || r.take() != 7) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -116,7 +116,7 @@ bool ContentSystem::load(const int32_t* data, int length) {
   auto nextPalette = r.colors(paletteSize);
   auto nextPixels = r.pixels(frameCount * width * height, paletteSize);
   std::array<bool, 256> nextHasTexture{};
-  std::vector<std::array<uint32_t, 64>> nextTextures(256);
+  std::vector<std::array<uint32_t, 32 * 32>> nextTextures(256);
   int textureCount = r.bounded(0, 256);
   for (int i = 0; i < textureCount && r.valid; i++) {
     int material = r.material();
@@ -210,6 +210,25 @@ bool ContentSystem::load(const int32_t* data, int length) {
   clips = std::move(nextClips); palette = std::move(nextPalette); pixels = std::move(nextPixels);
   hasTexture = nextHasTexture;
   std::copy(nextTextures.begin(), nextTextures.end(), textures.begin());
+  for (int m = 0; m < TABLE; m++) {
+    if (!hasTexture[m] || MAT_CLASS[m] != MC_LIQUID) continue;
+    std::map<uint32_t, int> counts;
+    for (uint32_t color : textures[m]) counts[color & 0xffffffu]++;
+    std::vector<uint32_t> colors;
+    uint32_t dominant = counts.begin()->first;
+    for (const auto& entry : counts) {
+      colors.push_back(entry.first);
+      if (entry.second > counts[dominant]) dominant = entry.first;
+    }
+    auto luminance = [](uint32_t c) {
+      return (c & 255u) * 54 + ((c >> 8) & 255u) * 183 + ((c >> 16) & 255u) * 19;
+    };
+    std::sort(colors.begin(), colors.end(), [&](uint32_t a, uint32_t b) {
+      return luminance(a) < luminance(b);
+    });
+    fluidColors[m] = {colors.front(), dominant,
+      colors[colors.size() > 1 ? colors.size() - 2 : 0], colors.back()};
+  }
   creatureArt = std::move(nextCreatureArt);
   limbColors = nextLimbColors;
   return true;

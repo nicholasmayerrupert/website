@@ -10,8 +10,8 @@ const readU32 = (bytes, offset) => (
 
 export const isValidMaterialId = isMaterialId;
 
-export const maxWorldRleBytes = (cells) => cells * 10;
-export const maxWorldDiffBytes = (cells) => cells * 18 + 4;
+export const maxWorldRleBytes = (cells) => cells * 22;
+export const maxWorldDiffBytes = (cells) => cells * 22 + 4;
 
 function scanWorldRle(bytes, cells, withHash) {
   if (!(bytes instanceof Uint8Array) || !Number.isSafeInteger(cells) || cells <= 0) return false;
@@ -30,6 +30,17 @@ function scanWorldRle(bytes, cells, withHash) {
           hash = Math.imul((hash ^ material) >>> 0, 0x01000193) >>> 0;
       }
       filled += run;
+    }
+  }
+  for (let layer = 0; layer < 2; layer++) {
+    let filled = 0;
+    while (filled < cells) {
+      if (offset + 6 > bytes.length) return false;
+      const run = readU32(bytes, offset);
+      const texel = readU16(bytes, offset + 4);
+      if (!run || run > cells - filled || (texel >= 1024 && texel !== 0xffff)) return false;
+      filled += run;
+      offset += 6;
     }
   }
   if (offset !== bytes.length) return false;
@@ -63,11 +74,15 @@ export function isValidWorldDiff(bytes, cols, rows) {
       offset += 8;
       if (x1 < x0 || y1 < y0 || x1 > cols || y1 > rows) return false;
       const area = (x1 - x0) * (y1 - y0);
-      if (area > bytes.length - offset) return false;
+      if (area * 3 > bytes.length - offset) return false;
       for (let i = 0; i < area; i++) {
         if (!isValidMaterialId(bytes[offset + i])) return false;
       }
-      offset += area;
+      for (let i = 0; i < area; i++) {
+        const texel = readU16(bytes, offset + area + i * 2);
+        if (texel >= 1024 && texel !== 0xffff) return false;
+      }
+      offset += area * 3;
     }
   }
   return offset === bytes.length;

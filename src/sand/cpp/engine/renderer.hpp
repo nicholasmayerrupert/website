@@ -51,6 +51,8 @@ class Renderer {
   // propagation margin, keeps its exact inner rect, then restores the margin.
   std::vector<uint8_t> lightPatchScratch;
 
+  uint32_t fluidColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const;
+
   void init(uint32_t seed) { renderRngState = seed ^ 0x9e3779b9u; buildRenderTables(); }
   inline double renderRand() {
     renderRngState = (renderRngState + 0x6d2b79f5u);
@@ -124,6 +126,12 @@ class Renderer {
   void buildRenderTables();
   bool fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1);
   void renderFull();
+  uint16_t textureAt(const Layer& layer, int cell) const;
+  void setTextureAt(Layer& layer, int cell, uint16_t texel);
+  void captureComponentTextures(Comp& component, const Layer& layer);
+  void restoreComponentTextures(const Comp& component, Layer& layer);
+  void stampBodyTexture(Body* body, int local, int cell);
+  void rebuildTextureProjection(Layer& layer);
   void renderDirtyRects();
 
  private:

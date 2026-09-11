@@ -141,6 +141,7 @@ export const UNIT_SUITES = [
   ['rigid-spawn-joint', 'rigid-spawn-joint-repro.mjs'],
   ['prefetch', 'prefetch-test.mjs'],
   ['render', 'render-noise-test.mjs'],
+  ['material-textures', 'material-texture-test.mjs'],
   ['viewport-sizing', 'viewport-sizing-test.mjs'],
   ['day-night', 'day-night-test.mjs'],
   ['biome-background', 'biome-background-test.mjs'],

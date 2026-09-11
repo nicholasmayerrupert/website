@@ -182,7 +182,7 @@ export function createSandGame(container, opts = {}) {
 
     // DEV A/B flags (flicker bench)
     testPaused: false,
-    gutterOn: true,
+    gutterOn: false,
     snapOff: false,
 
     // presentation preferences

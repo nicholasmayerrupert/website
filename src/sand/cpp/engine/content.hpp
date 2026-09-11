@@ -42,7 +42,9 @@ class ContentSystem {
   double pixelScale = .5;
   float backgroundTint = .55f;
   std::array<bool, 256> hasTexture{};
-  std::array<std::array<uint32_t, 64>, 256> textures{};
+  std::array<std::array<uint32_t, 32 * 32>, 256> textures{};
+  // Dark, dominant, accent and highlight colors for procedural liquid shading.
+  std::array<std::array<uint32_t, 4>, 256> fluidColors{};
   std::array<int, 4> repairBounds{};
   std::array<int, 2> spawn{};
   std::array<int, 4> ambient{};

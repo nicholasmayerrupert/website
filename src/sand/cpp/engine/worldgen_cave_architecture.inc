@@ -9,13 +9,29 @@
     bool deep = design >= 8;
     int theme = deep ? (design - 8) / 3 : design / 2;
     int variant = deep ? (design - 8) % 3 : design % 2;
-    const uint8_t shallowWall[] = {STONE, PALESTONE, MYCELIUM, STONE};
-    const uint8_t deepWall[] = {BRICK, PALESTONE, BONE, DEEPSTONE};
+    const uint8_t shallowWall[] = {SANDSTONE, PALESTONE, MUSH_STEM, STONE};
+    const uint8_t deepWall[] = {BRICK, PALESTONE, BONE, MUSH_STEM};
     const uint8_t shallowTrim[] = {SANDSTONE, CRYSTAL, MUSH_STEM, MOSS};
     const uint8_t deepTrim[] = {IRON_ORE, CRYSTAL, PALESTONE, MYCELIUM};
     uint8_t wall = deep ? deepWall[theme] : shallowWall[theme];
     uint8_t trim = deep ? deepTrim[theme] : shallowTrim[theme];
     uint8_t timber = deep && theme == 0 ? IRON_ORE : PINE_WOOD;
+    const uint8_t shallowField[] = {CLAY, STONE, MYCELIUM, SANDSTONE};
+    const uint8_t deepField[] = {SLATE, STONE, CLAY, MYCELIUM};
+    uint8_t field = deep ? deepField[theme] : shallowField[theme];
+    auto roofAt = [&](int x) {
+      double nx = std::abs(x-cx)/(width*.5);
+      if (design == 6) return top + 5;
+      if (!deep && theme == 2) return top + 3 + (int)(nx*nx*6);
+      if (deep) {
+        if (theme == 0 && variant == 1) return top + 3 + (x-left)%24/3;
+        if (theme == 1 && variant == 0) return top + (int)(nx*12);
+        if (theme == 1 && variant == 1) return top + 3 + std::abs((x-left)%28-14)/2;
+        if (theme == 2 && variant == 2) return top + (x-left)*9/width;
+      }
+      if (design == 1) return top + (int)(nx*6);
+      return top + (int)(variant == 1 ? nx*8 : nx*nx*10);
+    };
     auto put = [&](int x, int y, uint8_t m) {
       if (x >= left && x <= right && y >= top && y <= floor) write(x, y, m);
     };
@@ -58,20 +74,38 @@
     // Vault shapes vary with the use of the room, while the rear rock remains
     // continuous around the section. Masonry courses have staggered joints.
     for (int x=left;x<=right;x++) {
-      double nx=std::abs(x-cx)/(width*.5);
-      int roof=top+(int)(variant==1 ? nx*8 : nx*nx*10);
-      if(design==6)roof=top+5;
-      if (!deep && theme==2) roof=top+3+(int)(nx*nx*6);
+      int roof=roofAt(x);
+      int roofBottom=imax(roof+2, imax(roofAt(imax(left,x-1)),roofAt(imin(right,x+1))));
       for (int y=roof;y<=floor;y++) {
-        bool shell=y<roof+3||y>=floor-1||x<left+2||x>right-2;
+        bool shell=y<=roofBottom||y>=floor-1||x<left+2||x>right-2;
         uint8_t m = wall;
         if (!shell) {
-          bool joint=(y-top)%8==0 || (x-left+((y-top)/8%2)*7)%15==0;
-          m=joint ? wall : (theme==2 ? (deep ? DEEPSTONE : MYCELIUM) : DEEPSTONE);
+          bool joint=(y-top)%9==0 || (x-left+((y-top)/9%2)*9)%19==0;
+          m=joint ? wall : field;
         }
         put(x,y,background||shell?m:EMPTY);
       }
       put(x,roof,trim);
+    }
+    if (background) {
+      // Recessed bays give the rear wall depth. Piers carry the vault ribs;
+      // the sill and lower dado keep equipment distinct from the masonry.
+      int bay = deep ? 28 : 20;
+      for (int x=left+bay/2+2; x<right-5; x+=bay) {
+        int radius=imin(bay/2-3, right-x-3);
+        int spring=imax(top+14, roofAt(x-radius)+5);
+        for (int dx=-radius; dx<=radius; dx++) {
+          int crown=spring-(int)(7*std::sqrt(std::fmax(0.,1.-(double)dx*dx/(radius*radius))));
+          rect(x+dx,crown,x+dx,floor-7,deep && theme==0 ? DEEPSTONE : STONE);
+        }
+        arch(x,spring,radius,7,wall);
+        rect(x-radius-2,spring,x-radius-1,floor-2,wall);
+        rect(x+radius+1,spring,x+radius+2,floor-2,wall);
+        rect(x-radius-3,spring-1,x-radius,spring,trim);
+        rect(x+radius,spring-1,x+radius+3,spring,trim);
+        rect(x-radius,floor-7,x+radius,floor-6,wall);
+      }
+      rect(left+2,floor-3,right-2,floor-2,wall);
     }
     // A continuous lower aisle meets the cave at both ends. Upper galleries
     // have staggered stairs and leave headroom above the lower walking floor.
@@ -299,6 +333,15 @@
     if(!background)for(int side:{-1,1}) {
       int edge=side<0?left:right;
       for(int dx=0;dx<3;dx++)for(int y=floor-PLAYER_H-5;y<floor-1;y++)put(edge-side*dx,y,EMPTY);
+    }
+    // Ceiling lanterns have a closed frame attached to the vault. Their light
+    // sits in the foreground above the walking aisle and gallery stairs.
+    for (int x=left+8; x<right-5; x+=deep ? 26 : 20) {
+      int y=roofAt(x)+5;
+      rect(x,roofAt(x)+2,x,y-2,timber);
+      rect(x-2,y-2,x+2,y+2,timber);
+      rect(x-1,y-1,x+1,y+1,GLASS);
+      put(x,y,LIGHT);
     }
 #pragma clang attribute pop
   }

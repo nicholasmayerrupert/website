@@ -64,6 +64,17 @@
             rect(x,r.floor-4,x+2,r.floor-2,MOSS);put(x+1,r.floor-5,GLOWSHROOM);
           }
         }
+        // A ribbed cap shelters each stem dwelling; luminous gills sit in
+        // its underside and remain attached above the clear lower room.
+        for(int x=r.left+3;x<r.right-2;x++) {
+          double nx=(double)(x-cx)/(w*.5);
+          int crown=r.top+3+(int)(nx*nx*9);
+          put(x,crown,MUSH_CAP);put(x,crown+1,MUSH_STEM);
+          if((x-r.left)%6==0)put(x,crown+2,GLOWSHROOM);
+        }
+        int lanternY=r.top+6;
+        rect(cx,r.top+3,cx,lanternY,MUSH_STEM);
+        rect(cx-1,lanternY-1,cx+1,lanternY+1,MUSH_STEM);put(cx,lanternY,LIGHT);
       } else {
         stampCaveArchitecture(put,r.left,r.top,w,h,r.design,background,seed^(i*0x9e3779b9u));
         if(site.castle && r.design==6) {

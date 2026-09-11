@@ -430,47 +430,50 @@ void Renderer::buildRenderTables() {
   }
 }
 
+// Smooth world-space fields and palette blends are shared by liquid and gas art.
+static uint32_t renderMixColor(uint32_t a, uint32_t b, int t) {
+  uint32_t out = 0;
+  for (int shift : {0, 8, 16})
+    out |= (((((a >> shift) & 255u) * (256 - t)) + (((b >> shift) & 255u) * t)) >> 8) << shift;
+  return out;
+}
+
+static int renderFlowNoise(int x, int y) {
+  int ix = x >> 3, iy = y >> 3, fx = x & 7, fy = y & 7;
+  int tx = fx * fx * (12 - fx), ty = fy * fy * (12 - fy);
+  int a = (int)(Renderer::renderCellHash(ix, iy) & 255u);
+  int b = (int)(Renderer::renderCellHash(ix + 1, iy) & 255u);
+  int c = (int)(Renderer::renderCellHash(ix, iy + 1) & 255u);
+  int d = (int)(Renderer::renderCellHash(ix + 1, iy + 1) & 255u);
+  int top = a + ((b - a) * tx >> 8), bottom = c + ((d - c) * tx >> 8);
+  return top + ((bottom - top) * ty >> 8);
+}
+
 // Evolving liquid currents use a non-repeating field; material boundaries place
 // the surface highlights and bank shading. Liquid art supplies colors, not UVs.
 uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const {
-  auto mix = [](uint32_t a, uint32_t b, int t) {
-    uint32_t out = 0;
-    for (int shift : {0, 8, 16})
-      out |= (((((a >> shift) & 255u) * (256 - t)) + (((b >> shift) & 255u) * t)) >> 8) << shift;
-    return out;
-  };
-  auto noise = [](int x, int y) {
-    int ix = x >> 3, iy = y >> 3, fx = x & 7, fy = y & 7;
-    int tx = fx * fx * (12 - fx), ty = fy * fy * (12 - fy);
-    int a = (int)(renderCellHash(ix, iy) & 255u);
-    int b = (int)(renderCellHash(ix + 1, iy) & 255u);
-    int c = (int)(renderCellHash(ix, iy + 1) & 255u);
-    int d = (int)(renderCellHash(ix + 1, iy + 1) & 255u);
-    int top = a + ((b - a) * tx >> 8), bottom = c + ((d - c) * tx >> 8);
-    return top + ((bottom - top) * ty >> 8);
-  };
   const auto& colors = E.content.fluidColors[material];
   int wx = x + E.L->worldOffsetX, wy = y + E.L->worldOffsetY;
   uint8_t kind = MAT_RENDER_ANIM[material];
   int time = kind == RA_OIL || kind == RA_LAVA ? frame / 2 : frame;
-  int warp = noise(wx + time, wy * 2 - time);
-  int flow = noise(wx - time + ((warp - 128) >> 4), wy * (kind == RA_LAVA ? 2 : 4) + time);
+  int warp = renderFlowNoise(wx + time, wy * 2 - time);
+  int flow = renderFlowNoise(wx - time + ((warp - 128) >> 4), wy * (kind == RA_LAVA ? 2 : 4) + time);
   int band = flow & ~15;
   uint32_t color;
   if (kind == RA_LAVA) {
     // Hot currents extend through the melt to its contact edges.
-    color = mix(colors[1], colors[2], imin(224, band));
-    if (flow > 174) color = mix(color, colors[3], imin(224, (flow - 174) * 3));
+    color = renderMixColor(colors[1], colors[2], imin(224, band));
+    if (flow > 174) color = renderMixColor(color, colors[3], imin(224, (flow - 174) * 3));
   } else if (kind == RA_OIL) {
-    color = mix(colors[0], colors[1], 192);
-    if (flow > 135) color = mix(color, colors[2], imin(200, (flow - 135) * 3));
-    if (warp > 165) color = mix(color, colors[3], imin(192, (warp - 165) * 3));
+    color = renderMixColor(colors[0], colors[1], 192);
+    if (flow > 135) color = renderMixColor(color, colors[2], imin(200, (flow - 135) * 3));
+    if (warp > 165) color = renderMixColor(color, colors[3], imin(192, (warp - 165) * 3));
   } else {
-    color = mix(colors[1], colors[2], imax(0, band - 112));
+    color = renderMixColor(colors[1], colors[2], imax(0, band - 112));
     if (kind == RA_ACID && flow > 172 && flow < 204)
-      color = mix(color, colors[3], 144);
+      color = renderMixColor(color, colors[3], 144);
     else if (flow > 185)
-      color = mix(color, colors[3], imin(176, (flow - 185) * 4));
+      color = renderMixColor(color, colors[3], imin(176, (flow - 185) * 4));
   }
   auto air = [&](int cell) { return grid[cell] == EMPTY || MAT_CLASS[grid[cell]] == MC_GAS; };
   auto bank = [&](int cell) { return MAT_CLASS[grid[cell]] == MC_RIGID || MAT_CLASS[grid[cell]] == MC_SOLID; };
@@ -479,13 +482,53 @@ uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t materia
   bool belowSurface = y > 1 && grid[k - E.cols] == material && air(k - 2 * E.cols);
   bool solidContact = (x > 0 && bank(k - 1)) || (x + 1 < E.cols && bank(k + 1))
     || (y + 1 < E.rows && bank(k + E.cols));
-  if (solidContact && kind != RA_LAVA) color = mix(color, colors[0], 48);
+  if (solidContact && kind != RA_LAVA) color = renderMixColor(color, colors[0], 48);
   if (surface || belowSurface) {
-    int crest = noise(wx * 2 - time * 2, wy + time / 3);
+    int crest = renderFlowNoise(wx * 2 - time * 2, wy + time / 3);
     int strength = surface ? 112 + (crest >> 1) : crest > 144 ? 80 : 0;
-    color = mix(color, colors[3], strength);
+    color = renderMixColor(color, colors[3], strength);
   }
   return color;
+}
+
+// Rising, domain-warped wisps use the authored gas palette. Density only changes
+// presentation opacity inside the occupied mask; it never creates empty cells.
+uint32_t Renderer::gasColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const {
+  const auto& colors = E.content.fluidColors[material];
+  int wx = x + E.L->worldOffsetX, wy = y + E.L->worldOffsetY;
+  uint8_t kind = MAT_RENDER_ANIM[material];
+  int time = kind == RA_FIRE ? frame * 2 : kind == RA_METHANE ? frame / 3
+    : kind == RA_SMOKE ? frame / 2 : frame;
+  int warp = renderFlowNoise(wx + time / 3, wy + time);
+  int flow = renderFlowNoise(wx * 5 + ((warp - 128) >> 4), (wy + time) * 3);
+  int grain = (int)(renderCellHash(wx, wy + time) & 255u);
+  int detail = std::clamp(flow + ((grain - 128) >> (kind == RA_FIRE ? 1 : 2)), 0, 255);
+  uint32_t color;
+  int alpha;
+  if (kind == RA_FIRE) {
+    // Compact tongues and moving cell grain keep hot cores finely articulated.
+    int heat = detail;
+    color = renderMixColor(colors[1], colors[2], 96 + (heat >> 1));
+    if (heat > 144) color = renderMixColor(color, colors[3], imin(240, (heat - 144) * 3));
+    uint32_t red = imin(255, (int)(color & 255u) + 28);
+    uint32_t green = imin(255, (int)((color >> 8) & 255u) + 8);
+    uint32_t blue = ((color >> 16) & 255u) * 2 / 3;
+    color = red | (green << 8) | (blue << 16);
+    alpha = 248 + (heat >> 5);
+  } else {
+    int billow = detail;
+    color = renderMixColor(colors[0], colors[1], 128 + (billow >> 1));
+    int curl = 255 - std::abs(billow - 144) * 3;
+    if (curl > 96) color = renderMixColor(color, colors[2], (curl - 96) & ~15);
+    if (kind == RA_STEAM && curl > 208)
+      color = renderMixColor(color, colors[3], (curl - 208) * 2);
+    alpha = imin(208, ((int)(renderAlphaMask[material] >> 24) * (128 + billow)) >> 8);
+  }
+  int k = y * E.cols + x;
+  int exposed = (x > 0 && grid[k - 1] == EMPTY) + (x + 1 < E.cols && grid[k + 1] == EMPTY)
+    + (y > 0 && grid[k - E.cols] == EMPTY) + (y + 1 < E.rows && grid[k + E.cols] == EMPTY);
+  alpha = imax(1, alpha * (16 - exposed) / 16);
+  return color | ((uint32_t)alpha << 24);
 }
 
 // Fill `out` (RGBA over uint32) for an INCLUSIVE cell rect [x0,x1] x [y0,y1] from
@@ -542,13 +585,16 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       else if (animKind == RA_ACID) shade = (uint8_t)(((int)shade + shimmer) / 2);
       uint32_t c = renderVariants[((int)m << 3) + shade];
       const bool fluid = textured && MAT_CLASS[m] == MC_LIQUID;
+      const bool gas = textured && MAT_CLASS[m] == MC_GAS;
       if (fluid) {
         c = fluidColor(g, x, y, m, frame - frame / 4);
+      } else if (gas) {
+        c = gasColor(g, x, y, m, frame - frame / 4);
       } else if (textured) {
         uint16_t texel = E.L->textureTexels[(size_t)k];
         c = E.content.textures[m][texel == WORLD_TEXTURE ? ((wy & 31) << 5) | (wx & 31) : texel];
       }
-      uint32_t alphaMask = renderAlphaMask[m];
+      uint32_t alphaMask = gas ? c & 0xff000000u : renderAlphaMask[m];
       if (dmg) {
         uint32_t rem = dmg[k];
         if (rem > 0) {
@@ -559,8 +605,8 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           }
         }
       }
-      if (fluid) {
-        // Fluid animation is resolved with its boundary-aware color above.
+      if (fluid || gas) {
+        // Flow animation and boundary shading are resolved with the color above.
       } else if (textured) {
         // Pulse small groups in place, preserving the tile's designed shapes.
         if (animKind == RA_METHANE) {

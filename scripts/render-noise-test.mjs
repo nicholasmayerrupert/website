@@ -55,11 +55,74 @@ console.log('schema-driven animated textures');
       }
     }
     check(`${name.toLowerCase()} shimmer never creates invisible air holes`, hidden === 0, `(${hidden} hidden samples)`);
-    if (name === 'METHANE') check('methane shimmer has a clear translucent opacity pulse',
+    if (name === 'METHANE') check('methane wisps have clear translucent density variation',
       minAlpha > 0 && maxAlpha < 255 && maxAlpha - minAlpha >= 40,
       `(alpha ${minAlpha}..${maxAlpha})`);
     gas.destroy();
   }
+}
+
+console.log('evolving gas wisps');
+{
+  const size = 96;
+  for (const name of ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE']) {
+    const e = createEngineWasm({ cols: size, rows: size, worldSeed: SEED, sinksOn: false, infinite: false });
+    const grid = e.getGrid();
+    grid.fill(MAT[name]);
+    // A gap and isolated cell exercise the real occupied mask and exposed edges.
+    grid[48 * size + 48] = MAT.EMPTY;
+    for (let y = 8; y <= 10; y++) for (let x = 8; x <= 10; x++) grid[y * size + x] = MAT.EMPTY;
+    grid[9 * size + 9] = MAT[name];
+    const hash = e.gridHash();
+    e.renderFull();
+    const before = new Uint32Array(e.getRenderPixels().slice().buffer);
+    let repeated = 0, compared = 0;
+    for (let y = 16; y < 80; y++) for (let x = 8; x < 40; x++) {
+      if (before[y * size + x] === before[y * size + x + 32]) repeated++;
+      compared++;
+    }
+    check(`${name.toLowerCase()} wisps do not repeat a 32-cell stencil`, repeated < compared / 4,
+      `(${repeated}/${compared} repeat)`);
+    let contrast = 0, neighbors = 0;
+    for (let y = 16; y < 80; y++) for (let x = 16; x < 79; x++) {
+      for (const offset of [1, size]) {
+        const a = before[y * size + x], b = before[y * size + x + offset];
+        for (const shift of [0, 8, 16, 24]) contrast += Math.abs(((a >>> shift) & 255) - ((b >>> shift) & 255));
+        neighbors++;
+      }
+    }
+    check(`${name.toLowerCase()} texture retains fine detail between adjacent cells`, contrast / neighbors > (name === 'FIRE' ? 28 : 16),
+      `(mean RGBA contrast ${(contrast / neighbors).toFixed(1)})`);
+    for (let frame = 0; frame < 12; frame++) e.renderFull();
+    const after = new Uint32Array(e.getRenderPixels().slice().buffer);
+    let changed = 0, wrongMask = 0;
+    for (let i = 0; i < after.length; i++) {
+      if (before[i] !== after[i]) changed++;
+      if (((after[i] >>> 24) > 0) !== (grid[i] !== MAT.EMPTY)) wrongMask++;
+    }
+    check(`${name.toLowerCase()} wisps visibly evolve`, changed > after.length / 3);
+    check(`${name.toLowerCase()} opacity preserves empty gaps and isolated gas`, wrongMask === 0);
+    check(`${name.toLowerCase()} animation leaves simulation state unchanged`, hash === e.gridHash());
+    e.destroy();
+  }
+  // Equal presentation frames at the same absolute position must have equal
+  // density after horizontal and vertical streaming, including negative offsets.
+  const a = mk(), b = mk();
+  b.shiftWorldXY(-32, 0); b.shiftWorldXY(0, -32);
+  for (const name of ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE']) {
+    a.getGrid().fill(MAT[name]); b.getGrid().fill(MAT[name]);
+    a.renderFull(); b.renderFull();
+    const ap = new Uint32Array(a.getRenderPixels().slice().buffer);
+    const bp = new Uint32Array(b.getRenderPixels().slice().buffer);
+    const dx = a.getWorldOffsetX() - b.getWorldOffsetX();
+    const dy = a.getWorldOffsetY() - b.getWorldOffsetY();
+    let mismatch = 0;
+    for (let y = 16; y < 160; y++) for (let x = 16; x < 160; x++) {
+      if ((ap[y * COLS + x] >>> 24) !== (bp[(y + dy) * COLS + x + dx] >>> 24)) mismatch++;
+    }
+    check(`${name.toLowerCase()} wisps remain continuous through two-axis streaming`, mismatch === 0);
+  }
+  a.destroy(); b.destroy();
 }
 
 console.log('animated liquid currents');

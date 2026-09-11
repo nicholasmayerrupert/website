@@ -161,9 +161,9 @@ tile('OIL', '171329 2b2050 433263 7b50ac e58bcf 5ddccf', () => {
   ripples(); line([[4, 14], [7, 12], [12, 12], [15, 14], [12, 16], [7, 16]], 5);
   line([[7, 13], [11, 13], [13, 14]], 4);
 }, 'Deep violet oil with bright turquoise and magenta interference colors.');
-tile('FIRE', '9d302b c34a28 e36b2d f4a544 ffe2a0 f9c55b', () => {
+tile('FIRE', 'b91d00 ed3500 ff5900 ff8300 ffe51c ffb300', () => {
   foliage(['...3...', '...43..', '..345..', '..3453.', '.334531', '3335531', '3355431', '2333321'], [[1, 1], [13, 18], [24, 7], [4, 25]]);
-}, 'Upright amber tongues with cream cores, separated by warm ember ground.');
+}, 'Saturated orange tongues with yellow-hot cores and red ember ground.');
 tile('STEAM', '869eaa a5bbc3 c3d4d5 d7e4df eaf0df b4c9ce', wisps, 'Soft blue-white vapor curls with quiet interiors.');
 tile('SEED', '342b28 51402d 775833 987749 b8a275 826e41', () => {
   foliage(['.333.', '34421', '33221', '.211.'], [[2, 3], [17, 13], [7, 26], [28, 0]]);
@@ -173,14 +173,14 @@ tile('PLANT', '204737 356933 568e3f 7bb652 b5d977 447c37', () => canopy(leaf, le
 tile('ACID', '28600b 529f0d 93dd18 c2fa3e f2ffc0 5cbc30', () => {
   ripples(); foliage(['.33.', '3421', '3211', '.11.'], [[5, 12], [24, 27]]); dot(15, 17, 4);
 }, 'Chartreuse pools with tiny pale-rimmed bubbles.');
-tile('LAVA', '631928 b82a0c ff650d ffad20 fff5a4 ffd14b', () => {
+tile('LAVA', '631928 b82a0c ff6000 ff8000 ffb91c ff9600', () => {
   stamp(1, 2, ['...333...', '.3355533.', '335444553', '354455533', '.3555332.', '..3332...']);
   stamp(20, 19, ['.33333.', '3355533', '3544533', '.35533.', '..333..']);
   line([[9, 5], [14, 5], [17, 7], [17, 12]], 3);
   line([[23, 24], [21, 28], [16, 29], [11, 27]], 3);
   stamp(23, 2, ['..11111..', '.1100001.', '110000001', '.10000011', '..11111..']);
   stamp(3, 17, ['..1111...', '.1000011.', '110000001', '.11000011', '...1111..']);
-}, 'Incandescent orange melt, golden heat and pale yellow cores; burgundy cooling crust.');
+}, 'Incandescent orange melt with bright orange currents and burgundy cooling crust.');
 tile('ICE', '4269a7 6fadd4 a1d9e8 c6edf2 effff1 80bfdc', () => {
   facet([[-2, 3], [10, 0], [17, 5], [9, 14], [1, 20], [-2, 13]], 3);
   facet([[15, 12], [24, 9], [32, 4], [34, 16], [26, 25], [19, 22]], 5);
@@ -190,13 +190,9 @@ tile('ICE', '4269a7 6fadd4 a1d9e8 c6edf2 effff1 80bfdc', () => {
   line([[15, 12], [18, 21], [25, 28], [28, 35]], 3);
   line([[3, 24], [7, 20], [9, 15]], 4); stamp(24, 17, glint);
 }, 'Large glacial plates; a restrained branching fracture and sparse frost glint.');
-tile('RIGID', '29364e 3f5872 5e829b 85adc1 bbd9df 4e708b', () => {
-  facet([[0, 2], [31, 2], [25, 7], [4, 10], [0, 9]], 3);
-  facet([[0, 18], [31, 18], [20, 24], [0, 26]], 5);
-  for (const y of [0, 16]) { line([[0, y], [31, y]], 1); line([[0, y + 1], [31, y + 1]], 3); }
-  for (const [x, y] of [[3, 3], [27, 3], [11, 19], [23, 19]]) stamp(x, y, ['43', '10']);
-  line([[8, 7], [18, 7]], 3); line([[19, 25], [27, 25]], 1);
-}, 'Blue steel plates with inset seams, chamfered rivets and brushed wear.');
+tile('RIGID', '5e728a', () => {
+  rect(0, 0, SIZE, SIZE, 0);
+}, 'Uniform flat blue.');
 tile('DRIFTWOOD', '51474d 756756 9d9272 bfb08a e1d2a5 897959', () => {
   bark(true); line([[18, 2], [18, 7], [20, 9]], 4); line([[2, 19], [1, 25], [1, 29]], 0);
 }, 'Silvered driftwood; bleached raised grain and a split weathered end.');

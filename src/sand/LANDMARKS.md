@@ -23,8 +23,8 @@ and authored content. Rejected sites remain wilderness. Foreground and backgroun
 use the same foreground terrain queries and plan cache. Landmarks reserve space
 before villages, mine entrances, ruins, formations, and trees.
 
-Abbey and rotunda roofs retain continuous silhouettes; masonry courses, trim and
-vegetation carry their weathering. Aqueduct piers carry a continuous channel with
+Abbey roofs retain continuous silhouettes; the rotunda has a central open oculus.
+Masonry courses, trim and vegetation carry their weathering. Aqueduct piers carry a continuous channel with
 radial stone joints and contrasting keystones.
 
 Buildings use buried column foundations and up to 24-cell stepped soil approaches.
@@ -33,7 +33,7 @@ profile, each curved rib terminates in its own buried foot, and broken limbs res
 on the slope. Small fossil rib formations also extend individual feet into soil.
 Support columns preserve natural cave voids rather than plugging entrances.
 
-The generation version is 21; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
+The generation version is 22; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
 The existing engine component-registration pass owns every rigid cell. No separate
 visual overlay or unsimulated collider represents these landmarks.
 
@@ -48,7 +48,7 @@ and context fingerprint; `worldgen-quality` checks cave access.
 roofs, piers, furnishings and rubble: foreground aisles have thirteen cells of
 clearance and two-cell-thick connected treads. The player is four cells wide and
 eight high, steps up two cells, and jumps about twenty-six cells on Earth.
-Tower, mine and facility stairwells use alternating five-cell landings twelve
+Tower and mine stairwells use alternating five-cell landings twelve
 cells apart, with an open channel beside each landing. Cave branches keep their
 slopes gradual enough for ordinary walking. Rear bearing walls support the open
 foreground facade through cross-layer contacts.
@@ -61,7 +61,7 @@ are intentional obstacles, while occupied buildings retain usable access.
 
 `node scripts/run-tests.mjs --only worldgen-navigation` drives the production
 player through settlement occupations, inhabited landmarks, legacy ruins, cave
-galleries, mine offices, off-world facilities, the ship and authored lodge and
+galleries, mine offices, the ship and authored lodge and
 observatory. It checks return trips and includes sealed-wall and inescapable-drop
 negative controls. Add destinations to `scripts/fixtures/structure-navigation.json`
 and the navigation suite when adding a building archetype. Streaming and

@@ -263,39 +263,6 @@ check('revisiting the population cadence does not duplicate resident sites',
   residentIdsLater.join(',') === residentIds.join(','));
 residents.destroy();
 
-const moon = make({ planetId: PLANET.MOON });
-const facility = findContext(moon,
-  (context) => context.featureKind === WORLD_FEATURE.OFFWORLD_FACILITY
-    && [CAVE_BIOME.CRYSTAL,CAVE_BIOME.DEEP_MAGMA,CAVE_BIOME.DEEP_VOID].includes(context.caveBiome)
-    && has(context, WORLD_AREA.FACILITY)
-    && has(context, WORLD_AREA.UNDERGROUND),
-  {
-    minX: -6000,
-    maxX: 6000,
-    xStep: 8,
-    minDepth: 16,
-    maxDepth: 240,
-    depthStep: 4,
-  });
-const facilityPool = facility ? poolAt(moon, facility.x, facility.y) : [];
-check(`off-world facilities preserve their biome roster (${poolNames(facilityPool) || 'none'})`,
-  facility && samePool(facilityPool, [CREATURE.MINIGUNNER])
-    && moon._spawnWorldWeight(
-      CREATURE.MINIGUNNER, facility.x, facility.y)
-      > moon._spawnWorldWeight(
-        CREATURE.BORE_SENTINEL, facility.x, facility.y));
-const facilitySpawn = facility && spawnInsideFeature(
-  moon,
-  CREATURE.MINIGUNNER,
-  facility,
-  (context) => context.featureKind === WORLD_FEATURE.OFFWORLD_FACILITY
-    && has(context, WORLD_AREA.FACILITY)
-    && has(context, WORLD_AREA.UNDERGROUND),
-);
-check('a material-valid minigunner can spawn inside a facility',
-  !!facilitySpawn);
-moon.destroy();
-
 // The live director may choose any member of the broad realm pool. Its observed
 // candidates must still pass their final semantic validation after habitat
 // snapping.

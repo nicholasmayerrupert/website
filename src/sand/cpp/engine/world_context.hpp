@@ -44,7 +44,6 @@ enum GeneratedFeatureStage : uint8_t {
   GFS_SURFACE_CONSTRUCTED,
   GFS_DEEP_CONSTRUCTED,
   GFS_OFFWORLD_FORMATION,
-  GFS_OFFWORLD_CONSTRUCTED,
   GFS_COUNT,
 };
 
@@ -227,7 +226,7 @@ struct LandmarkPlan {
 };
 
 struct VillageBuildingPlan {
-  int ordinal = 0;
+  int ordinal = 0, architecture = 0;
   int center = 0;
   int left = 0, wallTop = 0, floorY = 0;
   int width = 0, height = 0, roofHeight = 0;
@@ -246,6 +245,7 @@ struct MineLevelPlan {
 
 struct MinePlan {
   static constexpr int MAX_LEVELS = 4;
+  static constexpr int HEADHOUSE_ROOF_HEIGHT = 14;
   int latticeX = 0;
   int center = 0, width = 0, levels = 0, firstFloor = 0;
   int left = 0, top = 0, right = 0, bottom = 0;
@@ -258,260 +258,15 @@ struct MinePlan {
   uint32_t id = 0;
 };
 
-enum OffworldFacilityKind : uint8_t {
-#define WORLDGEN_FACILITY_ARCHETYPE(symbol, id, ...) OFK_##symbol = id,
-#define WORLDGEN_RUIN_ARCHETYPE(...)
-#include "worldgen_structure_archetypes.def"
-#undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
-  OFK_COUNT =
-#define WORLDGEN_FACILITY_ARCHETYPE(...) + 1
-#define WORLDGEN_RUIN_ARCHETYPE(...)
-    0
-#include "worldgen_structure_archetypes.def"
-#undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
-};
-
-struct OffworldFacilityArchetypeDef {
-  OffworldFacilityKind kind;
-  const char* name;
-  uint32_t generationProfileMask;
-  int selectionOrdinal;
-  int halfWidth;
-  int undergroundDepth;
-  int aboveDeckReach;
-};
-
-inline constexpr std::array<OffworldFacilityArchetypeDef, OFK_COUNT>
-OFFWORLD_FACILITY_ARCHETYPES = {{
-#define WORLDGEN_FACILITY_ARCHETYPE(symbol, id, name, mask, ordinal, width, depth, above, stamp) \
-  {OFK_##symbol, name, mask, ordinal, width, depth, above},
-#define WORLDGEN_RUIN_ARCHETYPE(...)
-#include "worldgen_structure_archetypes.def"
-#undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
-}};
-
-inline constexpr int OFFWORLD_FACILITY_DECK_SPACING = 34;
-inline constexpr int OFFWORLD_FACILITY_FIRST_ROOM_OFFSET = 4;
-inline constexpr int OFFWORLD_FACILITY_BOTTOM_ROOM_CLEARANCE = 5;
-inline constexpr int OFFWORLD_FACILITY_SIDE_INSET = 9;
-inline constexpr int OFFWORLD_FACILITY_BELOW_DECK_OVERSCAN_MARGIN = 12;
-
-template <size_t N>
-constexpr bool validOffworldFacilityArchetypes(
-    const std::array<OffworldFacilityArchetypeDef, N>& archetypes) {
-  if (N != OFK_COUNT) return false;
-  for (size_t i = 0; i < N; i++) {
-    const OffworldFacilityArchetypeDef& archetype = archetypes[i];
-    if ((size_t)archetype.kind != i
-        || !archetype.name || archetype.name[0] == '\0'
-        || archetype.generationProfileMask == 0
-        || (archetype.generationProfileMask
-            & ~GENERATION_PROFILE_ALL_MASK) != 0
-        || archetype.selectionOrdinal < 0
-        || archetype.halfWidth <= OFFWORLD_FACILITY_SIDE_INSET
-        || archetype.undergroundDepth <= OFFWORLD_FACILITY_DECK_SPACING
-        || archetype.aboveDeckReach <= 0)
-      return false;
-    for (size_t j = 0; j < i; j++)
-      if ((archetype.generationProfileMask
-           & archetypes[j].generationProfileMask) != 0
-          && archetype.selectionOrdinal == archetypes[j].selectionOrdinal)
-        return false;
-  }
-  return true;
-}
-static_assert(validOffworldFacilityArchetypes(
-                OFFWORLD_FACILITY_ARCHETYPES),
-              "Facility archetypes must be dense, reachable, and dimension-safe");
-
-constexpr bool offworldFacilityInvalidFixturesAreRejected() {
-  auto fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[0].generationProfileMask = 0;
-  if (validOffworldFacilityArchetypes(fixture)) return false;
-  fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[0].generationProfileMask = UINT32_MAX;
-  if (validOffworldFacilityArchetypes(fixture)) return false;
-  fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[0].halfWidth = OFFWORLD_FACILITY_SIDE_INSET;
-  if (validOffworldFacilityArchetypes(fixture)) return false;
-  fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[0].undergroundDepth = OFFWORLD_FACILITY_DECK_SPACING;
-  if (validOffworldFacilityArchetypes(fixture)) return false;
-  fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[0].aboveDeckReach = 0;
-  if (validOffworldFacilityArchetypes(fixture)) return false;
-  fixture = OFFWORLD_FACILITY_ARCHETYPES;
-  fixture[1].generationProfileMask = fixture[0].generationProfileMask;
-  fixture[1].selectionOrdinal = fixture[0].selectionOrdinal;
-  return !validOffworldFacilityArchetypes(fixture);
-}
-static_assert(offworldFacilityInvalidFixturesAreRejected(),
-              "Invalid facility archetypes must fail validation");
-constexpr uint32_t offworldFacilityGenerationProfileMask() {
-  uint32_t mask = 0;
-  for (const OffworldFacilityArchetypeDef& archetype
-       : OFFWORLD_FACILITY_ARCHETYPES)
-    mask |= archetype.generationProfileMask;
-  return mask;
-}
-inline constexpr uint32_t OFFWORLD_FACILITY_GENERATION_PROFILE_MASK =
-  offworldFacilityGenerationProfileMask();
-
-constexpr int offworldFacilityRoomDeckCountForDepth(int depth) {
-  int count = 0;
-  for (int floor = OFFWORLD_FACILITY_FIRST_ROOM_OFFSET;
-       floor < depth - OFFWORLD_FACILITY_BOTTOM_ROOM_CLEARANCE;
-       floor += OFFWORLD_FACILITY_DECK_SPACING)
-    count++;
-  return count;
-}
-
-constexpr int offworldFacilityDividerCountForDepth(int depth) {
-  int count = 0;
-  for (int floor = OFFWORLD_FACILITY_DECK_SPACING;
-       floor < depth; floor += OFFWORLD_FACILITY_DECK_SPACING)
-    count++;
-  return count;
-}
-
-template <size_t N>
-constexpr int offworldFacilityMaxRoomDeckCount(
-    const std::array<OffworldFacilityArchetypeDef, N>& archetypes) {
-  int capacity = 0;
-  for (const OffworldFacilityArchetypeDef& archetype : archetypes) {
-    int count = offworldFacilityRoomDeckCountForDepth(
-      archetype.undergroundDepth);
-    if (count > capacity) capacity = count;
-  }
-  return capacity;
-}
-
-template <size_t N>
-constexpr int offworldFacilityMaxDividerCount(
-    const std::array<OffworldFacilityArchetypeDef, N>& archetypes) {
-  int capacity = 0;
-  for (const OffworldFacilityArchetypeDef& archetype : archetypes) {
-    int count = offworldFacilityDividerCountForDepth(
-      archetype.undergroundDepth);
-    if (count > capacity) capacity = count;
-  }
-  return capacity;
-}
-
-constexpr bool offworldFacilityPlanCountsFit(
-    int depth, int roomDeckCapacity, int dividerCapacity) {
-  return depth > OFFWORLD_FACILITY_BOTTOM_ROOM_CLEARANCE
-      && offworldFacilityRoomDeckCountForDepth(depth) <= roomDeckCapacity
-      && offworldFacilityDividerCountForDepth(depth) <= dividerCapacity;
-}
-
-inline constexpr int OFFWORLD_FACILITY_ROOM_DECK_CAPACITY =
-  offworldFacilityMaxRoomDeckCount(OFFWORLD_FACILITY_ARCHETYPES);
-inline constexpr int OFFWORLD_FACILITY_DIVIDER_CAPACITY =
-  offworldFacilityMaxDividerCount(OFFWORLD_FACILITY_ARCHETYPES);
-
-struct OffworldFacilityPlan {
-  static constexpr int MAX_ROOM_DECKS =
-    OFFWORLD_FACILITY_ROOM_DECK_CAPACITY;
-  static constexpr int MAX_DIVIDERS =
-    OFFWORLD_FACILITY_DIVIDER_CAPACITY;
-  int latticeX = 0;
-  int center = 0;
-  OffworldFacilityKind kind = OFK_MOON_OBSERVATORY;
-  int left = 0, top = 0, right = 0, bottom = 0;
-  int deckY = 0, facilityLeft = 0, facilityRight = 0;
-  int facilityTop = 0, facilityBottom = 0;
-  int roomDeckCount = 0, dividerCount = 0;
-  std::array<int, MAX_ROOM_DECKS> roomDeckFloor{};
-  std::array<int, MAX_DIVIDERS> dividerFloor{};
-  uint32_t id = 0;
-};
-
-constexpr bool offworldFacilityPlanCapacitiesAreComplete() {
-  for (const OffworldFacilityArchetypeDef& archetype
-       : OFFWORLD_FACILITY_ARCHETYPES)
-    if (!offworldFacilityPlanCountsFit(
-          archetype.undergroundDepth,
-          OffworldFacilityPlan::MAX_ROOM_DECKS,
-          OffworldFacilityPlan::MAX_DIVIDERS))
-      return false;
-  return true;
-}
-static_assert(offworldFacilityPlanCapacitiesAreComplete(),
-              "Facility plan buffers must contain every registered layout");
-
-constexpr bool offworldFacilityCapacityFixturesAreValid() {
-  constexpr int boundaryDepth = 146;
-  constexpr int roomDecks =
-    offworldFacilityRoomDeckCountForDepth(boundaryDepth);
-  constexpr int dividers =
-    offworldFacilityDividerCountForDepth(boundaryDepth);
-  return roomDecks == 5 && dividers == 4
-      && offworldFacilityPlanCountsFit(
-        boundaryDepth, roomDecks, dividers)
-      && !offworldFacilityPlanCountsFit(
-        boundaryDepth, roomDecks - 1, dividers)
-      && !offworldFacilityPlanCountsFit(
-        boundaryDepth, roomDecks, dividers - 1);
-}
-static_assert(offworldFacilityCapacityFixturesAreValid(),
-              "Facility plan capacity validation must reject undersized buffers");
-
-constexpr int offworldFacilityMaxHalfWidth() {
-  int reach = 0;
-  for (const OffworldFacilityArchetypeDef& archetype
-       : OFFWORLD_FACILITY_ARCHETYPES)
-    if (archetype.halfWidth > reach) reach = archetype.halfWidth;
-  return reach;
-}
-constexpr int offworldFacilityMaxUndergroundDepth() {
-  int reach = 0;
-  for (const OffworldFacilityArchetypeDef& archetype
-       : OFFWORLD_FACILITY_ARCHETYPES)
-    if (archetype.undergroundDepth > reach)
-      reach = archetype.undergroundDepth;
-  return reach;
-}
-constexpr int offworldFacilityMaxAboveDeckReach() {
-  int reach = 0;
-  for (const OffworldFacilityArchetypeDef& archetype
-       : OFFWORLD_FACILITY_ARCHETYPES)
-    if (archetype.aboveDeckReach > reach)
-      reach = archetype.aboveDeckReach;
-  return reach;
-}
-inline constexpr int OFFWORLD_FACILITY_OVERSCAN_X =
-  offworldFacilityMaxHalfWidth() + 8;
-inline constexpr int OFFWORLD_FACILITY_OVERSCAN_Y =
-  offworldFacilityMaxUndergroundDepth()
-      + OFFWORLD_FACILITY_BELOW_DECK_OVERSCAN_MARGIN
-    > offworldFacilityMaxAboveDeckReach()
-      ? offworldFacilityMaxUndergroundDepth()
-          + OFFWORLD_FACILITY_BELOW_DECK_OVERSCAN_MARGIN
-      : offworldFacilityMaxAboveDeckReach();
-static_assert(OFFWORLD_FACILITY_OVERSCAN_Y
-                >= offworldFacilityMaxAboveDeckReach()
-              && OFFWORLD_FACILITY_OVERSCAN_Y
-                >= offworldFacilityMaxUndergroundDepth()
-                    + OFFWORLD_FACILITY_BELOW_DECK_OVERSCAN_MARGIN,
-              "Facility feature reach must contain every registered layout");
-
 enum RuinKind : uint8_t {
-#define WORLDGEN_FACILITY_ARCHETYPE(...)
 #define WORLDGEN_RUIN_ARCHETYPE(symbol, id, ...) RK_##symbol = id,
 #include "worldgen_structure_archetypes.def"
 #undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
   RK_COUNT =
-#define WORLDGEN_FACILITY_ARCHETYPE(...)
 #define WORLDGEN_RUIN_ARCHETYPE(...) + 1
     0
 #include "worldgen_structure_archetypes.def"
 #undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
 };
 
 enum RuinSizeProfile : uint8_t {
@@ -554,13 +309,11 @@ struct RuinArchetypeDef {
 };
 
 inline constexpr std::array<RuinArchetypeDef, RK_COUNT> RUIN_ARCHETYPES = {{
-#define WORLDGEN_FACILITY_ARCHETYPE(...)
 #define WORLDGEN_RUIN_ARCHETYPE(symbol, id, name, profile, chance, neutral, size, widthAdd, heightAdd, minDepth, fallback, stamp) \
   {RK_##symbol, name, profile, chance, neutral, size, widthAdd, heightAdd, \
    minDepth, RK_##fallback},
 #include "worldgen_structure_archetypes.def"
 #undef WORLDGEN_RUIN_ARCHETYPE
-#undef WORLDGEN_FACILITY_ARCHETYPE
 }};
 
 constexpr int ruinArchetypeMaxWidth(
@@ -817,7 +570,6 @@ class WorldContextSystem {
   static constexpr int VILLAGE_LATTICE = 720;
   static constexpr double VILLAGE_CHANCE = 0.62;
   static constexpr int MINE_LATTICE = 512;
-  static constexpr int OFFWORLD_FACILITY_LATTICE = 420;
   static constexpr int RUIN_LATTICE = 76;
   static constexpr int OUTCROP_LATTICE = 92;
 
@@ -827,7 +579,6 @@ class WorldContextSystem {
                            VillageBuildingPlan& out,
                            int queryX = INT_MIN) const;
   bool minePlan(int latticeX, MinePlan& out) const;
-  bool offworldFacilityPlan(int latticeX, OffworldFacilityPlan& out) const;
   bool ruinCandidate(int latticeX, int latticeY, RuinPlan& out) const;
   bool ruinPlan(int latticeX, int latticeY, RuinPlan& out) const;
   bool deepStructurePlan(int gridX, int gridY,

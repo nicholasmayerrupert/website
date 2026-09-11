@@ -80,7 +80,11 @@ Neighboring cells sample one continuous tile; physics and the destructible cell
 silhouette remain exact. Fluid interiors use evolving noise without a short
 repeating tile. Exposed surfaces carry moving highlights; lava currents reach
 solid contact edges without a dark rim.
-Liquid animation is presentation-only and preserves the simulated material mask.
+Gas palettes feed fine rising wisps and moving cell grain without a short repeating tile: steam
+has pale curls, acrid smoke has denser olive billows, methane drifts slowly, and
+fire carries fast orange-gold tongues. Gas opacity varies through the wisps and
+softens at exposed cells while keeping every occupied cell visible. Liquid and
+gas animation is presentation-only and preserves the simulated material mask.
 Bodies carry occupancy-aligned source texel addresses. Baked components retain
 sparse cell-address records, and splitting, welding, freezing, saves, and streamed
 fragments preserve them. Repeated rotation and welding resample the artwork on

@@ -123,13 +123,9 @@ engine's lifetime. The `<sand-game>` element reads `planet`, `world-seed`,
 them. Planet and seed together select deterministic terrain and a matching
 planetary backdrop.
 
-Moon and Mars use separate constructed-landmark catalogues as well as separate
-terrain, cave, and surface-formation fields. Lunar exploration crosses mineral
-spire fields, observatories, helium-3 mass drivers, and far-side relay
-monasteries. Martian exploration crosses weathered fins and hoodoos, greenhouse
-arcologies, industrial refineries, and armored canyon foundries. Each complex
-has broad grounded foundations, a large surface silhouette, and three furnished,
-player-clear underground decks.
+Moon and Mars use separate terrain, cave, and surface-formation fields. Lunar
+exploration crosses mineral spires; Martian exploration crosses weathered fins
+and hoodoos. Procedural settlements and monuments belong to Earth.
 
 The canonical campaign gravity scales are Earth `1.0`, Moon `0.33`, and Mars
 `0.76`. The Web Component has no separate gravity attribute and campaign
@@ -170,7 +166,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 18 is canonical in absolute coordinates: viewport size changes
+World generation version 22 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
@@ -237,8 +233,23 @@ five to seven large role-specific buildings with distinct rooflines, terraced
 foundations, broad masonry supports, slope stairs, a market, lantern-lit streets,
 and a roofed well. Villages reserve their whole street with a gap between neighboring
 settlements. Streets occupy a single dry biome, with wider wilderness gaps
-between settlements. Desert buildings have low parapets and roof vents, and
-shared street furniture uses the local masonry. Mine entrances exclude settlements, and ruin plans exclude both settlements
+between settlements. Homes have limewashed timber frames, tiled gables, shuttered
+casements, projecting eaves, capped chimneys, and furnished rooms. Entrances open
+through the left and right walls; the visible back wall carries windows and furniture.
+Real candles, window lights,
+hearths, and street lanterns illuminate the rooms and approaches. Occupations and
+stable village variants select different wall heights, roof profiles, and window
+compositions: squat workshops, tall apothecaries and granaries, and civic halls.
+Repeated homes cycle through different silhouettes. Desert streets mix stepped
+terraces, vaulted homes, pergolas, and windcatchers; timber streets mix gables,
+shed roofs, cross gables, and gambrels. Watchwood uses round, twin, and pointed
+domes. Every silhouette fits the village's reserved skyline and street footprint.
+Shared street furniture uses the local masonry. Mine
+headhouses have framed workshops, winding gear, and hanging lights. Cottages and
+headhouses share `stampSurfaceHouseShell` for walls, roofs, windows, lights, and
+side-entry clearance, with domestic furniture or mine machinery added by their callers. Snowy
+longhouses, swamp stilt homes, tribal huts, and igloos have furnished, lit interiors
+suited to their local architecture. Mine entrances exclude settlements, and ruin plans exclude both settlements
 and mines; both simulated layers share these deterministic placement decisions.
 The biome catalogue selects the settlement architecture. Watchwood uses pale
 observation domes, ocular instruments, and burgundy ribs within the same reserved,
@@ -260,7 +271,8 @@ smaller workshops and nurseries; deep foundries, crystal instruments, fossil
 excavations and fungal settlements. Eight designs use connected wings, sloping
 passages and branches around preserved natural rock, with shared raster and
 semantic interior plans in `cave_sites.hpp`. They share foreground doorways and galleries with
-furnished, lit rear walls; buried piers meet the cave floor. Neighboring ruins
+furnished rear walls, recessed masonry bays, and supported foreground ceiling
+lanterns; buried piers meet the cave floor. Neighboring ruins
 resolve overlaps deterministically and respect the larger deep monuments.
 Acid springs use asymmetric bowls, stepped beds and paired pools with crystal
 linings, mineral rims and banks fitted to natural rock, outside structure sites.
@@ -274,7 +286,7 @@ actual hillside. The material cells participate in ordinary component simulation
 absolute coordinate: surface/cave biome, surface-relative depth, composable area
 tags, stable feature identity and bounds, parent feature, and nested site role.
 Worldgen and context queries share the plans for settlements, mines, ruins,
-deep monuments, formations, landmarks, and facilities, so spawning and tools can target a
+deep monuments, formations, and landmarks, so spawning and tools can target a
 site without inspecting mutable cell materials. One compile-time registry row
 owns each family's placement reach, profile eligibility, stage, write/layer
 policy, exclusions, priority, semantics, and executable callbacks. These
@@ -519,6 +531,8 @@ Raster generation and semantic world context share the explicit
 to generated cells, feature containment, or semantic identity increments that
 version and adds the matching `GOLDEN_BY_VERSION` entry in
 `scripts/worldgen-version-test.mjs` after the output has been inspected.
+Feature IDs use a stable namespace so unrelated structure layouts retain their
+procedural seeds across raster revisions; checkpoints check the generation version.
 
 The extension path for each registry is explicit:
 
@@ -534,7 +548,7 @@ The extension path for each registry is explicit:
 | Planet using existing profiles | One explicit-ID `PlanetId.descriptors` record in `abi.schema.json`, selecting compatible generation/off-world-material and presentation profiles plus gameplay capabilities | Generated C++/JS descriptors own identity, gravity, load-bearing facility materials, capability flags, and lookup helpers | `node scripts/run-tests.mjs --only planet-selection`, `node scripts/run-tests.mjs --only planet-gravity`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generated feature/site family | One `worldgen_features.def` row plus its localized plan/query/overlap/stamp callbacks; add stable semantic enums in `abi.schema.json` only for a public identity | The row generates the family enum, callback declarations, dispatch, reach, composition, and context registration | `node scripts/run-tests.mjs --only world-context`, `node scripts/run-tests.mjs --only structures`, and `node scripts/run-tests.mjs --only worldgen-version` |
 | Generation stage | One dense-ID `worldgen_stages.def` row in execution order plus a stage callback in `world_context_impl.inc`, or the shared generated-feature callback; insertion/reordering is a worldgen-version change | The row owns profile applicability, order, feature-stage selection, overscan, and dispatch | `node scripts/run-tests.mjs --only worldgen-quality`, `node scripts/run-tests.mjs --only worldgen-version`, and the affected domain suite |
-| Facility or ruin archetype | One dense-ID `worldgen_structure_archetypes.def` row plus its local stamp lambda in `worldgen_offworld.inc` or `worldgen_surface_structures.inc`; facility rows declare above-deck reach and ruin profile chances are increasing cumulative cutoffs | The row generates identity, selection metadata, buffer capacities, reach, and stamp dispatch; other structure families use `worldgen_features.def` | `node scripts/run-tests.mjs --only structures` and `node scripts/run-tests.mjs --only worldgen-version` |
+| Ruin archetype | One dense-ID `worldgen_structure_archetypes.def` row plus its local stamp lambda in `worldgen_surface_structures.inc`; profile chances are increasing cumulative cutoffs | The row generates identity, selection metadata, bounds, and stamp dispatch; other structure families use `worldgen_features.def` | `node scripts/run-tests.mjs --only structures,worldgen-version` |
 | Snapshot or ABI field | Add the field to every packed representation that carries it in `abi.schema.json`; authority snapshots and `glPlayerExt` are independent | The generator emits offsets, writers, and snapshot codecs for each declared representation; the owning subsystem supplies the value and presentation consumers read it | `node scripts/run-tests.mjs --only abi-generator`, `node scripts/run-tests.mjs --only abi-snapshot-writers`, and the relevant worker or presentation suite |
 
 After an authoritative edit, refresh and validate generated sources before the

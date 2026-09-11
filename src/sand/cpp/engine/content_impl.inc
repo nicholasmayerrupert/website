@@ -211,7 +211,7 @@ bool ContentSystem::load(const int32_t* data, int length) {
   hasTexture = nextHasTexture;
   std::copy(nextTextures.begin(), nextTextures.end(), textures.begin());
   for (int m = 0; m < TABLE; m++) {
-    if (!hasTexture[m] || MAT_CLASS[m] != MC_LIQUID) continue;
+    if (!hasTexture[m] || (MAT_CLASS[m] != MC_LIQUID && MAT_CLASS[m] != MC_GAS)) continue;
     std::map<uint32_t, int> counts;
     for (uint32_t color : textures[m]) counts[color & 0xffffffu]++;
     std::vector<uint32_t> colors;

@@ -188,8 +188,8 @@ function surfaceMasonryComponents(g, engine) {
         if (c.groundContacts >= 3) tally.groundedSurfaceShells++;
       }
       if (depth === 0) for (let y = 0; y < ROWS - 10; y++) for (let x = 3; x < COLS - 3; x++) {
-        let lamp = bg[(y + 1) * COLS + x - 3] === MAT.CRYSTAL
-          && bg[(y + 1) * COLS + x + 3] === MAT.CRYSTAL;
+        let lamp = bg[(y + 1) * COLS + x - 3] === MAT.LIGHT
+          && bg[(y + 1) * COLS + x + 3] === MAT.LIGHT;
         for (let dx = -3; dx <= 3 && lamp; dx++)
           lamp = bg[y * COLS + x + dx] === MAT.PINE_WOOD;
         for (let dy = 0; dy <= 9 && lamp; dy++)
@@ -213,9 +213,9 @@ function surfaceMasonryComponents(g, engine) {
         // isolated roof-edge cell is not a foreground lamp post.
         let foregroundFixtureCells = 0;
         for (let dx = -3; dx <= 3; dx++)
-          foregroundFixtureCells += g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.CRYSTAL ? 1 : 0;
+          foregroundFixtureCells += g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.LIGHT ? 1 : 0;
         for (let dy = 1; dy <= 9; dy++)
-          foregroundFixtureCells += g[(y + dy) * COLS + x] === MAT.PINE_WOOD || g[(y + dy) * COLS + x] === MAT.CRYSTAL ? 1 : 0;
+          foregroundFixtureCells += g[(y + dy) * COLS + x] === MAT.PINE_WOOD || g[(y + dy) * COLS + x] === MAT.LIGHT ? 1 : 0;
         tally.collidingStreetLamps += foregroundFixtureCells >= 4;
       }
       e.shiftWorldXY(128, 0);

@@ -51,6 +51,7 @@ class Renderer {
   // propagation margin, keeps its exact inner rect, then restores the margin.
   std::vector<uint8_t> lightPatchScratch;
 
+  uint32_t gasColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const;
   uint32_t fluidColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const;
 
   void init(uint32_t seed) { renderRngState = seed ^ 0x9e3779b9u; buildRenderTables(); }

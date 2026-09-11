@@ -394,10 +394,8 @@ const assertDenseArchetypeRows = (macro) => {
   if (ids.length === 0 || ids.some((id, index) => id !== index))
     fail(`${relative(root, archetypeRegistryPath)} ${macro} IDs must be dense and stable`);
 };
-assertDenseArchetypeRows('WORLDGEN_FACILITY_ARCHETYPE');
 assertDenseArchetypeRows('WORLDGEN_RUIN_ARCHETYPE');
 for (const [file, positionalTable] of [
-  ['worldgen_offworld.inc', 'facilityStamps'],
   ['worldgen_surface_structures.inc', 'ruinStamps'],
 ]) {
   const source = readFileSync(resolve(engineDir, file), 'utf8');

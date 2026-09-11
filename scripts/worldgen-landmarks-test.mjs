@@ -65,6 +65,7 @@ for(const [kind,c] of cases){
    const span=kind===3?[-78,43,-67,-30]:kind===13?[-53,53,-56,-25]:[3,77,-78,-40];
    let continuous=true;
    for(let x=span[0];x<=span[1];x++) {
+     if(kind===13 && Math.abs(x)<8)continue;
      let roofing=0;
      for(let y=span[2];y<=span[3];y++) {
        const m=e.getGrid()[(floor+y-e.getWorldOffsetY())*e.cols+cx+x-e.getWorldOffsetX()];
@@ -72,7 +73,13 @@ for(const [kind,c] of cases){
      }
      continuous&&=roofing>=2;
    }
-   check(`family ${kind}: roof has no missing vertical sections`,continuous);
+   check(`family ${kind}: roof is continuous outside designed openings`,continuous);
+   if(kind===13) {
+     let open=true;
+     for(let y=-55;y<=-45;y++)
+       open&&=e.getGrid()[(floor+y-e.getWorldOffsetY())*e.cols+cx-e.getWorldOffsetX()]===MAT.EMPTY;
+     check('rotunda: central oculus remains open to the sky',open);
+   }
  }
  const initial=capture(e),wide=make(512,c.seed);move(wide,cx,cy);
  check(`family ${kind}: both layers reproduce at another viewport size`,same(initial,capture(wide)));wide.destroy();

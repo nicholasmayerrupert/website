@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { initSandWasm, createEngineWasm, PLANET, WORLD_FEATURE } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm, PLANET, WORLD_FEATURE, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { GAME_WORLD } from '../src/sand/content/catalog.js';
@@ -12,6 +12,25 @@ try {
     for(let y=-30;y<0;y++){const c=e.worldContextAt(x,y);if(c.featureKind===WORLD_FEATURE.VILLAGE_BUILDING)return c;}
     throw new Error(`Missing fixture building at ${x}`);
   });
+  const fixtureLights = sites.flatMap(site => {
+    const lights=[];
+    for(let layer=0;layer<2;layer++) {
+      const grid=layer?e.getGridBg():e.getGrid(), b=site.bounds;
+      for(let y=b.top;y<b.bottom;y++)for(let x=b.left;x<=b.right;x++) {
+        const lx=x-e.getWorldOffsetX(),ly=y-e.getWorldOffsetY();
+        if(lx>=0&&lx<640&&ly>=0&&ly<448&&grid[ly*640+lx]===MAT.LIGHT)lights.push({layer,x,y});
+      }
+    }
+    assert.ok(lights.filter(l=>l.layer===0).length>=4,'each room has real lamps above the player aisle');
+    assert.ok(lights.filter(l=>l.layer===1).length>=4,'windows and hearths contain real light sources');
+    return lights;
+  });
+  for(let i=0;i<60;i++)e.stepWorld();
+  for(const light of fixtureLights) {
+    const grid=light.layer?e.getGridBg():e.getGrid();
+    assert.equal(grid[(light.y-e.getWorldOffsetY())*640+light.x-e.getWorldOffsetX()],MAT.LIGHT,
+      'generated lights stay attached to their fixtures while both layers simulate');
+  }
   // Other nearby NPCs must not consume the residents belonging to these homes.
   for(let i=0;i<15;i++)assert.ok(e.spawnScriptedCreature(CREATURE.VILLAGER,2160+i, e.worldSurfaceAbsAt(2160+i)-8));
   const ticks=n=>{for(let i=0;i<n;i++)e.stepActors();};ticks(61);

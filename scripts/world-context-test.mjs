@@ -291,10 +291,7 @@ const facility = findContext(moon,
     xStep: 8,
     yStep: 4,
   });
-check('off-world complexes participate in the same feature catalogue',
-  facility
-    && facility.context.siteRole === WORLD_SITE_ROLE.FACILITY
-    && facility.context.featureId > 0);
+check('off-world facility generation is absent', !facility);
 moon.destroy();
 
 const failures = done();

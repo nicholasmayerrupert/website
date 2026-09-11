@@ -21,7 +21,7 @@ query/overlap/stamp callbacks. The catalogue currently plans:
 - Earth settlements and their role-specific child buildings
 - Earth mines and their headhouse/gallery roles
 - Earth cave ruins and deep-cavern monuments
-- Moon and Mars formations and facilities
+- Moon and Mars natural formations
 
 The same pure plan functions are consumed by stamping and semantic queries, so
 a record cannot drift from the anchor, dimensions, terrain constraints, feature
@@ -73,7 +73,7 @@ The survival combat pools are broad within their physical realm:
 | Context | Eligible enemies | Affinities |
 | --- | --- | --- |
 | Any surface biome | Dynamiteer, caustic mortarman, cluster wasp | Dynamiteers favor open biomes and settlements; mortarmen favor desert and swamp; wasps favor forest, jungle, and swamp |
-| Any cave biome | Bore sentinel, minigunner | Bore sentinels favor mines and geode/fossil depths; minigunners favor mines, facilities, and crystal/magma/void depths |
+| Any cave biome | Bore sentinel, minigunner | Bore sentinels favor mines and geode/fossil depths; minigunners favor mines and crystal/magma/void depths |
 
 Surface combatants cannot naturally materialize inside designated building
 interiors, and cave enemies cannot materialize beneath a settlement. The
@@ -147,23 +147,20 @@ candidate-planned feature families.
    `node scripts/run-tests.mjs --only worldgen-version`, and the affected domain
    suite.
 
-## Adding a facility or ruin archetype
+## Adding a ruin archetype
 
-`cpp/engine/worldgen_structure_archetypes.def` owns variants of the existing
-off-world facility and cave-ruin families. Other structure families are
-generated sites and use `cpp/engine/worldgen_features.def` instead.
+`cpp/engine/worldgen_structure_archetypes.def` owns variants of the cave-ruin
+family. Other structure families are generated sites and use
+`cpp/engine/worldgen_features.def` instead.
 
-1. Append a dense, stable-ID facility or ruin row with its selection, size,
-   reach, and profile metadata. Facility `aboveDeckReach` contains every write
-   above its deck. Ruin chances for the same preferred cave profile are
-   increasing cumulative cutoffs in registry order.
+1. Append a dense, stable-ID ruin row with its selection, size, reach, and
+   profile metadata. Chances for the same preferred cave profile are increasing
+   cumulative cutoffs in registry order.
 2. Implement the row's named local stamp lambda in
-   `cpp/engine/worldgen_offworld.inc` for a facility or
-   `cpp/engine/worldgen_surface_structures.inc` for a ruin. The registry derives
-   the enum, metadata table, reach, and stamp dispatch from the same row.
+   `cpp/engine/worldgen_surface_structures.inc`. The registry derives the enum,
+   metadata table, reach, and stamp dispatch from the same row.
 3. Increment the world-generation version, add the new version's inspected
-   golden, and run `node scripts/run-tests.mjs --only structures` and
-   `node scripts/run-tests.mjs --only worldgen-version`.
+   golden, and run `node scripts/run-tests.mjs --only structures,worldgen-version`.
 
 ## Design references
 

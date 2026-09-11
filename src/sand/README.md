@@ -1313,8 +1313,8 @@ Winterbreath reaches 80 cells. Lumen heals its caster.
 Sparks (311) sustains one focused blue-white lightning arc with a 96-cell reach.
 It hits immediately and stops at the first actor or solid terrain. Bounce reflects
 the arc twice from terrain, sharing its range across all segments; only the final
-segment delivers connected spells. Winterbreath pulses also ricochet with Bounce. Contact refreshes
-a 24-tick Shocked stun and a 120-tick Electrified effect (40% slow, 2 damage every
+segment delivers connected spells. Winterbreath pulses also ricochet with Bounce. Contact deals 3 direct damage at most once every 12 ticks and refreshes
+a 30-tick Shocked stun and a 120-tick Electrified effect (40% slow, 2 damage every
 30 ticks). Protected residents and the caster are exempt. A six-second crackle loop layers short recorded arcs, irregular snaps and a
 quiet noise bed, with a brighter contact sound and a short release envelope.
 The bolt uses a half-cell world pixel grid and hard-edged colors. Sparks and Winterbreath each cost one mana per pulse

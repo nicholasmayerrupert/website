@@ -4809,7 +4809,7 @@
             "ST_CONTROL"
           ],
           "stacking": "SSP_REFRESH",
-          "defaultTicks": 24,
+          "defaultTicks": 30,
           "maxTicks": 120,
           "maxStacks": 1,
           "periodTicks": 0,

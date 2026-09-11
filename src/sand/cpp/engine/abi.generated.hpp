@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 58;
 
-static const uint64_t ABI_FINGERPRINT = 0xbf33f6f4fd10ULL;
+static const uint64_t ABI_FINGERPRINT = 0xd6559df58db2ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals
 enum PlayerSnapshotField : int {
@@ -2205,7 +2205,7 @@ inline constexpr StatusDefinition STATUS_DEFINITIONS[] = {
   {STATUS_REGENERATION, SSP_EXTEND, 300, 1800, 1, 60, 2, 1, 2, 0, 0, 0, SV_HEAL},
   {STATUS_HASTE, SSP_EXTEND, 600, 1800, 1, 0, 0, 1.25, 2, 0, 0, 0, SV_SPEED},
   {STATUS_WET, SSP_REFRESH, 120, 3600, 1, 0, 0, 1, 128, 0, 4, 4, SV_WATER},
-  {STATUS_SHOCKED, SSP_REFRESH, 24, 120, 1, 0, 0, 1, 65, 3, 0, 0, SV_SHOCK},
+  {STATUS_SHOCKED, SSP_REFRESH, 30, 120, 1, 0, 0, 1, 65, 3, 0, 0, SV_SHOCK},
   {STATUS_ELECTRIFIED, SSP_REFRESH, 120, 600, 1, 30, -2, 0.6, 1, 0, 0, 0, SV_SHOCK},
 };
 inline constexpr int STATUS_CREATURE_IMMUNITIES[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 4};

@@ -357,7 +357,10 @@ arena('sparks stun targets in front, respect walls, and spare the caster', (e, i
   const protectedByWall = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 156 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
   for (let y = 1; y < 110; y++) e.paintDisc(148, y, 0, MAT.STONE, true);
   e.syncComponents();
+  const initialHealth = e.getCreatures().find(c => c.id === victim).health;
   input(e, id, INPUT.PRIMARY, 180, 102); tick(e);
+  assert.equal(e.getCreatures().find(c => c.id === victim).health, initialHealth - 3, 'Sparks deals 3 direct damage');
+  assert.equal(e.getStatusEffects().find(s => s.actorId === victim && s.effect === STATUS_EFFECT.SHOCKED).remainingTicks, 30);
   assert.equal(e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC).length, 1);
   tick(e, 29);
   const statuses = e.getStatusEffects();
@@ -365,7 +368,11 @@ arena('sparks stun targets in front, respect walls, and spare the caster', (e, i
   for (const target of [behind, protectedByWall]) assert.ok(!statuses.some(s => s.actorId === target && s.actorKind === STATUS_ACTOR.CREATURE));
   assert.equal(e.getPlayer(id).health, 100);
   const contactHealth = e.getCreatures().find(c => c.id === victim).health;
-  input(e, id); e.setCreatureRuntime(true, false); tick(e, 60);
+  input(e, id); e.setCreatureRuntime(true, false); tick(e, 29);
+  assert.equal(e.getStatusEffects().find(s => s.actorId === victim && s.effect === STATUS_EFFECT.SHOCKED).remainingTicks, 1, 'stun persists for half a second after contact');
+  tick(e);
+  assert.ok(!e.getStatusEffects().some(s => s.actorId === victim && s.effect === STATUS_EFFECT.SHOCKED), 'stun expires on tick 30');
+  tick(e, 30);
   assert.ok(e.getCreatures().find(c => c.id === victim).health <= contactHealth - 4, 'electrification deals periodic damage after release');
   assert.ok(!e.getStatusEffects().some(s => s.effect === STATUS_EFFECT.SHOCKED), 'stun expires after the stream ends');
   assert.ok(e.getStatusEffects().some(s => s.actorId === victim && s.effect === STATUS_EFFECT.ELECTRIFIED), 'electrification outlasts contact');

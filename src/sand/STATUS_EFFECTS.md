@@ -79,7 +79,7 @@ recorded for future attribution consumers, not currently used for kill credit.
 | --- | --- | --- | --- |
 | Burning | 2 s | Refresh | 3 damage / 0.5 s; fire contact, Ember, Cindermaw |
 | Chilled | 2.5 s | Refresh | 35% movement; Rime, Winterbreath, Hollow Star pull |
-| Shocked | 0.4 s | Refresh | Blocks movement and attacks; Sparks contact |
+| Shocked | 0.5 s | Refresh | Blocks movement and attacks; Sparks contact |
 | Electrified | 2 s | Refresh | 40% slower; 2 damage every 0.5 s; Sparks contact |
 | Rooted | 1.5 s | Refresh | Root and disarm; Briar |
 | Poisoned | 5 s | Independent, 5 | 2 damage / s per stack; available to content/engine callers |

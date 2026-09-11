@@ -54,7 +54,7 @@ add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 8, mana: 1, cooldown:
   description: 'Hold to breathe a continuous frost stream like a frost giant. Chills foes, freezes water, and coats surfaces in lasting ice. Costs 1 mana per pulse (20 per second). Release to advance to the next spell.' });
 add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 128, style: 3, price: 140,
   description: 'Lob a molten glob that leaves a small pool of real lava. The lingering lava can burn anyone, including its caster.' });
-add(311, 'Sparks rune', 'spell', { spell: 12, power: 4, mana: 1, cooldown: 3, reach: 96, style: 2, price: 80,
+add(311, 'Sparks rune', 'spell', { spell: 12, power: 3, mana: 1, cooldown: 3, reach: 96, style: 2, price: 80,
   statusEffects: [{ effect: STATUS_EFFECT.SHOCKED }, { effect: STATUS_EFFECT.ELECTRIFIED }],
   description: 'Hold a focused lightning arc over a long reach. Contact stuns foes and leaves them electrified: slowed and taking damage for 2 seconds. Costs 1 mana per pulse (20 per second). Release to advance to the next spell.' });
 [

@@ -1163,7 +1163,11 @@ Swords chain an opening slash, return cut, and heavy finisher. Hold the primary
 action or press during recovery to buffer the next cut; an 18-tick idle window
 keeps the chain open. The finisher deals 150% damage with stronger knockback and
 costs 125% stamina. Guarding or switching weapons clears the chain. The renderer
-uses the authoritative combo stage for the blade, body lean, and slash arcs.
+uses the authoritative combo stage for independent wrist and blade paths: a
+stepping diagonal slash, low rising return, and overhead finisher. Pixel-aligned
+torso weight shifts, planted footwork, and blade-following ribbons distinguish
+the cuts. An empty off hand joins the grip during the finisher. Each contact
+pose lands on the authoritative damage tick.
 
 
 Adventure enemy charges gouge terrain along their path, heavy strikes excavate

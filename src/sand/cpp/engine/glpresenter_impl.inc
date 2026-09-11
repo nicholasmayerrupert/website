@@ -641,21 +641,45 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     ? std::max(0.0, std::min(1.0, (actionDuration - actionTicks) / (double)actionDuration))
     : animFrame / (double)imax(1, art.clips[animState].count - 1);
   auto ease = [](double t) { t = std::max(0.0, std::min(1.0, t)); return t*t*(3.0-2.0*t); };
-  auto swordAngle = [&](double t) {
-    const double start = -.80;
-    const double windup = swordCombo == 2 ? 1.85 : swordCombo == 3 ? -2.65 : -2.05;
-    const double follow = swordCombo == 2 ? -1.75 : swordCombo == 3 ? 2.10 : 1.65;
-    if (t < .20) return start + (windup-start) * ease(t/.20);
-    if (t < .34) return windup * (1-ease((t-.20)/.14));
-    if (t < .50) return follow * ease((t-.34)/.16);
-    return follow + (-.80-follow) * ease((t-.50)/.50);
-  };
   bool sword = E.planetId == PL_FRONTIER && gear && gear->family == GF_SWORD;
   bool cutting = sword && animState == AS_SWORD;
-  double bodyLean = cutting ? (actionPhase < .20 ? -.35 * ease(actionPhase/.20)
-    : actionPhase < .46 ? -.35 + .95 * ease((actionPhase-.20)/.26) : .60 * (1-ease((actionPhase-.46)/.54))) : 0;
-  if (cutting && swordCombo == 2) bodyLean *= -.55;
-  if (cutting && swordCombo == 3) bodyLean *= 1.3;
+  struct SwordPose { double angle, handX, handY, lean, crouch, stride; };
+  // Blade rotation, wrist travel and planted footwork are authored independently.
+  static constexpr SwordPose SWORD_POSES[3][7] = {
+    { // Step into a diagonal cut, then let the wrist carry the blade down.
+      {-1.45, 2.25, 1.55, 0, 0, 0}, {-2.80, .70, -.20, -.40, .12, .12},
+      {-2.35, .90, -.50, -.20, .05, .40}, {.12, 2.85, .15, .85, .18, .95},
+      {1.20, 2.25, 1.70, .65, .25, .85}, {.55, 2.15, 1.80, .30, .10, .45},
+      {-1.45, 2.25, 1.55, 0, 0, 0},
+    },
+    { // Gather low at the hip and rise into a backhand with the weight drawn back.
+      {-1.45, 2.25, 1.55, 0, 0, 0}, {1.75, .90, 1.10, -.55, .45, .30},
+      {1.30, 1.50, 1.25, -.20, .30, .50}, {-.18, 2.85, -.20, .45, -.12, .45},
+      {-1.75, 1.75, -1.70, -.10, -.18, .25}, {-1.85, 1.05, -.45, -.25, 0, .10},
+      {-1.45, 2.25, 1.55, 0, 0, 0},
+    },
+    { // Lift overhead, brace, and sink into a long finishing step.
+      {-1.45, 2.25, 1.55, 0, 0, 0}, {-1.70, .10, -2.60, -.65, .40, .45},
+      {-1.60, .55, -2.75, -.35, .20, .65}, {.08, 3.05, -.05, 1.15, .45, 1.25},
+      {1.35, 2.45, 1.10, 1.10, .85, 1.20}, {1.25, 1.85, 1.30, .55, .45, .75},
+      {-1.45, 2.25, 1.55, 0, 0, 0},
+    },
+  };
+  const double swordContact = actionDuration > 0
+    ? (actionDuration - actionDuration * 2 / 3) / (double)actionDuration : 1.0 / 3;
+  auto swordPose = [&](double t) {
+    const double times[] = {0, .17, .25, swordContact, .52, .78, 1};
+    int key = 0;
+    while (key < 5 && t > times[key + 1]) key++;
+    const auto& from = SWORD_POSES[imax(0, imin(2, swordCombo - 1))][key];
+    const auto& to = SWORD_POSES[imax(0, imin(2, swordCombo - 1))][key + 1];
+    double blend = ease((t - times[key]) / (times[key + 1] - times[key]));
+    auto mix = [&](double a, double b) { return a + (b - a) * blend; };
+    return SwordPose{mix(from.angle, to.angle), mix(from.handX, to.handX), mix(from.handY, to.handY),
+      mix(from.lean, to.lean), mix(from.crouch, to.crouch), mix(from.stride, to.stride)};
+  };
+  const auto cutPose = cutting ? swordPose(actionPhase) : SwordPose{};
+  double bodyLean = cutting ? cutPose.lean * .60 : 0;
   bool mining = E.planetId == PL_FRONTIER && heldItemKind == IK_MINING_TOOL && animState == AS_AXE;
   double mineContact = P_FRONTIER_MINE_IMPACT / (double)imax(1, actionDuration);
   if (mining) bodyLean = actionPhase < mineContact
@@ -673,7 +697,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     else if (animState == AS_WADE) bodyBob = animFrame ? -0.045 : 0.0;
     else if (animState == AS_SWIM) bodyBob = SWIM_BOB[animFrame % 4];
   }
-  double sprX = (pxc + PLAYER_W * .5 + facing * bodyLean - camCol) * cell + glOffX - spriteWidth * pixel * .5;
+  double sprX = (pxc + PLAYER_W * .5 + facing * (cutting ? 0 : bodyLean) - camCol) * cell + glOffX - spriteWidth * pixel * .5;
   double sprY = (pyc + PLAYER_H - camRow + bodyBob) * cell + glOffY - spriteHeight * pixel;
   if (alive && E.planetId != PL_FRONTIER) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
 
@@ -833,6 +857,17 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   // Facing right exposes the right hand; facing left exposes the left hand.
   const bool rightHandRear = E.planetId == PL_FRONTIER && facing < 0;
   const bool hasShield = alive && E.planetId == PL_FRONTIER && equipment && equipment[6];
+  auto bodyPoint = [&](double col, double row) {
+    double x = sprX + col * pixel, y = sprY + row * pixel;
+    if (cutting) {
+      double upper = 1 - row / (spriteHeight - 1);
+      double source = facing > 0 ? col : spriteWidth - 1 - col;
+      double step = cutPose.stride * ease((row - 27) / 15) * (source >= 18 ? 1 : -.35);
+      x += facing * std::round((cutPose.lean * upper + step) / art.pixelScale) * pixel;
+      y += std::round(cutPose.crouch * upper / art.pixelScale) * pixel;
+    }
+    return std::array<double, 2>{x, y};
+  };
   auto drawBody = [&]() {
     double rearSX = 0, rearSY = 0, rearEX = 0, rearEY = 0, rearHX = 0, rearHY = 0;
     if (alive && !aimedWeapon && (!hasShield || rightHandRear)) {
@@ -850,6 +885,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         int run = 1;
         while (c + run < spriteWidth) {
           int nextSource = facing >= 0 ? c + run : (spriteWidth - 1 - c - run);
+          if (cutting && r >= 27 && (source >= 18) != (nextSource >= 18)) break;
           if (row[nextSource] != idx) break;
           run++;
         }
@@ -873,7 +909,8 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         glUniform4f(glc->uColor, tr * light * (1 - flash) + flash,
                     tg * light * (1 - flash) + flash * .65f,
                     tb * light * (1 - flash) + flash * .65f, col[3]);
-        glSolidDev(sprX + c * pixel, sprY + r * pixel, run * pixel, pixel);
+        const auto point = bodyPoint(c, r);
+        glSolidDev(point[0], point[1], run * pixel, pixel);
         c += run;
       }
     }
@@ -885,7 +922,11 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     if (alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
       auto piece = [&](int x,int y,int w,int h,float r,float g,float b) {
         int col = facing > 0 ? x : spriteWidth-x-w;
-        glUniform4f(glc->uColor,r*light,g*light,b*light,1); glSolidDev(sprX+col*pixel,sprY+y*pixel,w*pixel,h*pixel);
+        glUniform4f(glc->uColor,r*light,g*light,b*light,1);
+        if (cutting) for (int row = y; row < y + h; row++) {
+          const auto point = bodyPoint(col, row);
+          glSolidDev(point[0], point[1], w*pixel, pixel);
+        } else glSolidDev(sprX+col*pixel,sprY+y*pixel,w*pixel,h*pixel);
       };
       const auto* head = E.content.gear(equipment[0]);
       if (head) {
@@ -922,7 +963,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double ux = std::cos(angle), uy = std::sin(angle), nx=-uy, ny=ux;
     bool rear = !rightHandRear;
     double shoulderX = pxc+PLAYER_W*.5 + facing*(bodyLean + (rear ? -.3 : .3));
-    double shoulderY = pyc+PLAYER_H-spriteHeight*art.pixelScale*.60+bodyBob;
+    double shoulderY = pyc+PLAYER_H-spriteHeight*art.pixelScale*.60+bodyBob+cutPose.crouch*.60;
     double restX = shoulderX + facing*(rear ? 2.0 : .7), restY = shoulderY+2.4;
     // The guard follows the visible body's oval, with room above the head.
     double radiusX = spriteWidth*art.pixelScale*.4+.4;
@@ -969,7 +1010,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     // Weapon geometry below is grip-relative, so it rotates in the hand instead
     // of orbiting around the center of the player's torso.
     double shoulderX = pxc + PLAYER_W * .5 + facing*(bodyLean + (E.planetId == PL_FRONTIER ? (rightHandRear ? -.3 : .3) : 0));
-    double shoulderY = pyc + (E.planetId == PL_FRONTIER ? PLAYER_H-spriteHeight*art.pixelScale*.60 : PLAYER_H*.42) + bodyBob;
+    double shoulderY = pyc + (E.planetId == PL_FRONTIER ? PLAYER_H-spriteHeight*art.pixelScale*.60 : PLAYER_H*.42) + bodyBob + cutPose.crouch*.60;
     double targetX=aimX,targetY=aimY;
     if (E.planetId==PL_FRONTIER && heldItemKind==IK_MINING_TOOL && animState==AS_AXE && own && glSurvivalPreviewLocked) {
       targetX=glSurvivalPreviewX+.5;targetY=glSurvivalPreviewY+.5;
@@ -977,10 +1018,22 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double dx = targetX - shoulderX, dy = targetY - shoulderY, d = std::hypot(dx, dy);
     if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
     dx /= d; dy /= d;
+    auto swordGrip = [&](double phase) {
+      const auto pose = swordPose(phase);
+      double baseX = pxc + PLAYER_W*.5 + facing*(rightHandRear ? -.3 : .3);
+      double baseY = pyc + PLAYER_H - spriteHeight*art.pixelScale*.60 + bodyBob;
+      double aim = std::atan2(aimY-baseY, (aimX-baseX)*facing);
+      double tilt = aim * ease(phase/.17) * (1-ease((phase-.78)/.22));
+      double x = std::cos(tilt)*pose.handX - std::sin(tilt)*pose.handY;
+      double y = std::sin(tilt)*pose.handX + std::cos(tilt)*pose.handY;
+      double angle = (facing > 0 ? 0 : 3.14159265) + facing*(pose.angle+tilt);
+      return std::array<double, 4>{baseX+facing*(pose.lean*.60+x), baseY+pose.crouch*.60+y,
+        std::cos(angle), std::sin(angle)};
+    };
     if (gear && gear->family <= GF_SPEAR) {
       double phase = actionPhase;
       double angle = std::atan2(dy, dx);
-      if (animState == AS_SWORD) angle += facing * swordAngle(actionPhase);
+      if (animState == AS_SWORD) angle += facing * swordPose(actionPhase).angle;
       else if (animState == AS_AXE) angle += facing * (-1.6 + phase * 2.9);
       else if (animState != AS_SPEAR) angle = facing > 0 ? -.85 : -2.29;
       dx = std::cos(angle); dy = std::sin(angle);
@@ -1012,6 +1065,10 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       handX = shoulderX+facing*2.25; handY = shoulderY+1.55;
       dx = facing*.12; dy = -std::sqrt(1-dx*dx);
       nx = -dy; ny = dx;
+    } else if (cutting) {
+      const auto grip = swordGrip(actionPhase);
+      handX = grip[0]; handY = grip[1]; dx = grip[2]; dy = grip[3];
+      nx = -dy; ny = dx;
     } else if (gear && gear->family == GF_WAND) {
       const auto pose = E.magic.wandPose(pxc, pyc, facing, targetX, targetY, bodyBob);
       shoulderX = pose.shoulderX; shoulderY = pose.shoulderY;
@@ -1029,6 +1086,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double supportHY = handY + dy * .74 - ny * .38;
     if (!sword && !(gear && gear->family == GF_WAND) && !hasShield) articulatedArm(supportSX, supportSY, supportEX, supportEY,
                    supportHX, supportHY, true);
+    if (cutting && !hasShield) {
+      double gather = swordCombo == 3 ? ease(actionPhase/.17)*(1-ease((actionPhase-.60)/.40)) : 0;
+      double offX = shoulderX-facing*(.7+cutPose.lean*.4), offY = shoulderY+1.8;
+      offX += (handX-dx*.55-offX)*gather;
+      offY += (handY-dy*.55-offY)*gather;
+      articulatedArm(shoulderX-facing*.6, shoulderY+.1,
+        (shoulderX+offX)*.5-facing*.7, (shoulderY+offY)*.5+.35, offX, offY, true);
+    }
     double leadEX = shoulderX + dx * .72 + nx * .25;
     double leadEY = shoulderY + dy * .72 + ny * .25;
     if (E.planetId == PL_FRONTIER) {
@@ -1062,26 +1127,29 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       worldSquare(shoulderX - dx * (1 + age * 3), shoulderY - 1 - age * 3 + age * age * 6,
                   .3, .9f, .69f, .24f);
     }
-    if (cutting && actionPhase>.23 && actionPhase<.55) {
-      double aimAngle=std::atan2(aimY-shoulderY,aimX-shoulderX);
-      for(int i=1;i<=9;i++) {
-        double past=std::max(.20,actionPhase-i*.009);
-        double angle=aimAngle+facing*swordAngle(past);
-        float alpha=(float)((1-i/10.0)*.45*(1-ease((actionPhase-.46)/.09)));
-        for(double radius:{3.3,4.0,4.8}) worldSquare(shoulderX+std::cos(angle)*(gripReach+radius),
-          shoulderY+std::sin(angle)*(gripReach+radius),.23,.91f,.94f,.83f,alpha);
-      }
-    }
-    if (cutting && actionPhase > .29 && actionPhase < .51) {
-      // The fading outer edge shows the reach of the sword's sweeping contact shape.
-      const double pulse = (actionPhase-.29)/.22;
-      const double radius = 7.8 + (gear->reach-7.8)*ease(pulse*2);
-      const double aimAngle = std::atan2(aimY-shoulderY,aimX-shoulderX);
-      for (int i=-12;i<=12;i++) {
-        double angle=aimAngle+i*.115;
-        float alpha=(float)(std::sin(pulse*3.14159265)*.25*(1-std::abs(i)/16.0));
-        worldSquare(shoulderX+std::cos(angle)*radius,shoulderY+std::sin(angle)*radius,
-          swordCombo==3?.28:.19,.86f,.91f,.79f,alpha);
+    if (cutting && actionPhase > .25 && actionPhase < .64) {
+      // A tapered ribbon records the moving wrist and cutting edge together.
+      double tail = swordCombo == 3 ? .16 : .12;
+      auto previous = swordGrip(actionPhase);
+      for (int i = 1; i <= 12; i++) {
+        double past = std::max(.25, actionPhase-tail*i/12);
+        const auto grip = swordGrip(past);
+        float fade = (float)((1-i/13.0)*(1-ease((actionPhase-.52)/.12)));
+        for (double radius : {3.2, 4.2, 5.1}) {
+          double x0 = previous[0]+previous[2]*radius, y0 = previous[1]+previous[3]*radius;
+          double x1 = grip[0]+grip[2]*radius, y1 = grip[1]+grip[3]*radius;
+          int samples = imax(1, (int)std::ceil(std::hypot(x1-x0,y1-y0)/.35));
+          for (int sample = 0; sample < samples; sample++) {
+            double along = sample/(double)samples;
+            double x = std::round((x0+(x1-x0)*along)*4)*.25;
+            double y = std::round((y0+(y1-y0)*along)*4)*.25;
+            bool edge = radius > 5;
+            worldSquare(x,y,edge?.27:.45,edge?.94f:.64f,edge?.97f:.78f,edge?.87f:.76f,
+              fade*(edge?.65f:.18f));
+          }
+        }
+        previous = grip;
+        if (past <= .25) break;
       }
     }
     if (heldItemKind == IK_GEAR && gear) {

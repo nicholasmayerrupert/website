@@ -268,11 +268,21 @@ tile('BRINE', '075d69 098e91 20bcb1 5ce8cb ccfff0 168f9c', () => {
 tile('GUNPOWDER', '2c2d33 3b3e45 4c5058 626570 85858b 41464d', () => {
   grains([[2, 2], [13, 7], [25, 2], [6, 18], [22, 22], [14, 29]], ['31', '10']);
 }, 'Charcoal grains; small broken angular clusters with restrained cool highlights.');
-tile('TNT', '622d35 8b3f42 b9554d d5745d e6b884 a89778', () => {
-  for (const x of [1, 9, 17, 25]) { rect(x, 0, 1, 32, 1); rect(x + 1, 0, 1, 32, 3); }
-  for (const y of [5, 23]) { rect(0, y, 32, 2, 5); rect(0, y + 2, 32, 1, 1); }
-  stamp(12, 12, ['.44.', '4444', '4114', '4114', '.44.']);
-}, 'Wax-red dynamite sticks, cloth binding and a small aged paper label.');
+tile('TNT', '542832 8d2e38 c43e40 e95e50 f17c60 a7353d', () => {
+  // Four-by-eight-cell sticks keep their shading visible in small brush dabs.
+  for (const y of [0, 8, 16, 24]) for (const x of [0, 4, 8, 12, 16, 20, 24, 28]) {
+    stamp(x, y, [
+      '1341',
+      '0321',
+      '0321',
+      '0221',
+      '0221',
+      '1551',
+      '0221',
+      '0111',
+    ]);
+  }
+}, 'Small crimson dynamite sticks with warm cap highlights, dark seams and narrow red bindings.');
 tile('DEBRIS', '383b40 51555a 6c706f 888b81 a4a496 605e57', () => {
   grains([[1, 1], [14, 5], [23, 17], [7, 22]], pebble); stamp(20, 29, chip);
 }, 'Broken gray rubble: irregular fragments with chipped pale upper faces.');

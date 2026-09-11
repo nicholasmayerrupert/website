@@ -4,7 +4,7 @@
 // the only place that knows about Web Audio, samples, synthesis, panning, mixing, voice
 // limits, browser activation, mute persistence, or document visibility.
 
-import { OFF, SOUND_EVENT, STRIDES } from '../wasmBridge/abi.generated.js';
+import { LIGHTNING_ARC_FLAG, OFF, PROJECTILE_KIND, SOUND_EVENT, STRIDES } from '../wasmBridge/abi.generated.js';
 import { KIND, MATERIAL_BY_ID, MAT } from '../materials.js';
 import {
   AMBIENCE_GROUP_MIXER, AMBIENCE_SAMPLE_FIELD, AMBIENCE_SAMPLE_STRIDE,
@@ -276,6 +276,53 @@ function writeStoredMuted(muted) {
   catch { /* storage may be unavailable in third-party/private embeds */ }
 }
 
+// A long electrical bed combines irregular recorded arcs, short snaps, and air.
+export function buildElectricityBuffer(context, crackle = null) {
+  const rate = context.sampleRate, length = rate * 6;
+  const buffer = context.createBuffer(1, length, rate), data = buffer.getChannelData(0);
+  const tau = Math.PI * 2, lowAlpha = 1 - Math.exp(-tau * 180 / rate);
+  const highAlpha = 1 - Math.exp(-tau * 5700 / rate);
+  let low = 0, high = 0, envelope = .5, target = .5, nextFlurry = 0;
+  for (let i = 0; i < length; i++) {
+    if (i >= nextFlurry) {
+      target = .25 + Math.random() * .75;
+      nextFlurry = i + rate * (.025 + Math.random() * .075);
+    }
+    envelope += (target - envelope) * .003;
+    const noise = Math.random() * 2 - 1;
+    low += (noise - low) * lowAlpha; high += (noise - high) * highAlpha;
+    data[i] = low * .55 + (high - low) * .16 * envelope;
+  }
+  if (crackle) {
+    const source = crackle.getChannelData(0), sourceRate = crackle.sampleRate;
+    for (let at = 0; at < length; at += Math.round(rate * (.025 + Math.random() * .055))) {
+      const frames = Math.round(rate * (.045 + Math.random() * .11));
+      const speed = (.72 + Math.random() * .65) * sourceRate / rate;
+      const start = Math.random() * Math.max(1, source.length * .78 - frames * speed);
+      const gain = .35 + Math.random() * .6;
+      for (let i = 0; i < frames; i++) {
+        const index = start + i * speed, left = Math.floor(index), mix = index - left;
+        const sample = source[left] * (1 - mix) + (source[left + 1] || 0) * mix;
+        const window = Math.min(1, i / (rate * .0015)) * Math.pow(1 - i / frames, .75);
+        data[(at + i) % length] += sample * window * gain;
+      }
+    }
+  }
+  for (let at = 0; at < length; at += Math.round(rate * (.008 + Math.random() * .04))) {
+    const frames = Math.round(rate * (.002 + Math.random() * .007));
+    const frequency = 1100 + Math.random() * 3700, gain = .12 + Math.random() * .5;
+    for (let i = 0; i < frames; i++) {
+      const t = i / rate;
+      data[(at + i) % length] += Math.sin(tau * frequency * t) * Math.exp(-i * 6 / frames) * gain;
+    }
+  }
+  let sum = 0, peak = 0;
+  for (const value of data) { sum += value * value; peak = Math.max(peak, Math.abs(value)); }
+  const gain = Math.min(.23 / Math.sqrt(sum / length), .85 / Math.max(.001, peak));
+  for (let i = 0; i < length; i++) data[i] *= gain;
+  return buffer;
+}
+
 export function createSandAudio({ expeditionScore = false } = {}) {
   let context = null;
   let unlocked = false;
@@ -476,6 +523,8 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     assetsReady = loadAudioAssets(context).then((assets) => {
       if (destroyed || context !== loadingContext) return;
       recordedAssets = { ...assets, tntExplosion: buildTntExplosionBuffer(context, assets) };
+      movementVoices.electricity = createMovementVoice(buildElectricityBuffer(context, assets.electricCrackle),
+        { frequency: 5200, q: .35 });
       ambienceVoices = AMBIENCE_VOICE_SPECS.map(createAmbienceVoice);
       for (const [name, asset, options] of [
         ['water', 'waterFlow', { frequency: 6800 }],
@@ -741,6 +790,7 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     } else if (type === SOUND_EVENT.RUNE) {
       // Element identities come from layered physical textures: air, embers,
       // brittle glass, foliage, and a low pressure body for the larger casts.
+      if (material === 12) return;
       sample('swish', .5, { rate: material === 8 ? .65 : pitch });
       if ([2, 7, 10].includes(material)) {
         sample('glass', .38, { rate: material === 10 ? .8 : 1.2, delay: .025 });
@@ -923,6 +973,23 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     }
   };
 
+  const updateSpellEffects = (packed, listener, paused = false) => {
+    let strength = 0, pan = 0, contact = false;
+    const f = OFF.projectileSnapshot;
+    if (!paused && listener) for (let i = 0; i < (packed?.length || 0); i += STRIDES.projectileSnapshot) {
+      if (packed[i + f.kind] !== PROJECTILE_KIND.LIGHTNING_ARC) continue;
+      const spatial = spatializeSound(
+        packed[i + f.x] + listener.x - listener.localX,
+        packed[i + f.y] + listener.y - listener.localY, listener, 140, 0);
+      if (spatial.gain <= strength) continue;
+      strength = spatial.gain; pan = spatial.pan; contact = !!(packed[i + f.rotation] & LIGHTNING_ARC_FLAG.CONTACT);
+    }
+    setMovementVoice('electricity', strength, {
+      volume: contact ? .185 : .15, rate: contact ? 1.08 : 1,
+      attack: .018, release: .045, pan,
+    });
+  };
+
   const updatePlayerEffects = (player) => {
     if (!context || !movementVoices) return;
     const next = derivePlayerEffectState(player);
@@ -994,6 +1061,7 @@ export function createSandAudio({ expeditionScore = false } = {}) {
     playBeam,
     updateAmbience,
     updatePlayerEffects,
+    updateSpellEffects,
     updateScore,
     setEnabled,
     setMuted,

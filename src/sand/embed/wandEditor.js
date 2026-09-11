@@ -15,7 +15,7 @@ export function createWandEditor(root, game, inventory) {
   header.append(title, picker.el);
   const mana = document.createElement('p'); mana.className = 'wand-mana';
   const hint = document.createElement('p'); hint.className = 'wand-help';
-  hint.textContent = 'Move runes from your inventory into sockets. Spells cast from left to right; upgrades affect compatible spells.';
+  hint.textContent = 'Move runes from your inventory into sockets. Each press selects the next spell. Hold Sparks or Winterbreath to stream; release before the next spell. Upgrades affect compatible spells.';
   const spellLabel = document.createElement('h3'); spellLabel.textContent = 'Spells';
   const spells = document.createElement('div'); spells.className = 'wand-spells';
   const upgradeLabel = document.createElement('h3'); upgradeLabel.textContent = 'Upgrades';
@@ -89,7 +89,7 @@ export function createWandEditor(root, game, inventory) {
     if (next === signature) return;
     signature = next;
     hint.textContent = locked ? 'Finish casting before changing sockets.'
-      : `${selected >= 9 ? 'Move this wand to the quickbar to cast. ' : ''}Move runes into sockets. Spells cast from left to right; upgrades affect compatible spells.`;
+      : `${selected >= 9 ? 'Move this wand to the quickbar to cast. ' : ''}Move runes into sockets. Each press selects the next spell. Hold Sparks or Winterbreath to stream; release before the next spell. Upgrades affect compatible spells.`;
     rows.forEach((group, kind) => group.forEach((row, index) => {
       const ids = kind ? current.upgrades : current.spells, id = ids[index] || 0;
       row.wrap.hidden = index >= ids.length;

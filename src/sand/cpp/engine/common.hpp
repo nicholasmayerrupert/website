@@ -699,6 +699,9 @@ struct Player {
   int mana = PLAYER_MANA_MAX, stamina = 100, actionTicks = 0, actionState = AS_IDLE;
   int manaRecoveryTicks = 0, wandChargeTicks = 0;
   SpellCast pendingCast;
+  // Unpaid input gesture state resets on release and checkpoint loading.
+  SpellCast heldCast;
+  bool wandHoldSpent = false;
   int actionDuration = 0, actionDefinition = 0, dodgeCooldown = 0, abilities = 0;
   int swordCombo = 0, swordComboWindow = 0; // -1 cancels chaining after the committed cut.
   bool swordComboQueued = false;

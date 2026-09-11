@@ -1195,25 +1195,32 @@ per 15 living actor ticks (one per eight with Hearthstone). Full mana does not
 bank recovery ticks. Mana cordials restore 55, capped at the player's maximum.
 Wands have no mana storage: Hearth, Tideglass, and Bellwood have 3/4/5 spell
 sockets, 2/3/4 separate upgrade sockets, and 36/30/24-tick casting cadences.
-They always select the next occupied spell from left to right and wrap at the
-end. An unaffordable spell blocks that position without spending or skipping.
+Each press selects the next occupied spell from left to right and wraps at the
+end. Ordinary spells cast once per press. Sparks and Winterbreath sustain the
+selected recipe while held, follow live aim, and pay for each three-tick pulse.
+Releasing ends the stream; the next press selects the next socket. Switching,
+guarding, disarming, and death cancel the hold. An unaffordable spell blocks
+that position without spending or skipping.
 
 Open Inventory → Wandcraft to swap spell runes and upgrades using the carried
 inventory cursor. New travellers have a Hearth wand with Ember in quickbar slot 3, and Prism
 Choir, Rime, Gale, Lumen, Bounce, and Double Shot in their pack. Three Blue
 cordials occupy quickbar slot 5. The rune merchant sells
-all nine upgrades (500–508). Amplify multiplies damage and mana, Bounce adds two
-terrain ricochets, Charge gathers up to twice the power over one second, Double
-Shot doubles each spell's copies, Homing steers travelling spells, and Linger
-extends projectile and field lifetimes. Cast Together, On Impact, and After
-Delay connect an occupied spell socket to the next occupied socket; choose the
+all nine upgrades (500–508). Amplify doubles damage and Double Shot doubles
+copies; each adds 15% of base mana. Bounce adds two terrain ricochets and Homing
+steers travelling spells; each adds 5%. Linger doubles the base lifetime for
+10% extra base mana. These surcharges add, rather than multiply with damage or
+copy count. Charge gathers up to twice the power over one second for up to 15%
+extra base mana. Continuous spells ignore Charge and stream immediately.
+Ordinary costs round up; continuous pulse costs round to the nearest mana point.
+Cast Together, On Impact, and After Delay connect an occupied spell socket to the next occupied socket; choose the
 source beneath the upgrade. Impact fires on contact or effect completion;
 delay fires after 24 actor ticks or earlier completion. Lumen is instantaneous
 healing and supports Cast Together as its outgoing connection.
 
-The mana display previews the full next cast, including every triggered copy.
-Connections form bounded, forward-only chains. The engine pays once, captures
-an immutable `SpellCast`, and advances the wand's cursor only after payment.
+The mana display previews the full next cast, or the current held pulse,
+including every triggered copy. Connections form bounded, forward-only chains.
+The engine pays once per cast or pulse, captures an immutable `SpellCast`, and advances the wand's cursor only after payment.
 Charge pays on release and stops at an affordable strength; switching or guarding
 cancels unpaid charge. A paid windup and its projectiles keep their recipe when
 the held item changes. Socket edits are locked during casting. Queued payloads
@@ -1232,7 +1239,7 @@ Prism Choir (306) fires five crystal shards with two terrain-cutting ricochets
 each. Hollow Star (307) anchors at the aimed distance, attracts nearby foes,
 dropped items and small rigid debris for 72 actor ticks, then collapses into a
 crater. The caster and protected residents are exempt from its pull. Faultline
-(308) sends six consecutive eruptions along the aim direction, excavating both
+(308) sends regularly spaced eruptions along the aim direction, excavating both
 layers and launching nearby enemies. Fields use the replicated `RUNE_FIELD`
 projectile phase; their timers and ownership survive checkpoints and streaming.
 Terrain repair runs on ricochet, eruption, or collapse rather than each attraction
@@ -1278,14 +1285,43 @@ without excavating stone. The dragon tolerates fire and drops a cinderjaw fang.
 `dinosaur` checks habitat, combat and persistence, and `dinosaur-e2e` captures
 both melee attacks, the flame stream, burning terrain, and a full sprite atlas.
 
-Winterbreath (309) is a broad frost cloud that chills creatures, freezes water,
-and lays a two-cell ice skin against struck surfaces through component-aware
+Winterbreath (309) sustains the frost giant's overlapping frost pulses while
+held. It chills creatures, freezes water, and lays a two-cell ice skin against struck surfaces through component-aware
 edits. The skin preserves its substrate and leaves occupied actor cells clear.
 Frost breath and ice spears use distinct replicated projectile kinds with saved
 lifetimes and ownership. Cindermaw (310) lobs a molten glob with a
 bounded real-lava deposit; lingering lava also threatens its player caster.
 Both use the shared rune, inventory, checkpoint, and render paths and can drop
 from their associated creatures. Lava toads tolerate fire and lava contact.
+
+Spell launches and the rendered wand share `MagicSystem::wandPose`, including
+its hand anchor, aim direction and crystal tip. The caster-to-tip segment is
+checked for terrain so a wand cannot fire through a nearby wall. A direct
+lightning arc follows the rendered wand between confirmed pulses; its contact
+endpoint remains authoritative. Lightning flags occupy the arc's `rotation`
+snapshot field.
+
+Projectile runes have reach suited to distant targets: Ember 160 cells, Rime
+144, Gale 112, Stonebreak 104, Briar 128, Prism Choir 168, Hollow Star 144 and
+Cindermaw 128. Faultline travels 96 cells at a steady eruption spacing;
+Winterbreath reaches 80 cells. Lumen heals its caster.
+
+Sparks (311) sustains one focused blue-white lightning arc with a 96-cell reach.
+It hits immediately and stops at the first actor or solid terrain. Bounce reflects
+the arc twice from terrain, sharing its range across all segments; only the final
+segment delivers connected spells. Winterbreath pulses also ricochet with Bounce. Contact refreshes
+a 24-tick Shocked stun and a 120-tick Electrified effect (40% slow, 2 damage every
+30 ticks). Protected residents and the caster are exempt. A six-second crackle loop layers short recorded arcs, irregular snaps and a
+quiet noise bed, with a brighter contact sound and a short release envelope.
+The bolt uses a half-cell world pixel grid and hard-edged colors. Sparks and Winterbreath each cost one mana per pulse
+(20 per second before regeneration). Their unpaid held recipes are transient
+input state; checkpoints preserve already emitted projectiles and reset holds.
+
+Lodge coffers contain runes and wand upgrades, including Sparks in the first
+coffer and Winterbreath in the second. Procedural village chests each contain
+one rune from the full twelve-rune pool and one of the nine upgrades, selected
+by stable building identity. Loot is generated once and follows ordinary chest
+transfer, packing, streaming, and checkpoint rules.
 
 `cpp/engine/enemy_drops.def` assigns a guaranteed signature trophy and an optional
 weapon, rune, or cordial to each adventure hostile. Bosses guarantee their listed

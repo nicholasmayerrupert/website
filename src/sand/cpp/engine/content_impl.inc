@@ -155,8 +155,8 @@ bool ContentSystem::load(const int32_t* data, int length) {
   int gearCount = r.bounded(1, 512);
   for (int i = 0; i < gearCount && r.valid; i++) {
     ContentGear g{r.bounded(1, 10000), r.bounded(GF_SWORD, GF_UPGRADE), r.bounded(-1, 8), r.bounded(0, 200),
-      r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 100),
-      r.bounded(0, SP_CINDERMAW), r.bounded(0, 6), r.bounded(0, 10000)};
+      r.bounded(0, 50), r.bounded(0, 100), r.bounded(0, 100), r.bounded(1, 300), r.bounded(0, 256),
+      r.bounded(0, SP_SPARKS), r.bounded(0, 6), r.bounded(0, 10000)};
     g.spellSlots = r.bounded(0, WAND_MAX_SPELLS);
     g.upgradeSlots = r.bounded(0, WAND_MAX_UPGRADES);
     g.initialSpell = r.bounded(0, 10000);

@@ -1049,6 +1049,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.shelterCharge = in[CSN_SHELTER_CHARGE];
     c.npcId = (int)in[CSN_NPC_ID];
     c.effects.visuals = (int)in[CSN_STATUS_VISUALS];
+    c.effects.controls = (int)in[CSN_STATUS_CONTROLS];
     e->creatures.creatures.push_back(c);
   }
 }

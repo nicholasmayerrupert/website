@@ -61,7 +61,7 @@ bool MagicSystem::validCast(const SpellCast& cast) const {
 bool MagicSystem::socket(int playerId, int slot, int kind, int index, int value) {
   auto* p = E.psys.findPlayer(playerId);
   if (!p || !p->active || !p->alive || slot < 0 || slot >= INV_SLOTS ||
-      p->actionTicks > 0 || p->wandChargeTicks > 0 || kind < 0 || kind > WS_CONNECTION) return false;
+      p->actionTicks > 0 || p->wandChargeTicks > 0 || p->heldCast.count > 0 || kind < 0 || kind > WS_CONNECTION) return false;
   InvSlot item = p->inv[slot];
   InvSlot cursor = p->cursor;
   if (!isWand(item) || index < 0 || index >= (kind == WS_SPELL ? spellCapacity(item) : upgradeCapacity(item))) return false;
@@ -113,12 +113,12 @@ SpellCast MagicSystem::compileCast(const InvSlot& original, int chargeTicks) con
   if (!wand.spells[at]) return cast;
   for (int i = 0; i < upgradeCapacity(item); i++) {
     switch (wand.upgrades[i]) {
-      case WU_AMPLIFY: cast.power *= 2; break;
-      case WU_BOUNCE: cast.bounces += 2; surcharge += 25; break;
+      case WU_AMPLIFY: cast.power *= 2; surcharge += 15; break;
+      case WU_BOUNCE: cast.bounces += 2; surcharge += 5; break;
       case WU_CHARGE: cast.charged = true; break;
-      case WU_DOUBLE_SHOT: cast.shots *= 2; break;
-      case WU_HOMING: cast.homing++; surcharge += 25; break;
-      case WU_LINGER: cast.lifetime += 100; surcharge += 50; break;
+      case WU_DOUBLE_SHOT: cast.shots *= 2; surcharge += 15; break;
+      case WU_HOMING: cast.homing++; surcharge += 5; break;
+      case WU_LINGER: cast.lifetime += 100; surcharge += 10; break;
     }
   }
   while (cast.count < WAND_MAX_SPELLS) {
@@ -138,13 +138,16 @@ SpellCast MagicSystem::compileCast(const InvSlot& original, int chargeTicks) con
     at = next;
   }
   cast.cooldown = gear->cooldown;
-  cast.power = cast.power * (100 + std::clamp(chargeTicks - 1, 0, WAND_CHARGE_TICKS) * 100 / WAND_CHARGE_TICKS) / 100;
+  if (continuous(cast)) { cast.cooldown = E.content.gear(cast.spells[0])->cooldown; cast.charged = false; chargeTicks = 0; }
+  int charge = std::clamp(chargeTicks - 1, 0, WAND_CHARGE_TICKS);
+  cast.power = cast.power * (100 + charge * 100 / WAND_CHARGE_TICKS) / 100;
+  surcharge += charge * 15 / WAND_CHARGE_TICKS;
   int64_t cost = 0;
   for (int i = cast.count - 1; i >= 0; i--) {
     const auto* core = E.content.gear(cast.spells[i]);
     if (cast.connections[i] == SC_IMPACT || cast.connections[i] == SC_TIMER)
       cost *= projectileCount(core->id) * cast.shots;
-    cost += ((int64_t)core->mana * cast.power * surcharge * cast.shots + 9999) / 10000;
+    cost += ((int64_t)core->mana * surcharge + (continuous(cast) ? 50 : 99)) / 100;
     cost = std::min<int64_t>(cost, 1000000);
   }
   cast.manaCost = (int)cost;

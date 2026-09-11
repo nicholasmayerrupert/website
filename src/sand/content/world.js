@@ -6220,6 +6220,14 @@ export default {
       "name": "Traveller’s coffer",
       "loot": [
         {
+          "gear": 311,
+          "count": 1
+        },
+        {
+          "gear": 500,
+          "count": 1
+        },
+        {
           "gear": 100,
           "count": 1
         },
@@ -6246,6 +6254,14 @@ export default {
       ],
       "name": "Traveller’s coffer",
       "loot": [
+        {
+          "gear": 309,
+          "count": 1
+        },
+        {
+          "gear": 507,
+          "count": 1
+        },
         {
           "gear": 101,
           "count": 1
@@ -6278,6 +6294,10 @@ export default {
       "name": "Traveller’s coffer",
       "loot": [
         {
+          "gear": 505,
+          "count": 1
+        },
+        {
           "gear": 102,
           "count": 1
         },
@@ -6308,6 +6328,10 @@ export default {
       ],
       "name": "Traveller’s coffer",
       "loot": [
+        {
+          "gear": 508,
+          "count": 1
+        },
         {
           "gear": 103,
           "count": 1

@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on any externally observable ABI signature, layout, or enum change. initSandWasm() checks both the version and a generated schema/export fingerprint, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 56,
+  "abiVersion": 58,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by the authority worker and presentation engine.",
@@ -511,6 +511,11 @@
           "name": "statusVisuals",
           "kind": "i32",
           "snapshotMember": "effects.visuals"
+        },
+        {
+          "name": "statusControls",
+          "kind": "i32",
+          "snapshotMember": "effects.controls"
         }
       ],
       "snapshotStorage": "float",
@@ -570,6 +575,9 @@
               "literal": 0
             },
             "statusVisuals": {
+              "literal": 0
+            },
+            "statusControls": {
               "literal": 0
             }
           }
@@ -1158,6 +1166,21 @@
           "name": "statusVisuals",
           "kind": "i32",
           "snapshotMember": "statusVisuals"
+        },
+        {
+          "name": "id",
+          "kind": "i32",
+          "snapshotMember": "id"
+        },
+        {
+          "name": "health",
+          "kind": "i32",
+          "snapshotMember": "health"
+        },
+        {
+          "name": "statusControls",
+          "kind": "i32",
+          "snapshotMember": "statusControls"
         }
       ],
       "snapshotStorage": "float",
@@ -1940,7 +1963,8 @@
         "PK_RUNE_FIELD": 11,
         "PK_FROST_BREATH": 12,
         "PK_ICE_SHARD": 13,
-        "PK_FIRE_BREATH": 14
+        "PK_FIRE_BREATH": 14,
+        "PK_LIGHTNING_ARC": 15
       }
     },
     "CraftIngredientKind": {
@@ -4473,7 +4497,8 @@
         "SP_HOLLOW_STAR": 8,
         "SP_FAULTLINE": 9,
         "SP_WINTERBREATH": 10,
-        "SP_CINDERMAW": 11
+        "SP_CINDERMAW": 11,
+        "SP_SPARKS": 12
       }
     },
     "BedResult": {
@@ -4773,6 +4798,54 @@
           "color": "#8dbed2",
           "glyph": "Wt",
           "visual": "SV_WATER"
+        },
+        {
+          "id": 9,
+          "key": "STATUS_SHOCKED",
+          "name": "Shocked",
+          "description": "Briefly unable to move or attack. Continued sparks refresh the stun.",
+          "tags": [
+            "ST_HARMFUL",
+            "ST_CONTROL"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 24,
+          "maxTicks": 120,
+          "maxStacks": 1,
+          "periodTicks": 0,
+          "healthDelta": 0,
+          "movementScale": 1,
+          "controls": [
+            "SC_ROOT",
+            "SC_DISARM"
+          ],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#a9dbff",
+          "glyph": "Sh",
+          "visual": "SV_SHOCK"
+        },
+        {
+          "id": 10,
+          "key": "STATUS_ELECTRIFIED",
+          "name": "Electrified",
+          "description": "Electrical charge slows movement and deals damage over time.",
+          "tags": [
+            "ST_HARMFUL"
+          ],
+          "stacking": "SSP_REFRESH",
+          "defaultTicks": 120,
+          "maxTicks": 600,
+          "maxStacks": 1,
+          "periodTicks": 30,
+          "healthDelta": -2,
+          "movementScale": 0.6,
+          "controls": [],
+          "immunityTags": [],
+          "removeTags": [],
+          "color": "#a9dbff",
+          "glyph": "El",
+          "visual": "SV_SHOCK"
         }
       ]
     },
@@ -4790,7 +4863,19 @@
         "SV_BLEED": 16,
         "SV_HEAL": 32,
         "SV_SPEED": 64,
-        "SV_WATER": 128
+        "SV_WATER": 128,
+        "SV_SHOCK": 256
+      }
+    },
+    "LightningArcFlag": {
+      "$comment": "Flags carried in projectileSnapshot.rotation for PK_LIGHTNING_ARC.",
+      "cName": "LightningArcFlag",
+      "cType": "int",
+      "jsName": "LIGHTNING_ARC_FLAG",
+      "jsPrefix": "LAF",
+      "values": {
+        "LAF_CONTACT": 1,
+        "LAF_WAND_TIP": 2
       }
     }
   },

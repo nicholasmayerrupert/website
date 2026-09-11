@@ -247,7 +247,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     p.input=p.prevInput=p.movementPrevInput=0; p.inputX=p.inputY=0;
     // Input acknowledgements belong to the browser session, not the saved world.
     p.inputSeq=0; p.mineActive=false; p.mineChestId=p.mineBedId=0; p.placeStrokeActive=false;
-    p.wandChargeTicks=0;
+    p.wandChargeTicks=0; p.heldCast=SpellCast(); p.wandHoldSpent=false;
     if (p.mana < 0 || p.mana > PLAYER_MANA_MAX || p.manaRecoveryTicks < 0 || p.manaRecoveryTicks >= 15) return false;
     for (const auto& slot:p.inv) if ((slot.itemKind==IK_GEAR && slot.definitionId && !E.content.gear(slot.definitionId)) || !E.magic.validItem(slot)) return false;
     for (const auto& slot:p.equipment) if (!E.magic.validItem(slot)) return false;

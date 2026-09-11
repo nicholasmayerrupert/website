@@ -44,6 +44,7 @@ void CombatSystem::apply(Player& p, int previousInput) {
     p.swordComboWindow = p.actionTicks && p.actionState == AS_SWORD ? -1 : 0; p.swordComboQueued = false;
     if (!p.actionTicks || p.actionState != AS_SWORD) p.swordCombo = 0;
   }
+  if (E.magic.isWand(held)) { E.magic.apply(p, previousInput); return; }
   if (!gear || held.count <= 0 || p.shieldActive || (p.effects.controls & SC_DISARM)) return;
   if (p.actionTicks) {
     // A fresh press in recovery queues one cut; holding also chains at recovery's end.
@@ -51,7 +52,6 @@ void CombatSystem::apply(Player& p, int previousInput) {
         && (p.input & PI_PRIMARY) && !(previousInput & PI_PRIMARY)) p.swordComboQueued = true;
     return;
   }
-  if (E.magic.isWand(held)) { E.magic.apply(p, previousInput); return; }
   bool primary = (p.input & PI_PRIMARY) != 0;
   if (gear->family == GF_BOW) {
     if (primary) { p.bowChargeTicks = imin(BOW_CHARGE_MAX, p.bowChargeTicks + 1); return; }
@@ -121,9 +121,9 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     bool hit = gear.family <= GF_SPEAR
       ? length <= (gear.family == GF_SWORD ? gear.reach : std::hypot(tx - cx, ty - cy)) + species.w * .5 &&
         (vx * dx + vy * dy) / std::max(1.0, length) > (gear.family == GF_SPEAR ? .87 : gear.family == GF_SWORD ? -.15 : .20)
-      : std::hypot(x - tx, y - ty) < 9 + species.w * .5;
+      : std::hypot(x - tx, y - ty) < (spell == SP_SPARKS ? 4 : 9) + species.w * .5;
     if (!hit) continue;
-    if (gear.family <= GF_SPEAR && length > .01) {
+    if ((gear.family <= GF_SPEAR || spell == SP_SPARKS) && length > .01) {
       bool blocked = false;
       for (double at = .5; at < length-species.w*.4; at+=.5)
         if (E.psys.playerCellSolid((int)(cx+vx*at/length),(int)(cy+vy*at/length))) { blocked=true; break; }
@@ -132,8 +132,8 @@ void CombatSystem::impact(Player& p, const ContentGear& gear, double cx, double 
     if (gear.family <= GF_SPEAR) E.audio.emit(SE_MELEE_HIT, x, y, .85, (uint8_t)gear.family);
     creature.health -= damage; creature.hurtCooldown = 15;
     for (const auto& effect : gear.statusEffects) E.status.apply(creature, effect.effect, effect.durationTicks, 1, SA_PLAYER, p.id);
-    creature.vx += dx * (spell == SP_GALE ? 3.5 : gear.family == GF_AXE ? 1.5 : gear.family == GF_SWORD && p.swordCombo == 3 ? 1.8 : .6);
-    creature.vy -= spell == SP_GALE ? 1.6 : .35;
+    creature.vx += dx * (spell == SP_SPARKS ? 0 : spell == SP_GALE ? 3.5 : gear.family == GF_AXE ? 1.5 : gear.family == GF_SWORD && p.swordCombo == 3 ? 1.8 : .6);
+    creature.vy -= spell == SP_SPARKS ? 0 : spell == SP_GALE ? 1.6 : .35;
     if (spell == SP_RIME || spell == SP_BRIAR) { creature.attackCooldown = imax(60, creature.attackCooldown); creature.vx *= .15; }
     E.audio.emit(SE_CREATURE, x, y, .8, creature.species);
     if (creature.health <= 0) E.creatures.killCreature(creature);

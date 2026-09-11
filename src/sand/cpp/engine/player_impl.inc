@@ -1118,7 +1118,7 @@ int PlayerSystem::buildPlayerSnapshot() {
       .gear7 = WritePlayerSnapshotGear7{p.equipment[7].definitionId},
       .gear8 = WritePlayerSnapshotGear8{p.equipment[8].definitionId},
       .manaMax = WritePlayerSnapshotManaMax{PLAYER_MANA_MAX},
-      .manaCastCost = WritePlayerSnapshotManaCastCost{E.magic.compileCast(held,p.wandChargeTicks).manaCost},
+      .manaCastCost = WritePlayerSnapshotManaCastCost{(p.heldCast.count ? p.heldCast : E.magic.compileCast(held,p.wandChargeTicks)).manaCost},
       .spellCharge = WritePlayerSnapshotSpellCharge{p.wandChargeTicks / (float)(WAND_CHARGE_TICKS + 1)},
       .statusMoveScale = WritePlayerSnapshotStatusMoveScale{(float)p.effects.movementScale},
       .statusControls = WritePlayerSnapshotStatusControls{p.effects.controls},

@@ -138,13 +138,24 @@ class GLPresenter {
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
   void glCollectDynamicLights();
   float glActorLight(double px, double py, int w, int h) const;
+  struct ActorReaction {
+    int health = -1, hitTick = -1000, seenTick = -1;
+    bool alive = false, seen = false;
+  };
+  std::unordered_map<int64_t, ActorReaction> glActorReactions;
+  struct ActorDeform {
+    bool active = false;
+    double x = 0, y = 0, scaleX = 1, scaleY = 1, shear = 0, shiftX = 0;
+  } glActorDeform;
+  int glActorHurtAge(int kind, int id, int health, bool alive);
+  void glBeginActorReaction(double x, double y, double w, double h, int hurtAge, bool stunned, int facing);
   void glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
                   int shieldHealth, bool shieldActive, int camCol, int camRow);
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
-                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
-                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration, int swordCombo);
+                     bool shieldActive, double weaponKick, int hurtAge, bool own, float light, int camCol, int camRow,
+                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration, int swordCombo, bool stunned);
   std::vector<float> chestData;
   std::vector<float> bedData;
   void glDrawBeds();
@@ -161,8 +172,8 @@ class GLPresenter {
                          int alive, int animFrame, int attackState, int attackPattern,
                          double attackProgress,
                          double aimX, double aimY, double spawnProgress,
-                    double rescueProgress, int hurtCooldown, double shelterCharge, float light,
-                         int camCol, int camRow, int npcId = 0);
+                    double rescueProgress, int hurtAge, double shelterCharge, float light,
+                         int camCol, int camRow, int npcId = 0, bool stunned = false);
   void glDrawCreatures();
   void glDrawStatusEffects(int visuals, double x, double y, double w, double h, double phase, int species = -1);
   void glDrawPreview();

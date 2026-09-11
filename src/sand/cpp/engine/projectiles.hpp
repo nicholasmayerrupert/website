@@ -39,6 +39,8 @@ class ProjectileSystem {
 
  private:
   Engine& E;
+  void spawnLightning(int owner, double x, double y, double targetX, double targetY,
+                      const ContentGear& gear, int damage, const SpellCast* cast, int node);
   void spawnDynamiteAt(int owner, double sx, double sy, double targetX, double targetY);
   void spawnAcidShellAt(int owner, double sx, double sy, double targetX, double targetY);
   void spawnClusterBombAt(int owner, double sx, double sy, double targetX, double targetY);

@@ -8,6 +8,7 @@ import { RECORDED_BANK_URLS } from './recordedBank.generated.js';
 export const AUDIO_ASSET_URLS = Object.freeze({
   ...RECORDED_BANK_URLS,
   ...CREATURE_BANK_URLS,
+  electricCrackle: new URL('./assets/electric-crackle.mp3', import.meta.url).href,
   sandFlow: new URL('./assets/sand-flow.wav', import.meta.url).href,
   waterFlow: new URL('./assets/water-flow.wav', import.meta.url).href,
   blastGunReport: new URL('./assets/blast-gun-report.mp3', import.meta.url).href,

@@ -79,6 +79,8 @@ recorded for future attribution consumers, not currently used for kill credit.
 | --- | --- | --- | --- |
 | Burning | 2 s | Refresh | 3 damage / 0.5 s; fire contact, Ember, Cindermaw |
 | Chilled | 2.5 s | Refresh | 35% movement; Rime, Winterbreath, Hollow Star pull |
+| Shocked | 0.4 s | Refresh | Blocks movement and attacks; Sparks contact |
+| Electrified | 2 s | Refresh | 40% slower; 2 damage every 0.5 s; Sparks contact |
 | Rooted | 1.5 s | Refresh | Root and disarm; Briar |
 | Poisoned | 5 s | Independent, 5 | 2 damage / s per stack; available to content/engine callers |
 | Bleeding | 3 s | Independent, 5 | 1 damage / 0.5 s per stack; available to content/engine callers |
@@ -134,3 +136,29 @@ sprite dimensions, using the confirmed actor clock. It emits bounded drawing
 primitives only, with viewport culling and no terrain edits, RNG calls or
 simulation particles. Player HUD badges provide the precise remaining duration;
 entity cues make affected allies and enemies recognizable in the world.
+
+### Hurt and stun poses
+
+Players and every creature use their authored hurt clip for a 15-tick impact and
+recovery. A two-tick warm highlight marks contact, then the silhouette stays
+colored while a small, feet-anchored compression and recoil ease out. Health
+loss starts the visual envelope; damage immunity by itself does not. Repeated
+hits can restart it at most once every 12 actor ticks. This presentation history
+is local to the renderer, keyed by actor kind and ID, and discarded when actors
+leave the render records. It does not change hitboxes, movement or attack timing.
+
+Shocked holds the tense hurt pose with a small stepped tremor. Its control bits
+distinguish that pose from Electrified's lingering surface electricity. Ending
+the stun immediately releases the body pose even if electricity remains. The
+confirmed actor clock freezes both cues in paused views.
+
+The design draws on Vlambeer's [The Art of Screenshake](https://www.youtube.com/watch?v=AJdEqssNZ-U)
+and the [impact-feedback study by Lin et al.](https://arxiv.org/html/2208.06155v2).
+The study describes One Finger Death Punch's immediate pose change followed by
+a held impact frame, and distinguishes contact feedback from continuing effects.
+[SuperTux's snail](https://github.com/SuperTux/supertux/blob/master/src/badguy/snail.cpp)
+uses a distinct stationary pose and a waking animation before returning to normal
+movement; the same clear separation informs the sustained electrical stun pose.
+Here the held pose is local to the affected actor, with a short recovery and no
+whole-world pause. `status-render-e2e.mjs` checks every species and the player,
+and captures a gallery under `.sand-artifacts/status-browser/`.

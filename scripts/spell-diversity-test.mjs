@@ -87,7 +87,7 @@ arena((e, id) => {
   const startX = e.getProjectiles()[0].x;
   tick(e, 12);
   assert.ok(e.getProjectiles()[0].x > startX + 12, 'Faultline advances between eruptions');
-  tick(e, 48);
+  tick(e, 84);
   let first = 240, last = 0;
   const cutColumns = new Set();
   for (let y = 120; y < 145; y++) for (let x = 1; x < 239; x++) {
@@ -95,7 +95,7 @@ arena((e, id) => {
       first = Math.min(first, x); last = Math.max(last, x); cutColumns.add(x);
     }
   }
-  assert.ok(last - first > 30, `six eruptions carve a long seam (${last - first} cells)`);
+  assert.ok(last - first > 30, `eruptions carve a long seam (${last - first} cells)`);
   assert.equal(cutColumns.size, last - first + 1, 'the seam has no intact columns between pulses');
   assert.ok(!e.getGrid().includes(MAT.FIRE), 'Faultline fractures terrain without igniting it');
   assert.equal(e.getProjectiles().length, 0);

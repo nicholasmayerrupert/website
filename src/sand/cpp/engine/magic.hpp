@@ -14,7 +14,12 @@ class MagicSystem {
   bool socket(int playerId, int slot, int kind, int index, int value);
   SpellCast compileCast(const InvSlot& item, int chargeTicks = 0) const;
 
+  struct WandPose { double shoulderX, shoulderY, handX, handY, dx, dy, tipX, tipY; };
+  WandPose wandPose(double x, double y, int facing, double aimX, double aimY,
+                    double bodyBob = 0) const;
+
   // Player resources and actor-clock execution.
+  bool continuous(const SpellCast& cast) const;
   void tickMana(Player& player);
   bool spendMana(Player& player, int cost);
   void restoreMana(Player& player, int amount);

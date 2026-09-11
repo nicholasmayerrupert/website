@@ -28,7 +28,9 @@ void ContainerSystem::tick() {
         InvSlot armor; armor.itemKind=IK_GEAR; armor.definitionId=100+building.id%36; armor.count=1;
         InvSlot cordial; cordial.itemKind=IK_GEAR; cordial.definitionId=320+(building.id%2); cordial.count=1;
         InvSlot copper; copper.material=COPPER_ORE; copper.count=20+building.id%30;
-        chest.loot={armor,cordial,copper}; chests.push_back(std::move(chest));
+        InvSlot rune; rune.itemKind=IK_GEAR; rune.definitionId=300+building.id%12; rune.count=1;
+        InvSlot upgrade; upgrade.itemKind=IK_GEAR; upgrade.definitionId=WU_AMPLIFY+(building.id/12)%9; upgrade.count=1;
+        chest.loot={armor,cordial,copper,rune,upgrade}; chests.push_back(std::move(chest));
       }
     }
   }

@@ -249,6 +249,50 @@ try {
   writeFileSync(resolve(artifactDir, 'combat-audio.json'), JSON.stringify(combat.levels, null, 2));
   console.log('Combat playback passed:', combat.levels);
 
+  const sparks = await page.evaluate(async () => {
+    const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');
+    const { OFF, PROJECTILE_KIND, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
+    const ctx = new OfflineAudioContext(2, 48000 * 8, 48000);
+    Object.defineProperty(ctx, 'state', { get: () => 'running' }); ctx.close = async () => {};
+    let sources = 0; const createSource = ctx.createBufferSource.bind(ctx);
+    ctx.createBufferSource = () => { sources++; return createSource(); };
+    window.AudioContext = function () { return ctx; };
+    const mixer = createSandAudio(); mixer.setMuted(false); await mixer.unlock(); await mixer.assetsReady;
+    const initial = sources, beam = new Float32Array(STRIDES.projectileSnapshot), f = OFF.projectileSnapshot;
+    beam[f.kind] = PROJECTILE_KIND.LIGHTNING_ARC; beam[f.charge] = 96;
+    const listener = { x: 1000, y: 2000, localX: 0, localY: 0, viewWidth: 100 };
+    mixer.updateSpellEffects(beam, listener);
+    const pauses = [.5, 1, 3, 6.25, 6.5, 7].map(t => ctx.suspend(t));
+    const rendering = ctx.startRendering();
+    for (let i = 0; i < pauses.length; i++) {
+      await pauses[i];
+      if (i === 1) beam[f.rotation] = 1;
+      for (let frame = 0; frame < 60; frame++) mixer.updateSpellEffects(i >= 3 ? null : beam, listener);
+      await ctx.resume();
+    }
+    if (sources !== initial) throw new Error('Sparks allocated per-pulse voices');
+    const rendered = await rendering, left = rendered.getChannelData(0), right = rendered.getChannelData(1);
+    const rms = (start, end) => {
+      const part = left.subarray(start * 48000, end * 48000);
+      return Math.sqrt(part.reduce((sum, n) => sum + n * n, 0) / part.length);
+    };
+    const levels = { free: rms(.3, .9), contact: rms(1.3, 1.9), loop: rms(5.9, 6.1), released: rms(6.75, 7.75), peak: left.reduce((m, v) => Math.max(m, Math.abs(v)), 0) };
+    if (levels.free < .003 || levels.contact < .003 || levels.loop < .003 || levels.peak > .25 || levels.released > .0001)
+      throw new Error(`Sparks level or release regression: ${JSON.stringify(levels)}`);
+    const pcm = new Uint8Array(rendered.length * 4), view = new DataView(pcm.buffer);
+    for (let i = 0; i < rendered.length; i++) {
+      view.setInt16(i * 4, Math.round(left[i] * 32767), true);
+      view.setInt16(i * 4 + 2, Math.round(right[i] * 32767), true);
+    }
+    let binary = '';
+    for (let i = 0; i < pcm.length; i += 8192) binary += String.fromCharCode(...pcm.subarray(i, i + 8192));
+    mixer.destroy(); return { levels, pcm: btoa(binary) };
+  });
+  const sparksPcm = Buffer.from(sparks.pcm, 'base64'), sparksHeader = Buffer.from(header);
+  sparksHeader.writeUInt32LE(sparksPcm.length + 36, 4); sparksHeader.writeUInt32LE(sparksPcm.length, 40);
+  writeFileSync(resolve(artifactDir, 'sparks-audio.wav'), Buffer.concat([sparksHeader, sparksPcm]));
+  console.log('Sparks sustained loop, contact, source count, and release passed:', sparks.levels);
+
   await page.route('**/assets/wood1.mp3', route => route.fulfill({ status: 404, body: '' }));
   const lifecycle = await page.evaluate(async () => {
     const { createSandAudio } = await import('/src/sand/audio/sandAudio.js');

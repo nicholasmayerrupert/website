@@ -70,6 +70,29 @@ void GLPresenter::glDrawStatusEffects(int visuals, double x, double y, double w,
     double py = h * (.25 + i * .25);
     rect(-2 + age * (w + 2), py, 2.4, .4, 1, .88f, .40f, (float)(.8 - age * .4));
   }
+  if (visuals & SV_SHOCK) {
+    // Two small stepped bolts cling to the torso; connected corners make
+    // residual electricity readable without obscuring the actor's silhouette.
+    static constexpr double ZIG[7] = {0, -.45, .35, -.20, .50, -.30, 0};
+    int beat = (int)std::floor(clock * 12);
+    double span = std::max(1.8, std::min(7.0, h * .48));
+    double width = std::max(.45, std::min(1.25, w * .09));
+    for (int side = 0; side < 2; side++) {
+      double baseX = w * (side ? .74 : .24), baseY = h * (side ? .34 : .24);
+      double sign = (beat + side) % 2 ? -1 : 1;
+      float r = side ? .48f : .66f, g = side ? .78f : .90f;
+      double previous = baseX;
+      for (int step = 1; step <= 6; step++) {
+        double px = baseX + ZIG[step] * width * sign, py = baseY + (step - 1) * span / 6;
+        rect(std::min(previous, px) - .10, py, std::fabs(px - previous) + .20, .20, r, g, 1);
+        rect(px - .10, py, .20, span / 6 + .12, r, g, 1);
+        previous = px;
+      }
+      double tipY = baseY + span;
+      rect(previous - .23, tipY - .10, .46, .20, .85f, .96f, 1);
+      rect(previous - .10, tipY - .23, .20, .46, .85f, .96f, 1);
+    }
+  }
   if (visuals & SV_WATER) for (int i = 0; i < 3; i++) {
     double age = std::fmod(clock * .9 + i * .37, 1.0);
     double px = w * (.15 + i * .35), py = age * (h + .8);

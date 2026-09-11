@@ -241,6 +241,9 @@ void GLPresenter::glCollectDynamicLights() {
   auto addProjectile = [&](int kind, double x, double y, double vx, double vy,
                            double charge, int fuse) {
     if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD || kind == PK_ICE_SHARD) add(x, y, 170);
+    else if (kind == PK_LIGHTNING_ARC) {
+      for (int i = 0; i < 4; i++) add(x + vx * charge * i / 3.0, y + vy * charge * i / 3.0, 185);
+    }
     else if (kind == PK_FIRE_BREATH && flameLights++ % 4 == 0) add(x, y, 190);
     else if (kind == PK_BLAST_ROUND) add(x, y, 255);
     else if (kind == PK_DYNAMITE)
@@ -444,6 +447,12 @@ void GLPresenter::glSetClip(double dx0, double dy0, double dx1, double dy1) {
   glUniform4f(glc->uClipRect, cx0, cy0, cx1, cy1);
 }
 void GLPresenter::glSolidDev(double dx0, double dy0, double w, double h) {
+  if (glActorDeform.active) {
+    const auto& a = glActorDeform;
+    dx0 = a.x + (dx0 - a.x) * a.scaleX + (dy0 - a.y) * a.shear + a.shiftX;
+    dy0 = a.y + (dy0 - a.y) * a.scaleY;
+    w *= a.scaleX; h *= a.scaleY;
+  }
   // Most bore-ray samples can lie in the loaded buffer but outside the visible
   // camera. Preserve partially visible quads for GPU clipping, but skip fully
   // offscreen draw calls (also benefits sprites and particles generally).
@@ -503,6 +512,42 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
   for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) { sum += E.fg.light[E.I(x, y)]; count++; }
   float measured = count ? (float)sum / (255.0f * count) : Renderer::LIGHT_AMBIENT / 255.0f;
   return E.planetId == PL_FRONTIER ? std::max(measured, E.content.ambientAt((int)py + E.fg.worldOffsetY) / 255.f) : measured;
+}
+
+// Health transitions trigger one local pose envelope. The authority clock keeps
+// paused/repeated frames still; initial snapshots and respawns are not impacts.
+int GLPresenter::glActorHurtAge(int kind, int id, int health, bool alive) {
+  auto& state = glActorReactions[((int64_t)kind << 32) | (uint32_t)id];
+  if (E.actorTick < state.seenTick || E.actorTick - state.seenTick > 120) state = ActorReaction{};
+  if (alive && state.alive && health < state.health) {
+    // A held arc can land repeatedly; let each short recovery finish so the
+    // victim's silhouette never becomes a continuous white flash.
+    if (E.actorTick - state.hitTick >= 12) {
+      state.hitTick = E.actorTick;
+    }
+  }
+  if (!alive || !state.alive) state.hitTick = -1000;
+  state.health = health; state.alive = alive; state.seen = true; state.seenTick = E.actorTick;
+  int age = E.actorTick - state.hitTick;
+  return alive && age >= 0 && age < 15 ? age : -1;
+}
+
+void GLPresenter::glBeginActorReaction(double x, double y, double w, double h, int hurtAge, bool stunned, int facing) {
+  glActorDeform = ActorDeform{};
+  if (hurtAge < 0 && !stunned) return;
+  auto& a = glActorDeform;
+  a.active = true;
+  a.x = (x + w * .5 - std::floor(glCamX)) * glCellDev + glOffX;
+  a.y = (y + h - std::floor(glCamY)) * glCellDev + glOffY;
+  double impact = hurtAge < 0 ? 0 : hurtAge < 3 ? 1 : std::pow((15 - hurtAge) / 12.0, 2);
+  double compression = impact * .085 + (stunned ? .025 : 0);
+  a.scaleY = 1 - compression; a.scaleX = 1 + compression * .65;
+  a.shear = facing * impact * std::min(.09, .85 / std::max(1.0, h));
+  a.shiftX = -facing * impact * .22 * glCellDev;
+  if (stunned) {
+    static constexpr double TWITCH[6] = {-.20, .16, -.10, .20, -.14, .08};
+    a.shiftX += TWITCH[(E.actorTick / 2) % 6] * glCellDev;
+  }
 }
 
 void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
@@ -567,14 +612,21 @@ void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, do
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
-                     bool shieldActive, double weaponKick, int hurtCooldown, bool own, float light, int camCol, int camRow,
-                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration, int swordCombo) {
+                     bool shieldActive, double weaponKick, int hurtAge, bool own, float light, int camCol, int camRow,
+                     int heldDefinition, const int* equipment, int actionTicks, int actionDuration, int swordCombo, bool stunned) {
+  stunned = stunned && alive;
   if (!alive) animState = AS_DEATH;
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   const auto& art = E.content;
   const int spriteWidth = art.spriteWidth, spriteHeight = art.spriteHeight;
   if (!spriteWidth || !spriteHeight) return;
+  if (alive && (hurtAge >= 0 || stunned)) {
+    animState = AS_HURT;
+    animFrame = stunned ? imin(1, art.clips[AS_HURT].count - 1)
+      : imin(art.clips[AS_HURT].count - 1, 1 + hurtAge / 5);
+  }
   if (animFrame < 0 || animFrame >= art.clips[animState].count) animFrame = 0;
+  glBeginActorReaction(pxc, pyc, PLAYER_W, PLAYER_H, hurtAge, stunned, facing);
   double cell = (double)glCellDev;
   double pixel = cell * art.pixelScale;
   const auto* gear = E.content.gear(heldDefinition);
@@ -817,7 +869,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
           }
         }
         if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
-        float flash = alive && hurtCooldown > 0 && hurtCooldown <= 30 && (hurtCooldown % 6 < 3) ? .65f : 0;
+        float flash = alive && hurtAge >= 0 && hurtAge < 2 ? .52f : 0;
         glUniform4f(glc->uColor, tr * light * (1 - flash) + flash,
                     tg * light * (1 - flash) + flash * .65f,
                     tb * light * (1 - flash) + flash * .65f, col[3]);
@@ -960,11 +1012,10 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       handX = shoulderX+facing*2.25; handY = shoulderY+1.55;
       dx = facing*.12; dy = -std::sqrt(1-dx*dx);
       nx = -dy; ny = dx;
-    } else if (E.planetId == PL_FRONTIER && gear && gear->family == GF_WAND) {
-      // The wand turns in a raised hand while the upper arm stays lowered.
-      handX = shoulderX+facing*2.35; handY = shoulderY+1.35+dy*.9;
-      double aimLength = std::hypot(targetX-handX,targetY-handY);
-      if (aimLength > .01) { dx = (targetX-handX)/aimLength; dy = (targetY-handY)/aimLength; }
+    } else if (gear && gear->family == GF_WAND) {
+      const auto pose = E.magic.wandPose(pxc, pyc, facing, targetX, targetY, bodyBob);
+      shoulderX = pose.shoulderX; shoulderY = pose.shoulderY;
+      handX = pose.handX; handY = pose.handY; dx = pose.dx; dy = pose.dy;
       nx = -dy; ny = dx;
     }
     double hx = (handX - camCol) * cell + glOffX;
@@ -1232,6 +1283,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
   if (rightHandRear) drawShield();
   else drawHeldWeapon();
+  glActorDeform = ActorDeform{};
 }
 
 void GLPresenter::glDrawChests() {
@@ -1280,8 +1332,8 @@ void GLPresenter::glDrawPlayers() {
                       p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE],
                       p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
                       (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
-                      p[GLP_WEAPON_KICK], (int)p[GLP_HURT_COOLDOWN],
-                      p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment, (int)p[GLP_ACTION_TICKS], (int)p[GLP_ACTION_DURATION], (int)p[GLP_SWORD_COMBO]);
+                      p[GLP_WEAPON_KICK], glActorHurtAge(SA_PLAYER, (int)p[GLP_ID], (int)p[GLP_HEALTH], p[GLP_ALIVE] > .5f),
+                      p[GLP_OWN] > 0.5f, light, camCol, camRow, (int)p[GLP_HELD_DEFINITION], equipment, (int)p[GLP_ACTION_TICKS], (int)p[GLP_ACTION_DURATION], (int)p[GLP_SWORD_COMBO], ((int)p[GLP_STATUS_VISUALS] & SV_SHOCK) && ((int)p[GLP_STATUS_CONTROLS] & SC_ROOT));
       if (p[GLP_ALIVE] > .5f) glDrawStatusEffects((int)p[GLP_STATUS_VISUALS], p[GLP_X], p[GLP_Y], p[GLP_W], p[GLP_H], i * .37);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
@@ -1295,11 +1347,15 @@ void GLPresenter::glDrawPlayers() {
       for (int g = 0; g < 9; g++) equipment[g] = p.equipment[g].definitionId;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
                       p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
-                      p.shieldHealth, p.shieldActive, p.weaponKick, p.hurtCooldown, p.id == glOwnPlayerId,
-                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment, p.actionTicks, p.actionDuration, p.swordCombo);
+                      p.shieldHealth, p.shieldActive, p.weaponKick, glActorHurtAge(SA_PLAYER, p.id, p.health, p.alive), p.id == glOwnPlayerId,
+                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow, held.definitionId, equipment, p.actionTicks, p.actionDuration, p.swordCombo, (p.effects.visuals & SV_SHOCK) && (p.effects.controls & SC_ROOT));
       if (p.alive) glDrawStatusEffects(p.effects.visuals, p.px, p.py, p.w, p.h, p.id * .37);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
+  }
+  for (auto it = glActorReactions.begin(); it != glActorReactions.end();) {
+    if (!it->second.seen) it = glActorReactions.erase(it);
+    else { it->second.seen = false; ++it; }
   }
 }
 
@@ -1546,17 +1602,83 @@ void GLPresenter::glDrawProjectiles() {
   glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   for (int i = 0; i < n; i++) {
-    double x, y, vx, vy, charge, fuse, rotation; int kind;
+    double x, y, vx, vy, charge, fuse, rotation; int kind, owner;
     if (external) {
       const float* p = external->data() + i * PRS_STRIDE;
       x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; charge=p[PRS_CHARGE];
-      kind=(int)p[PRS_KIND]; fuse=p[PRS_FUSE]; rotation=p[PRS_ROTATION];
+      kind=(int)p[PRS_KIND]; owner=(int)p[PRS_OWNER]; fuse=p[PRS_FUSE]; rotation=p[PRS_ROTATION];
     } else {
       const Projectile& p=E.projectiles.projectiles[i];
       x=p.px; y=p.py; vx=p.vx; vy=p.vy; charge=p.charge;
-      kind=p.kind; fuse=p.fuse; rotation=p.rotation;
+      kind=p.kind; owner=p.owner; fuse=p.fuse; rotation=p.rotation;
+    }
+    if (kind == PK_LIGHTNING_ARC && ((int)rotation & LAF_WAND_TIP)) {
+      auto attach = [&](double px, double py, int facing, double aimX, double aimY, int definition) {
+        const auto* gear = E.content.gear(definition);
+        if (!gear || gear->family != GF_WAND) return;
+        const auto pose = E.magic.wandPose(px, py, facing, aimX, aimY);
+        double endX = x + vx * charge, endY = y + vy * charge;
+        x = pose.tipX; y = pose.tipY;
+        charge = std::hypot(endX - x, endY - y);
+        if (charge > .01) { vx = (endX - x) / charge; vy = (endY - y) / charge; }
+      };
+      if (glUseExtPlayers) {
+        for (size_t at = 0; at < glExtPlayers.size(); at += GLP_STRIDE) {
+          const float* p = glExtPlayers.data() + at;
+          if ((int)p[GLP_ID] == owner && p[GLP_ALIVE]) {
+            attach(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], p[GLP_AIM_X], p[GLP_AIM_Y], (int)p[GLP_HELD_DEFINITION]);
+            break;
+          }
+        }
+      } else if (const auto* p = E.psys.findPlayer(owner); p && p->alive)
+        attach(p->px, p->py, p->facing, p->aimX, p->aimY, p->inv[p->selectedSlot].definitionId);
     }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
+    if (kind == PK_LIGHTNING_ARC) {
+      // Bolt pixels occupy a fixed half-cell world grid at every camera scale.
+      constexpr double pixel = .5;
+      int segments = imax(2, (int)std::ceil(charge / 5));
+      int phase = E.actorTick / 5;
+      std::vector<std::array<int, 2>> pixels;
+      int gx = (int)std::floor(x / pixel), gy = (int)std::floor(y / pixel);
+      pixels.push_back({gx, gy});
+      for (int segment = 1; segment <= segments; segment++) {
+        double at = charge * segment / segments;
+        double noise = std::sin(segment * 127.1 + phase * 311.7) * 43758.5453;
+        double jitter = segment == segments ? 0 : ((noise - std::floor(noise)) * 2 - 1) * 2;
+        int tx = (int)std::floor((x + vx * at - vy * jitter) / pixel);
+        int ty = (int)std::floor((y + vy * at + vx * jitter) / pixel);
+        int dx = std::abs(tx - gx), dy = -std::abs(ty - gy), error = dx + dy;
+        int sx = gx < tx ? 1 : -1, sy = gy < ty ? 1 : -1;
+        while (gx != tx || gy != ty) {
+          int twice = error * 2;
+          if (twice >= dy) { error += dy; gx += sx; }
+          if (twice <= dx) { error += dx; gy += sy; }
+          pixels.push_back({gx, gy});
+        }
+      }
+      glUniform4f(glc->uColor, .16f, .35f, .62f, 1);
+      for (const auto& point : pixels)
+        glSolidDev((point[0] * pixel - camCol - pixel * .5) * glCellDev + glOffX,
+                   (point[1] * pixel - camRow - pixel * .5) * glCellDev + glOffY,
+                   pixel * 2 * glCellDev, pixel * 2 * glCellDev);
+      glUniform4f(glc->uColor, .72f, .91f, 1, 1);
+      for (const auto& point : pixels)
+        glSolidDev((point[0] * pixel - camCol) * glCellDev + glOffX,
+                   (point[1] * pixel - camRow) * glCellDev + glOffY,
+                   pixel * glCellDev, pixel * glCellDev);
+      if ((int)rotation & LAF_CONTACT) {
+        glUniform4f(glc->uColor, .88f, .98f, 1, 1);
+        for (int spark = 0; spark < 4; spark++) {
+          int ox = ((phase * 3 + spark * 7) % 11) - 5;
+          int oy = ((phase * 7 + spark * 3) % 11) - 5;
+          glSolidDev(((gx + ox) * pixel - camCol) * glCellDev + glOffX,
+                     ((gy + oy) * pixel - camRow) * glCellDev + glOffY,
+                     pixel * glCellDev, pixel * glCellDev);
+        }
+      }
+      continue;
+    }
     if (kind == PK_FIRE_BREATH) {
       // Overlapping flame tongues join the slow pulses into a continuous plume.
       double speed = std::max(.1, std::hypot(vx,vy)), nx = vx/speed, ny = vy/speed;
@@ -1589,8 +1711,8 @@ void GLPresenter::glDrawProjectiles() {
     if (kind == PK_RUNE || kind == PK_RUNE_BURST || kind == PK_RUNE_FIELD || kind == PK_FROST_BREATH) {
       const auto* gear = E.content.gear((int)fuse);
       int spell = gear ? gear->spell : 1;
-      static const float colors[11][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f},{.55f,.90f,1},{1,.42f,.08f}};
-      const auto& tint = colors[imax(0,imin(10,spell-1))];
+      static const float colors[12][3]={{1,.30f,.06f},{.18f,.80f,1},{.72f,.36f,1},{1,.73f,.18f},{.32f,1,.18f},{1,.93f,.66f},{1,.3f,.82f},{.62f,.27f,1},{1,.66f,.10f},{.55f,.90f,1},{1,.42f,.08f},{.45f,.78f,1}};
+      const auto& tint = colors[imax(0,imin(11,spell-1))];
       if (kind == PK_RUNE_FIELD) {
         double phase = (1 - charge) * (spell == 8 ? 72 : 36);
         if (spell == 8) {
@@ -1619,18 +1741,20 @@ void GLPresenter::glDrawProjectiles() {
         }
         continue;
       }
-      if ((kind == PK_RUNE || kind == PK_FROST_BREATH) && spell == 10) {
-        // A broad, translucent snow cloud matches the swept collision envelope.
+      if ((kind == PK_RUNE || kind == PK_FROST_BREATH || kind == PK_RUNE_BURST) && spell == SP_WINTERBREATH) {
+        // Translucent snow clouds overlap along the stream and disperse on impact.
+        bool frostBurst = kind == PK_RUNE_BURST;
+        float fade = frostBurst ? charge : 1;
         for (int mote = 0; mote < 28; mote++) {
           double angle = mote * 2.39996 + E.actorTick * .055;
-          double radius = .5 + (mote % 7) * .42;
+          double radius = frostBurst ? (1-charge) * rotation : .5 + (mote % 7) * .42;
           double mx = std::cos(angle)*radius - vx*(mote/7)*1.1;
           double my = std::sin(angle)*radius - vy*(mote/7)*1.1;
           double size = (mote % 3 ? .85 : 1.4)*glCellDev;
-          glUniform4f(glc->uColor,.57f,.89f,1,mote % 3 ? .42f : .18f);
+          glUniform4f(glc->uColor,.57f,.89f,1,(mote % 3 ? .42f : .18f)*fade);
           glSolidDev(cx+mx*glCellDev-size*.5,cy+my*glCellDev-size*.5,size,size);
           if (mote % 4 == 0) {
-            glUniform4f(glc->uColor,.88f,1,1,.9f);
+            glUniform4f(glc->uColor,.88f,1,1,.9f*fade);
             glSolidDev(cx+mx*glCellDev-.42*glCellDev,cy+my*glCellDev-.10*glCellDev,.84*glCellDev,.20*glCellDev);
             glSolidDev(cx+mx*glCellDev-.10*glCellDev,cy+my*glCellDev-.42*glCellDev,.20*glCellDev,.84*glCellDev);
           }
@@ -1888,8 +2012,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     int alive, int animFrame, int attackState, int attackPattern,
                     double attackProgress,
                     double aimX, double aimY, double spawnProgress,
-                    double rescueProgress, int hurtCooldown, double shelterCharge, float light,
-                    int camCol, int camRow, int npcId) {
+                    double rescueProgress, int hurtAge, double shelterCharge, float light,
+                    int camCol, int camRow, int npcId, bool stunned) {
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
   const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
@@ -2166,25 +2290,28 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
     : (py - camRow) * cell + glOffY
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
-  int clipState = !alive ? CC_DEATH : hurtCooldown > 0 ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : animFrame ? CC_MOVE : CC_IDLE;
-  bool breathing = alive && !hurtCooldown && attackState == CAS_FIRING &&
+  stunned = stunned && alive;
+  bool reacting = alive && (hurtAge >= 0 || stunned);
+  int clipState = !alive ? CC_DEATH : reacting ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : animFrame ? CC_MOVE : CC_IDLE;
+  bool breathing = alive && !reacting && attackState == CAS_FIRING &&
     ((speciesId == CS_FROST_GIANT && attackPattern == 0) || (speciesId == CS_BONE_DINOSAUR && attackPattern == 2));
   if (breathing) clipState = CC_SPECIAL;
   const auto& clip = art.clips[clipState];
   int pose = !alive ? imin(clip.count - 1, animFrame) : clip.frameAt(E.actorTick);
-  if (alive && !breathing && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
+  if (alive && !reacting && !breathing && (attackState == CAS_CHARGING || attackState == CAS_FIRING || attackState == CAS_RECOVERING)) {
     double progress = attackState == CAS_FIRING ? 1 - attackProgress : attackProgress;
     // Each frost attack owns a windup, release and recovery segment.
-    int segmentCount = speciesId == CS_FROST_GIANT && !hurtCooldown ? clip.count / 3 : clip.count;
+    int segmentCount = speciesId == CS_FROST_GIANT && !reacting ? clip.count / 3 : clip.count;
     int pattern = attackState == CAS_RECOVERING ? (attackPattern + 2) % 3 : imin(2, (int)attackPattern);
-    int segmentOffset = speciesId == CS_FROST_GIANT && !hurtCooldown ? pattern * segmentCount : 0;
+    int segmentOffset = speciesId == CS_FROST_GIANT && !reacting ? pattern * segmentCount : 0;
     pose = segmentOffset + imin(segmentCount - 1, imax(0, (int)(progress * segmentCount)));
   }
+  if (reacting) pose = stunned ? imin(1, clip.count - 1) : imin(clip.count - 1, 1 + hurtAge / 5);
   int frame = clip.offset + pose;
   // A little whole-sprite follow-through keeps the detailed limbs from feeling
   // like a flipbook pasted to the AABB. Walkers rise on their passing steps,
   // swimmers roll gently, and the downstroke gives the bird visible lift.
-  if (alive) {
+  if (alive && !reacting) {
     if (speciesDef.renderBob == CRB_BIRD) sy += (frame == 0 ? -0.35 : frame == 2 ? 0.20 : 0.0) * cell;
     else if (speciesDef.renderBob == CRB_WASP) sy += (frame == 0 ? -0.28 : frame == 2 ? 0.16 : 0.0) * cell;
     else if (speciesDef.renderBob == CRB_AQUATIC) sy += (frame == 1 ? -0.12 : frame == 3 ? 0.12 : 0.0) * cell;
@@ -2197,7 +2324,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(sx + (sw - shadowW) * .5 * cell, shadowY,
                shadowW * cell, std::max(1.0, 0.30 * cell));
   }
-  if (alive && CREATURE_SPECIES[speciesId].hostile) {
+  if (alive && !reacting && CREATURE_SPECIES[speciesId].hostile) {
     double windup = attackState == CAS_CHARGING ? attackProgress : 0;
     sy += windup * .45 * cell;
     sx -= facing * windup * .35 * cell;
@@ -2253,6 +2380,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   // bounds include bob, windup and rescue ascent before rejecting its pixels.
   const bool spriteVisible = sx < glDevW && sy < glDevH &&
     sx + sw * cell > 0 && sy + sh * cell > 0;
+  glBeginActorReaction(px, py, speciesDef.w, speciesDef.h, hurtAge, stunned, facing);
   if (spriteVisible) for (int r = 0; r < art.height; r++) for (int c = 0; c < art.width;) {
     int idx = art.pixels[(frame * art.height + r) * art.width + c];
     if (idx <= 0 || idx >= (int)art.palette.size()) { c++; continue; }
@@ -2272,12 +2400,12 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     const float* col = tint.data();
     if (departing && ((r * 7 + c * 13) % 23) / 23.0 < departure) { c++; continue; }
     float fade = (alive || departing) ? 1.0f : 0.55f;
-    float flash = hurtCooldown > 0 && alive ? .6f : 0;
+    float flash = alive && hurtAge >= 0 && hurtAge < 2 ? .52f : 0;
     float beamTint = (float)std::min(1.0, rescueProgress) * .65f;
     glUniform4f(glc->uColor,
       col[0] * fade * light * (1 - flash) + flash,
-      col[1] * fade * light * (1 - flash - beamTint * .5f) + flash + beamTint * .5f,
-      col[2] * fade * light * (1 - flash - beamTint * .5f) + flash + beamTint * .5f,
+      col[1] * fade * light * (1 - flash - beamTint * .5f) + flash * .72f + beamTint * .5f,
+      col[2] * fade * light * (1 - flash - beamTint * .5f) + flash * .52f + beamTint * .5f,
       col[3] * (float)(1 - departure));
     double drawY = (alive || departing) ? sy + r * cell * art.scale : corpseBase - (art.height - r) * pixelH * art.scale;
     glSolidDev(sx + cc * cell * art.scale, drawY, run * cell * art.scale, pixelH * art.scale);
@@ -2332,6 +2460,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   }
   // A segmented, hard-edged health bar appears only after damage (or during
   // death), matching the survival HUD without adding noise to ambient mobs.
+  glActorDeform = ActorDeform{};
   if (!departing && maxHealth > 0 && health < maxHealth) {
     double frac = std::max(0.0, std::min(1.0, health / (double)maxHealth));
     const int segments = 10;
@@ -2447,8 +2576,8 @@ void GLPresenter::glDrawCreatures() {
                         (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
                         (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
                         c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
-                        c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], (int)c[CSN_HURT_COOLDOWN], c[CSN_SHELTER_CHARGE],
-                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID]);
+                        c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], glActorHurtAge(SA_CREATURE, (int)c[CSN_ID], (int)c[CSN_HEALTH], c[CSN_ALIVE] > .5f), c[CSN_SHELTER_CHARGE],
+                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID], ((int)c[CSN_STATUS_VISUALS] & SV_SHOCK) && ((int)c[CSN_STATUS_CONTROLS] & SC_ROOT));
       if (c[CSN_ALIVE] && !c[CSN_SPAWN_PROGRESS]) glDrawStatusEffects((int)c[CSN_STATUS_VISUALS], c[CSN_X], c[CSN_Y], c[CSN_W], c[CSN_H], c[CSN_ID] * .37, (int)c[CSN_SPECIES]);
     }
   } else {
@@ -2459,9 +2588,9 @@ void GLPresenter::glDrawCreatures() {
                         s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState,
                         c.attackPattern, c.attackProgress,
                         c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
-                        c.spawnProgress, c.rescueProgress, c.hurtCooldown, c.shelterCharge,
+                        c.spawnProgress, c.rescueProgress, glActorHurtAge(SA_CREATURE, c.id, c.health, c.alive), c.shelterCharge,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
-                        camCol, camRow, c.npcId);
+                        camCol, camRow, c.npcId, (c.effects.visuals & SV_SHOCK) && (c.effects.controls & SC_ROOT));
       if (c.alive) glDrawStatusEffects(c.effects.visuals, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h, c.id * .37, c.species);
     }
     for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {
@@ -2471,7 +2600,7 @@ void GLPresenter::glDrawCreatures() {
         std::min(1.0, (elapsed + 1.0) / p.totalTicks));
       double x = p.wx - E.fg.worldOffsetX, y = p.wy - E.fg.worldOffsetY;
       glDrawOneCreature(p.species, x, y, 1, 0, s.maxHealth, 0, 0,
-                        CAS_IDLE, 0, 0, x, y, progress, 0, 0, 0,
+                        CAS_IDLE, 0, 0, x, y, progress, 0, -1, 0,
                         glActorLight(x, y, s.w, s.h), camCol, camRow);
     }
   }

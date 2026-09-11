@@ -84,3 +84,18 @@ Weapon reports use the recorded muzzle transient and a quieter delayed
 mechanical action. TNT uses a peak-normalized explosion buffer.
 Sound files are served locally with the game; no audio
 is streamed from the source websites during play.
+
+## Sparks electricity
+
+`electric-crackle.mp3` is a mono, 32 kHz/96 kbps edit of **Long Crackle 04.wav**
+by ironcross32: https://freesound.org/people/ironcross32/sounds/582631/ (CC0;
+source and license checked 2026-09-11). The high-quality preview is filtered
+at 140 Hz and 6.5 kHz, with 1 ms entry and 90 ms exit fades. The mixer scatters
+short excerpts at varied rates into a six-second loop, with a quiet noise bed
+and irregular electrical snaps. It normalizes the buffer, rolls off above
+5.2 kHz, and uses one persistent voice with a short release.
+
+The crackling, layered character was referenced against Skyrim Sparks footage
+at 27–33 seconds in https://www.youtube.com/watch?v=M1JydpoIV2U . That recording
+is used only as a spectrogram reference; the shipped source is the
+CC0 recording above and procedural layers.

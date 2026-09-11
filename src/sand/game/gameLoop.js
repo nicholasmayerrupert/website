@@ -430,6 +430,8 @@ export function createGameLoop(ctx, {
     const listener = audioListener();
     if (listener) {
       ctx.audio.updatePlayerEffects(ctx.survival ? localPlayer() : null);
+      ctx.audio.updateSpellEffects(ctx.worldWorker?.getProjectilesForRender(), listener,
+        ctx.gameplayPaused || ctx.testPaused || ctx.reduced);
       ctx.audio.updateScore(ctx.survival ? localPlayer() : null,
         ctx.worldWorker?.getCreaturesForRender(), ctx.gameplayPaused || ctx.testPaused || ctx.reduced);
       const soundEvents = ctx.worldWorker?.consumeSoundEvents();

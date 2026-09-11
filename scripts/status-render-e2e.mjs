@@ -1,8 +1,9 @@
 import { runBrowserCases } from './browser-harness.mjs';
 import { mkdirSync } from 'node:fs';
+import process from 'node:process';
 const artifacts='.sand-artifacts/status-browser';mkdirSync(artifacts,{recursive:true});
 process.exitCode=await runBrowserCases({ 'status-render':async({page,baseURL,check})=>{
- await page.route('**/status-render-fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><body style="margin:0;background:#171f1b;color:#eee;font:13px monospace"></body>'}));
+ await page.route('**/status-render-fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><body style="margin:0;background:#171f1b;color:#eee;font:13px monospace"></body>'}));
  await page.goto(baseURL+'/status-render-fixture');
  const results=await page.evaluate(async()=>{
   const {initSandWasm,createEngineWasm}=await import('/src/sand/wasmBridge/engineFactory.js');
@@ -45,4 +46,67 @@ process.exitCode=await runBrowserCases({ 'status-render':async({page,baseURL,che
  });
  await page.screenshot({path:artifacts+'/status-entity-gallery.png'});
  for(const r of results)check(r.name,r.ok,r.detail);
-}});
+}, 'hurt-render': async ({ page, baseURL, check }) => {
+ await page.route('**/hurt-render-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><body style="margin:16px;background:#171f1b;color:#eee;font:13px monospace"><h2>Impact and electrical stun</h2><p>Normal · impact · recovery · shocked</p><main></main></body>' }));
+ await page.goto(baseURL + '/hurt-render-fixture');
+ const results = await page.evaluate(async () => {
+  const { initSandWasm, createEngineWasm } = await import('/src/sand/wasmBridge/engineFactory.js');
+  const { CREATURE, CREATURE_SPECIES_DEFS, STATUS_VISUAL, OFF, PLANET, STRIDES } = await import('/src/sand/wasmBridge/abi.generated.js');
+  await initSandWasm();
+  const e = createEngineWasm({ cols: 160, rows: 120, infinite: false, sinksOn: false, worldSeed: 7, planetId: PLANET.FRONTIER });
+  const canvas = document.createElement('canvas'); canvas.width = 300; canvas.height = 220; document.body.append(canvas);
+  e.glInit(canvas); e.glResize(300, 220); e.setViewport(1, 5, 60, 44); e.cameraSet(0, 0); e.setSkyLight(255); e.glSetFlags(false, false, true);
+  e.glSetItems(new Float32Array(0)); e.glSetProjectiles(new Float32Array(0));
+  const same = (a, b) => a.every((v, i) => v === b[i]);
+  const changes = (a, b) => a.reduce((n, v, i) => n + (i % 4 === 0 && (v !== b[i] || a[i+1] !== b[i+1] || a[i+2] !== b[i+2]) ? 1 : 0), 0);
+  const results = [], gallery = new Set([-1, CREATURE.BRIAR_WOLF, CREATURE.BELL_BAT, CREATURE.MINNOW, CREATURE.FROST_GIANT, CREATURE.LAVA_TOAD, CREATURE.BONE_DINOSAUR]);
+  const creatureSizes = (await (await fetch('/src/sand/abi.schema.json')).json()).enums.CreatureSpecies.descriptors;
+  const subjects = [{ id: -1, name: 'Player', w: 4, h: 9 }, ...CREATURE_SPECIES_DEFS];
+  for (const subject of subjects) {
+   const player = subject.id === -1, offsets = player ? OFF.glPlayerExt : OFF.creatureSnapshot;
+   const size = player ? subject : creatureSizes.find(c => c.id === subject.id).stats;
+   const record = new Float32Array(player ? STRIDES.glPlayerExt : STRIDES.creatureSnapshot);
+   const set = (name, value) => { record[offsets[name]] = value; };
+   const id = subject.id + 2;
+   set('id', id); set('x', (60 - size.w) / 2); set('y', 38 - size.h); set('w', size.w); set('h', size.h);
+   set('health', 90); set('alive', 1); set('facing', 1);
+   if (!player) { set('species', subject.id); set('maxHealth', 100); }
+   const render = () => {
+    e.glSetPlayers(true, player ? record : new Float32Array(0), 1);
+    e.glSetCreatures(player ? new Float32Array(0) : record);
+    e.glRenderFrame(true); return e.glReadPixels(0, 0, 300, 220).slice();
+   };
+   const tick = 200 + id * 100; e.syncActorTick(tick);
+   const normal = render();
+   set('hurtCooldown', 120); const immunity = render();
+   results.push({ name: `${subject.name}: immunity alone does not fake a hit`, ok: same(normal, immunity) });
+   set('health', 100); render(); set('health', 90);
+   const impact = render(), repeated = render();
+   results.push({ name: `${subject.name}: health loss produces visible hurt pose`, ok: changes(normal, impact) > 8 });
+   results.push({ name: `${subject.name}: paused hit pose is stable`, ok: same(impact, repeated) });
+   e.syncActorTick(tick + 7); const recovery = render();
+   results.push({ name: `${subject.name}: recoil recovers after the impact`, ok: changes(impact, recovery) > 8 });
+   e.syncActorTick(tick + 16); const recovered = render();
+   set('id', id + 10000); const fresh = render();
+   results.push({ name: `${subject.name}: hurt ends independently of immunity`, ok: same(recovered, fresh) });
+   set('statusVisuals', STATUS_VISUAL.SHOCK); set('statusControls', 0); const electrified = render();
+   set('statusControls', 3); const shocked = render();
+   results.push({ name: `${subject.name}: electrical stun changes the body pose`, ok: changes(electrified, shocked) > 8 });
+   set('statusControls', 0); const released = render();
+   results.push({ name: `${subject.name}: ending stun releases the pose while electricity lingers`, ok: same(electrified, released) });
+   if (gallery.has(subject.id)) {
+    const row = document.createElement('section'); row.style.cssText = 'display:flex;gap:8px;position:relative;padding-top:22px';
+    const title = document.createElement('b'); title.textContent = subject.name; title.style.cssText = 'position:absolute;top:2px'; row.append(title);
+    for (const pixels of [normal, impact, recovery, shocked]) {
+     const image = document.createElement('canvas'); image.width = 300; image.height = 220; image.style.cssText = 'width:240px;height:176px;image-rendering:pixelated';
+     image.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels), 300, 220), 0, 0); row.append(image);
+    }
+    document.querySelector('main').append(row);
+   }
+  }
+  canvas.remove(); e.destroy(); return results;
+ });
+ await page.screenshot({ path: artifacts + '/hurt-entity-gallery.png', fullPage: true });
+ for (const r of results) check(r.name, r.ok, r.detail);
+}
+});

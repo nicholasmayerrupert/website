@@ -97,8 +97,9 @@ export function gearPixels(id) {
     rect(11, 2, 1, 3, '#fff4d7');
   } else if (gear.family === GEAR_FAMILY.SPELL || gear.family === GEAR_FAMILY.RELIC) {
     path('M6 1h4v1h2v2h1v5h-2v2H5V9H3V4h1V2h2Z', '#b69a56');
-    const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57', '#b5f4ff', '#ff963c'][gear.spell - 1] || '#daca8d';
+    const runeColor = ['#f0ac55', '#9ad4e0', '#c0d9b9', '#d7b187', '#81a970', '#f4e5a1', '#ff91df', '#bb82ff', '#ffca57', '#b5f4ff', '#ff963c', '#a9dbff'][gear.spell - 1] || '#daca8d';
     if (gear.spell === 10) { rect(7, 2, 2, 8, runeColor); rect(4, 5, 8, 2, runeColor); rect(5, 3, 1, 6, runeColor); rect(10, 3, 1, 6, runeColor); }
+    else if (gear.spell === 12) path('M8 2h3L8 5h3l-5 5 1-4H4Z', runeColor);
     else if (gear.spell === 11) path('M8 2l3 4v3H5V6l2-1Z', runeColor);
     else if (gear.spell === 7) path('M4 3h2v4H4Z M7 2h2v6H7Z M10 3h2v4h-2Z', runeColor);
     else if (gear.spell === 8) {

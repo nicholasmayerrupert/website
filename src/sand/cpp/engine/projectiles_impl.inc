@@ -505,19 +505,95 @@ void ProjectileSystem::freezeSurface(double cx, double cy, int radius) {
   frozen.commitGeneral();
 }
 
+void ProjectileSystem::spawnLightning(int owner, double x, double y, double targetX, double targetY,
+                                      const ContentGear& gear, int damage, const SpellCast* cast, int node) {
+  double angle = std::atan2(targetY - y, targetX - x);
+  int shots = cast ? cast->shots : 1;
+  for (int shot = 0; shot < shots && (int)projectiles.size() < PROJECTILE_MAX; shot++) {
+    double a = angle + (shot - (shots - 1) * .5) * .08;
+    double dx = std::cos(a), dy = std::sin(a), remaining = gear.reach;
+    double originX = x, originY = y;
+    int bounces = cast ? cast->bounces : 0;
+    bool first = true;
+    auto solid = [&](double px, double py) {
+      return E.psys.playerCellSolid((int)px, (int)py);
+    };
+    while (remaining > 0 && (int)projectiles.size() < PROJECTILE_MAX) {
+      double reach = remaining, reflectedX = dx, reflectedY = dy;
+      bool contact = false, reflect = false;
+      for (double at = .5; at <= remaining; at += .5) {
+        double px = originX + dx * at, py = originY + dy * at;
+        if (px < 1 || py < 1 || px >= E.cols - 1 || py >= E.rows - 1) {
+          reach = at; contact = true; break;
+        }
+        if (solid(px, py)) {
+          reach = at; contact = true;
+          if (bounces > 0 && at < remaining && (int)projectiles.size() + 1 < PROJECTILE_MAX) {
+            double previousX = originX + dx * (at - .5), previousY = originY + dy * (at - .5);
+            bool blockX = solid(px, previousY), blockY = solid(previousX, py);
+            if (blockX || !blockY) reflectedX = -dx;
+            if (blockY || !blockX) reflectedY = -dy;
+            reach = at - .5; reflect = true;
+          }
+          break;
+        }
+        for (auto& c : E.creatures.creatures) {
+          if (!c.alive || (owner < 0 && c.id == -owner) || E.creatures.isProtectedNpc(c)) continue;
+          const auto& species = E.creatures.species(c);
+          double cx = c.wx - E.fg.worldOffsetX, cy = c.wy - E.fg.worldOffsetY;
+          if (px < cx - .6 || px > cx + species.w + .6 || py < cy - .6 || py > cy + species.h + .6) continue;
+          for (const auto& effect : gear.statusEffects)
+            E.status.apply(c, effect.effect, effect.durationTicks, 1, owner >= 0 ? SA_PLAYER : SA_CREATURE, std::abs(owner));
+          if (c.hurtCooldown <= 0) {
+            c.health -= damage; c.hurtCooldown = 12;
+            if (c.health <= 0) E.creatures.killCreature(c);
+          }
+          contact = true; break;
+        }
+        if (!contact) for (auto& p : E.psys.players) {
+          if (!p.active || !p.alive || p.id == owner || px < p.px || px > p.px + p.w || py < p.py || py > p.py + p.h) continue;
+          for (const auto& effect : gear.statusEffects)
+            E.status.apply(p, effect.effect, effect.durationTicks, 1, owner >= 0 ? SA_PLAYER : SA_CREATURE, std::abs(owner));
+          E.psys.damagePlayer(p, damage, 12, px, py);
+          contact = true; break;
+        }
+        if (contact) { reach = at; break; }
+      }
+      Projectile beam;
+      beam.id = nextId++; beam.owner = owner; beam.kind = PK_LIGHTNING_ARC; beam.fuse = gear.id;
+      beam.px = originX; beam.py = originY; beam.vx = dx; beam.vy = dy; beam.charge = reach;
+      beam.rotation = contact ? LAF_CONTACT : 0; beam.life = 4;
+      if (first && cast && node == 0) if (const auto* player = E.psys.findPlayer(owner)) {
+        const auto pose = E.magic.wandPose(player->px, player->py, player->facing, player->aimX, player->aimY);
+        if (std::hypot(x - pose.tipX, y - pose.tipY) < .5) beam.rotation = (int)beam.rotation | LAF_WAND_TIP;
+      }
+      // Only the terminal segment can deliver the pulse's connected spell.
+      if (cast && !reflect) { beam.cast = *cast; beam.spellNode = node; }
+      projectiles.push_back(beam);
+      if (!reflect) break;
+      originX += dx * reach; originY += dy * reach;
+      remaining -= reach; dx = reflectedX; dy = reflectedY;
+      bounces--; first = false;
+    }
+  }
+}
+
 void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, double targetY, int gearId, int damage,
                                  const SpellCast* cast, int node) {
   const auto* gear = E.content.gear(gearId);
   if (!gear) return;
+  if (gear->spell == SP_SPARKS) { spawnLightning(owner, x, y, targetX, targetY, *gear, damage, cast, node); return; }
   double dx = targetX - x, dy = targetY - y, distance = std::hypot(dx, dy);
   if (distance < .01) { dx = 1; dy = 0; distance = 1; }
   double angle = std::atan2(dy, dx);
   int count = gear->spell == SP_PRISM ? (owner < 0 ? 3 : 5) : 1;
   if (cast) count *= cast->shots;
-  double speed = gear->spell == SP_WINTERBREATH ? .85 : gear->spell == SP_CINDERMAW ? 1.5 : gear->spell == SP_PRISM ? 3.6 : owner < 0 ? 2.4 : 2.8;
+  double speed = gear->spell == SP_WINTERBREATH ? 1.75 : gear->spell == SP_CINDERMAW ? 1.5 : gear->spell == SP_PRISM ? 3.6 : owner < 0 ? 2.4 : 2.8;
   for (int i = 0; i < count && (int)projectiles.size() < PROJECTILE_MAX; i++) {
     double a = angle + (i - (count - 1) * .5) * .16;
+    if (gear->spell == SP_WINTERBREATH) a += std::sin(E.actorTick * 1.7) * .075;
     Projectile bolt; bolt.id = nextId++; bolt.owner = owner; bolt.kind = PK_RUNE;
+    if (gear->spell == SP_WINTERBREATH) bolt.kind = PK_FROST_BREATH;
     bolt.fuse = gearId; bolt.px = x; bolt.py = y;
     bolt.vx = std::cos(a) * speed; bolt.vy = std::sin(a) * speed;
     if (gear->spell == SP_CINDERMAW) bolt.vy -= .35;
@@ -525,7 +601,7 @@ void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, 
     double reach = gear->spell == SP_HOLLOW_STAR ? std::min((double)gear->reach, distance) : gear->reach;
     bolt.life = imax(1, (int)std::ceil(reach / speed));
     if (gear->spell == SP_FAULTLINE) {
-      bolt.kind = PK_RUNE_FIELD; bolt.life = 36; bolt.charge = 1; bolt.rotation = damage;
+      bolt.kind = PK_RUNE_FIELD; bolt.life = (int)std::ceil(gear->reach / 1.35); bolt.charge = 1; bolt.rotation = damage;
       bolt.vx = std::cos(a) * 1.35; bolt.vy = std::sin(a) * 1.35;
       bolt.px += std::cos(a) * 6; bolt.py += std::sin(a) * 6;
     }
@@ -536,7 +612,8 @@ void ProjectileSystem::spawnRune(int owner, double x, double y, double targetX, 
     }
     projectiles.push_back(bolt);
   }
-  E.audio.emit(SE_RUNE, x, y, .8, (uint8_t)gear->spell);
+  if (gear->spell != SP_WINTERBREATH || E.actorTick % 12 < 3)
+    E.audio.emit(SE_RUNE, x, y, .8, (uint8_t)gear->spell);
 }
 
 void ProjectileSystem::updateProjectiles() {
@@ -755,6 +832,15 @@ void ProjectileSystem::updateProjectiles() {
   size_t write = 0;
   for (size_t i = 0; i < projectiles.size(); i++) {
     Projectile p = projectiles[i];
+    if (p.kind == PK_LIGHTNING_ARC) {
+      if (--p.life <= 0) {
+        p.px += p.vx * p.charge; p.py += p.vy * p.charge;
+        if (((int)p.rotation & LAF_CONTACT) || (p.spellNode >= 0 && p.cast.connections[p.spellNode] == SC_TIMER)) E.magic.trigger(p);
+        continue;
+      }
+      projectiles[write++] = p;
+      continue;
+    }
     if (p.kind == PK_BORE_BEAM || p.kind == PK_RESCUE_BEAM || p.kind == PK_EXTRACTION_BEAM) {
       if (--p.life <= 0) continue;
       p.fuse = imax(0, p.fuse - 1);
@@ -958,7 +1044,7 @@ void ProjectileSystem::updateProjectiles() {
         if (gear->spell == SP_HOLLOW_STAR) fractureRune(p, 12, NEUTRONIUM, (int)p.rotation);
         p.kind = PK_RUNE_BURST; p.life = 18; p.charge = 1;
         p.rotation = gear->spell == SP_HOLLOW_STAR ? 16 : 8; p.vx = p.vy = 0;
-      } else p.charge = p.life / ((gear->spell == SP_HOLLOW_STAR ? 72.0 : 36.0) * p.cast.lifetime / 100);
+      } else p.charge = p.life / ((gear->spell == SP_HOLLOW_STAR ? 72.0 : std::ceil(gear->reach / 1.35)) * p.cast.lifetime / 100);
       projectiles[write++] = p; continue;
     }
     if (p.kind == PK_RUNE_BURST) {

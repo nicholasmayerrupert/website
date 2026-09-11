@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
+import { EQUIPMENT_BY_ID } from '../src/sand/content/equipment.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { initSandWasm, createEngineWasm, MAT, PLANET, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
-import { PROJECTILE_KIND, MISSION } from '../src/sand/wasmBridge/abi.generated.js';
+import { PROJECTILE_KIND, MISSION, CREATURE, STATUS_EFFECT, STATUS_ACTOR, GEAR_FAMILY, WORLD_FEATURE } from '../src/sand/wasmBridge/abi.generated.js';
 
 await initSandWasm();
 const options = { cols: 240, rows: 144, worldSeed: 73, sinksOn: false, planetId: PLANET.FRONTIER };
 const tick = (e, n = 1) => { for (let i = 0; i < n; i++) e.stepActors(); };
 const input = (e, id, bits = 0, aimX = 180, aimY = 92) => e.setPlayerInput(id, { bits, aimX, aimY });
-function arena(label, run) {
-  const e = createEngineWasm(options);
+function arena(label, run, overrides = {}) {
+  const e = createEngineWasm({ ...options, ...overrides });
   try {
     e.setSurvivalInventory(true); e.setCreatureRuntime(false, false);
     for (let x = 0; x < e.cols; x++) for (let y = 110; y < e.rows; y++) e.paintDisc(x, y, 0, MAT.STONE, true);
@@ -98,9 +99,8 @@ arena('separate socket types conserve runes and upgrades through swapping', (e, 
 
 arena('spells cycle left to right and an unaffordable spell is never skipped', (e, id) => {
   socket(e, id, 1, 0, 500); socket(e, id, 1, 1, 503);
-  assert.equal(e.getPlayer(id).manaCastCost, 72);
-  cast(e, id); assert.equal(e.getPlayer(id).mana, 28);
-  tick(e, 36);
+  assert.equal(e.getPlayer(id).manaCastCost, 24);
+  for (let i = 0; i < 3; i++) { cast(e, id); tick(e, 36); }
   socket(e, id, 1, 0, 0); socket(e, id, 1, 1, 0);
   socket(e, id, 0, 0, 307); socket(e, id, 0, 1, 300);
   const mana = e.getPlayer(id).mana;
@@ -120,7 +120,7 @@ arena('multishot and power multiply real projectiles and pay the complete cost',
   const bolts = e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.RUNE);
   assert.equal(bolts.length, 2);
   assert.ok(bolts.every(p => p.charge === 44));
-  assert.equal(e.getPlayer(id).mana, 28);
+  assert.equal(e.getPlayer(id).mana, 76);
   assert.equal(e.wandSocket(id, 5, 1, 0), false, 'a committed cast prevents socket edits');
 });
 
@@ -128,8 +128,8 @@ arena('charge is affordable, pays on release and cancels cleanly on switching or
   socket(e, id, 1, 0, 502);
   input(e, id, INPUT.PRIMARY); tick(e, 61);
   assert.equal(e.getPlayer(id).mana, 100); assert.equal(e.getPlayer(id).spellCharge, 1);
-  assert.equal(e.getPlayer(id).manaCastCost, 36);
-  input(e, id); tick(e); assert.equal(e.getPlayer(id).mana, 64);
+  assert.equal(e.getPlayer(id).manaCastCost, 21);
+  input(e, id); tick(e); assert.equal(e.getPlayer(id).mana, 79);
   assert.equal(e.getPlayer(id).spellCharge, 0);
   tick(e, 36); const before = e.getPlayer(id).mana;
   input(e, id, INPUT.PRIMARY); tick(e, 10); e.setSelectedSlot(id, 0);
@@ -197,12 +197,13 @@ arena('together emits both spells once and timer payloads wait for their carrier
   cast(e, id, 210, 40); tick(e, 12);
   assert.deepEqual(e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.RUNE).map(p => p.fuse).sort(), [300, 301]);
   tick(e, 36); socket(e, id, 1, 0, 506);
+  const previous = new Set(e.getProjectiles().map(p => p.id));
   const before = e.getPlayer(id).mana;
   cast(e, id, 210, 40); tick(e, 12);
   assert.ok(e.getPlayer(id).mana <= before - 37);
-  assert.equal(e.getProjectiles().filter(p => p.fuse === 301 && p.kind === PROJECTILE_KIND.RUNE).length, 0);
+  assert.equal(e.getProjectiles().filter(p => !previous.has(p.id) && p.fuse === 301 && p.kind === PROJECTILE_KIND.RUNE).length, 0);
   tick(e, 24);
-  assert.equal(e.getProjectiles().filter(p => p.fuse === 301 && p.kind === PROJECTILE_KIND.RUNE).length, 1);
+  assert.equal(e.getProjectiles().filter(p => !previous.has(p.id) && p.fuse === 301 && p.kind === PROJECTILE_KIND.RUNE).length, 1);
 });
 
 for (const definition of [300, 309, 310]) arena(`bounce reflects spell ${definition} before its terrain impact`, (e, id) => {
@@ -213,16 +214,67 @@ for (const definition of [300, 309, 310]) arena(`bounce reflects spell ${definit
   let reflected = false;
   for (let i = 0; i < 55; i++) {
     tick(e);
-    if (e.getProjectiles().some(p => p.kind === PROJECTILE_KIND.RUNE && p.vx < 0)) { reflected = true; break; }
+    if (e.getProjectiles().some(p => [PROJECTILE_KIND.RUNE, PROJECTILE_KIND.FROST_BREATH].includes(p.kind) && p.vx < 0)) { reflected = true; break; }
   }
   assert.ok(reflected, 'the projectile reflects from the wall');
 });
 
+arena('Sparks reflects like a mirror and shares its range across two ricochets', (e, id) => {
+  for (const x of [25, 70]) for (let y = 1; y < 110; y++) e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  socket(e, id, 0, 0, 311); socket(e, id, 1, 0, 501);
+  input(e, id, INPUT.PRIMARY, 180, 80); tick(e);
+  const arcs = e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC);
+  assert.equal(arcs.length, 3, 'two wall reflections make three connected segments');
+  assert.ok(Math.abs(arcs.reduce((sum, p) => sum + p.charge, 0) - 96) < .001, 'reflections share the spell range');
+  for (let i = 1; i < arcs.length; i++) {
+    const before = arcs[i - 1], after = arcs[i];
+    assert.ok(Math.abs(before.vx + after.vx) < 1e-8, 'vertical mirror reverses horizontal velocity');
+    assert.ok(Math.abs(before.vy - after.vy) < 1e-8, 'vertical mirror preserves vertical velocity');
+    assert.ok(Math.hypot(before.x + before.vx * before.charge - after.x, before.y + before.vy * before.charge - after.y) < 1e-4, 'segments meet at the reflection point');
+  }
+  tick(e, 12);
+  assert.equal(e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC).length, 3, 'holding sustains the reflected path');
+  assert.equal(e.getPlayer(id).health, 100, 'reflected lightning spares its caster');
+  input(e, id); tick(e, 5);
+  assert.equal(e.getProjectiles().length, 0, 'release clears every segment');
+});
+
+arena('a reflected arc shocks its target and delivers one connected payload', (e, id) => {
+  for (let y = 1; y < 110; y++) e.paintDisc(70, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  socket(e, id, 0, 0, 311); socket(e, id, 0, 1, 300);
+  socket(e, id, 1, 0, 501); socket(e, id, 1, 1, 505);
+  const victim = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 20 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  cast(e, id, 180, 102);
+  assert.ok(e.getStatusEffects().some(s => s.actorId === victim && s.actorKind === STATUS_ACTOR.CREATURE && s.effect === STATUS_EFFECT.SHOCKED), 'returning arc shocks a creature behind the caster');
+  assert.equal(e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC).length, 2, 'actor contact stops the reflected ray');
+  tick(e, 4);
+  assert.equal(e.getProjectiles().filter(p => p.fuse === 300).length, 1, 'intermediate terrain contact does not duplicate the payload');
+});
+
+arena('held Winterbreath preserves mirror angles at a wall', (e, id) => {
+  for (let y = 1; y < 110; y++) e.paintDisc(70, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  socket(e, id, 0, 0, 309); socket(e, id, 1, 0, 501);
+  input(e, id, INPUT.PRIMARY, 160, 60);
+  let reflections = 0;
+  for (let turn = 0; turn < 36; turn++) {
+    const before = new Map(e.getProjectiles().map(p => [p.id, p]));
+    tick(e);
+    for (const after of e.getProjectiles()) {
+      const previous = before.get(after.id);
+      if (after.kind !== PROJECTILE_KIND.FROST_BREATH || !previous || previous.vx <= 0 || after.vx >= 0) continue;
+      assert.ok(Math.abs(previous.vx + after.vx) < 1e-8);
+      assert.ok(Math.abs(previous.vy - after.vy) < 1e-8);
+      reflections++;
+    }
+  }
+  assert.ok(reflections >= 5, 'successive held frost pulses all follow the reflected stream');
+});
+
 arena('charge can release at exactly its base mana cost', (e, id) => {
-  socket(e, id, 1, 0, 500); socket(e, id, 1, 1, 503);
-  cast(e, id); tick(e, 36);
-  socket(e, id, 1, 0, 0); socket(e, id, 1, 1, 0);
-  cast(e, id); tick(e, 36);
+  while (e.getPlayer(id).mana >= 18) { cast(e, id); tick(e, 36); }
   socket(e, id, 1, 0, 502);
   while (e.getPlayer(id).mana < 18) tick(e);
   assert.equal(e.getPlayer(id).mana, 18);
@@ -234,7 +286,7 @@ arena('charge can release at exactly its base mana cost', (e, id) => {
   assert.ok(e.getPlayer(id).actionTicks > 0);
 });
 
-for (let definition = 300; definition <= 310; definition++) arena(`loose rune ${definition} cannot cast or contain other items`, (e, id) => {
+for (let definition = 300; definition <= 311; definition++) arena(`loose rune ${definition} cannot cast or contain other items`, (e, id) => {
   assert.ok(e.addGear(id, definition));
   const source = e.getInventory(id).slots.findIndex(item => item.definitionId === definition);
   e.inventoryMove(id, source, 8); e.setSelectedSlot(id, 8);
@@ -242,7 +294,7 @@ for (let definition = 300; definition <= 310; definition++) arena(`loose rune ${
   assert.equal(e.getPlayer(id).manaCastCost, 0);
   attachTestHooks(e)._damagePlayer(id, 70);
   const health = e.getPlayer(id).health; assert.ok(health < 100);
-  input(e, id, INPUT.PRIMARY); tick(e, 90); input(e, id);
+  input(e, id, INPUT.PRIMARY); tick(e, 90); input(e, id); tick(e);
   assert.equal(e.getPlayer(id).mana, 100);
   assert.equal(e.getPlayer(id).health, health, 'Lumen cannot heal from a loose rune');
   assert.equal(e.getPlayer(id).actionTicks, 0);
@@ -264,3 +316,143 @@ for (let definition = 300; definition <= 310; definition++) arena(`loose rune ${
   assert.ok(e.getPlayer(id).manaCastCost > 0);
   cast(e, id); assert.ok(e.getPlayer(id).mana < 100);
 });
+
+for (const stream of [309, 311]) arena(`hold spell ${stream}, release, then cast Ember once`, (e, id) => {
+  socket(e, id, 0, 0, stream); socket(e, id, 0, 1, 300);
+  input(e, id, INPUT.PRIMARY, 150, 70); tick(e, 30);
+  assert.equal(wand(e, id).next, 1);
+  assert.equal(e.getPlayer(id).manaCastCost, 1, 'preview prices the held pulse');
+  assert.ok(e.getPlayer(id).mana >= 90 && e.getPlayer(id).mana <= 92);
+  assert.ok(stream === 311 ? e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC).length === 1 : e.getProjectiles().filter(p => p.fuse === stream).length > 3, 'one lightning arc or overlapping frost pulses form a stream');
+  assert.ok(!e.getProjectiles().some(p => p.fuse === 300), 'holding never switches to Ember');
+  input(e, id, INPUT.PRIMARY, 5, 60); tick(e, 3);
+  assert.ok(e.getProjectiles().some(p => p.fuse === stream && p.vx < 0), 'stream follows the aim');
+  input(e, id); tick(e, 4);
+  const last = Math.max(...e.getProjectiles().map(p => p.id));
+  tick(e, 10); assert.ok(e.getProjectiles().every(p => p.id <= last), 'release stops new pulses');
+  input(e, id, INPUT.PRIMARY, 210, 40); tick(e, 60);
+  assert.equal(wand(e, id).next, 0, 'one press advances one ordinary spell');
+  assert.ok(e.getProjectiles().every(p => p.fuse !== stream), 'the second hold never resumes the stream');
+  input(e, id); tick(e); input(e, id, INPUT.PRIMARY); tick(e, 6);
+  assert.ok(e.getProjectiles().some(p => p.fuse === stream), 'third press wraps to the stream');
+  e.setSelectedSlot(id, 0); const mana = e.getPlayer(id).mana; tick(e, 9);
+  assert.ok(e.getPlayer(id).mana >= mana, 'switching cancels ongoing mana drain');
+});
+
+arena('stream upgrades remain affordable and Charge does not defer the stream', (e, id) => {
+  socket(e, id, 0, 0, 311); socket(e, id, 1, 0, 500); socket(e, id, 1, 1, 502);
+  assert.equal(e.getPlayer(id).manaCastCost, 1);
+  input(e, id, INPUT.PRIMARY); tick(e, 6);
+  assert.ok(e.getProjectiles().some(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC && p.charge > 70));
+  assert.equal(e.getPlayer(id).spellCharge, 0);
+  const mana = e.getPlayer(id).mana;
+  input(e, id, INPUT.PRIMARY | INPUT.SHIELD); tick(e, 12);
+  assert.ok(e.getPlayer(id).mana >= mana, 'guard cancels the stream without further mana drain');
+});
+
+arena('sparks stun targets in front, respect walls, and spare the caster', (e, id) => {
+  socket(e, id, 0, 0, 311);
+  const victim = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 118 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  const behind = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 24 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  const protectedByWall = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 156 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  for (let y = 1; y < 110; y++) e.paintDisc(148, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  input(e, id, INPUT.PRIMARY, 180, 102); tick(e);
+  assert.equal(e.getProjectiles().filter(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC).length, 1);
+  tick(e, 29);
+  const statuses = e.getStatusEffects();
+  assert.ok(statuses.some(s => s.actorId === victim && s.actorKind === STATUS_ACTOR.CREATURE && s.effect === STATUS_EFFECT.SHOCKED));
+  for (const target of [behind, protectedByWall]) assert.ok(!statuses.some(s => s.actorId === target && s.actorKind === STATUS_ACTOR.CREATURE));
+  assert.equal(e.getPlayer(id).health, 100);
+  const contactHealth = e.getCreatures().find(c => c.id === victim).health;
+  input(e, id); e.setCreatureRuntime(true, false); tick(e, 60);
+  assert.ok(e.getCreatures().find(c => c.id === victim).health <= contactHealth - 4, 'electrification deals periodic damage after release');
+  assert.ok(!e.getStatusEffects().some(s => s.effect === STATUS_EFFECT.SHOCKED), 'stun expires after the stream ends');
+  assert.ok(e.getStatusEffects().some(s => s.actorId === victim && s.effect === STATUS_EFFECT.ELECTRIFIED), 'electrification outlasts contact');
+  tick(e, 70);
+  assert.ok(!e.getStatusEffects().some(s => s.effect === STATUS_EFFECT.ELECTRIFIED), 'electrification expires');
+});
+
+arena('a wall cuts the lightning arc before its target', (e, id) => {
+  socket(e, id, 0, 0, 311);
+  const victim = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 118 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  for (let y = 1; y < 110; y++) e.paintDisc(80, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  cast(e, id, 180, 102);
+  const beam = e.getProjectiles().find(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC);
+  assert.ok(beam && beam.charge < 40, 'arc terminates on the wall');
+  assert.ok(!e.getStatusEffects().some(s => s.actorId === victim), 'wall prevents shock and damage');
+});
+
+arena('Ember remains airborne beyond the lightning arc reach', (e, id) => {
+  cast(e, id, 230, 100); tick(e, 58);
+  const bolt = e.getProjectiles().find(p => p.fuse === 300 && p.kind === PROJECTILE_KIND.RUNE);
+  assert.ok(bolt && bolt.x > e.getPlayer(id).x + 130, 'firebolt reaches distant targets beyond Sparks');
+});
+
+arena('a wand tip cannot project lightning through a nearby wall', (e, id) => {
+  socket(e, id, 0, 0, 311);
+  const victim = e.spawnScriptedCreature(CREATURE.BONE_GUARD, 65 + e.getWorldOffsetX(), 98 + e.getWorldOffsetY());
+  for (let y = 1; y < 110; y++) e.paintDisc(48, y, 0, MAT.STONE, true);
+  e.syncComponents(); cast(e, id, 180, 102);
+  const beam = e.getProjectiles().find(p => p.kind === PROJECTILE_KIND.LIGHTNING_ARC);
+  assert.ok(beam && beam.x < 48 && beam.charge < 2, 'an occluded tip stops on the near wall face');
+  assert.ok(!e.getStatusEffects().some(s => s.actorId === victim), 'no shock through the wall');
+});
+
+arena('coffers contain collectible runes and upgrades that survive loading', (e, id) => {
+  assert.ok(e.startMission(MISSION.FRONTIER, id));
+  for (const chestId of [1, 2, 3, 4]) {
+    const chest = e.getChests().find(c => c.id === chestId);
+    e.setPlayerState(id, { x: chest.worldX-e.getWorldOffsetX(), y: chest.worldY-e.getWorldOffsetY() });
+    assert.ok(e.interactChest(id, chestId));
+    const loot = e.getChestLoot().slots.filter(s => s.count);
+    for (const family of [GEAR_FAMILY.SPELL, GEAR_FAMILY.UPGRADE])
+      assert.ok(loot.some(s => EQUIPMENT_BY_ID[s.definitionId]?.family === family));
+    const rune = loot.find(s => EQUIPMENT_BY_ID[s.definitionId]?.family === GEAR_FAMILY.SPELL);
+    const slot = e.getChestLoot().slots.findIndex(s => s.definitionId === rune.definitionId);
+    assert.ok(e.chestSlot(id, chestId, slot));
+    assert.equal(e.getCursor(id).definitionId, rune.definitionId); stashCursor(e, id);
+  }
+  const saved = e.writeCheckpoint(); const chests = e.getChests();
+  assert.ok(e.readCheckpoint(saved)); assert.deepEqual(e.getChests(), chests);
+});
+
+for (const stream of [309, 311]) arena(`checkpoints preserve paid ${stream} pulses but require a fresh hold`, (e, id) => {
+  assert.ok(e.startMission(MISSION.FRONTIER, id));
+  socket(e, id, 0, 0, stream); socket(e, id, 0, 1, 300);
+  input(e, id, INPUT.PRIMARY, 150, 60); tick(e, 9);
+  const saved = e.writeCheckpoint(), shots = e.getProjectiles(), mana = e.getPlayer(id).mana;
+  assert.ok(e.readCheckpoint(saved)); assert.deepEqual(e.getProjectiles(), shots);
+  tick(e, 9); assert.ok(e.getPlayer(id).mana >= mana, 'loading cannot resume unpaid mana drain');
+  assert.equal(wand(e, id).next, 1, 'the successful stream advances once');
+  cast(e, id); assert.ok(e.getPlayer(id).mana <= mana - 16, 'a fresh press selects Ember');
+});
+
+arena('village chests generate rune and upgrade loot once', (e, id) => {
+  let building;
+  for (let x = 1600; x < 7000 && !building; x += 8) {
+    const surface = e.worldSurfaceAbsAt(x);
+    for (let y = surface-40; y < surface; y += 4) {
+      const context = e.worldContextAt(x,y);
+      if (context.featureKind === WORLD_FEATURE.VILLAGE_BUILDING) { building = context; break; }
+    }
+  }
+  assert.ok(building, 'a procedural building is available');
+  const x = Math.floor((building.bounds.left+building.bounds.right)/2);
+  const y = building.bounds.bottom-8;
+  const ox = Math.floor((x-120)/64)*64, oy = Math.floor((y-80)/64)*64;
+  while (e.getWorldOffsetX() !== ox) e.shiftWorldXY(Math.sign(ox-e.getWorldOffsetX())*Math.min(128,Math.abs(ox-e.getWorldOffsetX())),0);
+  while (e.getWorldOffsetY() !== oy) e.shiftWorldXY(0,Math.sign(oy-e.getWorldOffsetY())*Math.min(64,Math.abs(oy-e.getWorldOffsetY())));
+  e.setPlayerState(id,{x:x-ox,y:y-oy}); tick(e);
+  const chest = e.getChests().find(c => c.id >= 1000000);
+  assert.ok(chest, 'loaded village building spawns a chest');
+  e.setPlayerState(id,{x:chest.worldX-ox,y:chest.worldY-oy});
+  assert.ok(e.interactChest(id,chest.id));
+  const loot = e.getChestLoot().slots;
+  for (const family of [GEAR_FAMILY.SPELL,GEAR_FAMILY.UPGRADE])
+    assert.ok(loot.some(s => s.count && EQUIPMENT_BY_ID[s.definitionId]?.family === family));
+  const slot = loot.findIndex(s => EQUIPMENT_BY_ID[s.definitionId]?.family === GEAR_FAMILY.SPELL);
+  assert.ok(e.interactChest(id,chest.id,slot)); tick(e,121);
+  assert.equal(e.getChestLoot().slots[slot].count,0,'looted runes do not regenerate');
+}, { infinite: true });

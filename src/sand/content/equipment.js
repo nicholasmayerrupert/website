@@ -30,7 +30,7 @@ function add(id, name, family, details = {}) {
   { id: 14, name: 'Tideglass wand', spellSlots: 4, upgradeSlots: 3, initialSpell: 301, cooldown: 30, style: 2, price: 120 },
   { id: 15, name: 'Bellwood wand', spellSlots: 5, upgradeSlots: 4, initialSpell: 302, cooldown: 24, style: 3, price: 210 },
 ].forEach(({ id, name, ...wand }) => add(id, name, 'wand', { ...wand,
-  description: `${wand.spellSlots} spell sockets and ${wand.upgradeSlots} upgrade sockets. Casts in order using your mana. Arrange its runes in Wandcraft.` }));
+  description: `${wand.spellSlots} spell sockets and ${wand.upgradeSlots} upgrade sockets. Each press casts the next spell in order using your mana; hold continuous spells to sustain them. Arrange its runes in Wandcraft.` }));
 ARMOR_SETS.forEach((set, index) => EQUIPMENT_SLOTS.slice(0, 6).forEach((slot, part) =>
   add(100 + index * 6 + part, `${set.name} ${['hood', 'coat', 'gloves', 'leggings', 'boots', 'cloak'][part]}`, 'armor',
     { slot: part, style: index + 1, defense: set.defense, price: 15 + index * 35, description: set.lore })));
@@ -39,31 +39,34 @@ ARMOR_SETS.forEach((set, index) => EQUIPMENT_SLOTS.slice(0, 6).forEach((slot, pa
 ['Amber acorn', 'Hearthstone', 'Moonlit reed', 'Iron oath', 'Swift feather', 'Bell fragment'].forEach((name, i) => add(220 + i, name, 'charm',
   { slot: 7, style: i + 1, price: 60 + i * 25, description: ['Slowly replenishes health outside combat.', 'Increases spell recovery.', 'Softens falling damage.', 'Strengthens your armor.', 'Reduces the cost of dodging.', 'Strengthens every weapon.'][i] }));
 ['Ember', 'Rime', 'Gale', 'Stonebreak', 'Briar', 'Lumen'].forEach((name, i) => add(300 + i, `${name} rune`, 'spell',
-  { spell: i + 1, power: [22, 18, 12, 32, 16, 0][i], mana: [18, 20, 16, 32, 22, 28][i], cooldown: [36, 42, 30, 60, 48, 90][i], reach: [48, 44, 36, 30, 40, 0][i], style: i + 1, price: 80,
+  { spell: i + 1, power: [22, 18, 12, 32, 16, 0][i], mana: [18, 20, 16, 32, 22, 28][i], cooldown: [36, 42, 30, 60, 48, 90][i], reach: [160, 144, 112, 104, 128, 0][i], style: i + 1, price: 80,
     description: ['An explosive ember blasts terrain, ignites dry wood, and scatters foes.', 'Cold gathers around the target, stilling foes and freezing water.', 'A gust pushes creatures and loose terrain.', 'Shatters a pocket of stone, opening a path through the world.', 'Roots slow enemies and mend the living world.', 'A gentle light restores health.'][i] }));
-add(306, 'Prism Choir rune', 'spell', { spell: 7, power: 14, mana: 24, cooldown: 48, reach: 90, style: 1, price: 60,
+add(306, 'Prism Choir rune', 'spell', { spell: 7, power: 14, mana: 24, cooldown: 48, reach: 168, style: 1, price: 60,
   description: 'Five singing crystal shards fan outward. Each ricochets twice, chipping walls and catching foes around corners.' });
-add(307, 'Hollow Star rune', 'spell', { spell: 8, power: 38, mana: 42, cooldown: 100, reach: 64, style: 2, price: 100,
+add(307, 'Hollow Star rune', 'spell', { spell: 8, power: 38, mana: 42, cooldown: 100, reach: 144, style: 2, price: 100,
   description: 'Place a hungry violet star at your aim. It draws in foes and debris for a heartbeat, then collapses into a shattering crater. Its caster is immune to the pull.' });
-add(308, 'Faultline rune', 'spell', { spell: 9, power: 22, mana: 34, cooldown: 72, reach: 48, style: 3, price: 80,
-  description: 'Six travelling eruptions tear a continuous seam along your aim, breaking both terrain layers and throwing enemies upward.' });
+add(308, 'Faultline rune', 'spell', { spell: 9, power: 22, mana: 34, cooldown: 72, reach: 96, style: 3, price: 80,
+  description: 'Travelling eruptions tear a continuous seam along your aim, breaking both terrain layers and throwing enemies upward.' });
 add(320, 'Red cordial', 'potion', { power: 45, cooldown: 90, price: 15, description: 'Restores 45 health. Drink with the primary action.' });
 add(321, 'Blue cordial', 'potion', { power: 55, cooldown: 90, price: 15, description: 'Restores 55 mana. Drink with the primary action.' });
 ['Gale Step', 'Windmantle', 'The lost verse', 'Bell clapper'].forEach((name, i) => add(340 + i, name, 'relic', { style: i + 1, price: 0, description: ['An earned breath of wind. Dodge in midair to dash once before landing.', 'Hold jump while falling to ride a gentle current.', 'The words that can wake the Hollow Bell.', 'A forged heart for the silent bell.'][i] }));
-add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 26, mana: 28, cooldown: 66, reach: 64, style: 2, price: 120,
-  description: 'A broad cloud of frost. Chills creatures, freezes water, and coats struck surfaces in lasting ice. Recovered from frost giants.' });
-add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 68, style: 3, price: 140,
+add(309, 'Winterbreath rune', 'spell', { spell: 10, power: 8, mana: 1, cooldown: 3, reach: 80, style: 2, price: 120,
+  description: 'Hold to breathe a continuous frost stream like a frost giant. Chills foes, freezes water, and coats surfaces in lasting ice. Costs 1 mana per pulse (20 per second). Release to advance to the next spell.' });
+add(310, 'Cindermaw rune', 'spell', { spell: 11, power: 24, mana: 32, cooldown: 72, reach: 128, style: 3, price: 140,
   description: 'Lob a molten glob that leaves a small pool of real lava. The lingering lava can burn anyone, including its caster.' });
+add(311, 'Sparks rune', 'spell', { spell: 12, power: 4, mana: 1, cooldown: 3, reach: 96, style: 2, price: 80,
+  statusEffects: [{ effect: STATUS_EFFECT.SHOCKED }, { effect: STATUS_EFFECT.ELECTRIFIED }],
+  description: 'Hold a focused lightning arc over a long reach. Contact stuns foes and leaves them electrified: slowed and taking damage for 2 seconds. Costs 1 mana per pulse (20 per second). Release to advance to the next spell.' });
 [
-  [WAND_UPGRADE.AMPLIFY, 'Amplify', 'Doubles spell damage and mana cost. Multiple Amplify upgrades multiply together.'],
-  [WAND_UPGRADE.BOUNCE, 'Bounce', 'Travelling spells ricochet twice more from solid terrain. Adds 25% of the base mana cost.'],
-  [WAND_UPGRADE.CHARGE, 'Charge', 'Hold to gather up to twice the power and mana cost over one second; release to cast. Charging stops at what your mana can afford.'],
-  [WAND_UPGRADE.DOUBLE_SHOT, 'Double Shot', 'Fires two copies of each spell and doubles its mana cost. Stacks with other Double Shot upgrades.'],
+  [WAND_UPGRADE.AMPLIFY, 'Amplify', 'Doubles spell damage for 15% extra base mana. Multiple Amplify upgrades multiply together.'],
+  [WAND_UPGRADE.BOUNCE, 'Bounce', 'Projectiles and continuous streams ricochet twice more from solid terrain. Adds 5% of the base mana cost.'],
+  [WAND_UPGRADE.CHARGE, 'Charge', 'Hold to gather up to twice the power for up to 15% extra base mana over one second; release to cast. Continuous spells stream immediately. Charging stops at what your mana can afford.'],
+  [WAND_UPGRADE.DOUBLE_SHOT, 'Double Shot', 'Fires two copies of each spell for 15% extra base mana. Stacks with other Double Shot upgrades.'],
   [WAND_UPGRADE.TOGETHER, 'Cast Together', 'Joins a spell to the next occupied spell socket, casting both at once. Choose the first socket below this upgrade.'],
   [WAND_UPGRADE.IMPACT, 'On Impact', 'The linked spell carries the next spell and releases it on contact or when its effect ends. Every carried copy is paid for at launch.'],
   [WAND_UPGRADE.TIMER, 'After Delay', 'The linked spell releases the next spell after 0.4 seconds, or when it ends sooner. Every carried copy is paid for at launch.'],
-  [WAND_UPGRADE.HOMING, 'Homing', 'Travelling spells curve toward nearby creatures. Adds 25% of the base mana cost.'],
-  [WAND_UPGRADE.LINGER, 'Linger', 'Adds one base lifetime to spells and fields. Adds 50% of the base mana cost.'],
+  [WAND_UPGRADE.HOMING, 'Homing', 'Travelling spells curve toward nearby creatures. Adds 5% of the base mana cost.'],
+  [WAND_UPGRADE.LINGER, 'Linger', 'Adds one base lifetime to spells and fields. Adds 10% of the base mana cost.'],
 ].forEach(([id, name, description], index) => add(id, name, 'upgrade', { price: 25 + index * 5, description }));
 // Spell contact effects and consumable buffs use the same immutable definitions.
 for (const [id, effect] of [[300, STATUS_EFFECT.BURNING], [301, STATUS_EFFECT.CHILLED], [304, STATUS_EFFECT.ROOTED], [309, STATUS_EFFECT.CHILLED], [310, STATUS_EFFECT.BURNING]])

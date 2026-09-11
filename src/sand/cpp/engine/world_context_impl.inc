@@ -5,8 +5,11 @@ int WorldContextSystem::floorDiv(int value, int divisor) {
 }
 
 uint32_t WorldContextSystem::featureId(uint32_t salt, int x, int y) const {
+  // Feature identities stay stable across raster revisions. Checkpoints carry
+  // the world-generation version independently of this procedural namespace.
+  constexpr uint32_t FEATURE_ID_NAMESPACE_SALT = 0xfa8cfc2du;
   uint32_t seed = E.L->worldSeed ^ salt
-    ^ ((uint32_t)WORLD_GENERATION_VERSION * 0x9e3779b9u)
+    ^ FEATURE_ID_NAMESPACE_SALT
     ^ ((uint32_t)E.planetId * 0xc2b2ae35u);
   uint32_t id = (uint32_t)(whash2(seed, x, y) * 4294967296.0);
   return id ? id : 1;
@@ -160,11 +163,13 @@ bool WorldContextSystem::villageBuildingPlan(
             : role == 1 ? 44 + variant * 2
             : role == 2 ? 38 + variant * 4
                         : 46 - variant * 2;
-  int height = hall ? 30
-             : role == 0 ? 24 + variant * 2
-             : role == 1 ? 22 + variant * 2
-             : role == 2 ? 27 + variant
-                         : 24 + variant * 2;
+  int architecture = ((int)(whash1(E.L->worldSeed ^ 0xA11A72u, village.latticeX) * 3)
+                      + ordinal / 4) % 3;
+  int height = hall ? 36 + architecture * 2
+             : role == 0 ? 25 + architecture * 3
+             : role == 1 ? 22 + architecture * 2
+             : role == 2 ? 31 + architecture * 3
+                         : 34 + architecture * 2;
   int center = village.center
     + (ordinal - village.buildingCount / 2) * 58;
   int left = center - width / 2;
@@ -193,15 +198,27 @@ bool WorldContextSystem::villageBuildingPlan(
   if (crossesCaveMouth || hi - lo > (hall ? 14 : 11)) return false;
 
   int floorY = Engine::floorDiv(surfaceSum, width + 1) - 1;
+  bool watchwood = surfaceBiomeDef(biome).structureStyle == SSS_OBSERVATORY;
+  int roofHeight = biome == BIOME_DESERT
+    ? (hall ? 22 : role == 0 ? 11 + architecture * 2 : role == 1 ? 9 + architecture
+       : role == 2 ? 18 + architecture * 2 : 12 + architecture * 2)
+    : watchwood
+    ? (hall ? 18 + architecture : role == 0 ? 12 + architecture * 2
+       : role == 1 ? 10 + architecture : role == 2 ? 14 + architecture * 2 : 18 + architecture * 2)
+    : (hall ? 18 + architecture * 2 : role == 0 ? 18 + architecture * 2
+       : role == 1 ? 12 + architecture * 2 : role == 2 ? 16 + architecture * 2 : 20 + architecture);
+  // The complete silhouette stays within the settlement's reserved skyline.
+  height = imin(height, floorY - village.top - roofHeight - (hall ? 13 : 7));
   int wallTop = floorY - height;
   out.ordinal = ordinal;
+  out.architecture = architecture;
   out.center = center;
   out.left = left;
   out.wallTop = wallTop;
   out.floorY = floorY;
   out.width = width;
   out.height = height;
-  out.roofHeight = hall ? 11 : role == 2 ? 10 : 9;
+  out.roofHeight = roofHeight;
   out.hall = hall;
   out.biome = biome;
   out.role = hall ? WSR_MEETING_HALL
@@ -246,7 +263,7 @@ bool WorldContextSystem::minePlan(int latticeX, MinePlan& out) const {
   out.firstFloor = firstFloor;
   out.left = center - width / 2;
   out.right = center + width / 2;
-  out.top = surface - 36;
+  out.top = imin(surface - 36, houseFloor - 25 - MinePlan::HEADHOUSE_ROOF_HEIGHT - 7);
   out.bottom = firstFloor + (levels - 1) * LEVEL_GAP;
   out.headhouseLeft = houseLeft;
   out.headhouseRight = houseLeft + HOUSE_WIDTH;
@@ -278,7 +295,7 @@ bool WorldContextSystem::minePlan(int latticeX, MinePlan& out) const {
   // The entrance, its stairs, and the access shaft reserve surface space.
   // Deep galleries can run beneath settlements without consuming their street.
   return candidateAccepted(featureDef(GFF_MINE),
-    {houseLeft - 12, imin(out.top, out.headhouseTop - 9),
+    {houseLeft - 12, imin(out.top, out.headhouseTop - MinePlan::HEADHOUSE_ROOF_HEIGHT - 7),
      houseLeft + HOUSE_WIDTH + 12, out.connectorBottom});
 }
 
@@ -780,8 +797,8 @@ bool WorldContextSystem::mineContains(
   if (worldX > mine.headhouseLeft && worldX < mine.headhouseRight
       && worldY > mine.headhouseTop && worldY < mine.headhouseFloor) {
     role = WSR_MINE_HEADHOUSE;
-    bounds = {mine.headhouseLeft, mine.headhouseTop - 9,
-              mine.headhouseRight, mine.headhouseFloor};
+    bounds = {mine.headhouseLeft - 3, mine.headhouseTop - MinePlan::HEADHOUSE_ROOF_HEIGHT - 7,
+              mine.headhouseRight + 3, mine.headhouseFloor};
     return true;
   }
 
@@ -875,11 +892,9 @@ bool WorldContextSystem::queryVillage(
           || worldY <= building.wallTop || worldY >= building.floorY)
         continue;
       WorldBounds buildingBounds{
-        building.left - 2,
-        building.wallTop - building.roofHeight
-          - (building.hall ? 13
-             : building.role == WSR_WORKSHOP ? 7 : 0),
-        building.left + building.width + 2,
+        building.left - 3,
+        building.wallTop - building.roofHeight - (building.hall ? 13 : 7),
+        building.left + building.width + 3,
         building.floorY,
       };
       preferFeatureMatch(best, def, 100, WF_VILLAGE_BUILDING, building.role,

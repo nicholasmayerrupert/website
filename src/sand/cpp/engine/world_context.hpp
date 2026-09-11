@@ -227,7 +227,7 @@ struct LandmarkPlan {
 };
 
 struct VillageBuildingPlan {
-  int ordinal = 0;
+  int ordinal = 0, architecture = 0;
   int center = 0;
   int left = 0, wallTop = 0, floorY = 0;
   int width = 0, height = 0, roofHeight = 0;
@@ -246,6 +246,7 @@ struct MineLevelPlan {
 
 struct MinePlan {
   static constexpr int MAX_LEVELS = 4;
+  static constexpr int HEADHOUSE_ROOF_HEIGHT = 14;
   int latticeX = 0;
   int center = 0, width = 0, levels = 0, firstFloor = 0;
   int left = 0, top = 0, right = 0, bottom = 0;

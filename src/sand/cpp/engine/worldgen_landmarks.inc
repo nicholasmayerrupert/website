@@ -103,6 +103,32 @@
         }
         if (backdrop) { line(cx - half, y, cx, y - height, 2, trim); line(cx, y - height, cx + half, y, 2, trim); }
       };
+      auto homeDetails = [&](int l, int r, int top, int floor, uint8_t timber) {
+        if (backdrop) {
+          rect(l + 2, top + 2, r - 2, top + 3, timber);
+          rect(l + 2, floor - 3, r - 2, floor - 2, timber);
+          for (int x = l + 3; x < r - 4; x += 20) {
+            rect(x, top + 3, x + 1, floor - 3, timber);
+            line(x + 2, top + 4, imin(x + 8, r - 3), top + 10, 1, timber);
+          }
+          for (int x = l + 9; x < r - 5; x += 21) {
+            window(x, top + 11, 3, 5);
+            rect(x - 6, top + 8, x - 5, top + 16, timber);
+            rect(x + 5, top + 8, x + 6, top + 16, timber);
+            put(x - 5, top + 10, IRON_ORE); put(x + 5, top + 14, IRON_ORE);
+          }
+          rect(r - 18, floor - 6, r - 6, floor - 3, timber);
+          rect(r - 17, floor - 7, r - 7, floor - 6, MOSS);
+          rect(r - 17, floor - 8, r - 14, floor - 7, PALESTONE);
+        } else {
+          // Ceiling pendants light the open room above the walking clearance.
+          for (int x = l + 12; x < r - 8; x += 30) {
+            rect(x, top + 2, x, top + 4, timber);
+            rect(x - 1, top + 5, x + 1, top + 5, timber);
+            put(x, top + 6, LIGHT);
+          }
+        }
+      };
       auto crenels = [&](int l, int r, int y) {
         rect(l, y, r, y + 2, trim);
         for (int x = l; x < r; x += 7) rect(x, y - 4, imin(x + 3, r), y - 1, wall);
@@ -394,7 +420,7 @@
           break;
         }
         case LM_LONGHOUSE: {
-          room(-80, 80, -25, 0, wood); pad(-82, 82, 0, STONE, true);
+          room(-80, 80, -25, 0, PALESTONE); pad(-82, 82, 0, STONE, true);
           gable(0, 86, -25, 23, PINE_WOOD);
           gable(-40, 18, -26, 13, STONE); gable(40, 18, -26, 13, STONE);
           rect(-6, -37, 2, -20, STONE); rect(-8, -40, 4, -37, ICE);
@@ -410,6 +436,13 @@
           for (int x = -85; x <= 85; x++) {
             int top = -25 - 23 * (86 - std::abs(x)) / 86;
             put(x, top - 1, ICE);
+          }
+          homeDetails(-80, 80, -25, 0, PINE_WOOD);
+          if (backdrop) {
+            rect(-5, -12, 5, -3, STONE);
+            rect(-3, -9, 3, -4, DEEPSTONE);
+            put(-1, -5, LIGHT); put(1, -5, LIGHT);
+            rect(-7, -13, 7, -12, PALESTONE);
           }
           break;
         }
@@ -481,13 +514,20 @@
         case LM_STILT_HAMLET: {
           for (int house = -1; house <= 1; house++) {
             int cx = house * 66, floor = house == 0 ? -7 : -2;
-            room(cx - 23, cx + 23, floor - 22, floor, OAK_WOOD);
+            room(cx - 23, cx + 23, floor - 22, floor, PALESTONE);
             gable(cx, 27, floor - 22, 15, wood);
             for (int side : {-1, 1}) {
               for (int dx = 0; dx < 3; dx++) support(cx + side * 20 + dx, floor, wood);
               if (backdrop) line(cx + side * 20, floor, cx - side * 20, ground(cx) + 1, 2, wood);
             }
             vines(cx - 24, cx + 24, floor - 21);
+            homeDetails(cx - 23, cx + 23, floor - 22, floor, wood);
+            if (backdrop) {
+              rect(cx - 16, floor - 3, cx - 12, floor - 2, CLAY);
+              rect(cx - 15, floor - 6, cx - 13, floor - 4, BUSH_LEAF);
+              line(cx - 24, floor - 22, cx - 27, floor - 20, 1, wood);
+              line(cx + 24, floor - 22, cx + 27, floor - 20, 1, wood);
+            }
           }
           for (int x = -101; x <= 101; x++) {
             int floor = -3 - (int)std::lround(3 * std::cos(x * .025));
@@ -598,6 +638,7 @@
                 for (int x = -15; x <= 15; x += 6) line(cx + x, floor - 18, cx + x / 2, floor - 30, 1, BONE);
                 banner(cx - 4, floor - 19, 13, CLAY);
               }
+              homeDetails(cx - 24, cx + 24, floor - 20, floor, PINE_WOOD);
             }
             if (backdrop) {
               int y = ground(0);
@@ -615,6 +656,7 @@
               if (backdrop) line(side * 18, floor, -side * 18, ground(-side * 18), 2, BONE);
             }
             room(-25, 25, floor - 18, floor, PINE_WOOD);
+            homeDetails(-25, 25, floor - 18, floor, PINE_WOOD);
             gable(0, 32, floor - 18, 17, BONE);
             rect(-32, floor, 32, floor + 2, PINE_WOOD);
             if (backdrop) {
@@ -665,6 +707,14 @@
               ellipse(cx - 7, floor - 15, 3, 4, GLASS, false);
               lamp(cx, floor - 10);
               rect(cx - 12, floor - 3, cx - 7, floor - 2, CLAY);
+              rect(cx - 11, floor - 5, cx - 8, floor - 4, GOLD_ORE);
+              put(cx - 10, floor - 6, LIGHT);
+              rect(cx + 5, floor - 7, cx + 9, floor - 7, PALESTONE);
+            } else {
+              int ceiling = floor - 5 - height;
+              rect(cx, ceiling + 3, cx, ceiling + 6, PINE_WOOD);
+              rect(cx - 1, ceiling + 7, cx + 1, ceiling + 7, PINE_WOOD);
+              put(cx, ceiling + 8, LIGHT);
             }
           }
           break;

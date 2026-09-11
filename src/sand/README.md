@@ -170,7 +170,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 18 is canonical in absolute coordinates: viewport size changes
+World generation version 22 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions
@@ -237,8 +237,23 @@ five to seven large role-specific buildings with distinct rooflines, terraced
 foundations, broad masonry supports, slope stairs, a market, lantern-lit streets,
 and a roofed well. Villages reserve their whole street with a gap between neighboring
 settlements. Streets occupy a single dry biome, with wider wilderness gaps
-between settlements. Desert buildings have low parapets and roof vents, and
-shared street furniture uses the local masonry. Mine entrances exclude settlements, and ruin plans exclude both settlements
+between settlements. Homes have limewashed timber frames, tiled gables, shuttered
+casements, projecting eaves, capped chimneys, and furnished rooms. Entrances open
+through the left and right walls; the visible back wall carries windows and furniture.
+Real candles, window lights,
+hearths, and street lanterns illuminate the rooms and approaches. Occupations and
+stable village variants select different wall heights, roof profiles, and window
+compositions: squat workshops, tall apothecaries and granaries, and civic halls.
+Repeated homes cycle through different silhouettes. Desert streets mix stepped
+terraces, vaulted homes, pergolas, and windcatchers; timber streets mix gables,
+shed roofs, cross gables, and gambrels. Watchwood uses round, twin, and pointed
+domes. Every silhouette fits the village's reserved skyline and street footprint.
+Shared street furniture uses the local masonry. Mine
+headhouses have framed workshops, winding gear, and hanging lights. Cottages and
+headhouses share `stampSurfaceHouseShell` for walls, roofs, windows, lights, and
+side-entry clearance, with domestic furniture or mine machinery added by their callers. Snowy
+longhouses, swamp stilt homes, tribal huts, and igloos have furnished, lit interiors
+suited to their local architecture. Mine entrances exclude settlements, and ruin plans exclude both settlements
 and mines; both simulated layers share these deterministic placement decisions.
 The biome catalogue selects the settlement architecture. Watchwood uses pale
 observation domes, ocular instruments, and burgundy ribs within the same reserved,
@@ -519,6 +534,8 @@ Raster generation and semantic world context share the explicit
 to generated cells, feature containment, or semantic identity increments that
 version and adds the matching `GOLDEN_BY_VERSION` entry in
 `scripts/worldgen-version-test.mjs` after the output has been inspected.
+Feature IDs use a stable namespace so unrelated structure layouts retain their
+procedural seeds across raster revisions; checkpoints check the generation version.
 
 The extension path for each registry is explicit:
 

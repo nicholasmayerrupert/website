@@ -1,3 +1,285 @@
+  // Surface homes and mine workshops share their architectural shell. Their
+  // furniture and machinery are stamped by the owning feature after this pass.
+  template<class Put>
+  __attribute__((minsize, noinline))
+  static void stampSurfaceHouseShell(Put&& put, int left, int wallTop, int w,
+                                    int floorY, int roofH, int biome, int role,
+                                    int architecture, bool hall, bool background) {
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+    int cx = left + w / 2;
+    const int DOOR_CLEARANCE = PLAYER_H + 5;
+    const SurfaceBiomeDef& biomeDef = surfaceBiomeDef(biome);
+    bool watchwood = biomeDef.structureStyle == SSS_OBSERVATORY;
+    uint8_t foundation = biomeDef.structureFoundation;
+    const uint8_t timber = watchwood ? EYE_WOOD : OAK_WOOD;
+    const uint8_t plaster = biome == BIOME_DESERT ? SANDSTONE : PALESTONE;
+    const uint8_t roof = watchwood ? PALESTONE
+      : biome == BIOME_TUNDRA || role == 2 ? SLATE : BRICK;
+    const uint8_t shutter = watchwood ? VIOLET_FROND
+      : role == 2 ? MOSS : role == 3 ? SLATE : PINE_WOOD;
+    auto rect = [&](int x0, int y0, int x1, int y1, uint8_t mat) {
+      for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) put(x, y, mat);
+    };
+    auto beam = [&](int x0, int y0, int x1, int y1) {
+      int length = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+      for (int i = 0; i <= length; i++) {
+        int x = x0 + (x1 - x0) * i / imax(1, length);
+        int y = y0 + (y1 - y0) * i / imax(1, length);
+        put(x, y, timber);
+      }
+    };
+    int roomHeight = floorY - wallTop;
+    // Limewashed infill rests on a stone plinth. Wide wall bays, pegged posts,
+    // and short diagonal braces give each room an intelligible timber frame.
+    if (background) {
+      rect(left, wallTop, left + w, floorY - 3, plaster);
+      rect(left, floorY - 2, left + w, floorY, foundation);
+      for (int x : {left, left + w, cx}) rect(x, wallTop, x + (x == left ? 1 : 0), floorY - 1, timber);
+      for (int y : {wallTop, wallTop + 1, floorY - 3}) rect(left, y, left + w, y, timber);
+      if (roomHeight >= 30) {
+        rect(left, floorY - 19, left + w, floorY - 18, timber);
+        for (int side : {-1, 1}) {
+          int x = cx + side * (w / 2 - 1);
+          beam(x, floorY - 17, x - side * 5, floorY - 12);
+        }
+      }
+      for (int side : {-1, 1}) {
+        int x = cx + side * (w / 2 - 1);
+        beam(x, wallTop + 2, x - side * 5, wallTop + 7);
+        beam(cx, wallTop + 2, cx + side * 5, wallTop + 7);
+      }
+    } else {
+      rect(left, wallTop, left + w, floorY - 1, EMPTY);
+      rect(left, wallTop, left + w, wallTop + 1, timber);
+      rect(left, wallTop, left + 1, floorY, timber);
+      rect(left + w - 1, wallTop, left + w, floorY, timber);
+    }
+
+    // Roof profiles share one continuous tile skin and projecting fascia.
+    // Occupation controls the mass; a village variant changes its composition.
+    auto gableRise = [&](int x, int l, int r, int peak, int height) {
+      int span = x <= peak ? peak - l : r - peak;
+      int run = x <= peak ? x - l : r - x;
+      return floorDiv(height * run, imax(1, span));
+    };
+    auto domeRise = [&](int x, int l, int r, int height) {
+      double nx = (double)(x - (l + r) / 2) / imax(1, (r - l) / 2);
+      return (int)std::lround(height * std::sqrt(std::fmax(0.0, 1.0 - nx * nx)));
+    };
+    int apexX = cx + (architecture == 1 && !hall ? -4 : 0);
+    auto roofTop = [&](int x) {
+      if (biome == BIOME_DESERT) {
+        if (hall) return wallTop - (x < cx - 8 || x > cx + 8 ? 9 : 3);
+        if (role == 1) return wallTop - 1;
+        if (role == 2) return wallTop - (x < cx ? 3 : 8);
+        if (role == 3 || (role == 0 && architecture == 1))
+          return wallTop + 1 - domeRise(x, left - 3, left + w + 3, roofH);
+        int run = architecture == 0 ? x - left : left + w - x;
+        return wallTop - (architecture == 0 ? (run < w / 2 ? 3 : 9)
+          : run < w / 3 ? 2 : run < w * 2 / 3 ? 6 : 10);
+      }
+      if (watchwood) {
+        if (!hall && (role == 2 || (role == 0 && architecture == 2))) {
+          int l = x <= cx ? left - 3 : cx, r = x <= cx ? cx : left + w + 3;
+          return wallTop + 1 - domeRise(x, l, r, roofH);
+        }
+        if (!hall && (role == 3 || (role == 0 && architecture == 1))) {
+          double run = std::fmax(0.0, 1.0 - std::abs((double)(x - cx)) / (w / 2 + 3));
+          return wallTop + 1 - (int)std::lround(roofH * std::pow(run, .65));
+        }
+        return wallTop + 1 - domeRise(x, left - 3, left + w + 3, roofH);
+      }
+      if (hall) {
+        int rise = imin(roofH, imax(0, (w / 2 + 3 - std::abs(x - cx)) * roofH / imax(1, w / 2 - 5)));
+        return wallTop + 1 - rise;
+      }
+      if (role == 1) {
+        int run = architecture == 1 ? x - left + 3 : left + w + 3 - x;
+        return wallTop + 1 - (roofH + 1) * run / (w + 6);
+      }
+      if (role == 2) {
+        int l = x <= cx ? left - 3 : cx, r = x <= cx ? cx : left + w + 3;
+        return wallTop + 1 - gableRise(x, l, r, (l + r) / 2, roofH);
+      }
+      if (role == 3) {
+        double run = std::fmax(0.0, 1.0 - std::abs((double)(x - cx)) / (w / 2 + 3));
+        double rise = run < .45 ? run * 1.7 : .765 + (run - .45) * .235 / .55;
+        return wallTop + 1 - (int)std::lround(roofH * rise);
+      }
+      return wallTop - gableRise(x, left - 2, left + w + 2, apexX, roofH);
+    };
+    uint8_t roofSkin = biome == BIOME_DESERT ? SANDSTONE : roof;
+    for (int x = left - 3; x <= left + w + 3; x++) {
+      int top = roofTop(x), skinBottom = top + 1;
+      if (x > left - 3) skinBottom = imax(skinBottom, roofTop(x - 1));
+      if (x < left + w + 3) skinBottom = imax(skinBottom, roofTop(x + 1));
+      for (int y = top; y <= imax(wallTop - 1, skinBottom + 1); y++) {
+        uint8_t mat = y <= skinBottom ? roofSkin : y == skinBottom + 1 ? timber
+          : background ? plaster : EMPTY;
+        put(x, y, mat);
+      }
+      if (watchwood && (x - left) % 8 == 0) put(x, top, timber);
+    }
+    // Upper side posts join raised terrace and shed edges to the main ceiling.
+    for (int x : {left, left + w}) rect(x, roofTop(x) + 2, x, wallTop + 1, timber);
+    auto atticWindow = [&](int x, int y, int rx) {
+      rect(x - rx - 1, y - 3, x + rx + 1, y + 2, timber);
+      rect(x - rx, y - 2, x + rx, y + 1, CRYSTAL);
+      rect(x, y - 2, x, y + 1, timber);
+      put(x - 1, y, LIGHT); put(x + 1, y, LIGHT);
+      if (watchwood) stampEyeGlyph(put, x, y - 1, rx + 1, 2);
+    };
+    if (background && biome != BIOME_DESERT) {
+      if (role == 2 && !hall) {
+        for (int x : {left + w / 4, left + w * 3 / 4}) {
+          beam(x, wallTop - roofH + 3, x, wallTop);
+          atticWindow(x, wallTop - 5, 2);
+        }
+      } else if (role == 1 && !hall) {
+        for (int x = left + 7; x <= left + w - 7; x += 9) {
+          int top = roofTop(x);
+          if (top < wallTop - 6) atticWindow(x, top + 5, 2);
+        }
+      } else {
+        beam(apexX, wallTop - roofH + 3, apexX, wallTop);
+        beam(left + 5, wallTop - 1, apexX, wallTop - roofH + 4);
+        beam(left + w - 5, wallTop - 1, apexX, wallTop - roofH + 4);
+        atticWindow(apexX, wallTop - 5, role == 3 ? 5 : 2);
+      }
+    }
+    if (biome == BIOME_DESERT) {
+      // Desert roofs include usable terraces, shaded work courts, windcatchers,
+      // and vaulted stores, with masonry parapets on the exposed roof edges.
+      for (int x : {left - 2, left + w + 1}) {
+        int top = roofTop(x);
+        rect(x, top - 2, x + 1, top, SANDSTONE);
+      }
+      if (!hall && (role == 1 || (role == 0 && architecture == 2))) {
+        int l = role == 1 ? left + 1 : left + w / 2, r = left + w - 1;
+        int canopy = wallTop - roofH + 2;
+        for (int x : {l, r}) rect(x, canopy, x, roofTop(x), timber);
+        rect(l - 3, canopy, r + 3, canopy + 1, timber);
+        for (int x = l - 2; x <= r + 2; x += 4) put(x, canopy - 1, PINE_WOOD);
+      }
+      auto windcatcher = [&](int x, int top, int base, int half) {
+        rect(x - half, top, x + half, base, SANDSTONE);
+        if (background) rect(x - half + 1, top + 2, x + half - 1, base - 1, PALESTONE);
+        else rect(x - half + 1, top + 2, x + half - 1, base - 1, EMPTY);
+        if (background) for (int dx : {-1, 1}) {
+          rect(x + dx, top + 3, x + dx, top + 7, SLATE);
+          put(x + dx, top + 6, LIGHT);
+        }
+        rect(x - half - 1, top - 1, x + half + 1, top, PALESTONE);
+        rect(x - half, base, x + half, base + 1, timber);
+      };
+      if (hall) {
+        windcatcher(cx - w / 4, wallTop - roofH + 3, wallTop - 6, 4);
+        windcatcher(cx + w / 4, wallTop - roofH - 3, wallTop - 6, 4);
+      } else if (role == 2) {
+        windcatcher(cx + (architecture == 1 ? -w / 4 : w / 4),
+                    wallTop - roofH, wallTop - 4, 4);
+      } else if (role == 0 && architecture == 0) {
+        windcatcher(left + w - 7, wallTop - roofH - 2, wallTop - 6, 3);
+      } else if (role == 3 && background) {
+        atticWindow(cx, wallTop - 5, 4);
+      }
+    } else if (!watchwood && !hall && role == 0 && architecture == 2) {
+      // A cross gable projects from one slope of the larger family home.
+      int dx = cx + w / 4, base = roofTop(dx) + 4;
+      for (int x = dx - 5; x <= dx + 5; x++) {
+        int top = base - 7 + std::abs(x - dx);
+        rect(x, top, x, top + 1, roofSkin);
+        rect(x, top + 2, x, base, background ? plaster : EMPTY);
+      }
+      if (background) atticWindow(dx, base - 2, 2);
+    }
+    // The chimney is rooted in the hearth's rear masonry, with a capped stack
+    // projecting through the roof. Light represents a contained hearth flame.
+    if (biome != BIOME_DESERT || role == 1 || (role == 0 && architecture == 0)) {
+      const uint8_t chimneyMat = watchwood ? PALESTONE : BRICK;
+      int chimneyX = role == 1 ? left + w - 7 : left + 6;
+      int chimneyTop = roofTop(chimneyX) - 7;
+      if (background) rect(chimneyX - 1, chimneyTop, chimneyX + 1, floorY - 5, chimneyMat);
+      rect(chimneyX - 1, chimneyTop, chimneyX + 1,
+        roofTop(chimneyX) + 1, chimneyMat);
+      rect(chimneyX - 2, chimneyTop, chimneyX + 2, chimneyTop + 1, PALESTONE);
+    }
+    if (hall && biome != BIOME_DESERT) {
+      int top = wallTop - roofH - 9;
+      rect(cx - 3, top + 3, cx + 3, top + 10, timber);
+      if (background) {
+        rect(cx - 2, top + 4, cx + 2, top + 9, PALESTONE);
+        rect(cx - 1, top + 5, cx + 1, top + 7, GOLD_ORE);
+        put(cx, top + 8, LIGHT);
+        if (watchwood) {
+          stampEyeGlyph(put, cx, top + 6, 4, 3);
+          put(cx - 1, top + 6, LIGHT); put(cx + 1, top + 6, LIGHT);
+        }
+      } else rect(cx - 2, top + 4, cx + 2, top + 9, EMPTY);
+      for (int x = cx - 5; x <= cx + 5; x++) {
+        int topY = top + std::abs(x - cx) / 2;
+        rect(x, topY, x, topY + 1, SLATE);
+      }
+    }
+
+    if (background) {
+      auto window = [&](int x, int y, int rx, int ry, bool shutters) {
+        rect(x - rx - 1, y - ry - 1, x + rx + 1, y + ry + 1, timber);
+        rect(x - rx, y - ry, x + rx, y + ry, CRYSTAL);
+        for (int xx = x - rx + 3; xx <= x + rx; xx += 4) rect(xx, y - ry, xx, y + ry, timber);
+        if (ry >= 3) rect(x - rx, y, x + rx, y, timber);
+        if (shutters) for (int side : {-1, 1})
+          rect(x + side * (rx + 2), y - ry, x + side * (rx + 2), y + ry, shutter);
+        put(x - rx - 1, y - ry - 1, plaster); put(x + rx + 1, y - ry - 1, plaster);
+        put(x - 1, y + ry - 1, LIGHT); put(x + 1, y + ry - 1, LIGHT);
+        if (watchwood) {
+          stampEyeGlyph(put, x, y - 1, imin(4, rx + 1), imin(3, ry));
+          put(x - 1, y - 1, LIGHT); put(x + 1, y - 1, LIGHT);
+        }
+        rect(x - rx - 2, y + ry + 2, x + rx + 2, y + ry + 2, PALESTONE);
+      };
+      if (hall) {
+        for (int x : {left + 10, cx, left + w - 10}) window(x, wallTop + 10, 3, 5, false);
+        for (int x : {cx - 10, cx + 10}) window(x, floorY - 13, 2, 3, true);
+      } else if (role == 1) {
+        if (architecture == 1) {
+          for (int x = left + 6; x <= left + w - 6; x += 8) window(x, wallTop + 7, 2, 2, false);
+        } else if (architecture == 2) {
+          window(cx, wallTop + 8, w / 2 - 8, 3, false);
+        } else {
+          window(cx - 8, wallTop + 8, 7, 3, false);
+          window(left + w - 7, wallTop + 8, 2, 4, true);
+        }
+      } else if (role == 2) {
+        window(cx, wallTop + 9, 5, 5, true);
+        for (int x : {left + 7, left + w - 7}) window(x, floorY - 14, 2, 3, true);
+      } else if (role == 3) {
+        for (int x : {left + 9, cx, left + w - 9}) window(x, wallTop + 8, 2, 3, false);
+        for (int x : {cx - 10, cx + 10}) window(x, floorY - 13, 3, 3, true);
+      } else if (architecture == 1) {
+        for (int x : {left + 7, cx, left + w - 7}) window(x, wallTop + 8, 2, 3, true);
+      } else if (architecture == 2) {
+        window(cx, wallTop + 9, 6, 4, true);
+        for (int x : {left + 5, left + w - 5}) window(x, wallTop + 5, 1, 2, false);
+      } else {
+        window(left + 9, wallTop + 8, 3, 4, true);
+        window(left + w - 9, wallTop + 8, 3, 4, true);
+      }
+    }
+    if (!background) {
+      // Real candle fixtures sit in the open room above head height. Their
+      // light crosses into the rear wall, revealing the plaster and furnishings.
+      for (int x : {cx - w / 4, cx + w / 4}) {
+        int lampY = imin(wallTop + 5, floorY - DOOR_CLEARANCE - 3);
+        rect(x, wallTop + 2, x, lampY - 1, IRON_ORE);
+        rect(x - 2, lampY, x + 2, lampY, timber);
+        put(x - 1, lampY - 1, LIGHT); put(x + 1, lampY - 1, LIGHT);
+      }
+    }
+    stampStructureRoute(put, left, floorY, left + w, floorY, foundation, background);
+#pragma clang attribute pop
+  }
+
   __attribute__((minsize, noinline))
   void fillVillageGeneratedFeature(
       const GeneratedFeatureDef& feature,
@@ -58,251 +340,114 @@
       int biome = plan.biome, left = plan.left;
       int floorY = plan.floorY, wallTop = plan.wallTop;
       int roofH = plan.roofHeight;
-      if (left + w + 2 < rectX0 || left - 2 > rectX1
+      if (left + w + 3 < rectX0 || left - 3 > rectX1
           || floorY < rectY0 || wallTop - roofH - 16 > rectY1) return;
-      const int DOOR_CLEARANCE = PLAYER_H + 5;
       const SurfaceBiomeDef& biomeDef = surfaceBiomeDef(biome);
-      uint8_t wall = biomeDef.structureWall;
+      bool watchwood = biomeDef.structureStyle == SSS_OBSERVATORY;
       uint8_t foundation = biomeDef.structureFoundation;
-      for (int x = left; x <= left + w; x++) {
-        for (int y = wallTop; y <= floorY; y++) {
-          bool edge = x == left || x == left + w || y == wallTop || y == floorY;
-          bool sidePassage = (x == left || x == left + w) && y >= floorY - DOOR_CLEARANCE + 1;
-          bool door = x >= cx - 3 && x <= cx + 3 && y >= floorY - DOOR_CLEARANCE + 1;
-          if (L->isBackground) put(x, y, wall); // dim, solid room backdrop behind the facade
-          else put(x, y, edge && !sidePassage && !door ? wall : EMPTY);
-        }
-      }
       // Every exposed column continues into natural terrain. Alternating courses
       // keep tall downhill foundations from reading as featureless rectangles.
       stampTerraceFoundation(left, left + w, floorY, foundation, true);
 
-      if (biomeDef.structureStyle == SSS_OBSERVATORY) {
-        // Pale domes and a large ocular instrument share the village footprint.
-        // The instrument and interior ribs stay behind the player-clear hall.
-        for (int x = left - 2; x <= left + w + 2; x++) {
-          double nx = (double)(x - cx) / (w / 2 + 2);
-          int rise = (int)std::lround(roofH * std::sqrt(std::fmax(0.0, 1.0 - nx * nx)));
-          for (int y = wallTop - rise; y <= wallTop; y++) put(x, y, wall);
-          if ((x - left) % 6 == 0) put(x, wallTop - rise, EYE_WOOD);
-        }
-        if (hall) {
-          for (int dx : {-3, 3})
-            for (int y = wallTop - roofH - 12; y <= wallTop - roofH; y++) put(cx + dx, y, wall);
-          stampEyeGlyph(put, cx, wallTop - roofH - 7, 6, 5);
-        }
-        if (L->isBackground) {
-          for (int x = left + 4; x < left + w; x += 8) {
-            for (int y = wallTop + 1; y < floorY; y++) put(x, y, EYE_WOOD);
-          }
-          int instrumentY = wallTop + 10;
-          for (int y = instrumentY; y < floorY; y++) {
-            put(cx - 1, y, EYE_WOOD); put(cx + 1, y, EYE_WOOD);
-          }
-          stampEyeGlyph(put, cx, instrumentY, hall ? 12 : 9, hall ? 8 : 6);
-          for (int side : {-1, 1}) {
-            int shelf = cx + side * (w / 2 - 8);
-            for (int dx = -3; dx <= 3; dx++) put(shelf + dx, floorY - 5, EYE_WOOD);
-            put(shelf, floorY - 6, CRYSTAL);
-            put(shelf + 2, floorY - 6, EYE_IRIS);
-          }
-        }
-        stampStructureRoute(put, left, floorY, left + w, floorY, foundation, L->isBackground);
-        return;
-      }
-
-      // The four occupations use genuinely different silhouettes: domestic
-      // gable, workshop shed, glazed apothecary arch, warehouse parapet, and a
-      // civic hall with a belfry. All roofs are solid in both layers.
-      int roofStyle = hall ? 4 : role;
-      auto roofColumn = [&](int x, int top) {
-        for (int y = top; y <= wallTop; y++) put(x, y, wall);
+      stampSurfaceHouseShell(put, left, wallTop, w, floorY, roofH, biome,
+                             role, plan.architecture, hall, L->isBackground);
+      const uint8_t timber = watchwood ? EYE_WOOD : OAK_WOOD;
+      auto rect = [&](int x0, int y0, int x1, int y1, uint8_t mat) {
+        for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) put(x, y, mat);
       };
-      if (biome == BIOME_DESERT) {
-        // Sun-baked terraces have low stepped parapets and shaded roof vents.
-        for (int x = left - 2; x <= left + w + 2; x++) {
-          int rise = x < left + 2 || x > left + w - 2 ? 5 : 2;
-          roofColumn(x, wallTop - rise);
-          if (x % 7 == 0) put(x, wallTop - rise, CLAY);
+      auto beam = [&](int x0, int y0, int x1, int y1) {
+        int length = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+        for (int i = 0; i <= length; i++) {
+          int x = x0 + (x1 - x0) * i / imax(1, length);
+          int y = y0 + (y1 - y0) * i / imax(1, length);
+          put(x, y, timber);
         }
-        if (hall) for (int dx = -4; dx <= 4; dx++) {
-          for (int y = wallTop - 12; y <= wallTop - 2; y++)
-            put(cx + dx, y, std::abs(dx) >= 3 || y == wallTop - 12 ? wall : EMPTY);
-        }
-      } else if (roofStyle == 0) {
-        for (int ry = 0; ry <= roofH; ry++)
-          for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
-        int dormerY = wallTop - roofH / 2;
-        for (int dx = -3; dx <= 3; dx++) for (int dy = -2; dy <= 2; dy++)
-          put(cx + dx, dormerY + dy, std::abs(dx) == 3 || std::abs(dy) == 2 ? PINE_WOOD : CRYSTAL);
-      } else if (roofStyle == 1) {
-        for (int x = left - 2; x <= left + w + 2; x++) {
-          int run = x - (left - 2);
-          int rise = roofH - run * roofH / (w + 4);
-          roofColumn(x, wallTop - rise);
-        }
-        for (int x = left + 5; x <= left + 7; x++)
-          for (int y = wallTop - roofH - 6; y <= wallTop - roofH + 2; y++) put(x, y, BRICK);
-        put(left + 6, wallTop - roofH - 7, CRYSTAL);
-      } else if (roofStyle == 2) {
-        int half = w / 2 + 2;
-        for (int x = left - 2; x <= left + w + 2; x++) {
-          int dx = std::abs(x - cx);
-          int arch = 3 + (roofH - 2) * (half * half - dx * dx) / (half * half);
-          roofColumn(x, wallTop - imax(2, arch));
-        }
-        for (int ribX : {cx - 9, cx, cx + 9}) {
-          int dx = std::abs(ribX - cx);
-          int arch = 3 + (roofH - 2) * (half * half - dx * dx) / (half * half);
-          put(ribX, wallTop - arch, CRYSTAL);
-          put(ribX, wallTop - arch + 1, CRYSTAL);
-        }
-      } else if (roofStyle == 3) {
-        for (int x = left - 2; x <= left + w + 2; x++)
-          for (int y = wallTop - 5; y <= wallTop; y++) put(x, y, wall);
-        for (int x = left - 2; x <= left + w + 2; x += 7)
-          for (int y = wallTop - 8; y < wallTop - 5; y++) put(x, y, wall);
-      } else {
-        for (int ry = 0; ry <= roofH; ry++)
-          for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
-        int apex = wallTop - roofH;
-        for (int x = cx - 6; x <= cx + 6; x++) for (int y = apex - 8; y <= apex + 1; y++) put(x, y, wall);
-        for (int ry = 0; ry <= 5; ry++)
-          for (int x = cx - 8 + ry; x <= cx + 8 - ry; x++) put(x, apex - 8 - ry, wall);
-        for (int wx : {cx - 2, cx + 2}) for (int y = apex - 6; y <= apex - 3; y++) put(wx, y, CRYSTAL);
-        put(cx, apex - 7, CLAY);
-      }
-
+      };
       if (L->isBackground) {
         auto shelf = [&](int x0, int x1, int y) {
-          for (int x = x0; x <= x1; x++) put(x, y, PINE_WOOD);
-          put(x0 + 1, y + 1, WOOD); put(x1 - 1, y + 1, WOOD);
+          rect(x0, y, x1, y, timber);
+          put(x0 + 1, y + 1, timber); put(x1 - 1, y + 1, timber);
         };
         auto table = [&](int x0, int x1, int y) {
-          for (int x = x0; x <= x1; x++) put(x, y, WOOD);
-          for (int yy = y + 1; yy <= floorY - 1; yy++) {
-            put(x0 + 1, yy, PINE_WOOD); put(x1 - 1, yy, PINE_WOOD);
-          }
+          rect(x0, y, x1, y, timber);
+          rect(x0 + 1, y + 1, x0 + 1, floorY - 1, timber);
+          rect(x1 - 1, y + 1, x1 - 1, floorY - 1, timber);
+        };
+        auto hearth = [&](int x) {
+          rect(x - 4, floorY - 8, x + 4, floorY - 1, PALESTONE);
+          rect(x - 2, floorY - 6, x + 2, floorY - 2, SLATE);
+          rect(x - 5, floorY - 8, x + 5, floorY - 8, timber);
+          rect(x - 2, floorY - 2, x + 2, floorY - 2, WOOD);
+          put(x - 1, floorY - 3, LIGHT); put(x + 1, floorY - 3, LIGHT);
+          put(x, floorY - 4, GOLD_ORE);
+          rect(x - 4, floorY - 1, x + 4, floorY - 1, BRICK);
         };
         auto crate = [&](int x, int y, int cw, int ch) {
-          for (int dx = 0; dx < cw; dx++) for (int dy = 0; dy < ch; dy++) {
-            bool edge = dx == 0 || dx == cw - 1 || dy == 0 || dy == ch - 1;
-            put(x + dx, y + dy, edge || dx == dy ? PINE_WOOD : WOOD);
-          }
+          rect(x, y, x + cw - 1, y + ch - 1, PINE_WOOD);
+          rect(x, y, x + cw - 1, y, timber);
+          rect(x, y + ch - 1, x + cw - 1, y + ch - 1, timber);
+          beam(x, y, x + cw - 1, y + ch - 1);
         };
-        auto window = [&](int x, int y) {
-          for (int dx = -3; dx <= 3; dx++) for (int dy = -3; dy <= 3; dy++) {
-            bool frame = std::abs(dx) == 3 || std::abs(dy) == 3 || dx == 0 || dy == 0;
-            put(x + dx, y + dy, frame ? PINE_WOOD : CRYSTAL);
-          }
-          // Window boxes soften the masonry and visibly distinguish occupied homes.
-          for (int dx = -4; dx <= 4; dx++) put(x + dx, y + 4, WOOD);
-          for (int dx : {-3, 0, 3}) put(x + dx, y + 3, dx == 0 ? GLOWBERRY : PLANT);
-        };
-
-        // Timber framing and irregular masonry bands make the backdrop read as a
-        // built wall rather than a flat rectangle.
-        for (int x = left + 3; x <= left + w - 3; x += 8)
-          for (int y = wallTop + 1; y < floorY; y++) put(x, y, PINE_WOOD);
-        for (int y = wallTop + 5; y < floorY - 3; y += 7)
-          for (int x = left + 1; x < left + w; x++)
-            if ((x + ordinal) % 9 != 0) put(x, y, SANDSTONE);
-        for (int x = left + 1; x < left + w; x++) put(x, floorY - 2, PINE_WOOD);
-        window(left + 8, wallTop + 8);
-        window(left + w - 8, wallTop + 8);
-
         if (hall) {
-          // A communal banquet hall: long trestle table, benches, heraldic
-          // banners, a chandelier, and a raised speaker's end.
-          table(left + 8, left + w - 8, floorY - 6);
-          for (int x = left + 10; x <= left + w - 10; x++) {
-            put(x, floorY - 3, WOOD);
-            if (x % 9 == 0) put(x, floorY - 4, CLAY);
+          hearth(left + 7);
+          table(cx - 8, left + w - 5, floorY - 5);
+          for (int x = cx - 6; x < left + w - 5; x += 5) {
+            put(x, floorY - 6, PALESTONE); put(x + 1, floorY - 6, CLAY);
           }
-          for (int bx : {left + 14, cx, left + w - 14}) {
-            for (int y = wallTop + 2; y <= wallTop + 8; y++) put(bx, y, MOSS);
-            put(bx - 1, wallTop + 4, GOLD_ORE); put(bx + 1, wallTop + 6, CRYSTAL);
+          rect(cx - 6, floorY - 2, left + w - 6, floorY - 2, timber);
+          for (int x : {cx - 7, cx + 7}) {
+            rect(x - 1, wallTop + 3, x + 1, wallTop + 9, MOSS);
+            put(x, wallTop + 5, GOLD_ORE); put(x, wallTop + 7, GOLD_ORE);
           }
-          for (int y = wallTop + 1; y <= wallTop + 7; y++) put(cx, y, IRON_ORE);
-          for (int dx = -3; dx <= 3; dx++) put(cx + dx, wallTop + 7, IRON_ORE);
-          put(cx - 3, wallTop + 8, CRYSTAL); put(cx, wallTop + 8, CRYSTAL); put(cx + 3, wallTop + 8, CRYSTAL);
-          for (int x = left + w - 9; x <= left + w - 3; x++) put(x, floorY - 4, BRICK);
-          put(left + w - 6, floorY - 5, CRYSTAL);
+        } else if (role == 0) {
+          hearth(left + 6);
+          int bedX = left + w - 13;
+          rect(bedX, floorY - 4, bedX + 10, floorY - 2, timber);
+          rect(bedX + 1, floorY - 5, bedX + 8, floorY - 4, MOSS);
+          rect(bedX + 8, floorY - 5, bedX + 9, floorY - 4, PALESTONE);
+          rect(bedX + 10, floorY - 7, bedX + 10, floorY - 1, timber);
+          put(bedX, floorY - 1, timber);
+          shelf(left + w - 12, left + w - 4, floorY - 10);
+          put(left + w - 10, floorY - 11, CLAY); put(left + w - 10, floorY - 12, PLANT);
+        } else if (role == 1) {
+          hearth(left + w - 7);
+          table(left + 4, cx - 5, floorY - 5);
+          rect(left + 8, floorY - 7, left + 12, floorY - 6, IRON_ORE);
+          shelf(left + 4, cx - 5, floorY - 10);
+          for (int x = left + 6; x <= cx - 6; x += 4) {
+            put(x, floorY - 11, IRON_ORE); put(x, floorY - 12, PINE_WOOD);
+          }
+          crate(left + 3, floorY - 3, 4, 3);
+        } else if (role == 2) {
+          for (int side : {-1, 1}) {
+            int x = cx + side * (w / 2 - 8);
+            for (int y : {floorY - 4, floorY - 10}) {
+              shelf(x - 4, x + 4, y);
+              for (int dx : {-2, 2}) {
+                put(x + dx, y - 1, dx < 0 ? MOSS : CLAY);
+                put(x + dx, y - 2, dx < 0 ? GLOWBERRY : CRYSTAL);
+              }
+            }
+          }
+          rect(left + 2, wallTop + 3, left + 2, wallTop + 9, VINE);
+          put(left + 3, wallTop + 8, GLOWBERRY);
         } else {
-          switch (ordinal & 3) {
-            case 0: { // family home: hearth, bed, supper table, and potted herbs
-              for (int x = left + 3; x <= left + 9; x++) for (int y = floorY - 7; y < floorY; y++) {
-                bool hearth = x == left + 3 || x == left + 9 || y == floorY - 7;
-                if (hearth) put(x, y, BRICK);
-              }
-              put(left + 6, floorY - 2, CRYSTAL); put(left + 6, floorY - 3, GOLD_ORE);
-              for (int x = left + w - 13; x <= left + w - 3; x++) put(x, floorY - 3, WOOD);
-              for (int x = left + w - 12; x <= left + w - 5; x++) put(x, floorY - 4, MOSS);
-              put(left + w - 4, floorY - 4, WILLOW_LEAF);
-              table(cx - 4, cx + 4, floorY - 5);
-              shelf(left + w - 13, left + w - 5, floorY - 11);
-              put(left + w - 11, floorY - 12, CLAY); put(left + w - 10, floorY - 13, PLANT);
-              break;
-            }
-            case 1: { // smith/carpenter: workbench, tool board, furnace, timber
-              table(left + 4, left + 17, floorY - 5);
-              shelf(left + 5, left + 16, floorY - 11);
-              for (int tx = left + 7; tx <= left + 15; tx += 4) {
-                put(tx, floorY - 12, tx & 1 ? COPPER_ORE : IRON_ORE);
-                put(tx, floorY - 13, IRON_ORE);
-              }
-              for (int x = left + w - 11; x <= left + w - 3; x++) for (int y = floorY - 7; y < floorY; y++) {
-                bool furnace = x == left + w - 11 || x == left + w - 3 || y == floorY - 7;
-                if (furnace) put(x, y, BRICK);
-              }
-              put(left + w - 7, floorY - 2, CRYSTAL);
-              for (int x = cx - 3; x <= cx + 4; x += 2) put(x, floorY - 2, PINE_WOOD);
-              break;
-            }
-            case 2: { // apothecary: specimen shelves and a lush preparation table
-              for (int sy : {floorY - 6, floorY - 12}) shelf(left + 4, left + w - 4, sy);
-              static const uint8_t jars[] = { CLAY, MUSH_CAP, MOSS, GLOWBERRY, CRYSTAL, PLANT };
-              for (int x = left + 6; x <= left + w - 6; x += 4) {
-                put(x, floorY - 7, jars[std::abs(x + ordinal) % 6]);
-                put(x, floorY - 13, jars[std::abs(x + ordinal + 3) % 6]);
-              }
-              table(cx - 6, cx + 6, floorY - 4);
-              for (int x : {cx - 4, cx, cx + 4}) put(x, floorY - 5, x == cx ? GLOWSHROOM : PLANT);
-              for (int y = wallTop + 1; y <= wallTop + 6; y++) put(left + w - 4, y, VINE);
-              put(left + w - 5, wallTop + 6, GLOWBERRY);
-              break;
-            }
-            default: { // storehouse: stacked marked crates and well-stocked racks
-              crate(left + 4, floorY - 7, 8, 6);
-              crate(left + 12, floorY - 5, 7, 4);
-              crate(left + w - 13, floorY - 8, 9, 7);
-              shelf(cx - 6, cx + 7, floorY - 10);
-              for (int x = cx - 4; x <= cx + 5; x += 3) put(x, floorY - 11, x & 1 ? COPPER_ORE : COAL_ORE);
-              put(left + 7, floorY - 4, GOLD_ORE);
-              break;
-            }
+          crate(left + 3, floorY - 6, 7, 6);
+          crate(left + 5, floorY - 10, 5, 4);
+          crate(left + w - 11, floorY - 5, 8, 5);
+          shelf(left + w - 12, left + w - 3, floorY - 10);
+          for (int x = left + w - 10; x < left + w - 3; x += 3) {
+            put(x, floorY - 11, CLAY); put(x, floorY - 12, GOLD_ORE);
           }
         }
-      } else {
-        // Facade piers frame the upper rooms. The open aisle below them is
-        // supported through the bearing rear wall and terrace.
-        for (int pierX : {left + 9, left + w - 9})
-          for (int y = wallTop + 1; y <= floorY; y++) put(pierX, y, wall);
-        // High beams brace the wide spans without shrinking the playable opening.
-        for (int y = wallTop + 2; y < floorY - DOOR_CLEARANCE; y++) put(cx, y, wall);
-        for (int x = left + 5; x <= left + w - 5; x++) if (x < cx - 4 || x > cx + 4) put(x, floorY - DOOR_CLEARANCE - 1, wall);
+        // The hanging trade sign is attached to the side wall, above the street.
+        int signX = left + w + 4;
+        rect(left + w, wallTop + 5, signX + 2, wallTop + 5, timber);
+        rect(signX - 2, wallTop + 7, signX + 2, wallTop + 10, timber);
+        put(signX, wallTop + 8, hall ? GOLD_ORE : role == 1 ? IRON_ORE : role == 2 ? MOSS : CLAY);
+        put(signX, wallTop + 6, IRON_ORE);
       }
       stampStructureRoute(put, left, floorY, left + w, floorY, foundation, L->isBackground);
-      if (L->isBackground) {
-        // Hanging shop signs remain readable but, like streetlamps, sit behind the
-        // player so the decorative post cannot obstruct the path between homes.
-        int signX = left + w + 6;
-        for (int y = floorY - 8; y <= floorY; y++) put(signX, y, PINE_WOOD);
-        for (int y = floorY + 1; y <= groundAnchorY(signX); y++) put(signX, y, PINE_WOOD);
-        for (int x = signX - 4; x <= signX + 3; x++) for (int y = floorY - 9; y <= floorY - 6; y++)
-          put(x, y, PINE_WOOD);
-        put(signX - 1, floorY - 8, hall ? CRYSTAL : (ordinal & 1 ? COPPER_ORE : CRYSTAL));
-      }
     };
     for (int vx = vxMin; vx <= vxMax; vx++) {
       VillagePlan village;
@@ -335,7 +480,7 @@
         int lampY = terrain.genSurfaceAbs(lampX) - 1;
         for (int y = lampY - 9; y <= groundAnchorY(lampX); y++) put(lampX, y, timber);
         for (int dx = -3; dx <= 3; dx++) put(lampX + dx, lampY - 9, timber);
-        put(lampX - 3, lampY - 8, CRYSTAL); put(lampX + 3, lampY - 8, CRYSTAL);
+        put(lampX - 3, lampY - 8, LIGHT); put(lampX + 3, lampY - 8, LIGHT);
       }
 
       // A covered market stall beside the well adds a communal place rather than
@@ -623,47 +768,46 @@
       for (int shaftX : {plan.shaftLeft, plan.shaftRight})
         stampStructureLandings(put, shaftX, shaftHalf, plan.shaftTop, plan.shaftBottom, PINE_WOOD);
 
-      // A substantial headhouse makes the mine legible at the surface. Its
-      // constructed shaft is intentionally regular; natural cave mouths are not.
+      // The winding workshop shares the village shell and keeps its machinery
+      // behind the clear side entrances and constructed shaft connector.
       int houseW = plan.headhouseRight - plan.headhouseLeft;
       int houseLeft = plan.headhouseLeft;
       int floor = plan.headhouseFloor, houseTop = plan.headhouseTop;
-      const SurfaceBiomeDef& surfaceDef = surfaceBiomeDef(terrain.genBiomeAt(center));
+      int biome = terrain.genBiomeAt(center);
+      const SurfaceBiomeDef& surfaceDef = surfaceBiomeDef(biome);
       uint8_t houseWall = surfaceDef.structureWall;
-      for (int y = houseTop; y <= floor; y++) for (int x = houseLeft; x <= houseLeft + houseW; x++) {
-        bool shell = x == houseLeft || x == houseLeft + houseW || y == houseTop || y == floor;
-        bool doorway = y >= floor - PLAYER_H - 4 && std::abs(x - center) <= shaftHalf;
-        if (L->isBackground) put(x, y, houseWall);
-        else put(x, y, shell && !doorway ? houseWall : EMPTY);
-      }
+      uint8_t houseTimber = surfaceDef.structureStyle == SSS_OBSERVATORY ? EYE_WOOD : OAK_WOOD;
       stampTerraceFoundation(houseLeft, houseLeft + houseW, floor, surfaceDef.structureFoundation, true);
-      for (int roof = 0; roof <= (surfaceDef.id == BIOME_DESERT ? 3 : 9); roof++)
-        for (int x = houseLeft - 2 + roof; x <= houseLeft + houseW + 2 - roof; x++)
-          put(x, houseTop - roof, houseWall);
+      stampSurfaceHouseShell(put, houseLeft, houseTop, houseW, floor,
+                            MinePlan::HEADHOUSE_ROOF_HEIGHT, biome, 1,
+                            (plan.latticeX & 3) % 3, false, L->isBackground);
       if (L->isBackground) {
-        // Hoist house machinery: glowing windows, winding wheel and drum, tool
-        // rack, manifest board, and supplies beside the shaft.
-        for (int wx : {houseLeft + 7, houseLeft + houseW - 7})
-          for (int dx = -3; dx <= 3; dx++) for (int dy = -3; dy <= 3; dy++)
-            put(wx + dx, houseTop + 8 + dy, std::abs(dx) == 3 || std::abs(dy) == 3 || dx == 0 || dy == 0 ? PINE_WOOD : CRYSTAL);
-        int wheelX = center - 8, wheelY = floor - 10;
-        for (int d = -5; d <= 5; d++) {
-          put(wheelX + d, wheelY - 5 + std::abs(d) / 2, IRON_ORE);
-          put(wheelX + d, wheelY + 5 - std::abs(d) / 2, IRON_ORE);
-          put(wheelX - 5 + std::abs(d) / 2, wheelY + d, IRON_ORE);
-          put(wheelX + 5 - std::abs(d) / 2, wheelY + d, IRON_ORE);
+        // A braced timber winding stand carries the iron wheel. Its axle meets
+        // the central cable above the shaft; tools and cargo flank the opening.
+        int wheelX = center - 8, wheelY = floor - 8;
+        for (int d = -4; d <= 4; d++) {
+          put(wheelX + d, wheelY - 4 + std::abs(d) / 2, IRON_ORE);
+          put(wheelX + d, wheelY + 4 - std::abs(d) / 2, IRON_ORE);
+          put(wheelX - 4 + std::abs(d) / 2, wheelY + d, IRON_ORE);
+          put(wheelX + 4 - std::abs(d) / 2, wheelY + d, IRON_ORE);
         }
-        for (int dx = -3; dx <= 3; dx++) put(wheelX + dx, wheelY, COPPER_ORE);
+        for (int x = wheelX - 3; x <= center; x++) put(x, wheelY, COPPER_ORE);
+        for (int y = wheelY - 3; y <= wheelY + 3; y++) put(wheelX, y, COPPER_ORE);
         put(wheelX, wheelY, GOLD_ORE);
         for (int y = wheelY + 1; y <= floor; y++) put(center, y, IRON_ORE);
+        for (int x = wheelX - 5; x <= wheelX + 5; x++) put(x, floor - 4, houseTimber);
+        for (int x : {wheelX - 4, wheelX + 4})
+          for (int y = floor - 3; y < floor; y++) put(x, y, houseTimber);
         stampMineCrates(center + 9, floor, 2);
-        for (int x = houseLeft + 4; x <= houseLeft + 15; x++) put(x, floor - 5, PINE_WOOD);
-        for (int x = houseLeft + 6; x <= houseLeft + 13; x += 3) put(x, floor - 6, x & 1 ? IRON_ORE : COPPER_ORE);
-        for (int x = center - 5; x <= center + 5; x++) put(x, houseTop + 2, PINE_WOOD);
-        put(center, houseTop + 2, GOLD_ORE); put(center - 3, houseTop + 2, CRYSTAL); put(center + 3, houseTop + 2, CRYSTAL);
-      } else {
-        put(houseLeft + 1, floor - PLAYER_H - 6, CRYSTAL);
-        put(houseLeft + houseW - 1, floor - PLAYER_H - 6, CRYSTAL);
+        for (int x = center + 5; x <= houseLeft + houseW - 3; x++) put(x, floor - 10, houseTimber);
+        for (int x = center + 7; x <= houseLeft + houseW - 5; x += 4) {
+          put(x, floor - 11, IRON_ORE); put(x, floor - 12, PINE_WOOD);
+        }
+        // A glowing stove sits on the stone plinth beneath the chimney.
+        int stoveX = houseLeft + houseW - 7;
+        for (int y = floor - 6; y < floor; y++) for (int x = stoveX - 2; x <= stoveX + 2; x++)
+          put(x, y, x == stoveX - 2 || x == stoveX + 2 || y == floor - 6 ? STONE : SLATE);
+        put(stoveX - 1, floor - 3, LIGHT); put(stoveX + 1, floor - 3, LIGHT);
       }
 
       stampStructureRoute(put, houseLeft, floor, houseLeft + houseW, floor, houseWall, L->isBackground);

@@ -18,6 +18,31 @@ function verify(name, graph, targets) {
   if (!ok) failures.push({ name, missed, graph: { nodes: graph.nodes, returns: [...graph.returns], root: graph.root } });
 }
 
+// A shared shell serves biome cottages and mine workshops. Its eaves must fit
+// the semantic roof bounds while both side entrances admit a whole player.
+function verifyHouseShell(name, e, bounds) {
+  const fg=e.getGrid(),bg=e.getGridBg(),ox=e.getWorldOffsetX(),oy=e.getWorldOffsetY();
+  const {w,h}=e.getPlayerSize(),floor=bounds.bottom;
+  const left=bounds.left+3,right=bounds.right-3;
+  const cell=(grid,x,y)=>grid[(y-oy)*e.cols+x-ox];
+  const entranceClear=[left,right-w+1].every(x=>{
+    for(let dx=0;dx<w;dx++)for(let dy=1;dy<=h+5;dy++)
+      if(cell(fg,x+dx,floor-dy)!==MAT.EMPTY)return false;
+    return true;
+  });
+  check(`${name}: side entrances retain full player clearance`,entranceClear);
+  const eaves=[bounds.left,bounds.right].every(x=>{
+    for(let y=bounds.top;y<floor-h-5;y++)
+      if(cell(fg,x,y)!==MAT.EMPTY&&cell(bg,x,y)!==MAT.EMPTY)return true;
+    return false;
+  });
+  check(`${name}: both projecting eaves meet their declared roof bounds`,eaves);
+  let lights=0;
+  for(let y=bounds.top;y<floor-h-5;y++)for(let x=left;x<=right;x++)
+    lights+=cell(fg,x,y)===MAT.LIGHT;
+  check(`${name}: interior fixtures supply real light above the aisle`,lights>=4);
+}
+
 // Negative controls distinguish physical navigation from empty-space flooding,
 // and a visit from a route that also permits escape.
 {
@@ -44,10 +69,34 @@ for (const [name, seed, x, y] of fixtures.villages) {
   const e = make(seed); moveWorldWindow(e, x, y);
   const c = e.worldContextAt(x, y - 5), b = c.bounds;
   check(`${name}: correct generated building`, c.featureKind === WORLD_FEATURE.VILLAGE_BUILDING);
+  verifyHouseShell(name,e,b);
   const bounds = { left: b.left - 16, right: b.right + 16, top: b.top - 24, bottom: y + 40 };
   const start = entranceStart(e, b.left - 4, y);
   const nav = navigationGraph(e, bounds, start);
   verify(name, nav, [b.left + 8, x, b.right - 8].map(x => ({ x, feet: y, radius: 4 })));
+  e.destroy();
+}
+
+// This street retains two homes, a workshop and a hall even where cave mouths
+// reject the other occupations. Repeated homes must contribute different roofs.
+{
+  const e=make(0);moveWorldWindow(e,11110,-20);
+  const silhouettes=[];
+  for(const x of [10994,11052,11110,11226]) {
+    const c=e.worldContextAt(x,e.worldSurfaceAbsAt(x)-5),b=c.bounds;
+    check(`desert diversity: building at ${x} remains in its street`,c.featureKind===WORLD_FEATURE.VILLAGE_BUILDING);
+    const grid=e.getGrid(),ox=e.getWorldOffsetX(),oy=e.getWorldOffsetY(),profile=[];
+    for(let sample=0;sample<=16;sample++) {
+      const wx=Math.round(b.left+(b.right-b.left)*sample/16);
+      let y=b.top;
+      while(y<b.bottom&&grid[(y-oy)*e.cols+wx-ox]===MAT.EMPTY)y++;
+      profile.push(y);
+    }
+    const top=Math.min(...profile);
+    silhouettes.push(JSON.stringify(profile.map(y=>y-top)));
+  }
+  check('a desert street has at least three distinct roof profiles',new Set(silhouettes).size>=3);
+  check('repeated desert homes have different roof compositions',silhouettes[0]!==silhouettes[3]);
   e.destroy();
 }
 
@@ -104,6 +153,7 @@ for (const [kind, seed, x, y] of fixtures.caves) {
 for (const [, seed, x, y] of fixtures.mines) {
   const e = make(seed); moveWorldWindow(e, x, y + 100);
   const head = e.worldContextAt(x, y - 5).bounds, rooms = new Map();
+  verifyHouseShell('mine headhouse',e,head);
   for (let wy = y + 45; wy < y + 300; wy += 3) for (let wx = x - 120; wx < x + 120; wx += 7) {
     const c = e.worldContextAt(wx, wy);
     if (c.featureKind === WORLD_FEATURE.MINE && c.bounds.right - c.bounds.left > 20)

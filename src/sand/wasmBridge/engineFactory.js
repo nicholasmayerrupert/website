@@ -1,4 +1,4 @@
-import { GAME_CONTENT } from '../content/catalog.js';
+import { GAME_CONTENT, initGameContent } from '../content/catalog.js';
 // The falling-sand engine, backed by the C++ core in cpp/sand.cpp (compiled to
 // wasm/sandEngine.{js,wasm}). createEngineWasm() returns the simulation handle the game
 // runtime drives.
@@ -90,7 +90,7 @@ let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTarget
 
 export function initSandWasm() {
   if (!modPromise) {
-    modPromise = createSandModule().then((mod) => {
+    modPromise = Promise.all([createSandModule(), initGameContent()]).then(([mod]) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
       // manifest — the loud failure for stale committed sandEngine artifacts.

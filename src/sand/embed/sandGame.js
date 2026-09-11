@@ -1,4 +1,3 @@
-import pixelFontUrl from '../assets/fonts/PixelifySans.ttf?url';
 import { CAMPAIGN_HUD_STYLE } from './campaignHudStyle';
 // Framework-free <sand-game> Web Component. The standalone build embeds WASM;
 // see embed/README.md for attributes, layout, and events.
@@ -7,12 +6,8 @@ import { initSandWasm } from '../wasmBridge/engineFactory.js';
 import { createSandGame } from '../game/createSandGame';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
-import { createInventoryHud } from './inventoryHud';
-import { createAdventureHud } from './adventureHud';
-import { createSurvivalStatus } from './survivalStatus';
-import { createFootprintMenu } from './footprintMenu';
-import { createMissionHud, presentMissionSnapshot } from './missionHud';
-import { createTalkHud } from './talkHud';
+import { presentMissionSnapshot } from './missionHud';
+import { createStartupWorldWorker } from '../worker/worldWorkerClient.js';
 import { MISSION_PHASE, WEATHER } from '../wasmBridge/abi.generated.js';
 
 const HOST_CSS = `
@@ -575,16 +570,24 @@ class SandGameElement extends HTMLElement {
     this._lastMissionTerminal = 0;
     this._ready = false;
     let cancelled = false;
+    let startupWorker = null;
 
     const start = () => {
       this._initFailure?.remove();
       this._initFailure = null;
-      return initSandWasm()
-      .then(() => {
+      startupWorker?.terminate();
+      return Promise.all([
+        initSandWasm(),
+        mode === 'survival' ? import('./survivalUi.js') : null,
+      ])
+      .then(async ([, ui]) => {
         if (cancelled || !this.isConnected) return;
+        startupWorker = createStartupWorldWorker();
+        const { createInventoryHud, createAdventureHud, createSurvivalStatus, createFootprintMenu, createMissionHud, createTalkHud } = ui || {};
         let replayUiHidden = false;
         let syncMobileCreativeUi = () => {};
         const game = createSandGame(sim, {
+          startupWorker,
           initialTool,
           mode,
           planet,
@@ -647,7 +650,10 @@ class SandGameElement extends HTMLElement {
             }));
           },
         });
+        startupWorker = null;
         this._game = game;
+        if (cancelled || !this.isConnected) { game.destroy(); this._game = null; return; }
+        if (!await game.ready || cancelled || !this.isConnected) return;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
         if (mode === 'survival') {
@@ -774,13 +780,21 @@ class SandGameElement extends HTMLElement {
             detail: { on: true }, bubbles: true, composed: true,
           }));
         }
-        this._ready = true;
-        this.dispatchEvent(new CustomEvent('sand:ready', {
-          bubbles: true, composed: true,
-        }));
+        const reportReady = () => {
+          if (cancelled || !this.isConnected || this._ready) return;
+          this._ready = true;
+          this.dispatchEvent(new CustomEvent('sand:ready', { bubbles: true, composed: true }));
+        };
+        this._onTerrainReady = reportReady;
+        sim.addEventListener('sand:terrainready', reportReady, { once: true });
+        if (game.getStartupTimings().terrainready) reportReady();
       })
       .catch((e) => {
+        startupWorker?.terminate();
+        startupWorker = null;
         if (cancelled || !this.isConnected) return;
+        this._game?.destroy();
+        this._game = null;
         this._ready = false;
         console.error('sand-game: engine failed to initialize', e);
         this.dispatchEvent(new CustomEvent('sand:error', {
@@ -806,12 +820,14 @@ class SandGameElement extends HTMLElement {
     };
     start();
 
-    this._cancel = () => { cancelled = true; };
+    this._cancel = () => { cancelled = true; startupWorker?.terminate(); startupWorker = null; };
   }
 
   disconnectedCallback() {
     this._ready = false;
     this._cancel?.();
+    this.shadowRoot?.querySelector('.sg-sim')?.removeEventListener('sand:terrainready', this._onTerrainReady);
+    this._onTerrainReady = null;
     // Release analog input while its engine is still alive.
     this._stick?.destroy();
     this._adventureHud?.destroy();
@@ -856,9 +872,3 @@ if (typeof customElements !== 'undefined' && !customElements.get('sand-game')) {
 }
 
 export { SandGameElement };
-
-if (![...document.fonts].some(font => font.family === 'Sand Pixel')) {
-  const font = new FontFace('Sand Pixel', `url(${pixelFontUrl})`, { weight: '400 700', display: 'swap' });
-  document.fonts.add(font);
-  font.load().catch(() => {});
-}

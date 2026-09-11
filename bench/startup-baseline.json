@@ -1,0 +1,1820 @@
+{
+  "version": 1,
+  "environment": {
+    "cpu": "Apple M1 Pro",
+    "platform": "darwin",
+    "arch": "arm64",
+    "angle": "default",
+    "browser": "149.0.7827.55"
+  },
+  "config": {
+    "repeats": 2,
+    "seeds": [
+      12648430,
+      12345,
+      987654321
+    ],
+    "profiles": {
+      "desktop": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "deviceScaleFactor": 1,
+        "mbps": 20,
+        "latency": 40
+      },
+      "mobile": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "deviceScaleFactor": 3,
+        "isMobile": true,
+        "hasTouch": true,
+        "mbps": 5,
+        "latency": 80
+      }
+    },
+    "compression": "brotli-6",
+    "cache": "fresh-browser-per-sample"
+  },
+  "samples": [
+    {
+      "profile": "desktop",
+      "run": 0,
+      "seed": 12648430,
+      "backgroundMs": 615.9000000953674,
+      "terrainMs": 815.7000000476837,
+      "actionMs": 643,
+      "bytes": 1028618,
+      "blockingMs": 52,
+      "longTasks": [
+        {
+          "at": 565.2000000476837,
+          "duration": 51
+        },
+        {
+          "at": 807.2000000476837,
+          "duration": 101
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 615.9000000953674,
+          "detail": {
+            "at": 615.9000000953674,
+            "seed": 12648430,
+            "camX": -16,
+            "camY": -83.89230525493622,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 815.7000000476837,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 815.7000000476837,
+          "detail": {
+            "at": 815.7000000476837
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 576.2999999523163,
+      "snapshot": {
+        "at": 801.5999999046326,
+        "bytes": 64087,
+        "hash": 2785807014,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -224
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 615.9000000953674,
+          "seed": 12648430,
+          "camX": -16,
+          "camY": -83.89230525493622,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 815.7000000476837
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "desktop",
+      "run": 0,
+      "seed": 12345,
+      "backgroundMs": 606.2000000476837,
+      "terrainMs": 789.4000000953674,
+      "actionMs": 658,
+      "bytes": 1028618,
+      "blockingMs": 33,
+      "longTasks": [
+        {
+          "at": 780.9000000953674,
+          "duration": 83
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 606.2999999523163,
+          "detail": {
+            "at": 606.2000000476837,
+            "seed": 12345,
+            "camX": -16,
+            "camY": -135.51153683662415,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0.8609199968352135,
+              0,
+              0,
+              0.13908000316478647
+            ]
+          }
+        },
+        "ready": {
+          "at": 789.5,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 789.5,
+          "detail": {
+            "at": 789.4000000953674
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 566.4000000953674,
+      "snapshot": {
+        "at": 780.7999999523163,
+        "bytes": 69117,
+        "hash": 468426833,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -288
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 606.2000000476837,
+          "seed": 12345,
+          "camX": -16,
+          "camY": -135.51153683662415,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0.8609199968352135,
+            0,
+            0,
+            0.13908000316478647
+          ]
+        },
+        "terrainready": {
+          "at": 789.4000000953674
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "desktop",
+      "run": 0,
+      "seed": 987654321,
+      "backgroundMs": 600.4000000953674,
+      "terrainMs": 787.5,
+      "actionMs": 626,
+      "bytes": 1028618,
+      "blockingMs": 32,
+      "longTasks": [
+        {
+          "at": 779.7999999523163,
+          "duration": 82
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 600.4000000953674,
+          "detail": {
+            "at": 600.4000000953674,
+            "seed": 987654321,
+            "camX": -16,
+            "camY": -98.20769602060318,
+            "biomeWeights": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 787.5999999046326,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 787.7000000476837,
+          "detail": {
+            "at": 787.5
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 562.2999999523163,
+      "snapshot": {
+        "at": 778.4000000953674,
+        "bytes": 61722,
+        "hash": 3563636567,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -256
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 600.4000000953674,
+          "seed": 987654321,
+          "camX": -16,
+          "camY": -98.20769602060318,
+          "biomeWeights": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 787.5
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "desktop",
+      "run": 1,
+      "seed": 12648430,
+      "backgroundMs": 598.0999999046326,
+      "terrainMs": 789.1999998092651,
+      "actionMs": 629,
+      "bytes": 1028618,
+      "blockingMs": 33,
+      "longTasks": [
+        {
+          "at": 781.0999999046326,
+          "duration": 83
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 598.0999999046326,
+          "detail": {
+            "at": 598.0999999046326,
+            "seed": 12648430,
+            "camX": -16,
+            "camY": -83.89230525493622,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 789.3999998569489,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 789.3999998569489,
+          "detail": {
+            "at": 789.1999998092651
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 558.5,
+      "snapshot": {
+        "at": 781,
+        "bytes": 64087,
+        "hash": 2785807014,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -224
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 598.0999999046326,
+          "seed": 12648430,
+          "camX": -16,
+          "camY": -83.89230525493622,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 789.1999998092651
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "desktop",
+      "run": 1,
+      "seed": 12345,
+      "backgroundMs": 603.7000000476837,
+      "terrainMs": 788.1000001430511,
+      "actionMs": 636,
+      "bytes": 1028618,
+      "blockingMs": 31,
+      "longTasks": [
+        {
+          "at": 779.6000001430511,
+          "duration": 81
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 603.7000000476837,
+          "detail": {
+            "at": 603.7000000476837,
+            "seed": 12345,
+            "camX": -16,
+            "camY": -135.51153683662415,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0.8609199968352135,
+              0,
+              0,
+              0.13908000316478647
+            ]
+          }
+        },
+        "ready": {
+          "at": 788.2000000476837,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 788.2000000476837,
+          "detail": {
+            "at": 788.1000001430511
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 561.5,
+      "snapshot": {
+        "at": 778.6000001430511,
+        "bytes": 69117,
+        "hash": 468426833,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -288
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 603.7000000476837,
+          "seed": 12345,
+          "camX": -16,
+          "camY": -135.51153683662415,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0.8609199968352135,
+            0,
+            0,
+            0.13908000316478647
+          ]
+        },
+        "terrainready": {
+          "at": 788.1000001430511
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "desktop",
+      "run": 1,
+      "seed": 987654321,
+      "backgroundMs": 597.2999999523163,
+      "terrainMs": 776.2999999523163,
+      "actionMs": 600,
+      "bytes": 1028618,
+      "blockingMs": 33,
+      "longTasks": [
+        {
+          "at": 547.0999999046326,
+          "duration": 50
+        },
+        {
+          "at": 768.0999999046326,
+          "duration": 83
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 597.3999998569489,
+          "detail": {
+            "at": 597.2999999523163,
+            "seed": 987654321,
+            "camX": -16,
+            "camY": -98.20769602060318,
+            "biomeWeights": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 776.3999998569489,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 776.3999998569489,
+          "detail": {
+            "at": 776.2999999523163
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 555.2999999523163,
+      "snapshot": {
+        "at": 766,
+        "bytes": 61722,
+        "hash": 3563636567,
+        "cols": 544,
+        "rows": 416,
+        "x": -288,
+        "y": -256
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 597.2999999523163,
+          "seed": 987654321,
+          "camX": -16,
+          "camY": -98.20769602060318,
+          "biomeWeights": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 776.2999999523163
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 0,
+      "seed": 12648430,
+      "backgroundMs": 2023.6999998092651,
+      "terrainMs": 2356.199999809265,
+      "actionMs": 639,
+      "bytes": 1028618,
+      "blockingMs": 33,
+      "longTasks": [
+        {
+          "at": 2349.0999999046326,
+          "duration": 83
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 2023.7999999523163,
+          "detail": {
+            "at": 2023.6999998092651,
+            "seed": 12648430,
+            "camX": 0,
+            "camY": -144.04166540503502,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 2356.2999999523163,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2356.2999999523163,
+          "detail": {
+            "at": 2356.199999809265
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1983,
+      "snapshot": {
+        "at": 2347.199999809265,
+        "bytes": 66262,
+        "hash": 2403582453,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -352
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 2023.6999998092651,
+          "seed": 12648430,
+          "camX": 0,
+          "camY": -144.04166540503502,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 2356.199999809265
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 0,
+      "seed": 12345,
+      "backgroundMs": 1997.4000000953674,
+      "terrainMs": 2351.7000000476837,
+      "actionMs": 679,
+      "bytes": 1028618,
+      "blockingMs": 47,
+      "longTasks": [
+        {
+          "at": 2001.7000000476837,
+          "duration": 50
+        },
+        {
+          "at": 2344,
+          "duration": 97
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 1997.4000000953674,
+          "detail": {
+            "at": 1997.4000000953674,
+            "seed": 12345,
+            "camX": 0,
+            "camY": -198.39166295528412,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0.7418314835972696,
+              0,
+              0,
+              0.25816851640273036
+            ]
+          }
+        },
+        "ready": {
+          "at": 2351.7999999523163,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2351.7999999523163,
+          "detail": {
+            "at": 2351.7000000476837
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1965.1000001430511,
+      "snapshot": {
+        "at": 2338.600000143051,
+        "bytes": 76012,
+        "hash": 1126034635,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -416
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 1997.4000000953674,
+          "seed": 12345,
+          "camX": 0,
+          "camY": -198.39166295528412,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0.7418314835972696,
+            0,
+            0,
+            0.25816851640273036
+          ]
+        },
+        "terrainready": {
+          "at": 2351.7000000476837
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 0,
+      "seed": 987654321,
+      "backgroundMs": 1961.5999999046326,
+      "terrainMs": 2287.2999999523163,
+      "actionMs": 620,
+      "bytes": 1028618,
+      "blockingMs": 30,
+      "longTasks": [
+        {
+          "at": 2280.0999999046326,
+          "duration": 80
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 1961.7000000476837,
+          "detail": {
+            "at": 1961.5999999046326,
+            "seed": 987654321,
+            "camX": 0,
+            "camY": -154.1583302617073,
+            "biomeWeights": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 2287.4000000953674,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2287.4000000953674,
+          "detail": {
+            "at": 2287.2999999523163
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1924.7999999523163,
+      "snapshot": {
+        "at": 2276.7999999523163,
+        "bytes": 68462,
+        "hash": 2384713193,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -384
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 1961.5999999046326,
+          "seed": 987654321,
+          "camX": 0,
+          "camY": -154.1583302617073,
+          "biomeWeights": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 2287.2999999523163
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 1,
+      "seed": 12648430,
+      "backgroundMs": 1927.6000001430511,
+      "terrainMs": 2255.2000000476837,
+      "actionMs": 657,
+      "bytes": 1028618,
+      "blockingMs": 29,
+      "longTasks": [
+        {
+          "at": 2247.9000000953674,
+          "duration": 79
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 1927.7000000476837,
+          "detail": {
+            "at": 1927.6000001430511,
+            "seed": 12648430,
+            "camX": 0,
+            "camY": -144.04166540503502,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 2255.2999999523163,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2255.2999999523163,
+          "detail": {
+            "at": 2255.2000000476837
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1888.2000000476837,
+      "snapshot": {
+        "at": 2245.7000000476837,
+        "bytes": 66262,
+        "hash": 2403582453,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -352
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 1927.6000001430511,
+          "seed": 12648430,
+          "camX": 0,
+          "camY": -144.04166540503502,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 2255.2000000476837
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 1,
+      "seed": 12345,
+      "backgroundMs": 1920.2000000476837,
+      "terrainMs": 2241.399999856949,
+      "actionMs": 651,
+      "bytes": 1028618,
+      "blockingMs": 34,
+      "longTasks": [
+        {
+          "at": 1867.7999999523163,
+          "duration": 52
+        },
+        {
+          "at": 2233.899999856949,
+          "duration": 82
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 1920.2000000476837,
+          "detail": {
+            "at": 1920.2000000476837,
+            "seed": 12345,
+            "camX": 0,
+            "camY": -198.39166295528412,
+            "biomeWeights": [
+              0,
+              0,
+              0,
+              0,
+              0.7418314835972696,
+              0,
+              0,
+              0.25816851640273036
+            ]
+          }
+        },
+        "ready": {
+          "at": 2241.399999856949,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2241.399999856949,
+          "detail": {
+            "at": 2241.399999856949
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1877.2000000476837,
+      "snapshot": {
+        "at": 2233.7999999523163,
+        "bytes": 76012,
+        "hash": 1126034635,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -416
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 1920.2000000476837,
+          "seed": 12345,
+          "camX": 0,
+          "camY": -198.39166295528412,
+          "biomeWeights": [
+            0,
+            0,
+            0,
+            0,
+            0.7418314835972696,
+            0,
+            0,
+            0.25816851640273036
+          ]
+        },
+        "terrainready": {
+          "at": 2241.399999856949
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    },
+    {
+      "profile": "mobile",
+      "run": 1,
+      "seed": 987654321,
+      "backgroundMs": 1929.5999999046326,
+      "terrainMs": 2252.699999809265,
+      "actionMs": 636,
+      "bytes": 1028618,
+      "blockingMs": 33,
+      "longTasks": [
+        {
+          "at": 1879,
+          "duration": 50
+        },
+        {
+          "at": 2245.699999809265,
+          "duration": 83
+        }
+      ],
+      "milestones": {
+        "backgroundready": {
+          "at": 1929.5999999046326,
+          "detail": {
+            "at": 1929.5999999046326,
+            "seed": 987654321,
+            "camX": 0,
+            "camY": -154.1583302617073,
+            "biomeWeights": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "ready": {
+          "at": 2252.899999856949,
+          "detail": null
+        },
+        "terrainready": {
+          "at": 2252.899999856949,
+          "detail": {
+            "at": 2252.699999809265
+          }
+        }
+      },
+      "edges": 0,
+      "workerStarted": 1889.2999999523163,
+      "snapshot": {
+        "at": 2241.199999809265,
+        "bytes": 68462,
+        "hash": 2384713193,
+        "cols": 384,
+        "rows": 672,
+        "x": -192,
+        "y": -384
+      },
+      "startup": {
+        "backgroundready": {
+          "at": 1929.5999999046326,
+          "seed": 987654321,
+          "camX": 0,
+          "camY": -154.1583302617073,
+          "biomeWeights": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "terrainready": {
+          "at": 2252.699999809265
+        }
+      },
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "downloads": [
+        {
+          "path": "/index.html",
+          "bytes": 1851,
+          "decodedBytes": 6301
+        },
+        {
+          "path": "/assets/sandEngine-C2bX8uEN.wasm",
+          "bytes": 626814,
+          "decodedBytes": 2011673
+        },
+        {
+          "path": "/assets/index-DRUc8EzM.css",
+          "bytes": 4918,
+          "decodedBytes": 22709
+        },
+        {
+          "path": "/assets/portfolio-CN1LgjJX.css",
+          "bytes": 3296,
+          "decodedBytes": 13567
+        },
+        {
+          "path": "/assets/portfolio-DnlbxQIU.js",
+          "bytes": 2792,
+          "decodedBytes": 7006
+        },
+        {
+          "path": "/assets/index-DfzSGu3n.js",
+          "bytes": 43488,
+          "decodedBytes": 142434
+        },
+        {
+          "path": "/assets/SandGame-BS9yCydS.js",
+          "bytes": 1418,
+          "decodedBytes": 3381
+        },
+        {
+          "path": "/assets/sand-content-Dlp3gp9Y.bin",
+          "bytes": 127150,
+          "decodedBytes": 17992628
+        },
+        {
+          "path": "/assets/sandGame-Cs22Danc.js",
+          "bytes": 148174,
+          "decodedBytes": 461914
+        },
+        {
+          "path": "/assets/catalog-bVvvdikH.js",
+          "bytes": 7062,
+          "decodedBytes": 35093
+        },
+        {
+          "path": "/assets/About-D4qu7k18.js",
+          "bytes": 948,
+          "decodedBytes": 2807
+        },
+        {
+          "path": "/assets/worldWorker-DiqdBL-J.js",
+          "bytes": 60707,
+          "decodedBytes": 244356
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "desktop": {
+      "backgroundMs": {
+        "median": 600.4000000953674,
+        "worst": 615.9000000953674
+      },
+      "terrainMs": {
+        "median": 788.1000001430511,
+        "worst": 815.7000000476837
+      },
+      "blockingMs": {
+        "median": 33,
+        "worst": 52
+      },
+      "bytes": {
+        "median": 1028618,
+        "worst": 1028618
+      }
+    },
+    "mobile": {
+      "backgroundMs": {
+        "median": 1929.5999999046326,
+        "worst": 2023.6999998092651
+      },
+      "terrainMs": {
+        "median": 2255.2000000476837,
+        "worst": 2356.199999809265
+      },
+      "blockingMs": {
+        "median": 33,
+        "worst": 47
+      },
+      "bytes": {
+        "median": 1028618,
+        "worst": 1028618
+      }
+    }
+  },
+  "changePercent": {
+    "desktop": {
+      "backgroundMs": -22.9,
+      "terrainMs": -42.4,
+      "blockingMs": -88.9,
+      "bytes": -15
+    },
+    "mobile": {
+      "backgroundMs": -29.6,
+      "terrainMs": -36.9,
+      "blockingMs": -89.9,
+      "bytes": -15
+    }
+  }
+}

@@ -2417,3 +2417,6 @@ self.onmessage = async ({ data }) => {
 };
 
 setLivenessStage(WORKER_LIVENESS_STAGE.INITIALIZING, true);
+
+// Fetch and instantiate while the browser prepares viewport and WebGL state.
+void initSandWasm().catch(() => {});

@@ -7,6 +7,7 @@ export default {
     const url = new URL(request.url);
     const isAsset = url.pathname.startsWith('/assets/');
     const isWasm = isAsset && url.pathname.endsWith('.wasm');
+    const isBinary = isWasm || (isAsset && /\/sand-content-[^/]+\.bin$/.test(url.pathname));
     // Dedicated Vite HTML entries resolve internally so visitors keep canonical
     // extensionless URLs without paying for redirect round trips.
     let assetRequest = request;
@@ -18,9 +19,9 @@ export default {
       assetUrl.pathname = entryPath;
       assetRequest = new Request(assetUrl, request);
     }
-    // Production builds include a quality-11 Brotli sibling for each WASM file.
+    // Production builds include a quality-11 Brotli sibling for WASM and compiled content.
     // The public URL stays fingerprinted with the uncompressed module hash.
-    if (isWasm) {
+    if (isBinary) {
       const assetUrl = new URL(request.url);
       assetUrl.pathname += '.br';
       assetRequest = new Request(assetUrl, request);
@@ -44,8 +45,8 @@ export default {
       return new Response(null, { status: 404, headers });
     }
 
-    if (isWasm) {
-      headers.set('content-type', 'application/wasm');
+    if (isBinary && response.ok) {
+      headers.set('content-type', isWasm ? 'application/wasm' : 'application/octet-stream');
       headers.set('content-encoding', 'br');
       headers.set('cache-control', 'public, max-age=31556952, immutable, no-transform');
     }
@@ -54,7 +55,7 @@ export default {
       status: response.status,
       statusText: response.statusText,
       headers,
-      ...(isWasm ? { encodeBody: 'manual' } : {}),
+      ...(isBinary ? { encodeBody: 'manual' } : {}),
     });
   },
 };

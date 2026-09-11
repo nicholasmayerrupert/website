@@ -8,6 +8,7 @@ import { TOOL_IDS } from './runtimeConfig.js';
 import { ITEM_KIND, WEATHER, writeGlPlayerExtSnapshot } from '../wasmBridge/abi.generated.js';
 import { MAT_IS_PLANT_SEED } from '../materials.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
+import { markStartup } from './startupTiming.js';
 import {
   DAY_CYCLE_MS,
   DAY_VISUAL_STEP_MS,
@@ -257,7 +258,7 @@ export function createGameLoop(ctx, {
   let lastWorkerCreatures = unsetRenderSource;
   const render = (full = false) => {
     const engine = ctx.engine;
-    if (!engine) return;
+    if (!engine || !ctx.rendererReady) return;
     const renderStart = performance.now();
     engine.glSetChests(ctx.worldWorker?.getChests() || []);
     engine.glSetBeds(ctx.worldWorker?.getBeds() || []);
@@ -334,6 +335,7 @@ export function createGameLoop(ctx, {
     ctx.lastCamX = cam.x;
     ctx.lastCamY = cam.y;
     ctx.perfRenderMs = performance.now() - renderStart;
+    if (ctx.worldWorker?.state?.snapshotApplied) markStartup(ctx, 'terrainready');
   };
 
   const samplePerf = () => {

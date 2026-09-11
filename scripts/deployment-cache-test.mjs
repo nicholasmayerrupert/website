@@ -29,7 +29,7 @@ const env = {
       if (path === '/assets/index-abc123.js') {
         return new Response('export default true', { headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate' } });
       }
-      if (path === '/assets/sandEngine-abc123.wasm.br') {
+      if (path === '/assets/sandEngine-abc123.wasm.br' || path === '/assets/sand-content-abc123.bin.br') {
         return new Response(new Uint8Array([27, 3, 0, 0]), { headers: { 'content-type': 'application/octet-stream' } });
       }
       if (path === '/favicon.svg') {
@@ -61,6 +61,14 @@ check('precompressed WASM is read without a second encoding', lastAssetEncoding 
 check('fingerprinted WASM is immutable and byte-preserving', wasm.headers.get('cache-control') === 'public, max-age=31556952, immutable, no-transform', wasm.headers.get('cache-control'));
 check('WASM keeps its streaming MIME type', wasm.headers.get('content-type') === 'application/wasm', wasm.headers.get('content-type'));
 check('WASM is served as Brotli', wasm.headers.get('content-encoding') === 'br', wasm.headers.get('content-encoding'));
+
+const content = await get('/assets/sand-content-abc123.bin');
+check('compiled content resolves to its precompressed asset', lastAssetPath === '/assets/sand-content-abc123.bin.br');
+check('compiled content is binary Brotli with immutable caching', content.headers.get('content-type') === 'application/octet-stream'
+  && content.headers.get('content-encoding') === 'br'
+  && content.headers.get('cache-control') === 'public, max-age=31556952, immutable, no-transform');
+const missingContent = await get('/assets/sand-content-missing.bin');
+check('missing compiled content is an uncached 404', missingContent.status === 404 && missingContent.headers.get('cache-control') === 'no-store');
 
 const game = await get('/game');
 check('/game resolves its dedicated HTML entry without a redirect', game.status === 200 && (await game.text()).includes('Sand Game'));

@@ -193,6 +193,7 @@ export const BROWSER_SUITES = [
   // Reads and serves dist/, proving the production bundle boots and recovers
   // from a stale cached entry. `test:all` builds dist/ before this group.
   ['production-startup', 'startup-recovery-e2e.mjs', exclusive(180_000)],
+  ['compiled-startup', 'compiled-startup-e2e.mjs', exclusive(180_000)],
 ];
 
 // Focused suites are available by manifest key without joining the default

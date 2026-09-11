@@ -35,6 +35,30 @@ and auto cycling stays pinned clear there too.
 
 ## Runtime topology
 
+### Startup and production content
+
+The production Vite plugin in `scripts/compiled-content-vite.mjs` compiles authored
+content at build time and emits the exact `Int32Array` wire packet as a hashed
+binary asset. Browser and authority load the same URL; `initSandWasm()` prepares
+WASM and content concurrently. Development and Node tools retain the source
+compiler and full art for the authoring workbench. The standalone embed includes
+a gzip-compressed packet and decodes it through `DecompressionStream`, keeping
+one self-contained file. Deployment serves compiled content and WASM with Brotli.
+
+The hero loads WASM, content, and runtime JavaScript early on all pointer types.
+Mobile remains scrollable until START. The first backdrop comes from the real
+presentation engine's seed, camera, and biome blend. The browser yields a paint
+opportunity before WebGL initialization; authority initialization overlaps
+renderer preparation. Survival UI/font and the replay interface load only when
+needed. `sand:ready` follows the first terrain frame and control setup;
+`sand:backgroundready` and `sand:terrainready` expose the individual milestones.
+`game.getStartupTimings()` retains their timestamps and initial biome metadata.
+
+`npm run bench:startup` measures these milestones in a production build. See
+`scripts/README.md` for fixed-seed, cold-cache comparison and bandwidth settings.
+
+### Authority and presentation
+
 Offline creative, survival sandbox, and campaign deployments use two engine
 instances:
 

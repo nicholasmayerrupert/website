@@ -6,10 +6,11 @@ import { chromium } from 'playwright';
 import { stopDetachedProcess } from './local-vite-process.mjs';
 import { getAvailablePort } from './test-port.mjs';
 
-export async function startTestServer() {
+export async function startTestServer({ production = false } = {}) {
   const port = await getAvailablePort();
   const baseURL = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js',
+    ...(production ? ['preview'] : []),
     '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: new URL('..', import.meta.url), detached: true, stdio: ['ignore', 'pipe', 'pipe'],
   });

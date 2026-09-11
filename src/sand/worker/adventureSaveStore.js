@@ -1,6 +1,6 @@
 import { GAME_WORLD } from '../content/catalog.js';
 import { EQUIPMENT } from '../content/equipment.js';
-import { contentHash } from '../content/compile.js';
+import { contentHash } from '../content/hash.js';
 
 // Gameplay compatibility deliberately excludes sprite pixels, text, and UI styling.
 const identity = contentHash({ version: 2, seed: GAME_WORLD.seed,

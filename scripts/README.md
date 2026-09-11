@@ -83,6 +83,48 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
+### Cold startup
+
+Build with `npm run build`, then run:
+
+```sh
+npm run bench:startup -- --json .sand-artifacts/startup.json
+npm run bench:startup:compare
+node scripts/bench-startup.mjs --site dist --compare .sand-artifacts/startup-before.json --target 25
+```
+
+The benchmark uses a fresh Chromium process and cache for each sample, three
+fixed seeds (swamp, tundra/Watchwood boundary, plains), and two repetitions per
+seed/profile. Desktop is 1440×900 at 20 Mbps with 40 ms added request latency;
+mobile is a 390×844 touch viewport at 5 Mbps with 80 ms latency. One HTTP download
+budget covers both page and worker traffic. Assets use fixed Brotli quality 6
+in this laboratory server, independently of deployment compression. Mobile is
+a viewport/network profile on the current host, not a phone CPU measurement.
+No CPU throttle is applied. `--angle metal` may select hardware graphics on
+macOS; compare only matching host/browser/renderer and profile settings.
+
+Primary metrics are time from navigation to the first biome-correct backdrop
+draw and first rendered authority snapshot. These are completed draw submissions,
+not GPU/compositor presentation timestamps. The browser yields before shader
+setup so the backdrop can paint. The report includes median/worst samples,
+main-thread long-task blocking before terrain, compressed response-body bytes
+requested by that milestone, and raw milestone/network diagnostics. The paint
+input check holds for 250 ms and verifies both pointer edges reach the worker;
+its elapsed time is diagnostic, not an input-latency benchmark. Comparison
+requires identical initial world-packet hashes, camera positions, and biome
+weights. A default compare rejects median startup regressions above 10%;
+`--target 25` requires at least 25% faster backdrop and terrain in every profile.
+Use `--only desktop` or `--repeat 3` with a matching reference for focused runs.
+The committed reference is `bench/startup-baseline.json`; timing comparisons are
+meaningful only on the recorded environment.
+
+After `npm run build && npm run build:embed`, the `compiled-startup` suite checks
+binary equality with the authoring compiler, creative/survival startup,
+on-demand replay, corrupt-download retry, teardown before WebGL initialization,
+and the standalone embed. Select related suites in one runner invocation.
+
+### Runtime profiling
+
 `node scripts/bench-projectile-render.mjs --json FILE` isolates main-thread
 projectile presentation on unchanged terrain: idle, arrows, glowing rounds,
 offscreen rounds, separated lights, and a 12-round volley. It reports render

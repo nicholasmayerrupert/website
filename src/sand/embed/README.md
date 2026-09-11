@@ -95,7 +95,9 @@ stacks plus the recoverable enemy-weapon item kinds. Aster supplies its starting
 | --- | --- | --- |
 | `sand:drawmodechange` | `{ on: boolean }` | Creative palette toggles drawing. Bubbles and crosses the shadow boundary. |
 | `sand:interaction` | `{ kind, button?, key? }` | An accepted primary/secondary surface press or WASD/arrow input reaches the game. |
-| `sand:ready` | none | The engine, renderer, and mode-specific controls have initialized. Bubbles and crosses the shadow boundary. |
+| `sand:backgroundready` | `{ at, seed, camX, camY, biomeWeights }` | The initial backdrop has been drawn using the engine's real world and camera. `at` is milliseconds since navigation. |
+| `sand:terrainready` | `{ at }` | The first successfully applied authority snapshot has been rendered. |
+| `sand:ready` | none | Terrain has been rendered and the mode-specific controls have initialized. Bubbles and crosses the shadow boundary. |
 | `sand:error` | `{ message: string }` | Engine initialization failed and the embedded retry panel is available. |
 | `sand:missionupdate` | presented mission snapshot | Authoritative mission state changes. |
 | `sand:missioncomplete` | terminal mission snapshot plus `inventory` | Extraction completes. Emitted once per mount. |

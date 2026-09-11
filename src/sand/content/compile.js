@@ -1,3 +1,5 @@
+import { contentHash } from './hash.js';
+export { contentHash } from './hash.js';
 // The same content compiler runs in Node, the browser, and the authority worker.
 import { MAT } from '../materials.js';
 import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
@@ -27,11 +29,6 @@ const bounds = (value, path) => {
   if (value[0] > value[2] || value[1] > value[3]) fail(path, 'bounds are reversed');
   return value;
 };
-export function contentHash(value) {
-  let hash = 2166136261;
-  for (const c of JSON.stringify(value)) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-  return hash >>> 0;
-}
 
 export function compileContent(world, sprite, creatureSources = creatureArt) {
   if (world.version !== CONTENT_VERSION || sprite.version !== CONTENT_VERSION) fail('version', 'unsupported content version');

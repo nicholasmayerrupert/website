@@ -13,14 +13,13 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
-import { createReplayPanel } from './replayPanel.js';
+import { createLazyReplayPanel } from './lazyReplayPanel.js';
 import {
   CREATIVE_KIND, CREATURE, MISSION, PLANET, WEATHER,
 } from '../wasmBridge/abi.generated.js';
 import { MAT } from '../materials.js';
-import creatureArt from '../content/creatureArt.js';
+import { CREATURE_HEIGHTS as creatureArtHeight } from '../content/catalog.js';
 
-const creatureArtHeight = Object.fromEntries(Object.entries(creatureArt).map(([key, art]) => [CREATURE[key], art.height * art.pixelScale]));
 import { resolvePlanetId } from './planetSelection.js';
 import {
   DEFAULT_WEATHER_ID,
@@ -113,6 +112,8 @@ export function createSandGame(container, opts = {}) {
   // (set after the owning module is created).
   /** @type {import('./runtimeContext.js').SandRuntimeContext} */
   const ctx = {
+    startup: {},
+    rendererReady: false,
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
     planetId, weatherId, weatherMode: autoWeather ? 'auto' : 'pin', weatherMix,
     gravityScale: resolvedGravityScale, missionId,
@@ -205,12 +206,13 @@ export function createSandGame(container, opts = {}) {
   };
 
   ctx.startLocalAuthority = () => {
-    if (ctx.worldWorker || !ctx.engine) return ctx.worldWorker;
+    if (ctx.worldWorker || !ctx.cols || !ctx.rows) return ctx.worldWorker;
     if (typeof Worker === 'undefined') {
       ctx.setAuthorityError?.('This browser cannot start the simulation worker.');
       return null;
     }
-    const authority = createWorldWorkerClient(ctx);
+    const authority = createWorldWorkerClient(ctx, opts.startupWorker);
+    opts.startupWorker = null;
     ctx.worldWorker = authority;
     authority.init({
       survival,
@@ -359,7 +361,7 @@ export function createSandGame(container, opts = {}) {
 
   // Compose modules; order matters only for initial fit/attach.
   const lifecycle = createEngineLifecycle(ctx, { onLayoutChange });
-  const replayPanel = createReplayPanel(ctx, { onReplayUi });
+  const replayPanel = createLazyReplayPanel(ctx, { onReplayUi });
   const inputs = createInputBindings(ctx, {
     refreshBounds: lifecycle.refreshBounds,
     zoomBy: lifecycle.zoomBy,
@@ -420,12 +422,14 @@ export function createSandGame(container, opts = {}) {
   window.addEventListener('click', unlockAudio, audioGestureOptions);
   window.addEventListener('keydown', unlockAudio, audioGestureOptions);
   window.addEventListener('pageshow', unlockAudio, audioGestureOptions);
-  loop.start();
-
   let destroyed = false;
+  const ready = lifecycle.rendererReady();
+  ready.then(ok => { if (ok && !destroyed) loop.start(); }).catch(() => {});
+
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    lifecycle.cancelRenderer();
     loop.stop();
     window.removeEventListener('pointerdown', unlockAudio, { capture: true });
     window.removeEventListener('touchend', unlockAudio, { capture: true });
@@ -457,6 +461,8 @@ export function createSandGame(container, opts = {}) {
   };
 
   return {
+    ready,
+    getStartupTimings() { return structuredClone(ctx.startup); },
     setTool(id) { ctx.currentToolName = id; ctx.engine?.setTool(TOOL_IDS[id] ?? 0); ctx.worldWorker?.config({ tool: TOOL_IDS[id] ?? 0 }); },
     setDrawMode(on) { ctx.drawModeOn = !!on; ctx.engine?.setDrawMode(ctx.drawModeOn); ctx.worldWorker?.config({ drawMode: ctx.drawModeOn }); },
     getDrawMode() { return ctx.drawModeOn; },

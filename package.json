@@ -159,7 +159,9 @@
     "check:embed": "node scripts/check-embed-boundary.mjs",
     "content:check": "node scripts/game-content.mjs",
     "game:scenario": "node scripts/game-scenario.mjs",
-    "game:capture": "node scripts/game-scenario.mjs"
+    "game:capture": "node scripts/game-scenario.mjs",
+    "bench:startup": "node scripts/bench-startup.mjs",
+    "bench:startup:compare": "node scripts/bench-startup.mjs --compare bench/startup-baseline.json"
   },
   "dependencies": {
     "react": "^18.2.0",

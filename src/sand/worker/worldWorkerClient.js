@@ -31,9 +31,17 @@ const CAPTURE_PERF_KEYS = [
   'controlsReceived', 'edgesProcessed', 'toolWrites',
 ];
 
+// Retain failures that arrive before the runtime adopts the warming worker.
+export function createStartupWorldWorker() {
+  if (typeof Worker === 'undefined') return null;
+  const worker = new WorldWorker();
+  worker.onerror = event => { worker.startupError = event; };
+  return worker;
+}
+
 /** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
-export function createWorldWorkerClient(ctx) {
-  let worker = new WorldWorker();
+export function createWorldWorkerClient(ctx, startupWorker = null) {
+  let worker = startupWorker || new WorldWorker();
   let parkedLiveWorker = null;
   let parkedLiveJournal = null;
   let initOptions = null;
@@ -1325,6 +1333,7 @@ export function createWorldWorkerClient(ctx) {
             mirrorApplyMs: performance.now() - applyStarted, packetBytes,
             packetType: packet.type, resizePending: !!awaitingResizeId,
           };
+          if (appliedWorldTick !== null) state.snapshotApplied = true;
           if (appliedWorldTick !== null)
             liveness.noteApplied(appliedWorldTick, performance.now());
         } catch (error) {
@@ -1669,6 +1678,13 @@ export function createWorldWorkerClient(ctx) {
       if (closed || target !== worker || generation !== workerGeneration) return;
       handleError(event);
     };
+    if (target.startupError) {
+      const error = target.startupError;
+      delete target.startupError;
+      queueMicrotask(() => {
+        if (!closed && target === worker && generation === workerGeneration) handleError(error);
+      });
+    }
   };
   const restartWorker = () => {
     if (closed) return;

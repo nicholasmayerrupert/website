@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { compiledContentPlugin } from './scripts/compiled-content-vite.mjs'
 import { gameContentPlugin } from './scripts/game-content-vite.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -27,9 +28,9 @@ const rewriteEntryRoute = (req, _res, next) => {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [entryRoutePlugin(), gameContentPlugin(), react()],
+  plugins: [entryRoutePlugin(), gameContentPlugin(), compiledContentPlugin(), react()],
   base: '/',
-  worker: { format: 'es' },
+  worker: { format: 'es', plugins: () => [compiledContentPlugin()] },
   build: {
     outDir: 'dist',
     target: 'esnext',

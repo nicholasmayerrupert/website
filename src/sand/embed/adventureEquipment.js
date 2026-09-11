@@ -1,5 +1,5 @@
 import { ARMOR_SETS, EQUIPMENT_BY_ID, EQUIPMENT_SLOTS } from '../content/equipment.js';
-import { PLAYER_ART } from '../content/catalog.js';
+import { PLAYER_PREVIEW } from '../content/catalog.js';
 import { gearIcon } from './gearIcon.js';
 
 export function createAdventureEquipment(game, inventory) {
@@ -7,7 +7,7 @@ export function createAdventureEquipment(game, inventory) {
   const title = document.createElement('h2'); title.textContent = 'Equipment';
   const doll = document.createElement('div'); doll.className = 'ad-paperdoll';
   const preview = document.createElement('canvas'); preview.className = 'ad-character';
-  preview.width = PLAYER_ART.width; preview.height = PLAYER_ART.height;
+  preview.width = PLAYER_PREVIEW.width; preview.height = PLAYER_PREVIEW.height;
   preview.setAttribute('role', 'img'); preview.setAttribute('aria-label', 'Character with equipped armor');
   doll.append(preview);
   const places = ['head', 'torso', 'hands', 'legs', 'boots', 'cloak', 'offhand', 'charm1', 'charm2'];
@@ -39,13 +39,13 @@ export function createAdventureEquipment(game, inventory) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; stats.append(dt, dd);
     }
     const ctx = preview.getContext('2d'); ctx.clearRect(0, 0, preview.width, preview.height);
-    const palette = Object.keys(PLAYER_ART.palette);
-    PLAYER_ART.clips.idle.frames[0].forEach((row, y) => [...row].forEach((pixel, x) => {
+    const palette = Object.keys(PLAYER_PREVIEW.palette);
+    PLAYER_PREVIEW.rows.forEach((row, y) => [...row].forEach((pixel, x) => {
       if (pixel === '.') return;
       const index = palette.indexOf(pixel);
       const part = index === 3 || index === 4 ? 5 : y < 12 ? 0 : y < 28 ? 1 : y < 38 ? 3 : 4;
       const armor = EQUIPMENT_BY_ID[gear[part]?.definitionId];
-      let color = PLAYER_ART.palette[pixel];
+      let color = PLAYER_PREVIEW.palette[pixel];
       if (armor?.style && index !== 1 && !(index >= 10 && index <= 12)) {
         const shade = index === 2 || index === 7 ? .5 : [4, 6, 9].includes(index) ? 1.2 : .85;
         const hex = ARMOR_SETS[armor.style - 1].color.slice(1);

@@ -6,6 +6,7 @@
 // createSandGame.js; this module only reads/writes ctx and drives the engine.
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
+import { markStartup } from './startupTiming.js';
 import { SIZING, TOOL_IDS } from './runtimeConfig.js';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy.js';
 import {
@@ -23,6 +24,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   const { canvas, container, parallax } = ctx;
   const biomeBlend = createBiomeBackgroundBlend();
   const biomeScenery = createBiomeScenerySampler();
+  let rendererPromise = Promise.resolve(true);
+  let cancelInitialRenderer = () => {};
 
   const refreshBounds = () => {
     const rect = container.getBoundingClientRect();
@@ -62,7 +65,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   };
 
   // Construct a presentation engine and reapply all runtime state.
-  const buildEngine = ({ cols = ctx.cols, rows = ctx.rows, frameTerrain = false } = {}) => {
+  const buildEngine = ({ cols = ctx.cols, rows = ctx.rows, frameTerrain = false, deferRenderer = false } = {}) => {
     const previous = ctx.engine;
     let e = null;
     try {
@@ -79,18 +82,11 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
         gravityScale: ctx.gravityScale,
       });
       const resolvedGravityScale = e.getGravityScale();
-      if (!e.glInit(canvas)) throw new Error('The sand renderer could not initialize WebGL2.');
-      const gl = canvas.getContext('webgl2');
-      const reportedTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
-      const maxTextureSize = Number.isFinite(reportedTextureSize) && reportedTextureSize > 0
-        ? reportedTextureSize
-        : ctx.maxTextureSize;
       const skyLight = weatherSkyLight(
         ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT,
         WEATHER.RAIN,
         ctx.weatherMix ?? 0,
       );
-      e.glResize(canvas.width, canvas.height);
       e.setWeather(ctx.weatherId);
       e.setSkyLight(skyLight);
       e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool
@@ -99,8 +95,32 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       e.setPlayMode(ctx.playMode);
       e.setDrawMode(ctx.drawModeOn);
       e.inputStick(ctx.stickX, ctx.stickY);
-      e.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.reduced);
-      e.glSetDebugHitboxes(ctx.debugHitboxes);
+      const initializeRenderer = () => {
+        if (!e.glInit(canvas)) throw new Error('The sand renderer could not initialize WebGL2.');
+        const gl = canvas.getContext('webgl2');
+        const reportedTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
+        if (Number.isFinite(reportedTextureSize) && reportedTextureSize > 0)
+          ctx.maxTextureSize = reportedTextureSize;
+        e.glResize(canvas.width, canvas.height);
+        e.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.reduced);
+        e.glSetDebugHitboxes(ctx.debugHitboxes);
+        ctx.rendererReady = true;
+      };
+      if (deferRenderer) {
+        ctx.rendererReady = false;
+        rendererPromise = new Promise((resolve, reject) => {
+          let timer = 0;
+          // Let the biome-correct canvas paint before shader/texture setup.
+          const frame = requestAnimationFrame(() => {
+            timer = setTimeout(() => {
+              cancelInitialRenderer = () => {};
+              try { initializeRenderer(); resolve(true); }
+              catch (error) { reject(error); }
+            }, 0);
+          });
+          cancelInitialRenderer = () => { cancelAnimationFrame(frame); clearTimeout(timer); resolve(false); };
+        });
+      } else initializeRenderer();
       applyCreatureRuntimePolicy(ctx, e);
 
       previous?.destroy?.();
@@ -110,7 +130,6 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       // The compiled engine owns planet defaults; retain its resolved value for
       // the authority worker and later presentation-engine rebuilds.
       ctx.gravityScale = resolvedGravityScale;
-      ctx.maxTextureSize = maxTextureSize;
       ctx.appliedSkyLight = skyLight;
       ctx.forceFullRender = true;
       ctx.previewDirty = false;
@@ -145,7 +164,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     // ignores browser page zoom and stays in sync with the visible cells.
     const pageZoom = ctx.dpr / (ctx.baselineDpr > 0 ? ctx.baselineDpr : ctx.dpr);
     parallax.resize(cssW * pageZoom, cssH * pageZoom);
-    parallax.draw(parallaxCamera());
+    if (ctx.engine) parallax.draw(parallaxCamera());
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
@@ -170,7 +189,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       // View must fit the live buffer (camera clamp / stream assume this).
       ctx.viewCols = Math.min(ctx.viewCols, ctx.cols);
       ctx.viewRows = Math.min(ctx.viewRows, ctx.rows);
-      ctx.engine.glResize(canvas.width, canvas.height);
+      if (ctx.rendererReady) ctx.engine.glResize(canvas.width, canvas.height);
       ctx.engine.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
       if (worldCenter) {
         ctx.engine.cameraSet(
@@ -207,8 +226,13 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       return;
     }
 
+    // The authority initializes alongside presentation construction and WebGL.
+    ctx.cols = bufCols;
+    ctx.rows = worldRows;
+    ctx.startLocalAuthority();
+
     // First build.
-    const engine = buildEngine({ cols: bufCols, rows: worldRows, frameTerrain: !ctx.survival });
+    const engine = buildEngine({ cols: bufCols, rows: worldRows, frameTerrain: !ctx.survival, deferRenderer: true });
     // Creative startup is framed by the engine before either layer is generated.
     // Survival follows its authority-owned player after the first actor snapshot.
     if (ctx.survival) {
@@ -216,7 +240,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
       engine.cameraSet((ctx.cols - ctx.viewCols) / 2, spawnRow - Math.floor(ctx.viewRows * (2 / 3)));
     }
-    parallax.draw(parallaxCamera());
+    const backgroundView = parallaxCamera();
+    parallax.draw(backgroundView);
+    markStartup(ctx, 'backgroundready', {
+      seed: ctx.worldSeed, camX: backgroundView.camX, camY: backgroundView.camY,
+      biomeWeights: backgroundView.biomeWeights,
+    });
     ctx.lastCamX = NaN;
     ctx.lastCamY = NaN;
   };
@@ -353,6 +382,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   };
 
   return {
+    rendererReady: () => rendererPromise,
+    cancelRenderer: () => cancelInitialRenderer(),
     refreshBounds,
     parallaxCamera,
     buildEngine,

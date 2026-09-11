@@ -7,7 +7,7 @@ const root = new URL('../dist/', import.meta.url);
 const entries = await Promise.all([
   ['portfolio', '/', 'index.html', false],
   ['falling-sand case study', '/work/falling-sand/', 'work/falling-sand/index.html', false],
-  ['sand game', '/game', 'index.html', true],
+  ['sand game', '/game', 'game/index.html', true],
 ].map(async ([name, pathname, file, sandRuntime]) => {
   const currentHtml = await readFile(new URL(file, root), 'utf8');
   const entry = currentHtml.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/i)?.[1];
@@ -82,7 +82,7 @@ for (const { name: entryName, pathname, sandRuntime } of entries) {
     await page.goto(new URL(pathname.slice(1), baseURL).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__portfolioBooted === true, null, { timeout: 30000 });
     if (sandRuntime) {
-      await page.waitForFunction(() => !!document.querySelector('sand-game')?._game, null, { timeout: 30000 });
+      await page.waitForFunction(() => !!document.querySelector('sand-game')?._ready, null, { timeout: 30000 });
       check(`${entryName} ${name} starts the production sand runtime`, true);
     }
     const state = await page.evaluate(() => ({

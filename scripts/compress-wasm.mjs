@@ -11,20 +11,20 @@ const compress = promisify(brotliCompress);
 const decompress = promisify(brotliDecompress);
 const root = resolve(process.argv[2] || 'dist');
 
-const wasmFiles = [];
+const binaryFiles = [];
 const directories = [root];
 while (directories.length) {
   const directory = directories.pop();
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) directories.push(path);
-    else if (entry.isFile() && entry.name.endsWith('.wasm')) wasmFiles.push(path);
+    else if (entry.isFile() && (/\.(wasm|bin)$/).test(entry.name)) binaryFiles.push(path);
   }
 }
 
-if (!wasmFiles.length) throw new Error(`No WebAssembly files found in ${root}.`);
+if (!binaryFiles.length) throw new Error(`No WebAssembly or compiled content files found in ${root}.`);
 
-for (const path of wasmFiles.sort()) {
+for (const path of binaryFiles.sort()) {
   const input = await readFile(path);
   const output = await compress(input, {
     params: {

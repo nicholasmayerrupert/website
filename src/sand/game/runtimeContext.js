@@ -3,6 +3,8 @@
  *
  * @typedef {Object} SandRuntimeContext
  * @property {HTMLElement} container
+ * @property {Object} startup
+ * @property {boolean} rendererReady
  * @property {HTMLCanvasElement} canvas
  * @property {*} parallax
  * @property {*} audio

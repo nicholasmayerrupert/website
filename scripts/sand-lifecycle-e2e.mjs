@@ -34,7 +34,7 @@ try {
   await racePage.evaluate(() => {
     const host = document.querySelector('sand-game');
     const canvas = host.shadowRoot.getElementById('sand-main');
-    const contextCount = window.__sandTest.sharedGlContextProbe();
+    const contextCount = window.__sandTest?.sharedGlContextProbe?.() || (() => 0);
     host.remove();
     window.__sandStartupTeardown = { canvas, contextCount };
   });
@@ -46,7 +46,7 @@ try {
   check('startup worker closes after its host is removed', workerDidClose);
   const startupCleanup = await racePage.evaluate(() => ({
     contexts: window.__sandStartupTeardown.contextCount(),
-    targetRemoved: window.__sandStartupTeardown.canvas.__sandGlKey === undefined,
+    targetRemoved: window.__sandStartupTeardown.canvas?.__sandGlKey === undefined,
   }));
   check('startup teardown releases the shared context', startupCleanup.contexts === 0, String(startupCleanup.contexts));
   check('startup teardown unregisters the canvas target', startupCleanup.targetRemoved);

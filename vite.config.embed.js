@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { compiledContentPlugin } from './scripts/compiled-content-vite.mjs';
 import { fileURLToPath } from 'node:url';
 
 // Bundles the <sand-game> Web Component into ONE self-contained, drop-in ES file
@@ -10,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 //   npm run build:embed
 //   <script type="module" src="sand-game.js"></script>  <sand-game></sand-game>
 export default defineConfig({
+  plugins: [compiledContentPlugin({ inline: true })],
   define: { 'import.meta.env.DEV': 'false' },
   resolve: {
     alias: [
@@ -19,7 +21,7 @@ export default defineConfig({
       },
     ],
   },
-  worker: { format: 'es' },
+  worker: { format: 'es', plugins: () => [compiledContentPlugin({ inline: true })] },
   build: {
     target: 'esnext',
     outDir: 'dist-embed',

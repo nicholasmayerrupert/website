@@ -99,14 +99,13 @@ console.log('lava texture');
   }
   check('lava does not repeat a 32-cell stencil', repeated < compared / 4,
     `(${repeated}/${compared} repeat)`);
-  const brightness = color => ((color & 255) + ((color >>> 8) & 255) + ((color >>> 16) & 255)) / 3;
   const center = 32 * size + 32;
   const bank = createEngineWasm({ cols:size, rows:size, worldSeed:SEED, sinksOn:false, infinite:false });
   bank.getGrid().fill(MAT.LAVA);
   for (let y = 0; y < size; y++) bank.getGrid()[y * size + 31] = MAT.STONE;
   bank.renderFull();
   const bankPixel = new Uint32Array(bank.getRenderPixels().slice().buffer)[center];
-  check('lava cooling crust follows a solid bank', brightness(bankPixel) + 25 < brightness(px[center]));
+  check('lava meets a solid bank without a dark rim', bankPixel === px[center]);
   bank.destroy();
   const hash = e.gridHash();
   for (let frame = 0; frame < 6; frame++) e.renderFull();

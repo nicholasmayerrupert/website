@@ -17,7 +17,7 @@ class GLPresenter {
   double glCamX = 0, glCamY = 0;        // camera top-left in buffer cells (fractional)
   double glCellDev = 1;                 // device px per cell (fractional when zoomed out past 1 px/cell)
   int glViewCols = 0, glViewRows = 0;
-  int glGutterOn = 0, glSnapOff = 0;
+  int glGutterOn = 1, glSnapOff = 0;
   bool glDebugHitboxes = false;
   double glOffX = 0, glOffY = 0;        // snapped sub-cell present offset (device px)
   // Last presented window origin + world offset + skylight. The present path renders

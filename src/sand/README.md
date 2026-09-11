@@ -91,9 +91,11 @@ Repairs preserve field terrain, inventory, and quest progress. The journaled
 `content/player.js` owns the player palette, seven animation clips, frame timing,
 and source pixels. `content/creatureArt.js` owns all creature sprites and palettes.
 Authored material tiles live in `content/materialArt.js`; `world.js` owns tile
-overrides and ambient-light presentation. Continuous textured surfaces have no
-cell gutters. Rigid bodies carry texture coordinates through rotation, baking,
-fracture, welding, streaming, and checkpoints. See `content/README.md` for the material-art authoring loop.
+overrides and ambient-light presentation. Foreground cells have one-device-pixel
+gutters at scales of three pixels per cell and above, revealing the continuous
+background texture. Rigid bodies carry texture coordinates through rotation,
+baking, fracture, welding, streaming, and checkpoints. See `content/README.md`
+for the material-art authoring loop.
 The WebGL presenter reads this data; character pixels are not embedded in C++.
 
 `react/SandCampaign.jsx` presents the journal, tracked destination, pause menu,

@@ -60,8 +60,9 @@ revisions use the content fingerprint and content integration checks.
 
 ## Visual direction
 
-The world uses continuous material surfaces without cell gutters, hand-authored
-pixel textures, darker background layers, and simulated lighting. Opaque terrain
+The world combines authored pixel textures with one-device-pixel foreground
+gutters, darker continuous background layers, and simulated lighting. Gutters
+disappear below three device pixels per cell. Opaque terrain
 preserves the texture palette; opacity and light transmission remain
 schema-defined. Zero surface/depth ambient overrides leave the normal light
 field in control. Game text uses **Sand Pixel**,
@@ -71,10 +72,14 @@ including menus, dialogue, the journal, prompts, and HUDs.
 individual palettes; it writes the editable pixel rows in `materialArt.js`.
 There is no random texture generation. Each material has an art-direction note.
 Use clustered pixels, quiet base areas, upper-left highlights, and deliberate
-material-specific forms. Keep highlights sparse enough that actors remain clear.
+material-specific forms. Solid palettes pair saturated midtones with cooler
+shadows and warm highlights. Rock uses broad chipped facets, sediment has
+uneven bedding, and wood grain follows long growth bands around knots.
+Keep highlights sparse enough that actors remain clear.
 Neighboring cells sample one continuous tile; physics and the destructible cell
 silhouette remain exact. Fluid interiors use evolving noise without a short
-repeating tile. Exposed surfaces carry moving highlights; lava cools visually along solid contact edges.
+repeating tile. Exposed surfaces carry moving highlights; lava currents reach
+solid contact edges without a dark rim.
 Liquid animation is presentation-only and preserves the simulated material mask.
 Bodies carry occupancy-aligned source texel addresses. Baked components retain
 sparse cell-address records, and splitting, welding, freezing, saves, and streamed

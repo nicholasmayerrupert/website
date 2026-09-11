@@ -431,7 +431,7 @@ void Renderer::buildRenderTables() {
 }
 
 // Evolving liquid currents use a non-repeating field; material boundaries place
-// the surface highlights and cooling banks. Liquid art supplies colors, not UVs.
+// the surface highlights and bank shading. Liquid art supplies colors, not UVs.
 uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t material, int frame) const {
   auto mix = [](uint32_t a, uint32_t b, int t) {
     uint32_t out = 0;
@@ -458,7 +458,7 @@ uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t materia
   int band = flow & ~15;
   uint32_t color;
   if (kind == RA_LAVA) {
-    // Hot currents occupy the melt; dark crust belongs to solid contact edges.
+    // Hot currents extend through the melt to its contact edges.
     color = mix(colors[1], colors[2], imin(224, band));
     if (flow > 174) color = mix(color, colors[3], imin(224, (flow - 174) * 3));
   } else if (kind == RA_OIL) {
@@ -479,7 +479,7 @@ uint32_t Renderer::fluidColor(const uint8_t* grid, int x, int y, uint8_t materia
   bool belowSurface = y > 1 && grid[k - E.cols] == material && air(k - 2 * E.cols);
   bool solidContact = (x > 0 && bank(k - 1)) || (x + 1 < E.cols && bank(k + 1))
     || (y + 1 < E.rows && bank(k + E.cols));
-  if (solidContact) color = mix(color, colors[0], kind == RA_LAVA ? 176 : 48);
+  if (solidContact && kind != RA_LAVA) color = mix(color, colors[0], 48);
   if (surface || belowSurface) {
     int crest = noise(wx * 2 - time * 2, wy + time / 3);
     int strength = surface ? 112 + (crest >> 1) : crest > 144 ? 80 : 0;

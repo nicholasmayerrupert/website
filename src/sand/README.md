@@ -933,6 +933,8 @@ beds. Beds are entity furniture, outside both material grids, replicated to the
 WebGL presenter and saved with the world. At night residents walk to their beds
 and rest under a blanket; daylight, nearby monsters, damage, fire, flooding, or
 lost support keep them awake. Existing saves acquire beds as residents load.
+Press `T` near a sleeping resident to wake them, then press `T` again to talk.
+The nearby prompt and its click action also switch from waking to talking.
 Players can click a nearby bed or press `E` to set their respawn point. At night
 an unoccupied, safe bed lets the player rest under its blanket and advance to
 morning after two seconds. Leave bed, `E`, `Escape`, movement, and danger interrupt

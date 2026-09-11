@@ -154,6 +154,11 @@ export function createTalkHud(root, game, onAction) {
   });
 
   const openDialogue = (actor) => {
+    if (game.getBeds?.().some(bed => bed.sleeper === actor.id)) {
+      game.wakeResident(actor.id);
+      root.querySelector('.sg-sim')?.focus({ preventScroll: true });
+      return;
+    }
     let policy = TALKABLES[actor.species];
     if (!policy) return;
     activeIntent = null;
@@ -276,8 +281,14 @@ export function createTalkHud(root, game, onAction) {
     }
     for (const [id, button] of buttons) {
       button.hidden = id !== nearestActor?.id;
-      const label = id === nearestActor?.id ? 'T · Talk' : 'Talk';
-      if (button.textContent !== label) button.textContent = label;
+      const sleeping = game.getBeds?.().some(bed => bed.sleeper === id);
+      const action = sleeping ? 'Wake up' : 'Talk';
+      const label = id === nearestActor?.id ? `T · ${action}` : action;
+      if (button.textContent !== label) {
+        button.textContent = label;
+        const actor = actors.find(actor => actor.id === id);
+        if (actor) button.setAttribute('aria-label', `${sleeping ? 'Wake up' : 'Talk to'} ${GAME_WORLD.residents.find(n => n.id === actor.npcId)?.dialogue.name || TALKABLES[actor.species]?.name || 'traveller'}`);
+      }
       if (activeIds.has(id)) continue;
       button.remove();
       buttons.delete(id);

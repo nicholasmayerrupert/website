@@ -169,6 +169,7 @@ export function initSandWasm() {
         dayHeld: c('engine_day_held', 'number', ['number']),
         setDayPhase: c('engine_set_day_phase', null, ['number', 'number', 'number']),
         useBed: c('engine_use_bed', 'number', ['number', 'number', 'number']),
+        wakeResident: c('engine_wake_resident', 'number', ['number', 'number', 'number']),
         bedSnapshot: c('engine_bed_snapshot', 'number', ['number']),
         bedSnapshotPtr: c('engine_bed_snapshot_ptr', 'number', ['number']),
         applyStatus: c('engine_apply_status', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -838,6 +839,7 @@ const renderStrides = Object.freeze({
     getDayClock() { return { phase: M.dayPhase(ptr), held: !!M.dayHeld(ptr) }; },
     setDayPhase(phase, held = true) { M.setDayPhase(ptr, phase, held ? 1 : 0); },
     useBed(id, bed) { return M.useBed(ptr, id | 0, bed | 0); },
+    wakeResident(id, resident) { return !!M.wakeResident(ptr, id | 0, resident | 0); },
     applyStatusEffect(kind, id, effect, ticks = 0, strength = 1, sourceKind = 0, sourceId = 0) {
       return M.applyStatus(ptr, kind, id, effect, ticks, strength, sourceKind, sourceId);
     },

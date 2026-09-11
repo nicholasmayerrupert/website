@@ -21,6 +21,7 @@ class BedSystem {
   int buildSnapshot();
   int use(int player, int bed);
   void wake(Player& player, int result = BR_AWAKE);
+  bool wakeResident(int player, int resident);
   const AdventureBed* find(int id) const;
   void respawnAnchor(Player& player, double* out);
   bool supported(const AdventureBed& bed) const;

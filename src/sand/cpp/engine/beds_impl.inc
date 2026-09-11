@@ -180,6 +180,20 @@ void BedSystem::wake(Player& p, int result) {
   p.vx = p.vy = 0; p.prevInput = p.input;
 }
 
+bool BedSystem::wakeResident(int player, int resident) {
+  const Player* p = E.psys.findPlayer(player);
+  if (!p || !p->active || !p->alive || p->sleepingBed || E.planetId != PL_FRONTIER) return false;
+  for (auto& bed : beds) if (bed.id && bed.resident == resident && bed.sleeper == resident) {
+    double x = p->px + E.fg.worldOffsetX + p->w * .5;
+    double y = p->py + E.fg.worldOffsetY + p->h * .5;
+    if (std::hypot(x - bed.wx, y - bed.wy) > 28) return false;
+    bed.sleeper = 0; bed.seeking = false;
+    bed.wakeUntil = E.actorTick + 600;
+    return true;
+  }
+  return false;
+}
+
 int BedSystem::use(int player, int id) {
   Player* p = E.psys.findPlayer(player);
   if (!p || !p->active || !p->alive || E.planetId != PL_FRONTIER) return BR_NONE;

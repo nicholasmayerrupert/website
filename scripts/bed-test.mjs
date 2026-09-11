@@ -29,6 +29,19 @@ try {
   console.log('ok: day spawn, persistent bed choice, occupied player bed, leave, sleep to dawn');
   e.setDayPhase(.9);ticks(1000);assert.ok(e.getBeds().find(b=>b.id===bed.id).sleeper>0);
   assert.equal(e.useBed(id,bed.id),BED_RESULT.OCCUPIED);
+  const resident=e.getBeds().find(b=>b.id===bed.id).sleeper;
+  e.setPlayerState(id,{...e.getPlayer(id),x:bed.worldX-80-ox,y:bed.worldY-4-oy,vx:0,vy:0});
+  assert.equal(e.wakeResident(id,resident),false,'a distant player cannot wake a resident');
+  move(); assert.ok(e.wakeResident(id,resident));
+  assert.equal(e.getBeds().find(b=>b.id===bed.id).sleeper,0,'waking clears the sleeping pose immediately');
+  ticks(120); assert.equal(e.getBeds().find(b=>b.id===bed.id).sleeper,0,'resident stays awake for a follow-up conversation');
+  assert.equal(e.wakeResident(id,resident),false,'an awake resident does not consume another wake action');
+  const awake=createEngineWasm(options);
+  try {
+    assert.ok(awake.readCheckpoint(e.writeCheckpoint()));awake.stepActors();
+    assert.equal(awake.getBeds().find(b=>b.id===bed.id).sleeper,0,'wake time persists through saving');
+  } finally {awake.destroy();}
+  console.log('ok: nearby residents wake immediately and remain awake to talk');
   e.setDayPhase(.3);ticks(1);move();e.setDayPhase(.9);
   assert.equal(e.useBed(id,bed.id),BED_RESULT.SLEEPING);
   const monster=e.spawnScriptedCreature(CREATURE.CRAWLER,bed.worldX+16,bed.worldY-4);assert.ok(monster);ticks(1);

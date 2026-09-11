@@ -101,6 +101,7 @@ const events = [
   { tick: 19, message: normalizeReplayMessage({ type: 'intent', intent: 'respawn' }) },
   { tick: 19, message: normalizeReplayMessage({ type: 'intent', intent: 'bed', bed: 42 }) },
   { tick: 19, message: normalizeReplayMessage({ type: 'intent', intent: 'bed', bed: 0 }) },
+  { tick: 19, message: normalizeReplayMessage({ type: 'intent', intent: 'wake-resident', resident: 42 }) },
   { tick: 20, message: normalizeReplayMessage({ type: 'intent', intent: 'add', material: 7, count: 25 }) },
   { tick: 20, message: normalizeReplayMessage({ type: 'intent', intent: 'move', from: 2, to: 5 }) },
   { tick: 21, message: normalizeReplayMessage({ type: 'intent', intent: 'pick', slot: 3, half: true }) },

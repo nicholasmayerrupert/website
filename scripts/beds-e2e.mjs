@@ -51,6 +51,25 @@ const bedCase=async({page,baseURL,check},touch)=>{
  await page.waitForFunction(id=>!document.querySelector('sand-game')._game.getBeds().some(b=>b.id===id),bed);
  check('clicking a bed with a pickaxe mines it instead of using it',true);
  check('mining clears the bed respawn point',await page.evaluate(()=>document.querySelector('sand-game')._game.getPlayer().respawnBed===0));
+ await page.evaluate(()=>document.querySelector('sand-game')._game.setDayPhase(.9));
+ await page.waitForFunction(()=>{
+  const g=document.querySelector('sand-game')._game,actors=g.getTalkableActors();
+  return g.getBeds().some(b=>b.sleeper>0&&actors.some(a=>a.id===b.sleeper));
+ },null,{timeout:30000});
+ const sleepingBed=await page.evaluate(()=>{
+  const g=document.querySelector('sand-game')._game,actors=g.getTalkableActors(),o=window.__sandTest.worldOffset();
+  const b=g.getBeds().find(b=>b.sleeper>0&&actors.some(a=>a.id===b.sleeper));
+  window.__sandTest.setPlayerState({x:b.worldX-2-o.x,y:b.worldY-4-o.y,vx:0,vy:0});return b.id;
+ });
+ await page.getByRole('button',{name:/^Wake up /}).waitFor({state:'visible'});
+ await page.locator('sand-game').evaluate(h=>h.shadowRoot.querySelector('.sg-sim').focus());
+ await page.keyboard.press('t');
+ await page.waitForFunction(id=>document.querySelector('sand-game')._game.getBeds().find(b=>b.id===id)?.sleeper===0,sleepingBed);
+ check('first T wakes the resident without opening dialogue',!await page.getByRole('dialog',{name:'Conversation',exact:true}).isVisible());
+ await page.getByText('T · Talk',{exact:true}).waitFor({state:'visible'});
+ await page.keyboard.press('t');
+ await page.getByRole('dialog',{name:'Conversation',exact:true}).waitFor({state:'visible'});
+ check('second T opens the awake resident conversation',true);
  check('no browser errors',errors.length===0,errors.join('; '));
 };
 process.exitCode=await runBrowserCases({desktop:args=>bedCase(args,false),mobile:args=>bedCase(args,true)},undefined,{mobile:{viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2}});

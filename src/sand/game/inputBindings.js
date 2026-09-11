@@ -12,9 +12,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
   // Button/key state is edge-owned: down latches, up/cancel/blur clears.
-  // Pointermove never infers a new press from `buttons`: browsers can send a
-  // held-looking move while a tab/window is being re-entered even though this
-  // page never received the matching down/up pair.
+  // Chorded mouse/pen button edges arrive as pointermove with button >= 0.
+  // Ordinary movement (button === -1) never infers a press from `buttons`:
+  // a re-entered tab/window can report held buttons without a matching down.
   // Release listeners use the capture phase so a HUD `stopPropagation()` cannot
   // hide the matching up (a paint/WASD gesture that ends over a menu).
 
@@ -69,6 +69,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   };
 
   const onPointerMove = (e) => {
+    const bit = BUTTON_BITS[e.button] || 0;
+    if (bit && (e.buttons & bit) && !(ctx.mouseButtons & bit)) onPointerDown(e);
     updatePointer(e.clientX, e.clientY);
     if (ctx.playMode) { if (ctx.engine) ctx.previewDirty = true; return; } // re-present so the aim cursor follows
     if (!ctx.drawModeOn || !ctx.engine) return;
@@ -94,8 +96,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     if (ctx.inside && ctx.engine.pointerDraftAtAim()) ctx.previewDirty = true;
   };
 
-  // LMB starts drafts / spawns the cube; RMB arms the momentary eraser. Paint
-  // and erase tools act continuously in the step loop (engine.applyLocalInput).
+  // LMB targets foreground; RMB targets background. Paint and erase tools act
+  // continuously in the step loop (engine.applyLocalInput).
   const onPointerDown = (e) => {
     if (!ctx.engine) return;
     // Survival aims/builds with the mouse regardless of the Draw toggle;
@@ -109,9 +111,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     // clicking a palette control no longer disables camera movement.
     ctx.container.focus({ preventScroll: true });
     const button = logicalButton(e);
-    // Authoritative press edge: latch only this event's button. Any simultaneous
-    // button gets its own pointerdown; trusting the aggregate `buttons` field can
-    // resurrect a stale press from before this page regained focus.
+    // Latch only the changed button, including explicit chorded pointermove
+    // edges. The aggregate `buttons` field can contain presses from outside
+    // this surface or before the page regained focus.
     ctx.mouseButtons |= BUTTON_BITS[button] || 0;
     updatePointer(e.clientX, e.clientY);
     if (!ctx.inside) return;
@@ -127,7 +129,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   const onPointerUp = (e) => {
     if (!ctx.engine) return;
     // Authoritative release edge: drop only the released button's bit. Other
-    // buttons stay latched until their own pointerup (or blur/cancel). Capture
+    // buttons stay latched until their own release edge (or blur/cancel). Capture
     // phase still delivers this when the up lands on a widget that swallows
     // bubble-phase pointerup; skip the engine release if this page never saw
     // the matching down (a click that started on the HUD).
@@ -149,6 +151,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
     // (preventDefault on pointerdown, or a widget that swallows keyup). Drop
     // held keys; a still-physically-held key re-latches on the next keydown.
     if (!isSurfaceEvent(e)) ctx.engine?.inputClearKeys();
+  };
+
+  const onPointerMoveRelease = (e) => {
+    const bit = BUTTON_BITS[e.button] || 0;
+    if (bit && !(e.buttons & bit) && (ctx.mouseButtons & bit)) onPointerUp(e);
   };
 
   const onContextMenu = (e) => {
@@ -292,7 +299,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
 
   const attach = () => {
     if (!hadTabIndex) ctx.container.tabIndex = 0;
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointermove', onPointerMoveRelease, true);
     window.addEventListener('touchmove', onTouchMove, { passive: false });
     if (ctx.survival) window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('pointerdown', onPointerDown);
@@ -308,6 +316,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onI
   };
   const detach = () => {
     window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointermove', onPointerMoveRelease, true);
     window.removeEventListener('touchmove', onTouchMove);
     window.removeEventListener('wheel', onWheel);
     window.removeEventListener('pointerdown', onPointerDown);

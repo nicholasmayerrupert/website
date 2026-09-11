@@ -137,14 +137,14 @@ export default {
     ]
   },
   "OIL": {
-    "note": "Deep violet oil with bright turquoise and magenta interference colors.",
+    "note": "Dark brown oil with warm amber currents and restrained golden highlights.",
     "palette": [
-      "#171329",
-      "#2b2050",
-      "#433263",
-      "#7b50ac",
-      "#e58bcf",
-      "#5ddccf"
+      "#23180e",
+      "#463019",
+      "#69481c",
+      "#886132",
+      "#b58b4c",
+      "#9b733b"
     ],
     "rows": [
       "22222222222222222222222222222222",

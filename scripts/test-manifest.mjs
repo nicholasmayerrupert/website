@@ -159,6 +159,7 @@ export const UNIT_SUITES = [
 ];
 
 export const BROWSER_SUITES = [
+  ['pointer-buttons-e2e', 'pointer-buttons-e2e.mjs', exclusive(120_000)],
   ['hud-stability-e2e', 'hud-stability-e2e.mjs', exclusive(120_000)],
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],
   ['adventure-tools-e2e', 'adventure-tools-e2e.mjs', exclusive(120_000)],

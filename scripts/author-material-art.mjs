@@ -157,10 +157,10 @@ tile('SAND', '9d784a b39360 c8ad76 d6bf89 e5d3a3 b9a06c', () => {
 }, 'Wind-combed ochre dunes; broad quiet ground with sparse paired grains.');
 tile('WATER', '084b9c 086cd4 168fee 39cfff b3f5ff 126fca', ripples, 'Long broken blue ripples, with shadow only beneath each crest.');
 tile('STONE', '354059 505f77 7b899a 9aa8b6 bdcbce 68788f', rock, 'Blue-gray stone with broad chipped facets, warm pale shoulders and deep cool seams.');
-tile('OIL', '171329 2b2050 433263 7b50ac e58bcf 5ddccf', () => {
+tile('OIL', '23180e 463019 69481c 886132 b58b4c 9b733b', () => {
   ripples(); line([[4, 14], [7, 12], [12, 12], [15, 14], [12, 16], [7, 16]], 5);
   line([[7, 13], [11, 13], [13, 14]], 4);
-}, 'Deep violet oil with bright turquoise and magenta interference colors.');
+}, 'Dark brown oil with warm amber currents and restrained golden highlights.');
 tile('FIRE', 'b91d00 ed3500 ff5900 ff8300 ffe51c ffb300', () => {
   foliage(['...3...', '...43..', '..345..', '..3453.', '.334531', '3335531', '3355431', '2333321'], [[1, 1], [13, 18], [24, 7], [4, 25]]);
 }, 'Saturated orange tongues with yellow-hot cores and red ember ground.');

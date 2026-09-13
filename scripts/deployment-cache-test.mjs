@@ -23,6 +23,9 @@ const env = {
       if (path === '/game/') {
         return new Response(gameHtml, { headers: { 'content-type': 'text/html' } });
       }
+      if (path === '/3d/') {
+        return new Response('<title>The Quarry</title>', { headers: { 'content-type': 'text/html' } });
+      }
       if (path === '/work/falling-sand/') {
         return new Response(caseStudyHtml, { headers: { 'content-type': 'text/html' } });
       }
@@ -75,6 +78,10 @@ check('/game resolves its dedicated HTML entry without a redirect', game.status 
 check('/game is internally resolved as /game/', lastAssetPath === '/game/', lastAssetPath);
 check('/game HTML is revalidated but remains eligible for history restoration',
   game.headers.get('cache-control') === 'no-cache', game.headers.get('cache-control'));
+
+const demo = await get('/3d');
+check('/3d resolves its dedicated HTML entry without a redirect', demo.status === 200 && (await demo.text()).includes('The Quarry'));
+check('/3d internally resolves as /3d/ with revalidated HTML', lastAssetPath === '/3d/' && demo.headers.get('cache-control') === 'no-cache');
 
 const caseStudy = await get('/work/falling-sand');
 check('/work/falling-sand resolves its dedicated HTML entry without a redirect',

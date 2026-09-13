@@ -6,6 +6,7 @@
 const exclusive = (timeoutMs) => ({ timeoutMs, concurrency: 'exclusive' });
 
 export const UNIT_SUITES = [
+  ['3d-engine', '3d-engine-test.mjs', exclusive(120_000)],
   ['test-runner', 'run-tests-test.mjs'],
   ['scenario-runner', 'scenario-runner-test.mjs'],
   ['campaign', 'campaign-test.mjs'],
@@ -160,6 +161,7 @@ export const UNIT_SUITES = [
 ];
 
 export const BROWSER_SUITES = [
+  ['3d-browser', '3d-browser-e2e.mjs', exclusive(180_000)],
   ['pointer-buttons-e2e', 'pointer-buttons-e2e.mjs', exclusive(120_000)],
   ['hud-stability-e2e', 'hud-stability-e2e.mjs', exclusive(120_000)],
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],

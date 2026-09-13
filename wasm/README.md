@@ -97,6 +97,13 @@ npm run generate
 npm run build:sand
 ```
 
+## 3D quarry demo
+
+`npm run build:3d` compiles the separately loaded `/3d` demo and its pinned
+vendored Box3D library. Outputs are `src/sand3d/wasm/voxelDemo.{js,wasm}` and
+`build-info.json`. `npm run check:3d-wasm` verifies their source provenance.
+See [`src/sand3d/README.md`](../src/sand3d/README.md) for architecture and tests.
+
 ## Game of Life engine
 
 From the repository root:

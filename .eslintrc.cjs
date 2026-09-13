@@ -12,6 +12,7 @@ module.exports = {
     '.eslintrc.cjs',
     'src/life/wasm/lifeSearch.js',
     'src/sand/wasm/sandEngine.js',
+    'src/sand3d/wasm/voxelDemo.js',
   ],
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   settings: { react: { version: '18.2' } },

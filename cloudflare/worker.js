@@ -12,6 +12,7 @@ export default {
     // extensionless URLs without paying for redirect round trips.
     let assetRequest = request;
     const entryPath = url.pathname === '/game' ? '/game/'
+      : url.pathname === '/3d' ? '/3d/'
       : url.pathname === '/work/falling-sand' ? '/work/falling-sand/'
       : null;
     if (entryPath) {

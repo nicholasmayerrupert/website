@@ -5,6 +5,7 @@ import { gameContentPlugin } from './scripts/game-content-vite.mjs'
 import { fileURLToPath } from 'node:url'
 
 const entryRoutes = new Map([
+  ['/3d', '/3d/'],
   ['/game', '/game/'],
   ['/work/falling-sand', '/work/falling-sand/'],
 ])

@@ -4,17 +4,20 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { startTestServer } from './browser-harness.mjs';
 
-const server = await startTestServer({ production: true });
+const server = await startTestServer({ production: !process.argv.includes('--dev') });
 const artifacts = resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts/3d-browser');
 mkdirSync(artifacts, { recursive: true });
 let browser;
+const hardware = process.argv.includes('--hardware') || (process.platform === 'win32' && !process.argv.includes('--software'));
 try {
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, args: hardware ? ['--use-angle=d3d11'] : ['--use-angle=swiftshader'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   const errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('console', message => {
+    if (message.type() === 'error' || /GL_INVALID|Error compiling.*executable/.test(message.text())) errors.push(message.text());
+  });
   page.on('request', request => requests.push(request.url()));
   await page.goto(`${server.baseURL}/`, { waitUntil: 'networkidle' });
   assert.ok(!requests.some(url => /voxelDemo|sand3d/.test(url)), 'home does not request any 3D code or WASM');
@@ -23,6 +26,12 @@ try {
   requests.length = 0; errors.length = 0;
   await page.goto(`${server.baseURL}/3d?test`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#voxel-canvas[data-ready="true"]', { timeout: 60000 });
+  const renderer = await page.evaluate(() => {
+    const gl = document.getElementById('voxel-canvas').getContext('webgl2');
+    return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL);
+  });
+  if (hardware) assert.match(renderer, /Direct3D11/, 'hardware regression runs on the D3D11 backend');
+  console.log(`Renderer: ${renderer}`);
   assert.ok(requests.some(url => /voxelDemo.*\.wasm/.test(url)), '3D navigation loads its WASM');
   assert.ok(!requests.some(url => /sandEngine.*\.wasm|worldWorker/.test(url)), '3D does not start the 2D engine');
   await page.screenshot({ path: resolve(artifacts, 'desktop-intro.png') });
@@ -39,9 +48,10 @@ try {
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     const distinct = new Set();
     for (let i = 0; i < pixels.length; i += 128) distinct.add(`${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`);
-    return distinct.size;
+    return { count: distinct.size, error: gl.getError() };
   });
-  assert.ok(colors > 50, 'raycaster renders a non-uniform material scene');
+  assert.equal(colors.error, 0, 'drawing and readback succeed on the selected graphics backend');
+  assert.ok(colors.count > 50, 'raycaster renders a non-uniform material scene');
   await page.screenshot({ path: resolve(artifacts, 'desktop-quarry.png') });
   await page.keyboard.press('Digit5');
   await page.mouse.down(); await page.waitForTimeout(200); await page.mouse.up();

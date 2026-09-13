@@ -79,5 +79,7 @@ Bodies falling beyond the site's bounds are retired. Reset restores the scene.
 them. The headless test covers movement, support removal, falling/ground contact,
 body mining, sand conservation, attached placement, pause, and reset, and reports
 step timings. Browser tests cover production loading boundaries, desktop input,
-touch cancellation, layout, pause, and screenshots. Touch emulation is not a
+touch cancellation, layout, pause, and screenshots. On Windows they use Direct3D11
+to exercise native shader compilation; `node scripts/3d-browser-e2e.mjs --software`
+checks SwiftShader, and `--dev` selects the development server. Touch emulation is not a
 physical iPhone performance measurement.

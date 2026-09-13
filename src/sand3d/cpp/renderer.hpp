@@ -68,8 +68,8 @@ bool traceGrid(vec3 o, vec3 direction, vec3 size, int slot, float limit,
     vec3 boundary = lo + step(vec3(0), d) * stride;
     vec3 next = (boundary-o)/d;
     float nt = min(min(next.x,next.y),next.z);
-    normal = next.x <= next.y && next.x <= next.z ? vec3(-sign(d.x),0,0)
-           : next.y <= next.z ? vec3(0,-sign(d.y),0) : vec3(0,0,-sign(d.z));
+    normal = next.x <= next.y && next.x <= next.z ? vec3(-sign(d.x),0.0,0.0)
+           : next.y <= next.z ? vec3(0.0,-sign(d.y),0.0) : vec3(0.0,0.0,-sign(d.z));
     t = max(nt + 0.0002,t + 0.0002);
   }
   return false;

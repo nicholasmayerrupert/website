@@ -185,6 +185,8 @@ async function initialize() {
     if (disposed) return;
     if (!engine._demo_create(1)) throw new Error('WebGL2 could not start on this browser.');
     ready = true; engine._demo_pause(1); resize();
+    // Some graphics backends compile the native shader on its first draw.
+    if (canvas.getContext('webgl2').getError() !== 0) throw new Error('The 3D renderer could not draw on this graphics device.');
     $('enter').disabled = false; $('enter').textContent = 'Enter the quarry →';
     $('load-status').textContent = coarse ? 'Touch controls ready' : 'Mouse + keyboard · Free-flight camera';
     canvas.dataset.ready = 'true';
@@ -201,6 +203,7 @@ async function initialize() {
     }
   } catch (error) {
     if (disposed) return;
+    ready = false;
     console.error(error); $('enter').textContent = 'Unable to open the quarry';
     $('load-status').textContent = `${error.message || 'The 3D engine could not load.'} Try reloading or use a browser with WebGL2.`;
     $('retry').hidden = false;

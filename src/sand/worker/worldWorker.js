@@ -1028,8 +1028,8 @@ function executeTurn(
   setLivenessStage(WORKER_LIVENESS_STAGE.APPLY_TOOLS, publishBreadcrumbs);
   if (!survival) {
     applyEdges();
-    // Held-tool cadence belongs to authority turn time, independent of worker scheduling jitter.
-    applyContinuous(engine.getTick() * SIM_STEP_MS);
+    // Actor time advances every authority turn, including when terrain sleeps.
+    applyContinuous(engine.getActorTick() * SIM_STEP_MS);
   }
   const stepStart = performance.now();
   if (survival && latestInput && localPlayerId) {

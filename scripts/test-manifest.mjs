@@ -8,6 +8,7 @@ const exclusive = (timeoutMs) => ({ timeoutMs, concurrency: 'exclusive' });
 export const UNIT_SUITES = [
   ['3d-engine', '3d-engine-test.mjs', exclusive(120_000)],
   ['3d-materials', '3d-materials-test.mjs', exclusive(120_000)],
+  ['3d-detachment', '3d-detachment-test.mjs', exclusive(120_000)],
   ['test-runner', 'run-tests-test.mjs'],
   ['scenario-runner', 'scenario-runner-test.mjs'],
   ['campaign', 'campaign-test.mjs'],

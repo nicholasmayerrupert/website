@@ -3,6 +3,7 @@
 #include <emscripten/html5.h>
 #include <cstdio>
 #include "voxel_clipmap.hpp"
+#include "emissive_lights.hpp"
 
 static const char* vertexSource = R"GLSL(#version 300 es
 void main() {
@@ -126,6 +127,9 @@ vec3 palette(uint m) {
   if(m==14u) return vec3(0.52,0.59,0.28);
   return vec3(0.12,0.16,0.19);
 }
+)GLSL"
+#include "material_surface.glsl.inc"
+R"GLSL(
 bool traceScene(vec3 rayOrigin,vec3 rayDirection,float limit,bool transmit,
                 out float best,out vec3 bestN,out ivec3 bestCell,out uint mat,out int hitSlot,out vec3 localP) {
   float t;vec3 n;ivec3 cell;uint m;
@@ -145,6 +149,9 @@ bool traceScene(vec3 rayOrigin,vec3 rayDirection,float limit,bool transmit,
   }
   return mat!=0u;
 }
+)GLSL"
+#include "lighting_shader.inc"
+R"GLSL(
 void main() {
   vec2 uv = (gl_FragCoord.xy*2.0-resolution)/resolution.y;
   vec3 d = normalize(forward + 0.62*(uv.x*rightward + uv.y*upward));
@@ -154,22 +161,17 @@ void main() {
   traceScene(eye,d,1792.0,false,best,bestN,bestCell,mat,hitSlot,localP);
   if(mat==0u) { color=vec4(sky,1.0); return; }
   vec3 p=eye+d*best;
-  float grain=fract(sin(dot(vec3(bestCell)+worldPhase,vec3(12.9898,78.233,37.719)))*43758.5453);
-  vec3 base=palette(mat)*(0.90+grain*0.19);
   vec3 textureP=localP+(hitSlot<0?worldPhase:vec3(0.0));
-  if(mat==4u) base*=0.87+0.13*sin(textureP.y*4.0+textureP.z*0.7);
-  float diffuse=max(dot(bestN,sun),0.0);
-  float shade=1.0;
-  if(diffuse>0.01) {
-    if(traceWorld(p+bestN*0.015,sun,400.0,true,t,n,cell,m)) shade=0.22;
-    if(shade>0.5) for(int i=0;i<32;++i) {
-      if(i>=bodyCount) break;
-      vec4 q=bodyRotation[i];
-      vec3 o=rotateQ(vec4(-q.xyz,q.w),p+bestN*0.015-bodyPosition[i].xyz);
-      if(traceGrid(o,rotateQ(vec4(-q.xyz,q.w),sun),bodySize[i].xyz,int(bodyPosition[i].w),0,400.0,true,t,n,cell,m)) { shade=0.22; break; }
+  vec3 textureN=bestN;
+  if(hitSlot>=0)for(int i=0;i<32;++i) {
+    if(i>=bodyCount)break;
+    if(int(bodyPosition[i].w)==hitSlot) {
+      vec4 q=bodyRotation[i];textureN=rotateQ(vec4(-q.xyz,q.w),bestN);break;
     }
   }
-  vec3 lighting=vec3(0.43,0.53,0.60)*(0.70+0.30*max(bestN.y,0.0)) + vec3(1.0,0.87,0.66)*diffuse*shade;
+  float footprint=best*1.24/resolution.y/max(.12,abs(dot(bestN,d)));
+  vec3 base=materialAlbedo(mat,textureP,textureN,footprint);
+  vec3 lighting=sceneIllumination(p,bestN,hitSlot,localP,textureN);
   vec3 result=base*lighting;
   if(mat==8u||mat==9u||mat==11u||mat==12u||mat==14u) {
     float depth;vec3 behindN,behindP;ivec3 behindCell;uint behindM;int behindSlot;
@@ -211,12 +213,14 @@ struct Renderer {
   EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = 0;
   GLuint program=0,vao=0,textures[9]{};
   std::array<std::array<std::vector<uint8_t>,4>,4> occupancyData;
+  EmissiveLights lights;
   VoxelClipmap mid{2,512,256,512},far{4,512,256,512},horizon{8,512,512,512};
   VoxelClipmap& clipmap(int level){return level==1?mid:level==2?far:horizon;}
   Cell dimensions(int level){if(!level)return {W,H,D};auto& map=clipmap(level);return {map.wide,map.high,map.deep};}
   int uploaded=0;
   void invalidateLod(){mid.invalidate();far.invalidate();horizon.invalidate();}
   template<class Chunk> void uploadChunk(const Chunk& c,int slot,int level) {
+    lights.update(c,slot,level);
     auto size=dimensions(level);int wide=size.x,high=size.y,deep=size.z;
     int cw=wide/C,ch=high/C,cx=slot%cw,cy=(slot/cw)%ch,cz=slot/(cw*ch);
     int unit=level==0?0:level*2+1;
@@ -243,7 +247,7 @@ struct Renderer {
     }
     ++uploaded;
   }
-  void uploadWorld(VoxelWorld& world) {
+  template<class Camera> void uploadWorld(VoxelWorld& world,const Camera& camera) {
     uploaded=0;
     for(int level=1;level<4;++level)clipmap(level).update(world,1.25);world.renderChanges.clear();
     for(int i=0;i<CN;++i){auto& c=world.chunks[i];if(c.upload){uploadChunk(c,i,0);c.upload=false;}}
@@ -262,6 +266,12 @@ struct Renderer {
     glUniform4fv(uniform("gridOrigin[0]"),4,origins);glUniform3iv(uniform("gridOffset[0]"),4,offsets);
     glUniform3iv(uniform("gridSize[0]"),4,sizes);
     glUniform3f(uniform("worldPhase"),float(world.origin.x%4096),float(world.origin.y%4096),float(world.origin.z%4096));
+    lights.select(world.origin,camera.x,camera.y,camera.z,[&](int level,double x,double y,double z){
+      auto o=level==0?world.origin:clipmap(level).origin;auto size=dimensions(level);int scale=1<<level;
+      return x>=o.x&&y>=o.y&&z>=o.z&&x<o.x+size.x*scale&&y<o.y+size.y*scale&&z<o.z+size.z*scale;
+    });
+    glUniform1i(uniform("lightCount"),lights.count);
+    if(lights.count){glUniform4fv(uniform("lightPosition[0]"),lights.count,lights.positions.data());glUniform4fv(uniform("lightColor[0]"),lights.count,lights.colors.data());}
   }
   bool init() {
     EmscriptenWebGLContextAttributes a;

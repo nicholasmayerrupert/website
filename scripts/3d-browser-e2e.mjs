@@ -171,6 +171,43 @@ try {
   });
   assert.deepEqual(fluidLevels.near,[8,9,10,11,12,13,14]);
   assert.deepEqual(fluidLevels.levels,Array.from({length:3},()=>[8,9,10,11,12,13,14]),'every fluid and reaction product survives every distant detail level');
+  const clipmapParity=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.reset();d.pause(true);d.render();
+    const points=[];
+    for(let z=3;z<=5;z+=.5)for(let x=-6;x<=6;x+=.5)points.push([x+.03125,1.03125,z+.03125]);
+    points.forEach((p,i)=>d.edit(...p,1+i%14));d.render();
+    points.forEach((p,i)=>{if(i%3===0)d.edit(...p,0);else if(i%3===1)d.edit(...p,8+i%7);});d.render();
+    const sample=()=>[1,2,3].map(level=>points.map(p=>d.renderCell(...p,level)));
+    const incremental=sample();
+    d.camera(200,20,200,0,0);d.render();d.camera(0,4,8,0,-.18);d.render();
+    return {incremental,regenerated:sample()};
+  });
+  assert.deepEqual(clipmapParity.incremental,clipmapParity.regenerated,'incremental clipmap edits, replacements, and deletions exactly match a full rebuild');
+  const illumination=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.reset();d.pause(true);d.camera(4.5,2,-3.6,0,-.65);d.render();
+    const canvas=document.getElementById('voxel-canvas'),gl=canvas.getContext('webgl2');
+    const program=gl.getParameter(gl.CURRENT_PROGRAM),location=gl.getUniformLocation(program,'lightCount');
+    const count=gl.getUniform(program,location),lit=new Uint8Array(canvas.width*canvas.height*4);
+    gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,lit);
+    gl.uniform1i(location,0);gl.drawArrays(gl.TRIANGLES,0,3);
+    const dark=new Uint8Array(lit.length);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,dark);
+    // A source inside the resistant tray floor must not illuminate through it.
+    const eye=gl.getUniform(program,gl.getUniformLocation(program,'eye')),stats=d.stats();
+    gl.uniform1i(location,1);
+    gl.uniform4f(gl.getUniformLocation(program,'lightPosition[0]'),eye[0]+(4.5-stats[5])*16,eye[1]+(-1.125-stats[6])*16,eye[2]+(-6-stats[7])*16,128);
+    gl.uniform4f(gl.getUniformLocation(program,'lightColor[0]'),1,.3,.025,4);
+    gl.drawArrays(gl.TRIANGLES,0,3);const buried=new Uint8Array(lit.length);
+    gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,buried);
+    let warmed=0,maxRed=0,blockedDelta=0;
+    for(let i=0;i<lit.length;i+=4){const red=lit[i]-dark[i];if(red>5)warmed++;maxRed=Math.max(maxRed,red);}
+    for(let i=0;i<lit.length;++i)blockedDelta=Math.max(blockedDelta,Math.abs(buried[i]-dark[i]));
+    d.render();return {count,warmed,maxRed,blockedDelta,error:gl.getError()};
+  });
+  assert.ok(illumination.count>0&&illumination.count<=24,'lava creates a bounded set of clustered sources');
+  assert.ok(illumination.warmed>100&&illumination.maxRed>20,'lava casts warm light onto nearby surfaces');
+  assert.equal(illumination.blockedDelta,0,'solid terrain blocks emissive light');
+  assert.equal(illumination.error,0,'clustered lighting uniforms and draws succeed');
+  console.log('Lighting: clustered lava illuminates nearby material and solid terrain blocks light.');
   const fluidColors=await page.evaluate(()=>{
     const d=window.__voxelDemo;d.reset();d.pause(true);
     const canvas=document.getElementById('voxel-canvas'),gl=canvas.getContext('webgl2');

@@ -100,6 +100,7 @@ struct VoxelWorld {
   std::array<int,MATERIAL_COUNT> materialCounts{};
   PackedCells<N,1> sandQueued{};
   std::vector<Cell> edits;
+  std::unordered_map<int,uint8_t> editOriginals;
   bool generating=false;
   std::unordered_map<ChunkKey,TerrainChunk,KeyHash> prepared;
   std::vector<ChunkKey> pending;
@@ -127,7 +128,7 @@ struct VoxelWorld {
     renderChanges.insert(c.key);
     int ds=int(powder(m))-int(powder(v));sandCount+=ds;c.sand+=ds;c.solids+=int(solid(m))-int(solid(v));
     --materialCounts[v];++materialCounts[m];--c.counts[v];++c.counts[m];
-    if(solid(v)||solid(m)){c.collision=true;if(!generating)edits.push_back({x,y,z});}
+    if(solid(v)||solid(m)){c.collision=true;if(!generating){edits.push_back({x,y,z});editOriginals.try_emplace(i,v);}}
     v=m;c.upload=true;c.modified=true;if(powder(m))queueSand(i);if(flowing(m))queueFluid(i);
     if(fluidCount())for(auto n:std::array<Cell,6>{{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}}) {
       int a=x+n.x,b=y+n.y,d=z+n.z;if(inside(a,b,d)&&flowing(get(a,b,d)))queueFluid(address(a,b,d));
@@ -213,6 +214,10 @@ struct VoxelWorld {
       for(size_t j=0;j<data.size();j+=3){int count=data[j]+256*data[j+1];std::fill_n(c.cells.begin()+at,count,data[j+2]);at+=count;}
       c.modified=true;
     } else generateSamples(c.cells,key,1);
+    // Count materials while preparing the chunk, inside the streaming budget.
+    // Publishing a terrain-only chunk then needs no full voxel scan.
+    for(auto m:c.cells)++c.counts[m];
+    for(int m=0;m<MATERIAL_COUNT;++m){if(solid(m))c.solids+=c.counts[m];if(powder(m))c.sand+=c.counts[m];}
   }
   bool prepareWindow(ChunkKey next,double budget) {
     if(!preparing) {
@@ -240,7 +245,9 @@ struct VoxelWorld {
     if(ready!=prepared.end()){c=std::move(ready->second);prepared.erase(ready);}
     else {generate(c,key);}
     if(saved.contains(key))++restored;else ++generated;
-    for(int i=0;i<CELLS;++i){auto m=c.cells[i];++c.counts[m];if(m==AIR)continue;c.solids+=solid(m);c.sand+=powder(m);if(powder(m))queueSand(s*CELLS+i);if(flowing(m))queueFluid(s*CELLS+i);}
+    bool active=c.sand>0;
+    for(int m=WATER;m<MATERIAL_COUNT;++m)if(flowing(m)&&c.counts[m])active=true;
+    if(active)for(int i=0;i<CELLS;++i){auto m=c.cells[i];if(powder(m))queueSand(s*CELLS+i);if(flowing(m))queueFluid(s*CELLS+i);}
     for(int m=0;m<MATERIAL_COUNT;++m)materialCounts[m]+=c.counts[m];
     sandCount+=c.sand;
   }
@@ -250,7 +257,7 @@ struct VoxelWorld {
   }
   void resetVoxels() {
     saved.clear();prepared.clear();pending.clear();preparing=false;for(auto& c:chunks)c=TerrainChunk{};
-    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.clear();materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();renderChanges.clear();
+    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.clear();materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();editOriginals.clear();renderChanges.clear();
     origin={-W/2,-H/2+int(4/VOXEL),-D/2+int(8/VOXEL)};fillWindow();
   }
 };

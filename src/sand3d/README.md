@@ -13,7 +13,7 @@ independent of the 2D game.
 - `npm run build` builds both the main site and the separate 3D entry and
   compresses their WASM. Ordinary site builds do not need Emscripten.
 - After a production build, run
-  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-browser,deployment`.
+  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-detachment,3d-browser,deployment`.
 
 ## Loading boundary
 
@@ -51,7 +51,7 @@ physics coordinates keep Box3D near the origin as the world streams. Terrain is
 seeded by absolute coordinates, with hills, underground caverns, copper seams,
 trees, and the starter quarry at the origin.
 
-Entering chunks are prepared with a 4 ms budget per simulation tick. A window
+Entering chunks and their material counts are prepared with a 4 ms budget per simulation tick. A window
 shift reuses retained chunks in place and replaces only the entering slabs; it
 does not copy the entire volume. Modified departing chunks are run-length encoded
 in an in-memory cache. Unchanged terrain is regenerated, so flying through new
@@ -85,6 +85,8 @@ its uppermost occupied material, and the most frequent of those materials wins.
 This retains thin surface layers and isolated placed voxels. Every edit dirties
 all clipmaps, including deletion to air. Distant geometry has fewer cells, so
 small shapes are approximated consistently across materials.
+Edits reduce only the coarse cells covered by the changed fine chunk. An
+unchanged reduction skips its GPU upload; it matches a full clipmap rebuild.
 
 Clipmaps reuse retained chunks and prepare entering chunks with a 1.25 ms budget
 per level per rendered frame. A complete band is published together. Initial
@@ -98,15 +100,30 @@ These choices follow the relevant techniques in Burkelbear Games’
 empty-space skipping (3:00–3:41), distant terrain detail rings (4:11–4:32), and
 reduced rendering resolution (7:59–8:08). This demo uses a WebGL2 fragment shader;
 it does not require compute shaders, WebGPU, or hardware ray-tracing extensions.
-Temporal antialiasing, emissive-light clustering, and procedural grass blades
-from that video are not implemented.
+Temporal antialiasing and protruding procedural grass geometry are not implemented.
+The material shader adds world-anchored stone strata, sand ripples, bark grain,
+copper patina, foliage variation, and animated tapered grass surface detail.
+Moving bodies use local texture coordinates. Pixel-footprint filtering fades
+fine patterns before they become subpixel. Grass detail belongs to actual grass
+voxels, so mining and combustion remove it along with the material.
+
+`emissive_lights.hpp` caches exposed lava/fire faces in 16-cell clusters when a
+render chunk changes. Sources use absolute coordinates across all detail levels;
+finer coverage suppresses duplicate coarse sources. Up to 24 sources are selected,
+and each pixel shades its strongest two contributions with terrain/body shadow
+rays. `lighting_shader.inc` also provides local voxel ambient occlusion and
+overhead sky occlusion. This is direct illumination, without bounce lighting,
+full global illumination, bloom, or temporal accumulation.
 
 Box3D advances at 60 Hz with four substeps, with its length scale set to sixteen
 voxels per metre. Static collision hulls are generated only near dynamic bodies,
 using greedily merged solid boxes. Changed hulls rebuild before the next physics
-step. Mining checks connectivity from the edited cells; it does not scan the
-entire world after each cut. Connected material touching the loaded boundary
-remains anchored. Disconnected material becomes moving voxel bodies. Sand runs
+step. `structural_support.inc` checks connectivity from edited cells, continuing
+through saved or procedural geometry outside the loaded window. Support is
+proven by a continuous deep-rock column below both the caves and all known edits
+in that column; a streaming boundary does not anchor an island. Disconnected
+material transfers to moving voxel bodies, including its unloaded portions,
+and saved terrain is cleared so it cannot reappear on a later visit. Sand runs
 at 30 Hz over a list of grains, rather than scanning the entire terrain volume.
 
 ## Materials and interactions
@@ -143,7 +160,7 @@ All material cells share chunk persistence and every distant voxel detail level.
 The renderer traces through water, acid, and vapor to show the material behind
 them, with depth tinting, surface highlights, animated ripples, and emissive lava
 and flames. This is a single transmission layer; it does not simulate full
-refraction, volumetric light scattering, or illumination cast by hot materials.
+refraction or volumetric light scattering.
 Three resistant trays at the spawn hold water, acid, and lava. `L` or the Lab
 button positions the camera above them for experiments.
 
@@ -160,8 +177,10 @@ This is a creative terrain demo, not the 2D game's survival/content port. There
 is no inventory or player collision. Fluids and sand use body occupancy for
 collision; buoyancy and two-way fluid forces on Box3D are not implemented. Dynamic volumes
 are at most 64³ cells (4 m per side); larger disconnected regions are partitioned.
-The 32-active-body budget preserves excess disconnected terrain and reports the
-limit; an over-budget fracture remains one multi-shape body. Distant simulation
+The 32-active-body budget reports its limit. Structural edits are planned before
+detachment; a cut requiring more bodies than available restores its structural
+edits instead of leaving disconnected static material. An over-budget fracture
+of an existing body remains one multi-shape body. Distant simulation
 is suspended, not continuously computed.
 
 `?test` exposes `window.__voxelDemo` scenario hooks. Normal visits do not expose
@@ -178,7 +197,12 @@ and visible material more than 80 metres away.
 The material suite checks volume conservation, lateral flow, acid consumption,
 quenching by water and acid, ignition and extinguishing, rigid-body erosion, and
 fluid restoration after eviction. Browser checks exercise the new palette,
-fluid shading, pouring onto lava, the lab shortcut, and touch pouring.
+fluid shading, pouring onto lava, the lab shortcut, touch pouring, incremental
+clipmap parity, emissive illumination, and solid occluders. Detachment regressions
+cover fresh-world islands crossing both vertical window edges, physical falling,
+preservation of unloaded geometry, and atomic support edits at the body limit.
+`node scripts/bench-3d.mjs --json FILE` measures engine/render submission and
+normal RAF flight on the native GPU; add `--production` for built assets.
 On Windows they use Direct3D11
 to exercise native shader compilation; `node scripts/3d-browser-e2e.mjs --software`
 checks SwiftShader, and `--dev` selects the development server. Touch emulation is not a

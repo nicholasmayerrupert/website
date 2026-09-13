@@ -83,6 +83,17 @@ deliberately stale HTML and missing deployment assets.
 
 ## Stress and profiling
 
+### 3D demo
+
+`node scripts/bench-3d.mjs --json .sand-artifacts/3d-performance.json` measures
+the isolated `/3d` demo at a fixed 1280 × 800 viewport and its default render
+resolution. Use `--production` after a production build. It records the graphics
+renderer and actual render dimensions, stationary engine/draw timings, and frame
+gaps during normal RAF-driven flight. Stationary samples finish GL work before
+the next sample; flight samples include browser scheduling and streaming stalls.
+Compare only matching hardware, browser, viewport, and detail settings. Engine
+streaming-step timings are also reported by the `3d-engine` suite.
+
 ### Cold startup
 
 Build with `npm run build`, then run:

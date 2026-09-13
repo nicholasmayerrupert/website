@@ -105,7 +105,7 @@ struct Demo : VoxelWorld {
         savedBodies.erase(savedBodies.begin()+i);
       }else ++i;
     }
-    edits.clear();updateOccupied();rebuildTerrain();streamMs=emscripten_get_now()-begin;
+    edits.clear();editOriginals.clear();updateOccupied();rebuildTerrain();streamMs=emscripten_get_now()-begin;
   }
   void moveCamera(double x,double y,double z,float a,float p) {
     camera={float(x/VOXEL-origin.x),float(y/VOXEL-origin.y),float(z/VOXEL-origin.z)};yaw=a;pitch=p;stream(true);target=pick();
@@ -171,41 +171,7 @@ struct Demo : VoxelWorld {
     buildHulls(b.id,b.size.x,b.size.y,b.size.z,[&](int x,int y,int z){return b.cells[localIndex(x,y,z)];});
     ++detached;return slot;
   }
-  void detachUnsupported() {
-    std::vector<Cell> seeds=std::move(edits);edits.clear();
-    std::vector<int> touched;
-    const Cell candidates[7]={{0,0,0},{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
-    for(auto seed:seeds)for(auto n:candidates) {
-      Cell first{seed.x+n.x,seed.y+n.y,seed.z+n.z};
-      if(!inside(first.x,first.y,first.z)||!solid(get(first.x,first.y,first.z)))continue;
-      int firstId=address(first.x,first.y,first.z);if(visited[firstId])continue;
-      queue.clear();std::vector<Cell> stack{first};visited[firstId]=1;touched.push_back(firstId);bool anchored=false;
-      while(!stack.empty()&&!anchored) {
-        auto c=stack.back();stack.pop_back();queue.push_back(c);
-        if(c.x==0||c.y==0||c.z==0||c.x==W-1||c.y==H-1||c.z==D-1){anchored=true;break;}
-        for(auto d:neighbors) {
-          Cell v{c.x+d.x,c.y+d.y,c.z+d.z};if(!solid(get(v.x,v.y,v.z)))continue;
-          int i=address(v.x,v.y,v.z);if(visited[i]==2){anchored=true;break;}
-          if(!visited[i]){visited[i]=1;touched.push_back(i);stack.push_back(v);}
-        }
-      }
-      if(anchored) {
-        for(auto c:queue)visited[address(c.x,c.y,c.z)]=2;
-        for(auto c:stack)visited[address(c.x,c.y,c.z)]=2;
-        continue;
-      }
-      Cell lo{W,H,D},hi{};
-      for(auto c:queue){lo={std::min(lo.x,c.x),std::min(lo.y,c.y),std::min(lo.z,c.z)};hi={std::max(hi.x,c.x),std::max(hi.y,c.y),std::max(hi.z,c.z)};}
-      for(int z=lo.z;z<=hi.z;z+=B)for(int y=lo.y;y<=hi.y;y+=B)for(int x=lo.x;x<=hi.x;x+=B) {
-        std::vector<Cell> cells;std::vector<uint8_t> mats;
-        for(auto c:queue)if(c.x>=x&&c.x<x+B&&c.y>=y&&c.y<y+B&&c.z>=z&&c.z<z+B){cells.push_back({c.x-x,c.y-y,c.z-z});mats.push_back(get(c.x,c.y,c.z));}
-        if(cells.empty()||createBody(cells,mats,{float(x),float(y),float(z)})<0)continue;
-        for(auto c:cells)set(x+c.x,y+c.y,z+c.z,AIR);
-      }
-    }
-    for(int i:touched)visited[i]=0;
-    edits.clear();rebuildTerrain();updateOccupied();
-  }
+  #include "structural_support.inc"
   void updateOccupied() {
     for(int i:occupiedCells)occupied[i]=0;occupiedCells.clear();
     if(!sandCount&&!fluidCount())return;
@@ -379,7 +345,7 @@ struct Demo : VoxelWorld {
   void render(int width,int height) {
     if(!renderer.context)return;
     glUseProgram(renderer.program);glBindVertexArray(renderer.vao);glViewport(0,0,width,height);
-    renderer.uploadWorld(*this);uploaded=renderer.uploaded;
+    renderer.uploadWorld(*this,camera);uploaded=renderer.uploaded;
     glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,renderer.textures[2]);
     float positions[MAX_BODIES*4]{},rotations[MAX_BODIES*4]{},sizes[MAX_BODIES*4]{};int count=0;
     for(int i=0;i<MAX_BODIES;++i)if(bodies[i].active) {

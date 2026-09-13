@@ -77,7 +77,7 @@ function menu(open) {
   if (open) {
     cancelAnimationFrame(frame); frame = 0;
     if (document.pointerLockElement === canvas) document.exitPointerLock();
-    $('enter').textContent = 'Continue exploring →';
+    $('enter').textContent = 'Resume';
     $('enter').focus();
   } else startFrames();
 }
@@ -192,7 +192,7 @@ async function initialize() {
     const instance = await createModule({ locateFile: path => path.endsWith('.wasm') ? wasmURL : path, canvas });
     if (disposed) return;
     engine = instance;
-    $('load-status').textContent = 'Carving the quarry';
+    $('load-status').textContent = 'Preparing terrain';
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     if (disposed) return;
     if (!engine._demo_create(1)) throw new Error('WebGL2 could not start on this browser.');
@@ -200,8 +200,8 @@ async function initialize() {
     ready = true; engine._demo_pause(1); resize();
     // Some graphics backends compile the native shader on its first draw.
     if (canvas.getContext('webgl2').getError() !== 0) throw new Error('The 3D renderer could not draw on this graphics device.');
-    $('enter').disabled = false; $('enter').textContent = 'Enter the quarry →';
-    $('load-status').textContent = coarse ? 'Touch controls ready' : 'Mouse + keyboard · Free-flight camera';
+    $('enter').disabled = false; $('enter').textContent = 'Play';
+    $('load-status').textContent = '';
     canvas.dataset.ready = 'true';
     if (new URLSearchParams(location.search).has('test')) {
       window.__voxelDemo = {

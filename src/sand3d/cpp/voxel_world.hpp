@@ -9,7 +9,7 @@
 
 namespace {
 constexpr float VOXEL=0.0625f;
-constexpr int W=512,H=256,D=512,C=32,CW=W/C,CH=H/C,CD=D/C,CN=CW*CH*CD,CELLS=C*C*C;
+constexpr int W=768,H=256,D=768,C=32,CW=W/C,CH=H/C,CD=D/C,CN=CW*CH*CD,CELLS=C*C*C;
 constexpr int N=W*H*D,B=64,BN=B*B*B,MAX_BODIES=32;
 enum Material : uint8_t { AIR, SAND, BEDROCK, STONE, WOOD, GRASS, COPPER, LEAVES };
 struct Cell { int x,y,z; };
@@ -24,6 +24,7 @@ struct KeyHash {
   }
 };
 int64_t floorDiv(int64_t a,int b) { return a>=0?a/b:-1-(-1-a)/b; }
+int wrapIndex(int64_t a,int n){int r=int(a%n);return r<0?r+n:r;}
 bool inside(int x,int y,int z) { return x>=0&&x<W&&y>=0&&y<H&&z>=0&&z<D; }
 bool solid(uint8_t m) { return m>=BEDROCK; }
 int localIndex(int x,int y,int z) { return x+B*(z+B*y); }
@@ -80,6 +81,7 @@ struct VoxelWorld {
   std::unordered_map<ChunkKey,std::vector<uint8_t>,KeyHash> saved;
   std::unordered_set<ChunkKey,KeyHash> renderChanges;
   ChunkKey origin{-W/2,-H/2,-D/2}; // Absolute voxel coordinate of the loaded window.
+  Cell ringOrigin{};
   int sandCount=0,generated=0,restored=0,shifts=0;
   std::vector<int> sandCells;
   PackedCells<N,1> sandQueued{};
@@ -89,11 +91,11 @@ struct VoxelWorld {
   std::vector<ChunkKey> pending;
   ChunkKey pendingOrigin{};
   bool preparing=false;
-  static int slot(ChunkKey k) {return (int(k.x)&(CW-1))+CW*((int(k.y)&(CH-1))+CH*(int(k.z)&(CD-1)));}
+  static int slot(ChunkKey k) {return wrapIndex(k.x,CW)+CW*(wrapIndex(k.y,CH)+CH*wrapIndex(k.z,CD));}
   int address(int x,int y,int z) const {
-    // Unsigned shifts implement floor division and wrapping for negative coordinates.
-    uint32_t a=uint32_t(origin.x+x),b=uint32_t(origin.y+y),c=uint32_t(origin.z+z);
-    return (a&(C-1))+C*((b&(C-1))+C*(c&(C-1)))+CELLS*((a/ C&(CW-1))+CW*((b/C&(CH-1))+CH*(c/C&(CD-1))));
+    int a=ringOrigin.x+x,b=ringOrigin.y+y,c=ringOrigin.z+z;
+    if(a>=W)a-=W;if(b>=H)b-=H;if(c>=D)c-=D;
+    return (a&(C-1))+C*((b&(C-1))+C*(c&(C-1)))+CELLS*(a/C+CW*(b/C+CH*(c/C)));
   }
   Cell decode(int i) const {
     int s=i/CELLS,p=i%CELLS;
@@ -156,7 +158,7 @@ struct VoxelWorld {
       int64_t wx=(key.x*C+x)*scale+scale/2,wz=(key.z*C+z)*scale+scale/2;
       Column column;
       if(scale==1) {
-        auto& cached=columns[(uint32_t(wx)&(W-1))+W*(uint32_t(wz)&(D-1))];
+        auto& cached=columns[wrapIndex(wx,W)+W*wrapIndex(wz,D)];
         if(cached.x!=wx||cached.z!=wz){cached.x=wx;cached.z=wz;cached.data=columnAt((wx+0.5)*VOXEL,(wz+0.5)*VOXEL);}
         column=cached.data;
       }else column=columnAt((wx+0.5)*VOXEL,(wz+0.5)*VOXEL);
@@ -207,6 +209,7 @@ struct VoxelWorld {
     sandCount+=c.sand;
   }
   void fillWindow() {
+    ringOrigin={wrapIndex(origin.x,W),wrapIndex(origin.y,H),wrapIndex(origin.z,D)};
     for(int z=0;z<CD;++z)for(int y=0;y<CH;++y)for(int x=0;x<CW;++x)load({origin.x/C+x,origin.y/C+y,origin.z/C+z});
   }
   void resetVoxels() {

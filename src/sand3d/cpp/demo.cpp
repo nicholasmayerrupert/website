@@ -77,7 +77,7 @@ struct Demo : VoxelWorld {
     if(immediate){prepared.clear();pending.clear();preparing=false;}
     if(!dx&&!dy&&!dz&&!preparing){streamMs=0;return;}
     if(!immediate) {
-      if(!prepareWindow({origin.x+dx,origin.y+dy,origin.z+dz},2.5)){streamMs=emscripten_get_now()-begin;return;}
+      if(!prepareWindow({origin.x+dx,origin.y+dy,origin.z+dz},4.0)){streamMs=emscripten_get_now()-begin;return;}
       dx=int(pendingOrigin.x-origin.x);dy=int(pendingOrigin.y-origin.y);dz=int(pendingOrigin.z-origin.z);
     }
     b3Vec3 delta{float(dx),float(dy),float(dz)};
@@ -86,7 +86,7 @@ struct Demo : VoxelWorld {
     for(auto [key,id]:terrainBodies)if(b3Body_IsValid(id)){auto tr=b3Body_GetTransform(id);b3Body_SetTransform(id,sub(tr.p,delta),tr.q);}
     for(auto& b:bodies)if(b.active) {
       auto tr=b3Body_GetTransform(b.id);auto p=sub(tr.p,delta);
-      if(length(sub(p,camera))>96/VOXEL) {
+      if(length(sub(p,camera))>160/VOXEL) {
         savedBodies.push_back({b,origin,tr.p,b3Body_GetLinearVelocity(b.id),b3Body_GetAngularVelocity(b.id),tr.q});
         b3DestroyBody(b.id);b.active=false;
       }else b3Body_SetTransform(b.id,p,tr.q);
@@ -94,7 +94,7 @@ struct Demo : VoxelWorld {
     origin.x+=dx;origin.y+=dy;origin.z+=dz;fillWindow();prepared.clear();preparing=false;++shifts;
     for(size_t i=0;i<savedBodies.size()&&freeSlot()>=0;) {
       auto& a=savedBodies[i];b3Vec3 p{float(a.anchor.x-origin.x)+a.offset.x,float(a.anchor.y-origin.y)+a.offset.y,float(a.anchor.z-origin.z)+a.offset.z};
-      if(length(sub(p,camera))<80/VOXEL) {
+      if(length(sub(p,camera))<144/VOXEL) {
         std::vector<Cell> cells;std::vector<uint8_t> mats;
         for(int y=0;y<a.body.size.y;++y)for(int z=0;z<a.body.size.z;++z)for(int x=0;x<a.body.size.x;++x) {
           auto m=a.body.cells[localIndex(x,y,z)];if(m){cells.push_back({x,y,z});mats.push_back(m);}
@@ -354,7 +354,7 @@ struct Demo : VoxelWorld {
       rebuildTerrain();b3World_Step(world,dt,4);
       for(auto& b:bodies)if(b.active) {
         auto tr=b3Body_GetTransform(b.id);
-        if(length(sub(tr.p,camera))>96/VOXEL) {
+        if(length(sub(tr.p,camera))>160/VOXEL) {
           savedBodies.push_back({b,origin,tr.p,b3Body_GetLinearVelocity(b.id),b3Body_GetAngularVelocity(b.id),tr.q});
           b3DestroyBody(b.id);b.active=false;
         }
@@ -426,6 +426,6 @@ EMSCRIPTEN_KEEPALIVE int demo_cell(double x,double y,double z){return demo?demo-
 EMSCRIPTEN_KEEPALIVE int demo_render_cell(double x,double y,double z,int level){
   if(!demo)return 0;
   if(level==0)return demo_cell(x,y,z);
-  return (level==1?demo->renderer.mid:demo->renderer.far).sample(int64_t(std::floor(x/VOXEL)),int64_t(std::floor(y/VOXEL)),int64_t(std::floor(z/VOXEL)));
+  return demo->renderer.clipmap(std::clamp(level,1,3)).sample(int64_t(std::floor(x/VOXEL)),int64_t(std::floor(y/VOXEL)),int64_t(std::floor(z/VOXEL)));
 }
 }

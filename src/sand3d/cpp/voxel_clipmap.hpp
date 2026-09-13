@@ -2,25 +2,23 @@
 
 // Every level stores material voxels. Only the spatial sampling interval changes.
 struct VoxelClipmap {
-  static constexpr int SIDE=384, AXIS=SIDE/C, COUNT=AXIS*AXIS*AXIS;
   struct Chunk {
     std::array<uint8_t,CELLS> cells{};
     ChunkKey key{};
     bool valid=false,upload=false;
   };
-  int scale;
+  int scale,wide,high,deep,cw,ch,cd,count;
   ChunkKey origin{}; // In full-resolution voxel coordinates.
   bool ready=false,preparing=false;
   std::vector<Chunk> chunks;
   std::unordered_map<ChunkKey,Chunk,KeyHash> prepared;
   std::vector<ChunkKey> pending;
   ChunkKey nextOrigin{};
-  explicit VoxelClipmap(int s):scale(s){}
-  static int wrap(int64_t n){int a=int(n%AXIS);return a<0?a+AXIS:a;}
-  static int slot(ChunkKey k){return wrap(k.x)+AXIS*(wrap(k.y)+AXIS*wrap(k.z));}
+  VoxelClipmap(int s,int w,int h,int d):scale(s),wide(w),high(h),deep(d),cw(w/C),ch(h/C),cd(d/C),count(cw*ch*cd){}
+  int slot(ChunkKey k) const {return wrapIndex(k.x,cw)+cw*(wrapIndex(k.y,ch)+ch*wrapIndex(k.z,cd));}
   bool contains(ChunkKey k) const {
     int64_t x=k.x*C*scale-origin.x,y=k.y*C*scale-origin.y,z=k.z*C*scale-origin.z;
-    return ready&&x>=0&&y>=0&&z>=0&&x<SIDE*scale&&y<SIDE*scale&&z<SIDE*scale;
+    return ready&&x>=0&&y>=0&&z>=0&&x<wide*scale&&y<high*scale&&z<deep*scale;
   }
   void invalidate(){ready=false;preparing=false;pending.clear();prepared.clear();}
   void generate(Chunk& c,ChunkKey key,VoxelWorld& world) {
@@ -57,16 +55,16 @@ struct VoxelClipmap {
     }
   }
   void update(VoxelWorld& world,double budget) {
-    if(chunks.empty())chunks.resize(COUNT);
+    if(chunks.empty())chunks.resize(count);
     ChunkKey center{world.origin.x+W/2,world.origin.y+H/2,world.origin.z+D/2};
-    ChunkKey desired{(floorDiv(center.x,C*scale)-AXIS/2)*C*scale,
-                     (floorDiv(center.y,C*scale)-AXIS/2)*C*scale,
-                     (floorDiv(center.z,C*scale)-AXIS/2)*C*scale};
+    ChunkKey desired{(floorDiv(center.x,C*scale)-cw/2)*C*scale,
+                     (floorDiv(center.y,C*scale)-ch/2)*C*scale,
+                     (floorDiv(center.z,C*scale)-cd/2)*C*scale};
     bool teleport=!ready||std::abs(desired.x-origin.x)>C*scale*2||std::abs(desired.y-origin.y)>C*scale*2||std::abs(desired.z-origin.z)>C*scale*2;
     if(teleport){preparing=false;prepared.clear();pending.clear();}
     if(!preparing&&(!ready||!(origin==desired))) {
       nextOrigin=desired;preparing=true;
-      for(int z=0;z<AXIS;++z)for(int y=0;y<AXIS;++y)for(int x=0;x<AXIS;++x) {
+      for(int z=0;z<cd;++z)for(int y=0;y<ch;++y)for(int x=0;x<cw;++x) {
         ChunkKey key{desired.x/(C*scale)+x,desired.y/(C*scale)+y,desired.z/(C*scale)+z};
         const auto& c=chunks[slot(key)];if(!ready||!c.valid||!(c.key==key))pending.push_back(key);
       }

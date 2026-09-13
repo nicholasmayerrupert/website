@@ -101,7 +101,7 @@ try {
     const points=[[3.03125,.25,3.03125],[.03125,.03125,3.03125],[1.03125,.03125,3.03125],[.03125,-.03125,5.03125]];
     const near=points.map(p=>d.cell(...p));
     d.camera(3.03125,15,18,0,-Math.atan2(14.5,18-3.03125));d.render();
-    const levels=[1,2].map(level=>points.map(p=>d.renderCell(...p,level)));
+    const levels=[1,2,3].map(level=>points.map(p=>d.renderCell(...p,level)));
     const c=document.getElementById('voxel-canvas'),gl=c.getContext('webgl2'),pixels=new Uint8Array(11*11*4);
     gl.readPixels(Math.floor(c.width/2)-5,Math.floor(c.height/2)-5,11,11,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
     let sandPixels=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>pixels[i+1]*1.06&&pixels[i+1]>pixels[i+2]*1.06)sandPixels++;
@@ -109,7 +109,7 @@ try {
   });
   assert.deepEqual(distantMaterials.near,[1,3,4,5]);
   assert.equal(distantMaterials.evicted,true,'sand is outside the simulation window');
-  assert.deepEqual(distantMaterials.levels,[[1,3,4,5],[1,3,4,5]],'sand, stone, timber, and grass survive both detail levels');
+  assert.deepEqual(distantMaterials.levels,[[1,3,4,5],[1,3,4,5],[1,3,4,5]],'sand, stone, timber, and grass survive all distant detail levels');
   assert.ok(distantMaterials.sandPixels>20,'GPU still draws poured sand after its simulation chunk is evicted');
   await page.locator('#intro').evaluate(el=>{el.hidden=true;});
   await page.screenshot({path:resolve(artifacts,'desktop-distant-materials.png')});
@@ -118,9 +118,9 @@ try {
     const d=window.__voxelDemo;d.camera(3.03125,5,3.03125,0,-Math.PI/2);d.tool(0);d.use();d.render();
     const near=d.cell(3.03125,.25,3.03125);
     d.camera(3.03125,15,18,0,-Math.atan2(14.5,18-3.03125));d.render();
-    return [near,d.renderCell(3.03125,.25,3.03125,1),d.renderCell(3.03125,.25,3.03125,2)];
+    return [near,...[1,2,3].map(level=>d.renderCell(3.03125,.25,3.03125,level))];
   });
-  assert.deepEqual(removed,[0,0,0],'mining invalidates every detail level, including cached empty cells');
+  assert.deepEqual(removed,[0,0,0,0],'mining invalidates every detail level, including cached empty cells');
   const bodyPersistence=await page.evaluate(()=>{
     const d=window.__voxelDemo;d.reset();d.camera(3.03125,5,3.03125,0,-Math.PI/2);d.tool(4);d.use();d.pause(false);d.step(240);d.pause(true);
     const before=d.stats()[11];d.render();
@@ -141,6 +141,15 @@ try {
   await page.screenshot({path:resolve(artifacts,'desktop-distant-body.png')});
   assert.ok(bodyPersistence.stonePixels>10,`GPU draws the rigid body after the terrain window moves away: ${JSON.stringify(bodyPersistence)}`);
   console.log('Continuity: sand, single-voxel edits, grass surfaces, mined air, and rigid bodies survive detail boundaries.');
+  const distantTimber=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.camera(1.75,20,80,0,-Math.atan2(18.5,80.75));d.render();
+    const c=document.getElementById('voxel-canvas'),gl=c.getContext('webgl2'),pixel=new Uint8Array(4);
+    gl.readPixels(Math.floor(c.width/2),Math.floor(c.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+    return {pixel:Array.from(pixel),material:d.renderCell(1.75,1.5,-.75,3),error:gl.getError()};
+  });
+  await page.screenshot({path:resolve(artifacts,'desktop-expanded-distance.png')});
+  assert.equal(distantTimber.error,0);assert.equal(distantTimber.material,4);
+  assert.ok(distantTimber.pixel[0]>distantTimber.pixel[1]&&distantTimber.pixel[1]>distantTimber.pixel[2],`timber remains visible more than 80 m away: ${JSON.stringify(distantTimber)}`);
   await page.evaluate(() => {const d=window.__voxelDemo;d.camera(0,6,8,Math.PI/2,0);d.menu(false);});
   const flightStart=await page.evaluate(()=>window.__voxelDemo.stats());
   await page.keyboard.down('KeyW');await page.keyboard.down('ShiftLeft');await page.waitForTimeout(4500);

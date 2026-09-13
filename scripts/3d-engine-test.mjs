@@ -67,7 +67,7 @@ try {
   const checksum=sample();
   for(const [x,y,z] of [[160,5,160],[-160,5,-160],[0,80,0],[0,-80,0],[1048576,8,-1048576]]) {
     engine._demo_camera(x,y,z,0,0);
-    assert.equal(snapshot()[25],2048,'resident terrain remains bounded');
+    assert.equal(snapshot()[25],4608,'resident terrain remains bounded');
     assert.ok(snapshot().every(Number.isFinite));
   }
   engine._demo_camera(0,4,8,0,-0.18);
@@ -85,12 +85,12 @@ try {
 
   // Continuous fast diagonal flight uses the frame-budgeted path, not teleport hooks.
   engine._demo_reset();engine._demo_camera(0,6,8,0,0);engine._demo_key(0,1);engine._demo_key(3,1);engine._demo_key(6,1);
-  const travel=[];
-  for(let i=0;i<1200;++i){const start=performance.now();step(1);travel.push(performance.now()-start);}
+  const travel=[];let minMargin=Infinity;
+  for(let i=0;i<1200;++i){const start=performance.now();step(1);travel.push(performance.now()-start);minMargin=Math.min(minMargin,snapshot()[27]);}
   engine._demo_clear_input();
   assert.ok(snapshot()[5]>150&&snapshot()[7]<-140,'flight continues beyond the initial world in both axes');
   assert.ok(snapshot()[18]>20,'new terrain windows are streamed during flight');
-  assert.ok(snapshot()[27]>2,'preparation keeps the camera safely within resident terrain');
+  assert.ok(minMargin>2,`preparation keeps the camera safely within resident terrain throughout flight (${minMargin.toFixed(2)} m minimum)`);
   travel.sort((a,b)=>a-b);
   console.log(`Streaming flight: p50 ${travel[600].toFixed(2)} ms, p95 ${travel[1140].toFixed(2)} ms, p99 ${travel[1188].toFixed(2)} ms, max ${travel.at(-1).toFixed(2)} ms; heap ${(engine.HEAPU8.length/1048576).toFixed(1)} MiB.`);
 

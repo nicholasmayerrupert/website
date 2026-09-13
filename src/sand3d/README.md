@@ -44,20 +44,20 @@ reloads to recreate disposed resources. Graphics failure provides a reload path.
 ## Streaming and rendering
 
 Voxels measure **0.0625 metres per side**. The full-detail simulation window is
-512 × 256 × 512 voxels (32 × 16 × 32 metres), stored in 2,048 reusable 32³ chunks.
+768 × 256 × 768 voxels (48 × 16 × 48 metres), stored in 4,608 reusable 32³ chunks.
 The camera can travel in all three axes. Signed 64-bit voxel origins and local
 physics coordinates keep Box3D near the origin as the world streams. Terrain is
 seeded by absolute coordinates, with hills, underground caverns, copper seams,
 trees, and the starter quarry at the origin.
 
-Entering chunks are prepared with a 2.5 ms budget per simulation tick. A window
+Entering chunks are prepared with a 4 ms budget per simulation tick. A window
 shift reuses retained chunks in place and replaces only the entering slabs; it
 does not copy the entire volume. Modified departing chunks are run-length encoded
 in an in-memory cache. Unchanged terrain is regenerated, so flying through new
 terrain does not accumulate a history of unedited chunks. Edits and sand restore
 when revisiting. Rigid bodies remain active outside the terrain window, with
-collision chunks generated around them. Beyond 96 m they are suspended with
-their voxel volumes, transforms, and velocities, then restored within 80 m.
+collision chunks generated around them. Beyond 160 m they are suspended with
+their voxel volumes, transforms, and velocities, then restored within 144 m.
 Both thresholds are beyond the visible range.
 The active terrain allocation is fixed; the cache grows with edited chunks and
 archived bodies. **Persistence is for the current visit**, not across reloads.
@@ -70,8 +70,9 @@ uses an integer texture with nearest mip filtering so Direct3D exposes every
 level to `texelFetch`. Moving bodies use a separate local voxel atlas; rotation
 updates their poses without rebuilding render meshes.
 
-Beyond the simulation window, two 384³ voxel clipmaps use 12.5 cm and 25 cm
-cells, covering 48 m and 96 m cubes. All materials use the same volume traversal,
+Beyond the simulation window, three voxel clipmaps use 12.5 cm, 25 cm, and 50 cm
+cells. Their coverage is 64 × 32 × 64 m, 128 × 64 × 128 m, and a 256 m cube.
+All materials use the same volume traversal,
 occupancy hierarchy, palette, and shadow path. Trees remain voxels, and sand,
 placed materials, underground cavities, and mined air are represented at every
 level. There are no separate tree primitives or terrain height-field renderers.
@@ -81,15 +82,15 @@ The shared generator samples procedural cells. Modified resident or saved chunks
 override those samples using a conservative reduction: each fine column supplies
 its uppermost occupied material, and the most frequent of those materials wins.
 This retains thin surface layers and isolated placed voxels. Every edit dirties
-both clipmaps, including deletion to air. Distant geometry has fewer cells, so
+all clipmaps, including deletion to air. Distant geometry has fewer cells, so
 small shapes are approximated consistently across materials.
 
 Clipmaps reuse retained chunks and prepare entering chunks with a 1.25 ms budget
 per level per rendered frame. A complete band is published together. Initial
 loading and test teleports prepare synchronously. Fog fades all geometry between
-20 and 40 m, inside the outer cache boundary. The detail selector limits ray
+80 and 112 m, inside the outer cache boundary. The detail selector limits ray
 count independently of device pixel ratio. Render caches allocate only on the
-3D page; the WASM heap starts at 192 MiB and can grow to 512 MiB.
+3D page; the WASM heap starts at 384 MiB and can grow to 1 GiB.
 
 These choices follow the relevant techniques in Burkelbear Games’
 [graphics explainer](https://www.youtube.com/watch?v=Y8HRCXxI0BY): hierarchical
@@ -132,8 +133,9 @@ negative coordinates, vertical travel, million-metre coordinates, and continuous
 fast diagonal flight with a bounded active window. Browser tests cover production loading boundaries, desktop input,
 touch cancellation, layout, pause, native texture hierarchy sampling, continuous
 flight across chunk boundaries, and screenshots. Material regression checks verify
-GPU-visible sand after eviction, single-cell placements at both distant levels,
-grass preservation, mined-air invalidation, and bodies outside the terrain window.
+GPU-visible sand after eviction, single-cell placements at all distant levels,
+grass preservation, mined-air invalidation, bodies outside the terrain window,
+and visible material more than 80 metres away.
 On Windows they use Direct3D11
 to exercise native shader compilation; `node scripts/3d-browser-e2e.mjs --software`
 checks SwiftShader, and `--dev` selects the development server. Touch emulation is not a

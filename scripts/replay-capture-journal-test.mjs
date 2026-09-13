@@ -375,6 +375,26 @@ assert.equal(replayTimeline.hidden, true);
 assert.equal(replayOverlay.hidden, false);
 replayPanel.destroy();
 
+const failedContainer = new FakeElement('div');
+const failedPanel = createReplayPanel({
+  ...ctx,
+  container: failedContainer,
+  worldWorker: {
+    ...ctx.worldWorker,
+    startBufferedReplay: async () => { throw new Error('Buffered replay failed: test initialization error'); },
+  },
+});
+await failedPanel.startReplay();
+const failedOverlay = failedContainer.children[0];
+assert.equal(failedOverlay.hidden, false);
+assert.match(failedOverlay.children[0].children[1].textContent, /test initialization error/);
+const failedText = find(failedOverlay,
+  (node) => node.getAttribute('aria-label') === 'Replay capsule text');
+assert.deepEqual(await decodeReplayCapsule(failedText.value), verified,
+  'R retains the captured replay when worker startup fails');
+assert.equal(find(failedOverlay, (node) => node.textContent === 'Copy').disabled, false);
+failedPanel.destroy();
+
 // L must preempt R's capture wait even if the worker never answers either export.
 const stalledContainer = new FakeElement('div');
 const stalledR = deferred();

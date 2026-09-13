@@ -264,6 +264,9 @@ export function createReplayPanel(ctx, { onReplayUi } = {}) {
         capsule = (await materializeReplayFallback(capture)).capsule;
       }
       if (generation !== openGeneration) return;
+      const text = await encodeReplayCapsule(capsule);
+      if (generation !== openGeneration) return;
+      textarea.value = text;
       capturingReplay = false;
       await runCapsule(capsule);
     } catch (error) {

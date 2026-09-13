@@ -33,7 +33,13 @@ try {
   await page.evaluate(() => document.querySelector('sand-game')._game.openReplayPanel());
   await page.getByRole('dialog', { name: 'Authority logs' }).waitFor({ state: 'visible' });
   assert.ok(requested.some(url => /replayPanel-/.test(url)), 'opening replay loads its interface');
-  await page.getByRole('button', { name: 'Resume & close' }).click();
+  await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
+    .querySelector('textarea[aria-label="Replay capsule text"]')?.value.startsWith('SAND-REPLAY-3:'));
+  await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+  await page.getByRole('group', { name: 'Replay timeline' }).waitFor({ state: 'visible' });
+  await page.locator('sand-game').evaluate(host => host.shadowRoot.querySelector('.sg-sim').focus());
+  await page.keyboard.press('r');
+  await page.getByRole('group', { name: 'Replay timeline' }).waitFor({ state: 'hidden' });
   assert.deepEqual(errors, []);
   await page.close();
   console.log('ok compiled bytes, creative milestones, and deferred replay');

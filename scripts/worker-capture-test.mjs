@@ -56,4 +56,19 @@ client.destroy();
 await closing;
 worker.onmessage({ data: { type: 'destroyed' } });
 assert.equal(timers.size, 0, 'shutdown clears pending export and destruction timers');
+
+const replayClient = createWorldWorkerClient({
+  cols: 128, rows: 96, engine: null, survival: false, planetId: 0, fns: {},
+});
+const liveWorker = workers.at(-1);
+const startingReplay = replayClient.startBufferedReplay({
+  init: { cols: 128, rows: 96, survival: false, planetId: 0, worldSeed: 1 }, turns: 1,
+});
+const replayFailure = assert.rejects(startingReplay, /Buffered replay failed: test initialization error/);
+workers.at(-1).onmessage({ data: { type: 'error', phase: 'init', message: 'test initialization error' } });
+await replayFailure;
+replayClient.config({ paused: false });
+assert.deepEqual(liveWorker.messages.at(-1), { type: 'config', paused: false },
+  'a failed replay restores the live worker');
+replayClient.destroy();
 console.log('worker capture timeouts, cancellation, and stall notices pass');

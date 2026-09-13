@@ -1159,7 +1159,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
         initialViewCols: data.survival ? 0 : data.initialViewCols,
         initialViewRows: data.survival ? 0 : data.initialViewRows,
         planetId: data.planetId,
-        gravityScale: data.gravityScale,
+        gravityScale: data.gravityScale ?? undefined,
       });
       survival = !!data.survival;
       engine.setDayPhase(data.dayPhase ?? 5 / 24, !!data.dayOverridden);

@@ -259,16 +259,13 @@ export const workerBrowserCases = {
     await openSandPage(page, baseURL);
     await page.locator('sand-game').evaluate((host) =>
       host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
-    await page.keyboard.press('l');
-    await page.waitForFunction(() => document.querySelector('sand-game').shadowRoot
-      .querySelector('textarea[aria-label="Replay capsule text"]')?.value
-      .startsWith('SAND-REPLAY-3:'), null, { timeout: 30000 });
-    await page.getByRole('button', { name: 'Run replay', exact: true }).click();
+    await page.keyboard.press('r');
     await page.waitForFunction(() => {
       const timeline = document.querySelector('sand-game').shadowRoot
         .querySelector('[aria-label="Replay timeline"]');
       return timeline && !timeline.hidden;
     }, null, { timeout: 30000 });
+    check('R captures default-gravity gameplay and opens buffered playback', true);
     await page.waitForFunction(() => {
       const root = document.querySelector('sand-game').shadowRoot;
       return root.querySelector('[aria-label="Replay timeline"]')?.textContent

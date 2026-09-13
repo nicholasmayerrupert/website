@@ -120,7 +120,7 @@ export function normalizeReplayInit(data) {
     ),
     dayPhase: normalizeDayPhase(data.dayPhase ?? DEFAULT_DAY_PHASE),
     dayOverridden: !!data.dayOverridden,
-    gravityScale: Number(data.gravityScale),
+    ...(data.gravityScale == null ? {} : { gravityScale: Number(data.gravityScale) }),
     missionId: data.missionId | 0,
     loadout,
     drawMode: !!data.drawMode,
@@ -314,6 +314,9 @@ export function validateReplayCapsule(value, options = {}) {
     throw new Error('Replay dimensions are invalid.');
   if (!finiteInteger(init.worldSeed, 0, 0xffffffff))
     throw new Error('Replay world seed is invalid.');
+  if (init.gravityScale != null
+      && (!Number.isFinite(init.gravityScale) || init.gravityScale < 0.05 || init.gravityScale > 1))
+    throw new Error('Replay gravity scale must be between 0.05 and 1, or omitted for the planet default.');
   if (requireCompatibleAbi
       && init.weatherId !== undefined
       && (!isWeatherId(init.weatherId)

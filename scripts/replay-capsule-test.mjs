@@ -172,6 +172,21 @@ const capsule = {
 };
 
 const text = await encodeReplayCapsule(capsule);
+for (const planetId of [0, 1, 2]) {
+  for (const gravityScale of [undefined, null, 0.05, 0.33, 0.76, 1]) {
+    const normalized = normalizeReplayInit({ ...init, planetId, gravityScale });
+    assert.equal(normalized.gravityScale, gravityScale ?? undefined);
+    const copied = JSON.parse(JSON.stringify(normalized));
+    assert.deepEqual(normalizeReplayInit(copied), normalized,
+      'copying and normalizing a replay must preserve the planet gravity default');
+    const roundTrip = await decodeReplayCapsule(await encodeReplayCapsule({ ...capsule, init: copied }));
+    assert.equal(roundTrip.init.gravityScale, gravityScale ?? undefined);
+  }
+}
+for (const gravityScale of [0, -1, 1.1, NaN, Infinity]) {
+  assert.throws(() => validateReplayCapsule({ ...capsule, init: { ...init, gravityScale } }),
+    /Replay gravity scale/);
+}
 for (const action of [0, 1, 2, 3, 4]) {
   const message = normalizeReplayMessage({ type: 'intent', intent: 'pool', pool: 1, action, material: 3, value: 1 });
   const poolCapsule = { ...capsule, events: [{ tick: 1, message }] };

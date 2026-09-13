@@ -1612,7 +1612,8 @@ export function createWorldWorkerClient(ctx, startupWorker = null) {
     console.error('sand world worker failed', event.message || event);
     if (parkedLiveWorker) {
       for (const request of replayRequests.values())
-        request.reject(new Error('Buffered replay failed.'));
+        request.reject(new Error(event.message
+          ? `Buffered replay failed: ${event.message}` : 'Buffered replay failed.'));
       replayRequests.clear();
       pendingReplayView = null;
       pendingReplayFrameTurn = null;

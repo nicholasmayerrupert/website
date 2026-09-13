@@ -162,6 +162,10 @@ and `ReactionSystem::applyAcid`, `applyLava`, and fire rules in
   remains granular, avoiding a separate rigid body for each cooled cell.
 - Acid dissolves ordinary rock, copper, timber, plants, and powders; some acid is
   consumed, and erosion releases acrid smoke. Bedrock resists corrosion.
+  Corrosion checks current contacts after fluid movement on each fluid step,
+  independently of movement eligibility. Each eligible acid cell makes one
+  dissolve roll at the 2D probability of 0.75; successful reactions retain the
+  0.4 consumption probability and 0.5 smoke probability.
 - Lava and fire ignite timber, leaves, and grass. Water extinguishes fire.
   Fire decays into smoke; steam rises and can condense back into water.
 - Acid and heat also erode eligible materials on moving bodies. Voxel fragments
@@ -171,7 +175,10 @@ Fluids use an active-cell queue at 30 Hz. Stable enclosed cells sleep until a
 neighbor changes; lower openings also wake surfaces within their downhill reach.
 At most 24,000 queued cells are processed per pass, with
 deferred cells going first next time. Structural reaction edits are batched;
-ordinary liquid movement does not trigger connectivity searches. Pouring stops
+the contact pass checks up to 24,000 queued cells and makes at most 32 erosion
+or ignition edits per fluid step. Its cursor resumes beyond the last budgeted
+edit so sustained contacts in one region cannot monopolize corrosion.
+Ordinary liquid movement does not trigger connectivity searches. Pouring stops
 after reaching the 200,000 active-window fluid/gas budget (one brush can cross
 the threshold). Existing cells remain intact.
 All material cells share chunk persistence and every distant voxel detail level.

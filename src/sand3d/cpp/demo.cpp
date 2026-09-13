@@ -53,6 +53,7 @@ struct Demo : VoxelWorld {
   int tool=0,tick=0,mined=0,detached=0,limitHits=0;
   float stats[36]{};
   int reactions=0,dissolved=0,reactionEdits=0;
+  size_t reactionCursor=0;
   double stepMs=0;
   Hit target;
   std::vector<Cell> queue;
@@ -68,7 +69,7 @@ struct Demo : VoxelWorld {
     b3SetLengthUnitsPerMeter(1/VOXEL);
     auto def=b3DefaultWorldDef();def.gravity={0,-9.81f/VOXEL,0};world=b3CreateWorld(&def);
     resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies.clear();savedBodies.clear();
-    mined=detached=tick=limitHits=reactions=dissolved=0;cooldown=0;streamMs=0;
+    mined=detached=tick=limitHits=reactions=dissolved=0;reactionCursor=0;cooldown=0;streamMs=0;
     std::fill(std::begin(keys),std::end(keys),false);held=false;
     camera={W/2.f,H/2.f,D/2.f};yaw=0;pitch=-0.18f;
     renderer.invalidateLod();

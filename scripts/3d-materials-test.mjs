@@ -72,6 +72,35 @@ try {
   for(let x=-222;x<-195;++x)assert.ok(wet.has(x),`flow wets terrace cell ${x} instead of skipping it`);
   assert.equal(count(M.water),streamBefore+supplied,'continuous terrace flow conserves every poured cell');
 
+  // Flow beside an acid contact must not suppress that contact's reaction.
+  box(-256,160);
+  put(...cell(-251,0,166),M.stone);step(2);
+  while(stats()[0]%6!==0)step(1);
+  put(...cell(-252,3,166),M.water);put(...cell(-251,1,166),M.acid);
+  const contactRandom=Math.random;
+  try {Math.random=()=>0;step(1);} finally {Math.random=contactRandom;}
+  assert.notEqual(get(...cell(-251,0,166)),M.stone,'neighboring liquid movement cannot skip acid corrosion');
+
+  // Acid rolling down a step reacts at its destination between six-tick bursts.
+  for(let x=-254;x<=-242;++x)for(let z=169;z<=171;++z)for(let y=0;y<8;++y)put(...cell(x,y,z),M.bedrock);
+  for(const p of [[-250,5,170],[-249,5,170],[-249,4,170]])put(...cell(...p),M.air);
+  put(...cell(-249,4,171),M.stone);
+  while(stats()[0]%6!==2)step(1);
+  put(...cell(-250,5,170),M.acid);
+  try {Math.random=()=>0.5;step(1);} finally {Math.random=contactRandom;}
+  assert.equal(get(...cell(-249,4,170)),M.acid,'acid rolls down the step');
+  assert.equal(get(...cell(-249,4,171)),M.air,'rolling acid corrodes its new contact on the same step');
+
+  // More simultaneous contacts than one edit budget must all keep progressing.
+  box(128,208,32);
+  for(let x=129;x<159;++x)for(let z=209;z<239;++z)put(...cell(x,0,z),M.bedrock);
+  const contacts=[];
+  for(let x=131;x<155;x+=3)for(let z=211;z<235;z+=3) {
+    contacts.push([x,0,z]);put(...cell(x,0,z),M.stone);put(...cell(x,1,z),M.acid);
+  }
+  try {Math.random=()=>0.5;step(20);} finally {Math.random=contactRandom;}
+  assert.ok(contacts.every(p=>get(...cell(...p))!==M.stone),'the corrosion budget reaches every resting contact');
+
   // Acid reacts with material on an inert foundation and consumes itself.
   for(let x=165;x<169;++x)for(let z=165;z<169;++z)for(let y=0;y<4;++y)put(...cell(x,y,z),M.wood);
   for(let z=165;z<169;++z)for(let y=0;y<4;++y)put(...cell(164,y,z),M.acid);

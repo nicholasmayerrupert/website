@@ -1,33 +1,42 @@
   // Contact rules follow the 2D engine: acid erosion, combustion, and granular
   // lava quenching. Structural edits are collected for one connectivity pass.
-  bool reactMaterial(Cell c,uint8_t m,int phase) {
+  static constexpr int REACTION_EDIT_BUDGET=32;
+  bool reactMaterial(Cell c,uint8_t m,int phase,bool apply=true) {
+    if(m==STEAM||m==SMOKE)return false;
     bool active=false;
     for(int k=0;k<6;++k) {
       auto d=neighbors[(phase+k)%6];Cell n{c.x+d.x,c.y+d.y,c.z+d.z};
       if(!inside(n.x,n.y,n.z))continue;auto other=get(n.x,n.y,n.z);
       if(m==LAVA&&(other==WATER||other==ACID)) {
+        if(!apply)return true;
         set(n.x,n.y,n.z,STEAM);set(c.x,c.y,c.z,STONE_DUST);++reactions;return true;
       }
       if((m==WATER||m==ACID)&&other==LAVA) {
+        if(!apply)return true;
         set(n.x,n.y,n.z,STONE_DUST);set(c.x,c.y,c.z,STEAM);++reactions;return true;
       }
       if(m==FIRE&&other==WATER) {
+        if(!apply)return true;
         set(n.x,n.y,n.z,STEAM);set(c.x,c.y,c.z,AIR);++reactions;return true;
       }
       if(m==WATER&&other==FIRE) {
+        if(!apply)return true;
         set(n.x,n.y,n.z,AIR);set(c.x,c.y,c.z,STEAM);++reactions;return true;
       }
       bool erodes=m==ACID&&dissolvable(other);
       bool burns=(m==LAVA||m==FIRE)&&flammable(other);
       if(!erodes&&!burns)continue;
       active=true;
-      if(reactionEdits>=64||tick%6!=0||emscripten_random()>(erodes?0.35:m==LAVA?0.6:0.12))continue;
+      if(!apply||reactionEdits>=REACTION_EDIT_BUDGET||(!erodes&&tick%6!=0))continue;
+      // Acid rolls once per contact cell, with the 2D dissolve probability.
+      if(erodes){if(emscripten_random()>=0.75)return true;}
+      else if(emscripten_random()>(m==LAVA?0.6:0.12))continue;
       set(n.x,n.y,n.z,erodes?(emscripten_random()<0.5?SMOKE:AIR):FIRE);
       if(erodes){++dissolved;if(emscripten_random()<0.4)set(c.x,c.y,c.z,AIR);}
       ++reactionEdits;++reactions;return true;
     }
     if(m==LAVA&&get(c.x,c.y+1,c.z)==AIR&&inside(c.x,c.y+1,c.z)) {
-      active=true;if(emscripten_random()<0.001)set(c.x,c.y+1,c.z,FIRE);
+      active=true;if(apply&&emscripten_random()<0.001)set(c.x,c.y+1,c.z,FIRE);
     }
     return active;
   }
@@ -42,8 +51,7 @@
     const Cell sides[4]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1}};
     for(size_t j=0;j<count;++j) {
       int i=active[j];uint8_t m=raw(i);if(!flowing(m)||fluidQueued.contains(i))continue;
-      Cell c=decode(i);bool keep=reactMaterial(c,m,(phase+int(j))%6);
-      if(raw(i)!=m)continue;
+      Cell c=decode(i);bool keep=reactMaterial(c,m,(phase+int(j))%6,false);
       if(gas(m)) {
         double decay=emscripten_random();
         if(m==STEAM&&(decay<0.003||c.y==H-1)){set(c.x,c.y,c.z,WATER);continue;}
@@ -95,6 +103,19 @@
         if(destination.x!=c.x||destination.y!=c.y||destination.z!=c.z){move(destination);moved=true;}
       }
       if(!moved&&(keep||gas(m)))queueFluid(i);
+    }
+    // Reactions use the current contacts after flow, independently of which
+    // particles moved or were woken. A fixed snapshot excludes reaction products.
+    const auto contacts=fluidCells;
+    size_t start=contacts.empty()?0:reactionCursor%contacts.size();
+    size_t checks=std::min(contacts.size(),size_t(24000));
+    reactionCursor=start+checks;
+    bool full=false;
+    for(size_t k=0;k<checks;++k) {
+      size_t j=(start+k)%contacts.size();int i=contacts[j];auto m=raw(i);
+      if(flowing(m))reactMaterial(decode(i),m,(phase+int(j))%6);
+      // Resume at the first contact beyond this pass's structural edit budget.
+      if(!full&&reactionEdits>=REACTION_EDIT_BUDGET){reactionCursor=j+1;full=true;}
     }
     if(!edits.empty())detachUnsupported();
     else editOriginals.clear();

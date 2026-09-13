@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <climits>
 #include <vector>
 #include "voxel_world.hpp"
 #include "renderer.hpp"
@@ -48,7 +49,8 @@ struct Demo : VoxelWorld {
   float yaw=0,pitch=-0.23f,brush=6.0f,cooldown=0;
   bool keys[8]{},held=false,paused=false;
   int tool=0,tick=0,mined=0,detached=0,limitHits=0;
-  float stats[28]{};
+  float stats[36]{};
+  int reactions=0,dissolved=0,reactionEdits=0;
   double stepMs=0;
   Hit target;
   std::vector<Cell> queue;
@@ -64,7 +66,7 @@ struct Demo : VoxelWorld {
     b3SetLengthUnitsPerMeter(1/VOXEL);
     auto def=b3DefaultWorldDef();def.gravity={0,-9.81f/VOXEL,0};world=b3CreateWorld(&def);
     resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies={};savedBodies.clear();
-    mined=detached=tick=limitHits=0;cooldown=0;streamMs=0;
+    mined=detached=tick=limitHits=reactions=dissolved=0;cooldown=0;streamMs=0;
     std::fill(std::begin(keys),std::end(keys),false);held=false;
     camera={W/2.f,H/2.f,D/2.f};yaw=0;pitch=-0.18f;
     renderer.invalidateLod();
@@ -206,7 +208,7 @@ struct Demo : VoxelWorld {
   }
   void updateOccupied() {
     for(int i:occupiedCells)occupied[i]=0;occupiedCells.clear();
-    if(!sandCount)return;
+    if(!sandCount&&!fluidCount())return;
     for(auto& b:bodies)if(b.active) {
       auto tr=b3Body_GetTransform(b.id);
       for(int y=0;y<b.size.y;++y)for(int z=0;z<b.size.z;++z)for(int x=0;x<b.size.x;++x)if(b.cells[localIndex(x,y,z)]) {
@@ -218,20 +220,21 @@ struct Demo : VoxelWorld {
   }
   void stepSand() {
     const Cell diagonals[8]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1},{1,0,1},{-1,0,1},{-1,0,-1},{1,0,-1}};
-    auto empty=[&](int x,int y,int z){return inside(x,y,z)&&get(x,y,z)==AIR&&!occupied[address(x,y,z)];};
+    auto empty=[&](int x,int y,int z){return inside(x,y,z)&&(get(x,y,z)==AIR||get(x,y,z)==WATER||get(x,y,z)==ACID)&&!occupied[address(x,y,z)];};
     auto grains=std::move(sandCells);sandCells.clear();sandCells.reserve(grains.size());
     for(int i:grains)sandQueued[i]=0;
     // Bottom-up order prevents a falling grain from being simulated twice.
     std::sort(grains.begin(),grains.end(),[&](int a,int b){return decode(a).y<decode(b).y;});
     for(int i:grains) {
-      if(raw(i)!=SAND||sandQueued[i])continue;
+      if(!powder(raw(i))||sandQueued[i])continue;
+      auto material=raw(i);
       auto c=decode(i);int x=c.x,y=c.y,z=c.z;bool moved=false;
-      if(empty(x,y-1,z)){set(x,y,z,AIR);set(x,y-1,z,SAND);continue;}
+      if(empty(x,y-1,z)){auto m=get(x,y-1,z);set(x,y,z,m);set(x,y-1,z,material);continue;}
       if(occupied[i]) {
-        for(int up=1;up<8;++up)if(empty(x,y+up,z)){set(x,y,z,AIR);set(x,y+up,z,SAND);moved=true;break;}
+        for(int up=1;up<8;++up)if(empty(x,y+up,z)){auto m=get(x,y+up,z);set(x,y,z,m);set(x,y+up,z,material);moved=true;break;}
       }else for(int k=0;k<8;++k) {
         auto d=diagonals[(k+tick/2+x+z)%8];
-        if(empty(x+d.x,y,z+d.z)&&empty(x+d.x,y-1,z+d.z)){set(x,y,z,AIR);set(x+d.x,y-1,z+d.z,SAND);moved=true;break;}
+        if(empty(x+d.x,y,z+d.z)&&empty(x+d.x,y-1,z+d.z)){auto m=get(x+d.x,y-1,z+d.z);set(x,y,z,m);set(x+d.x,y-1,z+d.z,material);moved=true;break;}
       }
       if(!moved)queueSand(i);
     }
@@ -275,12 +278,16 @@ struct Demo : VoxelWorld {
     return best;
   }
   void mineBody(int slot,Cell center) {
-    auto& b=bodies[slot];auto tr=b3Body_GetTransform(b.id);auto angular=b3Body_GetAngularVelocity(b.id);
-    auto velocity=b3Body_GetLinearVelocity(b.id);auto oldCenter=b3Body_GetWorldCenter(b.id);
+    auto& b=bodies[slot];
     for(int y=0;y<b.size.y;++y)for(int z=0;z<b.size.z;++z)for(int x=0;x<b.size.x;++x) {
       if((x-center.x)*(x-center.x)+(y-center.y)*(y-center.y)+(z-center.z)*(z-center.z)>brush*brush)continue;
       auto& m=b.cells[localIndex(x,y,z)];if(m){m=AIR;++mined;}
     }
+    rebuildBody(slot);
+  }
+  void rebuildBody(int slot) {
+    auto& b=bodies[slot];auto tr=b3Body_GetTransform(b.id);auto angular=b3Body_GetAngularVelocity(b.id);
+    auto velocity=b3Body_GetLinearVelocity(b.id);auto oldCenter=b3Body_GetWorldCenter(b.id);
     std::array<uint8_t,BN> seen{};
     std::vector<std::vector<Cell>> groups;
     for(int y=0;y<b.size.y;++y)for(int z=0;z<b.size.z;++z)for(int x=0;x<b.size.x;++x) {
@@ -309,6 +316,7 @@ struct Demo : VoxelWorld {
     }
     updateOccupied();
   }
+  #include "material_simulation.inc"
   void useTool() {
     target=pick();
     if(tool==0) {
@@ -329,10 +337,12 @@ struct Demo : VoxelWorld {
       createBody(cells,mats,sub(p,{8,8,8}),b3Quat_identity,mul(forward(),8/VOXEL),{1.0f,0.3f,0.7f});
       updateOccupied();
     } else {
-      auto p=target.found?add(target.point,mul(target.normal,tool==1?brush+0.6f:0.15f)):add(camera,mul(forward(),4/VOXEL));
+      bool pouring=tool==1||tool>=5;
+      if(tool>=5&&fluidCount()>200000){++limitHits;return;}
+      auto p=target.found?add(target.point,mul(target.normal,pouring?brush+0.6f:0.15f)):add(camera,mul(forward(),4/VOXEL));
       int cx=int(std::floor(p.x)),cy=int(std::floor(p.y)),cz=int(std::floor(p.z));
-      int r=tool==1?int(brush):0;
-      uint8_t m=tool==1?SAND:tool==2?STONE:WOOD;
+      int r=pouring?int(brush):0;
+      uint8_t m=tool==1?SAND:tool==2?STONE:tool==3?WOOD:tool==5?WATER:tool==6?ACID:tool==7?LAVA:FIRE;
       bool changed=false;
       for(int z=cz-r;z<=cz+r;++z)for(int y=cy-r;y<=cy+r;++y)for(int x=cx-r;x<=cx+r;++x) {
         if(y<1||!inside(x,y,z)||get(x,y,z)||occupied[address(x,y,z)])continue;
@@ -360,7 +370,8 @@ struct Demo : VoxelWorld {
         }
       }
       updateOccupied();
-      if(tick%2==0)stepSand();
+      if(tick%2==0){stepSand();stepMaterials();}
+      if(tick%6==0)erodeBodies();
       ++tick;
     }
     target=pick();stepMs=emscripten_get_now()-start;
@@ -383,6 +394,7 @@ struct Demo : VoxelWorld {
     auto f=forward(),r=right(),u=b3Cross(r,f);
     glUniform3f(renderer.uniform("eye"),camera.x,camera.y,camera.z);
     glUniform3f(renderer.uniform("forward"),f.x,f.y,f.z);glUniform3f(renderer.uniform("rightward"),r.x,r.y,r.z);glUniform3f(renderer.uniform("upward"),u.x,u.y,u.z);
+    glUniform1f(renderer.uniform("simTime"),tick/60.f);
     glUniform2f(renderer.uniform("resolution"),float(width),float(height));
     glUniform4f(renderer.uniform("target"),float(target.cell.x),float(target.cell.y),float(target.cell.z),target.found?1.f:0.f);
     glUniform1i(renderer.uniform("targetBody"),target.slot);
@@ -396,6 +408,8 @@ struct Demo : VoxelWorld {
     stats[10]=float(detached);stats[11]=float(cells);stats[12]=float((origin.y+double(minY))*VOXEL);stats[13]=float(limitHits);
     stats[14]=yaw;stats[15]=pitch;stats[16]=target.found?target.distance*VOXEL:-1;
     stats[17]=VOXEL;stats[18]=float(shifts);stats[19]=float(generated);stats[20]=float(restored);stats[21]=float(saved.size());stats[22]=float(streamMs);stats[23]=float(uploaded);stats[24]=float(savedBodies.size());stats[25]=float(CN);stats[26]=float(pending.size());stats[27]=std::min({camera.x,float(W)-camera.x,camera.y,float(H)-camera.y,camera.z,float(D)-camera.z})*VOXEL;
+    for(int m=WATER;m<=SMOKE;++m)stats[28+m-WATER]=float(materialCounts[m]);
+    stats[35]=float(reactions);
     return stats;
   }
 };
@@ -415,12 +429,14 @@ EMSCRIPTEN_KEEPALIVE void demo_key(int key,int down){if(demo&&key>=0&&key<8)demo
 EMSCRIPTEN_KEEPALIVE void demo_clear_input(){if(demo){std::fill(std::begin(demo->keys),std::end(demo->keys),false);demo->held=false;}}
 EMSCRIPTEN_KEEPALIVE void demo_look(float x,float y){if(demo){demo->yaw+=x*0.0025f;demo->pitch=std::clamp(demo->pitch-y*0.0025f,-1.50f,1.50f);}}
 EMSCRIPTEN_KEEPALIVE void demo_hold(int held){if(demo)demo->held=held!=0;}
-EMSCRIPTEN_KEEPALIVE void demo_tool(int tool){if(demo)demo->tool=std::clamp(tool,0,4);}
+EMSCRIPTEN_KEEPALIVE void demo_tool(int tool){if(demo)demo->tool=std::clamp(tool,0,8);}
 EMSCRIPTEN_KEEPALIVE void demo_brush(float radius){if(demo)demo->brush=std::clamp(radius,0.5f,16.0f);}
 EMSCRIPTEN_KEEPALIVE void demo_pause(int paused){if(demo)demo->paused=paused!=0;}
 EMSCRIPTEN_KEEPALIVE float* demo_stats(){return demo?demo->snapshot():nullptr;}
 // The deterministic scenario hooks exercise the same editing and stepping paths as input.
 EMSCRIPTEN_KEEPALIVE void demo_camera(double x,double y,double z,float yaw,float pitch){if(demo)demo->moveCamera(x,y,z,yaw,pitch);}
+EMSCRIPTEN_KEEPALIVE int demo_material_count(int m){return demo&&m>=0&&m<MATERIAL_COUNT?demo->materialCounts[m]:0;}
+EMSCRIPTEN_KEEPALIVE void demo_edit(double x,double y,double z,int m){if(demo&&m>=0&&m<MATERIAL_COUNT){demo->set(int(std::floor(x/VOXEL)-demo->origin.x),int(std::floor(y/VOXEL)-demo->origin.y),int(std::floor(z/VOXEL)-demo->origin.z),uint8_t(m));}}
 EMSCRIPTEN_KEEPALIVE void demo_use(){if(demo)demo->useTool();}
 EMSCRIPTEN_KEEPALIVE int demo_cell(double x,double y,double z){return demo?demo->get(int(std::floor(x/VOXEL)-demo->origin.x),int(std::floor(y/VOXEL)-demo->origin.y),int(std::floor(z/VOXEL)-demo->origin.z)):0;}
 EMSCRIPTEN_KEEPALIVE int demo_render_cell(double x,double y,double z,int level){

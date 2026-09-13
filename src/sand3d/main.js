@@ -8,8 +8,10 @@ const tools = [
   ['Mining tool', 'Remove material'], ['Sand', 'Pour loose grains'],
   ['Stone', 'Place a solid voxel'], ['Timber', 'Place a solid voxel'],
   ['Throw', 'Launch a moving block'],
+  ['Water', 'Pools, flows, and quenches lava'], ['Acid', 'Dissolves rock, timber, and loose grains'],
+  ['Lava', 'Flows slowly; ignites timber and leaves'], ['Fire', 'Spreads through plants; water extinguishes it'],
 ];
-const materials = ['Air', 'Sand', 'Bedrock', 'Stone', 'Timber', 'Grass', 'Copper', 'Leaves'];
+const materials = ['Air', 'Sand', 'Bedrock', 'Stone', 'Timber', 'Grass', 'Copper', 'Leaves', 'Water', 'Acid', 'Lava', 'Steam', 'Fire', 'Stone dust', 'Acrid smoke'];
 const keyMap = { KeyW: 0, ArrowUp: 0, KeyS: 1, ArrowDown: 1, KeyA: 2, ArrowLeft: 2, KeyD: 3, ArrowRight: 3, Space: 4, KeyC: 5, ControlLeft: 5, ShiftLeft: 6, ShiftRight: 6 };
 const events = new AbortController();
 const on = (target, event, handler, options = {}) => target.addEventListener(event, handler, { ...options, signal: events.signal });
@@ -29,7 +31,7 @@ function resize() {
 }
 function stats() {
   const pointer = engine._demo_stats();
-  return Array.from(engine.HEAPF32.subarray(pointer / 4, pointer / 4 + 28));
+  return Array.from(engine.HEAPF32.subarray(pointer / 4, pointer / 4 + 36));
 }
 function refreshHud(now) {
   if (now - lastHud < 200) return;
@@ -38,9 +40,10 @@ function refreshHud(now) {
   $('body-count').textContent = `${s[1]} solids · ${s[2]} awake`;
   $('mined-count').textContent = `${s[3]} mined`;
   $('coordinates').textContent = `${s[5].toFixed(0)}, ${s[6].toFixed(0)}, ${s[7].toFixed(0)} m`;
+  $('reaction-count').textContent = `${s[35]} reactions`;
   $('target-label').textContent = s[9] ? `${materials[s[9]]} · ${s[16].toFixed(1)} m` : '';
   if (s[13] > lastLimitHits) {
-    $('status').textContent = 'Moving-solid limit reached. Mine existing pieces or reset the quarry.';
+    $('status').textContent = 'Material or moving-solid budget reached. Clear some material or reset the quarry.';
     lastLimitHits = s[13];
   }
   if (now - fpsStart > 1000) {
@@ -85,7 +88,7 @@ function selectTool(value) {
     button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected));
   });
   $('tool-name').textContent = tools[value][0]; $('tool-hint').textContent = tools[value][1];
-  $('touch-use').textContent = ['MINE', 'POUR', 'PLACE', 'PLACE', 'THROW'][value];
+  $('touch-use').textContent = ['MINE', 'POUR', 'PLACE', 'PLACE', 'THROW', 'POUR', 'POUR', 'POUR', 'IGNITE'][value];
 }
 function lockPointer() {
   if (coarse || !canvas.requestPointerLock) return;
@@ -133,7 +136,8 @@ on(document, 'keydown', event => {
   if (event.code === 'Escape') { if (!inMenu) menu(true); return; }
   if (inMenu) return;
   if (keyMap[event.code] !== undefined) { event.preventDefault(); engine._demo_key(keyMap[event.code], 1); }
-  if (/^Digit[1-5]$/.test(event.code)) selectTool(Number(event.code.at(-1)) - 1);
+  if (/^Digit[1-9]$/.test(event.code)) selectTool(Number(event.code.at(-1)) - 1);
+  if (event.code === 'KeyL') visitLab();
   if (event.code === 'BracketLeft' || event.code === 'BracketRight') {
     $('brush').value = String(Math.max(0.5, Math.min(16, Number($('brush').value) + (event.code === 'BracketLeft' ? -1 : 1))));
     engine._demo_brush(Number($('brush').value));
@@ -143,6 +147,13 @@ on(document, 'keyup', event => { if (keyMap[event.code] !== undefined) engine?._
 document.querySelectorAll('[data-tool]').forEach(button => on(button, 'click', () => selectTool(Number(button.dataset.tool))));
 on($('brush'), 'input', () => engine?._demo_brush(Number($('brush').value)));
 on($('quality'), 'change', resize);
+function visitLab() {
+  if (!ready) return;
+  engine._demo_clear_input();engine._demo_camera(0,7,-1,0,-0.95);
+  $('status').textContent = 'Water · Acid · Lava — dark lab trays resist corrosion';
+  if (inMenu) engine._demo_render(canvas.width,canvas.height);
+}
+on($('lab'), 'click', visitLab);
 on($('reset'), 'click', () => {
   if (!ready) return;
   engine._demo_reset(); lastLimitHits = 0; $('status').textContent = 'Quarry reset';
@@ -201,6 +212,8 @@ async function initialize() {
         reset: () => engine._demo_reset(), render: () => engine._demo_render(canvas.width, canvas.height),
         cell: (...args) => engine._demo_cell(...args),
         renderCell: (...args) => engine._demo_render_cell(...args),
+        count: material => engine._demo_material_count(material),
+        edit: (...args) => engine._demo_edit(...args),
         menu, get running() { return frame !== 0; },
       };
     }

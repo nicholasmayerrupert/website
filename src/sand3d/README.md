@@ -1,7 +1,8 @@
 # The Quarry — `/3d`
 
-A streaming creative demo with a free-flight camera, voxel mining, sand, stone
-and timber placement, and Box3D rigid bodies. It is independent of the 2D game.
+A streaming creative demo with a free-flight camera, voxel mining, sand, reactive
+fluids, combustion, stone and timber placement, and Box3D rigid bodies. It is
+independent of the 2D game.
 
 ## Run and build
 
@@ -12,7 +13,7 @@ and timber placement, and Box3D rigid bodies. It is independent of the 2D game.
 - `npm run build` builds both the main site and the separate 3D entry and
   compresses their WASM. Ordinary site builds do not need Emscripten.
 - After a production build, run
-  `node scripts/run-tests.mjs --only 3d-engine,3d-browser,deployment`.
+  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-browser,deployment`.
 
 ## Loading boundary
 
@@ -108,18 +109,56 @@ entire world after each cut. Connected material touching the loaded boundary
 remains anchored. Disconnected material becomes moving voxel bodies. Sand runs
 at 30 Hz over a list of grains, rather than scanning the entire terrain volume.
 
+## Materials and interactions
+
+`cpp/material_simulation.inc` owns active fluid motion, contact reactions, gas
+lifetime, and body erosion. The behavior follows the 2D engine's material flags
+and `ReactionSystem::applyAcid`, `applyLava`, and fire rules in
+`../sand/cpp/engine/reactions_impl.inc`:
+
+- Water and acid fall and spread only toward a lower cell, searching eight
+  horizontal directions up to eight cells away for a one-cell drop. Lava uses a
+  two-cell reach and moves more slowly, giving it a steeper repose slope.
+  Liquid cells do not wander sideways on a settled surface. This approximates
+  surface cohesion rather than physical surface tension. Density swaps let sand
+  and stone dust sink through water and acid.
+- Water or acid touching lava produces steam and loose stone dust. The residue
+  remains granular, avoiding a separate rigid body for each cooled cell.
+- Acid dissolves ordinary rock, copper, timber, plants, and powders; some acid is
+  consumed, and erosion releases acrid smoke. Bedrock resists corrosion.
+- Lava and fire ignite timber, leaves, and grass. Water extinguishes fire.
+  Fire decays into smoke; steam rises and can condense back into water.
+- Acid and heat also erode eligible materials on moving bodies. Voxel fragments
+  and collision hulls rebuild together, preserving their transforms and momentum.
+
+Fluids use an active-cell queue at 30 Hz. Stable enclosed cells sleep until a
+neighbor changes; lower openings also wake surfaces within their downhill reach.
+At most 24,000 queued cells are processed per pass, with
+deferred cells going first next time. Structural reaction edits are batched;
+ordinary liquid movement does not trigger connectivity searches. Pouring stops
+after reaching the 200,000 active-window fluid/gas budget (one brush can cross
+the threshold). Existing cells remain intact.
+All material cells share chunk persistence and every distant voxel detail level.
+
+The renderer traces through water, acid, and vapor to show the material behind
+them, with depth tinting, surface highlights, animated ripples, and emissive lava
+and flames. This is a single transmission layer; it does not simulate full
+refraction, volumetric light scattering, or illumination cast by hot materials.
+Three resistant trays at the spawn hold water, acid, and lava. `L` or the Lab
+button positions the camera above them for experiments.
+
 ## Controls and scope
 
 WASD/arrows fly, mouse looks, Space rises, C/Ctrl descends, Shift accelerates.
 Hold left-click to use the selected tool; 1–5 select mining, sand, stone, timber,
-or throwing. Brackets and the size slider change the brush. Escape pauses and
+or throwing; 6–9 select water, acid, lava, and fire. Brackets and the size slider change the brush. Escape pauses and
 releases pointer lock. Right-drag looks when pointer lock is unavailable.
 Touch uses drag-to-look, a movement pad, height buttons, and a held tool button.
 The detail setting controls render resolution independently of CSS/device scale.
 
 This is a creative terrain demo, not the 2D game's survival/content port. There
-are no fluids, reactions, inventory, or player collision. Sand uses coarse body
-occupancy and displacement, not two-way granular forces on Box3D. Dynamic volumes
+is no inventory or player collision. Fluids and sand use body occupancy for
+collision; buoyancy and two-way fluid forces on Box3D are not implemented. Dynamic volumes
 are at most 64³ cells (4 m per side); larger disconnected regions are partitioned.
 The 32-active-body budget preserves excess disconnected terrain and reports the
 limit; an over-budget fracture remains one multi-shape body. Distant simulation
@@ -136,6 +175,10 @@ flight across chunk boundaries, and screenshots. Material regression checks veri
 GPU-visible sand after eviction, single-cell placements at all distant levels,
 grass preservation, mined-air invalidation, bodies outside the terrain window,
 and visible material more than 80 metres away.
+The material suite checks volume conservation, lateral flow, acid consumption,
+quenching by water and acid, ignition and extinguishing, rigid-body erosion, and
+fluid restoration after eviction. Browser checks exercise the new palette,
+fluid shading, pouring onto lava, the lab shortcut, and touch pouring.
 On Windows they use Direct3D11
 to exercise native shader compilation; `node scripts/3d-browser-e2e.mjs --software`
 checks SwiftShader, and `--dev` selects the development server. Touch emulation is not a

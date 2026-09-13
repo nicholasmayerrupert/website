@@ -25,6 +25,7 @@ uniform ivec3 gridSize[4];
 uniform ivec3 gridOffset[4];
 uniform vec3 worldPhase;
 uniform vec2 resolution;
+uniform float simTime;
 uniform vec3 eye, forward, rightward, upward;
 uniform int bodyCount;
 uniform vec4 bodyPosition[32];
@@ -61,7 +62,7 @@ uint occupied(ivec3 p,int level,int mip) {
   if(level==2)return texelFetch(farOccupancy,p,mip).r;
   return texelFetch(horizonOccupancy,p,mip).r;
 }
-bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,
+bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,bool transmit,
                out float distance,out vec3 normal,out ivec3 cell,out uint material) {
   vec3 d=safeDirection(direction);
   float t,endT;normal=-normalize(d);material=0u;distance=limit;cell=ivec3(0);
@@ -89,7 +90,7 @@ bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,
     }
     if(stride==1.0) {
       material=slot<0?gridCell(physical,level):texelFetch(bodies,ivec2(cell.x+64*cell.z,cell.y+64*slot),0).r;
-      if(material!=0u){distance=t;return true;}
+      if(material!=0u&&!(transmit&&(material==8u||material==9u||material==11u||material==12u||material==14u))){distance=t;return true;}
     }
     vec3 boundary=floor(p/stride)*stride+step(vec3(0.0),d)*stride;
     vec3 next=(boundary-o)/d;
@@ -98,11 +99,11 @@ bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,
   }
   return false;
 }
-bool traceWorld(vec3 o,vec3 d,float limit,out float hitT,out vec3 normal,out ivec3 cell,out uint material) {
+bool traceWorld(vec3 o,vec3 d,float limit,bool transmit,out float hitT,out vec3 normal,out ivec3 cell,out uint material) {
   bool found=false;hitT=limit;normal=vec3(0);cell=ivec3(0);material=0u;
   for(int level=0;level<4;++level) {
     vec4 tr=gridOrigin[level];float t;vec3 n;ivec3 c;uint m;
-    if(traceGrid((o-tr.xyz)/tr.w,d,vec3(dimensions(level)),-1,level,hitT/tr.w,t,n,c,m)) {
+    if(traceGrid((o-tr.xyz)/tr.w,d,vec3(dimensions(level)),-1,level,hitT/tr.w,transmit,t,n,c,m)) {
       hitT=t*tr.w;normal=n;cell=ivec3(vec3(c)*tr.w+tr.xyz);material=m;found=true;
     }
   }
@@ -116,31 +117,41 @@ vec3 palette(uint m) {
   if(m==5u) return vec3(0.34,0.48,0.25);
   if(m==6u) return vec3(0.72,0.41,0.21);
   if(m==7u) return vec3(0.35,0.64,0.50);
+  if(m==8u) return vec3(0.13,0.51,0.70);
+  if(m==9u) return vec3(0.43,0.86,0.15);
+  if(m==10u) return vec3(1.0,0.25,0.025);
+  if(m==11u) return vec3(0.78,0.87,0.89);
+  if(m==12u) return vec3(1.0,0.57,0.08);
+  if(m==13u) return vec3(0.43,0.44,0.42);
+  if(m==14u) return vec3(0.52,0.59,0.28);
   return vec3(0.12,0.16,0.19);
+}
+bool traceScene(vec3 rayOrigin,vec3 rayDirection,float limit,bool transmit,
+                out float best,out vec3 bestN,out ivec3 bestCell,out uint mat,out int hitSlot,out vec3 localP) {
+  float t;vec3 n;ivec3 cell;uint m;
+  best=limit;bestN=vec3(0);bestCell=ivec3(0);mat=0u;hitSlot=-1;localP=vec3(0);
+  if(traceWorld(rayOrigin,rayDirection,best,transmit,t,n,cell,m)) {
+    best=t; bestN=n; bestCell=cell; mat=m; localP=rayOrigin+t*rayDirection;
+  }
+  for(int i=0;i<32;++i) {
+    if(i>=bodyCount) break;
+    vec4 q=bodyRotation[i];
+    vec3 o=rotateQ(vec4(-q.xyz,q.w),rayOrigin-bodyPosition[i].xyz);
+    vec3 rd=rotateQ(vec4(-q.xyz,q.w),rayDirection);
+    int slot=int(bodyPosition[i].w);
+    if(traceGrid(o,rd,bodySize[i].xyz,slot,0,best,transmit,t,n,cell,m)) {
+      best=t; bestN=rotateQ(q,n); bestCell=cell; mat=m; hitSlot=slot; localP=o+t*rd;
+    }
+  }
+  return mat!=0u;
 }
 void main() {
   vec2 uv = (gl_FragCoord.xy*2.0-resolution)/resolution.y;
   vec3 d = normalize(forward + 0.62*(uv.x*rightward + uv.y*upward));
   vec3 sky = mix(vec3(0.64,0.75,0.76),vec3(0.18,0.33,0.41),clamp(d.y*1.4,0.0,1.0));
   sky += vec3(1.0,0.81,0.52)*pow(max(dot(d,sun),0.0),300.0)*0.8;
-  float best=1792.0,t;
-  vec3 n, bestN=vec3(0), localP=vec3(0);
-  ivec3 cell, bestCell=ivec3(0);
-  uint mat=0u,m;
-  int hitSlot=-1;
-  if(traceWorld(eye,d,best,t,n,cell,m)) {
-    best=t; bestN=n; bestCell=cell; mat=m; localP=eye+t*d;
-  }
-  for(int i=0;i<32;++i) {
-    if(i>=bodyCount) break;
-    vec4 q=bodyRotation[i];
-    vec3 o=rotateQ(vec4(-q.xyz,q.w),eye-bodyPosition[i].xyz);
-    vec3 rd=rotateQ(vec4(-q.xyz,q.w),d);
-    int slot=int(bodyPosition[i].w);
-    if(traceGrid(o,rd,bodySize[i].xyz,slot,0,best,t,n,cell,m)) {
-      best=t; bestN=rotateQ(q,n); bestCell=cell; mat=m; hitSlot=slot; localP=o+t*rd;
-    }
-  }
+  float best,t;vec3 bestN,localP,n;ivec3 bestCell,cell;uint mat,m;int hitSlot;
+  traceScene(eye,d,1792.0,false,best,bestN,bestCell,mat,hitSlot,localP);
   if(mat==0u) { color=vec4(sky,1.0); return; }
   vec3 p=eye+d*best;
   float grain=fract(sin(dot(vec3(bestCell)+worldPhase,vec3(12.9898,78.233,37.719)))*43758.5453);
@@ -150,16 +161,37 @@ void main() {
   float diffuse=max(dot(bestN,sun),0.0);
   float shade=1.0;
   if(diffuse>0.01) {
-    if(traceWorld(p+bestN*0.015,sun,400.0,t,n,cell,m)) shade=0.22;
+    if(traceWorld(p+bestN*0.015,sun,400.0,true,t,n,cell,m)) shade=0.22;
     if(shade>0.5) for(int i=0;i<32;++i) {
       if(i>=bodyCount) break;
       vec4 q=bodyRotation[i];
       vec3 o=rotateQ(vec4(-q.xyz,q.w),p+bestN*0.015-bodyPosition[i].xyz);
-      if(traceGrid(o,rotateQ(vec4(-q.xyz,q.w),sun),bodySize[i].xyz,int(bodyPosition[i].w),0,400.0,t,n,cell,m)) { shade=0.22; break; }
+      if(traceGrid(o,rotateQ(vec4(-q.xyz,q.w),sun),bodySize[i].xyz,int(bodyPosition[i].w),0,400.0,true,t,n,cell,m)) { shade=0.22; break; }
     }
   }
   vec3 lighting=vec3(0.43,0.53,0.60)*(0.70+0.30*max(bestN.y,0.0)) + vec3(1.0,0.87,0.66)*diffuse*shade;
   vec3 result=base*lighting;
+  if(mat==8u||mat==9u||mat==11u||mat==12u||mat==14u) {
+    float depth;vec3 behindN,behindP;ivec3 behindCell;uint behindM;int behindSlot;
+    bool found=traceScene(p+d*0.04,d,128.0,true,depth,behindN,behindCell,behindM,behindSlot,behindP);
+    vec3 behind=found?palette(behindM)*(0.50+0.65*max(dot(behindN,sun),0.0)):sky;
+    if(behindM==10u)behind=vec3(1.0,0.35,0.025);
+    bool fluid=mat==8u||mat==9u;
+    float opacity=fluid?clamp(0.28+depth*0.014,0.28,0.83):mat==12u?0.62:mat==14u?0.35:0.23;
+    result=mix(behind,result,opacity);
+    if(fluid) {
+      float ripple=sin(textureP.x*0.34+simTime*2.3)*cos(textureP.z*0.29-simTime*1.7);
+      vec3 waterN=normalize(bestN+vec3(ripple*0.09,0.0,ripple*0.07));
+      float spec=pow(max(dot(reflect(-sun,waterN),-d),0.0),48.0);
+      result+=vec3(0.55,0.70,0.72)*spec+palette(mat)*ripple*0.035;
+    }
+  }
+  if(mat==10u) {
+    float crust=sin(textureP.x*.53+sin(textureP.z*.41)+simTime*.7)*sin(textureP.z*.57-simTime*.45);
+    result=mix(vec3(0.25,0.065,0.025),vec3(1.15,0.40,0.025),smoothstep(-.45,.5,crust));
+  }
+  if(mat==12u)result=mix(result,vec3(1.1,0.55+0.15*sin(simTime*8.0+textureP.y),0.035),0.8);
+  if(mat==9u)result+=vec3(0.025,0.06,0.005);
   if(target.w>0.0 && hitSlot==targetBody && all(equal(bestCell,ivec3(target.xyz)))) {
     vec3 f=fract(localP+bestN*0.001);
     vec3 edge=min(f,1.0-f);

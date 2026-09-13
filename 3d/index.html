@@ -15,7 +15,7 @@
       <div class="identity"><span class="eyebrow">A FALLING-SAND EXPERIMENT</span><h1>The Quarry <span>03 / 3D</span></h1></div>
       <button id="menu" aria-label="Open controls" title="Controls · Escape">☰</button>
     </header>
-    <aside class="scene-note"><span class="live-dot"></span> EXCAVATION SITE <span class="note-line">Cut the timber supports. Watch the stone fall.</span></aside>
+    <aside class="scene-note"><span class="live-dot"></span> MATERIAL LAB <span class="note-line">Water cools lava. Acid eats rock. Timber burns.<br />Press L to visit the lab.</span></aside>
     <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div id="target-label" aria-live="off"></div>
     <div id="status" role="status" aria-live="polite"></div>
@@ -23,12 +23,13 @@
       <section class="panel" aria-labelledby="panel-title">
         <span class="eyebrow">SMALL VOXELS. OPEN HORIZONS.</span>
         <h2 id="panel-title">Make room<br />for gravity.</h2>
-        <p>Explore an endless landscape at 6.25 cm voxel detail. Mine the quarry, pour sand, and cut the timber supports. Fly beyond the hills; your changes remain when you return.</p>
+        <p>Shape an endless voxel landscape. Pour water, etch rock with acid, or cool glowing lava into stone dust. Ignite the trees and cut supports to bring structures down. Your changes remain when you return.</p>
         <div class="controls desktop-help">
           <span><kbd>W A S D</kbd> Fly</span><span><kbd>SPACE / C</kbd> Up / down</span>
           <span><kbd>MOUSE</kbd> Look</span><span><kbd>HOLD CLICK</kbd> Use tool</span>
-          <span><kbd>1 — 5</kbd> Change tool</span><span><kbd>SHIFT</kbd> Fly faster</span>
+          <span><kbd>1 — 9</kbd> Change tool</span><span><kbd>SHIFT</kbd> Fly faster</span>
           <span><kbd>[ / ]</kbd> Tool size</span><span><kbd>ESC</kbd> Pause / controls</span>
+          <span><kbd>L</kbd> Visit the material lab</span>
         </div>
         <p class="touch-help">Drag the view to look. Use the left pad to fly and the right buttons to rise, descend, and use your tool.</p>
         <button id="enter" class="primary" disabled>Preparing the quarry…</button>
@@ -44,14 +45,18 @@
         <button data-tool="2" aria-pressed="false" title="Place stone · 3"><kbd>3</kbd><span class="swatch stone"></span><span>Stone</span></button>
         <button data-tool="3" aria-pressed="false" title="Place timber · 4"><kbd>4</kbd><span class="swatch wood"></span><span>Timber</span></button>
         <button data-tool="4" aria-pressed="false" title="Throw a rigid block · 5"><kbd>5</kbd><span class="tool-icon">⬡</span><span>Throw</span></button>
+        <button data-tool="5" aria-pressed="false" title="Pour water · 6"><kbd>6</kbd><span class="swatch water"></span><span>Water</span></button>
+        <button data-tool="6" aria-pressed="false" title="Pour acid · 7"><kbd>7</kbd><span class="swatch acid"></span><span>Acid</span></button>
+        <button data-tool="7" aria-pressed="false" title="Pour lava · 8"><kbd>8</kbd><span class="swatch lava"></span><span>Lava</span></button>
+        <button data-tool="8" aria-pressed="false" title="Ignite material · 9"><kbd>9</kbd><span class="swatch fire"></span><span>Fire</span></button>
       </nav>
-      <div class="settings"><label for="brush">SIZE</label><input id="brush" type="range" min="0.5" max="16" value="6" step="0.5" /><label for="quality">DETAIL</label><select id="quality"><option value="0.6">Low</option><option value="1" selected>Medium</option><option value="1.5">High</option></select><button id="reset" title="Reset the quarry">↻ <span>Reset</span></button></div>
+      <div class="settings"><label for="brush">SIZE</label><input id="brush" type="range" min="0.5" max="16" value="6" step="0.5" /><label for="quality">DETAIL</label><select id="quality"><option value="0.6">Low</option><option value="1" selected>Medium</option><option value="1.5">High</option></select><button id="lab" title="Visit the material lab · L">⚗ <span>Lab</span></button><button id="reset" title="Reset the quarry">↻ <span>Reset</span></button></div>
     </footer>
     <div id="touch-controls">
       <div class="dpad"><button data-move="0" aria-label="Fly forward">↑</button><button data-move="2" aria-label="Fly left">←</button><button data-move="1" aria-label="Fly backward">↓</button><button data-move="3" aria-label="Fly right">→</button></div>
       <div class="touch-actions"><button data-move="4" aria-label="Fly up">＋</button><button data-move="5" aria-label="Fly down">−</button><button id="touch-use">MINE</button></div>
     </div>
-    <div class="telemetry"><span id="fps">—</span><span id="body-count">0 moving solids</span><span id="mined-count">0 mined</span><span id="coordinates">0, 4, 8 m</span></div>
+    <div class="telemetry"><span id="fps">—</span><span id="body-count">0 moving solids</span><span id="mined-count">0 mined</span><span id="reaction-count">0 reactions</span><span id="coordinates">0, 4, 8 m</span></div>
     <noscript>This demo needs JavaScript. <a href="/">Back to portfolio</a></noscript>
     <script type="module" src="/src/sand3d/main.js"></script>
   </body>

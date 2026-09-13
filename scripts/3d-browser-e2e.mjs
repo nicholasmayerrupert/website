@@ -161,6 +161,39 @@ try {
   await page.evaluate(()=>window.__voxelDemo.menu(true));
   assert.deepEqual(errors,[]);
   console.log(`Streaming: flew ${(flight[5]-flightStart[5]).toFixed(1)} m through ${flight[18]-flightStart[18]} window shifts.`);
+  const fluidLevels=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.reset();d.pause(true);
+    const points=Array.from({length:7},(_,i)=>[-6+i*2+.03125,1.03125,8.03125]);
+    points.forEach((p,i)=>d.edit(...p,8+i));d.render();
+    const near=points.map(p=>d.cell(...p));
+    d.camera(0,15,18,0,-.7);d.render();
+    return {near,levels:[1,2,3].map(level=>points.map(p=>d.renderCell(...p,level)))};
+  });
+  assert.deepEqual(fluidLevels.near,[8,9,10,11,12,13,14]);
+  assert.deepEqual(fluidLevels.levels,Array.from({length:3},()=>[8,9,10,11,12,13,14]),'every fluid and reaction product survives every distant detail level');
+  const fluidColors=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.reset();d.pause(true);
+    const canvas=document.getElementById('voxel-canvas'),gl=canvas.getContext('webgl2');
+    return [-4.5,0,4.5].map(x=>{
+      // Aim inside a voxel face, clear of the gold selection outline.
+      d.camera(x+.03125,3,-6+.03125,0,-Math.PI/2);d.render();const pixel=new Uint8Array(4);
+      gl.readPixels(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+      return Array.from(pixel);
+    });
+  });
+  assert.ok(fluidColors[0][2]>fluidColors[0][0],'water has a translucent blue surface');
+  assert.ok(fluidColors[1][1]>fluidColors[1][0]&&fluidColors[1][1]>fluidColors[1][2],'acid is visibly green');
+  assert.ok(fluidColors[2][0]>fluidColors[2][1]*1.5,'lava remains visibly emissive');
+  const dustBefore=await page.evaluate(()=>window.__voxelDemo.count(13));
+  await page.evaluate(()=>window.__voxelDemo.menu(false));
+  await page.locator('#voxel-canvas').press('Digit6');
+  assert.equal(await page.locator('[data-tool="5"]').getAttribute('aria-pressed'),'true');
+  await page.mouse.move(640,400);await page.mouse.down();await page.waitForTimeout(250);await page.mouse.up();
+  await page.waitForFunction(before=>window.__voxelDemo.count(13)>before,dustBefore,{timeout:10000});
+  await page.locator('#voxel-canvas').press('KeyL');
+  await page.screenshot({path:resolve(artifacts,'desktop-material-lab.png')});
+  assert.deepEqual(errors,[],'fluid shading and interaction run without GPU or runtime errors');
+  console.log('Materials: water, acid, and lava render; keyboard pouring quenches lava; the lab shortcut works.');
   await page.evaluate(() => document.getElementById('voxel-canvas').getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());
   await page.waitForFunction(() => !document.getElementById('retry').hidden);
   assert.equal(await page.evaluate(() => window.__voxelDemo.running), false, 'context loss stops processing and offers recovery');
@@ -189,6 +222,12 @@ try {
   const stoppedSand = await touch.evaluate(() => window.__voxelDemo.stats()[4]);
   await touch.waitForTimeout(250);
   assert.equal(await touch.evaluate(() => window.__voxelDemo.stats()[4]), stoppedSand, 'cancel releases the tool');
+  await touch.locator('[data-tool="5"]').tap();
+  const waterBefore=await touch.evaluate(()=>window.__voxelDemo.count(8));
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:useBounds.x+useBounds.width/2,y:useBounds.y+useBounds.height/2}]});
+  await touch.waitForTimeout(250);await client.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
+  assert.ok(await touch.evaluate(()=>window.__voxelDemo.count(8))>waterBefore,'touch controls pour water');
+  assert.equal(await touch.locator('[data-tool]').count(),9,'all material tools are available on mobile');
   await touch.screenshot({ path: resolve(artifacts, 'mobile-quarry.png') });
   assert.equal(await touch.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'mobile controls fit');
   await touch.locator('#menu').tap();

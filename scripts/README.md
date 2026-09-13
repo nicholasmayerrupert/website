@@ -94,6 +94,13 @@ the next sample; flight samples include browser scheduling and streaming stalls.
 Compare only matching hardware, browser, viewport, and detail settings. Engine
 streaming-step timings are also reported by the `3d-engine` suite.
 
+`node scripts/bench-3d-acid.mjs --json FILE` compares water and acid simulation
+under eight equal pours followed by 600 steps. `node scripts/bench-3d-acid-browser.mjs
+--json FILE` runs the same workload with native rendering, reporting step, draw,
+upload, and frame timings separately, including the slowest frames and their
+body/reaction counts. It accepts `--production` for the production build. Contact
+reactions use the normal browser RNG, so reaction totals can vary between runs.
+
 ### Cold startup
 
 Build with `npm run build`, then run:

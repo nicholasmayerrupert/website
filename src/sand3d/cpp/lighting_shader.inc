@@ -6,35 +6,37 @@ uniform vec4 lightColor[24];
 bool opaqueMaterial(uint material) {
   return material!=0u&&material!=8u&&material!=9u&&material!=11u&&material!=12u&&material!=14u;
 }
-float ambientCell(vec3 position,int slot,vec3 localPosition) {
-  if(slot>=0) {
-    ivec3 c=ivec3(floor(localPosition));
-    if(all(greaterThanEqual(c,ivec3(0)))&&all(lessThan(c,ivec3(64)))) {
-      if(opaqueMaterial(texelFetch(bodies,ivec2(c.x+64*c.z,c.y+64*slot),0).r))return 1.0;
-    }
-  }
+float ambientCell(vec3 position) {
   for(int level=0;level<4;++level) {
     ivec3 c=ivec3(floor((position-gridOrigin[level].xyz)/gridOrigin[level].w));
     if(any(lessThan(c,ivec3(0)))||any(greaterThanEqual(c,dimensions(level))))continue;
-    return opaqueMaterial(gridCell((c+gridOffset[level])%dimensions(level),level))?1.0:0.0;
+    if(opaqueMaterial(gridCell((c+gridOffset[level])%dimensions(level),level)))return 1.0;
+    break;
+  }
+  for(int i=0;i<256;++i) {
+    if(i>=bodyCount)break;
+    vec4 q=bodyRotation[i];
+    ivec3 c=ivec3(floor(rotateQ(vec4(-q.xyz,q.w),position-bodyPosition[i].xyz)));
+    if(any(lessThan(c,ivec3(0)))||any(greaterThanEqual(c,ivec3(bodySize[i].xyz))))continue;
+    int slot=int(bodyPosition[i].w);
+    if(opaqueMaterial(texelFetch(bodies,ivec3(c.x+64*c.z,c.y+64*(slot%32),slot/32),0).r))return 1.0;
   }
   return 0.0;
 }
-float surfaceOcclusion(vec3 p,vec3 normal,int slot,vec3 localP,vec3 localN) {
+float surfaceOcclusion(vec3 p,vec3 normal) {
   vec3 tangent=normalize(abs(normal.y)<.9?cross(normal,vec3(0,1,0)):cross(normal,vec3(0,0,1)));
   vec3 bitangent=cross(normal,tangent);
-  vec3 localT=normalize(abs(localN.y)<.9?cross(localN,vec3(0,1,0)):cross(localN,vec3(0,0,1)));
-  vec3 localB=cross(localN,localT);
   float scale=1.0;
-  if(slot<0)for(int level=0;level<4;++level) {
+  for(int level=0;level<4;++level) {
     vec3 c=(p-gridOrigin[level].xyz)/gridOrigin[level].w;
     if(all(greaterThanEqual(c,vec3(0)))&&all(lessThan(c,vec3(dimensions(level))))){scale=gridOrigin[level].w;break;}
   }
-  vec3 outside=p+normal*scale*.55,localOutside=localP+localN*.55;
-  float blocked=ambientCell(outside+tangent*scale,slot,localOutside+localT)
-    +ambientCell(outside-tangent*scale,slot,localOutside-localT)
-    +ambientCell(outside+bitangent*scale,slot,localOutside+localB)
-    +ambientCell(outside-bitangent*scale,slot,localOutside-localB);
+  vec3 outside=p+normal*scale*.55;
+  float blocked=0.0;
+  for(int i=0;i<4;++i) {
+    vec3 offset=i<2?tangent:bitangent;
+    blocked+=ambientCell(outside+offset*(i%2==0?scale:-scale));
+  }
   return 1.0-blocked*.085;
 }
 bool lightBlocked(vec3 origin,vec3 direction,float limit) {
@@ -62,14 +64,33 @@ vec3 emissiveIllumination(vec3 p,vec3 normal) {
   }
   return result;
 }
+float skyCoverage(vec3 origin,vec3 direction) {
+  float distance;vec3 normal,localP;ivec3 cell;uint material;int slot;
+  if(!traceScene(origin,direction,96.0,true,distance,normal,cell,material,slot,localP))return 0.0;
+  return 1.0-smoothstep(0.0,96.0,distance);
+}
 vec3 sceneIllumination(vec3 p,vec3 normal,int slot,vec3 localP,vec3 localN) {
   float diffuse=max(dot(normal,sun),0.0);
-  float shade=diffuse>.01&&lightBlocked(p+normal*.025,sun,400.0)?0.0:1.0;
-  float skyVisibility=1.0;
-  if(shade<.5||diffuse<=.01||normal.y<-.1)
-    skyVisibility=lightBlocked(p+normal*.025,vec3(0,1,0),256.0)?.18:1.0;
-  vec3 ambient=mix(vec3(.24,.23,.19),vec3(.40,.51,.62),normal.y*.5+.5);
-  ambient*=skyVisibility*surfaceOcclusion(p,normal,slot,localP,localN);
+  float shade=1.0;
+  if(diffuse>.01) {
+    shade=0.0;
+    for(int i=0;i<2;++i) {
+      vec3 spread=vec3(-.4472,0.0,-.8944)*(i==0?.018:-.018);
+      shade+=lightBlocked(p+normal*.025,normalize(sun+spread),400.0)?0.0:.5;
+    }
+  }
+  // All ambient probes trace the same terrain and moving-body geometry.
+  // Fixed directions and distance weighting keep the illumination stable.
+  vec3 probe=p+normal*.025;
+  float coverage=0.0;
+  for(int i=0;i<3;++i) {
+    vec3 direction=i==0?vec3(0,1,0):i==1?normalize(vec3(.65,.75,.1)):normalize(vec3(-.3,.75,-.55));
+    coverage+=skyCoverage(probe,direction)/3.0;
+  }
+  float skyVisibility=1.0-.42*coverage;
+  vec3 ambient=mix(vec3(.34,.35,.32),vec3(.44,.55,.65),normal.y*.5+.5);
+  ambient*=skyVisibility*surfaceOcclusion(p,normal);
+  ambient+=vec3(.12,.11,.085)*diffuse*(1.0-shade);
   return ambient+vec3(1.0,.87,.68)*diffuse*shade+emissiveIllumination(p,normal);
 }
 )GLSL"

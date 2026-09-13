@@ -36,7 +36,10 @@ try {
   for(let z=161;z<183;++z)for(let x=-159;x<-137;++x)put(...cell(x,0,z),M.bedrock);
   put(...cell(-148,1,172),M.water);step(60);
   assert.equal(get(...cell(-148,1,172)),M.water,'an isolated droplet stays cohesive on a level shelf');
-  put(...cell(-156,0,172),M.air);step(4);
+  put(...cell(-156,0,172),M.air);step(2);
+  assert.equal(get(...cell(-149,1,172)),M.water,'a draining droplet moves into the next shelf cell');
+  assert.equal(get(...cell(-156,0,172)),M.air,'downhill lookahead does not teleport water over a dry shelf');
+  step(30);
   assert.equal(get(...cell(-156,0,172)),M.water,'opening a drain eight cells away wakes and drains a sleeping surface');
   assert.equal(get(...cell(-148,1,172)),M.air,'downhill motion conserves the source cell');
 
@@ -50,13 +53,31 @@ try {
   put(...cell(-152,1,176),M.bedrock);put(...cell(-156,0,176),M.air);
   put(...cell(-148,1,176),M.water);step(60);
   assert.equal(get(...cell(-148,1,176)),M.water,'a wall blocks the wider downhill search');
-  put(...cell(-152,1,176),M.air);step(4);
+  put(...cell(-152,1,176),M.air);step(32);
   assert.equal(get(...cell(-156,0,176)),M.water,'opening a distant wall wakes the surface behind it');
+
+  // A one-cell-wide terraced channel checks the complete route of a stream.
+  // The high inlet is fed continuously, so every flat shelf must carry water.
+  box(-224,160,32);
+  const shelfHeight=x=>x<-215?4:x<-207?3:x<-199?2:1;
+  for(let x=-223;x<-193;++x)for(let z=161;z<191;++z)for(let y=0;y<12;++y)
+    put(...cell(x,y,z),z!==176||y<shelfHeight(x)?M.bedrock:M.air);
+  const wet=new Set(),streamBefore=count(M.water);let supplied=0;
+  for(let frame=0;frame<100;++frame) {
+    if(frame<48&&get(...cell(-222,7,176))===M.air){put(...cell(-222,7,176),M.water);++supplied;}
+    step(2);
+    for(let x=-222;x<-194;++x)for(let y=shelfHeight(x);y<10;++y)
+      if(get(...cell(x,y,176))===M.water)wet.add(x);
+  }
+  for(let x=-222;x<-195;++x)assert.ok(wet.has(x),`flow wets terrace cell ${x} instead of skipping it`);
+  assert.equal(count(M.water),streamBefore+supplied,'continuous terrace flow conserves every poured cell');
 
   // Acid reacts with material on an inert foundation and consumes itself.
   for(let x=165;x<169;++x)for(let z=165;z<169;++z)for(let y=0;y<4;++y)put(...cell(x,y,z),M.wood);
   for(let z=165;z<169;++z)for(let y=0;y<4;++y)put(...cell(164,y,z),M.acid);
-  const acid=count(M.acid),reactionStart=stats()[35];step(180);
+  const acid=count(M.acid),reactionStart=stats()[35],random=Math.random;
+  // Exercise both probabilistic erosion and consumption on every contact.
+  try {Math.random=()=>0.1;step(180);} finally {Math.random=random;}
   let wood=0;for(let x=165;x<169;++x)for(let z=165;z<169;++z)for(let y=0;y<4;++y)wood+=get(...cell(x,y,z))===M.wood;
   assert.ok(wood<64,'acid erodes timber');assert.ok(count(M.acid)<acid,'acid is consumed while dissolving material');
   assert.ok(stats()[35]>reactionStart,'erosion reports material reactions');

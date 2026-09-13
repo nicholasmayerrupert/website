@@ -1,6 +1,6 @@
 {
-  "source": "6fb0c8fa057e2c9bc1650c76bcf9259c1fb5fb82b0aebfd3d6c0c2449606ab1f",
-  "wasm": "d9a2f7bfb5f46761fef42fbf1313e665656f4033db8f95ccda71ef5d623fa720",
-  "loader": "ceed0c470cfcec08545c832fc59174279e4c77ee7bc3603ea5b2d8df2068fb64",
+  "source": "3a77c28220df9ec6c9c72e890cff8dd099eaf2928efeff47263f007235568ff0",
+  "wasm": "11b385609b29a4aa3fa27fa175a84127d93cc678fc0f5122fdeba4178fab11bb",
+  "loader": "e31c2ca58e53fb1ca9646731d153810478e8eb1fd418bbb14155ca526ea3a7ae",
   "emscripten": "6.0.0"
 }

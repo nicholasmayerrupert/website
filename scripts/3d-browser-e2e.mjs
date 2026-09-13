@@ -126,7 +126,14 @@ try {
     const before=d.stats()[11];d.render();
     const c=document.getElementById('voxel-canvas'),gl=c.getContext('webgl2'),pixels=new Uint8Array(11*11*4);
     // Aim at the settled body's actual centre; angular contact can move it sideways.
-    const program=gl.getParameter(gl.CURRENT_PROGRAM),uniform=name=>gl.getUniform(program,gl.getUniformLocation(program,name));
+    const program=gl.getParameter(gl.CURRENT_PROGRAM),uniform=name=>{
+      if(!name.startsWith('body'))return gl.getUniform(program,gl.getUniformLocation(program,name));
+      const index=gl.getUniformIndices(program,[name]);
+      const offset=gl.getActiveUniforms(program,index,gl.UNIFORM_OFFSET)[0];
+      const binding=gl.getActiveUniformBlockParameter(program,gl.getUniformBlockIndex(program,'BodyTransforms'),gl.UNIFORM_BLOCK_BINDING);
+      gl.bindBuffer(gl.UNIFORM_BUFFER,gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING,binding));
+      const value=new Float32Array(4);gl.getBufferSubData(gl.UNIFORM_BUFFER,offset,value);return value;
+    };
     const p=uniform('bodyPosition[0]'),q=uniform('bodyRotation[0]'),size=uniform('bodySize[0]'),origin=uniform('worldPhase');
     const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
     const v=Array.from(size).slice(0,3).map(a=>a/2),a=cross(q,v),b=cross(q,a.map((a,i)=>a+q[3]*v[i]));
@@ -141,6 +148,22 @@ try {
   await page.screenshot({path:resolve(artifacts,'desktop-distant-body.png')});
   assert.ok(bodyPersistence.stonePixels>10,`GPU draws the rigid body after the terrain window moves away: ${JSON.stringify(bodyPersistence)}`);
   console.log('Continuity: sand, single-voxel edits, grass surfaces, mined air, and rigid bodies survive detail boundaries.');
+  const expandedBodies=await page.evaluate(()=>{
+    const d=window.__voxelDemo;d.reset();d.pause(true);d.tool(4);
+    for(let i=0;i<32;++i)d.use();
+    d.camera(8,12,8,0,0);d.use();d.camera(8,12,8,0,0);d.render();
+    const c=document.getElementById('voxel-canvas'),gl=c.getContext('webgl2'),visible=new Uint8Array(11*11*4),hidden=new Uint8Array(visible.length);
+    const read=pixels=>gl.readPixels(Math.floor(c.width/2)-5,Math.floor(c.height/2)-5,11,11,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    read(visible);
+    gl.uniform1i(gl.getUniformLocation(gl.getParameter(gl.CURRENT_PROGRAM),'bodyCount'),0);gl.drawArrays(gl.TRIANGLES,0,3);read(hidden);
+    let changed=0;for(let i=0;i<visible.length;i+=4)if(Math.max(...[0,1,2].map(k=>Math.abs(visible[i+k]-hidden[i+k])))>20)++changed;
+    d.render();return {bodies:d.stats()[1],material:d.stats()[9],changed,error:gl.getError()};
+  });
+  assert.equal(expandedBodies.bodies,33,'new rigid bodies exceed the old 32-body limit');
+  assert.equal(expandedBodies.material,3);
+  assert.ok(expandedBodies.changed>100,`a body in the second atlas bank renders at its own pose: ${JSON.stringify(expandedBodies)}`);
+  assert.equal(expandedBodies.error,0,'body uniform buffer and texture-array uploads are valid');
+  await page.evaluate(()=>window.__voxelDemo.reset());
   const distantTimber=await page.evaluate(()=>{
     const d=window.__voxelDemo;d.camera(1.75,20,80,0,-Math.atan2(18.5,80.75));d.render();
     const c=document.getElementById('voxel-canvas'),gl=c.getContext('webgl2'),pixel=new Uint8Array(4);

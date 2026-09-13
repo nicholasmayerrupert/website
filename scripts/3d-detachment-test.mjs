@@ -35,15 +35,27 @@ try {
   assert.equal(get(0,-20,65),0,'a completely excavated underground island detaches');
   assert.ok(stats()[11]>100,'the island retains its physical voxels');
 
-  // Exhaustion must not commit an irreversible support cut and leave an orphan.
+  // Local erosion proofs must not lose an orphan whose edge moves farther
+  // from the initial bridge cut as the remainder of a batch is removed.
+  e._demo_reset();
+  for(let y=0;y<=32;++y)put(16,y,96,4);
+  for(let x=17;x<=32;++x)put(x,32,96,4);
+  step(2);assert.equal(stats()[1],0);
+  for(let x=17;x<32;++x)put(x,32,96,0);
+  step(2);
+  assert.equal(get(32,32,96),0,'the final batch boundary detects the remaining orphan');
+  assert.equal(stats()[11],1,'the last isolated voxel becomes physical');
+  assert.equal(get(16,32,96),4,'the supported column is preserved');
+
+  // Mining still works after the first texture-array bank fills.
   e._demo_reset();e._demo_tool(4);
   for(let i=0;i<32;++i)e._demo_use();
   assert.equal(stats()[1],32);
   for(let z=60;z<72;++z)for(let y=-12;y<4;++y)for(let x=-6;x<6;++x)
     if(x< -4||x>=4||z<62||z>=70||y< -10||y>=0)put(x,y,z,0);
   step(2);
-  assert.equal(get(0,-11,65),3,'capacity-limited removal restores the island foundation');
-  assert.equal(stats()[1],32);assert.ok(stats()[13]>0,'capacity limit is reported');
+  assert.equal(get(0,-5,65),0,'terrain detaches with 32 bodies already present');
+  assert.equal(stats()[1],33);assert.equal(stats()[13],0);
   assert.ok(stats().every(Number.isFinite));
-  console.log('3D detachment checks passed: cross-window support, full geometry transfer, gravity, persistence, underground islands, and atomic capacity limits.');
+  console.log('3D detachment checks passed: cross-window support, full geometry transfer, gravity, persistence, batch erosion, and mining beyond 32 bodies.');
 }finally{e._demo_destroy();}

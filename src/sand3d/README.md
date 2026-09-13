@@ -13,7 +13,7 @@ independent of the 2D game.
 - `npm run build` builds both the main site and the separate 3D entry and
   compresses their WASM. Ordinary site builds do not need Emscripten.
 - After a production build, run
-  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-detachment,3d-browser,deployment`.
+  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-detachment,3d-browser,3d-lighting,deployment`.
 
 ## Loading boundary
 
@@ -69,7 +69,9 @@ hierarchy skips empty 32³, 16³, 8³, and 4³ regions before traversing individ
 Only changed chunks and their occupancy nodes upload to the GPU. The hierarchy
 uses an integer texture with nearest mip filtering so Direct3D exposes every
 level to `texelFetch`. Moving bodies use a separate local voxel atlas; rotation
-updates their poses without rebuilding render meshes.
+updates their poses without rebuilding render meshes. The atlas uses eight
+32-body texture-array banks, with 256 poses in a uniform buffer rather than
+individual fragment uniforms. CPU body volumes allocate on demand.
 
 Beyond the simulation window, three voxel clipmaps use 12.5 cm, 25 cm, and 50 cm
 cells. Their coverage is 64 × 32 × 64 m, 128 × 64 × 128 m, and a 256 m cube.
@@ -111,15 +113,30 @@ voxels, so mining and combustion remove it along with the material.
 render chunk changes. Sources use absolute coordinates across all detail levels;
 finer coverage suppresses duplicate coarse sources. Up to 24 sources are selected,
 and each pixel shades its strongest two contributions with terrain/body shadow
-rays. `lighting_shader.inc` also provides local voxel ambient occlusion and
-overhead sky occlusion. This is direct illumination, without bounce lighting,
-full global illumination, bloom, or temporal accumulation.
+rays. `lighting_shader.inc` uses the same world-space terrain and body queries
+for contact ambient occlusion, three fixed sky rays, sunlight, and emissive
+shadows. Sky obstruction is weighted by hit distance, and an indirect-light
+floor keeps sheltered surfaces legible. Two fixed sunlight samples soften shadow
+edges. Voxel-volume entry normals follow the actual box face. Changing supported
+terrain into a rigid body at the same pose preserves the illumination of both
+the object and its surroundings.
+This approximates indirect light without full global illumination, bloom,
+or temporal accumulation.
+
+The `3d-lighting` browser regression cuts a roof's one-voxel support while physics
+is paused and compares the static and rigid renders. Albedo is held constant to
+isolate lighting from body-local material patterns; the compiled traversal and
+lighting shader remain intact. Only the removed cell and its shadow may change.
 
 Box3D advances at 60 Hz with four substeps, with its length scale set to sixteen
 voxels per metre. Static collision hulls are generated only near dynamic bodies,
 using greedily merged solid boxes. Changed hulls rebuild before the next physics
 step. `structural_support.inc` checks connectivity from edited cells, continuing
-through saved or procedural geometry outside the loaded window. Support is
+through saved or procedural geometry outside the loaded window. A pre-removal
+3³-neighborhood proof skips that search when all surviving neighbors stay
+connected locally. Possible bridge cuts track surviving neighbors through the
+rest of the batch so further erosion cannot hide an orphan. Pending support
+edits are processed before a running world shifts. Support is
 proven by a continuous deep-rock column below both the caves and all known edits
 in that column; a streaming boundary does not anchor an island. Disconnected
 material transfers to moving voxel bodies, including its unloaded portions,
@@ -136,6 +153,8 @@ and `ReactionSystem::applyAcid`, `applyLava`, and fire rules in
 - Water and acid fall and spread only toward a lower cell, searching eight
   horizontal directions up to eight cells away for a one-cell drop. Lava uses a
   two-cell reach and moves more slowly, giving it a steeper repose slope.
+  Lookahead chooses the outlet, but liquid advances one adjacent cell at a time
+  across a shelf instead of jumping over intervening flat ground.
   Liquid cells do not wander sideways on a settled surface. This approximates
   surface cohesion rather than physical surface tension. Density swaps let sand
   and stone dust sink through water and acid.
@@ -177,7 +196,7 @@ This is a creative terrain demo, not the 2D game's survival/content port. There
 is no inventory or player collision. Fluids and sand use body occupancy for
 collision; buoyancy and two-way fluid forces on Box3D are not implemented. Dynamic volumes
 are at most 64³ cells (4 m per side); larger disconnected regions are partitioned.
-The 32-active-body budget reports its limit. Structural edits are planned before
+The 256-active-body budget reports its limit. Structural edits are planned before
 detachment; a cut requiring more bodies than available restores its structural
 edits instead of leaving disconnected static material. An over-budget fracture
 of an existing body remains one multi-shape body. Distant simulation
@@ -200,7 +219,9 @@ fluid restoration after eviction. Browser checks exercise the new palette,
 fluid shading, pouring onto lava, the lab shortcut, touch pouring, incremental
 clipmap parity, emissive illumination, and solid occluders. Detachment regressions
 cover fresh-world islands crossing both vertical window edges, physical falling,
-preservation of unloaded geometry, and atomic support edits at the body limit.
+preservation of unloaded geometry, batched erosion, and mining beyond 32 bodies.
+The engine suite checks the 256-body limit, and the browser suite renders a body
+in the second texture-array bank.
 `node scripts/bench-3d.mjs --json FILE` measures engine/render submission and
 normal RAF flight on the native GPU; add `--production` for built assets.
 On Windows they use Direct3D11

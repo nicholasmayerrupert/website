@@ -164,6 +164,7 @@ export const UNIT_SUITES = [
 
 export const BROWSER_SUITES = [
   ['3d-browser', '3d-browser-e2e.mjs', exclusive(180_000)],
+  ['3d-lighting', '3d-lighting-e2e.mjs', exclusive(120_000)],
   ['pointer-buttons-e2e', 'pointer-buttons-e2e.mjs', exclusive(120_000)],
   ['hud-stability-e2e', 'hud-stability-e2e.mjs', exclusive(120_000)],
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],

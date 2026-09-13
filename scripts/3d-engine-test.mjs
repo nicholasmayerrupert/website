@@ -95,8 +95,8 @@ try {
   console.log(`Streaming flight: p50 ${travel[600].toFixed(2)} ms, p95 ${travel[1140].toFixed(2)} ms, p99 ${travel[1188].toFixed(2)} ms, max ${travel.at(-1).toFixed(2)} ms; heap ${(engine.HEAPU8.length/1048576).toFixed(1)} MiB.`);
 
   engine._demo_reset(); engine._demo_tool(4);
-  for (let i = 0; i < 36; ++i) engine._demo_use();
-  assert.equal(snapshot()[1], 32, 'the dynamic body pool is bounded');
+  for (let i = 0; i < 260; ++i) engine._demo_use();
+  assert.equal(snapshot()[1], 256, 'the larger dynamic body pool is bounded');
   assert.ok(snapshot()[13] > 0, 'the body limit is reported to the interface');
 
   engine._demo_reset();assert.equal(snapshot()[1], 0);assert.equal(snapshot()[3], 0);

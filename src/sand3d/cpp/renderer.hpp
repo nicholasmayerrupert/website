@@ -17,9 +17,10 @@ precision highp float;
 precision highp int;
 precision highp usampler3D;
 precision highp usampler2D;
+precision highp usampler2DArray;
 uniform usampler3D terrain;
 uniform usampler3D occupancy;
-uniform usampler2D bodies;
+uniform usampler2DArray bodies;
 uniform usampler3D midVoxels, midOccupancy, farVoxels, farOccupancy, horizonVoxels, horizonOccupancy;
 uniform vec4 gridOrigin[4];
 uniform ivec3 gridSize[4];
@@ -29,9 +30,11 @@ uniform vec2 resolution;
 uniform float simTime;
 uniform vec3 eye, forward, rightward, upward;
 uniform int bodyCount;
-uniform vec4 bodyPosition[32];
-uniform vec4 bodyRotation[32];
-uniform vec4 bodySize[32];
+layout(std140) uniform BodyTransforms {
+  vec4 bodyPosition[256];
+  vec4 bodyRotation[256];
+  vec4 bodySize[256];
+};
 uniform vec4 target;
 uniform int targetBody;
 out vec4 color;
@@ -68,6 +71,10 @@ bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,bo
   vec3 d=safeDirection(direction);
   float t,endT;normal=-normalize(d);material=0u;distance=limit;cell=ivec3(0);
   if(!boxHit(o,d,size,t,endT))return false;
+  vec3 entry=min(-o/d,(size-o)/d);
+  vec3 entryAxis=step(entry.yzx,entry)*step(entry.zxy,entry);
+  entryAxis.y*=1.0-entryAxis.x;entryAxis.z=(1.0-entryAxis.x)*(1.0-entryAxis.y);
+  normal=mix(normal,-sign(d)*entryAxis,step(0.0,t));
   t=max(t,0.0)+0.0002;endT=min(endT,limit);
   for(int iteration=0;iteration<1024;++iteration) {
     if(t>endT)break;
@@ -90,7 +97,7 @@ bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,bo
       else if(occupied(physical/4,level,0)==0u)stride=4.0;
     }
     if(stride==1.0) {
-      material=slot<0?gridCell(physical,level):texelFetch(bodies,ivec2(cell.x+64*cell.z,cell.y+64*slot),0).r;
+      material=slot<0?gridCell(physical,level):texelFetch(bodies,ivec3(cell.x+64*cell.z,cell.y+64*(slot%32),slot/32),0).r;
       if(material!=0u&&!(transmit&&(material==8u||material==9u||material==11u||material==12u||material==14u))){distance=t;return true;}
     }
     vec3 boundary=floor(p/stride)*stride+step(vec3(0.0),d)*stride;
@@ -137,7 +144,7 @@ bool traceScene(vec3 rayOrigin,vec3 rayDirection,float limit,bool transmit,
   if(traceWorld(rayOrigin,rayDirection,best,transmit,t,n,cell,m)) {
     best=t; bestN=n; bestCell=cell; mat=m; localP=rayOrigin+t*rayDirection;
   }
-  for(int i=0;i<32;++i) {
+  for(int i=0;i<256;++i) {
     if(i>=bodyCount) break;
     vec4 q=bodyRotation[i];
     vec3 o=rotateQ(vec4(-q.xyz,q.w),rayOrigin-bodyPosition[i].xyz);
@@ -163,7 +170,7 @@ void main() {
   vec3 p=eye+d*best;
   vec3 textureP=localP+(hitSlot<0?worldPhase:vec3(0.0));
   vec3 textureN=bestN;
-  if(hitSlot>=0)for(int i=0;i<32;++i) {
+  if(hitSlot>=0)for(int i=0;i<256;++i) {
     if(i>=bodyCount)break;
     if(int(bodyPosition[i].w)==hitSlot) {
       vec4 q=bodyRotation[i];textureN=rotateQ(vec4(-q.xyz,q.w),bestN);break;
@@ -211,7 +218,7 @@ void main() {
 
 struct Renderer {
   EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = 0;
-  GLuint program=0,vao=0,textures[9]{};
+  GLuint program=0,vao=0,bodyTransforms=0,textures[9]{};
   std::array<std::array<std::vector<uint8_t>,4>,4> occupancyData;
   EmissiveLights lights;
   VoxelClipmap mid{2,512,256,512},far{4,512,256,512},horizon{8,512,512,512};
@@ -294,16 +301,19 @@ struct Renderer {
     GLint ok; glGetProgramiv(program,GL_LINK_STATUS,&ok);
     if(!ok) { char msg[4096]; glGetProgramInfoLog(program,sizeof(msg),nullptr,msg); std::fprintf(stderr,"%s\n",msg); return false; }
     glUseProgram(program); glGenVertexArrays(1,&vao); glBindVertexArray(vao);
+    glGenBuffers(1,&bodyTransforms);glBindBuffer(GL_UNIFORM_BUFFER,bodyTransforms);
+    glBufferData(GL_UNIFORM_BUFFER,MAX_BODIES*12*sizeof(float),nullptr,GL_DYNAMIC_DRAW);
+    glUniformBlockBinding(program,glGetUniformBlockIndex(program,"BodyTransforms"),0);glBindBufferBase(GL_UNIFORM_BUFFER,0,bodyTransforms);
     glGenTextures(9,textures);
     const char* names[]={"terrain","occupancy","bodies","midVoxels","midOccupancy","farVoxels","farOccupancy","horizonVoxels","horizonOccupancy"};
     for(int i=0;i<9;++i) {
       glActiveTexture(GL_TEXTURE0+i);
-      GLenum type=i==2?GL_TEXTURE_2D:GL_TEXTURE_3D;
+      GLenum type=i==2?GL_TEXTURE_2D_ARRAY:GL_TEXTURE_3D;
       bool isOccupancy=i==1||i==4||i==6||i==8;
       glBindTexture(type,textures[i]);
       glTexParameteri(type,GL_TEXTURE_MIN_FILTER,isOccupancy?GL_NEAREST_MIPMAP_NEAREST:GL_NEAREST); glTexParameteri(type,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
       glTexParameteri(type,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE); glTexParameteri(type,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-      if(i==2)glTexStorage2D(type,1,GL_R8UI,B*B,B*MAX_BODIES);
+      if(i==2)glTexStorage3D(type,1,GL_R8UI,B*B,B*32,MAX_BODIES/32);
       else {
         glTexParameteri(type,GL_TEXTURE_WRAP_R,GL_CLAMP_TO_EDGE);
         auto size=dimensions(i<2?0:(i-1)/2);int scale=isOccupancy?4:1,w=size.x,h=size.y,d=size.z;
@@ -318,7 +328,7 @@ struct Renderer {
   void destroy() {
     if(context>0) {
       emscripten_webgl_make_context_current(context);
-      glDeleteTextures(9,textures); glDeleteVertexArrays(1,&vao); glDeleteProgram(program);
+      glDeleteBuffers(1,&bodyTransforms);glDeleteTextures(9,textures); glDeleteVertexArrays(1,&vao); glDeleteProgram(program);
       emscripten_webgl_destroy_context(context); context=0;
     }
   }

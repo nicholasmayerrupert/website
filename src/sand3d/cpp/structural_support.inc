@@ -1,6 +1,7 @@
   void detachUnsupported() {
     auto seeds=std::move(edits);edits.clear();
     auto originals=std::move(editOriginals);editOriginals.clear();
+    supportFrontier.clear();
     if(seeds.empty())return;
     std::vector<int> touched;
     std::unordered_map<ChunkKey,uint8_t,KeyHash> exteriorVisited;
@@ -91,6 +92,7 @@
       rebuildTerrain();updateOccupied();return;
     }
     std::unordered_set<ChunkKey,KeyHash> changedExterior;
+    generating=true;
     for(auto& piece:pieces) {
       auto p=piece.origin;createBody(piece.cells,piece.materials,{float(p.x),float(p.y),float(p.z)});
       for(auto c:piece.cells) {
@@ -101,6 +103,7 @@
         it->second.cells[exteriorIndex(c)]=AIR;changedExterior.insert(key);
       }
     }
+    generating=false;
     for(auto key:changedExterior) {
       saved[key]=pack(exteriorChunks.at(key).cells);renderChanges.insert(key);prepared.erase(key);
       auto collider=terrainBodies.find(key);

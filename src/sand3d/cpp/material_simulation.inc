@@ -63,8 +63,8 @@
       if(!moved&&liquid(m)) {
         Cell destination=c;int bestDistance=INT_MAX;
         int first=(c.x*3+c.z*5+c.y)&7;
-        // Liquids only spread downhill. A wide, shallow repose slope gives a
-        // cohesive surface without moving settled cells sideways at random.
+        // Look ahead for a lower outlet, but flow across every intervening
+        // shelf cell. Settled surfaces have no outlet and stay still.
         for(int k=0;k<8;++k) {
           auto side=liquidSides[(first+k)&7];Cell previous=c;
           for(int reach=1;reach<=liquidReach(m);++reach) {
@@ -74,7 +74,10 @@
             Cell drop{p.x,p.y-1,p.z};
             if(empty(drop)) {
               int distance=reach*reach*(side.x*side.x+side.z*side.z);
-              if(distance<bestDistance){bestDistance=distance;destination=drop;}
+              if(distance<bestDistance) {
+                bestDistance=distance;
+                destination=reach==1?drop:Cell{c.x+side.x,c.y,c.z+side.z};
+              }
               break;
             }
             previous=p;
@@ -94,11 +97,12 @@
       if(!moved&&(keep||gas(m)))queueFluid(i);
     }
     if(!edits.empty())detachUnsupported();
+    else editOriginals.clear();
   }
   void erodeBodies() {
     if(!materialCounts[ACID]&&!materialCounts[LAVA]&&!materialCounts[FIRE])return;
     std::vector<int> changed;
-    for(int slot=0;slot<MAX_BODIES;++slot) {
+    for(int slot=0;slot<int(bodies.size());++slot) {
       auto& b=bodies[slot];if(!b.active)continue;auto tr=b3Body_GetTransform(b.id);int removed=0;
       int radius=std::max({b.size.x,b.size.y,b.size.z})+2;bool nearby=false;
       for(int z=int(std::floor((tr.p.z-radius)/C));z<=int(std::floor((tr.p.z+radius)/C))&&!nearby;++z)

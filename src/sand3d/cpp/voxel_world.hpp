@@ -10,7 +10,7 @@
 namespace {
 constexpr float VOXEL=0.0625f;
 constexpr int W=768,H=256,D=768,C=32,CW=W/C,CH=H/C,CD=D/C,CN=CW*CH*CD,CELLS=C*C*C;
-constexpr int N=W*H*D,B=64,BN=B*B*B,MAX_BODIES=32;
+constexpr int N=W*H*D,B=64,BN=B*B*B,MAX_BODIES=256;
 enum Material : uint8_t { AIR, SAND, BEDROCK, STONE, WOOD, GRASS, COPPER, LEAVES, WATER, ACID, LAVA, STEAM, FIRE, STONE_DUST, SMOKE, MATERIAL_COUNT };
 struct Cell { int x,y,z; };
 struct ChunkKey {
@@ -101,6 +101,7 @@ struct VoxelWorld {
   PackedCells<N,1> sandQueued{};
   std::vector<Cell> edits;
   std::unordered_map<int,uint8_t> editOriginals;
+  std::unordered_set<int> supportFrontier;
   bool generating=false;
   std::unordered_map<ChunkKey,TerrainChunk,KeyHash> prepared;
   std::vector<ChunkKey> pending;
@@ -122,13 +123,58 @@ struct VoxelWorld {
   void queueSand(int i) {if(!sandQueued[i]){sandQueued[i]=1;sandCells.push_back(i);}}
   void queueFluid(int i){if(fluidQueued.insert(i).second)fluidCells.push_back(i);}
   int fluidCount() const {return materialCounts[WATER]+materialCounts[ACID]+materialCounts[LAVA]+materialCounts[STEAM]+materialCounts[FIRE]+materialCounts[SMOKE];}
+  bool removalKeepsConnected(int x,int y,int z) const {
+    if(x==0||y==0||z==0||x==W-1||y==H-1||z==D-1)return false;
+    uint32_t adjacent=0;
+    constexpr int center=13;
+    const Cell sides[6]={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    for(auto d:sides)if(solid(get(x+d.x,y+d.y,z+d.z)))adjacent|=1u<<(center+d.x+3*d.y+9*d.z);
+    if((adjacent&(adjacent-1))==0)return true;
+    uint32_t occupied=0;
+    for(int k=0;k<3;++k)for(int j=0;j<3;++j)for(int i=0;i<3;++i)
+      if((i!=1||j!=1||k!=1)&&solid(get(x+i-1,y+j-1,z+k-1)))occupied|=1u<<(i+3*j+9*k);
+    static constexpr auto faces=[] {
+      std::array<uint32_t,6> masks{};
+      for(int k=0;k<3;++k)for(int j=0;j<3;++j)for(int i=0;i<3;++i) {
+        uint32_t bit=1u<<(i+3*j+9*k);
+        if(i==2)masks[0]|=bit;if(i==0)masks[1]|=bit;
+        if(j==2)masks[2]|=bit;if(j==0)masks[3]|=bit;
+        if(k==2)masks[4]|=bit;if(k==0)masks[5]|=bit;
+      }
+      return masks;
+    }();
+    uint32_t reached=adjacent&(~adjacent+1);
+    for(int iteration=0;iteration<26;++iteration) {
+      uint32_t expanded=reached|occupied&(((reached&~faces[0])<<1)|((reached&~faces[1])>>1)
+        |((reached&~faces[2])<<3)|((reached&~faces[3])>>3)|((reached&~faces[4])<<9)|((reached&~faces[5])>>9));
+      if((expanded&adjacent)==adjacent)return true;
+      if(expanded==reached)return false;reached=expanded;
+    }
+    return false;
+  }
   void set(int x,int y,int z,uint8_t m) {
     if(!inside(x,y,z))return;
     int i=address(x,y,z);auto& c=chunks[i/CELLS];auto& v=c.cells[i%CELLS];if(v==m)return;
     renderChanges.insert(c.key);
     int ds=int(powder(m))-int(powder(v));sandCount+=ds;c.sand+=ds;c.solids+=int(solid(m))-int(solid(v));
     --materialCounts[v];++materialCounts[m];--c.counts[v];++c.counts[m];
-    if(solid(v)||solid(m)){c.collision=true;if(!generating){edits.push_back({x,y,z});editOriginals.try_emplace(i,v);}}
+    if(solid(v)||solid(m)) {
+      c.collision=true;
+      if(!generating) {
+        // This proof runs before each removal, so a batch's final bridge cut
+        // still requests global support validation even if earlier cuts did not.
+        bool check=!solid(v)||(!solid(m)&&(supportFrontier.contains(i)||!removalKeepsConnected(x,y,z)));
+        if(check) {
+          edits.push_back({x,y,z});supportFrontier.erase(i);
+          if(solid(m))supportFrontier.insert(i);
+          for(auto n:std::array<Cell,6>{{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}}) {
+            int a=x+n.x,b=y+n.y,d=z+n.z;
+            if(inside(a,b,d)&&solid(get(a,b,d)))supportFrontier.insert(address(a,b,d));
+          }
+        }
+        editOriginals.try_emplace(i,v);
+      }
+    }
     v=m;c.upload=true;c.modified=true;if(powder(m))queueSand(i);if(flowing(m))queueFluid(i);
     if(fluidCount())for(auto n:std::array<Cell,6>{{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}}) {
       int a=x+n.x,b=y+n.y,d=z+n.z;if(inside(a,b,d)&&flowing(get(a,b,d)))queueFluid(address(a,b,d));
@@ -257,7 +303,7 @@ struct VoxelWorld {
   }
   void resetVoxels() {
     saved.clear();prepared.clear();pending.clear();preparing=false;for(auto& c:chunks)c=TerrainChunk{};
-    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.clear();materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();editOriginals.clear();renderChanges.clear();
+    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.clear();materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();editOriginals.clear();supportFrontier.clear();renderChanges.clear();
     origin={-W/2,-H/2+int(4/VOXEL),-D/2+int(8/VOXEL)};fillWindow();
   }
 };

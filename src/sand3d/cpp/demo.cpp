@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <climits>
 #include <vector>
+#include <deque>
 #include "voxel_world.hpp"
 #include "renderer.hpp"
 
@@ -22,6 +23,7 @@ struct Body {
   b3BodyId id{};
   std::array<uint8_t,BN> cells{};
   Cell size{};
+  int cellCount=0;
   bool active=false,dirty=false;
 };
 struct Hit {
@@ -42,7 +44,7 @@ struct Demo : VoxelWorld {
   std::vector<SavedBody> savedBodies;
   double streamMs=0;
   int uploaded=0;
-  std::array<Body,MAX_BODIES> bodies{};
+  std::deque<Body> bodies;
   b3WorldId world{};
   Renderer renderer;
   b3Vec3 camera{128,96,192};
@@ -59,13 +61,13 @@ struct Demo : VoxelWorld {
   ~Demo() { renderer.destroy(); if(b3World_IsValid(world)) b3DestroyWorld(world); }
   b3Vec3 forward() const { return {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)}; }
   b3Vec3 right() const { return {std::cos(yaw),0,std::sin(yaw)}; }
-  int freeSlot() { for(int i=0;i<MAX_BODIES;++i) if(!bodies[i].active) return i; return -1; }
+  int freeSlot() { for(int i=0;i<int(bodies.size());++i)if(!bodies[i].active)return i; if(bodies.size()<MAX_BODIES){bodies.emplace_back();return int(bodies.size())-1;}return -1; }
   int bodyCount() const { int n=0;for(const auto& b:bodies) n+=b.active;return n; }
   void reset() {
     if(b3World_IsValid(world))b3DestroyWorld(world);
     b3SetLengthUnitsPerMeter(1/VOXEL);
     auto def=b3DefaultWorldDef();def.gravity={0,-9.81f/VOXEL,0};world=b3CreateWorld(&def);
-    resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies={};savedBodies.clear();
+    resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies.clear();savedBodies.clear();
     mined=detached=tick=limitHits=reactions=dissolved=0;cooldown=0;streamMs=0;
     std::fill(std::begin(keys),std::end(keys),false);held=false;
     camera={W/2.f,H/2.f,D/2.f};yaw=0;pitch=-0.18f;
@@ -82,6 +84,7 @@ struct Demo : VoxelWorld {
       if(!prepareWindow({origin.x+dx,origin.y+dy,origin.z+dz},4.0)){streamMs=emscripten_get_now()-begin;return;}
       dx=int(pendingOrigin.x-origin.x);dy=int(pendingOrigin.y-origin.y);dz=int(pendingOrigin.z-origin.z);
     }
+    if(!paused&&!edits.empty())detachUnsupported();else editOriginals.clear();
     b3Vec3 delta{float(dx),float(dy),float(dz)};
     camera=sub(camera,delta);
     // Physics uses local floats; the stream origin carries the large coordinates.
@@ -105,7 +108,7 @@ struct Demo : VoxelWorld {
         savedBodies.erase(savedBodies.begin()+i);
       }else ++i;
     }
-    edits.clear();editOriginals.clear();updateOccupied();rebuildTerrain();streamMs=emscripten_get_now()-begin;
+    edits.clear();editOriginals.clear();supportFrontier.clear();updateOccupied();rebuildTerrain();streamMs=emscripten_get_now()-begin;
   }
   void moveCamera(double x,double y,double z,float a,float p) {
     camera={float(x/VOXEL-origin.x),float(y/VOXEL-origin.y),float(z/VOXEL-origin.z)};yaw=a;pitch=p;stream(true);target=pick();
@@ -160,7 +163,7 @@ struct Demo : VoxelWorld {
   int createBody(const std::vector<Cell>& cells,const std::vector<uint8_t>& materials,b3Vec3 origin,
                  b3Quat rotation=b3Quat_identity,b3Vec3 velocity={0,0,0},b3Vec3 angular={0,0,0}) {
     int slot=freeSlot(); if(slot<0) {++limitHits;return -1;}
-    auto& b=bodies[slot]; b=Body{};b.active=true;b.dirty=true;
+    auto& b=bodies[slot]; b=Body{};b.active=true;b.dirty=true;b.cellCount=int(cells.size());
     auto def=b3DefaultBodyDef();def.type=b3_dynamicBody;def.position=origin;def.rotation=rotation;
     def.linearVelocity=velocity;def.angularVelocity=angular;def.angularDamping=0.12f;
     b.id=b3CreateBody(world,&def);
@@ -235,7 +238,7 @@ struct Demo : VoxelWorld {
   Hit pick() {
     auto dir=forward();Hit best=cast(camera,dir,{W,H,D},[&](Cell c){return get(c.x,c.y,c.z);},8/VOXEL);
     if(!best.found)best.distance=8/VOXEL;
-    for(int i=0;i<MAX_BODIES;++i)if(bodies[i].active) {
+    for(int i=0;i<int(bodies.size());++i)if(bodies[i].active) {
       auto& b=bodies[i];auto tr=b3Body_GetTransform(b.id);
       auto o=b3InvRotateVector(tr.q,sub(camera,tr.p));auto d=b3InvRotateVector(tr.q,dir);
       auto h=cast(o,d,b.size,[&](Cell c){return b.cells[localIndex(c.x,c.y,c.z)];},best.distance);
@@ -346,17 +349,17 @@ struct Demo : VoxelWorld {
     if(!renderer.context)return;
     glUseProgram(renderer.program);glBindVertexArray(renderer.vao);glViewport(0,0,width,height);
     renderer.uploadWorld(*this,camera);uploaded=renderer.uploaded;
-    glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,renderer.textures[2]);
+    glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D_ARRAY,renderer.textures[2]);
     float positions[MAX_BODIES*4]{},rotations[MAX_BODIES*4]{},sizes[MAX_BODIES*4]{};int count=0;
-    for(int i=0;i<MAX_BODIES;++i)if(bodies[i].active) {
-      auto& b=bodies[i];if(b.dirty){glTexSubImage2D(GL_TEXTURE_2D,0,0,i*B,B*B,B,GL_RED_INTEGER,GL_UNSIGNED_BYTE,b.cells.data());b.dirty=false;}
+    for(int i=0;i<int(bodies.size());++i)if(bodies[i].active) {
+      auto& b=bodies[i];if(b.dirty){glTexSubImage3D(GL_TEXTURE_2D_ARRAY,0,0,(i%32)*B,i/32,B*B,B,1,GL_RED_INTEGER,GL_UNSIGNED_BYTE,b.cells.data());b.dirty=false;}
       auto p=b3Body_GetPosition(b.id);auto q=b3Body_GetRotation(b.id);int k=count++*4;
       positions[k]=p.x;positions[k+1]=p.y;positions[k+2]=p.z;positions[k+3]=float(i);
       rotations[k]=q.v.x;rotations[k+1]=q.v.y;rotations[k+2]=q.v.z;rotations[k+3]=q.s;
       sizes[k]=float(b.size.x);sizes[k+1]=float(b.size.y);sizes[k+2]=float(b.size.z);
     }
     glUniform1i(renderer.uniform("bodyCount"),count);
-    if(count){glUniform4fv(renderer.uniform("bodyPosition[0]"),count,positions);glUniform4fv(renderer.uniform("bodyRotation[0]"),count,rotations);glUniform4fv(renderer.uniform("bodySize[0]"),count,sizes);}
+    if(count){glBindBuffer(GL_UNIFORM_BUFFER,renderer.bodyTransforms);glBufferSubData(GL_UNIFORM_BUFFER,0,count*4*sizeof(float),positions);glBufferSubData(GL_UNIFORM_BUFFER,MAX_BODIES*4*sizeof(float),count*4*sizeof(float),rotations);glBufferSubData(GL_UNIFORM_BUFFER,MAX_BODIES*8*sizeof(float),count*4*sizeof(float),sizes);}
     auto f=forward(),r=right(),u=b3Cross(r,f);
     glUniform3f(renderer.uniform("eye"),camera.x,camera.y,camera.z);
     glUniform3f(renderer.uniform("forward"),f.x,f.y,f.z);glUniform3f(renderer.uniform("rightward"),r.x,r.y,r.z);glUniform3f(renderer.uniform("upward"),u.x,u.y,u.z);
@@ -368,7 +371,7 @@ struct Demo : VoxelWorld {
   }
   float* snapshot() {
     int cells=0,awake=0;float minY=1000;
-    for(auto& b:bodies)if(b.active){awake+=b3Body_IsAwake(b.id);minY=std::min(minY,b3Body_GetPosition(b.id).y);for(auto m:b.cells)cells+=m!=0;}
+    for(auto& b:bodies)if(b.active){awake+=b3Body_IsAwake(b.id);minY=std::min(minY,b3Body_GetPosition(b.id).y);cells+=b.cellCount;}
     stats[0]=float(tick);stats[1]=float(bodyCount());stats[2]=float(awake);stats[3]=float(mined);stats[4]=float(sandCount);
     stats[5]=float((origin.x+double(camera.x))*VOXEL);stats[6]=float((origin.y+double(camera.y))*VOXEL);stats[7]=float((origin.z+double(camera.z))*VOXEL);stats[8]=float(stepMs);stats[9]=float(target.material);
     stats[10]=float(detached);stats[11]=float(cells);stats[12]=float((origin.y+double(minY))*VOXEL);stats[13]=float(limitHits);

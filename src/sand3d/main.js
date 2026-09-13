@@ -29,7 +29,7 @@ function resize() {
 }
 function stats() {
   const pointer = engine._demo_stats();
-  return Array.from(engine.HEAPF32.subarray(pointer / 4, pointer / 4 + 17));
+  return Array.from(engine.HEAPF32.subarray(pointer / 4, pointer / 4 + 28));
 }
 function refreshHud(now) {
   if (now - lastHud < 200) return;
@@ -37,6 +37,7 @@ function refreshHud(now) {
   const s = stats();
   $('body-count').textContent = `${s[1]} solids · ${s[2]} awake`;
   $('mined-count').textContent = `${s[3]} mined`;
+  $('coordinates').textContent = `${s[5].toFixed(0)}, ${s[6].toFixed(0)}, ${s[7].toFixed(0)} m`;
   $('target-label').textContent = s[9] ? `${materials[s[9]]} · ${s[16].toFixed(1)} m` : '';
   if (s[13] > lastLimitHits) {
     $('status').textContent = 'Moving-solid limit reached. Mine existing pieces or reset the quarry.';
@@ -134,7 +135,7 @@ on(document, 'keydown', event => {
   if (keyMap[event.code] !== undefined) { event.preventDefault(); engine._demo_key(keyMap[event.code], 1); }
   if (/^Digit[1-5]$/.test(event.code)) selectTool(Number(event.code.at(-1)) - 1);
   if (event.code === 'BracketLeft' || event.code === 'BracketRight') {
-    $('brush').value = String(Math.max(0.5, Math.min(3.5, Number($('brush').value) + (event.code === 'BracketLeft' ? -1 : 1))));
+    $('brush').value = String(Math.max(0.5, Math.min(16, Number($('brush').value) + (event.code === 'BracketLeft' ? -1 : 1))));
     engine._demo_brush(Number($('brush').value));
   }
 });
@@ -184,6 +185,7 @@ async function initialize() {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     if (disposed) return;
     if (!engine._demo_create(1)) throw new Error('WebGL2 could not start on this browser.');
+    engine._demo_brush(Number($('brush').value));
     ready = true; engine._demo_pause(1); resize();
     // Some graphics backends compile the native shader on its first draw.
     if (canvas.getContext('webgl2').getError() !== 0) throw new Error('The 3D renderer could not draw on this graphics device.');
@@ -198,6 +200,7 @@ async function initialize() {
         step: count => { for (let i = 0; i < count; ++i) engine._demo_step(1 / 60); },
         reset: () => engine._demo_reset(), render: () => engine._demo_render(canvas.width, canvas.height),
         cell: (...args) => engine._demo_cell(...args),
+        renderCell: (...args) => engine._demo_render_cell(...args),
         menu, get running() { return frame !== 0; },
       };
     }

@@ -25,7 +25,7 @@ run(toolchain.emxx, [
   ...flags, '-std=c++20', 'src/sand3d/cpp/demo.cpp', object,
   '-sMODULARIZE=1', '-sEXPORT_ES6=1', '-sEXPORT_NAME=createVoxelDemo',
   '-sENVIRONMENT=web,worker,node', '-sFILESYSTEM=0', '-sALLOW_MEMORY_GROWTH=1',
-  '-sINITIAL_MEMORY=33554432', '-sMAXIMUM_MEMORY=268435456',
+  '-sINITIAL_MEMORY=201326592', '-sMAXIMUM_MEMORY=536870912', '-sSTACK_SIZE=4194304',
   '-sMIN_WEBGL_VERSION=2', '-sMAX_WEBGL_VERSION=2',
   '-sEXPORTED_RUNTIME_METHODS=["HEAPF32","HEAPU8"]',
   '--no-entry', '-o', `${out}/voxelDemo.js`,

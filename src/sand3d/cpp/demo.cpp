@@ -5,17 +5,10 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "voxel_world.hpp"
 #include "renderer.hpp"
 
 namespace {
-constexpr int W=64,H=40,D=64,N=W*H*D,B=16,BN=B*B*B,MAX_BODIES=32,C=8;
-constexpr int CW=W/C,CH=H/C,CD=D/C;
-enum Material : uint8_t { AIR, SAND, BEDROCK, STONE, WOOD, GRASS, COPPER, LEAVES };
-struct Cell { int x,y,z; };
-int index(int x,int y,int z) { return x+W*(y+H*z); }
-int localIndex(int x,int y,int z) { return x+B*(z+B*y); }
-bool inside(int x,int y,int z) { return x>=0&&x<W&&y>=0&&y<H&&z>=0&&z<D; }
-bool solid(uint8_t m) { return m>=BEDROCK; }
 b3Vec3 add(b3Vec3 a,b3Vec3 b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
 b3Vec3 sub(b3Vec3 a,b3Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 b3Vec3 mul(b3Vec3 a,float s) { return {a.x*s,a.y*s,a.z*s}; }
@@ -39,74 +32,82 @@ struct Hit {
   uint8_t material=0;
 };
 
-struct Demo {
-  std::array<uint8_t,N> grid{},occupied{},visited{};
-  std::array<uint8_t,(W/4)*(H/4)*(D/4)> coarse{};
-  std::array<bool,CW*CH*CD> dirtyChunks{},uploadChunks{};
-  std::array<b3BodyId,CW*CH*CD> terrainBodies{};
+struct Demo : VoxelWorld {
+  PackedCells<N,1> occupied{};
+  PackedCells<N,2> visited{};
+  std::unordered_map<ChunkKey,b3BodyId,KeyHash> terrainBodies;
+  std::vector<int> occupiedCells;
+  struct SavedBody { Body body; ChunkKey anchor; b3Vec3 offset,velocity,angular; b3Quat rotation; };
+  std::vector<SavedBody> savedBodies;
+  double streamMs=0;
+  int uploaded=0;
   std::array<Body,MAX_BODIES> bodies{};
   b3WorldId world{};
   Renderer renderer;
-  b3Vec3 camera{32,18,55};
-  float yaw=0,pitch=-0.23f,brush=1.5f,cooldown=0;
-  bool keys[8]{},held=false,paused=false,coarseDirty=true;
-  int tool=0,tick=0,mined=0,detached=0,sandCount=0,limitHits=0;
-  float stats[20]{};
+  b3Vec3 camera{128,96,192};
+  float yaw=0,pitch=-0.23f,brush=6.0f,cooldown=0;
+  bool keys[8]{},held=false,paused=false;
+  int tool=0,tick=0,mined=0,detached=0,limitHits=0;
+  float stats[28]{};
   double stepMs=0;
   Hit target;
   std::vector<Cell> queue;
 
-  Demo() { queue.reserve(N); reset(); }
+  Demo() { queue.reserve(16384); reset(); }
   ~Demo() { renderer.destroy(); if(b3World_IsValid(world)) b3DestroyWorld(world); }
   b3Vec3 forward() const { return {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)}; }
   b3Vec3 right() const { return {std::cos(yaw),0,std::sin(yaw)}; }
   int freeSlot() { for(int i=0;i<MAX_BODIES;++i) if(!bodies[i].active) return i; return -1; }
   int bodyCount() const { int n=0;for(const auto& b:bodies) n+=b.active;return n; }
-  uint8_t get(int x,int y,int z) const { return inside(x,y,z)?grid[index(x,y,z)]:uint8_t(AIR); }
-  void mark(int x,int y,int z,bool collision) {
-    int c=x/C+CW*(y/C+CH*(z/C)); uploadChunks[c]=true; coarseDirty=true;
-    if(collision) dirtyChunks[c]=true;
-  }
-  void set(int x,int y,int z,uint8_t m) {
-    if(!inside(x,y,z)) return;
-    auto& v=grid[index(x,y,z)]; if(v==m) return;
-    sandCount+=(m==SAND)-(v==SAND);
-    bool collision=solid(v)||solid(m); v=m; mark(x,y,z,collision);
-  }
-  void box(int x0,int y0,int z0,int x1,int y1,int z1,uint8_t m) {
-    for(int z=z0;z<z1;++z) for(int y=y0;y<y1;++y) for(int x=x0;x<x1;++x) set(x,y,z,m);
-  }
   void reset() {
-    if(b3World_IsValid(world)) b3DestroyWorld(world);
-    auto def=b3DefaultWorldDef(); def.gravity={0,-18,0};
-    world=b3CreateWorld(&def);
-    grid.fill(0); occupied.fill(0); coarse.fill(0); terrainBodies.fill({}); bodies={};
-    dirtyChunks.fill(true); uploadChunks.fill(true); coarseDirty=true;
-    sandCount=0; mined=0; detached=0; tick=0; limitHits=0; cooldown=0;
-    std::fill(std::begin(keys),std::end(keys),false); held=false;
-    camera={32,18,55}; yaw=0; pitch=-0.23f;
-    for(int z=0;z<D;++z) for(int x=0;x<W;++x) {
-      float edge=std::max(std::abs(x-32),std::abs(z-32));
-      int top=6+int(std::max(0.0f,edge-19)*0.25f + (edge>20?2.0f*std::sin(x*0.21f)*std::sin(z*0.17f):0));
-      for(int y=0;y<=top;++y) set(x,y,z,y==0?BEDROCK:y==top?GRASS:STONE);
-    }
-    // The quarry has an exposed copper seam, a timber gantry, and a supported stone lintel.
-    box(24,7,25,26,16,28,WOOD); box(38,7,25,40,16,28,WOOD);
-    box(24,16,25,40,19,28,STONE); box(27,19,25,37,20,28,COPPER);
-    box(10,7,19,12,16,21,WOOD); box(19,7,19,21,16,21,WOOD);
-    box(10,16,19,21,18,22,WOOD);
-    box(43,7,18,50,12,24,STONE); box(43,8,23,50,11,24,COPPER);
-    for(int z=31;z<42;++z) for(int x=12;x<24;++x) {
-      int top=7+std::max(0,5-int(std::hypot(x-18,z-36)));
-      for(int y=7;y<top;++y) set(x,y,z,SAND);
-    }
-    // A rooted voxel tree connects its crown to the ground through its trunk.
-    box(47,7,39,49,19,41,WOOD);
-    for(int z=36;z<45;++z) for(int x=44;x<53;++x) for(int y=17;y<24;++y)
-      if((x-48)*(x-48)+(z-40)*(z-40)+(y-20)*(y-20)<24) set(x,y,z,LEAVES);
-    rebuildTerrain();
+    if(b3World_IsValid(world))b3DestroyWorld(world);
+    b3SetLengthUnitsPerMeter(1/VOXEL);
+    auto def=b3DefaultWorldDef();def.gravity={0,-9.81f/VOXEL,0};world=b3CreateWorld(&def);
+    resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies={};savedBodies.clear();
+    mined=detached=tick=limitHits=0;cooldown=0;streamMs=0;
+    std::fill(std::begin(keys),std::end(keys),false);held=false;
+    camera={W/2.f,H/2.f,D/2.f};yaw=0;pitch=-0.18f;
+    renderer.invalidateLod();
   }
-
+  void stream(bool immediate=false) {
+    auto begin=emscripten_get_now();
+    int dx=int((camera.x-W/2.f)/C)*C;
+    int dy=int((camera.y-H/2.f)/C)*C;
+    int dz=int((camera.z-D/2.f)/C)*C;
+    if(immediate){prepared.clear();pending.clear();preparing=false;}
+    if(!dx&&!dy&&!dz&&!preparing){streamMs=0;return;}
+    if(!immediate) {
+      if(!prepareWindow({origin.x+dx,origin.y+dy,origin.z+dz},2.5)){streamMs=emscripten_get_now()-begin;return;}
+      dx=int(pendingOrigin.x-origin.x);dy=int(pendingOrigin.y-origin.y);dz=int(pendingOrigin.z-origin.z);
+    }
+    b3Vec3 delta{float(dx),float(dy),float(dz)};
+    camera=sub(camera,delta);
+    // Physics uses local floats; the stream origin carries the large coordinates.
+    for(auto [key,id]:terrainBodies)if(b3Body_IsValid(id)){auto tr=b3Body_GetTransform(id);b3Body_SetTransform(id,sub(tr.p,delta),tr.q);}
+    for(auto& b:bodies)if(b.active) {
+      auto tr=b3Body_GetTransform(b.id);auto p=sub(tr.p,delta);
+      if(length(sub(p,camera))>96/VOXEL) {
+        savedBodies.push_back({b,origin,tr.p,b3Body_GetLinearVelocity(b.id),b3Body_GetAngularVelocity(b.id),tr.q});
+        b3DestroyBody(b.id);b.active=false;
+      }else b3Body_SetTransform(b.id,p,tr.q);
+    }
+    origin.x+=dx;origin.y+=dy;origin.z+=dz;fillWindow();prepared.clear();preparing=false;++shifts;
+    for(size_t i=0;i<savedBodies.size()&&freeSlot()>=0;) {
+      auto& a=savedBodies[i];b3Vec3 p{float(a.anchor.x-origin.x)+a.offset.x,float(a.anchor.y-origin.y)+a.offset.y,float(a.anchor.z-origin.z)+a.offset.z};
+      if(length(sub(p,camera))<80/VOXEL) {
+        std::vector<Cell> cells;std::vector<uint8_t> mats;
+        for(int y=0;y<a.body.size.y;++y)for(int z=0;z<a.body.size.z;++z)for(int x=0;x<a.body.size.x;++x) {
+          auto m=a.body.cells[localIndex(x,y,z)];if(m){cells.push_back({x,y,z});mats.push_back(m);}
+        }
+        createBody(cells,mats,p,a.rotation,a.velocity,a.angular);--detached;
+        savedBodies.erase(savedBodies.begin()+i);
+      }else ++i;
+    }
+    edits.clear();updateOccupied();rebuildTerrain();streamMs=emscripten_get_now()-begin;
+  }
+  void moveCamera(double x,double y,double z,float a,float p) {
+    camera={float(x/VOXEL-origin.x),float(y/VOXEL-origin.y),float(z/VOXEL-origin.z)};yaw=a;pitch=p;stream(true);target=pick();
+  }
   // Merge occupied cells into non-overlapping boxes before making collision hulls.
   template<class Sample> void buildHulls(b3BodyId body,int sx,int sy,int sz,Sample sample) {
     std::vector<uint8_t> done(sx*sy*sz);
@@ -126,16 +127,33 @@ struct Demo {
     }
   }
   void rebuildTerrain() {
-    bool changed=false;
-    for(int z=0;z<CD;++z)for(int y=0;y<CH;++y)for(int x=0;x<CW;++x) {
-      int c=x+CW*(y+CH*z); if(!dirtyChunks[c])continue;
-      dirtyChunks[c]=false; changed=true;
-      if(b3Body_IsValid(terrainBodies[c])) b3DestroyBody(terrainBodies[c]);
-      auto def=b3DefaultBodyDef();def.position={float(x*C),float(y*C),float(z*C)};
-      terrainBodies[c]=b3CreateBody(world,&def);
-      buildHulls(terrainBodies[c],C,C,C,[&](int a,int b,int d){return get(x*C+a,y*C+b,z*C+d);});
+    // Visible bodies keep colliding with cached terrain beyond the voxel simulation window.
+    std::unordered_map<ChunkKey,bool,KeyHash> needed;
+    for(const auto& body:bodies)if(body.active) {
+      auto p=b3Body_GetPosition(body.id);
+      int radius=std::max({body.size.x,body.size.y,body.size.z});
+      for(int z=int(std::floor((p.z-radius)/C));z<=int(std::floor((p.z+radius)/C))+1;++z)
+        for(int y=int(std::floor((p.y-radius)/C))-1;y<=int(std::floor((p.y+radius)/C))+1;++y)
+          for(int x=int(std::floor((p.x-radius)/C));x<=int(std::floor((p.x+radius)/C))+1;++x)
+            needed[{origin.x/C+x,origin.y/C+y,origin.z/C+z}]=true;
     }
-    if(changed) for(auto& b:bodies) if(b.active) b3Body_SetAwake(b.id,true);
+    for(auto [key,unused]:needed) {
+      auto& resident=chunks[slot(key)];bool loaded=resident.key==key;
+      auto it=terrainBodies.find(key);
+      if(it!=terrainBodies.end()&&(!loaded||!resident.collision))continue;
+      if(it!=terrainBodies.end()){if(b3Body_IsValid(it->second))b3DestroyBody(it->second);terrainBodies.erase(it);}
+      TerrainChunk remote;
+      if(!loaded)generate(remote,key);
+      const auto& cells=loaded?resident.cells:remote.cells;
+      if(loaded)resident.collision=false;
+      if(std::none_of(cells.begin(),cells.end(),[](uint8_t m){return solid(m);})) {terrainBodies[key]={};continue;}
+      auto def=b3DefaultBodyDef();def.position={float(key.x*C-origin.x),float(key.y*C-origin.y),float(key.z*C-origin.z)};
+      auto id=b3CreateBody(world,&def);terrainBodies[key]=id;
+      buildHulls(id,C,C,C,[&](int x,int y,int z){return solid(cells[x+C*(y+C*z)])?STONE:AIR;});
+    }
+    for(auto it=terrainBodies.begin();it!=terrainBodies.end();) {
+      if(!needed.contains(it->first)){if(b3Body_IsValid(it->second))b3DestroyBody(it->second);it=terrainBodies.erase(it);}else ++it;
+    }
   }
   int createBody(const std::vector<Cell>& cells,const std::vector<uint8_t>& materials,b3Vec3 origin,
                  b3Quat rotation=b3Quat_identity,b3Vec3 velocity={0,0,0},b3Vec3 angular={0,0,0}) {
@@ -152,66 +170,70 @@ struct Demo {
     ++detached;return slot;
   }
   void detachUnsupported() {
-    visited.fill(0);queue.clear();
-    for(int z=0;z<D;++z)for(int x=0;x<W;++x)if(solid(get(x,0,z))) {visited[index(x,0,z)]=1;queue.push_back({x,0,z});}
-    for(size_t h=0;h<queue.size();++h) {
-      auto c=queue[h];for(auto n:neighbors) {
-        int x=c.x+n.x,y=c.y+n.y,z=c.z+n.z;
-        if(!inside(x,y,z))continue;int i=index(x,y,z);
-        if(!visited[i]&&solid(grid[i])) {visited[i]=1;queue.push_back({x,y,z});}
-      }
-    }
-    for(int z=0;z<D;++z)for(int y=1;y<H;++y)for(int x=0;x<W;++x) {
-      if(visited[index(x,y,z)]||!solid(get(x,y,z)))continue;
-      queue.clear();queue.push_back({x,y,z});visited[index(x,y,z)]=1;
-      Cell lo{x,y,z},hi=lo;
-      for(size_t h=0;h<queue.size();++h) {
-        auto c=queue[h];lo={std::min(lo.x,c.x),std::min(lo.y,c.y),std::min(lo.z,c.z)};
-        hi={std::max(hi.x,c.x),std::max(hi.y,c.y),std::max(hi.z,c.z)};
-        for(auto n:neighbors) {
-          int a=c.x+n.x,b=c.y+n.y,d=c.z+n.z;if(!inside(a,b,d))continue;int i=index(a,b,d);
-          if(!visited[i]&&solid(grid[i])){visited[i]=1;queue.push_back({a,b,d});}
+    std::vector<Cell> seeds=std::move(edits);edits.clear();
+    std::vector<int> touched;
+    const Cell candidates[7]={{0,0,0},{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    for(auto seed:seeds)for(auto n:candidates) {
+      Cell first{seed.x+n.x,seed.y+n.y,seed.z+n.z};
+      if(!inside(first.x,first.y,first.z)||!solid(get(first.x,first.y,first.z)))continue;
+      int firstId=address(first.x,first.y,first.z);if(visited[firstId])continue;
+      queue.clear();std::vector<Cell> stack{first};visited[firstId]=1;touched.push_back(firstId);bool anchored=false;
+      while(!stack.empty()&&!anchored) {
+        auto c=stack.back();stack.pop_back();queue.push_back(c);
+        if(c.x==0||c.y==0||c.z==0||c.x==W-1||c.y==H-1||c.z==D-1){anchored=true;break;}
+        for(auto d:neighbors) {
+          Cell v{c.x+d.x,c.y+d.y,c.z+d.z};if(!solid(get(v.x,v.y,v.z)))continue;
+          int i=address(v.x,v.y,v.z);if(visited[i]==2){anchored=true;break;}
+          if(!visited[i]){visited[i]=1;touched.push_back(i);stack.push_back(v);}
         }
       }
-      // Large disconnected regions are partitioned into bounded local voxel volumes.
-      for(int oz=lo.z;oz<=hi.z;oz+=B)for(int oy=lo.y;oy<=hi.y;oy+=B)for(int ox=lo.x;ox<=hi.x;ox+=B) {
+      if(anchored) {
+        for(auto c:queue)visited[address(c.x,c.y,c.z)]=2;
+        for(auto c:stack)visited[address(c.x,c.y,c.z)]=2;
+        continue;
+      }
+      Cell lo{W,H,D},hi{};
+      for(auto c:queue){lo={std::min(lo.x,c.x),std::min(lo.y,c.y),std::min(lo.z,c.z)};hi={std::max(hi.x,c.x),std::max(hi.y,c.y),std::max(hi.z,c.z)};}
+      for(int z=lo.z;z<=hi.z;z+=B)for(int y=lo.y;y<=hi.y;y+=B)for(int x=lo.x;x<=hi.x;x+=B) {
         std::vector<Cell> cells;std::vector<uint8_t> mats;
-        for(auto c:queue)if(c.x>=ox&&c.x<ox+B&&c.y>=oy&&c.y<oy+B&&c.z>=oz&&c.z<oz+B) {
-          cells.push_back({c.x-ox,c.y-oy,c.z-oz});mats.push_back(get(c.x,c.y,c.z));
-        }
-        if(cells.empty())continue;
-        if(createBody(cells,mats,{float(ox),float(oy),float(oz)})<0)continue;
-        for(auto c:cells)set(ox+c.x,oy+c.y,oz+c.z,AIR);
+        for(auto c:queue)if(c.x>=x&&c.x<x+B&&c.y>=y&&c.y<y+B&&c.z>=z&&c.z<z+B){cells.push_back({c.x-x,c.y-y,c.z-z});mats.push_back(get(c.x,c.y,c.z));}
+        if(cells.empty()||createBody(cells,mats,{float(x),float(y),float(z)})<0)continue;
+        for(auto c:cells)set(x+c.x,y+c.y,z+c.z,AIR);
       }
     }
-    rebuildTerrain();updateOccupied();
+    for(int i:touched)visited[i]=0;
+    edits.clear();rebuildTerrain();updateOccupied();
   }
   void updateOccupied() {
-    occupied.fill(0);
+    for(int i:occupiedCells)occupied[i]=0;occupiedCells.clear();
+    if(!sandCount)return;
     for(auto& b:bodies)if(b.active) {
-      auto transform=b3Body_GetTransform(b.id);
+      auto tr=b3Body_GetTransform(b.id);
       for(int y=0;y<b.size.y;++y)for(int z=0;z<b.size.z;++z)for(int x=0;x<b.size.x;++x)if(b.cells[localIndex(x,y,z)]) {
-        auto p=add(transform.p,b3RotateVector(transform.q,{x+0.5f,y+0.5f,z+0.5f}));
+        auto p=add(tr.p,b3RotateVector(tr.q,{x+0.5f,y+0.5f,z+0.5f}));
         int a=int(std::floor(p.x)),d=int(std::floor(p.y)),c=int(std::floor(p.z));
-        if(inside(a,d,c))occupied[index(a,d,c)]=1;
+        if(inside(a,d,c)){int i=address(a,d,c);if(!occupied[i]){occupied[i]=1;occupiedCells.push_back(i);}}
       }
     }
   }
   void stepSand() {
     const Cell diagonals[8]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1},{1,0,1},{-1,0,1},{-1,0,-1},{1,0,-1}};
-    auto empty=[&](int x,int y,int z) {return inside(x,y,z)&&grid[index(x,y,z)]==AIR&&!occupied[index(x,y,z)];};
-    for(int y=1;y<H;++y)for(int iz=0;iz<D;++iz)for(int ix=0;ix<W;++ix) {
-      int x=tick%2?W-1-ix:ix,z=tick%2?D-1-iz:iz;
-      if(get(x,y,z)!=SAND)continue;
-      if(empty(x,y-1,z)) {set(x,y,z,AIR);set(x,y-1,z,SAND);continue;}
-      if(occupied[index(x,y,z)]) {
-        for(int up=1;up<6;++up)if(empty(x,y+up,z)) {set(x,y,z,AIR);set(x,y+up,z,SAND);break;}
-        continue;
+    auto empty=[&](int x,int y,int z){return inside(x,y,z)&&get(x,y,z)==AIR&&!occupied[address(x,y,z)];};
+    auto grains=std::move(sandCells);sandCells.clear();sandCells.reserve(grains.size());
+    for(int i:grains)sandQueued[i]=0;
+    // Bottom-up order prevents a falling grain from being simulated twice.
+    std::sort(grains.begin(),grains.end(),[&](int a,int b){return decode(a).y<decode(b).y;});
+    for(int i:grains) {
+      if(raw(i)!=SAND||sandQueued[i])continue;
+      auto c=decode(i);int x=c.x,y=c.y,z=c.z;bool moved=false;
+      if(empty(x,y-1,z)){set(x,y,z,AIR);set(x,y-1,z,SAND);continue;}
+      if(occupied[i]) {
+        for(int up=1;up<8;++up)if(empty(x,y+up,z)){set(x,y,z,AIR);set(x,y+up,z,SAND);moved=true;break;}
+      }else for(int k=0;k<8;++k) {
+        auto d=diagonals[(k+tick/2+x+z)%8];
+        if(empty(x+d.x,y,z+d.z)&&empty(x+d.x,y-1,z+d.z)){set(x,y,z,AIR);set(x+d.x,y-1,z+d.z,SAND);moved=true;break;}
       }
-      for(int k=0;k<8;++k) {
-        auto n=diagonals[(k+tick+x+z)%8];
-        if(empty(x+n.x,y,z+n.z)&&empty(x+n.x,y-1,z+n.z)) {set(x,y,z,AIR);set(x+n.x,y-1,z+n.z,SAND);break;}
-      }
+      if(!moved)queueSand(i);
     }
   }
   template<class Sample> Hit cast(b3Vec3 o,b3Vec3 d,Cell size,Sample sample,float limit) {
@@ -225,7 +247,7 @@ struct Demo {
     if(nearT>farT)return hit;
     float t=nearT+0.0002f;
     b3Vec3 normal={0,0,0};if(entry>=0) {float s=axis(d,entry)>0?-1.f:1.f;if(entry==0)normal.x=s;else if(entry==1)normal.y=s;else normal.z=s;}
-    for(int step=0;step<240&&t<farT;++step) {
+    for(int step=0;step<768&&t<farT;++step) {
       auto p=add(o,mul(d,t));Cell c{int(std::floor(p.x)),int(std::floor(p.y)),int(std::floor(p.z))};
       if(c.x<0||c.x>=size.x||c.y<0||c.y>=size.y||c.z<0||c.z>=size.z)break;
       auto m=sample(c);if(m){hit.found=true;hit.distance=t;hit.point=p;hit.normal=normal;hit.cell=c;hit.material=m;return hit;}
@@ -242,8 +264,8 @@ struct Demo {
     return hit;
   }
   Hit pick() {
-    auto dir=forward();Hit best=cast(camera,dir,{W,H,D},[&](Cell c){return get(c.x,c.y,c.z);},32);
-    if(!best.found)best.distance=32;
+    auto dir=forward();Hit best=cast(camera,dir,{W,H,D},[&](Cell c){return get(c.x,c.y,c.z);},8/VOXEL);
+    if(!best.found)best.distance=8/VOXEL;
     for(int i=0;i<MAX_BODIES;++i)if(bodies[i].active) {
       auto& b=bodies[i];auto tr=b3Body_GetTransform(b.id);
       auto o=b3InvRotateVector(tr.q,sub(camera,tr.p));auto d=b3InvRotateVector(tr.q,dir);
@@ -301,19 +323,19 @@ struct Demo {
       if(changed)detachUnsupported();
     } else if(tool==4) {
       if(freeSlot()<0){++limitHits;return;}
-      auto p=add(camera,mul(forward(),7));
+      auto p=add(camera,mul(forward(),2.0f/VOXEL));
       std::vector<Cell> cells;std::vector<uint8_t> mats;
-      for(int y=0;y<3;++y)for(int z=0;z<3;++z)for(int x=0;x<3;++x) {cells.push_back({x,y,z});mats.push_back(x==1&&z==1?COPPER:STONE);}
-      createBody(cells,mats,sub(p,{1.5f,1.5f,1.5f}),b3Quat_identity,mul(forward(),14),{1.0f,0.3f,0.7f});
+      for(int y=0;y<16;++y)for(int z=0;z<16;++z)for(int x=0;x<16;++x) {cells.push_back({x,y,z});mats.push_back(x==1&&z==1?COPPER:STONE);}
+      createBody(cells,mats,sub(p,{8,8,8}),b3Quat_identity,mul(forward(),8/VOXEL),{1.0f,0.3f,0.7f});
       updateOccupied();
     } else {
-      auto p=target.found?add(target.point,mul(target.normal,tool==1?brush+0.6f:0.15f)):add(camera,mul(forward(),10));
+      auto p=target.found?add(target.point,mul(target.normal,tool==1?brush+0.6f:0.15f)):add(camera,mul(forward(),4/VOXEL));
       int cx=int(std::floor(p.x)),cy=int(std::floor(p.y)),cz=int(std::floor(p.z));
       int r=tool==1?int(brush):0;
       uint8_t m=tool==1?SAND:tool==2?STONE:WOOD;
       bool changed=false;
       for(int z=cz-r;z<=cz+r;++z)for(int y=cy-r;y<=cy+r;++y)for(int x=cx-r;x<=cx+r;++x) {
-        if(y<1||!inside(x,y,z)||get(x,y,z)||occupied[index(x,y,z)])continue;
+        if(y<1||!inside(x,y,z)||get(x,y,z)||occupied[address(x,y,z)])continue;
         set(x,y,z,m);changed=true;
       }
       if(changed&&solid(m))detachUnsupported();
@@ -324,15 +346,18 @@ struct Demo {
     b3Vec3 move{};auto f=forward(),r=right();
     move=add(move,mul(f,float(keys[0])-float(keys[1])));move=add(move,mul(r,float(keys[3])-float(keys[2])));
     move.y+=float(keys[4])-float(keys[5]);
-    if(length(move)>0)camera=add(camera,mul(unit(move),dt*(keys[6]?24:12)));
-    camera.x=std::clamp(camera.x,0.5f,63.5f);camera.y=std::clamp(camera.y,1.5f,55.f);camera.z=std::clamp(camera.z,0.5f,63.5f);
+    if(length(move)>0)camera=add(camera,mul(unit(move),dt*(keys[6]?12:4.5f)/VOXEL));
+    stream();
     if(!paused) {
       cooldown-=dt;
       if(held&&cooldown<=0){useTool();cooldown=tool==4?0.45f:0.12f;}
-      b3World_Step(world,dt,4);
+      rebuildTerrain();b3World_Step(world,dt,4);
       for(auto& b:bodies)if(b.active) {
-        auto p=b3Body_GetPosition(b.id);
-        if(p.y < -24 || p.x < -64 || p.x > W+64 || p.z < -64 || p.z > D+64) {b3DestroyBody(b.id);b.active=false;}
+        auto tr=b3Body_GetTransform(b.id);
+        if(length(sub(tr.p,camera))>96/VOXEL) {
+          savedBodies.push_back({b,origin,tr.p,b3Body_GetLinearVelocity(b.id),b3Body_GetAngularVelocity(b.id),tr.q});
+          b3DestroyBody(b.id);b.active=false;
+        }
       }
       updateOccupied();
       if(tick%2==0)stepSand();
@@ -343,22 +368,11 @@ struct Demo {
   void render(int width,int height) {
     if(!renderer.context)return;
     glUseProgram(renderer.program);glBindVertexArray(renderer.vao);glViewport(0,0,width,height);
-    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_3D,renderer.textures[0]);
-    std::array<uint8_t,C*C*C> packet{};
-    for(int z=0;z<CD;++z)for(int y=0;y<CH;++y)for(int x=0;x<CW;++x) {
-      int c=x+CW*(y+CH*z);if(!uploadChunks[c])continue;uploadChunks[c]=false;
-      for(int k=0;k<C;++k)for(int j=0;j<C;++j)for(int i=0;i<C;++i)packet[i+C*(j+C*k)]=get(x*C+i,y*C+j,z*C+k);
-      glTexSubImage3D(GL_TEXTURE_3D,0,x*C,y*C,z*C,C,C,C,GL_RED_INTEGER,GL_UNSIGNED_BYTE,packet.data());
-    }
-    if(coarseDirty) {
-      coarse.fill(0);for(int z=0;z<D;++z)for(int y=0;y<H;++y)for(int x=0;x<W;++x)if(get(x,y,z))coarse[x/4+16*(y/4+10*(z/4))]=1;
-      glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_3D,renderer.textures[1]);
-      glTexSubImage3D(GL_TEXTURE_3D,0,0,0,0,16,10,16,GL_RED_INTEGER,GL_UNSIGNED_BYTE,coarse.data());coarseDirty=false;
-    }
+    renderer.uploadWorld(*this);uploaded=renderer.uploaded;
     glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,renderer.textures[2]);
     float positions[MAX_BODIES*4]{},rotations[MAX_BODIES*4]{},sizes[MAX_BODIES*4]{};int count=0;
     for(int i=0;i<MAX_BODIES;++i)if(bodies[i].active) {
-      auto& b=bodies[i];if(b.dirty){glTexSubImage2D(GL_TEXTURE_2D,0,0,i*16,256,16,GL_RED_INTEGER,GL_UNSIGNED_BYTE,b.cells.data());b.dirty=false;}
+      auto& b=bodies[i];if(b.dirty){glTexSubImage2D(GL_TEXTURE_2D,0,0,i*B,B*B,B,GL_RED_INTEGER,GL_UNSIGNED_BYTE,b.cells.data());b.dirty=false;}
       auto p=b3Body_GetPosition(b.id);auto q=b3Body_GetRotation(b.id);int k=count++*4;
       positions[k]=p.x;positions[k+1]=p.y;positions[k+2]=p.z;positions[k+3]=float(i);
       rotations[k]=q.v.x;rotations[k+1]=q.v.y;rotations[k+2]=q.v.z;rotations[k+3]=q.s;
@@ -378,9 +392,10 @@ struct Demo {
     int cells=0,awake=0;float minY=1000;
     for(auto& b:bodies)if(b.active){awake+=b3Body_IsAwake(b.id);minY=std::min(minY,b3Body_GetPosition(b.id).y);for(auto m:b.cells)cells+=m!=0;}
     stats[0]=float(tick);stats[1]=float(bodyCount());stats[2]=float(awake);stats[3]=float(mined);stats[4]=float(sandCount);
-    stats[5]=camera.x;stats[6]=camera.y;stats[7]=camera.z;stats[8]=float(stepMs);stats[9]=float(target.material);
-    stats[10]=float(detached);stats[11]=float(cells);stats[12]=minY;stats[13]=float(limitHits);
-    stats[14]=yaw;stats[15]=pitch;stats[16]=target.found?target.distance:-1;
+    stats[5]=float((origin.x+double(camera.x))*VOXEL);stats[6]=float((origin.y+double(camera.y))*VOXEL);stats[7]=float((origin.z+double(camera.z))*VOXEL);stats[8]=float(stepMs);stats[9]=float(target.material);
+    stats[10]=float(detached);stats[11]=float(cells);stats[12]=float((origin.y+double(minY))*VOXEL);stats[13]=float(limitHits);
+    stats[14]=yaw;stats[15]=pitch;stats[16]=target.found?target.distance*VOXEL:-1;
+    stats[17]=VOXEL;stats[18]=float(shifts);stats[19]=float(generated);stats[20]=float(restored);stats[21]=float(saved.size());stats[22]=float(streamMs);stats[23]=float(uploaded);stats[24]=float(savedBodies.size());stats[25]=float(CN);stats[26]=float(pending.size());stats[27]=std::min({camera.x,float(W)-camera.x,camera.y,float(H)-camera.y,camera.z,float(D)-camera.z})*VOXEL;
     return stats;
   }
 };
@@ -401,11 +416,16 @@ EMSCRIPTEN_KEEPALIVE void demo_clear_input(){if(demo){std::fill(std::begin(demo-
 EMSCRIPTEN_KEEPALIVE void demo_look(float x,float y){if(demo){demo->yaw+=x*0.0025f;demo->pitch=std::clamp(demo->pitch-y*0.0025f,-1.50f,1.50f);}}
 EMSCRIPTEN_KEEPALIVE void demo_hold(int held){if(demo)demo->held=held!=0;}
 EMSCRIPTEN_KEEPALIVE void demo_tool(int tool){if(demo)demo->tool=std::clamp(tool,0,4);}
-EMSCRIPTEN_KEEPALIVE void demo_brush(float radius){if(demo)demo->brush=std::clamp(radius,0.5f,3.5f);}
+EMSCRIPTEN_KEEPALIVE void demo_brush(float radius){if(demo)demo->brush=std::clamp(radius,0.5f,16.0f);}
 EMSCRIPTEN_KEEPALIVE void demo_pause(int paused){if(demo)demo->paused=paused!=0;}
 EMSCRIPTEN_KEEPALIVE float* demo_stats(){return demo?demo->snapshot():nullptr;}
 // The deterministic scenario hooks exercise the same editing and stepping paths as input.
-EMSCRIPTEN_KEEPALIVE void demo_camera(float x,float y,float z,float yaw,float pitch){if(demo){demo->camera={x,y,z};demo->yaw=yaw;demo->pitch=pitch;}}
+EMSCRIPTEN_KEEPALIVE void demo_camera(double x,double y,double z,float yaw,float pitch){if(demo)demo->moveCamera(x,y,z,yaw,pitch);}
 EMSCRIPTEN_KEEPALIVE void demo_use(){if(demo)demo->useTool();}
-EMSCRIPTEN_KEEPALIVE int demo_cell(int x,int y,int z){return demo?demo->get(x,y,z):0;}
+EMSCRIPTEN_KEEPALIVE int demo_cell(double x,double y,double z){return demo?demo->get(int(std::floor(x/VOXEL)-demo->origin.x),int(std::floor(y/VOXEL)-demo->origin.y),int(std::floor(z/VOXEL)-demo->origin.z)):0;}
+EMSCRIPTEN_KEEPALIVE int demo_render_cell(double x,double y,double z,int level){
+  if(!demo)return 0;
+  if(level==0)return demo_cell(x,y,z);
+  return (level==1?demo->renderer.mid:demo->renderer.far).sample(int64_t(std::floor(x/VOXEL)),int64_t(std::floor(y/VOXEL)),int64_t(std::floor(z/VOXEL)));
+}
 }

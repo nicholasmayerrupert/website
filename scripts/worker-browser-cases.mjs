@@ -956,6 +956,7 @@ export const workerBrowserCases = {
       const visible = (selector) => getComputedStyle(root.querySelector(selector)).display !== 'none';
       return {
         start: visible('.sg-start'), palette: visible('.sg-palette'),
+        paletteAtBottom: root.querySelector('.sg-palette').classList.contains('bottom'),
         joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
         soundButtons: root.querySelectorAll('.sg-sound').length,
         audioEnabled: host._game.getAudioState().enabled,
@@ -963,6 +964,7 @@ export const workerBrowserCases = {
     });
     check('mobile creative rests behind only the START control',
       restingUi.start && !restingUi.palette && !restingUi.joystick && !restingUi.controls);
+    check('mobile palette has its centered layout before START or any resize', restingUi.paletteAtBottom);
     check('mobile navbar is visible before START', await mobile.locator('[data-site-navbar]').isVisible());
     check('resting mobile creative has no mute UI and audio is disabled',
       restingUi.soundButtons === 0 && !restingUi.audioEnabled);
@@ -970,14 +972,18 @@ export const workerBrowserCases = {
     const startedUi = await mobileGame.evaluate((host) => {
       const root = host.shadowRoot;
       const visible = (selector) => getComputedStyle(root.querySelector(selector)).display !== 'none';
+      const paletteBounds = root.querySelector('.sg-palette').getBoundingClientRect();
+      const surfaceBounds = root.querySelector('.sg-sim').getBoundingClientRect();
       return {
         start: visible('.sg-start'), palette: visible('.sg-palette'),
         joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
         audioEnabled: host._game.getAudioState().enabled,
+        paletteCenterOffset: paletteBounds.left + paletteBounds.width / 2 - surfaceBounds.left - surfaceBounds.width / 2,
       };
     });
     check('START reveals the full mobile creative controls',
       !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls && startedUi.audioEnabled);
+    check('mobile palette is horizontally centered when START reveals it', Math.abs(startedUi.paletteCenterOffset) < 1);
     check('START hides the mobile navbar', !(await mobile.locator('[data-site-navbar]').isVisible()));
 
     // Reproduce the real failure: move to a buffer corner, then start a second

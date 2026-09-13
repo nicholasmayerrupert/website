@@ -585,6 +585,7 @@ class SandGameElement extends HTMLElement {
         startupWorker = createStartupWorldWorker();
         const { createInventoryHud, createAdventureHud, createSurvivalStatus, createFootprintMenu, createMissionHud, createTalkHud } = ui || {};
         let replayUiHidden = false;
+        let paletteAtBottom = false;
         let syncMobileCreativeUi = () => {};
         const game = createSandGame(sim, {
           startupWorker,
@@ -596,7 +597,10 @@ class SandGameElement extends HTMLElement {
           worldSeed,
           loadout,
           debugHitboxes,
-          onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
+          onLayoutChange: ({ uiAtBottom }) => {
+            paletteAtBottom = uiAtBottom;
+            this._palette?.setLayout(uiAtBottom);
+          },
           onReplayUi: (active) => {
             replayUiHidden = !!active;
             syncMobileCreativeUi();
@@ -736,6 +740,8 @@ class SandGameElement extends HTMLElement {
             },
             getRainState: () => game.getWeatherState()?.rain ?? false,
           });
+          // The first layout arrives while the renderer starts, before the palette exists.
+          this._palette.setLayout(paletteAtBottom);
           // Touch has no +/- keys, so give mobile an on-screen zoom control beside
           // the palette (desktop zooms via the keyboard).
           if (coarse) {

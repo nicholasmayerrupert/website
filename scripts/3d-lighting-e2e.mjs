@@ -24,6 +24,10 @@ try {
     WebGL2RenderingContext.prototype.shaderSource = function (shader, source) {
       if (source.includes('uniform usampler3D terrain;')) {
         const modified = source.replace(/vec3 base=materialAlbedo\([^;]+;/, 'vec3 base=vec3(.55);')
+          .replace('uniform int lightCount;', 'uniform int lightingDebug;\nuniform int lightCount;')
+          .replace('vec3 p=eye+d*best;', `vec3 p=eye+d*best;
+            if(lightingDebug==1){color=vec4(bestN*.5+.5,1);return;}
+            if(lightingDebug==2){color=vec4(sceneIllumination(p,bestN,hitSlot,localP,bestN)*.5,1);return;}`)
           .replace('if(target.w>0.0 &&', 'if(false &&');
         window.__lightingShaderPatched = modified !== source;
         source = modified;
@@ -84,6 +88,34 @@ try {
   assert.ok(result.meanDifference < .02, 'transfer does not change overall illumination');
   assert.equal(after.error, 0); assert.deepEqual(errors, []);
   console.log('3D lighting continuity:', result);
+  const transitions = await page.evaluate(() => {
+    const d = window.__voxelDemo, canvas = document.querySelector('#voxel-canvas');
+    const gl = canvas.getContext('webgl2'), pixel = new Uint8Array(4);
+    const debug = gl.getUniformLocation(gl.getParameter(gl.CURRENT_PROGRAM), 'lightingDebug');
+    d.reset(); d.pause(true);
+    const samples = [];
+    for (const height of [4, 8, 12, 16, 20, 24, 30, 40, 50, 60]) {
+      d.camera(.03125, height, 5.03125 + height * .5, 0, -Math.atan2(1, .5));
+      const sample = { height };
+      for (const [mode, name] of [[1, 'normal'], [2, 'illumination']]) {
+        gl.uniform1i(debug, mode); d.render();
+        gl.readPixels(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        sample[name] = [...pixel].slice(0, 3);
+      }
+      samples.push(sample);
+    }
+    gl.uniform1i(debug, 0);
+    return samples;
+  });
+  writeFileSync(resolve(artifacts, 'lod-transitions.json'), JSON.stringify(transitions, null, 2));
+  for (const sample of transitions) {
+    assert.ok(sample.normal.every((v, i) => Math.abs(v - [128, 255, 128][i]) <= 1),
+      `unobstructed ground keeps its upward normal at ${sample.height} m: ${sample.normal}`);
+    assert.ok(sample.illumination.every((v, i) => Math.abs(v - transitions[0].illumination[i]) <= 3),
+      `unobstructed ground stays sunlit across LOD transitions at ${sample.height} m: ${sample.illumination}`);
+  }
+  assert.deepEqual(errors, []);
+  console.log('3D LOD lighting:', transitions);
 } finally {
   await browser?.close();
   server.close();

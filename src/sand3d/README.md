@@ -74,7 +74,9 @@ updates their poses without rebuilding render meshes. The atlas uses eight
 individual fragment uniforms. CPU body volumes allocate on demand.
 
 Beyond the simulation window, three voxel clipmaps use 12.5 cm, 25 cm, and 50 cm
-cells. Their coverage is 64 × 32 × 64 m, 128 × 64 × 128 m, and a 256 m cube.
+cells. Their coverage is 80 × 32 × 80 m, 192 × 64 × 192 m, and a 256 m cube.
+The first two coarse levels reach about 40 m and 96 m horizontally from the
+window center; their exposed bands are about 16 m and 56 m wide per side.
 All materials use the same volume traversal,
 occupancy hierarchy, palette, and shadow path. Trees remain voxels, and sand,
 placed materials, underground cavities, and mined air are represented at every
@@ -117,9 +119,11 @@ rays. `lighting_shader.inc` uses the same world-space terrain and body queries
 for contact ambient occlusion, three fixed sky rays, sunlight, and emissive
 shadows. Sky obstruction is weighted by hit distance, and an indirect-light
 floor keeps sheltered surfaces legible. Two fixed sunlight samples soften shadow
-edges. Voxel-volume entry normals follow the actual box face. Changing supported
-terrain into a rigid body at the same pose preserves the illumination of both
-the object and its surroundings.
+edges. Voxel-volume entry normals follow the actual box face.
+Coarse-shell entry normals follow the finer volume's exit face so crossing a
+detail boundary does not retain the ray's initial normal.
+Changing supported terrain into a rigid body at the same pose preserves the
+illumination of both the object and its surroundings.
 This approximates indirect light without full global illumination, bloom,
 or temporal accumulation.
 
@@ -127,6 +131,8 @@ The `3d-lighting` browser regression cuts a roof's one-voxel support while physi
 is paused and compares the static and rigid renders. Albedo is held constant to
 isolate lighting from body-local material patterns; the compiled traversal and
 lighting shader remain intact. Only the removed cell and its shadow may change.
+It also retreats obliquely from an open patch of ground through the detail
+levels, checking that its surface normal and illumination stay constant.
 
 Box3D advances at 60 Hz with four substeps, with its length scale set to sixteen
 voxels per metre. Static collision hulls are generated only near dynamic bodies,

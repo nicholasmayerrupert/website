@@ -1,0 +1,3429 @@
+{
+  "turn": 1012,
+  "tick": 1012,
+  "actorTick": 1012,
+  "gridHash": 1941822834,
+  "cols": 640,
+  "rows": 480,
+  "worldOffset": {
+    "x": -320,
+    "y": -128
+  },
+  "camera": {
+    "x": 97.66666666666612,
+    "y": 89.00000000000003,
+    "worldX": -222.33333333333388,
+    "worldY": -38.99999999999997
+  },
+  "bodies": [
+    {
+      "layer": 0,
+      "index": 0,
+      "id": 261,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 54.34678183084765,
+      "worldY": 172.8154641269693,
+      "speed": 0.04844852011675135,
+      "state": {
+        "px": 374.34678183084765,
+        "py": 300.8154641269693,
+        "angle": 15.877004341315644,
+        "vx": 0.039422441998508286,
+        "vy": -0.028162566793130023,
+        "omega": 0.037470640779366696,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 44,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 373,
+        "y0": 300,
+        "x1": 375,
+        "y1": 302,
+        "cells": 4,
+        "worldX0": 53,
+        "worldY0": 172,
+        "worldX1": 55,
+        "worldY1": 174
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 1,
+      "id": 264,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 57.69839129161164,
+      "worldY": 171.82196372454257,
+      "speed": 0.31353634405597824,
+      "state": {
+        "px": 377.69839129161164,
+        "py": 299.82196372454257,
+        "angle": 39.22414086004146,
+        "vx": 0.24168692770027314,
+        "vy": 0.19973098913987214,
+        "omega": 0.1972685183049554,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 4,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 377,
+        "y0": 299,
+        "x1": 379,
+        "y1": 301,
+        "cells": 4,
+        "worldX0": 57,
+        "worldY0": 171,
+        "worldX1": 59,
+        "worldY1": 173
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 2,
+      "id": 265,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 39.86395561625392,
+      "worldY": 167.82934049516507,
+      "speed": 0.00010128324425763716,
+      "state": {
+        "px": 359.8639556162539,
+        "py": 295.82934049516507,
+        "angle": 15.806438053412483,
+        "vx": -0.00008829179967229289,
+        "vy": 0.00004962714658309393,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 24,
+        "restProbeTicks": 33,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 359,
+        "y0": 295,
+        "x1": 361,
+        "y1": 297,
+        "cells": 4,
+        "worldX0": 39,
+        "worldY0": 167,
+        "worldX1": 41,
+        "worldY1": 169
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 3,
+      "id": 271,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 39.31612046461947,
+      "worldY": 169.53539320862438,
+      "speed": 0.0000512004251465439,
+      "state": {
+        "px": 359.3161204646195,
+        "py": 297.5353932086244,
+        "angle": 41.73036727921881,
+        "vx": 0.00005083979800030055,
+        "vy": -0.000006066174616303259,
+        "omega": 0,
+        "nPts": 1,
+        "maxR": 0,
+        "invMass": 0.3846153987229934,
+        "invInertia": 2.30769239233796,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 14,
+        "restProbeTicks": 61,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 359,
+        "y0": 297,
+        "x1": 360,
+        "y1": 298,
+        "cells": 1,
+        "worldX0": 39,
+        "worldY0": 169,
+        "worldX1": 40,
+        "worldY1": 170
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 4,
+      "id": 272,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -95.338672841114,
+      "worldY": 178.50554964856713,
+      "speed": 2.2813542831636737,
+      "state": {
+        "px": 224.661327158886,
+        "py": 306.5055496485671,
+        "angle": -3.01919408939975,
+        "vx": 0.4917323557244241,
+        "vy": 2.227729035507449,
+        "omega": 0.5607448614281474,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 224,
+        "y0": 305,
+        "x1": 226,
+        "y1": 308,
+        "cells": 4,
+        "worldX0": -96,
+        "worldY0": 177,
+        "worldX1": -94,
+        "worldY1": 180
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 5,
+      "id": 273,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 0.6868246254493897,
+      "worldY": 163.75950183957525,
+      "speed": 0.000048469064894264576,
+      "state": {
+        "px": 320.6868246254494,
+        "py": 291.75950183957525,
+        "angle": 5.747509393938636,
+        "vx": -0.00002950699147242066,
+        "vy": 0.000038452408324719086,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 16,
+        "restProbeTicks": 18,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 319,
+        "y0": 291,
+        "x1": 322,
+        "y1": 293,
+        "cells": 4,
+        "worldX0": -1,
+        "worldY0": 163,
+        "worldX1": 2,
+        "worldY1": 165
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 6,
+      "id": 274,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": 54.64191885868223,
+      "worldY": 170.75283150670498,
+      "speed": 0.12247262134324685,
+      "state": {
+        "px": 374.64191885868223,
+        "py": 298.752831506705,
+        "angle": 1.763546337518771,
+        "vx": 0.12046647600859801,
+        "vy": -0.022076483795120214,
+        "omega": 0.037085090701276587,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 6,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 373,
+        "y0": 298,
+        "x1": 376,
+        "y1": 300,
+        "cells": 5,
+        "worldX0": 53,
+        "worldY0": 170,
+        "worldX1": 56,
+        "worldY1": 172
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 7,
+      "id": 279,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -48.88456796021865,
+      "worldY": -22.31401447418827,
+      "speed": 1.5088994244225225,
+      "state": {
+        "px": 271.11543203978135,
+        "py": 105.68598552581173,
+        "angle": 0.013209676882701278,
+        "vx": 0.04461728159125054,
+        "vy": -1.50823962658658,
+        "omega": 0.0005283870753080524,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 270,
+        "y0": 105,
+        "x1": 272,
+        "y1": 107,
+        "cells": 4,
+        "worldX0": -50,
+        "worldY0": -23,
+        "worldX1": -48,
+        "worldY1": -21
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 8,
+      "id": 280,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -66.26494781809686,
+      "worldY": 35.351738776951606,
+      "speed": 0.9607352120531076,
+      "state": {
+        "px": 253.73505218190314,
+        "py": 163.3517387769516,
+        "angle": -2.3200145503342253,
+        "vx": 0.007544180062247868,
+        "vy": 0.9607055912327762,
+        "omega": -0.040728395290062835,
+        "nPts": 2,
+        "maxR": 0.5,
+        "invMass": 0.20833332505491078,
+        "invInertia": 0.4999999801317859,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 253,
+        "y0": 162,
+        "x1": 255,
+        "y1": 164,
+        "cells": 3,
+        "worldX0": -67,
+        "worldY0": 34,
+        "worldX1": -65,
+        "worldY1": 36
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 9,
+      "id": 281,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -65.20787868504132,
+      "worldY": 43.75405324328122,
+      "speed": 1.601954374278243,
+      "state": {
+        "px": 254.79212131495868,
+        "py": 171.75405324328122,
+        "angle": 11.984839706499912,
+        "vx": -0.12017798315638772,
+        "vy": 1.597440161518941,
+        "omega": 0.5129958438371035,
+        "nPts": 2,
+        "maxR": 0.5,
+        "invMass": 0.20833332505491078,
+        "invInertia": 0.4999999801317859,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 254,
+        "y0": 171,
+        "x1": 256,
+        "y1": 173,
+        "cells": 3,
+        "worldX0": -66,
+        "worldY0": 43,
+        "worldX1": -64,
+        "worldY1": 45
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 10,
+      "id": 282,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -51.57112906115839,
+      "worldY": 35.00370095056371,
+      "speed": 1.126303721808689,
+      "state": {
+        "px": 268.4288709388416,
+        "py": 163.0037009505637,
+        "angle": -19.887978242113498,
+        "vx": 0.7731422590216591,
+        "vy": 0.819030598375293,
+        "omega": -1.1532313937077745,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 267,
+        "y0": 162,
+        "x1": 270,
+        "y1": 164,
+        "cells": 4,
+        "worldX0": -53,
+        "worldY0": 34,
+        "worldX1": -50,
+        "worldY1": 36
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 11,
+      "id": 283,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -68.61569605365983,
+      "worldY": 35.231210685497416,
+      "speed": 0.6849302998991593,
+      "state": {
+        "px": 251.38430394634017,
+        "py": 163.23121068549742,
+        "angle": -2.644958729875582,
+        "vx": -0.0384671956466595,
+        "vy": 0.6838492455059331,
+        "omega": 0.20134425950868823,
+        "nPts": 2,
+        "maxR": 0.5,
+        "invMass": 0.20833332505491078,
+        "invInertia": 0.4999999801317859,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 251,
+        "y0": 163,
+        "x1": 252,
+        "y1": 164,
+        "cells": 1,
+        "worldX0": -69,
+        "worldY0": 35,
+        "worldX1": -68,
+        "worldY1": 36
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 12,
+      "id": 284,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -70.67034954110906,
+      "worldY": 37.66143129879174,
+      "speed": 0.8958424962297223,
+      "state": {
+        "px": 249.32965045889094,
+        "py": 165.66143129879174,
+        "angle": 0.5962496017426645,
+        "vx": -0.10604776926659616,
+        "vy": 0.8895435057852308,
+        "omega": 0.05373312000438135,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 248,
+        "y0": 165,
+        "x1": 251,
+        "y1": 167,
+        "cells": 4,
+        "worldX0": -72,
+        "worldY0": 37,
+        "worldX1": -69,
+        "worldY1": 39
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 13,
+      "id": 285,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -76.74352926102503,
+      "worldY": 39.68343173577611,
+      "speed": 0.5406858847733277,
+      "state": {
+        "px": 243.25647073897497,
+        "py": 167.6834317357761,
+        "angle": 2.0786090916537674,
+        "vx": 0.006014863115558082,
+        "vy": 0.5406524275491763,
+        "omega": -0.036001691358894486,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 242,
+        "y0": 167,
+        "x1": 245,
+        "y1": 169,
+        "cells": 4,
+        "worldX0": -78,
+        "worldY0": 39,
+        "worldX1": -75,
+        "worldY1": 41
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 14,
+      "id": 286,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -90.23892704103096,
+      "worldY": 35.475089417154635,
+      "speed": 0.8806695097708913,
+      "state": {
+        "px": 229.76107295896904,
+        "py": 163.47508941715463,
+        "angle": 1.1822396450889445,
+        "vx": 0.09160958680023938,
+        "vy": 0.8758918135514178,
+        "omega": 0,
+        "nPts": 2,
+        "maxR": 0.5,
+        "invMass": 0.20833332505491078,
+        "invInertia": 0.4999999801317859,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 229,
+        "y0": 163,
+        "x1": 230,
+        "y1": 164,
+        "cells": 1,
+        "worldX0": -91,
+        "worldY0": 35,
+        "worldX1": -90,
+        "worldY1": 36
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": 300,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 15,
+      "id": 288,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -89.1949199381016,
+      "worldY": 41.24322874219945,
+      "speed": 0.7204705232016362,
+      "state": {
+        "px": 230.8050800618984,
+        "py": 169.24322874219945,
+        "angle": -0.0012774395515455015,
+        "vx": 0.597105648168169,
+        "vy": 0.4031657472158444,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 230,
+        "y0": 168,
+        "x1": 232,
+        "y1": 170,
+        "cells": 4,
+        "worldX0": -90,
+        "worldY0": 40,
+        "worldX1": -88,
+        "worldY1": 42
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 16,
+      "id": 289,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -116.94886853376761,
+      "worldY": 50.21290953611711,
+      "speed": 0.6050182180075313,
+      "state": {
+        "px": 203.0511314662324,
+        "py": 178.2129095361171,
+        "angle": -0.3611910074219077,
+        "vx": 0.28020694179362743,
+        "vy": 0.5362192778068234,
+        "omega": 0.009052762758698447,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 202,
+        "y0": 177,
+        "x1": 204,
+        "y1": 179,
+        "cells": 4,
+        "worldX0": -118,
+        "worldY0": 49,
+        "worldX1": -116,
+        "worldY1": 51
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 17,
+      "id": 290,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -119.03957739424416,
+      "worldY": 51.226141489133425,
+      "speed": 0.4082789997394573,
+      "state": {
+        "px": 200.96042260575584,
+        "py": 179.22614148913343,
+        "angle": 3.0173771600665606,
+        "vx": 0.10368900857138418,
+        "vy": 0.3948928096708463,
+        "omega": 0.1541976408643789,
+        "nPts": 2,
+        "maxR": 0.5,
+        "invMass": 0.20833332505491078,
+        "invInertia": 0.4999999801317859,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 200,
+        "y0": 179,
+        "x1": 202,
+        "y1": 180,
+        "cells": 2,
+        "worldX0": -120,
+        "worldY0": 51,
+        "worldX1": -118,
+        "worldY1": 52
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 18,
+      "id": 291,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -110.59774466942415,
+      "worldY": 44.64302289458058,
+      "speed": 0.6962153564668953,
+      "state": {
+        "px": 209.40225533057585,
+        "py": 172.64302289458058,
+        "angle": -1.4088074994442885,
+        "vx": 0.6820506086950622,
+        "vy": 0.13972397703694667,
+        "omega": -0.3360882307124379,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 208,
+        "y0": 172,
+        "x1": 210,
+        "y1": 174,
+        "cells": 4,
+        "worldX0": -112,
+        "worldY0": 44,
+        "worldX1": -110,
+        "worldY1": 46
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 19,
+      "id": 293,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -131.74153092167754,
+      "worldY": 55.22270517236916,
+      "speed": 0.35558164719641905,
+      "state": {
+        "px": 188.25846907832246,
+        "py": 183.22270517236916,
+        "angle": -0.19345807523358705,
+        "vx": 0.006188444083110974,
+        "vy": 0.35552779213832053,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 187,
+        "y0": 182,
+        "x1": 189,
+        "y1": 184,
+        "cells": 4,
+        "worldX0": -133,
+        "worldY0": 54,
+        "worldX1": -131,
+        "worldY1": 56
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 20,
+      "id": 297,
+      "jointRole": 0,
+      "material": 36,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -162.24803486000377,
+      "worldY": 33.22541758182362,
+      "speed": 1.4558381824309987,
+      "state": {
+        "px": 157.75196513999623,
+        "py": 161.22541758182362,
+        "angle": 0.00038716465988095734,
+        "vx": -1.2480348600038345,
+        "vy": -0.7495824181764155,
+        "omega": 0.00038716465988095734,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.10416666252745539,
+        "invInertia": 0.1562499937911831,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 157,
+        "y0": 160,
+        "x1": 159,
+        "y1": 162,
+        "cells": 4,
+        "worldX0": -163,
+        "worldY0": 32,
+        "worldX1": -161,
+        "worldY1": 34
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 21,
+      "id": 298,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -160.47612053295597,
+      "worldY": 29.513479103501822,
+      "speed": 2.5827440680055798,
+      "state": {
+        "px": 159.52387946704403,
+        "py": 157.51347910350182,
+        "angle": 0,
+        "vx": -0.47612053295597434,
+        "vy": 2.5384791035018845,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 159,
+        "y0": 157,
+        "x1": 161,
+        "y1": 159,
+        "cells": 4,
+        "worldX0": -161,
+        "worldY0": 29,
+        "worldX1": -159,
+        "worldY1": 31
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 22,
+      "id": 299,
+      "jointRole": 0,
+      "material": 3,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": true,
+      "worldX": -164.48774779919984,
+      "worldY": 21.926110214486243,
+      "speed": 1.7864818383977386,
+      "state": {
+        "px": 155.51225220080016,
+        "py": 149.92611021448624,
+        "angle": 0,
+        "vx": 1.5122522008001706,
+        "vy": 0.9511102144862095,
+        "omega": 0,
+        "nPts": 4,
+        "maxR": 0.7071067811865476,
+        "invMass": 0.09615384968074835,
+        "invInertia": 0.1442307745211225,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 155,
+        "y0": 149,
+        "x1": 157,
+        "y1": 151,
+        "cells": 4,
+        "worldX0": -165,
+        "worldY0": 21,
+        "worldX1": -163,
+        "worldY1": 23
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 0,
+      "index": 23,
+      "id": 300,
+      "jointRole": 1,
+      "material": 3,
+      "awake": false,
+      "blocked": true,
+      "terrainBlocked": false,
+      "blastDebris": false,
+      "worldX": -101.14750779031931,
+      "worldY": 28.32367630352411,
+      "speed": 0,
+      "state": {
+        "px": 218.8524922096807,
+        "py": 156.3236763035241,
+        "angle": -0.000007836400446518292,
+        "vx": 0,
+        "vy": 0,
+        "omega": 0,
+        "nPts": 2949,
+        "maxR": 58.65204583132907,
+        "invMass": 0.00011283243633281048,
+        "invInertia": 1.5488360046475105e-7,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 20,
+        "restProbeTicks": 0,
+        "hadContact": true,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 171,
+        "y0": 139,
+        "x1": 266,
+        "y1": 176,
+        "cells": 1270,
+        "worldX0": -149,
+        "worldY0": 11,
+        "worldX1": -54,
+        "worldY1": 48
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": 286,
+          "count": 1
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 1,
+      "index": 0,
+      "id": 270,
+      "jointRole": 0,
+      "material": -1,
+      "awake": true,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": false,
+      "worldX": -138.79666990988173,
+      "worldY": 21.801914543356446,
+      "speed": 0.37378394988703423,
+      "state": {
+        "px": 181.20333009011827,
+        "py": 149.80191454335645,
+        "angle": 0.6742625789070111,
+        "vx": 0.3552890777527141,
+        "vy": 0.11612111101250605,
+        "omega": 0.33981682011906056,
+        "nPts": 1,
+        "maxR": 0,
+        "invMass": 2.4999999627470975,
+        "invInertia": 14.999999776482586,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 0,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 181,
+        "y0": 149,
+        "x1": 182,
+        "y1": 150,
+        "cells": 1,
+        "worldX0": -139,
+        "worldY0": 21,
+        "worldX1": -138,
+        "worldY1": 22
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": -1,
+          "count": 0
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "layer": 1,
+      "index": 1,
+      "id": 300,
+      "jointRole": 2,
+      "material": -1,
+      "awake": false,
+      "blocked": false,
+      "terrainBlocked": false,
+      "blastDebris": false,
+      "worldX": -101.14750779031931,
+      "worldY": 28.32367630352411,
+      "speed": 0,
+      "state": {
+        "px": 218.8524922096807,
+        "py": 156.3236763035241,
+        "angle": -0.000007836400446518292,
+        "vx": 0,
+        "vy": 0,
+        "omega": 0,
+        "nPts": 2949,
+        "maxR": 58.65204583132907,
+        "invMass": 0.00011283243633281048,
+        "invInertia": 1.5488360046475105e-7,
+        "pvx": 0,
+        "pvy": 0,
+        "pw": 0,
+        "stillTicks": 20,
+        "restProbeTicks": 0,
+        "hadContact": false,
+        "sleepSupports": 0,
+        "stampRecoveryStreak": 0,
+        "stampRecoveryTotal": 0,
+        "stampPreclaimAttempts": 0,
+        "stampPreclaimSuccesses": 0,
+        "stampPreclaimBlocked": 0,
+        "stampPreclaimOutside": 0,
+        "stampPreclaimMovedOutside": 0,
+        "stampPreclaimStartedOutside": 0,
+        "worldStillTicks": 0
+      },
+      "bounds": {
+        "x0": 171,
+        "y0": 110,
+        "x1": 268,
+        "y1": 184,
+        "cells": 2949,
+        "worldX0": -149,
+        "worldY0": -18,
+        "worldX1": -52,
+        "worldY1": 56
+      },
+      "terrainBlocker": {
+        "cell": -1,
+        "material": -1,
+        "component": -1,
+        "assembly": -1
+      },
+      "peerBlockers": [
+        {
+          "layer": 0,
+          "id": 286,
+          "count": 1
+        },
+        {
+          "layer": 1,
+          "id": -1,
+          "count": 0
+        }
+      ]
+    }
+  ],
+  "bodiesTruncated": false,
+  "contacts": [
+    {
+      "index": 0,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 261,
+      "bId": 274,
+      "nx": -0.14974044518442967,
+      "ny": 0.9887253405653003,
+      "depth": 0,
+      "normalImpulse": 0.2344211481339559,
+      "tangentImpulse": -0.14831646264325196,
+      "lax": -0.9201752117873707,
+      "lay": 1.0293865658355716,
+      "lbx": 1.0293781720822832,
+      "lby": -1.0007023223686065,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 375.4270224492448,
+        "y": 299.9555575456039,
+        "worldX": 55.42702244924482,
+        "worldY": 171.95555754560388
+      }
+    },
+    {
+      "index": 1,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 261,
+      "bId": 274,
+      "nx": -0.14974044518442967,
+      "ny": 0.9887253405653003,
+      "depth": 0,
+      "normalImpulse": 0.027944890774664714,
+      "tangentImpulse": -0.01788473009578542,
+      "lax": 0.804346298993392,
+      "lay": 1.049999999999939,
+      "lbx": 1.0499857183835806,
+      "lby": 0.7238192587805115,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 373.7305492702013,
+        "y": 299.64510930901724,
+        "worldX": 53.73054927020132,
+        "worldY": 171.64510930901724
+      }
+    },
+    {
+      "index": 2,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 265,
+      "bId": 271,
+      "nx": 0.09866858887488042,
+      "ny": -0.9951203492891901,
+      "depth": 0,
+      "normalImpulse": 0.09971544357002277,
+      "tangentImpulse": 0.009908625505317126,
+      "lax": 0.42904657315307637,
+      "lay": -1.05000000000003,
+      "lbx": 0.5355427164701517,
+      "lby": 0.4566300836605384,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 359.3337561640315,
+        "y": 296.8320715173228,
+        "worldX": 39.33375616403151,
+        "worldY": 168.8320715173228
+      }
+    },
+    {
+      "index": 3,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 265,
+      "bId": 271,
+      "nx": 0.09866858887488042,
+      "ny": -0.9951203492891901,
+      "depth": 0,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 0.37321829226198394,
+      "lay": -1.0223809643897162,
+      "lbx": 0.51590960543263,
+      "lby": 0.5157414110545907,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 359.39202935726274,
+        "y": 296.8100750852046,
+        "worldX": 39.39202935726274,
+        "worldY": 168.81007508520457
+      }
+    },
+    {
+      "index": 4,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 284,
+      "bId": 300,
+      "nx": 0.8263852471530478,
+      "ny": 0.5631051618372862,
+      "depth": 0,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -1.0500000000000027,
+      "lay": -0.8657137090194977,
+      "lbx": 30.188604799656385,
+      "lby": 7.664624036360184,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 248.94696626974672,
+        "y": 164.35547837568794,
+        "worldX": -71.05303373025328,
+        "worldY": 36.35547837568794
+      }
+    },
+    {
+      "index": 5,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 284,
+      "bId": 300,
+      "nx": 0.8263852471530478,
+      "ny": 0.5631051618372862,
+      "depth": 0,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -1.0302645846153524,
+      "lay": -0.8077893205291994,
+      "lbx": 30.172295837092175,
+      "lby": 7.723604873438498,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 248.93076924380546,
+        "y": 164.41449005040607,
+        "worldX": -71.06923075619454,
+        "worldY": 36.41449005040607
+      }
+    },
+    {
+      "index": 6,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 285,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.0635982931197828,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -1.0423874153949797,
+      "lay": 0.7180759567804521,
+      "lbx": 24.458166866798656,
+      "lby": 9.756562418013317,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 243.1358874519535,
+        "y": 166.42340623033144,
+        "worldX": -76.8641125480465,
+        "worldY": 38.42340623033144
+      }
+    },
+    {
+      "index": 7,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 285,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.0635982931197828,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -0.973042327311193,
+      "lay": 0.9831337732393696,
+      "lbx": 24.196684005162584,
+      "lby": 9.674763271453417,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 242.87055699362043,
+        "y": 166.35511175626456,
+        "worldX": -77.12944300637957,
+        "worldY": 38.35511175626456
+      }
+    },
+    {
+      "index": 8,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 286,
+      "bId": 300,
+      "nx": 0.9999999999645647,
+      "ny": -0.000008418476510350802,
+      "depth": 4.5,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 2.7826967586056237,
+      "lay": -9.44074744957921,
+      "lbx": 20.511156091781164,
+      "lby": 5.889029515027107,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 239.55231040051424,
+        "y": 162.4736988737732,
+        "worldX": -80.44768959948576,
+        "worldY": 34.4736988737732
+      }
+    },
+    {
+      "index": 9,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 286,
+      "bId": 300,
+      "nx": 0.9999999999645647,
+      "ny": -0.000008418476510350802,
+      "depth": 4.5,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 3.944920736981116,
+      "lay": -7.23911184890994,
+      "lbx": 18.8668020712406,
+      "lby": 7.758271005358782,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 237.95510383399434,
+        "y": 164.38338342309308,
+        "worldX": -82.04489616600566,
+        "worldY": 36.38338342309308
+      }
+    },
+    {
+      "index": 10,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 288,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.24424838143283764,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 0.9998416650261368,
+      "lay": -0.8778759119249084,
+      "lbx": 13.058029113470024,
+      "lby": 11.584438227296886,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 231.8037994780217,
+        "y": 168.36407630961534,
+        "worldX": -88.19620052197831,
+        "worldY": 40.36407630961534
+      }
+    },
+    {
+      "index": 11,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 288,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.24424838143283764,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -1.0001566540412217,
+      "lay": -0.8791724187011175,
+      "lbx": 11.058030794403372,
+      "lby": 11.585734735162749,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 229.80380113459594,
+        "y": 168.36533468015793,
+        "worldX": -90.19619886540406,
+        "worldY": 40.36533468015793
+      }
+    },
+    {
+      "index": 12,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 290,
+      "bId": 300,
+      "nx": 0.9999999999645647,
+      "ny": -0.000008418476510350802,
+      "depth": 0.1467622328707737,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 0.9269202843639933,
+      "lay": 0.49335594913733716,
+      "lbx": -18.9260953421108,
+      "lby": 22.14373230859248,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 199.9795191031588,
+        "y": 178.8514287662276,
+        "worldX": -120.0204808968412,
+        "worldY": 50.8514287662276
+      }
+    },
+    {
+      "index": 13,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 290,
+      "bId": 300,
+      "nx": 0.9999999999645647,
+      "ny": -0.000008418476510350802,
+      "depth": 0.1467622328707737,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 0.9720051906995231,
+      "lay": -0.5025451513496433,
+      "lbx": -18.880824493250866,
+      "lby": 23.139624973980656,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 200.058170039441,
+        "y": 179.8452424715831,
+        "worldX": -119.941829960559,
+        "worldY": 51.845242471583106
+      }
+    },
+    {
+      "index": 14,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 293,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.1939880768949603,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": 0.9810117608859531,
+      "lay": -0.904882755140324,
+      "lbx": -29.72040074972663,
+      "lby": 25.609568379565808,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 189.0472133657322,
+        "y": 182.14609970859638,
+        "worldX": -130.9527866342678,
+        "worldY": 54.14609970859638
+      }
+    },
+    {
+      "index": 15,
+      "aLayer": 0,
+      "bLayer": 0,
+      "aId": 293,
+      "bId": 300,
+      "nx": 0.000008418476510350802,
+      "ny": 0.9999999999645647,
+      "depth": 0.1939880768949603,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -0.1515181830772458,
+      "lay": -1.015717633855275,
+      "lbx": -30.85271453857423,
+      "lby": 25.722590182323636,
+      "initialProjection": 0,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 187.91450204977082,
+        "y": 182.25506538670666,
+        "worldX": -132.08549795022918,
+        "worldY": 54.25506538670666
+      }
+    },
+    {
+      "index": 16,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 261,
+      "bId": -1,
+      "nx": 0,
+      "ny": -1,
+      "depth": 0,
+      "normalImpulse": 0,
+      "tangentImpulse": 0,
+      "lax": -0.5065383085724109,
+      "lay": -1.1057352090855925,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -302.0002276904167,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 374.66007445947577,
+        "y": 301.99065736193546,
+        "worldX": 54.660074459475766,
+        "worldY": 173.99065736193546
+      }
+    },
+    {
+      "index": 17,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 261,
+      "bId": -1,
+      "nx": 0,
+      "ny": -1,
+      "depth": 0,
+      "normalImpulse": 0.5906526495974953,
+      "tangentImpulse": -0.09708583254924878,
+      "lax": -1.0007117786715227,
+      "lay": -1.0307620342057056,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -302.0000975679613,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 375.1598175259587,
+        "y": 301.9998911587476,
+        "worldX": 55.159817525958715,
+        "worldY": 173.99989115874757
+      }
+    },
+    {
+      "index": 18,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 265,
+      "bId": -1,
+      "nx": -0.7071067811865476,
+      "ny": -0.7071067811865476,
+      "depth": 0,
+      "normalImpulse": 0.48165191684540654,
+      "tangentImpulse": 0.18917147018447028,
+      "lax": -0.5785410402875222,
+      "lay": -1.119391451853965,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -464.8022326959391,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 360.3296400232422,
+        "y": 297.0001884745666,
+        "worldX": 40.32964002324218,
+        "worldY": 169.00018847456658
+      }
+    },
+    {
+      "index": 19,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 265,
+      "bId": -1,
+      "nx": -0.7071067811865476,
+      "ny": -0.7071067811865476,
+      "depth": 0,
+      "normalImpulse": 0.002830876638463295,
+      "tangentImpulse": -0.0018117610486165087,
+      "lax": -1.0524730241320106,
+      "lay": -1.072779931639929,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -465.13923737097565,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 360.80585858161504,
+        "y": 297.00039773206635,
+        "worldX": 40.80585858161504,
+        "worldY": 169.00039773206635
+      }
+    },
+    {
+      "index": 20,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 271,
+      "bId": -1,
+      "nx": 0,
+      "ny": -1,
+      "depth": 0.5,
+      "normalImpulse": 0.13297721954879593,
+      "tangentImpulse": 0.0525324704162104,
+      "lax": -3.3306690738754696e-16,
+      "lay": -0.49999999999999684,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -297.85028405979705,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 358.9276907373042,
+        "y": 297.85023022509125,
+        "worldX": 38.927690737304204,
+        "worldY": 169.85023022509125
+      }
+    },
+    {
+      "index": 21,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 271,
+      "bId": -1,
+      "nx": 0,
+      "ny": -1,
+      "depth": 0,
+      "normalImpulse": 0.12127599124837497,
+      "tangentImpulse": -0.03281784226150086,
+      "lax": -0.5602395148581092,
+      "lay": -0.0487545354848469,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -298.0012885938185,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 359.6310133175015,
+        "y": 298.0013200375821,
+        "worldX": 39.63101331750153,
+        "worldY": 170.0013200375821
+      }
+    },
+    {
+      "index": 22,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 273,
+      "bId": -1,
+      "nx": -0.7071067811865476,
+      "ny": -0.7071067811865476,
+      "depth": 0.5,
+      "normalImpulse": 0.2597409612391311,
+      "tangentImpulse": 0.1662342151930439,
+      "lax": -1.0000000000000222,
+      "lay": 0.999999999999978,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -433.78673640108013,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 320.33732319084737,
+        "y": 293.12984805393535,
+        "worldX": 0.3373231908473713,
+        "worldY": 165.12984805393535
+      }
+    },
+    {
+      "index": 23,
+      "aLayer": 0,
+      "bLayer": -1,
+      "aId": 273,
+      "bId": -1,
+      "nx": -0.7071067811865476,
+      "ny": -0.7071067811865476,
+      "depth": 0.5,
+      "normalImpulse": 0.20214579523409174,
+      "tangentImpulse": 0.09056960550692628,
+      "lax": 0.999999999999978,
+      "lay": 1.0000000000000222,
+      "lbx": 0,
+      "lby": 0,
+      "initialProjection": -434.28109115410086,
+      "targetVn": 0,
+      "staticFriction": 0.64,
+      "dynamicFriction": 0.6,
+      "point": {
+        "x": 322.0571708398095,
+        "y": 292.10900327417727,
+        "worldX": 2.057170839809487,
+        "worldY": 164.10900327417727
+      }
+    }
+  ],
+  "cells": [
+    {
+      "worldX": -50,
+      "worldY": 165,
+      "localX": 270,
+      "localY": 293,
+      "inside": true,
+      "layers": [
+        {
+          "layer": 0,
+          "material": 3,
+          "grounded": true,
+          "bodyId": -1,
+          "fallSpeed": 0
+        },
+        {
+          "layer": 1,
+          "material": 3,
+          "grounded": true,
+          "bodyId": -1,
+          "fallSpeed": 0
+        }
+      ]
+    },
+    {
+      "worldX": 104,
+      "worldY": 77,
+      "localX": 424,
+      "localY": 205,
+      "inside": true,
+      "layers": [
+        {
+          "layer": 0,
+          "material": 0,
+          "grounded": false,
+          "bodyId": -1,
+          "fallSpeed": 0
+        },
+        {
+          "layer": 1,
+          "material": 0,
+          "grounded": false,
+          "bodyId": -1,
+          "fallSpeed": 0
+        }
+      ]
+    },
+    {
+      "worldX": -187,
+      "worldY": 14,
+      "localX": 133,
+      "localY": 142,
+      "inside": true,
+      "layers": [
+        {
+          "layer": 0,
+          "material": 3,
+          "grounded": true,
+          "bodyId": -1,
+          "fallSpeed": 0
+        },
+        {
+          "layer": 1,
+          "material": 3,
+          "grounded": true,
+          "bodyId": -1,
+          "fallSpeed": 0
+        }
+      ]
+    }
+  ],
+  "solver": {
+    "substeps": 2,
+    "contacts": 0,
+    "warmStarted": 0,
+    "velocityIterations": 0,
+    "biasIterations": 0,
+    "maxContactDepth": 0,
+    "islands": 1,
+    "blockSolves": 0,
+    "islandBodySteps": 2,
+    "globalBodySteps": 2,
+    "childPairs": 0,
+    "childManifolds": 0,
+    "sweepFallbacks": 0,
+    "maxChildren": 1,
+    "fluidNodes": 0,
+    "fluidFaces": 0,
+    "fluidIterations": 0,
+    "spillDisplaced": 1,
+    "spillVisits": 2,
+    "spillSearches": 1,
+    "fluidCorrectorPasses": 0,
+    "fluidInitialMs": 0,
+    "fluidCorrectorMs": 0,
+    "rigidCoreMs": 1.300000011920929,
+    "rigidClearMs": 0,
+    "rigidDepenMs": 0,
+    "rigidStampMs": 0.09999999403953552,
+    "rigidSpillMs": 0,
+    "fluidCorrectorBodies": 0,
+    "fluidReferenceMs": 0,
+    "fluidDomainMs": 0,
+    "fluidMatrixMs": 0,
+    "fluidSolveMs": 0,
+    "fluidWritebackMs": 0,
+    "coherentIslands": 0,
+    "denseFallbackIslands": 0,
+    "maxRelativeSpeed": 0.33981682011906056,
+    "terrainRiskBodies": 0,
+    "impactRiskBodies": 0,
+    "ownershipConflicts": 0,
+    "positionCorrections": 8,
+    "recoveryBodies": 0,
+    "terrainRecoveryBodies": 0,
+    "stampRecoveryBodies": 0,
+    "rasterPlaceholderBodies": 0,
+    "spawnSeparations": 6,
+    "spawnSeparationFailures": 0,
+    "spawnMaxSeparation": 14.866068747318506,
+    "rasterCorrections": 8,
+    "rasterProjectionFailures": 0,
+    "rasterMaxCorrection": 0.48772736162860303,
+    "childTransforms": 0,
+    "velocityConstraintEvals": 0,
+    "biasConstraintEvals": 0,
+    "maxVelocityResidual": 0,
+    "maxBiasResidual": 0,
+    "maxPenetrationResidual": 0,
+    "shockIslands": 0,
+    "shockConstraintEvals": 0,
+    "shockFallbacks": 0,
+    "shockMaxLayers": 0,
+    "shockSkipped": 0,
+    "rigidPrepareMs": 0.09999999403953552,
+    "rigidFinalizeMs": 0.20000000298023224,
+    "rigidContactMs": 0.20000000298023224,
+    "rigidSolveMs": 0,
+    "rigidPairContactMs": 0.10000000894069672,
+    "rigidTerrainContactMs": 0.09999999403953552,
+    "terrainSamples": 10,
+    "terrainSamplesSkipped": 0,
+    "granularBodiesSkipped": 0,
+    "rigidMotionPrepMs": 0,
+    "rigidIntegrateMs": 0,
+    "rigidStepPrepareMs": 1,
+    "rigidContactSetupMs": 0,
+    "rigidStepFinalizeMs": 0,
+    "rigidOccupancyBuildMs": 0.5,
+    "rigidCadenceMs": 0,
+    "rigidFluidCoupleMs": 0.5,
+    "rigidFluidReferenceTotalMs": 0.09999999403953552,
+    "rigidFluidDomainTotalMs": 0.10000000894069672,
+    "rigidFluidMatrixTotalMs": 0,
+    "rigidFluidSolveTotalMs": 0.19999998807907104,
+    "rigidFluidWritebackTotalMs": 0,
+    "rigidFluidNodesTotal": 340,
+    "rigidFluidFacesTotal": 829,
+    "rigidFluidIterationsTotal": 17,
+    "rigidFluidDryReferencesSkipped": 20,
+    "rigidBakeMs": 0,
+    "rigidBakedCells": 0,
+    "rigidBakeSupportMs": 0,
+    "rigidBakeRasterMs": 0,
+    "rigidBakeRegisterMs": 0,
+    "worldRelaxBodies": 0,
+    "worldRelaxContacts": 0,
+    "worldPositionIterations": 0,
+    "worldMaxPositionTranslation": 0,
+    "worldMaxPositionRotation": 0,
+    "worldPositionLimitHits": 0
+  },
+  "markers": [
+    {
+      "type": "body-slept",
+      "turn": 67,
+      "body": {
+        "layer": 1,
+        "id": 2,
+        "cells": 865
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 67,
+      "body": {
+        "layer": 1,
+        "id": 3,
+        "cells": 692
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 71,
+      "body": {
+        "layer": 1,
+        "id": 8,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 352,
+      "body": {
+        "layer": 1,
+        "id": 12,
+        "cells": 572
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 500,
+      "body": {
+        "layer": 0,
+        "id": 26,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 520,
+      "body": {
+        "layer": 0,
+        "id": 74,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 521,
+      "body": {
+        "layer": 0,
+        "id": 52,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 522,
+      "body": {
+        "layer": 0,
+        "id": 14,
+        "cells": 4
+      }
+    },
+    {
+      "type": "stalled-airborne",
+      "turn": 526,
+      "detectedAt": 549,
+      "body": {
+        "layer": 0,
+        "id": 75,
+        "cells": 74
+      },
+      "speed": 3.884632261254913e-8,
+      "displacement": 0.00035189790998229725,
+      "contactCount": 2
+    },
+    {
+      "type": "body-slept",
+      "turn": 576,
+      "body": {
+        "layer": 0,
+        "id": 58,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 584,
+      "body": {
+        "layer": 0,
+        "id": 20,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 584,
+      "body": {
+        "layer": 0,
+        "id": 144,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 585,
+      "body": {
+        "layer": 0,
+        "id": 45,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 593,
+      "body": {
+        "layer": 0,
+        "id": 51,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 597,
+      "body": {
+        "layer": 0,
+        "id": 96,
+        "cells": 39
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 597,
+      "body": {
+        "layer": 1,
+        "id": 96,
+        "cells": 39
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 603,
+      "body": {
+        "layer": 0,
+        "id": 96,
+        "cells": 39
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 603,
+      "body": {
+        "layer": 1,
+        "id": 96,
+        "cells": 39
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 605,
+      "body": {
+        "layer": 0,
+        "id": 127,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 605,
+      "body": {
+        "layer": 0,
+        "id": 146,
+        "cells": 5
+      }
+    },
+    {
+      "type": "stalled-airborne",
+      "turn": 610,
+      "detectedAt": 633,
+      "body": {
+        "layer": 0,
+        "id": 220,
+        "cells": 849
+      },
+      "speed": 0.0015662444677254765,
+      "displacement": 0.0018173344796575117,
+      "contactCount": 6
+    },
+    {
+      "type": "body-slept",
+      "turn": 659,
+      "body": {
+        "layer": 0,
+        "id": 50,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 660,
+      "body": {
+        "layer": 0,
+        "id": 91,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 660,
+      "body": {
+        "layer": 0,
+        "id": 220,
+        "cells": 671
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 660,
+      "body": {
+        "layer": 1,
+        "id": 220,
+        "cells": 671
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 664,
+      "body": {
+        "layer": 0,
+        "id": 210,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 665,
+      "body": {
+        "layer": 0,
+        "id": 10,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 682,
+      "body": {
+        "layer": 0,
+        "id": 218,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 692,
+      "body": {
+        "layer": 0,
+        "id": 214,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 692,
+      "body": {
+        "layer": 0,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 692,
+      "body": {
+        "layer": 1,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 693,
+      "body": {
+        "layer": 0,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 693,
+      "body": {
+        "layer": 1,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 695,
+      "body": {
+        "layer": 0,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 695,
+      "body": {
+        "layer": 1,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 696,
+      "body": {
+        "layer": 0,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 696,
+      "body": {
+        "layer": 1,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 700,
+      "body": {
+        "layer": 0,
+        "id": 16,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 707,
+      "body": {
+        "layer": 0,
+        "id": 196,
+        "cells": 2
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 707,
+      "body": {
+        "layer": 0,
+        "id": 215,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 740,
+      "body": {
+        "layer": 0,
+        "id": 216,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 757,
+      "body": {
+        "layer": 0,
+        "id": 252,
+        "cells": 11
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 757,
+      "body": {
+        "layer": 1,
+        "id": 252,
+        "cells": 11
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 796,
+      "body": {
+        "layer": 0,
+        "id": 239,
+        "cells": 37
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 796,
+      "body": {
+        "layer": 1,
+        "id": 239,
+        "cells": 37
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 797,
+      "body": {
+        "layer": 0,
+        "id": 239,
+        "cells": 37
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 797,
+      "body": {
+        "layer": 1,
+        "id": 239,
+        "cells": 37
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 800,
+      "body": {
+        "layer": 1,
+        "id": 253,
+        "cells": 17
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 801,
+      "body": {
+        "layer": 1,
+        "id": 253,
+        "cells": 17
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 814,
+      "body": {
+        "layer": 0,
+        "id": 242,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 72,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 73,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 221,
+        "cells": 3
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 232,
+        "cells": 6
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 0,
+        "id": 240,
+        "cells": 102
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 1,
+        "id": 232,
+        "cells": 6
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 1,
+        "id": 237,
+        "cells": 1768
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 824,
+      "body": {
+        "layer": 1,
+        "id": 240,
+        "cells": 102
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 829,
+      "body": {
+        "layer": 0,
+        "id": 221,
+        "cells": 3
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 916,
+      "body": {
+        "layer": 1,
+        "id": 261,
+        "cells": 6
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 916,
+      "body": {
+        "layer": 1,
+        "id": 265,
+        "cells": 3
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 916,
+      "body": {
+        "layer": 1,
+        "id": 267,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 916,
+      "body": {
+        "layer": 1,
+        "id": 268,
+        "cells": 103
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 947,
+      "body": {
+        "layer": 0,
+        "id": 269,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 950,
+      "body": {
+        "layer": 0,
+        "id": 267,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 953,
+      "body": {
+        "layer": 0,
+        "id": 254,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 959,
+      "body": {
+        "layer": 0,
+        "id": 270,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 963,
+      "body": {
+        "layer": 1,
+        "id": 15,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 974,
+      "body": {
+        "layer": 0,
+        "id": 256,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 974,
+      "body": {
+        "layer": 0,
+        "id": 266,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 974,
+      "body": {
+        "layer": 1,
+        "id": 16,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 976,
+      "body": {
+        "layer": 1,
+        "id": 17,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 977,
+      "body": {
+        "layer": 1,
+        "id": 17,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 987,
+      "body": {
+        "layer": 0,
+        "id": 255,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 992,
+      "body": {
+        "layer": 0,
+        "id": 262,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 996,
+      "body": {
+        "layer": 1,
+        "id": 17,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 997,
+      "body": {
+        "layer": 0,
+        "id": 263,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-woke",
+      "turn": 997,
+      "body": {
+        "layer": 1,
+        "id": 17,
+        "cells": 1
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 1003,
+      "body": {
+        "layer": 0,
+        "id": 268,
+        "cells": 4
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 1012,
+      "body": {
+        "layer": 0,
+        "id": 300,
+        "cells": 2949
+      }
+    },
+    {
+      "type": "body-slept",
+      "turn": 1012,
+      "body": {
+        "layer": 1,
+        "id": 300,
+        "cells": 2949
+      }
+    }
+  ],
+  "replayState": {
+    "tick": 1012,
+    "actorTick": 1012,
+    "gridHash": 1941822834,
+    "worldOffsetX": -320,
+    "worldOffsetY": -128,
+    "cols": 640,
+    "rows": 480,
+    "componentCount": 4578,
+    "componentCellCount": 217792,
+    "crossBondCount": 0,
+    "playerCount": 0,
+    "itemCount": 80,
+    "creatureCount": 0,
+    "projectileCount": 0
+  }
+}

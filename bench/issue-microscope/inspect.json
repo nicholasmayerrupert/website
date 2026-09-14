@@ -1,0 +1,411 @@
+{
+  "source": "issue.sand-replay",
+  "abi": {
+    "matches": true,
+    "recorded": {
+      "version": 34,
+      "fingerprint": 132777953581475
+    },
+    "current": {
+      "version": 34,
+      "fingerprint": 132777953581475
+    }
+  },
+  "init": {
+    "mode": "creative",
+    "planet": "earth",
+    "weather": "clear",
+    "seed": 2419357662,
+    "grid": "640x480",
+    "tool": "cube",
+    "creative": "material:empty",
+    "gravity": 1,
+    "mission": "none",
+    "loadout": [],
+    "drawMode": false,
+    "creatureNaturalSpawning": false
+  },
+  "turns": 1330,
+  "eventCount": 1309,
+  "eventCounts": {
+    "config": 6,
+    "control": 1291,
+    "edge": 12
+  },
+  "tools": [
+    "cube"
+  ],
+  "strokes": 6,
+  "activity": {
+    "pointer": {
+      "minX": -239,
+      "minY": -37,
+      "maxX": 280,
+      "maxY": 179
+    },
+    "camera": {
+      "minX": -280.66666666666725,
+      "minY": -84,
+      "maxX": -34.00000000000068,
+      "maxY": 54.33333333333317
+    },
+    "longestStroke": {
+      "turns": 83,
+      "from": "-50,165",
+      "to": "258,-12"
+    }
+  },
+  "gates": 37,
+  "timeline": [
+    {
+      "tick": 0,
+      "type": "config",
+      "text": "cube:0"
+    },
+    {
+      "tick": 0,
+      "type": "config",
+      "text": "draw"
+    },
+    {
+      "tick": 0,
+      "type": "control",
+      "text": "@15,-37 cam -184,-84"
+    },
+    {
+      "tick": 0,
+      "type": "control",
+      "text": "@13,-37 cam -184,-84"
+    },
+    {
+      "tick": 0,
+      "type": "control",
+      "text": "@11,-37 cam -184,-84"
+    },
+    {
+      "tick": 1,
+      "type": "control",
+      "text": "@8,-36 cam -184,-84"
+    },
+    {
+      "tick": 1,
+      "type": "control",
+      "text": "@5,-35 cam -184,-84"
+    },
+    {
+      "tick": 2,
+      "type": "control",
+      "text": "@1,-34 cam -184,-84"
+    },
+    {
+      "tick": 2,
+      "type": "control",
+      "text": "@-4,-33 cam -184,-84"
+    },
+    {
+      "tick": 2,
+      "type": "control",
+      "text": "@-9,-32 cam -184,-84"
+    },
+    {
+      "tick": 3,
+      "type": "control",
+      "text": "@-14,-31 cam -184,-84"
+    },
+    {
+      "tick": 3,
+      "type": "control",
+      "text": "@-18,-30 cam -184,-84"
+    },
+    {
+      "tick": 4,
+      "type": "control",
+      "text": "@-22,-29 cam -184,-84"
+    },
+    {
+      "tick": 4,
+      "type": "control",
+      "text": "@-27,-27 cam -184,-84"
+    },
+    {
+      "tick": 4,
+      "type": "control",
+      "text": "@-32,-26 cam -184,-84"
+    },
+    {
+      "tick": 5,
+      "type": "control",
+      "text": "@-37,-24 cam -184,-84"
+    },
+    {
+      "tick": 5,
+      "type": "control",
+      "text": "@-42,-23 cam -184,-84"
+    },
+    {
+      "tick": 6,
+      "type": "control",
+      "text": "@-48,-21 cam -184,-84"
+    },
+    {
+      "tick": null,
+      "type": "omitted",
+      "text": "1273 more events"
+    },
+    {
+      "tick": 1273,
+      "type": "control",
+      "text": "@-184,5 cam -281,-41"
+    },
+    {
+      "tick": 1274,
+      "type": "control",
+      "text": "@-184,4 cam -281,-42"
+    },
+    {
+      "tick": 1275,
+      "type": "control",
+      "text": "@-184,2 cam -281,-44"
+    },
+    {
+      "tick": 1276,
+      "type": "control",
+      "text": "@-184,0 cam -281,-46"
+    },
+    {
+      "tick": 1290,
+      "type": "control",
+      "text": "@-185,0 cam -281,-46"
+    },
+    {
+      "tick": 1291,
+      "type": "control",
+      "text": "@-186,-1 cam -281,-46"
+    },
+    {
+      "tick": 1292,
+      "type": "control",
+      "text": "@-186,-2 cam -281,-46"
+    },
+    {
+      "tick": 1294,
+      "type": "control",
+      "text": "@-187,-2 cam -281,-46"
+    },
+    {
+      "tick": 1294,
+      "type": "control",
+      "text": "@-187,-1 cam -281,-46"
+    },
+    {
+      "tick": 1295,
+      "type": "control",
+      "text": "@-187,0 cam -281,-46"
+    },
+    {
+      "tick": 1296,
+      "type": "control",
+      "text": "@-187,1 cam -281,-46"
+    },
+    {
+      "tick": 1296,
+      "type": "control",
+      "text": "@-187,2 cam -281,-46"
+    },
+    {
+      "tick": 1296,
+      "type": "control",
+      "text": "@-187,4 cam -281,-46"
+    },
+    {
+      "tick": 1297,
+      "type": "control",
+      "text": "@-187,6 cam -281,-46"
+    },
+    {
+      "tick": 1297,
+      "type": "control",
+      "text": "@-187,8 cam -281,-46"
+    },
+    {
+      "tick": 1298,
+      "type": "control",
+      "text": "@-187,10 cam -281,-46"
+    },
+    {
+      "tick": 1298,
+      "type": "control",
+      "text": "@-187,13 cam -281,-46"
+    },
+    {
+      "tick": 1298,
+      "type": "control",
+      "text": "@-187,14 cam -281,-46"
+    }
+  ],
+  "final": {
+    "tick": 1330,
+    "actorTick": 1330,
+    "gridHash": 4155576940,
+    "worldOffsetX": -448,
+    "worldOffsetY": -128,
+    "cols": 640,
+    "rows": 480,
+    "componentCount": 4269,
+    "componentCellCount": 217832,
+    "crossBondCount": 1346,
+    "playerCount": 0,
+    "itemCount": 0,
+    "creatureCount": 0,
+    "projectileCount": 0,
+    "diagnostics": {
+      "source": "authority-export",
+      "authorityResponded": true,
+      "liveness": {
+        "status": "paused",
+        "stage": "paused",
+        "stageAgeMs": 1.2000000029802322,
+        "progressAgeMs": 1.2000000029802322,
+        "messageAgeMs": 0.5,
+        "packetAgeMs": 13.299999997019768,
+        "applyAgeMs": 5.5,
+        "turn": 1330,
+        "completedTurn": 1330,
+        "awaitingAck": true,
+        "hasControl": true,
+        "authorityTick": 1330,
+        "packetTick": 1330,
+        "mirrorTick": 1330,
+        "tickLag": 0
+      },
+      "authority": {
+        "worldTick": 1330,
+        "actorTick": 1330,
+        "epoch": 4,
+        "sequence": 115,
+        "replayProgress": {
+          "turns": 1330,
+          "phase": "turn-start",
+          "worldTick": 1329,
+          "actorTick": 1329,
+          "epoch": 4,
+          "sequence": 114,
+          "awaitingAck": false,
+          "fullResyncRequested": false
+        }
+      },
+      "transport": {
+        "appliedEpoch": 4,
+        "awaitingResizeId": 0,
+        "queuedPacket": null,
+        "packetType": "diff",
+        "packetBytes": 47252,
+        "mirrorApplyMs": 0.10000000894069672,
+        "mirrorPacketErrors": 0,
+        "lastMirrorPacketError": ""
+      },
+      "mirror": {
+        "tick": 1330,
+        "actorTick": 1330,
+        "cols": 640,
+        "rows": 480,
+        "gridHash": 4155576940,
+        "worldOffsetX": -448,
+        "worldOffsetY": -128,
+        "componentCount": 4269,
+        "componentCellCount": 217832,
+        "crossBondCount": 1346,
+        "playerCount": 0,
+        "itemCount": 0,
+        "creatureCount": 0,
+        "projectileCount": 0
+      },
+      "perf": {
+        "worldTps": 59.936908517350155,
+        "stepMs": 6.5,
+        "actorMs": 0,
+        "groundingMs": 0.20000000298023224,
+        "crossLayerGroundingMs": 0.4000000059604645,
+        "componentIndexMs": 0,
+        "assemblyUnionMs": 0.09999999403953552,
+        "carryMs": 0.09999999403953552,
+        "bodyMs": 1.5999999940395355,
+        "sandMs": 0.09999999403953552,
+        "liquidMs": 0.10000000894069672,
+        "gasMs": 0,
+        "reactMs": 0,
+        "tailMs": 0.29999999701976776,
+        "layersMs": 5.5999999940395355,
+        "crossMs": 0.20000000298023224,
+        "lightMs": 0,
+        "fillMs": 0,
+        "uploadMs": 0,
+        "liquidRelaxMs": 0.19999998807907104,
+        "liquidSurfaceMs": 0,
+        "forcePrepareMs": 0,
+        "forceWakeMs": 0,
+        "dirtyChunks": 45,
+        "dirtyRows": 357,
+        "dirtyCells": 17798,
+        "componentCount": 4269,
+        "componentCellCount": 217832,
+        "crossBondCount": 1346,
+        "wasmHeapBytes": 100663296,
+        "controlsReceived": 1291,
+        "edgesProcessed": 12,
+        "toolWrites": 0
+      },
+      "journal": {
+        "turns": 1330,
+        "truncated": false,
+        "discontinuous": false,
+        "progress": {
+          "turns": 1330,
+          "phase": "turn-start",
+          "worldTick": 1329,
+          "actorTick": 1329,
+          "epoch": 4,
+          "sequence": 114,
+          "awaitingAck": false,
+          "fullResyncRequested": false
+        }
+      }
+    }
+  },
+  "suggested": {
+    "at": [
+      0,
+      133,
+      167,
+      258,
+      268,
+      398,
+      437,
+      559,
+      609,
+      760,
+      927,
+      1330
+    ],
+    "cells": [
+      {
+        "x": -50,
+        "y": 165
+      },
+      {
+        "x": 104,
+        "y": 77
+      },
+      {
+        "x": -187,
+        "y": 14
+      }
+    ],
+    "microscope": "npm run replay:microscope -- issue.sand-replay --at 0,133,167,258,268,398,437,559,609,760,927,1330 --cell -50,165 --cell 104,77 --cell -187,14 --around-anomalies 6"
+  },
+  "notes": [
+    "This capsule is a deterministic input recipe (seed + authority events), not a screenshot or world dump.",
+    "ABI matches this checkout; microscope can replay it.",
+    "Save pasted gzip to a file. Chat wrapping/truncation breaks capsules."
+  ]
+}

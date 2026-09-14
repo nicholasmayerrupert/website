@@ -85,6 +85,9 @@ bool traceGrid(vec3 o,vec3 direction,vec3 size,int slot,int level,float limit,bo
       vec3 fineSize=vec3(dimensions(level-1));
       if(all(greaterThanEqual(fine,vec3(0.0)))&&all(lessThan(fine,fineSize))) {
         float a,b;boxHit(fine,d,fineSize,a,b);
+        // Entering the coarse shell exposes the face at the finer volume's exit.
+        vec3 exit=max(-fine/d,(fineSize-fine)/d);
+        normal=exit.x<=exit.y&&exit.x<=exit.z?vec3(-sign(d.x),0.0,0.0):exit.y<=exit.z?vec3(0.0,-sign(d.y),0.0):vec3(0.0,0.0,-sign(d.z));
         t+=max(b*gridOrigin[level-1].w/gridOrigin[level].w,0.0)+0.0002;continue;
       }
     }
@@ -221,7 +224,7 @@ struct Renderer {
   GLuint program=0,vao=0,bodyTransforms=0,textures[9]{};
   std::array<std::array<std::vector<uint8_t>,4>,4> occupancyData;
   EmissiveLights lights;
-  VoxelClipmap mid{2,512,256,512},far{4,512,256,512},horizon{8,512,512,512};
+  VoxelClipmap mid{2,640,256,640},far{4,768,256,768},horizon{8,512,512,512};
   VoxelClipmap& clipmap(int level){return level==1?mid:level==2?far:horizon;}
   Cell dimensions(int level){if(!level)return {W,H,D};auto& map=clipmap(level);return {map.wide,map.high,map.deep};}
   int uploaded=0;

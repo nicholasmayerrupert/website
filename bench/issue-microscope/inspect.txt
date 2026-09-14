@@ -1,0 +1,65 @@
+# Replay inspect
+source: issue.sand-replay
+abi: MATCH v34 0x78c2c6c1d9a3
+
+## Init
+mode: creative    planet: earth    weather: clear
+seed: 2419357662 (0x903477de)    grid: 640x480    gravity: 1
+tool: cube    creative: material:empty    mission: none
+
+## Events
+turns: 1330    events: 1309    gates: 37    paint strokes: 6
+control=1291  edge=12  config=6
+tools: cube
+pointer: -239,-37 .. 280,179
+camera: -281,-84 .. -34,54
+longest stroke: 83 turns -50,165 -> 258,-12
+
+## Timeline
+       0  config             cube:0
+       0  config             draw
+       0  control            @15,-37 cam -184,-84
+       0  control            @13,-37 cam -184,-84
+       0  control            @11,-37 cam -184,-84
+       1  control            @8,-36 cam -184,-84
+       1  control            @5,-35 cam -184,-84
+       2  control            @1,-34 cam -184,-84
+       2  control            @-4,-33 cam -184,-84
+       2  control            @-9,-32 cam -184,-84
+       3  control            @-14,-31 cam -184,-84
+       3  control            @-18,-30 cam -184,-84
+       4  control            @-22,-29 cam -184,-84
+       4  control            @-27,-27 cam -184,-84
+       4  control            @-32,-26 cam -184,-84
+       5  control            @-37,-24 cam -184,-84
+       5  control            @-42,-23 cam -184,-84
+       6  control            @-48,-21 cam -184,-84
+       …  omitted            1273 more events
+    1273  control            @-184,5 cam -281,-41
+    1274  control            @-184,4 cam -281,-42
+    1275  control            @-184,2 cam -281,-44
+    1276  control            @-184,0 cam -281,-46
+    1290  control            @-185,0 cam -281,-46
+    1291  control            @-186,-1 cam -281,-46
+    1292  control            @-186,-2 cam -281,-46
+    1294  control            @-187,-2 cam -281,-46
+    1294  control            @-187,-1 cam -281,-46
+    1295  control            @-187,0 cam -281,-46
+    1296  control            @-187,1 cam -281,-46
+    1296  control            @-187,2 cam -281,-46
+    1296  control            @-187,4 cam -281,-46
+    1297  control            @-187,6 cam -281,-46
+    1297  control            @-187,8 cam -281,-46
+    1298  control            @-187,10 cam -281,-46
+    1298  control            @-187,13 cam -281,-46
+    1298  control            @-187,14 cam -281,-46
+
+## Final
+tick: 1330    actorTick: 1330    grid: 640x480
+gridHash: 0xf7b1126c    worldOffset: -448,-128
+
+## Next
+- This capsule is a deterministic input recipe (seed + authority events), not a screenshot or world dump.
+- ABI matches this checkout; microscope can replay it.
+- Save pasted gzip to a file. Chat wrapping/truncation breaks capsules.
+- npm run replay:microscope -- issue.sand-replay --at 0,133,167,258,268,398,437,559,609,760,927,1330 --cell -50,165 --cell 104,77 --cell -187,14 --around-anomalies 6

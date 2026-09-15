@@ -107,7 +107,8 @@ class RigidBodySystem {
   std::vector<int> occCells;
   // Body erosion connectivity and ownership repair use dense generation stamps
   // because every key is already a loaded-grid cell index.
-  StampSet splitMemberStamp, splitVisitedStamp;
+  StampSet splitMemberStamp;
+  std::vector<int> splitBodyStack;
   StampSet splitWasBodyStamp, splitClaimedStamp;
   StampSet spawnSeparationStamp, spawnReservationStamp;
   // Per-contact body-cell erosion probabilities.

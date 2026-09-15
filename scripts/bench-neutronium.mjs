@@ -2,6 +2,8 @@
 // ordinary moving, large moving, and dense interacting neutronium sources.
 
 import { performance } from 'node:perf_hooks';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import {
   initSandWasm,
   createEngineWasm as createEngineWasmRaw,
@@ -233,6 +235,7 @@ const runScenario = (setup) => {
   for (const key of phaseKeys) combined[key] = [];
   const rigid = Object.fromEntries(rigidKeys.map((key) => [key, []]));
   const repeatWindows = [];
+  const fingerprints = new Set();
   let activeSteps = 0;
   for (let repeat = 0; repeat < repeats; repeat++) {
     const engine = createEngine();
@@ -246,6 +249,7 @@ const runScenario = (setup) => {
       engine._setRigidForceFullSolveBodies(forceFullSolveBodies);
     for (let i = 0; i < WARMUP; i++) engine.stepWorld();
     const repeatSteps = [];
+    const trajectory = createHash('sha256');
     for (let i = 0; i < sampleSteps; i++) {
       if (!engine.stepWorld()) break;
       const perf = engine.getPerf();
@@ -255,13 +259,27 @@ const runScenario = (setup) => {
       repeatSteps.push(perf.stepMs);
       for (const key of phaseKeys) combined[key].push(phases[key] ?? 0);
       for (const key of rigidKeys) rigid[key].push(solver[key] ?? 0);
+      // Diagnostics are outside the engine's step timer. Hash every measured
+      // frame so temporary trajectory or ownership changes cannot cancel out.
+      trajectory.update(engine.getGrid());
+      trajectory.update(engine.getGridBg());
+      for (let layer = 0; layer < 2; layer++) {
+        for (const view of [engine._bodyOwnerGrid(layer), engine._liquidVelocityGrid(layer)])
+          trajectory.update(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+        const states = [];
+        for (let body = 0; body < engine._bodyCountLayer(layer); body++)
+          states.push(engine._bodyStateLayer(layer, body));
+        trajectory.update(JSON.stringify(states));
+      }
       activeSteps++;
     }
     repeatWindows.push(worstWindowP50(repeatSteps));
+    fingerprints.add(trajectory.digest('hex'));
     engine.destroy();
   }
   return {
     activeSteps,
+    fingerprints: [...fingerprints],
     step: summarize(combined.stepMs),
     worstWindowP50: percentile(repeatWindows, 0.5),
     phases: Object.fromEntries(
@@ -300,7 +318,25 @@ for (const [name, setup] of selectedSetups) {
 }
 console.log(`\nwall ${(performance.now() - started).toFixed(0)} ms, ${repeats} repeats`);
 
-if (process.argv.includes('--json'))
-  console.log(JSON.stringify({
-    cols: COLS, rows: ROWS, repeats, sampleSteps, results,
-  }));
+const report = { cols: COLS, rows: ROWS, repeats, sampleSteps, results };
+const outputPath = valueAfter('--output', null);
+if (outputPath) writeFileSync(outputPath, JSON.stringify(report, null, 2) + '\n');
+if (process.argv.includes('--json')) console.log(JSON.stringify(report));
+const comparePath = valueAfter('--compare', null);
+if (comparePath) {
+  const before = JSON.parse(readFileSync(comparePath, 'utf8'));
+  if (before.cols !== COLS || before.rows !== ROWS || before.sampleSteps !== sampleSteps)
+    throw new Error('Neutronium comparison requires matching dimensions and steps');
+  for (const [name, result] of Object.entries(results)) {
+    const baseline = before.results[name];
+    if (!baseline || result.fingerprints.length !== 1
+        || baseline.fingerprints?.length !== 1
+        || result.fingerprints[0] !== baseline.fingerprints[0]) {
+      console.error(`${name}: trajectory fingerprint mismatch`);
+      process.exitCode = 1;
+      continue;
+    }
+    console.log(`${name}: exact trajectory match; step p50 `
+      + `${baseline.step.p50.toFixed(3)} -> ${result.step.p50.toFixed(3)} ms`);
+  }
+}

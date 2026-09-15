@@ -176,6 +176,9 @@ component registration, and restoration. Browser presentation exposes
   powder candidates reuse the ordinary constant-time density claim check. Players
   and mobile creatures add one chunk-bin force sample per actor tick; stationary
   mission fixtures remain anchored and add no query.
+  Queries outside the source bounds plus maximum force radius return zero
+  without scanning source cells. A filtered nearest-source query that finds no
+  dominant body also returns directly without repeating an exhaustive scan.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a
@@ -184,6 +187,15 @@ component registration, and restoration. Browser presentation exposes
 - Fire's stable-slot repairs reuse connectivity scratch and specialize interior
   neighbour probes while retaining the exact flood order. Mutation batches
   repair body rosters only when they actually edit a body.
+- Moving-body erosion consumes one generation-stamped membership set during its
+  world-cell flood and reuses the traversal stack. Interior neighbour probes
+  preserve the same depth-first order with one membership test per neighbour.
+  A chip stops traversal once every surviving cell has been reached; actual
+  splits complete the ordered traversal used to construct their fragments.
+- Rigid split-impulse targets are computed once after each island's velocity
+  solve. Bias iterations and residual checks reuse them while updating only
+  pseudo-velocity; the velocity-dependent joint terrain slop is evaluated after
+  the velocity solve has finished.
 - A TNT batch accumulates overlapping stencils into one bounds-local
   maximum-energy field, with generation-stamped sparse storage for widely
   separated waves. Each unique affected cell is classified once, each
@@ -390,6 +402,56 @@ reaction ordering, staggered world-column gravity, compound rigid contacts,
 cave-blast carry, bounded broad TNT fronts, and world-wide cross-layer rigid
 contact reconciliation. Those changes can alter the foreground itself, so a
 checksum transition is not solely a measurement-scope change.
+
+## Physics performance measurements — 2026-09-14
+
+Compared the deployed `146708b` engine with the force-query, erosion-flood, and
+split-impulse optimizations above on Windows / i7-13700K / Node 22.17.0. A game
+was running during measurement. Three pairs alternated reference/candidate
+order; the table uses the median of the three per-run percentiles, in ms.
+
+| Workload | Reference p50 | Optimized p50 | Reference p95 | Optimized p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Moving 900-cell neutronium near lava | 5.885 | 3.902 | 10.170 | 5.941 |
+| Mixed rigid / water / neutronium stress | 94.481 | 92.319 | 123.416 | 110.251 |
+| Burning, fragmenting wood slab | 1.315 | 1.239 | 18.979 | 17.875 |
+| Engine pan/stream workload | 2.397 | 2.210 | 14.897 | 14.233 |
+
+The neutronium wake phase fell from 1.262 to 0.202 ms p50 (84%); this is the
+clearest phase-specific gain. Smaller total-time changes remain sensitive to
+host load: unchanged rendering also measured faster in some pairs. Dense
+128-body neutronium did not show a clear improvement in the broader sweep.
+The fire result is modest; its reaction p95 did not improve consistently.
+These are engine timings, not browser FPS.
+
+Behavior and validation:
+
+- All six runs of each paired workload retained identical fingerprints.
+  Engine checksum: `0xc2d35348`; mixed rigid: `0xc2d77ecd`; burning wood:
+  `96de5778`, with 74,674 wood cells and unchanged peak fire/burning counts.
+- All 11 neutronium scenes matched every measured material, ownership,
+  liquid-velocity, and body-state frame against the reference engine.
+- Eight invariant-build suites passed: burning, neutronium-force,
+  rigid-collision, rigid-fluid-accuracy, rigid-world-raster-island,
+  rigid-terrain-contact, structural-stress, and actor-rigid. The crowded island
+  reported zero shared raster cells, terrain penetration, ownership conflicts,
+  and failed projections.
+- The production roof replay passed with the same 0.519647-cell maximum
+  correction and final settling. The separate neutronium-cut replay cannot
+  decode: its fixture records ABI v47, while both reference and candidate use
+  v59. The reference produces the same incompatibility error.
+- The committed engine timing gate still failed for step and fresh streaming
+  against its earlier recording, including on the unmodified reference under
+  current load. Paired p99 medians improved from 18.906 to 17.114 ms for step and
+  50.725 to 48.688 ms for fresh streaming. The deterministic baselines remain
+  unchanged; concurrent game load is not a reason to replace their timings.
+
+Local profiles, original WASM, paired measurements, trajectory fingerprints,
+and test logs are under `.sand-artifacts/performance-round/`. The reference
+loads through `scripts/sand-wasm-loader.mjs`; generic benchmark provenance
+still describes the working-tree artifact, so reference identity comes from
+the saved loader/WASM copied from `146708b` (2,050,999 bytes, FNV `0x0743565d`).
+The optimized production artifact is 2,053,189 bytes, FNV `0xa3633dc9`.
 
 ## Baseline policy
 

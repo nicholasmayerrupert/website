@@ -415,6 +415,8 @@ struct Contact {
   bool persisted;
   double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
   uint8_t layer = 0;
+  // Fixed after velocity solving, while split impulses update pseudo-velocity.
+  double targetBias = 0;
 };
 
 // ---- Dropped items + cosmetic particles (items.inc) ----

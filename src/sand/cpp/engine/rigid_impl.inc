@@ -2337,9 +2337,6 @@ void RigidBodySystem::applyWarmStart(Contact& c) {
 }
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  double slop = rigidContactSlop(c);
-  double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
-  if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
   if (B && (c.bIntegrated || B->actorProxy)) {
     rvx -= B->pvx - B->pw * c.rby;
@@ -2347,7 +2344,7 @@ double RigidBodySystem::resolveBias(Contact& c) {
   }
   double vn = rvx * c.nx + rvy * c.ny;
   if (c.biasMass <= 0) return 0;
-  double delta = (bias - vn) * c.biasMass;
+  double delta = (c.targetBias - vn) * c.biasMass;
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
@@ -3061,25 +3058,48 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
     // chipped mixed-material object split even though its structural bond is
     // still intact.
     splitMemberStamp.reset((size_t)E.cols * E.rows);
-    splitVisitedStamp.reset((size_t)E.cols * E.rows);
-    for (int k : wc) splitMemberStamp.add(k);
+    size_t remainingCount = 0;
+    for (int k : wc) {
+      if (!splitMemberStamp.has(k)) remainingCount++;
+      splitMemberStamp.add(k);
+    }
+    auto& remaining = splitMemberStamp.stamp;
+    const int32_t memberGeneration = splitMemberStamp.gen;
+    splitBodyStack.clear();
+    splitBodyStack.reserve(wc.size());
     std::vector<std::vector<int>> groups;
     for (int seed : wc) {
-      if (splitVisitedStamp.has(seed)) continue;
+      if (remaining[seed] != memberGeneration) continue;
       int gid = (int)groups.size();
       groups.push_back({});
-      std::vector<int> st{seed};
-      splitVisitedStamp.add(seed);
-      while (!st.empty()) { int k = st.back(); st.pop_back(); groups[gid].push_back(k); int y = k / E.cols, x = k - y * E.cols;
+      splitBodyStack.push_back(seed);
+      remaining[seed] = 0;
+      remainingCount--;
+      while (!splitBodyStack.empty()) {
+        // A chip needs only proof that all cells are connected. Group ordering
+        // matters only for a real split, whose traversal runs to completion.
+        if (gid == 0 && remainingCount == 0) break;
+        int k = splitBodyStack.back(); splitBodyStack.pop_back();
+        groups[gid].push_back(k);
+        int y = k / E.cols, x = k - y * E.cols;
+        auto visit = [&](int neighbor) {
+          if (remaining[neighbor] != memberGeneration) return;
+          remaining[neighbor] = 0;
+          remainingCount--;
+          splitBodyStack.push_back(neighbor);
+        };
+        // Consume membership on discovery, preserving the DFS neighbour order.
+        if (x > 0 && x + 1 < E.cols && y > 0 && y + 1 < E.rows) {
+          visit(k - E.cols - 1); visit(k - E.cols); visit(k - E.cols + 1);
+          visit(k - 1); visit(k + 1);
+          visit(k + E.cols - 1); visit(k + E.cols); visit(k + E.cols + 1);
+          continue;
+        }
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
           if (!ox && !oy) continue;
           int nx = x + ox, ny = y + oy;
           if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-          int neighbor = ny * E.cols + nx;
-          if (!splitMemberStamp.has(neighbor)
-              || splitVisitedStamp.has(neighbor)) continue;
-          splitVisitedStamp.add(neighbor);
-          st.push_back(neighbor);
+          visit(ny * E.cols + nx);
         }
       }
     }

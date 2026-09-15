@@ -40,7 +40,7 @@ console.log(JSON.stringify(result, null, 2));
 const compareAt = process.argv.indexOf('--compare');
 if (compareAt >= 0) {
   const baseline = JSON.parse(readFileSync(process.argv[compareAt + 1], 'utf8'));
-  for (const key of ['wood', 'peakFire', 'checksum']) {
+  for (const key of ['scene', 'steps', 'wood', 'peakFire', 'peakBurning', 'checksum']) {
     if (baseline[key] !== result[key]) {
       console.error(`${key} changed: ${baseline[key]} -> ${result[key]}`);
       process.exitCode = 1;

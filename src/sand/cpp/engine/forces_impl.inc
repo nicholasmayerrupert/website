@@ -1292,6 +1292,11 @@ bool ForceSystem::sampleNearestNeutronium(
              && emitter.sourceBodyId == sourceBodyId);
   };
   int gridX = (int)std::floor(x), gridY = (int)std::floor(y);
+  // The source bounds include the largest emitter radius. Outside this box no
+  // neutronium source can contribute, including when the grid field is deferred.
+  if (gridX < nearestFieldX0 || gridX > nearestFieldX1
+      || gridY < nearestFieldY0 || gridY > nearestFieldY1)
+    return false;
   int fieldSeed = nearestFieldValid
                && (int)nearestNeutroniumField.size() == E.cols * E.rows
     ? nearestNeutroniumField[gridY * E.cols + gridX] : -1;
@@ -1309,6 +1314,8 @@ bool ForceSystem::sampleNearestNeutronium(
       && target == FORCE_RIGID && neutroniumKdRoot >= 0) {
     nearestSeed = nearestDominantNeutronium(
       x, y, targetNeutroniumCells, targetBodyLayer, sourceBodyId);
+    // The filtered index exhausts every eligible source, including an empty set.
+    if (nearestSeed < 0) return false;
   }
   if (nearestSeed < 0) {
     double nearestDistance2 = 1e30;

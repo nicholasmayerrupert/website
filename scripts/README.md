@@ -206,6 +206,13 @@ pass `--compare FILE` with the same scene to check exact material/checksum
 parity and report phase timing deltas. Fixture construction and fire injection
 are outside the step timings.
 
+`node scripts/bench-neutronium.mjs --repeat 3 --output FILE` records static and
+moving sources, liquids, dense rigid piles, and cross-layer slivers. After a
+rebuild, use `--compare FILE --output AFTER` to compare timings and exact
+trajectory fingerprints. Each fingerprint includes both material grids, body
+ownership, liquid velocity, and body state at every measured step; hashing is
+outside the engine step timer. `--scenario moving-900-lava` selects one scene.
+
 ```sh
 node scripts/scenario-runner.mjs --scenario placement --sizes 80,160,240 --repeat 3
 node scripts/scenario-runner.mjs --scenario aftermath --seed 1401181199 --steps 92

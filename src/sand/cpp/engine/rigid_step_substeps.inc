@@ -1221,10 +1221,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         return std::fmax(normalResidual, tangentResidual);
       };
       auto contactBiasResidual = [&](const Contact& contact) {
-        double slop = rigidContactSlop(contact);
-        double bias = R_BAUMGARTE
-          * std::fmax(0.0, contact.depth - slop);
-        bias = std::fmin(bias, R_MAX_BIAS_VEL);
         double rvx = contact.a->pvx - contact.a->pw * contact.ray;
         double rvy = contact.a->pvy + contact.a->pw * contact.rax;
         if (contact.b && (contact.bIntegrated || contact.b->actorProxy)) {
@@ -1233,7 +1229,8 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         }
         double vn = rvx * contact.nx + rvy * contact.ny;
         return contact.accBias > 1e-12
-          ? std::fabs(bias - vn) : std::fmax(0.0, bias - vn);
+          ? std::fabs(contact.targetBias - vn)
+          : std::fmax(0.0, contact.targetBias - vn);
       };
       bool shockVelocityConverged = false;
       uint64_t shockIslandKey = solveShockKey[root];
@@ -1308,6 +1305,11 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
         rigidMaxVelocityResidual = std::fmax(
           rigidMaxVelocityResidual,
           contactVelocityResidual(contacts[contactOrder[oi]]));
+      for (int oi = islandStart; oi < islandEnd; oi++) {
+        Contact& contact = contacts[contactOrder[oi]];
+        contact.targetBias = std::fmin(R_MAX_BIAS_VEL, R_BAUMGARTE
+          * std::fmax(0.0, contact.depth - rigidContactSlop(contact)));
+      }
       for (int it = 0; !softLayer && it < solverIters; it++) {
         rigidBiasIterations++;
         rigidBiasConstraintEvals += islandEnd - islandStart;

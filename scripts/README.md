@@ -148,6 +148,10 @@ weights. A default compare rejects median startup regressions above 10%;
 Use `--only desktop` or `--repeat 3` with a matching reference for focused runs.
 The committed reference is `bench/startup-baseline.json`; timing comparisons are
 meaningful only on the recorded environment.
+Record a reference with `npm run bench:startup -- --json FILE`, then compare
+with `node scripts/bench-startup.mjs --compare FILE`. Main-thread blocking
+excludes worker CPU; these controlled measurements do not describe production
+telemetry.
 
 After `npm run build && npm run build:embed`, the `compiled-startup` suite checks
 binary equality with the authoring compiler, creative/survival startup,
@@ -246,8 +250,12 @@ replay test's corrected assumption about world-tick progress.
 
 `rigid-world-raster-island` writes a `motion.json` report for its selected body,
 separating solver bias, position projection, and raster repair travel, including
-rotation at the body's perimeter. See [the rigid evaluation record](../src/sand/RIGID_EVALUATION.md)
-for measured experiments, rejected patches, and known shipping-mode failures.
+rotation at the body's perimeter. See [rigid diagnostics](../src/sand/RIGID_COLLISION.md#motion-diagnostics)
+for the pivot and roof regression checks and the limits of these measurements.
+
+Save investigation reports, experiment patches, and generated JSON/HTML/images
+under `.sand-artifacts/` (or a temporary directory). `bench/` holds maintained
+comparison baselines; replay recipes used by regression tests live in `scripts/`.
 
 ## Game authoring workbench
 

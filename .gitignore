@@ -31,3 +31,8 @@ bench/*.png
 
 # Local test, profiling, and comparison artifacts
 .sand-artifacts/
+.playwright-mcp/
+.claude/settings.local.json
+bench/issue-microscope/
+bench/rigid-pivot/
+bench/rigid-evaluation/

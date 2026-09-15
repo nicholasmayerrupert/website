@@ -131,11 +131,12 @@ authoritative pause/actor stepping, runtime inspection, a blueprint brush, and
 player pixel/frame editing. Local saves validate all content and reload the real
 game without a WASM rebuild. `npm run game:capture -- archive` produces a browser
 screenshot and state JSON. See [content/README.md](content/README.md) for authoring
-and [content/ROADMAP.md](content/ROADMAP.md) for the remaining rebuild stages.
+and [content/ADVENTURE.md](content/ADVENTURE.md#verification-and-remaining-acceptance-work)
+for remaining gameplay acceptance work.
 
-World changes and job progress persist through streaming during the session.
-Durable world saves are not implemented: reloading starts a fresh valley, as the
-pause menu states. The legacy campaign metadata and mission definitions remain
+World changes and job progress persist through streaming and authoritative
+checkpoints in IndexedDB. Journal → Settings & controls → Start fresh resets
+the saved adventure. The legacy campaign metadata and mission definitions remain
 available to direct engine consumers and old replay recipes; the Aster UI does
 not use their progression, briefings, loadouts, or extraction flow.
 
@@ -435,8 +436,8 @@ If `--at`/`--filmstrip` are omitted it captures inspect-suggested turns (start,
 activity, end) instead of only the last turn.
 
 ```sh
-npm run replay:inspect -- issue.sand-replay
-npm run replay:microscope -- issue.sand-replay \
+npm run replay:inspect -- /path/to/capture.sand-replay
+npm run replay:microscope -- /path/to/capture.sand-replay \
   --at 0,3000,6138 --filmstrip 5100:5350:10 \
   --body 0:936 --focus body --cell 120,-40 \
   --around-anomalies 6

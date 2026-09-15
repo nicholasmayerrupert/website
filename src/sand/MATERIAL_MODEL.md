@@ -77,6 +77,20 @@ a generated continuous-sound group. Water and brine share one group, while fire,
 lava, and acid select their existing groups. A new material can reuse either
 policy without adding an engine-side material check.
 
+### Loose density exchanges
+
+`allowLooseDensityExchange` gates occupied-cell exchanges with strict density
+eligibility, density-contrast probability, participating-liquid mobility, and
+source/destination movement guards. Powder/powder contacts remain supportive.
+The early interface pass owns ordinary powder/liquid settling; surface,
+force-directed, and cross-layer exchanges share the same policy. Gap-filling
+moves carry the occupied material's exchange lock. A rejected exchange still
+allows ordinary empty-space falling, whose acceleration is independent.
+
+The `liquid-mass` suite checks exchange rates, one-exchange-per-tick ownership,
+both-material conservation, cross-layer exchange, gap locks, and clear falling
+beside a rejected contact.
+
 ### Rendering and light profiles
 
 `transparency` is render-only and ranges from `0` (opaque) to `1` (invisible).

@@ -148,3 +148,10 @@ population costs belong to the species descriptors in `abi.schema.json`.
 sprite sets from articulated pixel geometry. It preserves every other species.
 The compiled sprites remain editable in `creatureArt.js`; rerunning the author
 script replaces those five sets.
+
+## Further authoring work
+
+Branching choices, escorts, and a dedicated encounter editor remain expansion
+work. Deliver each stage as a playable example with a named development scene
+and ordinary-input acceptance checks. The chapter's remaining playthrough and
+balance work is tracked in [ADVENTURE.md](ADVENTURE.md#verification-and-remaining-acceptance-work).

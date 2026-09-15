@@ -453,6 +453,29 @@ still describes the working-tree artifact, so reference identity comes from
 the saved loader/WASM copied from `146708b` (2,050,999 bytes, FNV `0x0743565d`).
 The optimized production artifact is 2,053,189 bytes, FNV `0xa3633dc9`.
 
+## Performance investigation priorities
+
+Measure structural repair, grounding, raster recovery, and wet-body solving
+separately. Body count alone does not describe the cost of large cut structures
+or force-driven piles. Use the maintained TNT, rigid-acid, neutronium, and mixed
+benchmarks with matching controls and phase counters.
+
+- For raster recovery, count validation calls, visited cells, trial footprints,
+  and rollback work. Any localization must retain exact ownership, terrain
+  checks, cross-layer atomicity, and continued body motion.
+- For cuts and erosion, measure cells visited per removed cell, topology repair,
+  and derived-geometry work. Local no-split proofs need an exact fallback;
+  rotated-body connectivity follows the world raster.
+- For grounding, preserve refresh obligations at each phase boundary. An empty
+  blast batch alone does not prove that skipping its finalization is a no-op.
+- For wet bodies, compare domain size, pressure iterations, force-cache reuse,
+  and contact residuals. Dry force-driven piles need separate contact analysis;
+  reducing iteration caps can harm convergence and settling.
+
+Bounded search counts do not guarantee a world-step time budget. Track p95/p99,
+material retention, motion, and time to sleep together. Whole-engine timing
+failures remain relevant even when an isolated kernel comparison improves.
+
 ## Baseline policy
 
 - A pure refactor must preserve the deterministic checksum.

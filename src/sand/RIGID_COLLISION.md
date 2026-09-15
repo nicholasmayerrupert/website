@@ -6,6 +6,11 @@ lives in `rigid_impl.inc`.
 
 ## Collision pipeline
 
+- Both layers prepare terrain and forces before one world contact/island solve.
+  Joint bodies share an origin, mass, velocity, and pose while exposing separate
+  layer collision masks. Contact identities include ownership and collision
+  layer; both rasters commit before erosion. Exact raster validation remains
+  necessary alongside continuous collision constraints.
 - A conservative full-tick broadphase partitions bodies into candidate islands.
   Each island chooses its own substep cadence from linear speed plus angular tip
   speed, capped by `R_MAX_SUBSTEPS`; an isolated fast projectile therefore does
@@ -202,6 +207,22 @@ Raster recovery changes only actor positions.
 Fluid coupling performs a boundary-only liquid preflight before stamping body
 footprints into its pressure domain.
 
+## Support balance near rest
+
+Near rest, level contacts below the center of mass define a horizontal support
+span. A body overhanging that span by more than half a cell keeps angular motion
+toward the overhang and cannot enter either low-motion sleep path. Touching
+contacts count even at zero impulse. Side contacts, unequal support heights,
+fluids, and spatial forces use the general settling policy. For body/body
+support, the island's mass-weighted center must also overhang its terrain span,
+allowing connected pieces to counterbalance.
+
+Sleeping bodies save a 7×7 static-terrain stencil around each support anchor.
+Support-change dirtiness gates rechecks; removing part of an anchor wakes the
+body even if another support cell remains. Adding terrain alone preserves it.
+Contact persistence and damping must preserve real pivots and continued motion;
+integer raster validity alone does not establish continuous shape separation.
+
 ## Component-to-body lifecycle
 
 An erase, cut, or explosion marks the edited support closure. Grounding then
@@ -293,6 +314,45 @@ body. Material above a body contributes granular confinement only when the
 underside footprint can bear the body's mass, so loose cargo cannot slow or
 re-ground an airborne body. Powders never push a rigid body upward.
 
+## Fluid approximation limits
+
+Wet boundaries use full axis-aligned raster faces, so fractional pose changes
+can change draft and torque discretely. Projected liquid velocity is coupling
+state; ordinary cellular transport follows occupancy, fall speed, mobility,
+and exchanges. The pressure solve alone therefore does not establish final
+global incompressibility or momentum conservation.
+
+Cutoff pressure samples nearby open columns without proving pool connectivity.
+Viscosity at a domain cutoff treats the exterior as a reservoir. Ordinary
+negative pressures are clamped after solving; ice also uses an active-set
+corrector. Separate pools, narrow channels, fractional body poses, sealed
+containers, mixed liquids, fast entry, and large wet-body batches are useful
+accuracy cases.
+
+Potential accuracy work starts with residual/divergence and boundary-slip
+diagnostics under a fixed work budget, then consistent fractional wet-face
+geometry and conservative velocity-informed transport. Geometry weights must
+agree across pressure, exclusion, and displacement. These are extensions to the
+current model, not assumptions its tests already establish.
+
+## Motion diagnostics
+
+Run related checks together through `scripts/run-tests.mjs --only`:
+
+- `rigid-pivot` checks mirrored overhangs, balanced controls, body support, and
+  partial support removal. `node scripts/rigid-pivot-investigate.mjs` writes
+  motion traces to `.sand-artifacts/pivot/`; `PIVOT_SVG=1` adds raster frames.
+- `rigid-world-raster-island` writes `motion.json`, separating solver bias,
+  position projection, and raster recovery with angular perimeter travel.
+- `rigid-roof-motion,rigid-terrain-contact` checks the roof replay's correction,
+  continued motion, final baking, both-layer clearance, and ownership. The roof
+  fixture observes authority turns 745–840 and extends to 1061 for rest.
+
+Motion metrics report net travel per stage, so canceling movements within one
+stage are not summed. The 0.3-cell bias limit is distinct from final projection,
+raster recovery, and rollback. A focused replay passing does not establish that
+the general microscope's backward seek or every large-stack case completes.
+
 ## Invariants and limits
 
 - A body stamps its real material into the grid; `bodyOwner` distinguishes it
@@ -324,6 +384,12 @@ large-body fragmentation and repair, and `npm run bench:rigid-long` for sustaine
 large/long-body contact.
 
 ## Design references
+
+Fluid boundary work is informed by
+[Batty, Bertails & Bridson's variational coupling](https://www.cs.ubc.ca/labs/imager/tr/2007/Batty_VariationalFluids/)
+and its [2D reference implementation](https://github.com/christopherbatty/FluidRigidCoupling2D).
+[Bridson's course notes](https://www.cs.ubc.ca/~rbridson/fluidsimulation/)
+cover pressure solving and advection.
 
 The contact persistence, block solve, island scheduling, substep, and continuous
 collision choices follow the same families used by production engines:

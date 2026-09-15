@@ -19,13 +19,12 @@ const { check, done } = makeChecker('cross-layer rigid slivers');
 const forceFullSolveBodies = Number(
   process.env.RIGID_FORCE_FULL_SOLVE_BODIES ?? 12,
 );
-const useSolverMode = (engine) => {
-
+const configureSolver = (engine) => {
   engine._setRigidForceFullSolveBodies(forceFullSolveBodies);
   return engine;
 };
 
-const engine = useSolverMode(attachTestHooks(createEngineWasmRaw({
+const engine = configureSolver(attachTestHooks(createEngineWasmRaw({
   cols: 360,
   rows: 240,
   worldSeed: 0x51a7c0de,
@@ -118,7 +117,7 @@ console.log(`  info body max ${maxBodyMs.toFixed(3)} ms at tick ${maxBodyTick} w
 engine.destroy();
 
 console.log('\nforce-driven single-layer rigid pile stays live');
-const pile = useSolverMode(attachTestHooks(createEngineWasmRaw({
+const pile = configureSolver(attachTestHooks(createEngineWasmRaw({
   cols: 768,
   rows: 320,
   worldSeed: 0xC0FFEE,
@@ -134,11 +133,13 @@ for (let i = 0; i < 48; i++)
 pile.syncComponents();
 
 let maxPileRecoveries = 0;
+let totalPileRecoveries = 0;
 let latePileMovingPeak = 0;
 for (let tick = 0; tick <= 500; tick++) {
   pile.stepWorld();
-  maxPileRecoveries = Math.max(maxPileRecoveries,
-    pile.getRigidSolverDebug().recoveryBodies);
+  const recoveries = pile.getRigidSolverDebug().recoveryBodies;
+  maxPileRecoveries = Math.max(maxPileRecoveries, recoveries);
+  totalPileRecoveries += recoveries;
   if (tick >= 400) {
     let moving = 0;
     for (let body = 0; body < pile._bodyCount(); body++) {
@@ -159,7 +160,8 @@ for (let body = 0; body < pile._bodyCount(); body++) {
     + Math.abs(state.omega) * state.maxR;
   finalPileMoving += pointSpeed > 0.001;
 }
-check(`single-layer pile bypasses cross-layer recovery (${maxPileRecoveries} bodies)`,
+check(`single-layer pile needs no terrain/stamp rollback `
+    + `(peak ${maxPileRecoveries} bodies, ${totalPileRecoveries} body-ticks)`,
   maxPileRecoveries === 0);
 check(`force-driven pile stays live (late peak ${latePileMovingPeak}/48 moving, `
     + `final ${finalPileMoving} moving, ${finalPileAwake} awake)`,

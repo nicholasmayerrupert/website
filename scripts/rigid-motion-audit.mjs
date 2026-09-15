@@ -21,7 +21,7 @@ const rect = (x, y, w, h) => Array.from({ length: w * h }, (_, k) =>
 const digest = (array) => createHash('sha256').update(new Uint8Array(
   array.buffer, array.byteOffset, array.byteLength)).digest('hex');
 
-function pivot(engine, size, offset, removeSupport = false) {
+function pivot(engine, size, offset, removeSupportFrom = null) {
   const thick = Math.max(3, Math.round(size / 8));
   const cells = rect(0, 0, size, size).filter(([x, y]) =>
     x < thick || x >= size - thick || y < thick || y >= size - thick);
@@ -30,9 +30,9 @@ function pivot(engine, size, offset, removeSupport = false) {
   engine.syncComponents();
   engine.spawnBody(cells.map(([x, y]) => [x + 160 - size / 2 + offset, y + 200 - size]));
   return (tick) => {
-    if (!removeSupport || tick !== 60) return;
+    if (removeSupportFrom === null || tick !== 60) return;
     for (let y = 200; y < floor; y++)
-      for (let x = 160; x <= 161; x++) engine.eraseDisc(x, y, 0);
+      for (let x = removeSupportFrom; x <= 161; x++) engine.eraseDisc(x, y, 0);
     engine.syncComponents();
   };
 }
@@ -40,7 +40,16 @@ const cases = [
   ...[32, 128].flatMap((size) => [-1, 0, 1].map((side) => ({
     name: `pivot-${size}-${side}`, setup: (e) => pivot(e, size, side * Math.max(3, size / 16)),
   }))),
-  { name: 'support-removal', setup: (e) => pivot(e, 128, 1, true) },
+  { name: 'support-narrowing', setup: (e) => pivot(e, 128, 1, 160) },
+  { name: 'support-removal', setup: (e) => pivot(e, 128, 0, 159), verify(ticks) {
+    const resting = ticks[59].bodies[0];
+    const released = ticks[60].bodies.find((body) => body.id === resting.id);
+    const falling = ticks[100].bodies.find((body) => body.id === resting.id);
+    assert.equal(resting.awake, 0, 'support-removal must release a sleeping body');
+    assert.ok(released?.awake, 'removing the support must wake the body');
+    assert.ok(falling && falling.py > resting.py + 10,
+      'the released body must fall instead of sleeping in midair');
+  } },
   { name: 'thin-rotating-beam', setup(e) {
     e.spawnBody(rect(50, 180, 200, 3));
     e._setBodyMotion(0, 0.4, 0.5, 0.035);
@@ -120,6 +129,7 @@ for (const spec of cases) {
     ticks.push({ tick, worldTick: e.getTick(), bodies, rasters });
     if (tick % 10 === 0 || tick === steps - 1) frames.push({ tick, layers: rasterFrame(e, layers) });
   }
+  spec.verify?.(ticks);
   const motion = tracker.summary();
   scenes.push({ name: spec.name, ticks, frames, motion });
   console.log(`${spec.name}: ${ticks.length} ticks; max correction ${motion.maxCorrection.toFixed(6)}`);

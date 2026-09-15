@@ -2339,13 +2339,13 @@ double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
   double slop = rigidContactSlop(c);
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
-  if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
+  if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
   if (B && (c.bIntegrated || B->actorProxy)) {
     rvx -= B->pvx - B->pw * c.rby;
     rvy -= B->pvy + B->pw * c.rbx;
   }
-  double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return 0;
+  double vn = rvx * c.nx + rvy * c.ny;
   if (c.biasMass <= 0) return 0;
   double delta = (bias - vn) * c.biasMass;
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
@@ -3674,7 +3674,7 @@ bool RigidBodySystem::findTerrainClearAdjustment(
   };
   const double step = 0.125;
   auto clearAlong = [&](const double* direction) {
-    for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
+    for (double radius = step; radius <= R_SAFE_SUBSTEP + 1e-9; radius += step) {
       place(direction[0] * radius, direction[1] * radius);
       if (overlapsBlockingCell()) continue;
       double blockedRadius = radius - step;
@@ -3728,7 +3728,7 @@ bool RigidBodySystem::findTerrainClearAdjustment(
 
   // A balanced obstruction has no reliable normal. Use the shortest local
   // translation without changing the solver's rotation.
-  for (double radius = step; radius <= 2.0 + 1e-9; radius += step) {
+  for (double radius = step; radius <= R_SAFE_SUBSTEP + 1e-9; radius += step) {
     bool found = false;
     double bestRadius = radius, bestX = 0, bestY = 0;
     for (const auto& direction : directions) {

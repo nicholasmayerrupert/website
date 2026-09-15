@@ -222,7 +222,7 @@ try {
   await page.evaluate((names) => window.__sandReplayMicroscope.setOverlays(names), overlays);
   await page.evaluate(({ replayText, selected, focusMode, inspected, limit }) => (
     window.__sandReplayMicroscope.open(replayText, {
-      body: selected, focus: focusMode, cells: inspected, scanBodyLimit: limit,
+      body: selected, traceBody: selected, focus: focusMode, cells: inspected, scanBodyLimit: limit,
     })
   ), {
     replayText: text, selected: body, focusMode: focus,

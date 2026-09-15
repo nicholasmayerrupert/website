@@ -134,6 +134,8 @@ function readCells(engine, hooks, cells = []) {
 
 export function createReplayMicroscopeProbe(rawEngine, options = {}) {
   const engine = attachTestHooks(rawEngine);
+  const traceBody = options.traceBody;
+  if (traceBody) engine._setRigidTraceBody(traceBody.layer, traceBody.id);
   const scanBodyLimit = Math.max(1,
     Math.min(2000, options.scanBodyLimit | 0 || DEFAULT_SCAN_BODY_LIMIT));
   let markers = [];
@@ -233,6 +235,7 @@ export function createReplayMicroscopeProbe(rawEngine, options = {}) {
       contacts,
       cells: readCells(engine, engine, inspectCells),
       solver: engine.getRigidSolverDebug(),
+      trace: traceBody ? engine._rigidTracePoses() : null,
       markers: markers.slice(),
     };
   };

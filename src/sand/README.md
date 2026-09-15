@@ -462,6 +462,12 @@ into its prompt. With a selected body, the default `selection` overlay limits
 labels, velocity arrows, status, and contacts to that body while leaving nearby
 body bounds faintly visible for context.
 
+Opening the microscope with `traceBody: { layer, id }` includes the selected
+body's correction-stage poses and integrated velocity/bias vectors in each
+frame's `trace`. The CLI enables this with `--body`. The `rigid-roof-motion`
+suite replays a detached joint roof and checks correction travel, terrain
+clearance, continued movement, and settling.
+
 ## Source map
 
 - `cpp/sand.cpp`: unity translation unit and `Engine` composition.

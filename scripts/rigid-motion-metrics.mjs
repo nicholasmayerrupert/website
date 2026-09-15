@@ -1,3 +1,28 @@
+export function rigidCorrectionStages(trace, layer, radius) {
+  const travel = (dx, dy, da) => Math.hypot(dx, dy) + Math.abs(da) * radius;
+  const stages = {};
+  for (const name of ['biasMotion', 'projectionMotion']) {
+    const { dx, dy, da } = trace[name];
+    stages[name] = travel(dx, dy, da);
+  }
+  // Missing optional stages are bridged to the next captured world pose.
+  const order = layer === 0
+    ? [[7, 'bodyRaster'], [8, 'terrainRecovery'], [9, 'stamp'],
+      [1, 'layerFinalize'], [2, 'peerLayer'], [3, 'worldRelax'],
+      [4, 'worldRestamp'], [5, 'worldCommit']]
+    : [[7, 'bodyRaster'], [8, 'terrainRecovery'], [9, 'stamp'],
+      [2, 'layerFinalize'], [3, 'worldRelax'], [4, 'worldRestamp'],
+      [5, 'worldCommit']];
+  let previous = 6;
+  for (const [index, name] of order) {
+    if (!(trace.mask & (1 << index))) continue;
+    const a = trace.poses[previous], b = trace.poses[index];
+    stages[name] = travel(b.px - a.px, b.py - a.py, b.angle - a.angle);
+    previous = index;
+  }
+  return stages;
+}
+
 // Observe one body's correction stages without changing the simulated inputs.
 export function trackRigidMotion(engine, layer, bodyId) {
   engine._setRigidTraceBody(layer, bodyId);
@@ -7,8 +32,6 @@ export function trackRigidMotion(engine, layer, bodyId) {
   let maxCorrectionTick = -1;
   let correctionTicks = 0;
   let previousWorldTick = engine.getTick();
-  const pointTravel = (dx, dy, da, radius) =>
-    Math.hypot(dx, dy) + Math.abs(da) * radius;
   return {
     sample(tick) {
       const worldTick = engine.getTick();
@@ -30,26 +53,8 @@ export function trackRigidMotion(engine, layer, bodyId) {
         stage.ticks += value > 1e-8;
         correction += value;
       };
-      for (const name of ['biasMotion', 'projectionMotion']) {
-        const { dx, dy, da } = trace[name];
-        add(name, pointTravel(dx, dy, da, radius));
-      }
-      // Missing optional stages are bridged to the next captured world pose.
-      const order = layer === 0
-        ? [[6], [7, 'bodyRaster'], [8, 'terrainRecovery'], [9, 'stamp'],
-          [1, 'layerFinalize'], [2, 'peerLayer'], [3, 'worldRelax'],
-          [4, 'worldRestamp'], [5, 'worldCommit']]
-        : [[6], [7, 'bodyRaster'], [8, 'terrainRecovery'], [9, 'stamp'],
-          [2, 'layerFinalize'], [3, 'worldRelax'], [4, 'worldRestamp'],
-          [5, 'worldCommit']];
-      let previous = 6;
-      for (const [index, name] of order.slice(1)) {
-        if (!(trace.mask & (1 << index))) continue;
-        const a = trace.poses[previous], b = trace.poses[index];
-        add(name, pointTravel(b.px - a.px, b.py - a.py,
-          b.angle - a.angle, radius));
-        previous = index;
-      }
+      for (const [name, value] of Object.entries(rigidCorrectionStages(trace, layer, radius)))
+        add(name, value);
       correctionTicks += correction > 1e-8;
       if (correction > maxCorrection) {
         maxCorrection = correction;

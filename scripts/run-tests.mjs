@@ -4,7 +4,7 @@
 
 import { closeSync, mkdirSync, openSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   BROWSER_SUITES, EXCLUDED_TESTS, FOCUSED_SUITES, UNIT_SUITES, TEST_GROUPS,
@@ -229,7 +229,7 @@ const runSuite = (name, file, timeoutMs, suiteArgs = []) => new Promise((resolve
   const logPath = resolve(artifactDir, `${name}.log`);
   const log = openSync(logPath, 'w');
   let tail = '';
-  const child = spawn(process.execPath, [...(wasmLoader ? ['--import', resolve(root, 'scripts/sand-wasm-loader.mjs')] : []), resolve(root, 'scripts', file), ...suiteArgs], {
+  const child = spawn(process.execPath, [...(wasmLoader ? ['--import', pathToFileURL(resolve(root, 'scripts/sand-wasm-loader.mjs')).href] : []), resolve(root, 'scripts', file), ...suiteArgs], {
     cwd: root,
     env: { ...process.env, SAND_TEST_ARTIFACTS: resolve(artifactDir, name), ...(wasmLoader ? { SAND_WASM_LOADER: wasmLoader } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],

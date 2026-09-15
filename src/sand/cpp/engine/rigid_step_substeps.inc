@@ -12,7 +12,6 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
   auto& actorProxyOrder = step.actorProxyOrder;
   auto& stepIslandParent = step.stepIslandParent;
   auto& bodySubsteps = step.bodySubsteps;
-  auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
   auto& substeps = step.substeps;
   double contactSetupStart = emscripten_get_now();
   std::vector<Contact>& contacts = solverContactScratch;
@@ -34,6 +33,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
   std::vector<uint8_t> solveHasPeerContacts(n);
   std::vector<uint8_t> solveHasSpatialForce(n);
   std::vector<uint8_t> solveHasJointBody(n);
+  std::vector<double> biasScale(n);
   struct PenPt {
     double wx, wy, nx, ny, depth;
     int bk = 0;
@@ -44,6 +44,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
 #include "rigid_step_contacts.inc"
   rigidContactSetupMs += emscripten_get_now() - contactSetupStart;
   for (int sub = 0; sub < substeps; sub++) {
+    const auto priorTraceBiasByKind = rigidTraceBiasByKind;
     double motionPrepStart = emscripten_get_now();
     for (int bi = 0; bi < n; bi++) {
       int cadence = bodySubsteps[bi];
@@ -1037,8 +1038,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
       double terrainScale = 1;
       if (!B && ((solverMode >= 37 && solverMode <= 39)
           || ((solverMode == 43 || solverMode == 44)
-            && !rigidStructureScaleBody(A))
-          || (solverMode == 45 && worldStructureScaleBodyCount < 8)))
+            && !rigidStructureScaleBody(A))))
         terrainScale = 2;
       contact.biasMass = biasK > 0
         ? terrainScale / biasK
@@ -1340,6 +1340,33 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           std::fmax(0.0, contact.depth - slop));
       }
       islandStart = islandEnd;
+    }
+    // Bound aggregate translation plus angular perimeter travel, rather than
+    // each contact's target alone. Scale the whole contact island together.
+    std::fill(biasScale.begin(), biasScale.end(), 1.0);
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      if (!activeBody[bi] || !body->awake) continue;
+      double pointSpeed = std::hypot(body->pvx, body->pvy)
+        + std::fabs(body->pw) * body->maxR;
+      if (pointSpeed <= R_MAX_BIAS_POINT_SPEED) continue;
+      int root = ufFind(solveParent, bi);
+      biasScale[root] = std::fmin(biasScale[root],
+        R_MAX_BIAS_POINT_SPEED / pointSpeed);
+    }
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      if (!activeBody[bi] || !body->awake) continue;
+      double scale = biasScale[ufFind(solveParent, bi)];
+      if (scale >= 1) continue;
+      body->pvx *= scale; body->pvy *= scale; body->pw *= scale;
+      body->denseMicrostepTicks = R_DENSE_MICROSTEP_HYSTERESIS;
+      if (rigidTraceLayer == body->solverLayer && body->id == rigidTraceBodyId)
+        for (int kind = 0; kind < 3; kind++)
+          for (int axis = 0; axis < 3; axis++)
+            rigidTraceBiasByKind[kind][axis] = priorTraceBiasByKind[kind][axis]
+              + (rigidTraceBiasByKind[kind][axis]
+                - priorTraceBiasByKind[kind][axis]) * scale;
     }
     if (solverMode >= 5 && hasWorldJointBody && sub + 1 == substeps) {
       for (int contactIndex = 0;

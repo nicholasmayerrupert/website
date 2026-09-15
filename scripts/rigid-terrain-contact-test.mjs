@@ -61,6 +61,9 @@ const runCase = (bodies) => {
   }
 
   let firstContact = -1;
+  engine._setRigidTraceBody(0, engine._bodyIdLayer(0, 0));
+  const traceRadius = engine._bodyState(0).maxR;
+  let maxBiasTravel = 0;
   let peakCells = 0;
   let peakChildren = 0;
   let maxTerrainBlocked = 0;
@@ -73,6 +76,9 @@ const runCase = (bodies) => {
     engine.stepWorld();
     const rigid = engine.getRigidDebug();
     const solver = engine.getRigidSolverDebug();
+    const bias = engine._rigidTracePoses().biasMotion;
+    maxBiasTravel = Math.max(maxBiasTravel,
+      Math.hypot(bias.dx, bias.dy) + Math.abs(bias.da) * traceRadius);
     let terrainBlocked = 0;
     let speed = 0;
     let awake = 0;
@@ -97,6 +103,7 @@ const runCase = (bodies) => {
   }
   engine.destroy();
   return {
+    maxBiasTravel,
     firstContact,
     peakCells,
     peakChildren,
@@ -126,6 +133,8 @@ check(`single carved body sleeps without late jitter `
     + `(${single.latePeakSpeed.toFixed(6)} peak, `
     + `${single.lateAwakeTicks} awake ticks)`,
   single.latePeakSpeed <= 0.001 && single.lateAwakeTicks === 0);
+check(`single body bounds correction at its perimeter (${single.maxBiasTravel})`,
+  single.maxBiasTravel <= 0.3 + 1e-8);
 
 const pair = runCase([
   { x: 185, y: 30, width: 190, height: 76, vx: 0.08, omega: 0.005 },
@@ -141,6 +150,8 @@ check(`interacting bodies never enter terrain `
 check(`interacting bodies settle without persistent jitter `
     + `(${pair.latePeakSpeed.toFixed(6)} peak, ${pair.lateAwakeTicks} awake ticks)`,
   pair.latePeakSpeed <= 0.001 && pair.lateAwakeTicks === 0);
+check(`interacting bodies bound correction at the perimeter (${pair.maxBiasTravel})`,
+  pair.maxBiasTravel <= 0.3 + 1e-8);
 
 {
   const cols = 480, rows = 340, floorY = 292;

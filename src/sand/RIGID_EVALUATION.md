@@ -299,3 +299,63 @@ p99 65.951 → 70.673 ms, and worst-30-step median 62.680 → 59.627 ms. This st
 scene remains well above a 60-Hz frame budget in both versions. Actor checksums
 are unchanged and its benchmark passes. The intentional engine and brutal
 checksum changes are captured in their updated committed baselines.
+
+## Joint roof correction regression
+
+`scripts/rigid-roof-motion.sand-replay` captures seed 3558815564. Its simulation
+ticks 680/681 are authority turns 765/766. Foreground body 15 and its background
+follower form the detached roof. The original trace measures a 1.868-cell center
+jump and 1.655-degree rotation at tick 681. Terrain bias contributes 1.529 cells
+left and 2.215 degrees; local terrain recovery lifts it another 1.225 cells.
+Earlier ticks roll back the oversized correction. Peak measured correction
+travel, including rotation and rollback, is 9.221 cells at tick 679.
+
+The correction update allows accumulated bias impulses to decrease and uses
+ordinary terrain effective mass in shipping mode 45. An island-wide scale bounds
+bias translation plus angular perimeter speed to 0.3 cells per tick, with a
+short four-substep cooldown after a limit. Local terrain-clearance searches stay
+within half a cell. Exact raster assignment and fallback validity checks remain.
+
+The roof regression measures a peak correction of 0.51965 cells, below its
+0.75-cell limit. Tick 681 moves 0.2265 cells left and 0.4787 cells down, rotating
+-0.7156 degrees, with no terrain-recovery lift. The roof continues moving,
+retains its material as settled structure, and bakes. The test measures every
+authority turn from 745 through 840 and extends the recipe to turn 1061 for rest.
+It checks both-layer terrain clearance and zero failed assignments/ownership
+conflicts. The microscope's optional `traceBody` provides the same stage data;
+`--body` enables it from the CLI.
+
+Run `node scripts/run-tests.mjs --only rigid-roof-motion,rigid-terrain-contact`
+for the replay and perimeter-bias guards. The shared motion metric reports net
+travel per stage; it does not sum canceling motions within a stage. The 0.3-cell
+bias bound is distinct from final projection, raster recovery, and rollback.
+
+Validation: the production roof, terrain, test-runner and complex-stack suites
+pass; stack seeds 7/19 settle at ticks 476/530 with no overlaps, terrain
+penetration, ownership conflicts, or failed raster assignments. The invariant
+build passes crowded-island, terrain, toppling, fluid, and actor suites. Its
+complex-stack run completes seed 7 without violations but exceeds the 300-second
+limit before finishing seed 19. The general microscope browser suite reaches
+forward seek/single-step, then times out during its backward-seek case; that
+broader behavior remains unverified by this change.
+
+The layer suite's two 40-tick fire-attachment assertions and the window-edge
+suite's three-versus-two debris count fail identically with the saved original
+WASM. The clean-revision runner comparison cannot reach those tests because its
+archived generated-reaction files fail preflight, so the original-binary checks
+use the same tests through the diagnostic loader instead. Diagnostic loading
+now uses a file URL on Windows; the runner fixture covers that path.
+
+Three-run engine comparisons pass timing gates against a same-session original
+binary measurement. Host timing varies substantially, including unchanged
+rendering and streaming work, so this is not evidence of a speedup. Engine
+checksum changes from `0x30d35298` to `0xc2d35348`. The paired single-run rigid
+stress comparison has mean step time 53.24 → 57.12 ms (+7.3%), p95 74.74 → 73.46
+ms, and p99 83.27 → 80.61 ms. Its fingerprint changes from `0x3be98964` to
+`0xc2d77ecd`. Both committed baselines are regenerated for the intentional
+behavior changes. The three-run stress baseline records mean 53.17 ms,
+p95 73.32 ms, and p99 87.77 ms, illustrating the host timing variation.
+Raw records live in `.sand-artifacts/roof-teleport/`.
+The final pan comparison passes with zero horizontal/vertical instability and
+zero near-ridge mismatch. Its timing gate is skipped because the saved baseline
+is macOS and this run is Windows.

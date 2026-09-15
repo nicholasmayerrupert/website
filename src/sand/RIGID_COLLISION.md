@@ -106,6 +106,13 @@ lives in `rigid_impl.inc`.
   well-separated contacts on one face use a coupled two-point normal solve,
   which prevents a long resting face from alternating support between its
   endpoints.
+- Penetration bias uses a nonnegative accumulated impulse whose increments may
+  be negative, so excess correction can unwind. Zero-depth contacts constrain
+  correction from neighboring contacts. Shipping terrain constraints use the
+  ordinary effective mass. Before integration, each contact island shares a
+  scale limiting every body's bias translation plus angular perimeter speed
+  to 0.3 cells per world tick. Limited dry islands use at least four substeps
+  during their short cadence cooldown, refreshing contacts at each substep.
 - Contact islands are ordered from the lowest contact upward for the first
   passes, then alternate direction. Iteration budgets scale with island size,
   retain a minimum for large bodies, and use the full cap for impacts. Islands
@@ -129,7 +136,9 @@ lives in `rigid_impl.inc`.
   raster; larger shapes restore the last pose, keep their velocity, and stay
   awake without a persistent lock. One-cell lattice aliasing is tolerated while
   bodies remain dynamic, but overlapping bodies cannot bake into static terrain.
-- Raster depenetration remains a last-resort fallback.
+- Raster depenetration remains a last-resort fallback. Each local terrain
+  clearance search is limited to a half-cell translation; exact assignment and
+  rollback checks retain collision validity when no local correction fits.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
 contact is consistently converting a fall into a real topple. In the current

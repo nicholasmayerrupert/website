@@ -112,6 +112,15 @@ appendFileSync(process.env.RUN_TESTS_TRACE, '${label}\\n');
     'preflight completes before the suite starts');
   assert.ok(suiteStarted < probe, 'the selected suite inherits command-specific environment');
 
+  writeFileSync(resolve(fixtureScripts, 'sand-wasm-loader.mjs'),
+    "import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_TESTS_TRACE, 'loader\\n');");
+  writeFileSync(tracePath, '');
+  const diagnostic = run(['--only', 'test-runner', '--wasm', 'diagnostic/sandEngine.js'],
+    { RUN_TESTS_TRACE: tracePath });
+  assert.equal(diagnostic.status, 0, diagnostic.stdout + diagnostic.stderr);
+  assert.match(readFileSync(tracePath, 'utf8'), /loader\nsuite\n/,
+    'diagnostic preload is a valid module URL on every platform');
+
   const artifacts = resolve(fixtureRoot, 'artifacts');
   writeFileSync(resolve(fixtureScripts, 'rigid-a-test.mjs'), `
 console.log(JSON.stringify({ details: 'x'.repeat(100000) }));

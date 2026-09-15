@@ -214,6 +214,7 @@ export function createReplayMicroscopeDev(ctx, render) {
   const seekOptions = (options = {}) => ({
     inspectCells: options.cells || [],
     scanBodyLimit: options.scanBodyLimit,
+    traceBody: bodyRef(options.traceBody),
   });
 
   const acceptFrame = (next, options = {}) => {

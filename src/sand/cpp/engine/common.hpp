@@ -385,8 +385,7 @@ struct Body {
   double omegaPre = 0;
   bool hadContact = false;
   bool rasterMayOverlapSolid = false;
-  // Dense wet-island cadence carries impact/terrain risk across ticks so a
-  // newly turbulent or landing island stays on normal microsteps briefly.
+  // Cadence carries impact, terrain, and limited-correction risk across ticks.
   double recentImpactSpeed = 0;
   uint8_t denseMicrostepTicks = 0;
   int bakeRasterSampleTag = INT_MIN;
@@ -786,6 +785,7 @@ static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;
 static const int    R_WALL_RELEASE_MIN_CELLS = 256;
 static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
 static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
+static const double R_MAX_BIAS_POINT_SPEED = 0.3;
 static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;
 static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
 static const double R_STRUCTURE_WARM_START_FACTOR = 1.0;

@@ -35,7 +35,6 @@ struct RigidBodySystem::StepState {
   std::vector<int> actorProxyOrder{};
   std::vector<int> stepIslandParent{};
   std::vector<int> bodySubsteps{};
-  int worldStructureScaleBodyCount{};
   int substeps{};
 };
 
@@ -84,7 +83,6 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   auto& actorProxyOrder = step.actorProxyOrder;
   auto& stepIslandParent = step.stepIslandParent;
   auto& bodySubsteps = step.bodySubsteps;
-  auto& worldStructureScaleBodyCount = step.worldStructureScaleBodyCount;
   auto& substeps = step.substeps;
   if ((E.tick & 255) == 0) {
     for (auto it = shockAttemptCache.begin(); it != shockAttemptCache.end();) {
@@ -389,13 +387,6 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   bodySubsteps.assign(n, 1);
   double globalPointSpeed = 0;
   int structureScaleBodyCount = 0;
-  worldStructureScaleBodyCount = 0;
-  for (Body* body : E.fg.bodies)
-    if (body->jointRole != 2 && rigidStructureScaleBody(body))
-      worldStructureScaleBodyCount++;
-  for (Body* body : E.bg.bodies)
-    if (body->jointRole == 0 && rigidStructureScaleBody(body))
-      worldStructureScaleBodyCount++;
   double denseFrameVx = 0, denseFrameVy = 0;
   int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
   for (int bi = 0; bi < n; bi++) {
@@ -617,6 +608,8 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
         (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
           / safeSubstep);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
+      // Limited correction refreshes dry-island contacts on smaller steps.
+      if (!denseWetIsland && islandCooldown[root]) count = imax(count, 4);
       // Peer-layer contacts are discovered after cadence selection. In a
       // cross-layer structure pile, keep each giant member on the same temporal
       // cadence so joint followers transmit support coherently through both

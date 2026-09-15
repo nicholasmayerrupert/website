@@ -182,6 +182,27 @@ written directly to the grid without membership is removed during cleanup. Use a
 component-aware edit path and call `syncComponents()` after test/runtime bulk
 edits.
 
+### Burning
+
+Combustible structural cells keep their material and support while burning.
+Wood burns for roughly six seconds and leaves for two at 60 ticks per second,
+with a seeded ±15% variation per ignition. Burning fuel spreads heat and emits
+flames before topology-aware removal consumes it. Edge emission has an 8% chance
+per tick; fuel also has a 0.1% chance to vent into the empty overlapping cell in
+the other layer, including from an enclosed interior. Water, brine, and acid quench
+fuel and loose flames through cardinal contact in the same layer or overlapping
+contact in the other layer. Oil and lava do not extinguish fire.
+
+Static fuel uses the persistent `burning` cell channel; moving bodies own local
+fuel timers that follow rotation, splitting, welding, and baking. Checkpoints
+and streamed tiles preserve remaining fuel. Replication carries a separate byte
+mask for each layer after the material and texture planes. The renderer blends
+an emissive orange/yellow tint over burning texels and flickers it at the existing 12 Hz
+animation cadence without simulation updates or additional worker packets.
+Burning material also lights nearby cells and the other layer through the cached
+lighting solve. Pausing freezes the flicker. Focused checks: `burning` and
+`burning-e2e` suites.
+
 ## Infinite world
 
 The engine holds a finite loaded window over a procedural world. As the camera

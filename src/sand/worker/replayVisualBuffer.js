@@ -39,7 +39,7 @@ function encodeLayer(grid, output, textures = false) {
   }
 }
 
-function applyDiffLayer(bytes, offset, grid, texels, cols, rows) {
+function applyDiffLayer(bytes, offset, grid, texels, burning, cols, rows) {
   if (offset + 2 > bytes.length) throw new Error('Truncated replay visual delta.');
   const rectCount = readU16(bytes, offset);
   offset += 2;
@@ -54,8 +54,9 @@ function applyDiffLayer(bytes, offset, grid, texels, cols, rows) {
       throw new Error('Invalid replay visual rectangle.');
     const width = x1 - x0;
     const area = width * (y1 - y0);
-    if (offset + area * 3 > bytes.length) throw new Error('Truncated replay visual rectangle cells.');
+    if (offset + area * 4 > bytes.length) throw new Error('Truncated replay visual rectangle cells.');
     let textureOffset = offset + area;
+    let burningOffset = offset + area * 3;
     for (let y = y0; y < y1; y++) {
       if (offset + width > bytes.length)
         throw new Error('Truncated replay visual rectangle cells.');
@@ -64,9 +65,10 @@ function applyDiffLayer(bytes, offset, grid, texels, cols, rows) {
       for (let x = x0; x < x1; x++) {
         texels[y * cols + x] = readU16(bytes, textureOffset);
         textureOffset += 2;
+        burning[y * cols + x] = bytes[burningOffset++];
       }
     }
-    offset += area * 2;
+    offset += area * 3;
   }
   return offset;
 }
@@ -108,7 +110,9 @@ export function reconstructReplayWorld(frames, targetIndex) {
   let background = decodeLayer(source, foreground.offset, cells);
   const foregroundTexels = decodeLayer(source, background.offset, cells, true);
   const backgroundTexels = decodeLayer(source, foregroundTexels.offset, cells, true);
-  if (backgroundTexels.offset !== source.length)
+  const foregroundBurning = decodeLayer(source, backgroundTexels.offset, cells);
+  const backgroundBurning = decodeLayer(source, foregroundBurning.offset, cells);
+  if (backgroundBurning.offset !== source.length)
     throw new Error('Replay visual keyframe has trailing bytes.');
 
   for (let index = keyframeIndex + 1; index <= targetIndex; index++) {
@@ -131,10 +135,12 @@ export function reconstructReplayWorld(frames, targetIndex) {
     if (packet.type === 'shift') {
       foregroundTexels.grid = shiftLayer(foregroundTexels.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0);
       backgroundTexels.grid = shiftLayer(backgroundTexels.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0);
+      foregroundBurning.grid = shiftLayer(foregroundBurning.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0);
+      backgroundBurning.grid = shiftLayer(backgroundBurning.grid, cols, rows, packet.shiftDx | 0, packet.shiftDy | 0);
     }
     const bytes = new Uint8Array(packet.data);
-    let offset = applyDiffLayer(bytes, 0, foreground.grid, foregroundTexels.grid, cols, rows);
-    offset = applyDiffLayer(bytes, offset, background.grid, backgroundTexels.grid, cols, rows);
+    let offset = applyDiffLayer(bytes, 0, foreground.grid, foregroundTexels.grid, foregroundBurning.grid, cols, rows);
+    offset = applyDiffLayer(bytes, offset, background.grid, backgroundTexels.grid, backgroundBurning.grid, cols, rows);
     if (offset !== bytes.length) throw new Error('Replay visual delta has trailing bytes.');
   }
 
@@ -143,6 +149,8 @@ export function reconstructReplayWorld(frames, targetIndex) {
   encodeLayer(background.grid, encoded);
   encodeLayer(foregroundTexels.grid, encoded, true);
   encodeLayer(backgroundTexels.grid, encoded, true);
+  encodeLayer(foregroundBurning.grid, encoded);
+  encodeLayer(backgroundBurning.grid, encoded);
   const target = frames[targetIndex];
   return {
     ...keyframe,

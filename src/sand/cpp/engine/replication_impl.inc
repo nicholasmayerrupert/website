@@ -1,5 +1,6 @@
 // RLE planes: foreground/background u8 materials, then foreground/background
-// u16 source texels. Each run is [u32 length][value].
+// u16 source texels, then foreground/background u8 burning masks.
+// Each run is [u32 length][value].
 template<class T> void ReplicationSystem::rleEncode(const T* g) {
   size_t n = (size_t)E.cols * E.rows, i = 0;
   while (i < n) {
@@ -18,6 +19,11 @@ int ReplicationSystem::serializeWorld() {
   rleEncode(E.bg.grid);
   rleEncode(E.fg.textureTexels.data());
   rleEncode(E.bg.textureTexels.data());
+  for (Layer* layer : {&E.fg, &E.bg}) {
+    for (size_t k = 0; k < layer->burningVisual.size(); k++)
+      layer->burningVisual[k] = layer->burningAt((int)k);
+    rleEncode(layer->burningVisual.data());
+  }
   return (int)blob.size();
 }
 // Decode one grid's worth of RLE (cols*rows cells) starting at buf[p]; returns
@@ -33,7 +39,7 @@ template<class T> int ReplicationSystem::rleDecode(const uint8_t* buf, int len, 
   }
   return p;
 }
-int ReplicationSystem::rleValidate(const uint8_t* buf, int len, int p, bool textures) const {
+int ReplicationSystem::rleValidate(const uint8_t* buf, int len, int p, bool textures, bool burning) const {
   size_t idx = 0, n = (size_t)E.cols * E.rows;
   while (idx < n) {
     if (p < 0 || p + (textures ? 6 : 5) > len) return -1;
@@ -42,7 +48,7 @@ int ReplicationSystem::rleValidate(const uint8_t* buf, int len, int p, bool text
       | ((uint32_t)buf[p + 2] << 16)
       | ((uint32_t)buf[p + 3] << 24);
     int value = textures ? readLE16(buf, p + 4) : buf[p + 4];
-    if (run == 0 || run > n - idx || (textures ? (value >= 1024 && value != WORLD_TEXTURE) : !isMaterialId(value))) return -1;
+    if (run == 0 || run > n - idx || (textures ? (value >= 1024 && value != WORLD_TEXTURE) : (burning ? value > 1 : !isMaterialId(value)))) return -1;
     idx += run;
     p += textures ? 6 : 5;
   }
@@ -54,11 +60,17 @@ bool ReplicationSystem::decodeWorldGrids(const uint8_t* buf, int len) {
   int bgEnd = fgEnd >= 0 ? rleValidate(buf, len, fgEnd) : -1;
   int fgTexturesEnd = bgEnd >= 0 ? rleValidate(buf, len, bgEnd, true) : -1;
   int bgTexturesEnd = fgTexturesEnd >= 0 ? rleValidate(buf, len, fgTexturesEnd, true) : -1;
-  if (bgTexturesEnd != len) return false;
+  int fgBurningEnd = bgTexturesEnd >= 0 ? rleValidate(buf, len, bgTexturesEnd, false, true) : -1;
+  int bgBurningEnd = fgBurningEnd >= 0 ? rleValidate(buf, len, fgBurningEnd, false, true) : -1;
+  if (bgBurningEnd != len) return false;
   int p = rleDecode(buf, len, 0, E.fg.grid);
   p = rleDecode(buf, len, p, E.bg.grid);
   p = rleDecode(buf, len, p, E.fg.textureTexels.data());
-  rleDecode(buf, len, p, E.bg.textureTexels.data());
+  p = rleDecode(buf, len, p, E.bg.textureTexels.data());
+  p = rleDecode(buf, len, p, E.fg.burningVisual.data());
+  rleDecode(buf, len, p, E.bg.burningVisual.data());
+  for (Layer* layer : {&E.fg, &E.bg})
+    layer->burningPresent = std::find(layer->burningVisual.begin(), layer->burningVisual.end(), 1) != layer->burningVisual.end();
   return true;
 }
 // Presentation mirrors do not simulate their cellular world, so rebuilding all
@@ -80,7 +92,7 @@ bool ReplicationSystem::applyWorldMirror(const uint8_t* buf, int len) {
 }
 
 // Diff per layer: [u16 rectCount] then per rect [u16 x0,y0,x1,y1][raw cells,
-// row-major][u16 source texels, row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
+// row-major][u16 source texels, row-major][u8 burning masks, row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
 void ReplicationSystem::writeDiffLayer(bool background) {
   Layer* lay = background ? &E.bg : &E.fg;
   Engine::ActiveLayerScope active(E, lay);
@@ -91,7 +103,7 @@ void ReplicationSystem::writeDiffLayer(bool background) {
   for (int r = 0; r < rc; r++) {
     int x0 = lay->dirtyRects[r * 4], y0 = lay->dirtyRects[r * 4 + 1], x1 = lay->dirtyRects[r * 4 + 2], y1 = lay->dirtyRects[r * 4 + 3];
     diffRectOffsets[r] = cursor;
-    cursor += 8 + 3 * (size_t)(x1 - x0) * (y1 - y0);
+    cursor += 8 + 4 * (size_t)(x1 - x0) * (y1 - y0);
   }
   blob.resize(cursor);
   auto put16 = [&](size_t p, int v) { blob[p] = v & 0xff; blob[p + 1] = (v >> 8) & 0xff; };
@@ -109,6 +121,8 @@ void ReplicationSystem::writeDiffLayer(bool background) {
       put16(out, lay->textureTexels[y * E.cols + x]);
       out += 2;
     }
+    for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++)
+      blob[out++] = lay->burningAt(y * E.cols + x);
   };
   for (int r = 0; r < rc; r++) writeRect(r);
 }
@@ -131,6 +145,7 @@ int ReplicationSystem::readDiffLayer(const uint8_t* buf, int len, int p, bool ba
     int width = x1 - x0;
     int area = width * (y1 - y0);
     int textureOffset = p + area;
+    int burningOffset = p + area * 3;
     if (width < 0 || y1 < y0) return p;
     bool validRect = x0 >= 0 && x1 <= E.cols && y0 >= 0 && y1 <= E.rows;
     for (int y = y0; y < y1; y++) {
@@ -142,10 +157,11 @@ int ReplicationSystem::readDiffLayer(const uint8_t* buf, int len, int p, bool ba
           int runX0 = -1;
           for (int x = 0; x < width; x++) {
             uint8_t oldM = current[x], newM = incoming[x];
-            bool immediateLightChange = oldM != newM &&
+            bool immediateLightChange = lay->burningVisual[y * E.cols + x0 + x] != buf[burningOffset + x]
+              || (oldM != newM &&
               ((isMaterialId(oldM) && MAT_CLASS[oldM] == MC_RIGID)
                || MAT_CLASS[newM] == MC_RIGID ||
-               (x0 + x >= lightEditX0 && x0 + x <= lightEditX1));
+               (x0 + x >= lightEditX0 && x0 + x <= lightEditX1)));
             if (immediateLightChange && runX0 < 0) runX0 = x0 + x;
             if ((!immediateLightChange || x + 1 == width) && runX0 >= 0) {
               int runX1 = immediateLightChange && x + 1 == width ? x0 + x : x0 + x - 1;
@@ -158,12 +174,14 @@ int ReplicationSystem::readDiffLayer(const uint8_t* buf, int len, int p, bool ba
         for (int x = x0; x < x1; x++) {
           lay->textureTexels[y * E.cols + x] = (uint16_t)readLE16(buf, textureOffset);
           textureOffset += 2;
+          lay->burningVisual[y * E.cols + x] = buf[burningOffset++];
+          if (lay->burningVisual[y * E.cols + x]) lay->burningPresent = true;
         }
         lay->clearMotionSpan((size_t)y * E.cols + x0, (size_t)width);
       }
       p += width;
     }
-    p += area * 2;
+    p += area * 3;
     if (x1 > x0 && y1 > y0) E.markDirtyRect(x0, y0, x1 - 1, y1 - 1);
   }
   return p;
@@ -179,14 +197,16 @@ int ReplicationSystem::validateDiffLayer(const uint8_t* buf, int len, int p) con
     p += 8;
     if (x1 < x0 || y1 < y0 || x1 > E.cols || y1 > E.rows) return -1;
     size_t area = (size_t)(x1 - x0) * (size_t)(y1 - y0);
-    if (area * 3 > (size_t)(len - p)) return -1;
+    if (area * 4 > (size_t)(len - p)) return -1;
     for (size_t i = 0; i < area; i++)
       if (!isMaterialId(buf[p + i])) return -1;
     for (size_t i = 0; i < area; i++) {
       int texel = readLE16(buf, p + (int)area + (int)i * 2);
       if (texel >= 1024 && texel != WORLD_TEXTURE) return -1;
     }
-    p += (int)area * 3;
+    for (size_t i = 0; i < area; i++)
+      if (buf[p + area * 3 + i] > 1) return -1;
+    p += (int)area * 4;
   }
   return p;
 }

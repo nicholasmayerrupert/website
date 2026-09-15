@@ -228,6 +228,7 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
     for (int x = rx0; x <= rx1; x++) {
       int k = rb + x;
       uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
+      if (lay->burningAt(k)) e = (uint8_t)imax(e, BURNING_EMISSION);
       if (e && e > lay->light[k]) {
         lay->light[k] = e;
         lightBuckets[lay->light[k]].push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
@@ -291,6 +292,7 @@ void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int 
         v = (int)cl[k] - CROSS_LAYER_EMISSIVE_LOSS;
       } else {
         v = (int)crossLayerEmissionFor(cg[k], crossLay->worldOffsetX + x, crossLay->worldOffsetY + y);
+        if (crossLay->burningAt(k)) v = imax(v, BURNING_EMISSION - CROSS_LAYER_EMISSIVE_LOSS);
       }
       if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
         lay->light[k] = (uint8_t)v;
@@ -576,7 +578,8 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       // EMPTY is the dominant cell in open sky / caves — skip noise/light work.
       if (m == EMPTY) { p[k] = 0; continue; }
       uint8_t animKind = MAT_RENDER_ANIM[m];
-      hasAnimated = hasAnimated || animKind != RA_NONE;
+      bool burning = E.L->burningAt(k);
+      hasAnimated = hasAnimated || animKind != RA_NONE || burning;
       uint8_t shade = noiseRow[wx & 63];
       const bool textured = E.content.hasTexture[m];
       uint8_t shimmer = animKind == RA_NONE ? 0 : shimmerAt(textured ? wx >> 2 : wx, textured ? wy >> 2 : wy, shimmerPhase(animKind));
@@ -655,7 +658,19 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           highlighted = myceliumNoduleAt(wx, wy);
         if (highlighted) c = RENDER_DETAIL_COLOR[detail];
       }
-      if (light) c = applyLight(c, (uint8_t)imax(authoredAmbient, renderLightForCell(light, k, x, y, m)));
+      if (light) c = applyLight(c, (uint8_t)imax(burning ? BURNING_EMISSION : authoredAmbient,
+        renderLightForCell(light, k, x, y, m)));
+      if (burning) {
+        // Independent ember pulses tint the original grain; nearby cells do
+        // not flash together. This presentation clock never consumes sim RNG.
+        uint16_t texel = E.L->textureTexels[(size_t)k];
+        int bx = texel == WORLD_TEXTURE ? wx : texel & 31;
+        int by = texel == WORLD_TEXTURE ? wy : texel >> 5;
+        uint32_t pulse = renderCellHash(bx + frame * 17, by - frame * 11);
+        int amount = 128 + (int)((pulse >> 8) & 63u);
+        uint32_t ember = (pulse & 3u) == 0 ? 0x0078efffu : 0x00209effu;
+        c = renderMixColor(c, ember, amount);
+      }
       c = (c & 0x00ffffffu) | alphaMask;
       p[k] = c;
     }

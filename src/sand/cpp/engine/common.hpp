@@ -57,9 +57,12 @@ static const int   LIQUID_SURFACE_LOOKAHEAD = 64, LIQUID_SURFACE_FLOW_PASSES = 2
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
-static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
+static const float OIL_IGNITE_P = 0.125f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
+static constexpr uint32_t WOOD_BURN_TICKS = 360, LEAF_BURN_TICKS = 120;
+static constexpr float BURN_SPREAD_P = 0.02f, BURN_FLAME_P = 0.08f;
+static constexpr float BURN_CROSS_FLAME_P = 0.001f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
-static const float FIRE_CROSS_P = 0.18f;
+static const float FIRE_CROSS_P = 0.09f;
 // Acid moves every tick but batches static corrosion every three ticks, reducing
 // component repair work while retaining the calibrated cut rate. Body erosion
 // uses the per-tick probability.
@@ -264,6 +267,8 @@ struct Body {
   // shape without losing their individual cell identities.
   std::vector<uint8_t> cellMaterials;
   std::vector<uint16_t> textures;
+  // Remaining fuel time keyed by occupancy-local cell; empty for unlit bodies.
+  std::vector<uint32_t> burning;
   // Accepted samples when a tiny shape falls between raster sample centres.
   std::vector<RasterTexture> placeholderTextures; // occupancy-local source texels, including rotation
   // A blast-detached foreground/background pair shares one physical occupancy

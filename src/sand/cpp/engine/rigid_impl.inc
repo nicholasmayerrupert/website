@@ -1462,6 +1462,13 @@ Body* RigidBodySystem::spawnBodyImpl(const std::vector<std::pair<int, int>>& cel
   for (auto& c : cells) {
     size_t local = (size_t)(c.second - minY) * w + (c.first - minX);
     b->occ[local] = 1;
+    if (c.first >= 0 && c.first < E.cols && c.second >= 0 && c.second < E.rows) {
+      uint32_t fuel = E.L->burning.current[c.second * E.cols + c.first];
+      if (fuel) {
+        if (b->burning.empty()) b->burning.assign(b->occ.size(), 0);
+        b->burning[local] = fuel;
+      }
+    }
     b->textures[local] = c.first >= 0 && c.first < E.cols && c.second >= 0 && c.second < E.rows
       ? E.renderer.textureAt(*E.L, c.second * E.cols + c.first)
       : (uint16_t)((((c.second + E.L->worldOffsetY) & 31) << 5) | ((c.first + E.L->worldOffsetX) & 31));
@@ -1714,6 +1721,7 @@ void RigidBodySystem::resolveSpawnedJointOverlaps(
         int k = cell.y * E.cols + cell.x;
         E.writeGridIndexUnsafe(k, bodyMaterialAt(member, cell.local));
         E.renderer.stampBodyTexture(member, cell.local, k);
+        E.reactions.stampBodyBurning(member, cell.local, k);
         layer.bodyOwner[k] = member->id;
         cells.push_back(k);
         E.markLayerSimCell(&layer, k);
@@ -1938,6 +1946,8 @@ void RigidBodySystem::freezeCellsOntoBody(
     int oldW = body->w, oldH = body->h;
     std::vector<uint8_t> occ((size_t)newW * newH, 0);
     std::vector<uint16_t> textures((size_t)newW * newH, WORLD_TEXTURE);
+    std::vector<uint32_t> burning;
+    if (!body->burning.empty()) burning.assign((size_t)newW * newH, 0);
     std::vector<uint8_t> own, peer;
     if (!body->cellMaterials.empty())
       own.assign((size_t)newW * newH, EMPTY);
@@ -1948,11 +1958,13 @@ void RigidBodySystem::freezeCellsOntoBody(
       int local = (j + addTop) * newW + i + addLeft;
       occ[local] = body->occ[oldLocal];
       if (!body->textures.empty()) textures[local] = body->textures[oldLocal];
+      if (!burning.empty()) burning[local] = body->burning[oldLocal];
       if (!own.empty()) own[local] = body->cellMaterials[oldLocal];
       if (!peer.empty()) peer[local] = body->jointPeerMaterials[oldLocal];
     }
     body->occ = std::move(occ);
     body->textures = std::move(textures);
+    body->burning = std::move(burning);
     if (!own.empty()) body->cellMaterials = std::move(own);
     if (!peer.empty()) body->jointPeerMaterials = std::move(peer);
     body->w = newW; body->h = newH;
@@ -2004,6 +2016,7 @@ void RigidBodySystem::freezeCellsOntoBody(
       continue;
     E.writeGridIndexUnsafe(k, ICE);
     E.renderer.stampBodyTexture(target, (candidate.j + addTop) * newW + candidate.i + addLeft, k);
+    E.reactions.stampBodyBurning(target, (candidate.j + addTop) * newW + candidate.i + addLeft, k);
     targetLayer.bodyOwner[k] = target->id;
     bodyCells.push_back(k);
   }
@@ -2601,6 +2614,7 @@ bool RigidBodySystem::eraseLocalCell(Body* b, int idx) {
   if (!b->occ[idx]) return false;
   b->occ[idx] = 0;
   if (!b->cellMaterials.empty()) b->cellMaterials[idx] = EMPTY;
+  if (!b->burning.empty()) b->burning[idx] = 0;
   b->rasterFootprintValid = false;
   return true;
 }
@@ -2917,9 +2931,9 @@ double RigidBodySystem::rigidErodeProbabilityAt(int k) {
     uint8_t profile = E.materialReactionProfile(medium);
     if (profile == MRP_ACID && (target == RIGID || E.isDissolvable(target)))
       p = std::fmax(p, ACID_DISSOLVE_P);
-    else if (profile == MRP_LAVA && (target == RIGID || E.isFlammable(target)))
+    else if (profile == MRP_LAVA && (target == RIGID || (E.isFlammable(target) && !E.persistentBurningState(target))))
       p = std::fmax(p, RIGID_LAVA_ERODE_P);
-    else if (profile == MRP_FIRE && (target == RIGID || E.isFlammable(target)))
+    else if (profile == MRP_FIRE && (target == RIGID || (E.isFlammable(target) && !E.persistentBurningState(target))))
       p = std::fmax(p, RIGID_FIRE_ERODE_P);
   };
   if (x < E.cols - 1) consider(k + 1); if (x > 0) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 0) consider(k - E.cols);
@@ -2930,12 +2944,18 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
   auto it = bodyById.find(id); if (it == bodyById.end()) return false; Body* b = it->second;
   int y = k / E.cols, x = k - y * E.cols;
   int idx = localCellAt(b, x + 0.5, y + 0.5);
+  if (!eraseBodyLocalCell(b, idx, dirty)) return false;
+  E.writeGridIndexUnsafe(k, EMPTY); E.L->bodyOwner[k] = -1;
+  return true;
+}
+bool RigidBodySystem::eraseBodyLocalCell(Body* b, int idx, std::unordered_set<Body*>& dirty) {
   if (idx < 0) return false;
   if (b->jointRole && b->jointPeer) {
     Body* leader = b->jointRole == 1 ? b : b->jointPeer;
     Body* follower = leader->jointPeer;
     if (bodyMaterialAt(b, idx) == EMPTY) return false;
     b->cellMaterials[idx] = EMPTY;
+    if (!b->burning.empty()) b->burning[idx] = 0;
     b->jointPeer->jointPeerMaterials[idx] = EMPTY;
     if (b->jointPeer->cellMaterials[idx] == EMPTY) {
       leader->occ[idx] = 0;
@@ -2943,13 +2963,11 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
     }
     leader->rasterFootprintValid = false;
     follower->rasterFootprintValid = false;
-    E.writeGridIndexUnsafe(k, EMPTY);
-    E.L->bodyOwner[k] = -1;
     dirty.insert(leader);
     return true;
   }
   if (!eraseLocalCell(b, idx)) return false;
-  E.writeGridIndexUnsafe(k, EMPTY); E.L->bodyOwner[k] = -1; dirty.insert(b); return true;
+  dirty.insert(b); return true;
 }
 bool RigidBodySystem::replaceBodyCellMaterialIndex(
     int k, uint8_t material, std::unordered_map<int, Body*>& bodyById,
@@ -2982,8 +3000,10 @@ bool RigidBodySystem::replaceBodyCellMaterialIndex(
     member->cellMaterials[local] = material;
     member->rasterFootprintValid = false;
   }
+  if (!member->burning.empty()) member->burning[local] = 0;
   E.writeGridIndexUnsafe(k, material);
   E.renderer.stampBodyTexture(member, local, k);
+  E.reactions.stampBodyBurning(member, local, k);
   E.L->bodyOwner[k] = id;
   dirty.insert(leader);
   return true;
@@ -3776,6 +3796,7 @@ void RigidBodySystem::bakeBodyToGrid(
     }
     baked[material].push_back(k);
     E.renderer.stampBodyTexture(b, local, k);
+    E.reactions.stampBodyBurning(b, local, k);
     rigidBakedCells++;
   });
   rigidBakeRasterMs += emscripten_get_now() - rasterStart;
@@ -4174,6 +4195,7 @@ void RigidBodySystem::stampJointFollower(
       });
     E.writeGridIndexUnsafe(k, bodyMaterialAt(follower, local));
     E.renderer.stampBodyTexture(follower, local, k);
+    E.reactions.stampBodyBurning(follower, local, k);
     E.bg.bodyOwner[k] = follower->id;
     E.bg.passiveBodyCells.push_back(k);
     footprint.push_back(k);
@@ -4206,6 +4228,7 @@ void RigidBodySystem::restampBodiesAfterStream(
         });
       E.writeGridIndexUnsafe(k, bodyMaterialAt(body, local));
       E.renderer.stampBodyTexture(body, local, k);
+      E.reactions.stampBodyBurning(body, local, k);
       E.L->bodyOwner[k] = body->id;
       if (body->blastDebris) E.L->groundedCell[k] = 0;
       cells.push_back(k);
@@ -5126,6 +5149,7 @@ void RigidBodySystem::commitBodyMovement() {
       uint8_t material = bodyMaterialAt(body, local);
       E.writeGridIndexUnsafe(k, material);
       E.renderer.stampBodyTexture(body, local, k);
+      E.reactions.stampBodyBurning(body, local, k);
       E.L->bodyOwner[k] = body->id;
       if (body->blastDebris) E.L->groundedCell[k] = 0;
       movement().moveCells.push_back(k);
@@ -5152,6 +5176,7 @@ void RigidBodySystem::commitBodyMovement() {
           && movement().movePreviousMaterialGrid[k] == material) {
         E.L->grid[k] = material;
         E.renderer.stampBodyTexture(b, local, k);
+        E.reactions.stampBodyBurning(b, local, k);
         E.clearPersistentCurrentState(E.L, k);
         E.L->bodyOwner[k] = b->id;
         if (material == NEUTRONIUM) {
@@ -5189,6 +5214,7 @@ void RigidBodySystem::commitBodyMovement() {
       });
       E.writeGridIndexUnsafe(k, material); E.L->bodyOwner[k] = b->id;
       E.renderer.stampBodyTexture(b, local, k);
+      E.reactions.stampBodyBurning(b, local, k);
       if (b->blastDebris) E.L->groundedCell[k] = 0;
       movement().moveCells.push_back(k); movement().moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
@@ -5226,6 +5252,10 @@ void RigidBodySystem::commitBodyMovement() {
       if (material == EMPTY) continue;
       E.writeGridIndexUnsafe(k, material);
       E.renderer.setTextureAt(*E.L, k, movement().movePreviousTextures[slot][index]);
+      if (body->nPts == 1) {
+        int local = (int)(std::find(body->occ.begin(), body->occ.end(), 1) - body->occ.begin());
+        E.reactions.stampBodyBurning(body, local, k);
+      }
       body->placeholderTextures.push_back({k % E.cols + E.L->worldOffsetX,
         k / E.cols + E.L->worldOffsetY, movement().movePreviousTextures[slot][index]});
       E.L->bodyOwner[k] = body->id;
@@ -5267,6 +5297,7 @@ void RigidBodySystem::commitBodyMovement() {
       uint8_t material = bodyMaterialAt(body, local);
       E.writeGridIndexUnsafe(k, material);
       E.renderer.stampBodyTexture(body, local, k);
+      E.reactions.stampBodyBurning(body, local, k);
       E.L->bodyOwner[k] = body->id;
       movement().moveCells.push_back(k);
       movement().moveFootprint.push_back(k);
@@ -5646,6 +5677,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     // smaller layer-local merge below.
     std::map<int, uint8_t> activeMaterialAt, peerMaterialAt;
     std::map<int, uint16_t> activeTextureAt, peerTextureAt;
+    std::map<int, uint32_t> activeBurningAt, peerBurningAt;
     std::array<std::unordered_set<int>, 2> removedIds;
     std::array<std::unordered_set<Body*>, 2> removedBodies;
     int activeLayer = placementLayer == &E.bg ? 1 : 0;
@@ -5655,10 +5687,12 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     int fuseTicks = 0;
     double fuseX = 0, fuseY = 0;
     auto collectRaster = [&](Body* source, std::map<int, uint8_t>& materialAt,
-                             std::map<int, uint16_t>& textureAt) {
+                             std::map<int, uint16_t>& textureAt,
+                             std::map<int, uint32_t>& burningAt) {
       forEachBodyCell(source, [&](int x, int y, int local) {
         materialAt.emplace(y * E.cols + x, bodyMaterialAt(source, local));
         textureAt.emplace(y * E.cols + x, source->textures[local]);
+        if (!source->burning.empty()) burningAt.emplace(y * E.cols + x, source->burning[local]);
       });
     };
     for (Body* source : touching) {
@@ -5672,11 +5706,11 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
           bodyFusePoint(physical, fuseX, fuseY);
         }
       }
-      collectRaster(source, activeMaterialAt, activeTextureAt);
+      collectRaster(source, activeMaterialAt, activeTextureAt, activeBurningAt);
       removedIds[activeLayer].insert(source->id);
       removedBodies[activeLayer].insert(source);
       if (source->jointRole && source->jointPeer) {
-        collectRaster(source->jointPeer, peerMaterialAt, peerTextureAt);
+        collectRaster(source->jointPeer, peerMaterialAt, peerTextureAt, peerBurningAt);
         removedIds[peerLayer].insert(source->jointPeer->id);
         removedBodies[peerLayer].insert(source->jointPeer);
       }
@@ -5734,6 +5768,9 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     for (const auto& entry : activeTextureAt) E.renderer.setTextureAt(*placementLayer, entry.first, entry.second);
     Layer& peerTextureLayer = placementLayer == &E.fg ? E.bg : E.fg;
     for (const auto& entry : peerTextureAt) E.renderer.setTextureAt(peerTextureLayer, entry.first, entry.second);
+    for (const auto& cell : spawnCells) activeBurningAt.erase(cell.second * E.cols + cell.first);
+    for (const auto& entry : activeBurningAt) placementLayer->burning.current[entry.first] = entry.second;
+    for (const auto& entry : peerBurningAt) peerTextureLayer.burning.current[entry.first] = entry.second;
     Body* leader = placementLayer == &E.fg
       ? spawnJointBodyImpl(activeCells, activeMaterials,
                            peerCells, peerMaterials)
@@ -5757,6 +5794,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
     // authoritative shape at the instant of attachment.
     std::map<int, uint8_t> materialAt;
     std::map<int, uint16_t> textureAt;
+    std::map<int, uint32_t> burningAt;
     std::vector<WeldMotion> motion;
     int fuseTicks = 0;
     double fuseX = 0, fuseY = 0;
@@ -5769,6 +5807,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       forEachBodyCell(source, [&](int x, int y, int local) {
         materialAt.emplace(y * E.cols + x, bodyMaterialAt(source, local));
         textureAt.emplace(y * E.cols + x, source->textures[local]);
+        if (!source->burning.empty()) burningAt.emplace(y * E.cols + x, source->burning[local]);
       });
     }
     for (const auto& cell : spawnCells)
@@ -5807,6 +5846,8 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
       mergedMaterials.push_back(entry.second);
     }
     for (const auto& entry : textureAt) E.renderer.setTextureAt(*E.L, entry.first, entry.second);
+    for (const auto& cell : spawnCells) burningAt.erase(cell.second * E.cols + cell.first);
+    for (const auto& entry : burningAt) E.L->burning.current[entry.first] = entry.second;
     body = spawnBodyImpl(mergedCells, mergedMaterials);
     if (body) {
       applyWeldMotion(body, motion);
@@ -5833,6 +5874,7 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
         });
       E.writeGridIndexUnsafe(k, bodyMaterialAt(spawned, local));
       E.renderer.stampBodyTexture(spawned, local, k);
+      E.reactions.stampBodyBurning(spawned, local, k);
       layer.bodyOwner[k] = spawned->id;
       (passive ? layer.passiveBodyCells : layer.bodyCells).push_back(k);
       footprint.push_back(k);

@@ -74,6 +74,7 @@ class Renderer {
     return (h % 19u) == 0u || (((h >> 8) % 53u) == 0u);
   }
   // Baseline strength and spatial pattern both come from the material schema.
+  static constexpr uint8_t BURNING_EMISSION = 235;
   static inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
     uint8_t e = MAT_EMISSION[m];
     if (!e) return 0;

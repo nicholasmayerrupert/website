@@ -110,9 +110,9 @@ class RigidBodySystem {
   StampSet splitMemberStamp, splitVisitedStamp;
   StampSet splitWasBodyStamp, splitClaimedStamp;
   StampSet spawnSeparationStamp, spawnReservationStamp;
-  // Body-cell erosion probabilities match static reaction rates.
+  // Per-contact body-cell erosion probabilities.
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
-  static constexpr double RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
+  static constexpr double RIGID_FIRE_ERODE_P = 0.055;
 
   // Rasterize a body's occ mask to world cells (bodies in impl; instantiated there).
   void ensureBodyRaster(Body* b);
@@ -174,6 +174,7 @@ class RigidBodySystem {
                                   const std::vector<int>* vacated = nullptr);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
+  bool eraseBodyLocalCell(Body* body, int local, std::unordered_set<Body*>& dirty);
   bool replaceBodyCellMaterialIndex(
     int k, uint8_t material, std::unordered_map<int, Body*>& bodyById,
     std::unordered_set<Body*>& dirty);

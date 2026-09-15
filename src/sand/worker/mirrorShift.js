@@ -44,6 +44,8 @@ export function prepareMirrorShift(engine, packet, bytes) {
   shiftGridInPlace(engine.getGridBg(), cols, rows, dx, dy);
   shiftGridInPlace(engine.getTextureTexels(), cols, rows, dx, dy, 0xffff);
   shiftGridInPlace(engine.getTextureTexels(true), cols, rows, dx, dy, 0xffff);
+  shiftGridInPlace(engine.getBurningVisual(), cols, rows, dx, dy);
+  shiftGridInPlace(engine.getBurningVisual(true), cols, rows, dx, dy);
   engine.setMirrorWorldOffset(packet.worldOffsetX, packet.worldOffsetY);
   return true;
 }

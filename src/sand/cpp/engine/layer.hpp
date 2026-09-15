@@ -75,13 +75,13 @@ enum PersistentCellOperation : uint8_t {
     | PCSO_FORCE_PARK | PCSO_BODY_DISPLACE | PCSO_BODY_MOTION,
 };
 
-// One profile entry declares a loose-cell side channel's value type, empty
-// value, streamed codec, material predicate, and motion policy. Component and
-// body state belongs to their topology records. Loose-cell lifecycle and motion
-// paths expand this same list at compile time.
+// Each grid channel declares its value type, empty value, streamed codec,
+// material predicate, and motion policy. Body-local state is projected into
+// these buffers when bodies rasterize; static cells retain their grid state.
 #define SAND_PERSISTENT_CELL_CHANNELS(X) \
   X(fallSpeed, uint8_t, 0, fallSpeedStore, encodeTile, decodeTile, persistentLooseState, PCSO_CROSS_LAYER) \
   X(liquidVel, uint32_t, 0, liquidVelocityStore, encodeVelocityTile, decodeVelocityTile, persistentLiquidState, PCSO_STATIONARY | PCSO_MOVE | PCSO_SWAP | PCSO_CROSS_LAYER | PCSO_BODY_DISPLACE) \
+  X(burning, uint32_t, 0, burningStore, encodeVelocityTile, decodeVelocityTile, persistentBurningState, PCSO_STATIONARY | PCSO_BODY_MOTION) \
   SAND_REACTION_AGE_CHANNEL(X)
 
 #define SAND_VALIDATE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
@@ -281,6 +281,13 @@ struct Layer {
   // Authority projection of component/body texture ownership. Presentation
   // mirrors receive this alongside materials and do not reconstruct topology.
   std::vector<uint16_t> textureTexels;
+  // Replicated on/off mask; the authority's fuel timers remain simulation-only.
+  std::vector<uint8_t> burningVisual;
+  // Conservative latch avoids burn-mask reads in worlds with no ignited fuel.
+  bool burningPresent = false;
+  bool burningAt(int cell) const {
+    return burningPresent && (burning.current ? burning.current[cell] != 0 : burningVisual[cell] != 0);
+  }
 
   // The material grid and motion state are one ping-pong unit. Keeping their
   // phase change and reset operations here prevents a newly-added side buffer
@@ -312,6 +319,7 @@ struct Layer {
   void clearVacatedCellPhases(size_t index) {
     if (!grid || !next || index >= gridA.size()) return;
     textureTexels[index] = WORLD_TEXTURE;
+    burningVisual[index] = 0;
     grid[index] = next[index] = EMPTY;
 #define SAND_CLEAR_VACATED_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
     if (name.current) { \
@@ -326,6 +334,7 @@ struct Layer {
   template <class Shift>
   void shiftPersistentCellState(Shift&& shift) {
     shift(textureTexels.data(), WORLD_TEXTURE);
+    shift(burningVisual.data(), (uint8_t)0);
     shift(grid, (uint8_t)EMPTY); shift(next, (uint8_t)EMPTY);
 #define SAND_SHIFT_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) \
     shift(name.current, name.emptyValue); shift(name.next, name.emptyValue);
@@ -338,7 +347,7 @@ struct Layer {
                              int chunkCols, int chunkRows) const {
     const size_t n = (size_t)cols * rows;
     const size_t chunks = (size_t)chunkCols * chunkRows;
-    if (gridA.size() != n || grid == nullptr || dirtyRender.size() != chunks
+    if (gridA.size() != n || burningVisual.size() != n || grid == nullptr || dirtyRender.size() != chunks
         || rowMarkSpans.size() != (size_t)rows
         || simOnlyRowMarkSpans.size() != (size_t)rows)
       return false;
@@ -386,6 +395,7 @@ struct Layer {
 
   void releaseCellBufferCapacity() {
     releaseBuffer(gridA); releaseBuffer(gridB); releaseBuffer(textureTexels);
+    releaseBuffer(burningVisual);
 #define SAND_RELEASE_CELL_CHANNEL(name, type, empty, store, encode, decode, accepts, operations) name.release();
     SAND_PERSISTENT_CELL_CHANNELS(SAND_RELEASE_CELL_CHANNEL)
 #undef SAND_RELEASE_CELL_CHANNEL
@@ -430,6 +440,8 @@ struct Layer {
     size_t n = (size_t)cols * rows;
     gridA.assign(n, EMPTY);
     textureTexels.assign(n, WORLD_TEXTURE);
+    burningVisual.assign(n, 0);
+    burningPresent = false;
     grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
     rowMarkSpans.clear(); rowMarkSpans.resize(rows);
@@ -534,8 +546,10 @@ struct Layer {
                           int oldOffX, int oldOffY, int newOffX, int newOffY) {
     std::vector<uint8_t> oldGrid = std::move(gridA);
     std::vector<uint16_t> oldTextures = std::move(textureTexels);
+    std::vector<uint8_t> oldBurning = std::move(burningVisual);
     gridA.assign((size_t)newCols * newRows, EMPTY);
     textureTexels.assign((size_t)newCols * newRows, WORLD_TEXTURE);
+    burningVisual.assign((size_t)newCols * newRows, 0);
     int wx0 = imax(oldOffX, newOffX), wy0 = imax(oldOffY, newOffY);
     int wx1 = imin(oldOffX + oldCols, newOffX + newCols);
     int wy1 = imin(oldOffY + oldRows, newOffY + newRows);
@@ -546,6 +560,7 @@ struct Layer {
         size_t dst = (size_t)(wy - newOffY) * newCols + (wx0 - newOffX);
         memcpy(gridA.data() + dst, oldGrid.data() + src, width);
         memcpy(textureTexels.data() + dst, oldTextures.data() + src, width * sizeof(uint16_t));
+        memcpy(burningVisual.data() + dst, oldBurning.data() + src, width);
       }
     }
     gridB.clear(); grid = gridA.data(); next = grid;

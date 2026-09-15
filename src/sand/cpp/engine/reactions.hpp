@@ -213,6 +213,14 @@ class ReactionSystem {
                     bool backgroundActive);
   void applyFireAndWater(bool effectEnabled, bool foregroundActive,
                          bool backgroundActive);
+  void applyBurning(bool effectEnabled, bool foregroundActive,
+                    bool backgroundActive);
+  void applyQuenching(bool effectEnabled, bool foregroundActive,
+                      bool backgroundActive);
+  bool igniteSolid(int cell);
+  bool touchesExtinguishingLiquid(Layer& layer, int cell) const;
+  void extinguishSolid(Layer& layer, int cell);
+  void stampBodyBurning(Body* body, int local, int cell);
   void applyAcid(bool effectEnabled, bool foregroundActive,
                  bool backgroundActive);
   void applyLava(bool effectEnabled, bool foregroundActive,
@@ -263,6 +271,7 @@ class ReactionSystem {
   std::vector<ReactionContactEvent> rigidContactEvents;
   Layer* rigidContactLayer = nullptr;
   std::vector<int> heatCells;
+  std::vector<int> burningCells;
   std::vector<int> mutationRemovedScratch;
   std::vector<int> crossIgniteFg, crossIgniteBg;
   std::vector<std::pair<int, int>> crossBodyFrozenIceFg,

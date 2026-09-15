@@ -336,6 +336,9 @@
   inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
   inline bool persistentLooseState(uint8_t m) { return isLooseMedium(m); }
   inline bool persistentLiquidState(uint8_t m) { return isLiquidMaterial(m); }
+  inline bool persistentBurningState(uint8_t m) {
+    return isComponentMaterial(m) && isFlammable(m);
+  }
   inline bool persistentReactionAgeState(uint8_t m) {
     return MAT_REACTION_AGE_ENABLED[m] != 0;
   }
@@ -1024,6 +1027,7 @@
         ? snapshot.name : (type)(empty);
     SAND_PERSISTENT_CELL_CHANNELS(SAND_RESTORE_CURRENT_CHANNEL)
 #undef SAND_RESTORE_CURRENT_CHANNEL
+    if (snapshot.burning) layer->burningPresent = true;
   }
   inline void restorePersistentNextState(
       Layer* layer, int k, uint8_t material,
@@ -1034,6 +1038,7 @@
         ? snapshot.name : (type)(empty);
     SAND_PERSISTENT_CELL_CHANNELS(SAND_RESTORE_NEXT_CHANNEL)
 #undef SAND_RESTORE_NEXT_CHANNEL
+    if (snapshot.burning) layer->burningPresent = true;
   }
   inline void carryPersistentStateToNext(
       int fromK, int toK, uint8_t material, PersistentCellOperation operation) {

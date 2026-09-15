@@ -28,7 +28,7 @@ class ReplicationSystem {
 
   template<class T> void rleEncode(const T* g);
   template<class T> int rleDecode(const uint8_t* buf, int len, int p, T* g);
-  int rleValidate(const uint8_t* buf, int len, int p, bool textures = false) const;
+  int rleValidate(const uint8_t* buf, int len, int p, bool textures = false, bool burning = false) const;
   bool decodeWorldGrids(const uint8_t* buf, int len);
   // Layer is Engine-nested (incomplete here), so the per-layer halves take a
   // background flag and resolve E.fg/E.bg in the impl.

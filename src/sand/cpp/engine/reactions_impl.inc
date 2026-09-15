@@ -8,6 +8,9 @@ static constexpr ReactionRetryDescriptor NO_REACTION_RETRY = {
   {ReactionMatchKind::MATERIAL, EMPTY}, false,
 };
 static constexpr ReactionPassDescriptor REACTION_PASS_CATALOGUE[] = {
+  {"quench burning fuel", ReactionPhase::BEFORE_BODY_MOVE,
+   ReactionLayerPolicy::CURRENT_LAYER, {{}}, 0, 5, 1,
+   NO_REACTION_RETRY, &ReactionSystem::applyQuenching},
   {"body ice", ReactionPhase::BEFORE_BODY_MOVE,
    ReactionLayerPolicy::CURRENT_LAYER, {{}}, 0, 10, 1,
    NO_REACTION_RETRY, &ReactionSystem::applyBodyIce},
@@ -16,6 +19,9 @@ static constexpr ReactionPassDescriptor REACTION_PASS_CATALOGUE[] = {
    {{{ReactionMatchKind::MATERIAL, WATER}, {ReactionMatchKind::PROFILE, MRP_FIRE}}},
    2, 10, 1, NO_REACTION_RETRY,
    &ReactionSystem::applyFireAndWater},
+  {"burning fuel", ReactionPhase::ACTIVE_LAYER,
+   ReactionLayerPolicy::CURRENT_LAYER, {{}}, 0, 15, 1,
+   NO_REACTION_RETRY, &ReactionSystem::applyBurning},
   {"acid", ReactionPhase::ACTIVE_LAYER,
    ReactionLayerPolicy::CURRENT_LAYER,
    {{{ReactionMatchKind::PROFILE, MRP_ACID}}}, 1,
@@ -507,6 +513,7 @@ void ReactionSystem::prepareActiveLists() {
   for (auto& cells : activeByMaterial) cells.clear();
   for (auto& cells : activeByReactionProfile) cells.clear();
   heatCells.clear();
+  burningCells.clear();
   E.L->heatAddedAfterPrepare = false;
   auto besideExplosive = [&](int k, int x, int y) {
     auto explosive = [&](int q) {
@@ -524,6 +531,7 @@ void ReactionSystem::prepareActiveLists() {
       for (int x = minX; x <= maxX; x++) {
         int k = rb + x;
         uint8_t material = E.L->grid[k];
+        if (E.L->burningAt(k)) burningCells.push_back(k);
 #if SAND_HAS_REACTION_AGE_CHANNEL
         if (MAT_REACTION_AGE_ENABLED[material] && E.L->reactionAge.current) {
           uint32_t& age = E.L->reactionAge.current[k];
@@ -542,6 +550,194 @@ void ReactionSystem::prepareActiveLists() {
       }
     });
   }
+}
+
+static bool extinguishesFire(uint8_t material) {
+  return material == WATER || material == BRINE || material == ACID;
+}
+
+void ReactionSystem::applyQuenching(bool effectEnabled, bool, bool) {
+  if (!effectEnabled) return;
+  const Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+  CellMutationBatch flames(E, mutationRemovedScratch);
+  // Observe contact before either bodies or liquids can move away from it.
+  for (int y = 1; y < E.rows; y++)
+    E.forEachActiveSpan(y, 1, E.cols - 2, true, [&](int minX, int maxX) {
+      for (int x = minX; x <= maxX; x++) {
+        int cell = y * E.cols + x;
+        if (E.L->burningAt(cell) && touchesExtinguishingLiquid(*E.L, cell))
+          extinguishSolid(*E.L, cell);
+        if (E.bgEnabled && E.hasMaterialReactionProfile(E.L->grid[cell], MRP_FIRE)
+            && extinguishesFire(peer.grid[cell])) flames.replaceLoose(cell, EMPTY);
+      }
+    });
+  flames.commitBodiesOnly();
+}
+
+bool ReactionSystem::touchesExtinguishingLiquid(Layer& layer, int cell) const {
+  int x = cell % E.cols, y = cell / E.cols;
+  if ((x > 0 && extinguishesFire(layer.grid[cell - 1]))
+      || (x + 1 < E.cols && extinguishesFire(layer.grid[cell + 1]))
+      || (y > 0 && extinguishesFire(layer.grid[cell - E.cols]))
+      || (y + 1 < E.rows && extinguishesFire(layer.grid[cell + E.cols]))) return true;
+  const Layer& peer = &layer == &E.fg ? E.bg : E.fg;
+  return E.bgEnabled && extinguishesFire(peer.grid[cell]);
+}
+
+void ReactionSystem::extinguishSolid(Layer& layer, int cell) {
+  auto clear = [&](int k) {
+    layer.burning.current[k] = layer.burning.next[k] = 0;
+    E.markLayerCell(&layer, k);
+    E.markWorldTileDirty(&layer, k);
+  };
+  if (layer.bodyOwner[cell] >= 0) {
+    auto subject = resolveSubject(layer, cell);
+    if (subject.body && subject.localCell >= 0 && !subject.body->burning.empty()) {
+      subject.body->burning[subject.localCell] = 0;
+      E.rigid.forEachBodyCell(subject.body, [&](int x, int y, int local) {
+        if (local == subject.localCell && x >= 0 && x < E.cols && y >= 0 && y < E.rows) {
+          int k = y * E.cols + x;
+          if (layer.bodyOwner[k] == subject.body->id) clear(k);
+        }
+      });
+    }
+  }
+  clear(cell);
+}
+
+bool ReactionSystem::igniteSolid(int cell) {
+  uint8_t material = E.L->grid[cell];
+  if (!E.persistentBurningState(material)) return false;
+  if (E.L->burning.current[cell]) return true;
+  if (touchesExtinguishingLiquid(*E.L, cell)) return true;
+  uint32_t ticks = (MAT_FLAGS[material] & MF_PLANTWOOD)
+    ? WOOD_BURN_TICKS : LEAF_BURN_TICKS;
+  ticks = ticks * (85 + (uint32_t)(E.rand() * 31)) / 100;
+  if (E.L->bodyOwner[cell] >= 0) {
+    auto subject = resolveSubject(*E.L, cell);
+    if (!subject.body || subject.localCell < 0) return true;
+    auto& fuel = subject.body->burning;
+    if (fuel.empty()) fuel.assign(subject.body->occ.size(), 0);
+    if (!fuel[subject.localCell]) fuel[subject.localCell] = ticks;
+    ticks = fuel[subject.localCell];
+  }
+  E.L->burning.current[cell] = ticks;
+  E.L->burningPresent = true;
+  if (E.L->next[cell] == material) E.L->burning.next[cell] = ticks;
+  E.markLayerCell(E.L, cell);
+  E.markWorldTileDirty(cell);
+  return true;
+}
+
+void ReactionSystem::stampBodyBurning(Body* body, int local, int cell) {
+  uint32_t ticks = local >= 0 && (size_t)local < body->burning.size()
+    && E.persistentBurningState(E.L->grid[cell]) ? body->burning[local] : 0;
+  if ((E.L->burning.current[cell] != 0) != (ticks != 0)) E.markLayerCell(E.L, cell);
+  E.L->burning.current[cell] = ticks;
+  if (E.L->next[cell] == E.L->grid[cell]) E.L->burning.next[cell] = ticks;
+  if (ticks) { E.L->burningPresent = true; E.markLayerSimCell(E.L, cell); }
+}
+
+void ReactionSystem::applyBurning(bool effectEnabled, bool, bool) {
+  if (!effectEnabled || !E.L->burningPresent) return;
+  std::unordered_map<int, Body*> bodies;
+  std::vector<std::pair<Body*, int>> expired;
+  for (Body* body : E.L->bodies) {
+    if (body->burning.empty()) continue;
+    bodies[body->id] = body;
+    E.rigid.forEachBodyCell(body, [&](int x, int y, int local) {
+      if (!body->burning[local] || x < 0 || x >= E.cols || y < 0 || y >= E.rows) return;
+      int cell = y * E.cols + x;
+      if (E.L->bodyOwner[cell] == body->id && touchesExtinguishingLiquid(*E.L, cell))
+        extinguishSolid(*E.L, cell);
+    });
+    // Local fuel advances even when rotation leaves a texel without a raster sample.
+    for (int local = 0; local < (int)body->burning.size(); local++)
+      if (body->burning[local] && --body->burning[local] == 0)
+        expired.push_back({body, local});
+  }
+  if (burningCells.empty() && expired.empty()) return;
+  std::unordered_set<uint64_t> stepped;
+  std::vector<int> consumed, ignite, flames;
+  for (int cell : burningCells) {
+    if (!E.persistentBurningState(E.L->grid[cell])) continue;
+    uint32_t* fuel = &E.L->burning.current[cell];
+    Body* body = nullptr;
+    int local = -1;
+    auto found = bodies.find(E.L->bodyOwner[cell]);
+    if (found != bodies.end()) {
+      body = found->second;
+      local = E.rigid.localCellAt(body, cell % E.cols + 0.5, cell / E.cols + 0.5);
+      if (local < 0 && body->nPts == 1)
+        local = (int)(std::find(body->occ.begin(), body->occ.end(), 1) - body->occ.begin());
+      if (local < 0 || (size_t)local >= body->burning.size()) continue;
+      fuel = &body->burning[local];
+    }
+    int x = cell % E.cols, y = cell / E.cols;
+    int neighbors[4], count = 0;
+    if (y > 1) neighbors[count++] = cell - E.cols;
+    if (x > 1) neighbors[count++] = cell - 1;
+    if (x < E.cols - 2) neighbors[count++] = cell + 1;
+    if (y < E.rows - 1) neighbors[count++] = cell + E.cols;
+    bool wet = touchesExtinguishingLiquid(*E.L, cell);
+    if (wet && *fuel) { extinguishSolid(*E.L, cell); *fuel = 0; }
+    if (!*fuel) {
+      E.L->burning.current[cell] = E.L->burning.next[cell] = 0;
+      E.markWorldTileDirty(cell);
+      continue;
+    }
+    bool advance = !body || stepped.insert(
+      ((uint64_t)(uint32_t)body->id << 32) | (uint32_t)local).second;
+    if (!body && --*fuel == 0) consumed.push_back(cell);
+    E.L->burning.current[cell] = *fuel;
+    if (E.L->next[cell] == E.L->grid[cell]) E.L->burning.next[cell] = *fuel;
+    E.markLayerSimCell(E.L, cell);
+    E.markWorldTileDirty(cell);
+    if (!advance) continue;
+    for (int i = 0; i < count; i++) {
+      int neighbor = neighbors[i];
+      if (E.persistentBurningState(E.L->grid[neighbor])
+          && !E.L->burning.current[neighbor] && E.rand() < BURN_SPREAD_P)
+        ignite.push_back(neighbor);
+    }
+    // Emit at most one flame per cell, preferring the space above the fuel.
+    if (E.rand() < BURN_FLAME_P)
+      for (int i = 0; i < count; i++)
+        if (E.L->grid[neighbors[i]] == EMPTY) {
+          flames.push_back(neighbors[i]);
+          break;
+        }
+  }
+  std::unordered_set<Body*> dirtyBodies;
+  for (size_t begin = 0; begin < expired.size();) {
+    Body* body = expired[begin].first;
+    size_t end = begin + 1;
+    while (end < expired.size() && expired[end].first == body) end++;
+    // Clear every projected sample before repairing the body's connectivity.
+    E.rigid.forEachBodyCell(body, [&](int x, int y, int sample) {
+      if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return;
+      auto found = std::lower_bound(expired.begin() + begin, expired.begin() + end,
+        sample, [](const auto& entry, int value) { return entry.second < value; });
+      if (found == expired.begin() + end || found->second != sample) return;
+      int cell = y * E.cols + x;
+      if (E.L->bodyOwner[cell] == body->id) {
+        E.writeGridIndexUnsafe(cell, FIRE);
+        E.L->bodyOwner[cell] = -1;
+      }
+    });
+    for (size_t i = begin; i < end; i++)
+      E.rigid.eraseBodyLocalCell(body, expired[i].second, dirtyBodies);
+    begin = end;
+  }
+  if (!dirtyBodies.empty()) E.rigid.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+  for (int cell : ignite) igniteSolid(cell);
+  if (consumed.empty() && flames.empty()) return;
+  bool indexed = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
+  CellMutationBatch mutations(E, mutationRemovedScratch);
+  for (int cell : consumed) mutations.replaceLoose(cell, FIRE);
+  for (int cell : flames)
+    if (E.L->grid[cell] == EMPTY) mutations.replaceLoose(cell, FIRE);
+  mutations.commitPlantErosion(indexed, true);
 }
 
 void ReactionSystem::applyFireAndWater(bool effectEnabled, bool, bool) {
@@ -565,6 +761,11 @@ void ReactionSystem::applyFireAndWater(bool effectEnabled, bool, bool) {
   }
   for (int k : activeProfileCells(MRP_FIRE)) {
       if (!isFire(k) || E.L->reactionFlags[k]) continue;
+      if (touchesExtinguishingLiquid(*E.L, k)) {
+        E.L->reactionFlags[k] = 1;
+        E.L->reactionFires[fireCount++] = k;
+        continue;
+      }
       int y = k / E.cols;
       int neigh[4]; int nn; if (y < E.rows - 1) { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k + E.cols; neigh[3] = k - E.cols; nn = 4; } else { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k - E.cols; nn = 3; }
       for (int ni = 0; ni < nn; ni++) {
@@ -589,13 +790,13 @@ void ReactionSystem::applyFireAndWater(bool effectEnabled, bool, bool) {
         // flammable = "ignites near fire/lava", and lava already uses isFlammable.
         // This stops fire from burning non-flammable plants (juicy cactus, wet
         // mushrooms) and lets any flammable powder/liquid catch the same way oil does.
-        else if (!E.isBodyCell(nk) && E.isFlammable(E.L->grid[nk]) && E.rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) E.L->reactionIgnite[igniteCount++] = nk; } // body-material invariant: a flammable body disintegrates via erodeBodies, not in-place ignition
+        else if (E.isFlammable(E.L->grid[nk]) && E.rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) E.L->reactionIgnite[igniteCount++] = nk; }
       }
   }
   for (int i = 0; i < fireCount; i++) { int k = E.L->reactionFires[i]; if (isFire(k)) mutations.replaceLoose(k, EMPTY); E.L->reactionFlags[k] = 0; }
   for (int i = 0; i < steamCount; i++) { int k = E.L->reactionSteam[i]; if (E.L->grid[k] == WATER) mutations.replaceLoose(k, STEAM); }
   for (size_t i = 0; i < snowMelt.size(); i++) { int k = snowMelt[i]; if (E.L->grid[k] == SNOW) mutations.replaceLoose(k, WATER); }
-  for (int i = 0; i < igniteCount; i++) { int k = E.L->reactionIgnite[i]; if (!E.isBodyCell(k) && E.isFlammable(E.L->grid[k])) mutations.replaceLoose(k, FIRE); }
+  for (int i = 0; i < igniteCount; i++) { int k = E.L->reactionIgnite[i]; if (E.isFlammable(E.L->grid[k]) && !igniteSolid(k) && !E.isBodyCell(k)) mutations.replaceLoose(k, FIRE); }
   mutations.commitPlantErosion(plantIndexExact, true);
 }
 void ReactionSystem::applyAcid(bool effectEnabled, bool, bool) {
@@ -755,10 +956,9 @@ void ReactionSystem::applyLava(bool effectEnabled, bool, bool) {
         E, k, 0x1A7A01u, [&](int q) { return E.L->grid[q] == SNOW; });
       if (snowK >= 0) { mutations.replaceLoose(snowK, WATER); E.markCellIndex(k); continue; }
       int burnK = -1;
-      // body-material invariant: lava disintegrates a flammable body via erodeBodies, not in-place ignition.
-      auto lavaBurns = [&](int q) { return E.isFlammable(E.L->grid[q]) && !E.isBodyCell(q); };
+      auto lavaBurns = [&](int q) { return E.isFlammable(E.L->grid[q]); };
       burnK = reactionCardinalMatch(E, k, 0x1A7A02u, lavaBurns);
-      if (burnK >= 0) { mutations.replaceLoose(burnK, FIRE); continue; }
+      if (burnK >= 0) { if (!igniteSolid(burnK) && !E.isBodyCell(burnK)) mutations.replaceLoose(burnK, FIRE); continue; }
       int liquidK = -1;
       // Flag-driven (quenchesLava: water/acid/brine) -> steam + loose stone dust.
       // Keeping disconnected quench residue granular avoids creating a rigid body
@@ -955,6 +1155,8 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
   crossIgniteFg.clear(); crossIgniteBg.clear();
   crossFrozenIceFg.clear(); crossFrozenIceBg.clear();
   crossBodyFrozenIceFg.clear(); crossBodyFrozenIceBg.clear();
+  std::vector<int> extinguishFg, extinguishBg;
+  std::vector<int> flamesFg, flamesBg;
   for (int y = 1; y < E.rows - 1; y++) {
     E.forEachActiveUnionSpan(&E.fg, foregroundActive, &E.bg, backgroundActive,
                              y, 1, E.cols - 2, true,
@@ -963,13 +1165,30 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
         int cell = y * E.cols + x;
         uint8_t foreground = E.fg.grid[cell];
         uint8_t background = E.bg.grid[cell];
-        if (E.hasMaterialReactionProfile(foreground, MRP_FIRE)
+        bool fgBurning = E.fg.burningAt(cell), bgBurning = E.bg.burningAt(cell);
+        if ((E.hasMaterialReactionProfile(foreground, MRP_FIRE) || fgBurning)
+            && touchesExtinguishingLiquid(E.fg, cell)) {
+          if (fgBurning) extinguishSolid(E.fg, cell);
+          if (E.hasMaterialReactionProfile(foreground, MRP_FIRE)) extinguishFg.push_back(cell);
+          continue;
+        }
+        if ((E.hasMaterialReactionProfile(background, MRP_FIRE) || bgBurning)
+            && touchesExtinguishingLiquid(E.bg, cell)) {
+          if (bgBurning) extinguishSolid(E.bg, cell);
+          if (E.hasMaterialReactionProfile(background, MRP_FIRE)) extinguishBg.push_back(cell);
+          continue;
+        }
+        if (fgBurning && background == EMPTY && E.rand() < BURN_CROSS_FLAME_P)
+          flamesBg.push_back(cell);
+        if (bgBurning && foreground == EMPTY && E.rand() < BURN_CROSS_FLAME_P)
+          flamesFg.push_back(cell);
+        if ((E.hasMaterialReactionProfile(foreground, MRP_FIRE) || fgBurning)
             && E.isFlammable(background)) {
-          if (E.rand() < FIRE_CROSS_P && E.bg.bodyOwner[cell] == -1)
+          if (E.rand() < FIRE_CROSS_P)
             crossIgniteBg.push_back(cell);
-        } else if (E.hasMaterialReactionProfile(background, MRP_FIRE)
+        } else if ((E.hasMaterialReactionProfile(background, MRP_FIRE) || bgBurning)
                    && E.isFlammable(foreground)) {
-          if (E.rand() < FIRE_CROSS_P && E.fg.bodyOwner[cell] == -1)
+          if (E.rand() < FIRE_CROSS_P)
             crossIgniteFg.push_back(cell);
         }
         if (foreground == ICE && background == WATER
@@ -1002,16 +1221,22 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
   {
     Engine::ActiveLayerScope layerScope(E, &E.fg);
     CellMutationBatch foregroundFire(E, mutationRemovedScratch);
+    for (int cell : extinguishFg) foregroundFire.replaceLoose(cell, EMPTY);
+    for (int cell : flamesFg)
+      if (E.fg.grid[cell] == EMPTY) foregroundFire.replaceLoose(cell, FIRE);
     for (int cell : crossIgniteFg)
-      if (E.fg.bodyOwner[cell] < 0 && E.isFlammable(E.fg.grid[cell]))
+      if (E.isFlammable(E.fg.grid[cell]) && !igniteSolid(cell) && E.fg.bodyOwner[cell] < 0)
         foregroundFire.replaceLoose(cell, FIRE);
     foregroundFire.commitPlantErosion(fgIndexExact, true);
   }
   {
     Engine::ActiveLayerScope layerScope(E, &E.bg);
     CellMutationBatch backgroundFire(E, mutationRemovedScratch);
+    for (int cell : extinguishBg) backgroundFire.replaceLoose(cell, EMPTY);
+    for (int cell : flamesBg)
+      if (E.bg.grid[cell] == EMPTY) backgroundFire.replaceLoose(cell, FIRE);
     for (int cell : crossIgniteBg)
-      if (E.bg.bodyOwner[cell] < 0 && E.isFlammable(E.bg.grid[cell]))
+      if (E.isFlammable(E.bg.grid[cell]) && !igniteSolid(cell) && E.bg.bodyOwner[cell] < 0)
         backgroundFire.replaceLoose(cell, FIRE);
     backgroundFire.commitPlantErosion(bgIndexExact, true);
   }

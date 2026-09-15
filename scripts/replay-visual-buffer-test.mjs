@@ -22,22 +22,25 @@ const encodeLayer = (grid, out, textures = false) => {
     start = end;
   }
 };
-const full = (foreground, background, fgTexels = foreground.map(() => 0xffff), bgTexels = background.map(() => 0xffff)) => {
+const full = (foreground, background, fgTexels = foreground.map(() => 0xffff), bgTexels = background.map(() => 0xffff), fgBurning = foreground.map(() => 0), bgBurning = background.map(() => 0)) => {
   const out = [];
   encodeLayer(foreground, out);
   encodeLayer(background, out);
   encodeLayer(fgTexels, out, true);
   encodeLayer(bgTexels, out, true);
+  encodeLayer(fgBurning, out);
+  encodeLayer(bgBurning, out);
   return Uint8Array.from(out).buffer;
 };
 const diff = (foregroundRects, backgroundRects) => {
   const out = [];
   for (const rects of [foregroundRects, backgroundRects]) {
     pushU16(out, rects.length);
-    for (const { x0, y0, x1, y1, cells, texels = cells.map(() => 0xffff) } of rects) {
+    for (const { x0, y0, x1, y1, cells, texels = cells.map(() => 0xffff), burning = cells.map(() => 0) } of rects) {
       pushU16(out, x0); pushU16(out, y0); pushU16(out, x1); pushU16(out, y1);
       out.push(...cells);
       for (const texel of texels) pushU16(out, texel);
+      out.push(...burning);
     }
   }
   return Uint8Array.from(out).buffer;
@@ -46,19 +49,19 @@ const decode = (buffer, cells, textures = false) => {
   const bytes = new Uint8Array(buffer);
   const grids = [];
   let offset = 0;
-  for (let layer = 0; layer < 4; layer++) {
+  for (let layer = 0; layer < 6; layer++) {
     const grid = [];
     while (grid.length < cells) {
       const run = (bytes[offset] | (bytes[offset + 1] << 8)
         | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
-      const value = layer < 2 ? bytes[offset + 4] : bytes[offset + 4] | (bytes[offset + 5] << 8);
-      offset += layer < 2 ? 5 : 6;
+      const value = (layer < 2 || layer >= 4) ? bytes[offset + 4] : bytes[offset + 4] | (bytes[offset + 5] << 8);
+      offset += (layer < 2 || layer >= 4) ? 5 : 6;
       for (let i = 0; i < run; i++) grid.push(value);
     }
     grids.push(grid);
   }
   assert.equal(offset, bytes.length);
-  return textures ? grids.slice(2) : grids.slice(0, 2);
+  return textures === "burning" ? grids.slice(4) : textures ? grids.slice(2, 4) : grids.slice(0, 2);
 };
 
 const frames = [
@@ -239,3 +242,11 @@ const texturedFrames = [
 assert.deepEqual(decode(reconstructReplayWorld(texturedFrames, 1).data, 4, true), [
   [777, 0xffff, 45, 0xffff], [0xffff, 0xffff, 0xffff, 0xffff],
 ]);
+
+const burningFrames = [
+  { world: { type: 'full', cols: 2, rows: 2, data: full([8, 8, 0, 0], [0, 0, 0, 0], undefined, undefined, [1, 0, 0, 0]) } },
+  { world: { type: 'diff', data: diff([{ x0: 1, y0: 0, x1: 2, y1: 1, cells: [8], burning: [1] }], []) } },
+  { world: { type: 'shift', cols: 2, rows: 2, shiftDx: 1, shiftDy: 0, data: diff([], []) } },
+];
+assert.deepEqual(decode(reconstructReplayWorld(burningFrames, 2).data, 4, 'burning'), [[1, 0, 0, 0], [0, 0, 0, 0]],
+  'burning masks survive replay keyframes, deltas and streaming');

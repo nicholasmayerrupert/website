@@ -21,8 +21,12 @@ const world = Uint8Array.of(
   4, 0, 0, 0, MAT.EMPTY,
   4, 0, 0, 0, 255, 255,
   4, 0, 0, 0, 255, 255,
+  4, 0, 0, 0, 0,
+  4, 0, 0, 0, 0,
 );
 check('two-layer RLE accepts defined materials', isValidWorldRle(world, 4));
+const invalidBurning = world.slice(); invalidBurning[invalidBurning.length - 1] = 2;
+check('RLE rejects invalid burning mask values', !isValidWorldRle(invalidBurning, 4));
 check('two-layer RLE rejects truncation', !isValidWorldRle(world.subarray(0, 5), 4));
 const invalidWorldTexel = world.slice();
 invalidWorldTexel[20] = 0; invalidWorldTexel[21] = 4;
@@ -46,7 +50,7 @@ check('two-layer RLE validates the background after a valid foreground',
 
 const diff = Uint8Array.of(
   1, 0,
-  0, 0, 0, 0, 1, 0, 1, 0, MAT.WATER, 255, 255,
+  0, 0, 0, 0, 1, 0, 1, 0, MAT.WATER, 255, 255, 0,
   0, 0,
 );
 check('two-layer diff accepts a bounded material rectangle', isValidWorldDiff(diff, 2, 2));
@@ -66,11 +70,13 @@ const invalidBackgroundDiffMaterial = Uint8Array.of(
   0, 0,
   1, 0,
   0, 0, 0, 0, 1, 0, 1, 0,
-  HAS_UNDEFINED_MATERIAL_BYTE ? FIRST_UNDEFINED_MATERIAL_ID : MAT.WATER, 255, 255,
+  HAS_UNDEFINED_MATERIAL_BYTE ? FIRST_UNDEFINED_MATERIAL_ID : MAT.WATER, 255, 255, 0,
 );
 if (!HAS_UNDEFINED_MATERIAL_BYTE) invalidBackgroundDiffMaterial[8] = 0;
 check('two-layer diff validates the background after a valid foreground',
   !isValidWorldDiff(invalidBackgroundDiffMaterial, 2, 2));
+const invalidBurningDiff = diff.slice(); invalidBurningDiff[13] = 2;
+check('diff rejects invalid burning mask values', !isValidWorldDiff(invalidBurningDiff, 2, 2));
 check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1), 2, 2));
 
 {
@@ -83,6 +89,7 @@ check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1
     getGrid: () => foreground,
     getGridBg: () => background,
     getTextureTexels: () => new Uint16Array(4).fill(0xffff),
+    getBurningVisual: () => new Uint8Array(4),
     setMirrorWorldOffset(x, y) { offset = [x, y]; },
   };
   const shift = {
@@ -104,6 +111,7 @@ check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1
       getGrid: () => diagonalForeground,
       getGridBg: () => diagonalBackground,
       getTextureTexels: () => new Uint16Array(4).fill(0xffff),
+    getBurningVisual: () => new Uint8Array(4),
       setMirrorWorldOffset(x, y) { diagonalOffset = [x, y]; },
     };
     check('diagonal shift moves both mirror layers on both axes',
@@ -115,7 +123,7 @@ check('two-layer diff rejects truncation', !isValidWorldDiff(diff.subarray(0, -1
   const oversizedDiff = Uint8Array.of(
     9, 0,
     ...Array.from({ length: 9 }, () => [
-      0, 0, 0, 0, 1, 0, 1, 0, MAT.WATER, 255, 255,
+      0, 0, 0, 0, 1, 0, 1, 0, MAT.WATER, 255, 255, 0,
     ]).flat(),
     0, 0,
   );
@@ -160,8 +168,8 @@ check('native diff rejection is transactional when only the background is invali
   native.applyDiffMirror(invalidBackgroundDiffMaterial) === false
     && native.gridHash() === nativeHash);
 const nativeBadTexel = nativeWorld.slice();
-nativeBadTexel[nativeBadTexel.length - 2] = 0;
-nativeBadTexel[nativeBadTexel.length - 1] = 4;
+nativeBadTexel[nativeBadTexel.length - 12] = 0;
+nativeBadTexel[nativeBadTexel.length - 11] = 4;
 check('native texture rejection preserves the material and source planes',
   native.applyWorldMirror(nativeBadTexel, native.getWorldOffsetX(), native.getWorldOffsetY()) === false
     && native.gridHash() === nativeHash

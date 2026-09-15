@@ -92,6 +92,13 @@ EMSCRIPTEN_KEEPALIVE int engine_sound_event_snapshot(Engine* e) { return e->audi
 EMSCRIPTEN_KEEPALIVE float* engine_sound_event_snapshot_ptr(Engine* e) { return e->audio.snapshotData(); }
 EMSCRIPTEN_KEEPALIVE void engine_audio_ambience(Engine* e, double x, double y, int radius, float* out) { e->audio.sampleAmbience(x, y, radius, out); }
 EMSCRIPTEN_KEEPALIVE uint16_t* engine_texture_texels(Engine* e, int background) { return (background ? e->bg : e->fg).textureTexels.data(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_burning_visual(Engine* e, int background) {
+  Layer& layer = background ? e->bg : e->fg;
+  if (layer.burning.current)
+    for (size_t k = 0; k < layer.burningVisual.size(); k++)
+      layer.burningVisual[k] = layer.burning.current[k] != 0;
+  return layer.burningVisual.data();
+}
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->fg.grid; }
 EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->fg.dirtyRenderCount; }
 EMSCRIPTEN_KEEPALIVE int engine_cols(Engine* e) { return e->cols; }

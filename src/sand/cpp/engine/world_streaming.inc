@@ -831,6 +831,7 @@
         }
         SAND_PERSISTENT_CELL_CHANNELS(SAND_LOAD_CELL_CHANNEL)
 #undef SAND_LOAD_CELL_CHANNEL
+        if (L->burningStore.find(key) != L->burningStore.end()) L->burningPresent = true;
         if (persistent != L->tileStore.end()) L->dirtyWorldTiles.insert(key);
         if (prefetched != L->prefetchStore.end()) L->prefetchStore.erase(prefetched);
       }
@@ -859,6 +860,7 @@
           b->px = e.second.first - L->worldOffsetX;
           b->py = e.second.second - L->worldOffsetY;
           L->bodies.push_back(b);
+          if (!b->burning.empty()) L->burningPresent = true;
           if (b->jointRole == 2) L->passiveBodyIds.insert(b->id);
         }
         L->bodyStore.erase(it);

@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 9;
+static constexpr uint32_t CHECKPOINT_VERSION = 10;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -118,7 +118,7 @@ struct CheckpointArchive {
     else if (reading) { v.manaRecoveryTicks = v.wandChargeTicks = 0; v.pendingCast = SpellCast(); }
   }
   void field(AdventureChest& v) { fields(v.id,v.wx,v.wy,v.opened,v.loot); if (version>=3) field(v.packed); else if (reading) v.packed=false; }
-  void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); if (version >= 9) fields(v.textures,v.placeholderTextures); else if (reading) { v.textures.clear(); v.placeholderTextures.clear(); } }
+  void field(Body& v) { fields(v.id,v.occ,v.w,v.h,v.cellMaterials,v.jointPeerMaterials,v.solverLayer,v.jointRole,v.offsetX,v.offsetY,v.px,v.py,v.angle,v.acceptedWorldPx,v.acceptedWorldPy,v.acceptedAngle,v.acceptedRasterGeometryRevision,v.acceptedRasterPoseValid,v.vx,v.vy,v.omega,v.actorProxy,v.actorVx,v.actorVy,v.material,v.density,v.awake,v.stillTicks,v.worldStillTicks,v.restProbePoints,v.restProbeTicks,v.sleepSupports,v.stampRecoveryStreak,v.stampRecoveryTotal,v.stampRecoveryTick,v.stampPreclaimAttempts,v.stampPreclaimSuccesses,v.stampPreclaimBlocked,v.stampPreclaimOutside,v.stampPreclaimMovedOutside,v.stampPreclaimStartedOutside,v.rasterAssignmentLocked,v.rasterLockCell,v.rasterLockOwner,v.loadedWindowParked,v.blastDebris,v.fuseTicks,v.fuseLocalX,v.fuseLocalY,v.plantType,v.points,v.nPts,v.boundaryPts,v.boundarySamples,v.boundarySampleRadii,v.boundarySampleBlocks,v.erosionBoundaryMask,v.collisionRects,v.collisionSpans,v.collisionTree,v.collisionTreeRoot,v.geometryRevision,v.rasterFootprint,v.rasterWords,v.rasterWordsValid,v.rasterBoundaryFootprint,v.rasterPx,v.rasterPy,v.rasterAngle,v.rasterGeometryRevision,v.rasterCols,v.rasterRows,v.rasterFootprintValid,v.rasterAligned,v.rasterAlignedX,v.rasterAlignedY,v.rasterBounds,v.erodible,v.tightSlenderBounds,v.bakeRasterStableTicks,v.bakeSupportedPoseTicks,v.bakeBlockedByBody,v.invMass,v.invInertia,v.maxR,v.cs,v.sn,v.sweepMargin,v.aabbX0,v.aabbY0,v.aabbX1,v.aabbY1,v.pvx,v.pvy,v.pw,v.spatialForceApplied,v.omegaPre,v.hadContact,v.rasterMayOverlapSolid,v.recentImpactSpeed,v.denseMicrostepTicks,v.bakeRasterSampleTag,v.bakeRasterSignature,v.maxDepth,v.idx); if (version >= 9) fields(v.textures,v.placeholderTextures); else if (reading) { v.textures.clear(); v.placeholderTextures.clear(); } if (version >= 10) field(v.burning); else if (reading) v.burning.clear(); }
   void field(Body*& body) {
     if (reading) body = new Body();
     field(*body);
@@ -133,7 +133,8 @@ struct CheckpointArchive {
     fields(v.gridA, v.gridB);
     if (reading) { v.grid = phaseA ? v.gridA.data() : v.gridB.data(); v.next = phaseA ? v.gridB.data() : v.gridA.data(); }
 #define CHECKPOINT_CHANNEL(name,type,empty,store,encode,decode,accepts,operations) \
-    fields(v.name.phaseA,v.name.phaseB,v.store); \
+    if (version >= 10 || std::strcmp(#name, "burning") != 0) { fields(v.name.phaseA,v.name.phaseB,v.store); } \
+    else if (reading) { v.name.allocate(v.gridA.size(), (type)(empty)); v.store.clear(); } \
     if (reading) { v.name.current=phaseA?v.name.phaseA.data():v.name.phaseB.data(); v.name.next=phaseA?v.name.phaseB.data():v.name.phaseA.data(); }
     SAND_PERSISTENT_CELL_CHANNELS(CHECKPOINT_CHANNEL)
 #undef CHECKPOINT_CHANNEL
@@ -202,6 +203,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     for (uint8_t mat:layer->gridB) if (!isMaterialId(mat)) return false;
     layer->groundDirty=true; layer->componentRegistryDirty=true; layer->componentIndexExact=false;
     layer->forceSourcePresent=true; layer->prefetchStore.clear();
+    layer->burningPresent=true;
     std::fill(layer->dirtyRender.begin(),layer->dirtyRender.end(),1);
   }
   for (const auto& peer:a.peers) {
@@ -223,6 +225,10 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     }
     for (const RasterTexture& source : body->placeholderTextures) if (source.texel >= 1024) return false;
     if (body->textures.size() != body->occ.size()) return false;
+    if (!body->burning.empty() && body->burning.size() != body->occ.size()) return false;
+    for (size_t local = 0; local < body->burning.size(); local++)
+      if (body->burning[local] > WOOD_BURN_TICKS * 115 / 100
+          || (body->burning[local] && !E.persistentBurningState(E.rigid.bodyMaterialAt(body, (int)local)))) return false;
     for (uint16_t texel : body->textures) if (texel != WORLD_TEXTURE && texel >= 1024) return false;
   }
   for (Layer* layer : {&E.fg, &E.bg}) {

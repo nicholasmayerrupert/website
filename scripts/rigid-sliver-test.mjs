@@ -16,12 +16,11 @@ import {
 
 await initSandWasm();
 const { check, done } = makeChecker('cross-layer rigid slivers');
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
 const forceFullSolveBodies = Number(
   process.env.RIGID_FORCE_FULL_SOLVE_BODIES ?? 12,
 );
 const useSolverMode = (engine) => {
-  engine._setRigidSolverOptions(solverMode);
+
   engine._setRigidForceFullSolveBodies(forceFullSolveBodies);
   return engine;
 };

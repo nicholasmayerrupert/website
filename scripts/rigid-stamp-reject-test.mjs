@@ -9,10 +9,8 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
 const createEngine = (opts) => {
   const engine = attachTestHooks(createEngineWasmRaw(opts));
-  engine._setRigidSolverOptions(solverMode);
   return engine;
 };
 

@@ -9,7 +9,6 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
 const COLS = 384;
 const ROWS = 288;
 const STEPS = 240;
@@ -22,7 +21,6 @@ const engine = attachTestHooks(createEngineWasmRaw({
   sinksOn: false,
   infinite: true,
 }));
-engine._setRigidSolverOptions(solverMode);
 
 const four = [];
 for (let y = 0; y < 2; y++)
@@ -33,6 +31,11 @@ engine.spawnBody(three);
 engine._setBodyMotion(0, 0.2, 3, 0.05);
 engine._setBodyMotion(1, -0.15, 3, -0.04);
 
+// Procedural terrain may detach unrelated fragments while the fixture runs.
+const debrisCells = new Map([
+  [engine._bodyIdLayer(0, 0), four.length],
+  [engine._bodyIdLayer(0, 1), three.length],
+]);
 const tracks = new Map();
 let latePeakBodyBlocked = 0;
 let finalBodyBlocked = 0;
@@ -40,6 +43,7 @@ for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
   for (let i = 0; i < engine._bodyCount(); i++) {
     const id = engine._bodyIdLayer(0, i);
+    if (!debrisCells.has(id)) continue;
     const state = engine._bodyState(i);
     if (!state) continue;
     let samples = tracks.get(id);
@@ -71,8 +75,12 @@ for (const samples of tracks.values()) {
 
 const { check, done } = makeChecker(
   '4-cell/3-cell debris settles at the bottom loaded-window boundary');
-check(`both debris bodies remain in the solver (${tracks.size})`,
-  tracks.size === 2);
+check(`both debris bodies remain intact for all ${STEPS} ticks`,
+  debrisCells.size === 2 && [...debrisCells].every(([id, cells]) => {
+    const samples = tracks.get(id);
+    return samples?.length === STEPS
+      && samples.every((sample) => sample.nPts === cells);
+  }));
 check(`late body overlap clears (${latePeakBodyBlocked})`,
   latePeakBodyBlocked === 0);
 check(`final body overlap clears (${finalBodyBlocked})`,

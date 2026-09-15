@@ -9,10 +9,8 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 100, ROWS = 120, SEED = 0xC0FFEE;
 await initSandWasm();
-const solverMode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
 const createEngineWasm = (opts) => {
   const engine = attachTestHooks(createEngineWasmRaw(opts));
-  engine._setRigidSolverOptions(solverMode);
   return engine;
 };
 const { check, done } = makeChecker('detached solids retain rigid assembly bonds');

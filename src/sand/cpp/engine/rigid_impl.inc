@@ -17,17 +17,6 @@ static bool rigidTightSlenderBounds(const Body* body) {
   return body->tightSlenderBounds;
 }
 
-static bool rigidWorldBridgeMode(int mode) {
-  return mode == 5 || mode == 13 || mode == 14
-    || mode == 15 || mode == 16
-    || (mode >= 18 && mode <= 23) || mode == 25
-    || mode == 27 || mode == 28 || mode == 30 || mode == 31
-    || mode == 32 || mode == 33 || mode == 34 || mode == 35
-    || mode == 36 || mode == 37 || mode == 38 || mode == 39
-    || mode == 40 || mode == 42 || mode == 43 || mode == 44
-    || mode == 45 || mode == 46;
-}
-
 static bool rigidPreciseContact(const Contact& contact) {
   return contact.a->jointRole == 1
     || (contact.b && (!contact.bIntegrated
@@ -224,7 +213,6 @@ double RigidBodySystem::worldContactState(int index, int field) const {
 bool RigidBodySystem::preserveRasterRecoveryMotion(
     Body* body, const MovePose& rejectedPose,
     double referenceVx, double referenceVy) {
-  if (!rigidWorldBridgeMode(solverMode)) return false;
   double pointSpeed = std::hypot(body->vx, body->vy)
     + std::fabs(body->omega) * body->maxR;
   if (pointSpeed <= R_WORLD_SLEEP_VELOCITY
@@ -1083,8 +1071,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     double travel = translation
       + std::fabs(body->angle - current.angle) * body->maxR;
     bool poseChanged = travel > 1e-9;
-    bool worldBridge = rigidWorldBridgeMode(solverMode);
-    if (!poseChanged && worldBridge) continue;
+    if (!poseChanged) continue;
     if (poseChanged) {
       movedBodies++;
       rigidRasterMaxCorrection = std::fmax(
@@ -1099,8 +1086,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
       ? recoveryMomentumY[root] / recoveryMass[root] : 0;
     if (!preserveRasterRecoveryMotion(
           body, current, referenceVx, referenceVy)) {
-      // A body inside the world sleep band, or a solver without a cross-layer
-      // contact coordinator, parks with the completed assignment.
+      // A body inside the world sleep band parks with the completed assignment.
       body->vx = body->vy = body->omega = 0;
       body->awake = false;
       resetSleepTracking(body);
@@ -2033,46 +2019,6 @@ void RigidBodySystem::terrainNormalAt(Body* b, int cx, int cy, double bodyDensit
   int u = cy > 0 && isBodyTerrain(b, cx, cy - 1, bodyDensity) ? 1 : 0;
   int d = cy < E.rows - 1 && isBodyTerrain(b, cx, cy + 1, bodyDensity) ? 1 : 0;
   double nx = l - r, ny = u - d;
-  bool ambiguousSurface = (nx == 0 && ny == 0)
-    || (nx != 0 && ny != 0);
-  if ((solverMode == 13 || solverMode == 14 || solverMode == 16
-        || (solverMode >= 20 && solverMode <= 22))
-      && rigidStructureScaleBody(b) && ambiguousSurface) {
-    auto solid = [&](int x, int y) {
-      return x >= 0 && x < E.cols && y >= 0 && y < E.rows
-        && isBodyTerrain(b, x, y, bodyDensity);
-    };
-    double smoothX = 0, smoothY = 0;
-    if (solverMode == 13) {
-      for (int q = -2; q <= 2; q++) {
-        double weight = 3 - std::abs(q);
-        smoothX += weight * (
-            (solid(cx - 2, cy + q) ? 1 : 0)
-          + 2 * (solid(cx - 1, cy + q) ? 1 : 0)
-          - 2 * (solid(cx + 1, cy + q) ? 1 : 0)
-          - (solid(cx + 2, cy + q) ? 1 : 0));
-        smoothY += weight * (
-            (solid(cx + q, cy - 2) ? 1 : 0)
-          + 2 * (solid(cx + q, cy - 1) ? 1 : 0)
-          - 2 * (solid(cx + q, cy + 1) ? 1 : 0)
-          - (solid(cx + q, cy + 2) ? 1 : 0));
-      }
-    } else {
-      for (int q = -1; q <= 1; q++) {
-        double weight = 2 - std::abs(q);
-        smoothX += weight * (
-            (solid(cx - 1, cy + q) ? 1 : 0)
-          - (solid(cx + 1, cy + q) ? 1 : 0));
-        smoothY += weight * (
-            (solid(cx + q, cy - 1) ? 1 : 0)
-          - (solid(cx + q, cy + 1) ? 1 : 0));
-      }
-    }
-    if (smoothX != 0 || smoothY != 0) {
-      nx = smoothX;
-      ny = smoothY;
-    }
-  }
   if (nx == 0 && ny == 0) {
     double bx = b->px - (cx + 0.5), by = b->py - (cy + 0.5);
     if (std::fabs(bx) > std::fabs(by)) {
@@ -2143,45 +2089,6 @@ double RigidBodySystem::resolveContactNormal(Contact& c) {
     if (B) { B->vx -= jx * c.bInvM; B->vy -= jy * c.bInvM; B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx); }
   }
   return movedN;
-}
-// The soft normal impulse and bias-free relaxation use Box2D's MIT-licensed
-// massScale/impulseScale contact formulation.
-// https://github.com/erincatto/box2d/blob/main/src/contact_solver.c
-double RigidBodySystem::resolveContactNormalSoft(Contact& c, bool useBias) {
-  Body* A = c.a;
-  Body* B = c.b;
-  double rvx = A->vx - A->omega * c.ray;
-  double rvy = A->vy + A->omega * c.rax;
-  if (B) {
-    rvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
-    rvy -= rigidContactVy(B) + rigidContactOmega(B) * c.rbx;
-  }
-  double vn = rvx * c.nx + rvy * c.ny;
-  if (c.normalMass <= 0) return 0;
-  double massScale = useBias ? c.softMassScale : 1;
-  double impulseScale = useBias ? c.softImpulseScale : 0;
-  double bias = 0;
-  if (useBias) {
-    double penetration = std::fmax(0.0, c.depth - rigidContactSlop(c));
-    bias = std::fmin(
-      R_MAX_BIAS_VEL,
-      c.softMassScale * c.softBiasRate * penetration);
-  }
-  double delta = c.normalMass * (bias - massScale * vn)
-    - impulseScale * c.accJn;
-  double next = std::fmax(0.0, c.accJn + delta);
-  double applied = next - c.accJn;
-  c.accJn = next;
-  double jx = applied * c.nx, jy = applied * c.ny;
-  A->vx += jx * c.aInvM;
-  A->vy += jy * c.aInvM;
-  A->omega += c.aInvI * (c.rax * jy - c.ray * jx);
-  if (B) {
-    B->vx -= jx * c.bInvM;
-    B->vy -= jy * c.bInvM;
-    B->omega -= c.bInvI * (c.rbx * jy - c.rby * jx);
-  }
-  return std::fabs(applied);
 }
 double RigidBodySystem::resolveContactFriction(Contact& c) {
   Body* A = c.a; Body* B = c.b;
@@ -2299,29 +2206,6 @@ double RigidBodySystem::resolveContactBlock(Contact& first, Contact& second) {
   }
   return std::fabs(delta1) + std::fabs(delta2)
     + resolveContactFriction(first) + resolveContactFriction(second);
-}
-// One bounded angular impulse per manifold opposes relative rolling without
-// damping free rotation. This is the rolling-resistance constraint used by
-// Box2D's MIT-licensed contact solver.
-// https://github.com/erincatto/box2d/blob/main/src/contact_solver.c
-double RigidBodySystem::resolveContactRolling(
-    Contact& first, Contact* second) {
-  Body* A = first.a;
-  Body* B = first.b;
-  if (solverMode != 3 || (B && B->actorProxy)) return 0;
-  double inverseInertia = first.aInvI + first.bInvI;
-  if (inverseInertia <= 0) return 0;
-  double relativeOmega = A->omega - (B ? rigidContactOmega(B) : 0);
-  double normalImpulse = first.accJn
-    + (second ? second->accJn : 0);
-  double limit = R_ROLLING_RESISTANCE * normalImpulse;
-  double next = first.accRolling - relativeOmega / inverseInertia;
-  next = std::fmax(-limit, std::fmin(limit, next));
-  double applied = next - first.accRolling;
-  first.accRolling = next;
-  A->omega += first.aInvI * applied;
-  if (B) B->omega -= first.bInvI * applied;
-  return std::fabs(applied);
 }
 void RigidBodySystem::applyWarmStart(Contact& c) {
   Body* A = c.a; Body* B = c.b;
@@ -2449,8 +2333,19 @@ void RigidBodySystem::breakJointBody(Body* member) {
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
 #include "rigid_world_step.inc"
+#include "rigid_rest.inc"
 #include "rigid_step_prepare.inc"
 #include "rigid_actors.inc"
+#include "rigid_substep_state.inc"
+#include "rigid_contact_geometry.inc"
+#include "rigid_contact_cache.inc"
+#include "rigid_contact_sweep.inc"
+#include "rigid_contact_manifold.inc"
+#include "rigid_contact_generation.inc"
+#include "rigid_step_shock.inc"
+#include "rigid_constraint_solve.inc"
+#include "rigid_substep_motion.inc"
+#include "rigid_position_solve.inc"
 #include "rigid_step_substeps.inc"
 #include "rigid_step_finalize.inc"
 
@@ -4286,8 +4181,7 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
     hasStructure = hasStructure || rigidStructureScaleBody(body);
   if (!hasStructure) return;
   for (Body* body : E.L->bodies)
-    if (rigidWorldBridgeMode(solverMode) || rigidStructureScaleBody(body))
-      rasterProjectionBodies.push_back(body);
+    rasterProjectionBodies.push_back(body);
   if ((int)rasterProjectionBodies.size() < R_STRUCTURE_RASTER_MIN_BODIES)
     return;
 
@@ -4423,23 +4317,11 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
       // raster still violates a body contact. Keep both sides active so the
       // continuous solver and this final lattice constraint can converge
       // together on the next substep.
-      auto wakeRasterContact = [&](Body* body) {
-        uint16_t retainedWorldStill = body->worldStillTicks;
-        if (!body->awake) wakeBody(body);
-        if (solverMode == 30
-            && pairOverlap <= allowedAliasCells + 1)
-          body->worldStillTicks = retainedWorldStill;
-      };
-      bool protectSleepingA = solverMode == 34 && !A->awake
-        && rigidStructureScaleBody(A) && B->nPts < 256;
-      bool protectSleepingB = solverMode == 34 && !B->awake
-        && rigidStructureScaleBody(B) && A->nPts < 256;
-      if (!protectSleepingA) wakeRasterContact(A);
-      if (!protectSleepingB) wakeRasterContact(B);
+      if (!A->awake) wakeBody(A);
+      if (!B->awake) wakeBody(B);
       bool structureComponent =
         structureOverlap[ufFind(overlapParent, pair.first)];
-      if (rigidWorldBridgeMode(solverMode)
-          && !structureComponent && pairOverlap <= 3)
+      if (!structureComponent && pairOverlap <= 3)
         continue;
 
       double nx = 0, ny = 0;
@@ -4721,10 +4603,6 @@ void RigidBodySystem::resolveStructureRasterOverlaps(
         if (rollbackPairAcceptedPose()) {
           corrected = true;
           continue;
-        }
-        if (solverMode == 34) {
-          if (protectSleepingA) wakeRasterContact(A);
-          if (protectSleepingB) wakeRasterContact(B);
         }
         rigidRasterProjectionFailures++;
         continue;

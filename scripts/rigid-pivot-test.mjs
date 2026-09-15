@@ -9,7 +9,7 @@ const cols = 640, rows = 480, postX = 320, postY = 300;
 function scene(shape, size, offset, drop = 0, dynamicSupport = false) {
   const e = attachTestHooks(createEngineWasm({ cols, rows, worldSeed: 7, sinksOn: false, infinite: false }));
   e.setBgEnabled(false);
-  e._setRigidSolverOptions(Number(process.env.RIGID_SOLVER_MODE ?? 45));
+
   const grid = e.getGrid();
   for (let y = 460; y < rows; y++) for (let x = 0; x < cols; x++) grid[y * cols + x] = MAT.STONE;
   const post = [];

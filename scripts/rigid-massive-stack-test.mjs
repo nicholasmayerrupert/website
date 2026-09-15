@@ -13,7 +13,6 @@ const createEngineWasm = (options) =>
   attachTestHooks(createEngineWasmRaw(options));
 const { check, done } = makeChecker('massive irregular rigid stacks');
 const COLS = 960, ROWS = 1160, FLOOR_Y = 1090;
-const SOLVER_MODE = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '2', 10);
 
 const makeRandom = (seed) => {
   let state = seed >>> 0;
@@ -70,7 +69,7 @@ const runCase = (seed, bodyCount) => {
     cols: COLS, rows: ROWS, worldSeed: seed,
     sinksOn: false, infinite: false,
   });
-  engine._setRigidSolverOptions(SOLVER_MODE);
+
   for (let x = 0; x < COLS; x++) {
     const top = FLOOR_Y + Math.round(12 * Math.sin(x * 0.039 + seed))
       - ((x * 19 + seed) % 83 < 13 ? 22 : 0);

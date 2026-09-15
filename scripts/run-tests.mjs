@@ -344,7 +344,7 @@ for (const r of completed) {
   console.log(`  [${mark}] ${r.name.padEnd(20)} ${(r.ms / 1000).toFixed(1)}s${r.timedOut ? '  (timeout)' : r.signal ? `  (signal ${r.signal})` : ''}`);
 }
 const report = {
-  parameters: Object.fromEntries(['SEED', 'STEPS', 'COLS', 'ROWS', 'RIGID_SOLVER_MODE', 'MAX_CASES']
+  parameters: Object.fromEntries(['SEED', 'STEPS', 'COLS', 'ROWS', 'MAX_CASES']
     .filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])),
   suites: completed.map(({ name, file, ms, failed, status, signal, timedOut, logPath }) =>
     ({ name, file, ms, failed, status, signal, timedOut, logPath,

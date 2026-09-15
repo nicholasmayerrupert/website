@@ -79,13 +79,11 @@ const engine = attachTestHooks(createEngineWasmRaw({
   sinksOn: false,
   infinite: false,
 }));
-const solverMode = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const residualTolerance = Number.parseFloat(
   process.env.RIGID_RESIDUAL_TOLERANCE ?? '0.0001');
 const solverMinIterations = Number.parseInt(
   process.env.RIGID_MIN_ITERATIONS ?? '4', 10);
-engine._setRigidSolverOptions(
-  solverMode, residualTolerance, solverMinIterations);
+engine._setRigidSolverConvergence(residualTolerance, solverMinIterations);
 
 for (let y = FLOOR_Y; y < ROWS; y++)
   for (let x = 0; x < COLS; x++)
@@ -157,7 +155,6 @@ for (let step = 0; step < STEPS; step++) {
 console.log(JSON.stringify({
   scene: `${BODY_COUNT} continuously spawned long bodies`,
   solverOptions: {
-    mode: solverMode,
     residualTolerance,
     minIterations: solverMinIterations,
   },

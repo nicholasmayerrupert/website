@@ -493,8 +493,14 @@ clearance, continued movement, and settling.
 - `cpp/engine/rigid_impl.inc`: rigid-body operations. `rigidStep()` coordinates
   `prepareRigidStep`, `solveRigidStep`, and `finalizeRigidStep`, whose definitions
   live in the prepare/substeps/finalize includes. Their per-tick `StepState`
-  contains only data shared across phases; contact helpers and solver scratch
-  stay inside the solve phase. Liquid coupling uses domain/projection/solve/
+  contains data shared across phases. The substep coordinator calls explicit
+  contact generation, constraint, integration, and position-projection phases.
+  `rigid_contact_geometry.inc` owns compound collision geometry and pose caches;
+  sweep, manifold reduction, and warm-start cache handling have separate modules.
+  `rigid_substep_state.inc` holds named contact, island, and support records.
+  `rigid_step_shock.inc` defines the support-propagation solve with explicit inputs.
+  `rigid_rest.inc` groups solid/fluid contact damping, sleep-age updates, and
+  world-space rest probes. Liquid coupling uses domain/projection/solve/
   writeback includes. `rigid_actors.inc` owns finite-mass actor response, moving
   support, and final actor/raster clearance.
 - `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world

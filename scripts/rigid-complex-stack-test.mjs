@@ -16,7 +16,6 @@ const COLS = 960;
 const ROWS = 1440;
 const FLOOR_Y = 1360;
 const STEPS = Number.parseInt(process.env.STEPS ?? '620', 10);
-const SOLVER_MODE = Number.parseInt(process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const SOLVER_TOLERANCE = Number.parseFloat(
   process.env.RIGID_SOLVER_TOLERANCE ?? '0.0001');
 const SOLVER_MIN_ITERS = Number.parseInt(
@@ -66,8 +65,7 @@ const runCase = (seed) => {
     infinite: false,
   }));
   engine.setBgEnabled(true);
-  engine._setRigidSolverOptions(
-    SOLVER_MODE, SOLVER_TOLERANCE, SOLVER_MIN_ITERS);
+  engine._setRigidSolverConvergence(SOLVER_TOLERANCE, SOLVER_MIN_ITERS);
   engine._setRigidPeerBiasScale(PEER_BIAS_SCALE);
   engine._setRigidWorldPositionLimit(WORLD_POSITION_LIMIT);
   const fgGrid = layerGrid(engine, 0);
@@ -481,7 +479,7 @@ const runCase = (seed) => {
   }
   const result = {
     seed, initialFg, initialBg, jointLeaders,
-    solverMode: SOLVER_MODE, peerBiasScale: PEER_BIAS_SCALE,
+    peerBiasScale: PEER_BIAS_SCALE,
     maxAwake, maxSubsteps, settledAt, finalAwake,
     totalContacts, totalWarmStarted,
     warmStartRatio: totalContacts > 0 ? totalWarmStarted / totalContacts : 0,

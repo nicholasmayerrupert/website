@@ -2,7 +2,34 @@
 
 Free bodies use a continuous pose over a pixel occupancy mask. Mass, inertia,
 boundary samples, and the local AABB are derived from occupied cells. The solver
-lives in `rigid_impl.inc`.
+lives in `rigid_impl.inc` and its step includes. There is one shipping solver;
+test hooks expose convergence tolerance and iteration limits, not alternative
+solver selection. Contact damping and rest timers live in `rigid_rest.inc`;
+contact generation, integration, and island sleep eligibility remain in their
+respective step phases.
+
+## Phase ownership
+
+`solveRigidStep()` orchestrates each substep with explicit inputs:
+
+1. Motion preparation applies forces and computes swept bounds.
+2. Contact generation builds candidate pairs, collects compound or swept
+   manifolds, and classifies support contacts.
+3. Constraint preparation restores effective masses and applies warm starts;
+   named island records collect membership, bounds, load, and solve policy.
+4. The island solver applies velocity and bias impulses. Support propagation is
+   a separate function with its own convergence result. Bias travel is limited
+   across the complete island.
+5. Contact publication updates actor load, world-contact records, and the next
+   warm-start cache.
+6. Integration applies motion and rest policy; position projection then corrects
+   residual overlap before finalization and raster commit.
+
+`ContactGeometry` owns transformed-child caches and collision scratch for one
+world tick. Body pairs and actor pairs share swept-candidate screening. It does
+not own constraint islands, warm-start matching, or rest decisions.
+`SubstepState` owns the per-body contact/support records and per-island solve
+records. Persistent contact and broadphase caches stay on `RigidBodySystem`.
 
 ## Collision pipeline
 
@@ -336,6 +363,11 @@ agree across pressure, exclusion, and displacement. These are extensions to the
 current model, not assumptions its tests already establish.
 
 ## Motion diagnostics
+
+For synchronized before/after raster playback and motion measurements, use
+[`rigid-motion-audit.mjs`](../../scripts/README.md#comparing-rigid-motion). Its
+review mode accepts changed trajectories; the stress suites and visible quality
+determine whether a behavior change is acceptable.
 
 Run related checks together through `scripts/run-tests.mjs --only`:
 

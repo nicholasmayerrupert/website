@@ -82,36 +82,7 @@ void RigidBodySystem::finalizeRigidStep(StepState& step) {
     if (!c.b || !c.bIntegrated || !c.a->awake || !c.b->awake) continue;
     ufUnite(islandParent, c.a->idx, c.b->idx);
   }
-  auto updateRestProbe = [](Body* body) {
-    double cs = std::cos(body->angle), sn = std::sin(body->angle);
-    double lx0 = body->offsetX - 0.5;
-    double lx1 = body->offsetX + body->w - 0.5;
-    double ly0 = body->offsetY - 0.5;
-    double ly1 = body->offsetY + body->h - 0.5;
-    double lx = std::fabs(lx0) >= std::fabs(lx1) ? lx0 : lx1;
-    double ly = std::fabs(ly0) >= std::fabs(ly1) ? ly0 : ly1;
-    const std::array<double, 6> points = {
-      body->px, body->py,
-      body->px + lx * cs, body->py + lx * sn,
-      body->px - ly * sn, body->py + ly * cs,
-    };
-    if (body->restProbeTicks == 0) {
-      body->restProbePoints = points;
-      body->restProbeTicks = 1;
-      return;
-    }
-    double radius2 = R_REST_PROBE_RADIUS * R_REST_PROBE_RADIUS;
-    for (int point = 0; point < 3; point++) {
-      double dx = points[point * 2] - body->restProbePoints[point * 2];
-      double dy = points[point * 2 + 1] - body->restProbePoints[point * 2 + 1];
-      if (dx * dx + dy * dy <= radius2) continue;
-      body->restProbePoints = points;
-      body->restProbeTicks = 1;
-      return;
-    }
-    if (body->restProbeTicks < R_REST_PROBE_TICKS)
-      body->restProbeTicks++;
-  };
+
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     if (!body->awake || loadedWindowFreeze[bi].frozen) continue;

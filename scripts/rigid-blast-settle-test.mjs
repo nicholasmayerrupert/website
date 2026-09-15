@@ -16,8 +16,6 @@ const COLS = Number.parseInt(process.env.COLS ?? '384', 10);
 const ROWS = Number.parseInt(process.env.ROWS ?? '288', 10);
 const BLASTS = Number.parseInt(process.env.BLASTS ?? '24', 10);
 const STEPS = Number.parseInt(process.env.STEPS ?? '600', 10);
-const SOLVER_MODE = Number.parseInt(
-  process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const SEEDS = (process.env.SEEDS ?? '2667084199,1026552672,3680988441')
   .split(',').map(Number).filter(Number.isFinite);
 const CAPTURE_DIR = process.env.CAPTURE_DIR
@@ -250,7 +248,7 @@ for (const seed of SEEDS) {
     sinksOn: false,
     infinite: true,
   }));
-  engine._setRigidSolverOptions(SOLVER_MODE);
+
   engine.setBgEnabled(true);
   const sites = chooseSites(caveWallCandidates(engine), randomFor(seed ^ 0x51a7e));
   if (GOLDEN) {

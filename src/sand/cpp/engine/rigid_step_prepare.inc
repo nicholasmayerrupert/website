@@ -408,20 +408,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
       structureScaleBodyCount++;
   }
   bool crossLayerStructurePile = false;
-  bool peerLayerBodyPotential = false;
   if (E.bgEnabled) {
-    if (E.L == &E.fg) {
-      bool hasLeader = false, hasBackgroundBody = false;
-      for (Body* body : E.fg.bodies)
-        hasLeader = hasLeader || body->jointRole == 1;
-      for (Body* body : E.bg.bodies)
-        hasBackgroundBody = hasBackgroundBody || body->jointRole == 0;
-      peerLayerBodyPotential = hasLeader && hasBackgroundBody;
-    } else if (!E.bg.passiveBodyIds.empty()) {
-      for (Body* body : E.bg.bodies)
-        peerLayerBodyPotential = peerLayerBodyPotential
-          || body->jointRole == 0;
-    }
     for (Body* body : E.fg.bodies) {
       if (body->jointRole == 2
           || body->maxR < R_SOLVER_HUGE_BODY_RADIUS) continue;
@@ -496,7 +483,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
   // MIT-licensed solver: advance and relinearize the cross-layer load path
   // several times within one world tick.
   // https://box2d.org/posts/2024/02/solver2d/
-  if (solverMode >= 2 && crossLayerStructurePile
+  if (crossLayerStructurePile
       && structureScaleBodyCount >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES)
     substeps = imax(substeps, R_CROSS_LAYER_STRUCTURE_SUBSTEPS);
   if (substeps == 1) {
@@ -614,7 +601,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
       // cross-layer structure pile, keep each giant member on the same temporal
       // cadence so joint followers transmit support coherently through both
       // independently solved layers.
-      if (solverMode >= 2 && crossLayerStructurePile
+      if (crossLayerStructurePile
           && (islandBodyCount[root] >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES
             || structureScaleBodyCount >= R_CROSS_LAYER_STRUCTURE_MIN_BODIES)
           && islandMaxRadius[root] >= R_SOLVER_HUGE_BODY_RADIUS)
@@ -629,18 +616,6 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
         solverBodies[bi]->denseMicrostepTicks =
           R_DENSE_MICROSTEP_HYSTERESIS;
     }
-  }
-  if ((solverMode == 4 && !peerLayerBodyPotential && !hasWorldJointBody)
-      || solverMode == 7 || solverMode == 8
-      || solverMode == 21 || solverMode == 22) {
-    substeps = imax(substeps, 4);
-    for (int bi = 0; bi < n; bi++)
-      bodySubsteps[bi] = imax(bodySubsteps[bi], 4);
-  }
-  if (solverMode == 22) {
-    substeps = imax(substeps, 8);
-    for (int bi = 0; bi < n; bi++)
-      bodySubsteps[bi] = imax(bodySubsteps[bi], 8);
   }
   // Bodies within an actor's swept reach share its substep cadence. Distant
   // islands retain their own cadence even when the world contains actors.

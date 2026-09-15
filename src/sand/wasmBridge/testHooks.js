@@ -108,7 +108,7 @@ function table() {
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
     rigidDepen: c('engine_test_rigid_depen', 'number', ['number']),
     rigidSolverDiag: c('engine_test_rigid_solver_diag', 'number', ['number', 'number']),
-    setRigidSolverOptions: c('engine_test_set_rigid_solver_options', null,
+    setRigidSolverConvergence: c('engine_test_set_rigid_solver_options', null,
       ['number', 'number', 'number', 'number']),
     setRigidForceFullSolveBodies: c(
       'engine_test_set_rigid_force_full_solve_bodies', null,
@@ -396,9 +396,9 @@ export function attachTestHooks(engine) {
     worldMaxPositionRotation: t.rigidSolverDiag(ptr, 91),
     worldPositionLimitHits: t.rigidSolverDiag(ptr, 92),
   });
-  engine._setRigidSolverOptions = (mode, residualTolerance = 1e-4,
-    minIterations = 4) => t.setRigidSolverOptions(
-    ptr, mode | 0, residualTolerance, minIterations | 0);
+  engine._setRigidSolverConvergence = (residualTolerance = 1e-4,
+    minIterations = 4) => t.setRigidSolverConvergence(
+    ptr, 45, residualTolerance, minIterations | 0);
   engine._setRigidForceFullSolveBodies = (bodyCount) =>
     t.setRigidForceFullSolveBodies(ptr, bodyCount | 0);
   engine._setRigidWorldPositionLimit = (limit) =>

@@ -241,17 +241,53 @@ Scenario definitions live in `tnt-scenarios.mjs`; shared component-aware setup
 lives in `sand-fixtures.mjs`. Keep deterministic assertions such as material
 retention and reconstruction count alongside timing measurements.
 
-## Remaining simulation issue
+## Rigid diagnostics
 
-`rigid-tnt-rubble` can leave two significant bodies awake after its 900-tick
-fixture. The original freeze-fix baseline produces identical non-timing
-diagnostics. Its sleep assertion remains enabled; this is separate from the
-replay test's corrected assumption about world-tick progress.
+The shipping solver still has failing stress checks: `rigid-massive-stack`
+reports support/overlap/ownership failures, `rigid-blast-settle` reports rejected
+stamps and overlapping debris, and the force-driven portion of `rigid-sliver`
+can become motionless. These assertions remain enabled. A passing pivot or
+roof replay does not cover these cases.
 
 `rigid-world-raster-island` writes a `motion.json` report for its selected body,
 separating solver bias, position projection, and raster repair travel, including
 rotation at the body's perimeter. See [rigid diagnostics](../src/sand/RIGID_COLLISION.md#motion-diagnostics)
 for the pivot and roof regression checks and the limits of these measurements.
+
+### Comparing rigid motion
+
+Rigid suites exercise the shipping solver. Diagnostic convergence controls use
+`_setRigidSolverConvergence(residualTolerance, minIterations)`; solver selection
+is not a runtime option.
+
+Before changing contact or rest behavior, record the current engine:
+
+```sh
+node scripts/rigid-motion-audit.mjs --record .sand-artifacts/rigid-before.json
+```
+
+After rebuilding, generate synchronized playback and a before/after metrics table:
+
+```sh
+node scripts/rigid-motion-audit.mjs --review .sand-artifacts/rigid-before.json
+```
+
+Open `.sand-artifacts/rigid-motion/comparison.html`. The eleven scenes cover
+mirrored and balanced pivots, support removal, a rotating thin beam, a stack,
+floating wood, and a cross-layer body. The report compares toppling time, first
+sleep, final awake counts, late point speed, and correction travel. Full body
+states and material/ownership hashes are recorded every tick; playback samples
+the raster every ten ticks. Use `SAND_TEST_ARTIFACTS` to choose the output directory.
+
+`--compare` instead of `--review` fails on any trajectory or motion-summary
+difference and is useful for mechanical refactors. Different trajectories alone
+are not a quality regression. For behavioral changes, inspect playback and run
+the relevant suites together, especially `rigid-pivot,rigid-jitter,rigid-dense-pile,
+rigid-world-raster-island,rigid-terrain-contact,rigid-roof-motion`. Material retention,
+terrain clearance, support release, and continued motion need their assertions;
+the diagnostic report is not an automatic physical-quality score. Motion traces
+follow one selected body and report net correction per stage, not every correction
+within a stage. Benchmark separately from captures and concurrent tests.
 
 Save investigation reports, experiment patches, and generated JSON/HTML/images
 under `.sand-artifacts/` (or a temporary directory). `bench/` holds maintained

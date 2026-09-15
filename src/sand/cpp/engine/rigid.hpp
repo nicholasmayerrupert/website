@@ -20,7 +20,6 @@ class RigidBodySystem {
 
   void resolveActorRasterContacts();
 
-  int solverMode = 45;
   double solverResidualTolerance = 1e-4;
   int solverMinIterations = 4;
   int forceFullSolveBodies = R_FORCE_FULL_SOLVE_BODIES;
@@ -144,10 +143,8 @@ class RigidBodySystem {
   // same zeros — breaking there is bit-identical to running all iterations).
   double resolveContact(Contact& c);
   double resolveContactNormal(Contact& c);
-  double resolveContactNormalSoft(Contact& c, bool useBias);
   double resolveContactFriction(Contact& c);
   double resolveContactBlock(Contact& first, Contact& second);
-  double resolveContactRolling(Contact& first, Contact* second);
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   bool occupancyInsideLoadedWindow(
@@ -219,6 +216,58 @@ class RigidBodySystem {
  private:
   double spatialFluidReferencePressure(int layer, int cell);
   struct StepState;
+  struct ContactPoint {
+    double wx, wy, nx, ny, depth;
+    int bk = 0;
+    int childA = -1, childB = -1;
+    int featureA = -1, featureB = -1;
+  };
+  struct ContactGeometry;
+  struct SubstepState;
+  double contactPenetrationDepth(
+      Body* target, double wx, double wy, double nx, double ny,
+      bool precise, bool foregroundOnly);
+  void collectBodySweep(
+      ContactGeometry& geometry, Body* P, Body* T, double sign, double dt,
+      std::vector<ContactPoint>& penAcc);
+  void collectTerrainSweep(
+      ContactGeometry& geometry, bool terrainOccupancyReady, Body* b, double dt,
+      std::vector<ContactPoint>& terrAcc);
+  void emitRigidManifold(
+      const StepState& step, SubstepState& state, std::vector<ContactPoint>& acc,
+      Body* A, Body* B, double fbx, double fby, double contactDt);
+  void buildRigidBroadphase(
+      const StepState& step, const SubstepState& state);
+  void prepareRigidContactState(
+      const StepState& step, SubstepState& state);
+
+  void prepareRigidSubstep(StepState& step, SubstepState& state, int sub, double tickDt);
+  void generateRigidContacts(StepState& step, SubstepState& state, ContactGeometry& geometry);
+  void classifyRigidContacts(StepState& step, SubstepState& state);
+  void prepareRigidConstraints(const StepState& step, int sub);
+  void buildRigidIslands(const StepState& step, SubstepState& state);
+  void solveRigidIslands(const StepState& step, SubstepState& state);
+  void limitRigidBiasMotion(
+    const StepState& step, SubstepState& state,
+    const std::array<std::array<double, 3>, 3>& priorTraceBiasByKind);
+  void publishRigidContacts(StepState& step, SubstepState& state, int sub);
+  void integrateRigidSubstep(StepState& step, SubstepState& state, int sub, double tickDt);
+  void projectRigidContacts(
+      const StepState& step, SubstepState& state, ContactGeometry& geometry, int sub);
+  bool solveSupportShock(const StepState& step, SubstepState& state,
+      int root, int islandStart, int islandEnd, int solverIters, uint64_t shockIslandKey);
+  double contactVelocityResidual(const Contact& contact);
+  double contactBiasResidual(const Contact& contact);
+
+  void dampSolidContact(Body* body, bool unbalancedSupport,
+                        bool frictionalContact, bool upwardContact,
+                        bool bodyContact);
+  void dampFluidContact(Body* body, bool fluidOnlyContact,
+                        bool fluidRestContact, bool densityEquilibrium);
+  void updateSleepAge(Body* body, bool unbalancedSupport,
+                       bool liquidContact, bool fluidOnlyContact,
+                       bool fluidRestContact);
+  void updateRestProbe(Body* body);
   bool prepareBodyMovement();
   void commitBodyMovement();
   Layer* bodyLayer(const Body* body) const;
@@ -280,6 +329,10 @@ class RigidBodySystem {
   };
   using ContactCache = std::unordered_map<
     ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
+  static ContactCacheKey contactCacheKey(const Contact& contact, int normalBucket);
+  static void contactLocalAnchors(const Contact& contact, double& lax, double& lay,
+                                  double& lbx, double& lby);
+  void restoreContact(SubstepState& state, Contact& contact, int normalBucket, double dt);
   ContactCache contactCache;
   std::array<std::unordered_map<uint64_t, int>, 8> impactContactTicks;
   struct PairAxisState {

@@ -19,7 +19,6 @@ const COLS = 960;
 const ROWS = 1440;
 const FLOOR_Y = 1360;
 const STEPS = Number.parseInt(process.env.STEPS ?? '320', 10);
-const SOLVER_MODE = 45;
 const { check, done } = makeChecker('crowded cross-layer raster island');
 const { random, specs: allSpecs } = makeComplexStackScenario(19, COLS);
 const specs = allSpecs.filter((_, index) => index >= 7 && index !== 10);
@@ -31,7 +30,7 @@ const engine = attachTestHooks(createEngineWasmRaw({
   infinite: false,
 }));
 engine.setBgEnabled(true);
-engine._setRigidSolverOptions(SOLVER_MODE, 0.0001, 4);
+engine._setRigidSolverConvergence(0.0001, 4);
 engine._setRigidPeerBiasScale(1);
 engine._setRigidWorldPositionLimit(0.5);
 

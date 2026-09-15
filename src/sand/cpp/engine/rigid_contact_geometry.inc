@@ -1,4 +1,12 @@
-  auto addSlenderObbManifold = [&](Body* first, Body* second,
+// Collision geometry and pose caches for one world tick.
+// Constraint impulses, support policy, and raster recovery are owned by their phases.
+struct RigidBodySystem::ContactGeometry {
+  RigidBodySystem& rigid;
+  const int n;
+  ContactGeometry(RigidBodySystem& system, int count) : rigid(system), n(count) {}
+  using PenPt = ContactPoint;
+  std::vector<ContactPoint> sweepPoints, terrainPoints;
+  auto addSlenderObbManifold(Body* first, Body* second,
                                    std::vector<PenPt>& points,
                                    double& referenceX, double& referenceY) {
     if (points.empty()) return false;
@@ -95,142 +103,15 @@
       });
     }
     return true;
-  };
-  std::vector<int>& broadphaseOrder = broadphaseOrderScratch;
-  std::vector<std::pair<int, int>>& broadphasePairs = broadphasePairScratch;
-  broadphaseOrder.clear();
-  broadphasePairs.clear();
-  if (broadphasePairs.capacity() < (size_t)n * 4)
-    broadphasePairs.reserve((size_t)n * 4);
-  auto bodyKey = [](Body* body) {
-    return ((uint64_t)body->solverLayer << 32) | (uint32_t)body->id;
-  };
-  std::unordered_map<uint64_t, int> bodyIndexById;
-  bodyIndexById.reserve((size_t)n * 2);
-  for (int i = 0; i < n; i++) bodyIndexById[bodyKey(solverBodies[i])] = i;
-  std::vector<uint8_t> broadphaseSeen(n, 0);
-  for (uint64_t id : broadphaseBodyIds) {
-    auto it = bodyIndexById.find(id);
-    if (it == bodyIndexById.end() || broadphaseSeen[it->second]) continue;
-    broadphaseSeen[it->second] = 1;
-    broadphaseOrder.push_back(it->second);
   }
-  for (int i = 0; i < n; i++)
-    if (!broadphaseSeen[i]) broadphaseOrder.push_back(i);
-  ContactCache& previousContacts = contactCache;
-  ContactCacheKey previousRestoreKey;
-  ContactCache::iterator previousRestoreEntry = previousContacts.end();
-  bool previousRestoreKeyValid = false;
-  for (auto& ticks : impactContactTicks)
-    for (auto it = ticks.begin(); it != ticks.end();)
-      if (it->second < E.tick - R_IMPACT_SOUND_SEPARATION_TICKS)
-        it = ticks.erase(it);
-      else ++it;
-  for (auto& axes : pairAxes)
-    for (auto it = axes.begin(); it != axes.end();)
-      if (it->second.age >= 4) it = axes.erase(it);
-      else { it->second.age++; ++it; }
-  auto bodyPairKey = [](int aId, int bId) {
-    return ((uint64_t)(uint32_t)aId << 32) | (uint32_t)bId;
-  };
-  auto cacheKey = [&](const Contact& contact, int normalBucket) {
-    return ContactCacheKey{
-      contact.a->id,
-      contact.b ? contact.b->id : -1,
-      contact.childA,
-      contact.childB,
-      contact.featureA,
-      contact.featureB,
-      contact.a->geometryRevision,
-      contact.b ? contact.b->geometryRevision : 0,
-      (uint8_t)normalBucket,
-      (uint8_t)(contact.b ? contact.b->solverLayer : 2),
-      contact.a->solverLayer, contact.layer,
-      (uint8_t)(contact.a->maxR >= 24
-        || (contact.b && contact.b->maxR >= 24)),
-    };
-  };
-  auto localAnchors = [](const Contact& contact, double& lax, double& lay,
-                         double& lbx, double& lby) {
-    Body* A = contact.a;
-    lax = contact.rax * A->cs + contact.ray * A->sn;
-    lay = -contact.rax * A->sn + contact.ray * A->cs;
-    lbx = lby = 0;
-    if (!contact.b) return;
-    Body* B = contact.b;
-    double bcs = contact.bIntegrated ? B->cs : std::cos(B->angle);
-    double bsn = contact.bIntegrated ? B->sn : std::sin(B->angle);
-    lbx = contact.rbx * bcs + contact.rby * bsn;
-    lby = -contact.rbx * bsn + contact.rby * bcs;
-  };
-  auto restoreContact = [&](Contact& contact, int normalBucket, double dt) {
-    ContactCacheKey key = cacheKey(contact, normalBucket);
-    ContactCache::iterator found;
-    if (previousRestoreKeyValid && key == previousRestoreKey) {
-      found = previousRestoreEntry;
-    } else {
-      found = previousContacts.find(key);
-      previousRestoreKey = key;
-      previousRestoreEntry = found;
-      previousRestoreKeyValid = true;
-    }
-    if (found == previousContacts.end()) return;
-    double lax, lay, lbx, lby;
-    localAnchors(contact, lax, lay, lbx, lby);
-    CachedContact* best = nullptr;
-    double bestDistance = 1e18;
-    for (CachedContact& cached : found->second) {
-      if (cached.used || cached.nx * contact.nx + cached.ny * contact.ny < 0.7)
-        continue;
-      double dax = cached.lax - lax, day = cached.lay - lay;
-      double aDistance = dax * dax + day * day;
-      if (aDistance > R_CONTACT_CACHE_MATCH2) continue;
-      double distance = aDistance;
-      if (contact.b) {
-        double dbx = cached.lbx - lbx, dby = cached.lby - lby;
-        double bDistance = dbx * dbx + dby * dby;
-        if (bDistance > R_CONTACT_CACHE_MATCH2) continue;
-        distance += bDistance;
-      }
-      if (distance < bestDistance) {
-        best = &cached;
-        bestDistance = distance;
-      }
-    }
-    if (!best) return;
-    best->used = true;
-    double dtRatio = best->dt > 0 ? dt / best->dt : 1;
-    if (dtRatio < 0.25) dtRatio = 0.25;
-    else if (dtRatio > 4) dtRatio = 4;
-    // Temporal substeps preserve the complete previous manifold impulse for
-    // structure-scale contacts. This rule is adapted from Box2D's MIT-licensed
-    // contact solver; feature/local-anchor matching above prevents transferring
-    // it to a different part of an irregular body.
-    // https://github.com/erincatto/box2d/blob/main/src/contact_solver.c
-    bool structureContact = contact.a->maxR >= R_SOLVER_HUGE_BODY_RADIUS
-      && (!contact.b
-        || contact.b->maxR >= R_SOLVER_HUGE_BODY_RADIUS)
-      && contact.impactSpeed <= R_STRUCTURE_WARM_START_MAX_IMPACT;
-    double warmStartFactor = structureContact
-      ? R_STRUCTURE_WARM_START_FACTOR : R_WARM_START_FACTOR;
-    contact.accJn = std::fmax(
-      0.0, best->jn * dtRatio * warmStartFactor);
-    double maxFriction = contact.staticFriction * contact.accJn;
-    contact.accJt = best->jt * dtRatio * warmStartFactor;
-    if (contact.accJt > maxFriction) contact.accJt = maxFriction;
-    else if (contact.accJt < -maxFriction) contact.accJt = -maxFriction;
-    contact.persisted = true;
-    contact.targetVn = 0;
-  };
-  double wpx, wpy, nx_, ny_;
-  auto sweptPoint = [](Body* body, double lx, double ly, double t,
+  auto sweptPoint(Body* body, double lx, double ly, double t,
                        double& wx, double& wy) {
     double angle = body->angle + body->omega * t;
     double cs = std::cos(angle), sn = std::sin(angle);
     wx = body->px + body->vx * t + lx * cs - ly * sn;
     wy = body->py + body->vy * t + lx * sn + ly * cs;
-  };
-  auto insideBodyAt = [&](Body* body, double wx, double wy, double t,
+  }
+  auto insideBodyAt(Body* body, double wx, double wy, double t,
                           bool foregroundOnly = false) {
     double angle = body->angle + body->omega * t;
     double cs = std::cos(angle), sn = std::sin(angle);
@@ -242,16 +123,16 @@
     if (i < 0 || i >= body->w || j < 0 || j >= body->h) return -1;
     int local = j * body->w + i;
     return body->occ[local] && (!foregroundOnly
-      || bodyMaterialAt(body, local) != EMPTY) ? local : -1;
-  };
-  auto bodyNormalAtTime = [&](Body* body, int idx, double wx, double wy,
+      || rigid.bodyMaterialAt(body, local) != EMPTY) ? local : -1;
+  }
+  auto bodyNormalAtTime(Body* body, int idx, double wx, double wy,
                              double t, double& ox, double& oy,
                              bool foregroundOnly = false) {
     int i = idx % body->w, j = idx / body->w;
     auto at = [&](int ii, int jj) {
       if (ii < 0 || ii >= body->w || jj < 0 || jj >= body->h) return 0;
       int local = jj * body->w + ii;
-      return foregroundOnly ? (int)(bodyMaterialAt(body, local) != EMPTY)
+      return foregroundOnly ? (int)(rigid.bodyMaterialAt(body, local) != EMPTY)
                             : (int)body->occ[local];
     };
     int nlx = at(i - 1, j) - at(i + 1, j);
@@ -282,12 +163,12 @@
     double inv = 1 / std::sqrt(nx * nx + ny * ny);
     ox = nx * inv;
     oy = ny * inv;
-  };
-  auto needsExactAngularSweep = [](Body* body) {
+  }
+  auto needsExactAngularSweep(Body* body) {
     if (std::fabs(body->omega) < 1e-8) return false;
     return body->maxR >= 24;
-  };
-  auto pairSeparatingDirection = [](Body* first, Body* second,
+  }
+  auto pairSeparatingDirection(Body* first, Body* second,
                                     double& ox, double& oy) {
     bool firstSlender = rigidLargeSlenderBody(first);
     bool secondSlender = rigidLargeSlenderBody(second);
@@ -351,7 +232,7 @@
       ox /= length;
       oy /= length;
     }
-  };
+  }
   struct ChildFrame {
     Body* body = nullptr;
     const BodyCollisionRect* rect = nullptr;
@@ -391,11 +272,13 @@
     std::vector<ChildBounds> nodeBounds;
     std::vector<uint32_t> nodeBoundsGeneration;
   };
-  std::vector<ChildPose> currentChildPoses(n * 3), nextChildPoses(n * 3);
-  std::vector<double> nextChildPoseDt(n * 3, -1);
-  std::vector<std::vector<ChildFrame>> currentChildFrames(n * 3), nextChildFrames(n * 3);
-  std::vector<uint8_t> currentChildFramesValid(n * 3, 0);
-  std::vector<ChildTreePoseCache> childTreePoseCaches(n * 3);
+  std::vector<ChildPose> currentChildPoses = std::vector<ChildPose>(n * 3);
+  std::vector<ChildPose> nextChildPoses = std::vector<ChildPose>(n * 3);
+  std::vector<double> nextChildPoseDt = std::vector<double>(n * 3, -1);
+  std::vector<std::vector<ChildFrame>> currentChildFrames = std::vector<std::vector<ChildFrame>>(n * 3);
+  std::vector<std::vector<ChildFrame>> nextChildFrames = std::vector<std::vector<ChildFrame>>(n * 3);
+  std::vector<uint8_t> currentChildFramesValid = std::vector<uint8_t>(n * 3, 0);
+  std::vector<ChildTreePoseCache> childTreePoseCaches = std::vector<ChildTreePoseCache>(n * 3);
   ChildTreePoseCache scratchChildTreePoseCacheA;
   ChildTreePoseCache scratchChildTreePoseCacheB;
   const std::vector<ChildFrame>* activeCurrentChildFramesA = nullptr;
@@ -407,7 +290,7 @@
   std::vector<int> activeChildrenA, activeChildrenB;
   std::vector<std::pair<int, int>> childPairScratch;
   std::vector<std::pair<int, int>> childTreeStack;
-  auto childPose = [](Body* body, double time) {
+  auto childPose(Body* body, double time) {
     double angle = body->angle + body->omega * time;
     double ux = std::cos(angle), uy = std::sin(angle);
     return ChildPose{
@@ -415,14 +298,14 @@
       body->py + body->vy * time,
       ux, uy, -uy, ux,
     };
-  };
-  auto samePose = [](const ChildPose& a, const ChildPose& b) {
+  }
+  auto samePose(const ChildPose& a, const ChildPose& b) {
     return a.px == b.px && a.py == b.py
         && a.ux == b.ux && a.uy == b.uy
         && a.vx == b.vx && a.vy == b.vy;
-  };
+  }
 
-  auto makeChildFrame = [&](Body* body, const ChildPose& pose, int child,
+  auto makeChildFrame(Body* body, const ChildPose& pose, int child,
                             ChildFrame& frame) {
     frame.body = body;
     frame.rect = &body->collisionRects[child];
@@ -441,16 +324,16 @@
     frame.cy = pose.py + lx * pose.uy + ly * pose.vy;
     frame.hx = (frame.rect->x1 - frame.rect->x0) * 0.5;
     frame.hy = (frame.rect->y1 - frame.rect->y0) * 0.5;
-    rigidChildTransforms++;
-  };
-  auto collectChildFrames = [&](Body* body, const ChildPose& pose,
+    rigid.rigidChildTransforms++;
+  }
+  auto collectChildFrames(Body* body, const ChildPose& pose,
                                  std::vector<ChildFrame>& frames) {
     frames.resize(body->collisionRects.size());
     for (int child = 0; child < (int)frames.size(); child++) {
       makeChildFrame(body, pose, child, frames[child]);
     }
-  };
-  auto makeNodeFrame = [&](Body* body, const ChildPose& pose,
+  }
+  auto makeNodeFrame(Body* body, const ChildPose& pose,
                            const BodyCollisionNode& node) {
     ChildFrame frame;
     frame.body = body;
@@ -467,8 +350,8 @@
     frame.hx = (node.x1 - node.x0) * 0.5;
     frame.hy = (node.y1 - node.y0) * 0.5;
     return frame;
-  };
-  auto childFramesOverlap = [](const ChildFrame& a, const ChildFrame& b) {
+  }
+  auto childFramesOverlap(const ChildFrame& a, const ChildFrame& b) {
     double aExtentX = std::fabs(a.ux) * a.hx + std::fabs(a.vx) * a.hy;
     double aExtentY = std::fabs(a.uy) * a.hx + std::fabs(a.vy) * a.hy;
     double bExtentX = std::fabs(b.ux) * b.hx + std::fabs(b.vx) * b.hy;
@@ -477,8 +360,8 @@
              <= aExtentX + bExtentX + R_CONTACT_SKIN
         && std::fabs(a.cy - b.cy)
              <= aExtentY + bExtentY + R_CONTACT_SKIN;
-  };
-  auto childBoundsAtBothPoses = [&](Body* body, const ChildFrame& now,
+  }
+  auto childBoundsAtBothPoses(Body* body, const ChildFrame& now,
                                     const ChildFrame& next, double dt) {
     double nowX = std::fabs(now.ux) * now.hx
                 + std::fabs(now.vx) * now.hy;
@@ -500,13 +383,13 @@
       std::fmax(now.cx + nowX, next.cx + nextX) + pad,
       std::fmax(now.cy + nowY, next.cy + nextY) + pad,
     };
-  };
-  auto childBoundsOverlap = [](const ChildBounds& a,
+  }
+  auto childBoundsOverlap(const ChildBounds& a,
                                const ChildBounds& b) {
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
-  };
-  auto prepareChildTreePoseCache = [&](ChildTreePoseCache& cache,
+  }
+  auto prepareChildTreePoseCache(ChildTreePoseCache& cache,
       Body* body, double dt) {
     ChildPose currentPose = childPose(body, 0);
     ChildPose nextPose = childPose(body, dt);
@@ -538,8 +421,8 @@
     size_t nodeCount = body->collisionTree.size();
     cache.nodeBounds.resize(nodeCount);
     cache.nodeBoundsGeneration.resize(nodeCount, 0);
-  };
-  auto ensureChildTreeFrames = [&](ChildTreePoseCache& cache, int child) {
+  }
+  auto ensureChildTreeFrames(ChildTreePoseCache& cache, int child) {
     if (cache.currentChildGeneration[child] != cache.generation) {
       makeChildFrame(cache.body, cache.currentPose, child,
                      cache.currentChildren[child]);
@@ -550,8 +433,8 @@
                      cache.nextChildren[child]);
       cache.nextChildGeneration[child] = cache.generation;
     }
-  };
-  auto ensureChildTreeNodeBounds = [&](ChildTreePoseCache& cache,
+  }
+  auto ensureChildTreeNodeBounds(ChildTreePoseCache& cache,
       int nodeIndex) -> const ChildBounds& {
     if (cache.nodeBoundsGeneration[nodeIndex] != cache.generation) {
       const BodyCollisionNode& node = cache.body->collisionTree[nodeIndex];
@@ -564,8 +447,8 @@
       cache.nodeBoundsGeneration[nodeIndex] = cache.generation;
     }
     return cache.nodeBounds[nodeIndex];
-  };
-  auto collectChildTreePairCandidates = [&](Body* bodyA, Body* bodyB,
+  }
+  auto collectChildTreePairCandidates(Body* bodyA, Body* bodyB,
       double dt, ChildTreePoseCache& cacheA, ChildTreePoseCache& cacheB) {
     prepareChildTreePoseCache(cacheA, bodyA, dt);
     prepareChildTreePoseCache(cacheB, bodyB, dt);
@@ -611,8 +494,8 @@
     ensureChildTreeFrames(cacheB, 0);
     std::sort(childPairScratch.begin(), childPairScratch.end());
     return sweptCandidate;
-  };
-  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB, double dt,
+  }
+  auto collectChildPairCandidates(Body* bodyA, Body* bodyB, double dt,
       const std::vector<ChildFrame>& currentFramesA,
       const std::vector<ChildFrame>& currentFramesB,
       const std::vector<ChildFrame>& nextFramesA,
@@ -720,8 +603,8 @@
     // child-index nesting after exact swept-AABB culling.
     std::sort(childPairScratch.begin(), childPairScratch.end());
     return sweptCandidate;
-  };
-  auto sweptBodyBounds = [&](Body* body, const ChildFrame& now,
+  }
+  auto sweptBodyBounds(Body* body, const ChildFrame& now,
                              const ChildFrame& next, double dt) {
     double localX = body->offsetX + (body->w - 1) * 0.5;
     double localY = body->offsetY + (body->h - 1) * 0.5;
@@ -747,12 +630,12 @@
       std::fmax(nowCx + nowX, nextCx + nextX) + pad,
       std::fmax(nowCy + nowY, nextCy + nextY) + pad,
     };
-  };
-  auto sweptBoundsOverlap = [](const ChildBounds& a, const ChildBounds& b) {
+  }
+  auto sweptBoundsOverlap(const ChildBounds& a, const ChildBounds& b) {
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
-  };
-  auto sweptObbsSeparated = [](Body* a, const ChildFrame& nowA,
+  }
+  auto sweptObbsSeparated(Body* a, const ChildFrame& nowA,
                                const ChildFrame& nextA,
                                Body* b, const ChildFrame& nowB,
                                const ChildFrame& nextB, double dt) {
@@ -815,15 +698,15 @@
     WholeFrame endA = wholeFrame(a, nextA);
     WholeFrame endB = wholeFrame(b, nextB);
     return separatedAt(endA, endB);
-  };
-  auto faceNormal = [](const ChildFrame& frame, BodyCollisionFace face,
+  }
+  auto faceNormal(const ChildFrame& frame, BodyCollisionFace face,
                        double& nx, double& ny) {
     if (face == BCF_LEFT) { nx = -frame.ux; ny = -frame.uy; }
     else if (face == BCF_RIGHT) { nx = frame.ux; ny = frame.uy; }
     else if (face == BCF_UP) { nx = -frame.vx; ny = -frame.vy; }
     else { nx = frame.vx; ny = frame.vy; }
-  };
-  auto faceForNormal = [&](const ChildFrame& frame, double nx, double ny) {
+  }
+  auto faceForNormal(const ChildFrame& frame, double nx, double ny) {
     BodyCollisionFace best = BCF_LEFT;
     double bestDot = -1e18;
     for (int fi = 0; fi < 4; fi++) {
@@ -836,8 +719,8 @@
       }
     }
     return best;
-  };
-  auto facePoint = [](const ChildFrame& frame, BodyCollisionFace face,
+  }
+  auto facePoint(const ChildFrame& frame, BodyCollisionFace face,
                       double tangent, double& wx, double& wy) {
     double lx = 0, ly = 0;
     if (face == BCF_LEFT) {
@@ -855,8 +738,8 @@
     }
     wx = frame.px + lx * frame.ux + ly * frame.vx;
     wy = frame.py + lx * frame.uy + ly * frame.vy;
-  };
-  auto clipLinearRange = [](double start, double end, double lo, double hi,
+  }
+  auto clipLinearRange(double start, double end, double lo, double hi,
                             double& u0, double& u1) {
     double delta = end - start;
     if (std::fabs(delta) < 1e-12)
@@ -867,8 +750,8 @@
     u0 = std::fmax(u0, first);
     u1 = std::fmin(u1, second);
     return u1 >= u0 - 1e-9;
-  };
-  auto childSatManifolds = [&](const ChildFrame& a, const ChildFrame& b,
+  }
+  auto childSatManifolds(const ChildFrame& a, const ChildFrame& b,
                                bool speculative) {
     struct Axis {
       double x, y;
@@ -997,21 +880,21 @@
             manifold.points[manifold.count++] = point;
           }
           childManifoldScratch.push_back(manifold);
-          rigidChildManifolds++;
+          rigid.rigidChildManifolds++;
           produced = true;
         }
       }
       if (produced) return true;
     }
     return false;
-  };
+  }
   enum ChildContactState {
     CCS_SEPARATED,
     CCS_NONE,
     CCS_SPECULATIVE,
     CCS_CURRENT,
   };
-  auto collectChildContacts = [&](Body* a, Body* b, double dt,
+  auto collectChildContacts(Body* a, Body* b, double dt,
                                   int bodyIndexA, int bodyIndexB) {
     childManifoldScratch.clear();
     auto currentFrames = [&](Body* body, int bodyIndex,
@@ -1093,7 +976,7 @@
     bool currentContact = false;
     for (const auto& pair : childPairScratch) {
       int ai = pair.first, bi = pair.second;
-      rigidChildPairs++;
+      rigid.rigidChildPairs++;
       const ChildFrame& nowA = currentFramesA[ai];
       const ChildFrame& nowB = currentFramesB[bi];
       if (!childFramesOverlap(nowA, nowB)) {
@@ -1115,9 +998,22 @@
     if (currentContact) return CCS_CURRENT;
     if (!childManifoldScratch.empty()) return CCS_SPECULATIVE;
     return sweptCandidate ? CCS_NONE : CCS_SEPARATED;
-  };
-  std::vector<uint8_t> activeBody(n, 0);
-  std::vector<double> bodyDt(n, 0);
-  std::vector<std::pair<int, int>> positionPairs;
-  std::vector<uint8_t> terrainAnchored;
-  std::vector<uint8_t> spatialForceIsland;
+  }
+  // Reject swept candidates only after the compound-shape narrow phase has
+  // established that there is no contact at the current pose.
+  ChildContactState collectPotentialContacts(Body* a, Body* b, double dt,
+                                              int bodyIndexA, int bodyIndexB) {
+    ChildContactState result = collectChildContacts(a, b, dt, bodyIndexA, bodyIndexB);
+    if (result == CCS_SEPARATED || result == CCS_CURRENT) return result;
+    ChildBounds sweptA = sweptBodyBounds(
+      a, (*activeCurrentChildFramesA)[0], (*activeNextChildFramesA)[0], dt);
+    ChildBounds sweptB = sweptBodyBounds(
+      b, (*activeCurrentChildFramesB)[0], (*activeNextChildFramesB)[0], dt);
+    if (result == CCS_NONE && (!sweptBoundsOverlap(sweptA, sweptB)
+        || sweptObbsSeparated(a, (*activeCurrentChildFramesA)[0],
+             (*activeNextChildFramesA)[0], b, (*activeCurrentChildFramesB)[0],
+             (*activeNextChildFramesB)[0], dt)))
+      return CCS_SEPARATED;
+    return result;
+  }
+};

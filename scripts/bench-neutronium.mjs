@@ -28,9 +28,7 @@ const repeatArg = process.argv.indexOf('--repeat');
 const repeats = repeatArg >= 0
   ? Math.max(1, Number.parseInt(process.argv[repeatArg + 1] ?? '3', 10))
   : 3;
-const solverModeArg = process.argv.indexOf('--solver-mode');
-const solverOptions = solverModeArg < 0 ? null : {
-  mode: Number.parseInt(process.argv[solverModeArg + 1] ?? '2', 10),
+const solverOptions = {
   tolerance: Number.parseFloat(valueAfter('--solver-tolerance', '0.0001')),
   minIterations: Math.max(
     1,
@@ -240,8 +238,7 @@ const runScenario = (setup) => {
   for (let repeat = 0; repeat < repeats; repeat++) {
     const engine = createEngine();
     setup(engine);
-    if (solverOptions) engine._setRigidSolverOptions(
-      solverOptions.mode,
+    engine._setRigidSolverConvergence(
       solverOptions.tolerance,
       solverOptions.minIterations,
     );

@@ -27,8 +27,6 @@ const terrainFactory = terrainRoot === repoRoot
 const COLS = 512;
 const ROWS = 384;
 const MAX_TICKS = 360;
-const SOLVER_MODE = Number.parseInt(
-  process.env.RIGID_SOLVER_MODE ?? '2', 10);
 const STRUCTURAL = new Uint8Array(TABLE_SIZE);
 for (const material of MATERIALS) {
   if (material.kind === KIND.COMPONENT) STRUCTURAL[material.id] = 1;
@@ -359,7 +357,7 @@ async function runCase(testCase, caseIndex) {
     sinksOn: false,
     infinite: true,
   });
-  engine._setRigidSolverOptions(SOLVER_MODE, 0.0001, 4);
+  engine._setRigidSolverConvergence(0.0001, 4);
   let source = null;
   let sourceSurfaces = null;
   if (terrainFactory !== factory) {
@@ -574,8 +572,7 @@ async function runCase(testCase, caseIndex) {
   engine.destroy();
   return {
     caseIndex,
-    solverMode: SOLVER_MODE,
-    geometry: { ...testCase, left, right, top, bottom, trackingSeed: [trackingX, trackingY], initialTnt },
+      geometry: { ...testCase, left, right, top, bottom, trackingSeed: [trackingX, trackingY], initialTnt },
     topology,
     reproduction,
     trace,

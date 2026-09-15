@@ -11,10 +11,6 @@ import { makeChecker } from './sand-test-util.mjs';
 import { makeComplexStackScenario } from './rigid-complex-stack-scenario.mjs';
 
 await initSandWasm();
-const requestedSolverMode = process.env.RIGID_SOLVER_MODE;
-const SOLVER_MODES = requestedSolverMode
-  ? [Number(requestedSolverMode)]
-  : [2, 45];
 const COLS = 245, ROWS = 197, SCALE = 0.35;
 
 const transform = (cells, spec) => {
@@ -37,9 +33,9 @@ const jointFg = transform(joint.cells, joint);
 const jointBg = transform(joint.peerCells, joint);
 const independentBg = transform(independent.cells, independent);
 
-const runCase = (solverMode) => {
+const runCase = () => {
   const { check, done } = makeChecker(
-    `cross-layer rigid raster projection (solver ${solverMode})`);
+    'cross-layer rigid raster projection');
   const engine = attachTestHooks(createEngineWasmRaw({
     cols: COLS,
     rows: ROWS,
@@ -48,7 +44,7 @@ const runCase = (solverMode) => {
     infinite: false,
   }));
   engine.setBgEnabled(true);
-  engine._setRigidSolverOptions(solverMode, 0.0001, 4);
+  engine._setRigidSolverConvergence(0.0001, 4);
   engine._setRigidPeerBiasScale(1);
   engine._setRigidWorldPositionLimit(0.5);
   
@@ -139,6 +135,4 @@ const runCase = (solverMode) => {
   return done();
 };
 
-let failures = 0;
-for (const solverMode of SOLVER_MODES) failures += runCase(solverMode);
-process.exitCode = failures;
+process.exitCode = runCase();

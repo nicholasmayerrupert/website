@@ -820,7 +820,11 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
 }
 EMSCRIPTEN_KEEPALIVE void engine_test_set_rigid_solver_options(
     Engine* e, int mode, double residualTolerance, int minIterations) {
-  e->rigid.solverMode = mode;
+  // The test ABI accepts only the shipping solver selector.
+  if (mode != 45) {
+    emscripten_console_error("Only the shipping rigid solver (45) is supported");
+    abort();
+  }
   e->rigid.solverResidualTolerance = std::fmax(0.0, residualTolerance);
   e->rigid.solverMinIterations = imax(1, minIterations);
 }

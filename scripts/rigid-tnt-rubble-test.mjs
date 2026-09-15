@@ -17,8 +17,6 @@ const COLS = Number.parseInt(process.env.COLS ?? '640', 10);
 const ROWS = Number.parseInt(process.env.ROWS ?? '480', 10);
 const STEPS = Number.parseInt(process.env.STEPS ?? '900', 10);
 const SEED = Number.parseInt(process.env.SEED ?? '2667084199', 10) >>> 0;
-const SOLVER_MODE = Number.parseInt(
-  process.env.RIGID_SOLVER_MODE ?? '45', 10);
 const WORLD_POSITION_LIMIT = Number.parseFloat(
   process.env.WORLD_POSITION_LIMIT ?? '0.5');
 const PEER_BIAS_SCALE = Number.parseFloat(
@@ -133,7 +131,7 @@ const engine = attachTestHooks(createEngineWasmRaw({
   infinite: true,
 }));
 engine.setBgEnabled(true);
-engine._setRigidSolverOptions(SOLVER_MODE, 0.0001, 4);
+engine._setRigidSolverConvergence(0.0001, 4);
 engine._setRigidWorldPositionLimit(WORLD_POSITION_LIMIT);
 engine._setRigidPeerBiasScale(PEER_BIAS_SCALE);
 if (FOCUS_BODY) {
@@ -506,7 +504,6 @@ for (const state of finalStates) {
 
 const summary = {
   seed: SEED,
-  solverMode: SOLVER_MODE,
   worldPositionLimit: WORLD_POSITION_LIMIT,
   peerBiasScale: PEER_BIAS_SCALE,
   sites: sites.length,
@@ -588,7 +585,6 @@ if (process.env.SUMMARY_ONLY) {
   });
   console.log(JSON.stringify({
     seed: summary.seed,
-    solverMode: summary.solverMode,
     worldPositionLimit: summary.worldPositionLimit,
     peerBiasScale: summary.peerBiasScale,
     peakBodies: summary.peakBodies,

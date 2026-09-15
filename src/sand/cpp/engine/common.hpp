@@ -410,8 +410,7 @@ struct Contact {
   // Computing them once turns repeated inertia expressions and divisions into
   // one preparation pass plus multiplications in the iterative solver.
   double normalMass, tangentMass, biasMass;
-  double softBiasRate, softMassScale, softImpulseScale;
-  double accJn, accJt, accBias, accRolling;
+  double accJn, accJt, accBias;
   int blockMate;
   bool persisted;
   double aInvM = 0, aInvI = 0, bInvM = 0, bInvI = 0;
@@ -779,7 +778,6 @@ static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BO
 static const int    R_IMPACT_SOUND_SEPARATION_TICKS = 12;
 static const double R_FLUID_IMPACT_SOUND_MIN_SPEED = 1.5;
 static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
-static const double R_ROLLING_RESISTANCE = 0.02;
 static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
 static const double R_STATIC_FRICTION_SPEED = 0.025;
 static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;

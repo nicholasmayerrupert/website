@@ -1,6 +1,5 @@
 // Tall, gravity-supported stacks exercise support propagation separately from
-// the irregular long-body benchmark. Run one solver mode per process so timing
-// and diagnostics stay attributable: RIGID_SOLVER_MODE=2 node this-file.mjs.
+// the irregular long-body benchmark. All assertions exercise the shipping solver.
 
 import { performance } from 'node:perf_hooks';
 import {
@@ -9,7 +8,6 @@ import {
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 
-const mode = Number(process.env.RIGID_SOLVER_MODE ?? 2);
 const tolerance = Number(process.env.RIGID_RESIDUAL_TOLERANCE ?? 1e-4);
 const minIterations = Number(process.env.RIGID_MIN_ITERATIONS ?? 4);
 const cols = 160, rows = 260, floorY = rows - 3;
@@ -19,7 +17,7 @@ await initSandWasm();
 const engine = attachTestHooks(createEngineWasmRaw({
   cols, rows, worldSeed: 0x2f5f, sinksOn: false, infinite: false,
 }));
-engine._setRigidSolverOptions(mode, tolerance, minIterations);
+engine._setRigidSolverConvergence(tolerance, minIterations);
 
 for (let y = floorY; y < rows; y++)
   for (let x = 0; x < cols; x++)
@@ -91,7 +89,7 @@ for (let body = 0; body + 1 < finalStates.length; body++)
 
 const result = {
   scene: `${bodyCount}-body vertical stack`,
-  solverOptions: { mode, tolerance, minIterations },
+  solverOptions: { tolerance, minIterations },
   finalBodies: engine._bodyCount(),
   finalAwake,
   settledAt,
@@ -107,26 +105,24 @@ const result = {
 };
 console.log(JSON.stringify(result, null, 2));
 
-if (mode === 2) {
-  const checks = [
-    ['all bodies remain represented', result.finalBodies === bodyCount],
-    ['tower reaches island sleep by tick 100',
-      result.settledAt > 0 && result.settledAt <= 100],
-    ['tower has no awake bodies', result.finalAwake === 0],
-    ['tower stays horizontally aligned', result.maxHorizontalDrift <= 0.5],
-    ['tower retains at least 110 cells of vertical span',
-      result.finalVerticalSpan >= 110],
-    ['all adjacent body pairs preserve vertical order',
-      result.preservedPairs === bodyCount - 1],
-    ['two-pass support propagation activates', result.shockIslands > 0],
-    ['two-pass solve rarely needs fallback', result.shockFallbacks <= 10],
-  ];
-  for (const [label, passed] of checks)
-    console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}`);
-  if (checks.some(([, passed]) => !passed)) {
-    engine.destroy();
-    process.exit(1);
-  }
+const checks = [
+  ['all bodies remain represented', result.finalBodies === bodyCount],
+  ['tower reaches island sleep by tick 100',
+    result.settledAt > 0 && result.settledAt <= 100],
+  ['tower has no awake bodies', result.finalAwake === 0],
+  ['tower stays horizontally aligned', result.maxHorizontalDrift <= 0.5],
+  ['tower retains at least 110 cells of vertical span',
+    result.finalVerticalSpan >= 110],
+  ['all adjacent body pairs preserve vertical order',
+    result.preservedPairs === bodyCount - 1],
+  ['two-pass support propagation activates', result.shockIslands > 0],
+  ['two-pass solve rarely needs fallback', result.shockFallbacks <= 10],
+];
+for (const [label, passed] of checks)
+  console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}`);
+if (checks.some(([, passed]) => !passed)) {
+  engine.destroy();
+  process.exit(1);
 }
 
 engine.destroy();

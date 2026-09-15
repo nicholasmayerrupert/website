@@ -8,15 +8,14 @@ await initSandWasm();
 const out = process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts/pivot';
 mkdirSync(out, { recursive: true });
 const results = [];
-const modes = (process.env.PIVOT_MODES || '45').split(',').map(Number);
 const sizes = (process.env.PIVOT_SIZES || '32,64,128').split(',').map(Number);
 const drop = Number(process.env.PIVOT_DROP || 0);
 const balance = Number(process.env.PIVOT_OFFSET || .08);
 const shapes = (process.env.PIVOT_SHAPES || 'bar,l,arch').split(',');
-for (const mode of modes) for (const shape of shapes) for (const size of sizes) {
+for (const shape of shapes) for (const size of sizes) {
   const cols = 640, rows = 480, pivotX = 320, pivotY = 300;
   const e = attachTestHooks(createEngineWasm({ cols, rows, worldSeed: 7, infinite: false, sinksOn: false }));
-  e.setBgEnabled(false); e._setRigidSolverOptions(mode);
+  e.setBgEnabled(false);
   const grid = e.getGrid();
   for (let y = 460; y < rows; y++) for (let x = 0; x < cols; x++) grid[y * cols + x] = MAT.STONE;
   for (let y = pivotY; y < rows; y++) for (let x = pivotX - 1; x <= pivotX + 1; x++) grid[y * cols + x] = MAT.STONE;
@@ -65,9 +64,9 @@ for (const mode of modes) for (const shape of shapes) for (const size of sizes) 
     corrections = Math.max(corrections, e.getRigidDebug().depenetrations);
     if (tick < 12 || tick % 10 === 0 || tick === sleep) frames.push({ tick, ...state, awake: !!e._bodyAwake(0), contacts: e.getRigidSolverDebug().contacts });
   }
-  const result = { mode, shape, size, drop, balance, initial, maxAngle, first45, sleep, blocked, corrections, motion: tracker.summary(), frames };
+  const result = { shape, size, drop, balance, initial, maxAngle, first45, sleep, blocked, corrections, motion: tracker.summary(), frames };
   results.push(result);
-  console.log(JSON.stringify({ mode, shape, size, cells: initial.nPts, radius: initial.maxR, lever: initial.px - pivotX, maxAngle, first45, sleep, blocked, correction: result.motion.maxCorrection }));
+  console.log(JSON.stringify({ shape, size, cells: initial.nPts, radius: initial.maxR, lever: initial.px - pivotX, maxAngle, first45, sleep, blocked, correction: result.motion.maxCorrection }));
   e.destroy();
 }
 writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 2));

@@ -85,6 +85,7 @@ export const UNIT_SUITES = [
   ['rigid-inertia', 'rigid-inertia-test.mjs'],
   ['rigid-shock', 'rigid-shock-test.mjs'],
   ['rigid-fluid-accuracy', 'rigid-fluid-accuracy-test.mjs'],
+  ['rigid-spatial-fluid', 'rigid-spatial-fluid-test.mjs'],
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-jitter', 'rigid-jitter-test.mjs', exclusive(120_000)],
   ['rigid-massive-stack', 'rigid-massive-stack-test.mjs', exclusive(240_000)],

@@ -1,6 +1,9 @@
 // Spatial force emitters and neutronium attraction.
 
 static constexpr double LOOSE_CELL_STEP_FORCE = 0.12;
+static bool forceReplacesPlanetGravity(double x, double y) {
+  return x * x + y * y >= LOOSE_CELL_STEP_FORCE * LOOSE_CELL_STEP_FORCE;
+}
 
 int ForceSystem::layerIndex(const Layer* layer) const {
   return layer == &E.bg ? 1 : 0;
@@ -1268,7 +1271,7 @@ bool ForceSystem::sampleState(
 bool ForceSystem::sampleNearestNeutronium(
     Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
     int targetNeutroniumCells, int targetBodyLayer,
-    double& forceX, double& forceY) const {
+    double& forceX, double& forceY, bool continuousLiquid) const {
   forceX = forceY = 0;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows
       || neutroniumSeeds.empty())
@@ -1340,7 +1343,10 @@ bool ForceSystem::sampleNearestNeutronium(
   double distance = std::sqrt(distance2);
   double falloff = 1.0 - distance / emitter.radius;
   double magnitude = emitter.strength * falloff * falloff;
-  if (target == FORCE_RIGID && targetNeutroniumCells == 0) magnitude *= 0.5;
+  // Continuous liquid and ordinary rigid motion share acceleration units;
+  // cellular movement uses the full field to select lattice steps.
+  if ((target == FORCE_RIGID && targetNeutroniumCells == 0)
+      || continuousLiquid) magnitude *= 0.5;
   if (emitter.repelTargets & target) magnitude = -magnitude;
   double inverseDistance = 1.0 / distance;
   forceX = dx * inverseDistance * magnitude;
@@ -1351,7 +1357,8 @@ bool ForceSystem::sampleNearestNeutronium(
 bool ForceSystem::sampleLayer(
     Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
     double& forceX, double& forceY,
-    int targetNeutroniumCells, int targetBodyLayer) const {
+    int targetNeutroniumCells, int targetBodyLayer, bool continuousLiquid,
+    bool* replacesGravity) const {
   forceX = forceY = 0;
   int targetIndex = layerIndex(layer);
   uint8_t targetLayer = layerBit(layer);
@@ -1363,15 +1370,42 @@ bool ForceSystem::sampleLayer(
     forceX += sourceForceX;
     forceY += sourceForceY;
   }
+  double rawForceX = forceX, rawForceY = forceY;
   double nearestForceX, nearestForceY;
   if (sampleNearestNeutronium(
         layer, x, y, target, sourceBodyId,
         targetNeutroniumCells, targetBodyLayer,
-                              nearestForceX, nearestForceY)) {
+                              nearestForceX, nearestForceY, continuousLiquid)) {
+    double rawScale = (target == FORCE_RIGID && targetNeutroniumCells == 0)
+                   || continuousLiquid ? 2.0 : 1.0;
+    rawForceX += nearestForceX * rawScale;
+    rawForceY += nearestForceY * rawScale;
     forceX += nearestForceX;
     forceY += nearestForceY;
   }
-  return forceX * forceX + forceY * forceY > 1e-12;
+  if (replacesGravity)
+    *replacesGravity = forceReplacesPlanetGravity(rawForceX, rawForceY);
+  return forceX * forceX + forceY * forceY > 1e-12
+      || (replacesGravity && *replacesGravity);
+}
+
+bool ForceSystem::liquidAcceleration(
+    Layer* layer, int x, int y,
+    double& accelerationX, double& accelerationY) const {
+  if (!layer->forceActive) {
+    accelerationX = 0;
+    accelerationY = E.scaledGravity(R_GRAVITY);
+    return false;
+  }
+  bool replacesGravity = false;
+  bool active = sampleLayer(layer, x + 0.5, y + 0.5, FORCE_LIQUID, -1,
+              accelerationX, accelerationY, 0, -1, true, &replacesGravity);
+  if (!replacesGravity) accelerationY += E.scaledGravity(R_GRAVITY);
+  return active || replacesGravity;
+}
+
+double ForceSystem::bodyGravity(const Body* body) const {
+  return body->spatialGravityOverride ? 0 : E.scaledGravity(R_GRAVITY);
 }
 
 bool ForceSystem::sampleLoose(
@@ -1421,13 +1455,18 @@ bool ForceSystem::sampleLoose(
 }
 
 bool ForceSystem::sampleBody(
-    Layer* layer, Body* body, double& forceX, double& forceY) const {
+    Layer* layer, Body* body, double& forceX, double& forceY,
+    bool* replacesGravity) const {
   int targetLayer = layerIndex(layer);
   int neutroniumCells = bodyNeutroniumCellCount(body);
+  bool centreReplacesGravity = false;
+  if (replacesGravity) *replacesGravity = false;
   if (sampleLayer(layer, body->px, body->py, FORCE_RIGID, body->id,
                   forceX, forceY, neutroniumCells,
-                  neutroniumCells > 0 ? targetLayer : -1))
+                  neutroniumCells > 0 ? targetLayer : -1, false, &centreReplacesGravity)) {
+    if (replacesGravity) *replacesGravity = centreReplacesGravity;
     return true;
+  }
   // Moving neutronium uses body-level dominance metadata. Keep that exact path
   // to one query; ordinary long bodies can fall back to their exposed cells.
   if (neutroniumCells > 0) return false;
@@ -1448,14 +1487,16 @@ bool ForceSystem::sampleBody(
         && !binAffectsLayer(states[1], bin, targetBit))
       continue;
     double sampleX, sampleY;
+    bool sampleReplacesGravity = false;
     if (!sampleLayer(layer, x, y, FORCE_RIGID, body->id,
-                     sampleX, sampleY))
+                     sampleX, sampleY, 0, -1, false, &sampleReplacesGravity))
       continue;
     double magnitude2 = sampleX * sampleX + sampleY * sampleY;
     if (magnitude2 <= bestMagnitude2) continue;
     bestMagnitude2 = magnitude2;
     forceX = sampleX;
     forceY = sampleY;
+    if (replacesGravity) *replacesGravity = sampleReplacesGravity;
   }
   return bestMagnitude2 > 1e-12;
 }
@@ -1561,7 +1602,7 @@ bool ForceSystem::overridesGravity(
   double forceX, forceY, forceSquared;
   if (!sampleLooseForceSquared(
         x, y, target, forceX, forceY, forceSquared)) return false;
-  return forceSquared >= LOOSE_CELL_STEP_FORCE * LOOSE_CELL_STEP_FORCE;
+  return forceReplacesPlanetGravity(forceX, forceY);
 }
 
 int ForceSystem::liquidForceSinkMoves(
@@ -1601,11 +1642,12 @@ void ForceSystem::applyBodyForces() {
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
     body->spatialForceApplied = false;
+    body->spatialGravityOverride = false;
     if (!body->awake
         && !bodyTouchesBins(body, changedBins[targetLayer])) continue;
     double forceX, forceY;
     bool active = E.L->forceActive
-      && sampleBody(E.L, body, forceX, forceY);
+      && sampleBody(E.L, body, forceX, forceY, &body->spatialGravityOverride);
     if (!body->awake) E.rigid.wakeBody(body);
     if (!active) continue;
     body->spatialForceApplied = true;

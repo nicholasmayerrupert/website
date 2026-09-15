@@ -55,6 +55,8 @@
   if (fluidNodeGeneration == INT32_MAX) {
     fluidNodeGeneration = 1;
     for (auto& stamp : fluidNodeStamp) std::fill(stamp.begin(), stamp.end(), 0);
+    for (auto& stamp : fluidSpatialReferenceStamp)
+      std::fill(stamp.begin(), stamp.end(), 0);
   } else {
     fluidNodeGeneration++;
   }

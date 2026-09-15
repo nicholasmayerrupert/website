@@ -2629,6 +2629,7 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
   uint8_t material = E.L->grid[k];
   return !E.isBuoyantMedium(material) && E.isRigidMaterialClass(material);
 }
+#include "rigid_fluid_reference.inc"
 bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt) {
 #include "rigid_fluid_domain.inc"
 #include "rigid_fluid_projection.inc"

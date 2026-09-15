@@ -194,7 +194,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     fluidStartPose[bi] = {body->px, body->py, body->angle};
     bool stopAtWindow = false;
     if (!freeze.frozen && body->awake) {
-      double gravity = E.scaledGravity(R_GRAVITY) * tickDt;
+      double gravity = E.forces.bodyGravity(body) * tickDt;
       double nextPx = body->px + body->vx * tickDt;
       double nextPy = body->py + (body->vy + gravity) * tickDt;
       double nextAngle = body->angle + body->omega * tickDt;
@@ -219,7 +219,7 @@ void RigidBodySystem::prepareRigidStep(StepState& step, double tickDt) {
     body->loadedWindowParked = freeze.frozen;
     if (freeze.frozen) body->awake = false;
     if (body->awake && !stopAtWindow)
-      body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
+      body->vy += E.forces.bodyGravity(body) * tickDt;
     predictedLiquidVy[bi] = body->vy;
     body->cs = std::cos(body->angle);
     body->sn = std::sin(body->angle);

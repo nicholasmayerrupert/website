@@ -3,6 +3,17 @@
   // without walking the connected pool. The local pressure domain interpolates
   // between the two sides; sealed regions fall back to their cached pressure.
   double referenceStart = emscripten_get_now();
+  double spatialReferenceMs = 0;
+  std::vector<uint8_t> spatialReferences(bodies.size() * 2, 0);
+  for (const FluidSeed& seed : fluidSeeds) {
+    int layer = seed.packedCell / cellCount;
+    int k = seed.packedCell % cellCount;
+    if (!layerAt(layer)->forceActive || spatialReferences[seed.body * 2 + layer])
+      continue;
+    double ax, ay;
+    if (E.forces.liquidAcceleration(layerAt(layer), k % E.cols, k / E.cols, ax, ay))
+      spatialReferences[seed.body * 2 + layer] = 1;
+  }
   fluidReferences.resize(bodies.size() * 2);
   std::vector<std::pair<int, int>> referenceColumns;
   for (int layer = 0; layer < 2; layer++) {
@@ -89,6 +100,7 @@
     for (int layer = 0; layer < 2; layer++) {
       FluidReference& reference = fluidReferences[bodyIndex * 2 + layer];
       reference.leftX = reference.rightX = -1;
+      if (spatialReferences[bodyIndex * 2 + layer]) continue;
       const std::array<int, 4>& bounds =
         fluidBodyBounds[bodyIndex * 2 + layer];
       if (bounds[2] < bounds[0]) continue;
@@ -112,8 +124,26 @@
     }
   }
   fluidReferenceMs += emscripten_get_now() - referenceStart;
+  for (int layer = 0; layer < 2; layer++) {
+    // Share a fixed search budget across boundary queries in crowded pools.
+    fluidReferenceSearchBudget[layer] = 32768;
+    if (!layerAt(layer)->forceActive) continue;
+    if ((int)fluidSpatialReferenceStamp[layer].size() != cellCount) {
+      fluidSpatialReferenceStamp[layer].assign(cellCount, 0);
+      fluidSpatialReferencePressure[layer].resize(cellCount);
+    }
+  }
   auto referencePressureAt = [&](int sourceBody, int layer, int cell) {
     double cached = std::fmax(0.0f, fluidPressureCache[layer][cell]) * dt;
+    if (sourceBody >= 0 && sourceBody < (int)bodies.size()
+        && spatialReferences[sourceBody * 2 + layer]) {
+      double spatialStart = emscripten_get_now();
+      double pressure = spatialFluidReferencePressure(layer, cell);
+      double elapsed = emscripten_get_now() - spatialStart;
+      fluidReferenceMs += elapsed;
+      spatialReferenceMs += elapsed;
+      return pressure >= 0 ? pressure * dt : cached;
+    }
     if (sourceBody < 0 || sourceBody >= (int)bodies.size()) return cached;
     const FluidReference& reference =
       fluidReferences[sourceBody * 2 + layer];
@@ -170,7 +200,9 @@
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
     double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]) * dt;
-    fluidNodes.push_back({lay, k, -1, sourceBody, material, vx, vy + E.scaledGravity(R_GRAVITY) * dt,
+    double ax, ay;
+    E.forces.liquidAcceleration(lay, k % E.cols, k / E.cols, ax, ay);
+    fluidNodes.push_back({lay, k, -1, sourceBody, material, vx + ax * dt, vy + ay * dt,
                           pressure});
     fluidNodeDepth.push_back(depth);
     fluidQueue.push_back(layer * cellCount + k);
@@ -333,18 +365,27 @@
     uint8_t material = layerAt(layer)->grid[nk];
     if (E.isLiquidMaterial(material)) {
       uint32_t packedVelocity = layerAt(layer)->liquidVel.current[nk];
-      double outsideVx = E.liquidVelocityX(packedVelocity);
-      double outsideVy = E.liquidVelocityY(packedVelocity) + E.scaledGravity(R_GRAVITY) * dt;
+      double ax, ay;
+      E.forces.liquidAcceleration(layerAt(layer), nk % E.cols, nk / E.cols, ax, ay);
+      double outsideVx = E.liquidVelocityX(packedVelocity) + ax * dt;
+      double outsideVy = E.liquidVelocityY(packedVelocity) + ay * dt;
       double predicted = (node.vx + outsideVx) * nx * 0.5
                        + (node.vy + outsideVy) * ny * 0.5;
       FluidFace face{ni, nk, -1, (int8_t)nx, (int8_t)ny,
-                     outsideVx, E.liquidVelocityY(packedVelocity), predicted, FF_DOMAIN};
+                     E.liquidVelocityX(packedVelocity), E.liquidVelocityY(packedVelocity), predicted, FF_DOMAIN};
       face.inverseDensity =
         2.0 / (DENSITY[node.material] + DENSITY[material]);
       // The lateral Robin coefficient represents the pressure response of the
       // unresolved reservoir between this face and the far field.
-      if (nx)
-        face.inverseDensity /= fluidDomainRadiusFor(node.sourceBody);
+      if (ax == 0) {
+        if (nx) face.inverseDensity /= fluidDomainRadiusFor(node.sourceBody);
+      } else {
+        double acceleration2 = ax * ax + ay * ay;
+        double normalAcceleration = ax * nx + ay * ny;
+        double normalWeight = normalAcceleration * normalAcceleration / acceleration2;
+        face.inverseDensity *= normalWeight
+          + (1 - normalWeight) / fluidDomainRadiusFor(node.sourceBody);
+      }
       face.boundaryPressure =
         referencePressureAt(node.sourceBody, layer, nk);
       fluidFaces.push_back(face);

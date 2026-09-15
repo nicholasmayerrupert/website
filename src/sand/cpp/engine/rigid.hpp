@@ -217,6 +217,7 @@ class RigidBodySystem {
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);
 
  private:
+  double spatialFluidReferencePressure(int layer, int cell);
   struct StepState;
   bool prepareBodyMovement();
   void commitBodyMovement();
@@ -357,6 +358,16 @@ class RigidBodySystem {
   std::vector<FluidReference> fluidReferences;
   std::array<std::vector<double>, 2> fluidReferencePressure;
   std::array<std::vector<uint8_t>, 2> fluidReferenceColumnState;
+  std::array<std::vector<int32_t>, 2> fluidSpatialReferenceStamp;
+  std::array<std::vector<double>, 2> fluidSpatialReferencePressure;
+  struct FluidReferenceTrace {
+    int cell, nextDirection = 0;
+    double increment = 0;
+    std::array<int, 4> directions;
+  };
+  std::vector<FluidReferenceTrace> fluidReferencePath;
+  std::array<int, 2> fluidReferenceSearchBudget{};
+  int32_t fluidReferenceTraceSerial = 0;
   std::vector<std::array<int, 4>> fluidBodyBounds;
   std::vector<double> fluidSolvePressure, fluidSolveResidual;
   std::vector<double> fluidSolveDirection, fluidSolveApplied;

@@ -25,7 +25,7 @@
       });
     }
   }
-  fluidDomainMs += emscripten_get_now() - domainStart;
+  fluidDomainMs += emscripten_get_now() - domainStart - spatialReferenceMs;
 
   double matrixStart = emscripten_get_now();
   const int nodeCount = (int)fluidNodes.size();

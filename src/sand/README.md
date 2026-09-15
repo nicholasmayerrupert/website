@@ -715,6 +715,18 @@ density interface, that connected liquid region joins the projection so the
 interface remains exact. Ordinary single-material pressure work therefore
 scales with wet surface area and the fixed band, not body area or lake area.
 
+Wet bodies inside spatial force fields use the same effective acceleration as
+the surrounding liquid. `ForceSystem` owns the continuous acceleration scale and
+the strong-field replacement of planetary gravity; the rigid integrator and
+liquid pressure prediction consume that policy. Pressure references integrate
+density-weighted acceleration through connected liquid to a free surface,
+including sideways and upward paths around submerged obstacles. Searches are
+bounded and share successful references within each solve; sealed or ambiguous
+paths use cached pressure. A shared per-layer search budget bounds total work
+in crowded pools. Unaffected pools retain the column reference path.
+Buoyancy comes from pressure and material density for all bodies. Focused
+regressions are in the `rigid-spatial-fluid` suite.
+
 Spatial forces are target-masked radial or directional emitters consumed by
 powders, liquids, gases, free rigid bodies, and mobile actors. Each emitter selects
 which target classes it repels and which simulated layers it affects. Emitters are

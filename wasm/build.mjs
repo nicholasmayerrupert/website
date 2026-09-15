@@ -63,7 +63,12 @@ const compilerArgs = [
   'src/sand/cpp/sand.cpp',
   '-o', output,
 ];
-run(toolchain.emxx, compilerArgs, { environment: toolchain.environment });
+// Binaryen's Windows worker execution can crash on this engine's optimized TU.
+// A single optimizer worker retains -O3 and keeps the build deterministic.
+const compilerEnvironment = process.platform === 'win32'
+  ? { BINARYEN_CORES: '1', ...toolchain.environment }
+  : toolchain.environment;
+run(toolchain.emxx, compilerArgs, { environment: compilerEnvironment });
 normalizeTextFile(output);
 
 const wasmOutput = output.replace(/\.js$/, '.wasm');

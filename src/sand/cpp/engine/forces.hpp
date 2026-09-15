@@ -62,6 +62,9 @@ class ForceSystem {
   void invalidateLooseCandidateCache(Layer* layer);
   bool sampleActor(double x, double y,
                    double& forceX, double& forceY) const;
+  bool liquidAcceleration(Layer* layer, int x, int y,
+                          double& accelerationX, double& accelerationY) const;
+  double bodyGravity(const Body* body) const;
   bool overridesGravity(int x, int y, uint8_t material);
   bool tryMoveLoose(int x, int y, int k, uint8_t material);
   void levelLiquidSurfaces();
@@ -215,18 +218,22 @@ class ForceSystem {
                                uint8_t target, int sourceBodyId,
                                int targetNeutroniumCells,
                                int targetBodyLayer,
-                               double& forceX, double& forceY) const;
+                               double& forceX, double& forceY,
+                               bool continuousLiquid = false) const;
   bool sampleLayer(Layer* layer, double x, double y, uint8_t target,
                    int sourceBodyId, double& forceX, double& forceY,
                    int targetNeutroniumCells = 0,
-                   int targetBodyLayer = -1) const;
+                   int targetBodyLayer = -1,
+                   bool continuousLiquid = false,
+                   bool* replacesGravity = nullptr) const;
   bool sampleLoose(Layer* layer, int x, int y, uint8_t target,
                    double& forceX, double& forceY);
   bool sampleLooseForceSquared(int x, int y, uint8_t target,
                                double& forceX, double& forceY,
                                double& forceSquared);
   bool sampleBody(Layer* layer, Body* body,
-                  double& forceX, double& forceY) const;
+                  double& forceX, double& forceY,
+                  bool* replacesGravity = nullptr) const;
   bool bodyTouchesBins(const Body* body,
                        const std::vector<uint8_t>& bins) const;
   int looseMoveCandidates(double forceX, double forceY, double directionPhase,

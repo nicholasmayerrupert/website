@@ -90,6 +90,11 @@ test runner. Production provenance rejects profiling builds. See
 The development variant writes to the production artifact paths. Run the
 production command before committing generated artifacts.
 
+On Windows, the sand build defaults to one Binaryen optimizer worker to avoid
+worker crashes in the pinned toolchain. This retains production `-O3` settings;
+`BINARYEN_CORES` can override the worker count. The setting is documented in
+[Binaryen's debugging guide](https://github.com/WebAssembly/binaryen/wiki/Debugging).
+
 Material or ABI schema edits require generated sources before compilation:
 
 ```text

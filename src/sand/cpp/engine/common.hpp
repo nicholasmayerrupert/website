@@ -378,6 +378,7 @@ struct Body {
   double aabbX0 = 0, aabbY0 = 0, aabbX1 = 0, aabbY1 = 0;
   double pvx = 0, pvy = 0, pw = 0;
   bool spatialForceApplied = false;
+  bool spatialGravityOverride = false;
   // omega entering the substep's contact solve (before the solver converts the
   // body's fall into rotation). Used to tell a genuine topple — where the solver
   // feeds angular velocity that grows in one direction each substep — apart from

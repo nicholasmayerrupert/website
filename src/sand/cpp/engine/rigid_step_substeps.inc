@@ -86,7 +86,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
                    b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
         continue;
       }
-      if (b->awake) b->vy += E.scaledGravity(R_GRAVITY) * dt;
+      if (b->awake) b->vy += E.forces.bodyGravity(b) * dt;
       b->pvx = 0; b->pvy = 0; b->pw = 0;
       b->hadContact = liquidContact[bi] != 0;
       b->maxDepth = 0;
@@ -124,7 +124,7 @@ void RigidBodySystem::solveRigidStep(StepState& step, double tickDt) {
           double powderSubmerged = (double)powderWet / b->boundaryPts.size();
           double powderSupport = powderWet > 0 ? (powderDensitySum / powderWet / b->density) * powderSubmerged : 0;
           powderSupport = std::fmin(1.0, powderSupport);
-          b->vy -= E.scaledGravity(R_GRAVITY) * powderSupport * dt;
+          b->vy -= E.forces.bodyGravity(b) * powderSupport * dt;
           if (std::fabs(powderSupport - 1.0) <= R_GRANULAR_REST_BAND) {
             b->vy *= R_GRANULAR_REST_DAMP;
             if (std::fabs(b->vy) < R_GRANULAR_ZERO_VY) b->vy = 0;

@@ -24,12 +24,15 @@
     uint8_t& columnState = fluidReferenceColumnState[layer][x];
     if (columnState) return columnState == 2;
     Layer* lay = layerAt(layer);
+    // Reference columns are contiguous so their vertical integration streams
+    // through memory instead of touching one cache line per world row.
     std::vector<double>& pressureOut = fluidReferencePressure[layer];
     bool inLiquid = false, openSegment = false, found = false;
     double pressure = 0, priorDensity = 0;
     for (int y = 0; y < E.rows; y++) {
       int k = y * E.cols + x;
-      pressureOut[k] = 0;
+      int referenceK = x * E.rows + y;
+      pressureOut[referenceK] = 0;
       uint8_t material = lay->grid[k];
       bool liquid = fluidBodyStamp[layer][k] != fluidBodyGeneration
                  && E.isLiquidMaterial(material);
@@ -55,7 +58,7 @@
       inLiquid = true;
       priorDensity = density;
       if (openSegment) {
-        pressureOut[k] = pressure;
+        pressureOut[referenceK] = pressure;
         found = true;
       }
     }
@@ -70,7 +73,7 @@
       if (!buildReferenceColumn(layer, x)) continue;
       int surfaceY = 0;
       while (surfaceY < E.rows
-             && fluidReferencePressure[layer][surfaceY * E.cols + x] <= 0)
+             && fluidReferencePressure[layer][x * E.rows + surfaceY] <= 0)
         surfaceY++;
       if (surfaceY < E.rows) referenceColumns.push_back({surfaceY, x});
     }
@@ -116,9 +119,9 @@
       fluidReferences[sourceBody * 2 + layer];
     int y = cell / E.cols, x = cell - y * E.cols;
     double left = reference.leftX >= 0
-      ? fluidReferencePressure[layer][y * E.cols + reference.leftX] : 0;
+      ? fluidReferencePressure[layer][reference.leftX * E.rows + y] : 0;
     double right = reference.rightX >= 0
-      ? fluidReferencePressure[layer][y * E.cols + reference.rightX] : 0;
+      ? fluidReferencePressure[layer][reference.rightX * E.rows + y] : 0;
     if (left <= 0) return right > 0 ? right : cached;
     if (right <= 0) return left;
     double width = reference.rightX - reference.leftX;

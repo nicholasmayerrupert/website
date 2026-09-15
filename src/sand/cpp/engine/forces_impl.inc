@@ -1608,6 +1608,178 @@ void ForceSystem::applyBodyForces() {
   }
 }
 
+void ForceSystem::levelLiquidSurfaces() {
+  if (neutroniumSeeds.empty() || E.activeLiquidCells.empty()
+      || states[0].hasOrdinaryEmitters || states[1].hasOrdinaryEmitters)
+    return;
+  liquidLevelVisited.assign(E.cols * E.rows, 0);
+  // The nearest-source field defines height above each neutronium surface.
+  // Pressure connects only face-adjacent cells of one liquid under one source.
+  auto heightAt = [&](int k, int& sourceLayer, int& sourceEmitter) {
+    int y = k / E.cols, x = k - y * E.cols;
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1)
+      return -1.0;
+    int seedIndex = nearestFieldValid && x >= nearestFieldX0
+        && x <= nearestFieldX1 && y >= nearestFieldY0 && y <= nearestFieldY1
+        && k < (int)nearestNeutroniumField.size()
+      ? nearestNeutroniumField[k] : nearestGridNeutronium(x, y);
+    if (seedIndex < 0) return -1.0;
+    const NeutroniumSeed& seed = neutroniumSeeds[seedIndex];
+    const ForceEmitter& emitter = states[seed.sourceLayer].emitters[seed.emitter];
+    double distance = std::hypot(seed.x - (x + 0.5), seed.y - (y + 0.5));
+    double falloff = 1.0 - distance / emitter.radius;
+    if (falloff <= 0 || emitter.strength * falloff * falloff < LOOSE_CELL_STEP_FORCE)
+      return -1.0;
+    sourceLayer = seed.sourceLayer;
+    sourceEmitter = seed.emitter;
+    return distance;
+  };
+  const int offsets[] = {-1, 1, -E.cols, E.cols};
+  for (int start : E.activeLiquidCells) {
+    uint8_t material = E.L->grid[start];
+    if (liquidLevelVisited[start] || !E.isLiquidMaterial(material)) continue;
+    int sourceLayer = -1, sourceEmitter = -1;
+    if (heightAt(start, sourceLayer, sourceEmitter) < 0) continue;
+    auto heightInSource = [&](int k) {
+      int layer = -1, emitter = -1;
+      double height = heightAt(k, layer, emitter);
+      return layer == sourceLayer && emitter == sourceEmitter ? height : -1.0;
+    };
+    liquidLevelRegion.clear();
+    liquidLevelDonors.clear();
+    liquidLevelOutlets.clear();
+    liquidLevelRegion.push_back(start);
+    liquidLevelVisited[start] = 1;
+    for (size_t i = 0; i < liquidLevelRegion.size(); i++) {
+      int k = liquidLevelRegion[i];
+      double height = heightInSource(k);
+      bool exposed = false;
+      for (int offset : offsets) {
+        int neighbor = k + offset;
+        uint8_t occupant = E.L->grid[neighbor];
+        bool lighterLiquid = E.isLiquidMaterial(occupant)
+          && E.canDisplaceByLooseDensity(material, occupant);
+        if (occupant != material && occupant != EMPTY && !lighterLiquid) continue;
+        if (E.L->assemblyWakeStamp[neighbor] == E.tick) continue;
+        double neighborHeight = heightInSource(neighbor);
+        if (neighborHeight < 0) continue;
+        if (occupant != material) {
+          exposed |= neighborHeight > height;
+          liquidLevelOutlets.push_back({neighborHeight, neighbor});
+        } else if (!liquidLevelVisited[neighbor]) {
+          liquidLevelVisited[neighbor] = 1;
+          liquidLevelRegion.push_back(neighbor);
+        }
+      }
+      if (exposed && E.L->assemblyWakeStamp[k] != E.tick)
+        liquidLevelDonors.push_back({height, k});
+    }
+    std::sort(liquidLevelDonors.begin(), liquidLevelDonors.end());
+    std::sort(liquidLevelOutlets.begin(), liquidLevelOutlets.end());
+    liquidLevelOutlets.erase(std::unique(liquidLevelOutlets.begin(),
+      liquidLevelOutlets.end()), liquidLevelOutlets.end());
+    // Nearby pressure flow carries a swell around the surface. A small distant
+    // flux resolves shallow gradients that the cell lattice cannot represent.
+    static constexpr int LOCAL_PRESSURE_REACH = 8;
+    int distantBudget = (E.tick & 7) == 0 ? 2 : 0;
+    for (const auto& outlet : liquidLevelOutlets) {
+      uint8_t occupant = E.L->grid[outlet.second];
+      bool lighterLiquid = E.isLiquidMaterial(occupant)
+        && E.canDisplaceByLooseDensity(material, occupant);
+      if (occupant != EMPTY && !lighterLiquid) continue;
+      double minimumDrop = lighterLiquid ? 1.0 : 1.5;
+      int outletY = outlet.second / E.cols;
+      int outletX = outlet.second - outletY * E.cols;
+      int donor = -1, distantDonor = -1;
+      for (int candidate = (int)liquidLevelDonors.size() - 1; candidate >= 0; candidate--) {
+        const auto& from = liquidLevelDonors[candidate];
+        if (from.first <= outlet.first + minimumDrop) break;
+        if (from.second < 0 || E.L->vacatedStamp[from.second] == E.tick) continue;
+        int fromY = from.second / E.cols, fromX = from.second - fromY * E.cols;
+        int dx = fromX - outletX, dy = fromY - outletY;
+        if (dx * dx + dy * dy <= LOCAL_PRESSURE_REACH * LOCAL_PRESSURE_REACH) {
+          donor = candidate;
+          break;
+        }
+        if (distantDonor < 0) distantDonor = candidate;
+      }
+      bool distant = donor < 0;
+      if (distant) {
+        if (distantDonor < 0) continue;
+        E.markCellIndex(liquidLevelDonors[distantDonor].second);
+        if (distantBudget == 0) continue;
+        donor = distantDonor;
+      }
+      int fromK = liquidLevelDonors[donor].second;
+      if (!lighterLiquid && !distant
+          && ((fromK % E.cols + fromK / E.cols + E.tick) & 3) != 0) {
+        E.markCellIndex(fromK);
+        continue;
+      }
+      liquidLevelDonors[donor].second = -1;
+      // Submerged surfaces use the same density contrast, viscosity and
+      // one-exchange-per-tick limit as adjacent liquid density sorting.
+      if (lighterLiquid) {
+        if (E.trySwapSettledLooseByDensity(fromK, outlet.second)) {
+          liquidLevelVisited[outlet.second] = 1;
+          if (distant) distantBudget--;
+        }
+        continue;
+      }
+      if (MOBILITY[material] < 1 && E.rand() >= MOBILITY[material]) {
+        E.markCellIndex(fromK);
+        continue;
+      }
+      E.swapSettledCells(fromK, outlet.second);
+      if (distant) distantBudget--;
+      E.L->vacatedStamp[fromK] = E.tick;
+      E.L->vacatedStamp[outlet.second] = E.tick;
+      liquidLevelVisited[outlet.second] = 1;
+    }
+  }
+}
+
+bool ForceSystem::trySlumpPowder(
+    int x, int y, int k, uint8_t material, double forceX, double forceY) {
+  double forceSquared = forceX * forceX + forceY * forceY;
+  if (forceSquared < LOOSE_CELL_STEP_FORCE * LOOSE_CELL_STEP_FORCE) return false;
+  // A grain avalanches at most one cell, within 60 degrees of local down.
+  // The move must remain downhill at its destination as the field curves.
+  auto downhill = [](double fx, double fy, int dx, int dy) {
+    double dot = fx * dx + fy * dy;
+    return dot > 0 && 4.0 * dot * dot + 1e-12
+      >= (fx * fx + fy * fy) * (dx * dx + dy * dy);
+  };
+  int direction = ((x + y + E.tick) & 1) ? 1 : -1;
+  int destination = -1;
+  double bestAlignment = -1;
+  for (int row = -1; row <= 1; row++) {
+    int dy = row * direction;
+    for (int column = -1; column <= 1; column++) {
+      int dx = column * direction;
+      if ((!dx && !dy) || !downhill(forceX, forceY, dx, dy)) continue;
+      int nx = x + dx, ny = y + dy;
+      if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
+      int toK = ny * E.cols + nx;
+      if (!E.canEnterIndex(toK, material)) continue;
+      // Diagonal motion needs an open side of the corner.
+      if (dx && dy && !E.canEnterIndex(k + dx, material)
+          && !E.canEnterIndex(k + dy * E.cols, material)) continue;
+      double nextForceX, nextForceY;
+      if (!sampleLoose(E.L, nx, ny, FORCE_POWDER, nextForceX, nextForceY)
+          || nextForceX * dx + nextForceY * dy <= 0) continue;
+      double dot = forceX * dx + forceY * dy;
+      double alignment = dot * dot / (dx * dx + dy * dy);
+      if (alignment <= bestAlignment) continue;
+      bestAlignment = alignment;
+      destination = toK;
+    }
+  }
+  if (destination < 0) return false;
+  E.moveMaterialInto(k, destination, material);
+  return true;
+}
+
 bool ForceSystem::tryMoveLoose(
     int x, int y, int k, uint8_t material) {
   uint8_t target = looseTargetForMaterial(material);
@@ -1618,11 +1790,13 @@ bool ForceSystem::tryMoveLoose(
   int forceLayer = layerIndex(E.L);
   // Nearest-cell Voronoi boundaries can sustain microscopic swaps. Once a
   // static field has processed an unchanged material population long enough,
-  // strong-field non-gas cells park so the layer can become inactive.
+  // strong-field non-gas cells park, except for downhill powder avalanches.
   static constexpr int FORCE_EQUILIBRIUM_TICKS = 768;
   if (target != FORCE_GAS && !dynamicField[forceLayer]
       && magnitude >= LOOSE_CELL_STEP_FORCE
       && looseForceAge[forceLayer] >= FORCE_EQUILIBRIUM_TICKS) {
+    if (target == FORCE_POWDER
+        && trySlumpPowder(x, y, k, material, forceX, forceY)) return true;
     E.L->next[k] = material;
     E.carryPersistentStateToNext(k, k, material, PCSO_FORCE_PARK);
     return true;
@@ -1811,6 +1985,8 @@ bool ForceSystem::tryMoveLoose(
     break;
   }
   if (destination < 0) {
+    if (target == FORCE_POWDER
+        && trySlumpPowder(x, y, k, material, forceX, forceY)) return true;
     // The field owns this cell for the tick, but a blocked cell creates no
     // follow-up wake. Static force-balanced arrangements can therefore sleep.
     E.L->next[k] = material;

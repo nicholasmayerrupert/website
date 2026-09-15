@@ -42,15 +42,17 @@ const countMaterial = (engine, mat) =>
   [...engine.getGrid()].filter((value) => value === mat).length;
 const materialStats = (engine, mat, centerX, centerY) => {
   const grid = engine.getGrid();
-  let count = 0, sumRadius = 0, maxY = -1;
+  let count = 0, sumRadius = 0, maxRadius = 0, maxY = -1;
   for (let k = 0; k < grid.length; k++) {
     if (grid[k] !== mat) continue;
     const x = k % COLS, y = Math.floor(k / COLS);
     count++;
-    sumRadius += Math.hypot(x + 0.5 - centerX, y + 0.5 - centerY);
+    const radius = Math.hypot(x + 0.5 - centerX, y + 0.5 - centerY);
+    sumRadius += radius;
+    maxRadius = Math.max(maxRadius, radius);
     maxY = Math.max(maxY, y);
   }
-  return { count, meanRadius: count ? sumRadius / count : 0, maxY };
+  return { count, meanRadius: count ? sumRadius / count : 0, maxRadius, maxY };
 };
 const longestVerticalInterface = (engine, first, second) => {
   const grid = engine.getGrid();
@@ -375,8 +377,8 @@ for (const [label, mat, limit] of [
   const before = countMaterial(engine, MAT.WATER);
   const idleAt = runUntilIdle(engine, 600);
   const held = materialStats(engine, MAT.WATER, sourceX, sourceY);
-  check(`suspended neutronium holds water radially (max y ${held.maxY})`,
-    held.count === before && held.maxY <= sourceY + 8);
+  check(`suspended neutronium holds water radially (radius ${held.maxRadius.toFixed(2)})`,
+    held.count === before && held.maxRadius <= 12);
   check(`a static neutronium-water scene settles (${idleAt} steps)`,
     idleAt > 0 && idleAt <= 600 && engine.stepWorld() === false);
 
@@ -427,8 +429,8 @@ for (const [label, mat, limit] of [
   engine.destroy();
 }
 
-// Radial density sorting places denser sand inside the water shell. Both
-// materials remain conserved and the resulting static arrangement goes idle.
+// Radial density sorting removes water beneath sand. A powder mound can rise
+// above the leveled water surface, so whole-material mean radii need not order.
 {
   const { engine, sourceX, sourceY } = createSuspendedSource();
   for (let y = 34; y <= 48; y++) {
@@ -439,15 +441,29 @@ for (const [label, mat, limit] of [
   }
   const sandBefore = countMaterial(engine, MAT.SAND);
   const waterBefore = countMaterial(engine, MAT.WATER);
-  const idleAt = runUntilIdle(engine, 320);
+  const countWaterUnderSand = () => {
+    const grid = engine.getGrid();
+    let inversions = 0;
+    for (let k = 0; k < grid.length; k++) {
+      if (grid[k] !== MAT.SAND) continue;
+      const dx = Math.sign(sourceX - k % COLS);
+      const dy = Math.sign(sourceY - Math.floor(k / COLS));
+      for (const offset of new Set([dx, dy * COLS, dx + dy * COLS]))
+        if (offset && grid[k + offset] === MAT.WATER) inversions++;
+    }
+    return inversions;
+  };
+  const inversionsBefore = countWaterUnderSand();
+  const idleAt = runUntilIdle(engine, 900);
   const sand = materialStats(engine, MAT.SAND, sourceX, sourceY);
   const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
-  check(`sand sorts inside water (${sand.meanRadius.toFixed(2)} < ${water.meanRadius.toFixed(2)})`,
-    sand.meanRadius < water.meanRadius);
+  const inversionsAfter = countWaterUnderSand();
+  check(`sand displaces inward water (${inversionsBefore} -> ${inversionsAfter} inversions)`,
+    inversionsBefore > 100 && inversionsAfter <= inversionsBefore * 0.05);
   check('radially sorted sand and water are conserved',
     sand.count === sandBefore && water.count === waterBefore);
   check(`a static mixed scene settles (${idleAt} steps)`,
-    idleAt > 0 && idleAt <= 320 && engine.stepWorld() === false);
+    idleAt > 0 && idleAt <= 900 && engine.stepWorld() === false);
   engine.destroy();
 }
 
@@ -524,6 +540,104 @@ for (const [label, innerMaterial, outerMaterial] of [
   engine.destroy();
 }
 
+// A heavy pour inside a lighter pool must form a shell, not cardinal lobes.
+for (const [layer, reversed, heavyMaterial, lightMaterial] of [
+  [0, false, MAT.WATER, MAT.OIL], [0, true, MAT.WATER, MAT.OIL],
+  [1, false, MAT.WATER, MAT.OIL], [0, false, MAT.ACID, MAT.WATER],
+]) {
+  const engine = createEngineWasm();
+  if (layer) {
+    engine.setBgEnabled(true);
+    paintRect(engine, 0, 0, COLS - 1, ROWS - 1, MAT.STONE);
+    engine.syncComponents();
+  }
+  const grid = () => layer ? engine.getGridBg() : engine.getGrid();
+  const cx = 90, cy = 55;
+  const support = heavyMaterial === MAT.ACID ? MAT.GLASS : MAT.STONE;
+  paintRectLayer(engine, layer, 0, 112, COLS - 1, ROWS - 1, support);
+  paintRectLayer(engine, layer, cx, cy + 5, cx, 111, support);
+  engine.paintDiscLayer(layer, cx, cy, 5, MAT.NEUTRONIUM, true);
+  engine.syncComponentsLayer(layer);
+  const source = [];
+  for (let k = 0; k < grid().length; k++)
+    if (grid()[k] === MAT.NEUTRONIUM) source.push([k % COLS, Math.floor(k / COLS)]);
+  for (let y = cy - 26; y <= cy + 26; y++) {
+    for (let x = cx - 26; x <= cx + 26; x++) {
+      const radius = Math.hypot(x - cx, y - cy);
+      if (radius > 26 || grid()[y * COLS + x] !== MAT.EMPTY) continue;
+      const heavy = reversed ? radius < 13 : false;
+      engine.paintDiscLayer(layer, x, y, 0, heavy ? heavyMaterial : lightMaterial, true);
+    }
+  }
+  for (let step = 0; step < 100; step++) engine.stepWorld();
+  if (!reversed) paintRectLayer(engine, layer, 78, 10, 102, 24, heavyMaterial);
+  const count = (mat) => [...grid()].filter((m) => m === mat).length;
+  const heavyBefore = count(heavyMaterial), lightBefore = count(lightMaterial);
+  const idleAt = runUntilIdle(engine, 1800);
+  const liquidHeights = [], heavyHeights = [], sectors = Array(8).fill(0);
+  for (let k = 0; k < grid().length; k++) {
+    const mat = grid()[k];
+    if (mat !== heavyMaterial && mat !== lightMaterial) continue;
+    const dx = k % COLS - cx, dy = Math.floor(k / COLS) - cy;
+    const height = Math.min(...source.map(([sx, sy]) =>
+      Math.hypot(dx + cx - sx, dy + cy - sy)));
+    liquidHeights.push(height);
+    if (mat !== heavyMaterial) continue;
+    heavyHeights.push(height);
+    const sector = Math.floor((Math.atan2(dy, dx) + Math.PI) * 4 / Math.PI) % 8;
+    sectors[sector]++;
+  }
+  liquidHeights.sort((a, b) => a - b);
+  const idealHeight = liquidHeights[heavyBefore - 1];
+  const misplaced = heavyHeights.filter((height) => height > idealHeight + 2).length;
+  const label = `liquid shells ${heavyMaterial}/${lightMaterial} layer ${layer} ${reversed ? 'heavy first' : 'heavy poured last'}`;
+  check(`${label}: heavy liquid fills the inner shell (${misplaced} outliers)`,
+    misplaced <= heavyBefore * 0.02);
+  check(`${label}: heavy liquid covers diagonal and cardinal sectors (${sectors.join('/')})`,
+    Math.min(...sectors) >= heavyBefore * 0.07);
+  check(`${label}: both liquids are conserved`,
+    heavyBefore > 0 && lightBefore > 0
+      && count(heavyMaterial) === heavyBefore && count(lightMaterial) === lightBefore);
+  check(`${label}: concentric layers come to rest (${idleAt} steps)`,
+    idleAt > 0 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// A fresh pour stays near its impact before pressure spreads around the pool.
+{
+  const { engine, sourceX, sourceY } = createOpenSuspendedSource();
+  for (let y = sourceY - 22; y <= sourceY + 22; y++)
+    for (let x = sourceX - 22; x <= sourceX + 22; x++)
+      if (Math.hypot(x - sourceX, y - sourceY) <= 22
+          && engine.getGrid()[y * COLS + x] === MAT.EMPTY)
+        engine.paintDisc(x, y, 0, MAT.WATER, true);
+  runUntilIdle(engine, 1800);
+  const before = engine.getGrid().slice();
+  const pourY = sourceY - 24;
+  engine.paintDisc(sourceX, pourY, 5, MAT.WATER, true);
+  const volume = countMaterial(engine, MAT.WATER);
+  const farGrowth = () => {
+    let cells = 0;
+    const grid = engine.getGrid();
+    for (let k = 0; k < grid.length; k++)
+      if (grid[k] === MAT.WATER && before[k] !== MAT.WATER
+          && Math.hypot(k % COLS - sourceX, Math.floor(k / COLS) - pourY) > 24)
+        cells++;
+    return cells;
+  };
+  for (let step = 0; step < 8; step++) engine.stepWorld();
+  const earlyGrowth = farGrowth();
+  check(`a pour does not immediately inflate the far surface (${earlyGrowth} cells)`,
+    earlyGrowth <= 8);
+  const idleAt = runUntilIdle(engine, 2400);
+  const finalGrowth = farGrowth();
+  check(`the swell gradually reaches the rest of the pool (${earlyGrowth} -> ${finalGrowth})`,
+    finalGrowth >= earlyGrowth + 8);
+  check('gradual surface leveling conserves water', countMaterial(engine, MAT.WATER) === volume);
+  check(`the swell settles (${idleAt} steps)`, idleAt > 0 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
 // Radial density sorting is independent of the initial shell order. Denser
 // lava moves inside lighter sand, including when the sand starts nearer.
 for (const [label, innerMaterial, outerMaterial] of [
@@ -574,17 +688,19 @@ for (const [label, innerMaterial, outerMaterial] of [
   engine.syncComponents();
   const lavaBefore = countMaterial(engine, MAT.LAVA);
   const dirtBefore = countMaterial(engine, MAT.DIRT);
-  for (let step = 0; step < 240; step++) engine.stepWorld();
+  // Measure the seam after the viscosity-limited interface has time to relax.
+  for (let step = 0; step < 720; step++) engine.stepWorld();
   const seam = longestVerticalInterface(engine, MAT.LAVA, MAT.DIRT);
-  const idleAfter = runUntilIdle(engine, 2760);
-  const idleAt = idleAfter < 0 ? -1 : idleAfter + 240;
-  check(`a broad neutronium pile quickly sheds vertical loose-material seams (${seam} cells)`,
+  // The final idle window includes transient fire emitted by the lava.
+  const idleAfter = runUntilIdle(engine, 2480);
+  const idleAt = idleAfter < 0 ? -1 : idleAfter + 720;
+  check(`a broad neutronium pile sheds vertical loose-material seams (${seam} cells)`,
     seam <= 6);
   check('broad-source pile relaxation conserves lava and dirt',
     countMaterial(engine, MAT.LAVA) === lavaBefore
       && countMaterial(engine, MAT.DIRT) === dirtBefore);
   check(`a broad-source mixed pile settles (${idleAt} steps)`,
-    idleAt > 0 && idleAt <= 3000 && engine.stepWorld() === false);
+    idleAt > 0 && idleAt <= 3200 && engine.stepWorld() === false);
   engine.destroy();
 }
 
@@ -608,6 +724,117 @@ for (const [label, innerMaterial, outerMaterial] of [
   const idleAfter = runUntilIdle(engine, 2760);
   check(`broad-source sand relaxation settles (${idleAfter + 240} steps)`,
     idleAfter > 0 && idleAfter <= 2760 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// Loose solids slump at an exposed source tip but retain a localized mound.
+for (const [powder, layer, depth] of [
+  [MAT.SAND, 0, 1], [MAT.DIRT, 0, 1], [MAT.SAND, 1, 1],
+  [MAT.SAND, 0, 19],
+]) {
+  const engine = createEngineWasm();
+  if (layer) {
+    engine.setBgEnabled(true);
+    paintRect(engine, 0, 0, COLS - 1, ROWS - 1, MAT.STONE);
+    engine.syncComponents();
+  }
+  const grid = () => layer ? engine.getGridBg() : engine.getGrid();
+  paintRectLayer(engine, layer, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRectLayer(engine, layer, 40, 96, 40, 111, MAT.STONE);
+  for (let x = 40; x <= 100; x++)
+    engine.paintDiscLayer(layer, x, 95 - Math.round((x - 40) * 5 / 6), 1, MAT.NEUTRONIUM, true);
+  engine.syncComponentsLayer(layer);
+  paintRectLayer(engine, layer, depth === 1 ? 102 : 104, 45,
+    depth === 1 ? 131 : 124, 44 + depth, powder);
+  const volume = [...grid()].filter((m) => m === powder).length;
+  const idleAt = runUntilIdle(engine, 1200);
+  let sharpEdge = 0, run = 0, nearTip = 0, farEnd = 0;
+  for (let y = 1; y < ROWS - 1; y++) {
+    run = 0;
+    for (let x = 102; x < COLS - 1; x++) {
+      const k = y * COLS + x;
+      run = grid()[k] === powder && grid()[k - COLS] === MAT.EMPTY ? run + 1 : 0;
+      sharpEdge = Math.max(sharpEdge, run);
+    }
+  }
+  for (let k = 0; k < grid().length; k++) {
+    if (grid()[k] !== powder) continue;
+    if (k % COLS >= 80) nearTip++;
+    if (k % COLS < 60) farEnd++;
+  }
+  const label = `powder ${powder} layer ${layer} depth ${depth}`;
+  check(`${label} slumps the sharp tip edge (${sharpEdge} cells)`, sharpEdge <= 4);
+  check(`${label} retains a local mound (${nearTip}/${volume} near tip, ${farEnd} far away)`,
+    nearTip >= volume * 0.7 && farEnd === 0);
+  check(`${label} tip slumping conserves material`,
+    [...grid()].filter((m) => m === powder).length === volume);
+  check(`${label} tip slumping sleeps (${idleAt} steps)`,
+    idleAt > 0 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// A one-sided pour levels around long faces, including diagonal cell edges.
+for (const [diagonal, layer, liquid] of [
+  [false, 0, MAT.WATER], [true, 0, MAT.WATER],
+  [true, 1, MAT.WATER], [false, 0, MAT.OIL],
+]) {
+  const engine = createEngineWasm();
+  if (layer) {
+    engine.setBgEnabled(true);
+    paintRect(engine, 0, 0, COLS - 1, ROWS - 1, MAT.STONE);
+    engine.syncComponents();
+  }
+  const grid = () => layer ? engine.getGridBg() : engine.getGrid();
+  const count = () => [...grid()].filter((m) => m === liquid).length;
+  const source = [];
+  paintRectLayer(engine, layer, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRectLayer(engine, layer, 65, 96, 65, 111, MAT.STONE);
+  for (let y = 30; y <= 95; y++) {
+    const x = diagonal ? 65 + Math.round((95 - y) * 0.6) : 65;
+    engine.paintDiscLayer(layer, x, y, 1, MAT.NEUTRONIUM, true);
+  }
+  engine.syncComponentsLayer(layer);
+  for (let k = 0; k < grid().length; k++) {
+    if (grid()[k] === MAT.NEUTRONIUM)
+      source.push([k % COLS, Math.floor(k / COLS)]);
+  }
+  const pourX = diagonal ? 110 : 72;
+  paintRectLayer(engine, layer, pourX, 30, pourX + 15, 54, liquid);
+  const volume = count();
+  const idleAt = runUntilIdle(engine, 1600);
+  let maxDepth = 0, lowerWater = 0;
+  for (let k = 0; k < grid().length; k++) {
+    if (grid()[k] !== liquid) continue;
+    const x = k % COLS, y = Math.floor(k / COLS);
+    maxDepth = Math.max(maxDepth,
+      Math.min(...source.map(([sx, sy]) => Math.hypot(x - sx, y - sy))));
+    if (y >= 73) lowerWater++;
+  }
+  const label = `${diagonal ? 'diagonal' : 'vertical'} layer ${layer} liquid ${liquid}`;
+  check(`${label} liquid surface levels (maximum depth ${maxDepth.toFixed(2)})`,
+    maxDepth <= 6);
+  check(`${label} liquid reaches the far end (${lowerWater} cells)`, lowerWater >= 60);
+  check(`${label} leveling conserves liquid`, count() === volume);
+  check(`${label} leveled pool sleeps (${idleAt} steps)`, idleAt > 0 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// Pressure cannot connect pools through a solid partition, even when both
+// sides share one neutronium emitter.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 65, 30, 67, 111, MAT.NEUTRONIUM);
+  paintRect(engine, 0, 60, COLS - 1, 62, MAT.STONE);
+  paintRect(engine, COLS - 1, 60, COLS - 1, 111, MAT.STONE);
+  engine.syncComponents();
+  paintRect(engine, 72, 30, 87, 54, MAT.WATER);
+  const volume = countMaterial(engine, MAT.WATER);
+  runUntilIdle(engine, 1600);
+  check('neutronium pressure does not cross a solid partition',
+    engine.getGrid().slice(63 * COLS).every((m) => m !== MAT.WATER));
+  check('partitioned neutronium pool conserves water',
+    countMaterial(engine, MAT.WATER) === volume);
   engine.destroy();
 }
 

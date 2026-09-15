@@ -309,11 +309,12 @@ function floorMat(e, mat) {
     maxOilAboveSurface <= 20,
   );
   // Density-contrast exchange is deliberately gradual, but the water must enter
-  // the oil instead of remaining stranded above the interface.
+  // the oil instead of remaining stranded above the interface. Include water
+  // that has already reached the floor below the initial oil rectangle.
   {
     const g = e.getGrid();
     let waterInOil = 0, waterAbove = 0;
-    for (let y = 0; y <= oilBot; y++) {
+    for (let y = 0; y < ROWS; y++) {
       for (let x = 1; x < COLS - 1; x++) {
         if (g[k(x, y)] !== MAT.WATER) continue;
         if (y >= oilTop) waterInOil++;
@@ -460,6 +461,128 @@ function floorMat(e, mat) {
     runConserve(e, [MAT.SAND, MAT.WATER], 250, 'sand on water');
     e.destroy();
   }
+}
+
+// Occupied powder/liquid exchange is local and viscosity-limited in sealed lanes.
+{
+  console.log('\n13. powder/liquid density exchange rate and per-tick budget');
+  const lane = (moving, target) => {
+    let distance = 0, maxJump = 0, conserved = true;
+    for (let seed = 0; seed < 24; seed++) {
+      const e = createEngineWasm({
+        cols: COLS, rows: ROWS, worldSeed: SEED + seed, sinksOn: false,
+      });
+      e.setBgEnabled(false);
+      stoneBox(e, 29, 31, 3, ROWS - 2);
+      fillRect(e, 30, 30, 9, ROWS - 3, target);
+      e.paintDisc(30, 8, 0, moving, true);
+      const before = snapshot(e, [moving, target]);
+      let previous = 8;
+      for (let tick = 0; tick < 32; tick++) {
+        e.stepWorld();
+        const g = e.getGrid();
+        const index = g.indexOf(moving);
+        const y = Math.floor(index / COLS);
+        maxJump = Math.max(maxJump, Math.abs(y - previous));
+        distance += y - previous;
+        previous = y;
+        conserved &&= count(g, moving) === before[moving]
+          && count(g, target) === before[target];
+      }
+      e.destroy();
+    }
+    return { distance, maxJump, conserved };
+  };
+  const lavaSand = lane(MAT.LAVA, MAT.SAND);
+  const lavaDust = lane(MAT.LAVA, MAT.STONE_DUST);
+  const sandWater = lane(MAT.SAND, MAT.WATER);
+  const sandLava = lane(MAT.SAND, MAT.LAVA);
+  for (const [label, result] of Object.entries({ lavaSand, lavaDust, sandWater, sandLava })) {
+    check(`${label}: at most one exchanged cell per tick (${result.maxJump})`, result.maxJump <= 1);
+    check(`${label}: both materials conserved`, result.conserved);
+  }
+  check(`lava exchange includes stalled ticks (${lavaSand.distance}/768)`,
+    lavaSand.distance > 30 && lavaSand.distance < 230);
+  check(`near-equal density exchanges more slowly (${lavaDust.distance} vs ${lavaSand.distance})`,
+    lavaDust.distance > 0 && lavaDust.distance * 3 < lavaSand.distance);
+  check('sand sinks in water and stays above denser lava',
+    sandWater.distance > 100 && sandLava.distance === 0);
+}
+
+// A rejected diagonal density exchange must not cancel a clear fall below.
+{
+  let fell = true, conserved = true;
+  for (const [moving, target] of [[MAT.LAVA, MAT.SAND], [MAT.SAND, MAT.WATER]]) {
+    for (let seed = 0; seed < 24; seed++) {
+      const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED + seed, sinksOn: false });
+      e.setBgEnabled(false);
+      stoneBox(e, 29, 32, 3, 10);
+      e.paintDisc(30, 8, 0, moving, true);
+      e.paintDisc(31, 9, 0, target, true);
+      e.stepWorld();
+      const g = e.getGrid();
+      fell &&= g[k(30, 8)] !== moving && Math.floor(g.indexOf(moving) / COLS) === 9;
+      conserved &&= count(g, moving) === 1 && count(g, target) === 1;
+      e.destroy();
+    }
+  }
+  check('clear fall proceeds beside a powder/liquid density contact', fell);
+  check('clear-fall density contact conserves both materials', conserved);
+}
+
+// Gap filling carries a liquid's exchange lock into its new position.
+{
+  let exchanged = 0, repeated = 0, conserved = true;
+  for (let seed = 0; seed < 96; seed++) {
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED + seed, sinksOn: false });
+    e.setBgEnabled(false);
+    stoneBox(e, 19, 23, 17, 22);
+    for (const [x, y] of [[20, 21], [21, 19], [22, 19], [22, 20], [22, 21]])
+      e.paintDisc(x, y, 0, MAT.STONE, true);
+    e.stepWorld();
+    e.paintDisc(20, 19, 0, MAT.WATER, true);
+    e.paintDisc(20, 20, 0, MAT.SNOW, true);
+    e.paintDisc(21, 21, 0, MAT.OIL, true);
+    e.stepWorld();
+    const g = e.getGrid();
+    if (g[k(20, 19)] === MAT.SNOW) {
+      exchanged++;
+      if (g[k(21, 21)] === MAT.WATER) repeated++;
+    }
+    conserved &&= [MAT.WATER, MAT.SNOW, MAT.OIL].every(mat => count(g, mat) === 1);
+    e.destroy();
+  }
+  check(`gap-fill scene exercised powder/liquid exchange (${exchanged}/96)`, exchanged > 10);
+  check(`gap-fill liquid cannot exchange twice (${repeated})`, repeated === 0);
+  check('gap-fill exchange conserves all three materials', conserved);
+}
+
+// A supported background powder remains a density exchange, not empty volume.
+{
+  console.log('\n14. cross-layer powder/liquid exchange uses the same rate');
+  let swaps = 0, conserved = true;
+  for (let seed = 0; seed < 96; seed++) {
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED + seed, sinksOn: false });
+    for (const layer of [0, 1]) {
+      for (const x of [29, 31]) for (let y = 3; y < ROWS; y++)
+        e.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+      e.paintDiscLayer(layer, 30, 9, 0, MAT.STONE, true);
+      e.paintDiscLayer(layer, 30, 12, 0, MAT.STONE, true);
+    }
+    e.paintDiscLayer(0, 30, 11, 0, MAT.STONE, true);
+    e.paintDiscLayer(0, 30, 10, 0, MAT.LAVA, true);
+    e.paintDiscLayer(1, 30, 10, 0, MAT.SAND, true);
+    e.paintDiscLayer(1, 30, 11, 0, MAT.SAND, true);
+    e.syncComponents();
+    e.stepWorld();
+    const fg = e.getGrid(), bg = e.getGridBg();
+    if (bg[k(30, 10)] === MAT.LAVA && fg[k(30, 10)] === MAT.SAND) swaps++;
+    conserved &&= count(fg, MAT.LAVA) + count(bg, MAT.LAVA) === 1
+      && count(fg, MAT.SAND) + count(bg, MAT.SAND) === 2;
+    e.destroy();
+  }
+  check(`cross-layer lava/sand swaps are rate limited (${swaps}/96)`, swaps > 2 && swaps < 35);
+  check('cross-layer swaps conserve both materials', conserved);
 }
 
 const failures = done();

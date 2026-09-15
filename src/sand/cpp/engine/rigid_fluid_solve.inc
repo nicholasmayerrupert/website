@@ -155,18 +155,10 @@
           fluidSolveLowerFactor[i][edge] = 0;
           continue;
         }
-        double correction = 0;
-        for (int a = 0; a < edge; a++) {
-          int common = fluidSolveLower[i][a];
-          if (common >= j) continue;
-          for (int b = 0; b < fluidSolveLowerCount[j]; b++)
-            if (fluidSolveLower[j][b] == common)
-              correction += fluidSolveLowerFactor[i][a]
-                          * fluidSolveLowerFactor[j][b];
-        }
+        // Cardinal grid neighbours have no shared predecessor: the fluid
+        // stencil is bipartite, so the incomplete-Cholesky cross term is zero.
         fluidSolveLowerFactor[i][edge] =
-          (fluidSolveLowerMatrix[i][edge] - correction)
-          / fluidSolveFactorDiagonal[j];
+          fluidSolveLowerMatrix[i][edge] / fluidSolveFactorDiagonal[j];
         diagonal -= fluidSolveLowerFactor[i][edge]
                   * fluidSolveLowerFactor[i][edge];
       }
@@ -177,18 +169,23 @@
       if (!hasPinned) {
         for (int i = 0; i < nodeCount; i++) {
           double value = fluidSolveResidual[i];
-          for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
-            value -= fluidSolveLowerFactor[i][edge]
-                   * fluidSolveApplied[fluidSolveLower[i][edge]];
+          if (fluidSolveLowerCount[i] > 0)
+            value -= fluidSolveLowerFactor[i][0]
+                   * fluidSolveApplied[fluidSolveLower[i][0]];
+          if (fluidSolveLowerCount[i] > 1)
+            value -= fluidSolveLowerFactor[i][1]
+                   * fluidSolveApplied[fluidSolveLower[i][1]];
           fluidSolveApplied[i] = value / fluidSolveFactorDiagonal[i];
         }
         for (int i = nodeCount - 1; i >= 0; i--) {
           fluidSolvePreconditioned[i] =
             fluidSolveApplied[i] / fluidSolveFactorDiagonal[i];
-          for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
-            fluidSolveApplied[fluidSolveLower[i][edge]] -=
-              fluidSolveLowerFactor[i][edge]
-              * fluidSolvePreconditioned[i];
+          if (fluidSolveLowerCount[i] > 0)
+            fluidSolveApplied[fluidSolveLower[i][0]] -=
+              fluidSolveLowerFactor[i][0] * fluidSolvePreconditioned[i];
+          if (fluidSolveLowerCount[i] > 1)
+            fluidSolveApplied[fluidSolveLower[i][1]] -=
+              fluidSolveLowerFactor[i][1] * fluidSolvePreconditioned[i];
         }
         return;
       }
@@ -198,19 +195,24 @@
           continue;
         }
         double value = fluidSolveResidual[i];
-        for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
-          value -= fluidSolveLowerFactor[i][edge]
-                 * fluidSolveApplied[fluidSolveLower[i][edge]];
+        if (fluidSolveLowerCount[i] > 0)
+          value -= fluidSolveLowerFactor[i][0]
+                 * fluidSolveApplied[fluidSolveLower[i][0]];
+        if (fluidSolveLowerCount[i] > 1)
+          value -= fluidSolveLowerFactor[i][1]
+                 * fluidSolveApplied[fluidSolveLower[i][1]];
         fluidSolveApplied[i] = value / fluidSolveFactorDiagonal[i];
       }
       for (int i = nodeCount - 1; i >= 0; i--) {
         if (fluidSolvePinned[i]) continue;
         fluidSolvePreconditioned[i] =
           fluidSolveApplied[i] / fluidSolveFactorDiagonal[i];
-        for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
-          fluidSolveApplied[fluidSolveLower[i][edge]] -=
-            fluidSolveLowerFactor[i][edge]
-            * fluidSolvePreconditioned[i];
+        if (fluidSolveLowerCount[i] > 0)
+          fluidSolveApplied[fluidSolveLower[i][0]] -=
+            fluidSolveLowerFactor[i][0] * fluidSolvePreconditioned[i];
+        if (fluidSolveLowerCount[i] > 1)
+          fluidSolveApplied[fluidSolveLower[i][1]] -=
+            fluidSolveLowerFactor[i][1] * fluidSolvePreconditioned[i];
       }
     };
     applyPressureMatrix(false);

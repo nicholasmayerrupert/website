@@ -720,6 +720,21 @@ than gravity, so oil poured after water still settles outside the water.
 Layer-wide tangential flow stops after quadrant coverage is balanced or stops
 improving, while pressure-backed powder keeps taking supported tangent steps
 along an elongated neutronium face until its local column spreads.
+Blocked powders can also avalanche one cell within 60 degrees of local down,
+provided the path remains downhill and has an open side around diagonal corners.
+This local slumping remains available after the field's settling timer expires;
+it removes unsupported edges while preserving mounds and resting slopes.
+Liquids also level free and submerged surfaces by pressure through face-connected pools
+under the same neutronium source. Height is distance from the nearest source
+cell, so vertical and diagonal faces level just like horizontal ones. Surface
+volume moves into lower empty or lighter-liquid boundary cells with a strict
+height drop; walls and separate pools block this exchange. Pressure favors
+transfers within eight cells, with free-surface flow staggered over four ticks.
+At most two distant transfers per pool every eight ticks resolve shallow
+gradients, so a pour spreads as a local swell before the whole surface levels.
+Submerged exchanges preserve both liquids and use the shared density contrast,
+viscosity, and per-tick exchange limit to form nested layers. This pass continues
+independently of the tangential-flow timer until the surface is level.
 A blocked static arrangement becomes inactive; moving neutronium bodies continue
 to wake their field.
 

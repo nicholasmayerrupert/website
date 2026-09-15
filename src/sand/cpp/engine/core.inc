@@ -30,21 +30,20 @@
   void carryNextFallSpeed(int k, uint8_t speed) {
     if (L->fallSpeed.next) L->fallSpeed.next[k] = speed;
   }
-  bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
     uint8_t m = L->grid[k];
     if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) return;
     if (L->forceActive && forces.overridesGravity(x, y, m)) return;
     if (!gravityCellStepAt(x)) return;
-    if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
     // Liquid↔liquid density is handled by the post-settle adjacent-swap pass.
     // This pass is powder↔liquid; powder↔powder contacts remain supportive.
     auto trySink = [&](int ik) {
       if (!canDisplaceByLooseDensity(m, L->grid[ik]) || L->next[ik] != EMPTY) return false;
       if (isLiquidMaterial(m) && isLiquidMaterial(L->grid[ik])) return false;
-      moveMaterialInto(k, ik, m);
+      // A rejected exchange leaves ordinary empty-space falling available.
+      moveMaterialInto(k, ik, m, false);
       return true;
     };
     if (y + 1 < rows && trySink(belowK)) return;
@@ -98,7 +97,7 @@
       if (dst != belowK) markMoveSpan(k, dst);
       return;
     }
-    if (y + 1 < rows && canDisplaceMaterial(self, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
+    if (y + 1 < rows && isGasMaterial(L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
@@ -109,7 +108,7 @@
         carryPersistentStateToNext(k, ik, self, PCSO_MOVE);
         audio.notePowderMove(self, nx, y + 1); return;
       }
-      if (canDisplaceMaterial(self, m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
+      if (isGasMaterial(m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, self);
   }
@@ -211,16 +210,6 @@
       }
     }
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
-    // LATERAL density push into lighter POWDER only.
-    for (int i = 0; i < 2; i++) {
-      int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
-      int sk = k + dx;
-      if (!liquidCanClaim(sk, m)) continue;
-      uint8_t occ = liquidOccupantAt(sk);
-      if (!isLooseSolidMaterial(occ) || !canDisplaceByLooseDensity(m, occ)) continue;
-      moveLiquidInto(k, nx, y, m);
-      return;
-    }
     if (y + 1 < rows && supportsLiquid(L->grid[belowK], m)) {
       // Same material above OR lighter liquid above (submerged denser body).
       bool hasAbove = liquidPressureAbove(k, m);
@@ -293,6 +282,8 @@
   void swapSettledCells(int a, int b) {
     const uint8_t materialA = L->grid[a];
     const uint8_t materialB = L->grid[b];
+    const bool lockedA = materialA != EMPTY && L->vacatedStamp[a] == tick;
+    const bool lockedB = materialB != EMPTY && L->vacatedStamp[b] == tick;
     const PersistentCellSnapshot stateA = capturePersistentCurrentState(L, a);
     const PersistentCellSnapshot stateB = capturePersistentCurrentState(L, b);
 
@@ -307,27 +298,34 @@
     L->next[b] = materialA;
     restorePersistentNextState(L, a, materialB, stateB, PCSO_SWAP);
     restorePersistentNextState(L, b, materialA, stateA, PCSO_SWAP);
+    // Empty-space gap moves carry the occupied cell's exchange lock.
+    if (lockedA) L->vacatedStamp[b] = tick;
+    if (lockedB) L->vacatedStamp[a] = tick;
   }
 
-  bool trySwapSettledLiquidsByDensity(int heavyK, int lightK) {
-    if (L->vacatedStamp[heavyK] == tick || L->vacatedStamp[lightK] == tick)
-      return false;
-    if (L->assemblyWakeStamp[heavyK] == tick
-        || L->assemblyWakeStamp[lightK] == tick)
-      return false;
-    uint8_t heavy = L->grid[heavyK], light = L->grid[lightK];
-    if (!isLiquidMaterial(heavy) || !isLiquidMaterial(light)
-        || DENSITY[heavy] <= DENSITY[light])
-      return false;
-    markCellIndex(heavyK);
-    markCellIndex(lightK);
-    // Density contrast sets the exchange rate; the heavier liquid's mobility
-    // applies the same viscosity gate used by its ordinary movement.
+  // All occupied loose-density exchanges share viscosity and movement guards.
+  // The liquid sets drag when the denser participant is a powder.
+  bool allowLooseDensityExchange(Layer* heavyLayer, int heavyK,
+                                 Layer* lightLayer, int lightK) {
+    if (heavyLayer->vacatedStamp[heavyK] == tick
+        || lightLayer->vacatedStamp[lightK] == tick
+        || heavyLayer->assemblyWakeStamp[heavyK] == tick
+        || lightLayer->assemblyWakeStamp[lightK] == tick) return false;
+    uint8_t heavy = heavyLayer->grid[heavyK], light = lightLayer->grid[lightK];
+    if (!canDisplaceByLooseDensity(heavy, light)) return false;
+    markWorldTileDirty(heavyLayer, heavyK);
+    markWorldTileDirty(lightLayer, lightK);
+    markLayerCell(heavyLayer, heavyK);
+    markLayerCell(lightLayer, lightK);
+    uint8_t liquid = isLiquidMaterial(heavy) ? heavy : light;
     double contrast = (DENSITY[heavy] - DENSITY[light])
       / (DENSITY[heavy] + DENSITY[light]);
     double chance = std::fmin(
-      1.0, contrast * MOBILITY[heavy] * LIQUID_DENSITY_EXCHANGE_RATE);
-    if (rand() >= chance) return false;
+      1.0, contrast * MOBILITY[liquid] * LIQUID_DENSITY_EXCHANGE_RATE);
+    return rand() < chance;
+  }
+  bool trySwapSettledLooseByDensity(int heavyK, int lightK) {
+    if (!allowLooseDensityExchange(L, heavyK, L, lightK)) return false;
     swapSettledCells(heavyK, lightK);
     L->vacatedStamp[heavyK] = tick;
     L->vacatedStamp[lightK] = tick;
@@ -471,8 +469,8 @@
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
           if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick || L->assemblyWakeStamp[toK] == tick) continue;
-          if (isLiquidMaterial(L->grid[toK])) {
-            trySwapSettledLiquidsByDensity(k, toK);
+          if (isLooseDensityMaterial(L->grid[toK])) {
+            trySwapSettledLooseByDensity(k, toK);
             continue;
           }
           if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
@@ -504,8 +502,9 @@
       if (L->assemblyWakeStamp[fartherK] == tick
           || L->assemblyWakeStamp[closerK] == tick)
         return;
-      if (!isLiquidMaterial(L->grid[fartherK])) return;
-      trySwapSettledLiquidsByDensity(fartherK, closerK);
+      if (!isLiquidMaterial(L->grid[fartherK])
+          || !isLiquidMaterial(L->grid[closerK])) return;
+      trySwapSettledLooseByDensity(fartherK, closerK);
     };
 
     for (int pass = 0; pass < 2; pass++) {
@@ -546,39 +545,6 @@
   void separateLiquidsByDensity() {
     if (L->forceActive) separateLiquidsByDensityPass<true>();
     else separateLiquidsByDensityPass<false>();
-  }
-  template <bool spatialForces>
-  void separateLooseByDensityPass() {
-    int parity = rand() < 0.5 ? 0 : 1;
-    // Keep the RNG draw above for deterministic parity with the former scan.
-    if (activeDensityCells.empty()) return;
-    for (int y = 1; y < rows - 1; y++) {
-      if (L->activeRowSpans[y].empty()) continue;
-      bool ltr = (y % 2) == 0;
-      forEachActiveSpan(y, 1, cols - 2, ltr, [&](int minX, int maxX) {
-        int start = ltr ? minX : maxX;
-        int end = ltr ? maxX + 1 : minX - 1;
-        int stepX = ltr ? 1 : -1;
-        for (int x = start; x != end; x += stepX) {
-        if (((x + y) % 2) != parity) continue;
-        int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
-        if constexpr (spatialForces) {
-          if (isLooseDensityMaterial(upper)
-              && forces.overridesGravity(x, y, upper))
-            continue;
-        }
-        // Liquid↔liquid exchange is owned by separateLiquidsByDensity().
-        if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
-        if (canDisplaceByLooseDensity(upper, lower)) {
-          swapSettledCells(k, belowK);
-        }
-        }
-      });
-    }
-  }
-  void separateLooseByDensity() {
-    if (L->forceActive) separateLooseByDensityPass<true>();
-    else separateLooseByDensityPass<false>();
   }
   // Move a light gas upward into empty volume or exchange it with a heavier gas.
   // The upper row has already run in the gas pass: if it stayed, park that gas in

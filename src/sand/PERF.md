@@ -206,6 +206,10 @@ component registration, and restoration. Browser presentation exposes
   beyond the cutoff. Mixed-liquid interfaces extend only the affected body's
   projection to a fixed 24-cell radius; cutoff faces use the adjacent density
   and the column's stratified pressure.
+  Hydrostatic reference columns use contiguous column-major storage for their
+  vertical integration and sampling. The incomplete-Cholesky preconditioner
+  exploits the cardinal grid's triangle-free, two-predecessor stencil and
+  preserves subtraction order in its unrolled triangular solves.
   Bodies with no adjacent liquid skip hydrostatic reference construction. Domain
   nodes regain deterministic grid order through stable linear radix passes, and
   the repeated body-boundary operator stores its invariant normal, lever arm,

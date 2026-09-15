@@ -1247,11 +1247,12 @@
     uint8_t g = L->grid[k];
     return g == EMPTY || isGasMaterial(g);
   }
-  // Land/claim for fall / down-diagonal movement: EMPTY, claimable gas, or a
-  // strictly lighter powder. Another liquid is never ordinary free volume.
+  // Ordinary liquid movement claims EMPTY or gas. Occupied powder/liquid
+  // density exchanges are owned by the interface and surface passes.
   // Gas/powder already written into next[] this tick are parked displacees —
   // do not re-claim them (cascade would drop mass on vacatedStamp / overwrite).
   inline bool liquidCanClaim(int k, uint8_t m) {
+    (void)m;
     if (L->assemblyWakeStamp[k] == tick) return false;
     uint8_t n = L->next[k];
     if (n != EMPTY) {
@@ -1260,8 +1261,7 @@
     }
     if (L->vacatedStamp[k] == tick) return true;
     uint8_t g = L->grid[k];
-    return g == EMPTY || isGasMaterial(g)
-      || (isLooseSolidMaterial(g) && canDisplaceByLooseDensity(m, g));
+    return g == EMPTY || isGasMaterial(g);
   }
   // Same-level flow / enter: EMPTY or claimable gas only. Liquid↔liquid motion
   // stays in the adjacent density pass, and parked next[] gas is blocked.
@@ -1294,11 +1294,17 @@
     if (a == m) return true;
     return isLiquidMaterial(a) && DENSITY[a] < DENSITY[m];
   }
-  void moveMaterialInto(int fromK, int toK, uint8_t m) {
+  void moveMaterialInto(int fromK, int toK, uint8_t m,
+                        bool parkOnRejectedExchange = true) {
     // For liquids, capture the effective occupant (next if set, else grid) so
     // every displacement preserves the target's persistent state.
     bool displacedFromNext = isLiquidMaterial(m) && L->next[toK] != EMPTY;
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
+    bool densityExchange = canDisplaceByLooseDensity(m, displaced);
+    if (densityExchange && !allowLooseDensityExchange(L, fromK, L, toK)) {
+      if (parkOnRejectedExchange) writeNextIndex(fromK, m);
+      return;
+    }
     PersistentCellSnapshot displacedState;
     if (displaced != EMPTY && displaced != m && canDisplaceMaterial(m, displaced)) {
       displacedState = displacedFromNext
@@ -1321,26 +1327,15 @@
     // Multi-cell liquid sinks (and any sparse jump) must dirty the full span so
     // vacated/intermediate rows stay blankable across the double buffer.
     if (fromK != toK) markMoveSpan(fromK, toK);
-    if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
-    if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
-    // A defensive liquid→liquid path remains local and conservative. Ordinary
-    // gravity movement excludes liquid targets; the post-settle adjacent-pair
-    // pass owns those exchanges, and force-directed settling may also swap one
-    // denser liquid into a lighter neighbour toward the source.
-    if (isLiquidMaterial(m) && isLiquidMaterial(displaced)) {
-      if (L->next[fromK] == EMPTY) {
-        writeNextIndex(fromK, displaced);
-        restorePersistentNextState(
-          L, fromK, displaced, displacedState, PCSO_SWAP);
-      }
+    if (densityExchange) {
+      writeNextIndex(fromK, displaced);
+      restorePersistentNextState(L, fromK, displaced, displacedState, PCSO_SWAP);
+      L->vacatedStamp[toK] = tick;
       return;
     }
-    // Gas / lighter powder: swap into the mover's vacated source (one cell).
-    // Claim checks only allow grid-native gas/powder, so a lower liquid swap that
-    // parked the displacee in next[fromK] is not re-claimed by the cell above —
-    // bubbles/grains rise ~1 cell/tick instead of cascading. Always relocate:
-    // the vacatedStamp[toK] powder guard below is for powder→powder ghosts and
-    // would drop liquid-displaced snow/steam (water "eats" snow).
+    if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
+    if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
+    // A displaced gas is parked in the source for the remainder of this tick.
     if (isGasMaterial(displaced) || isLooseSolidMaterial(displaced)) {
       if (L->next[fromK] == EMPTY) {
         writeNextIndex(fromK, displaced);

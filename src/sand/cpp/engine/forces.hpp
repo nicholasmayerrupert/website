@@ -64,6 +64,7 @@ class ForceSystem {
                    double& forceX, double& forceY) const;
   bool overridesGravity(int x, int y, uint8_t material);
   bool tryMoveLoose(int x, int y, int k, uint8_t material);
+  void levelLiquidSurfaces();
   int liquidForceSinkMoves(int x, int y,
                            std::array<std::pair<int, int>, 3>& moves);
   int debugMetric(int metric) const;
@@ -153,6 +154,9 @@ class ForceSystem {
   std::vector<int> nearestSeedAt, nearestVertical, nearestNeutroniumField;
   std::vector<int> edtLocations;
   std::vector<double> edtBreaks;
+  std::vector<uint8_t> liquidLevelVisited;
+  std::vector<int> liquidLevelRegion;
+  std::vector<std::pair<double, int>> liquidLevelDonors, liquidLevelOutlets;
   uint64_t nearestGeometryHash = 0;
   int nearestFieldCols = 0, nearestFieldRows = 0;
   int nearestFieldX0 = 0, nearestFieldY0 = 0;
@@ -228,4 +232,6 @@ class ForceSystem {
   int looseMoveCandidates(double forceX, double forceY, double directionPhase,
                           std::array<std::pair<int, int>, 3>& moves) const;
   bool elongatedNeutroniumFaceAt(int k, int stepX, int stepY) const;
+  bool trySlumpPowder(int x, int y, int k, uint8_t material,
+                      double forceX, double forceY);
 };

@@ -191,9 +191,11 @@
       relaxLiquidGaps();
     perfLiquidRelaxMs += emscripten_get_now() - tRelax;
     if (gravityCellStep) separateLiquidsByDensity();
-    if (gravityCellStep && tick % 3 == 0) separateLooseByDensity();
+    // Density-phase cadence is part of the deterministic simulation RNG stream.
+    if (gravityCellStep && tick % 3 == 0) (void)rand();
     double tSurface = emscripten_get_now();
     levelLiquidSurfaces();
+    if (L->forceActive) forces.levelLiquidSurfaces();
     perfLiquidSurfaceMs += emscripten_get_now() - tSurface;
     applySideSinks();
     perfTailMs += emscripten_get_now() - tT;
@@ -397,7 +399,7 @@
     return actors || world;
   }
 
-  // ---- cross-layer transfer (RNG-free) ----
+  // ---- cross-layer transfer ----
   // A loose cell (powder or liquid) that is stuck in its layer moves to the other
   // layer at the same (x,y) when it can keep falling there. A gas uses the inverse
   // rule: when it is blocked upward here, it moves to an empty same-cell target in
@@ -486,12 +488,15 @@
     }
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;
+    if (swap && !allowLooseDensityExchange(from, k, to, k)) return false;
     PersistentCellSnapshot sourceState = capturePersistentCurrentState(from, k);
     PersistentCellSnapshot targetState = capturePersistentCurrentState(to, k);
     if (swap) {
       to->grid[k] = m; from->grid[k] = dst;
       restorePersistentCurrentState(to, k, m, sourceState, PCSO_CROSS_LAYER);
       restorePersistentCurrentState(from, k, dst, targetState, PCSO_CROSS_LAYER);
+      from->vacatedStamp[k] = tick;
+      to->vacatedStamp[k] = tick;
     } else {
       to->grid[k] = m; from->grid[k] = EMPTY;
       restorePersistentCurrentState(to, k, m, sourceState, PCSO_CROSS_LAYER);

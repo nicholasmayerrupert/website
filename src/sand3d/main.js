@@ -55,10 +55,13 @@ function animate(now) {
   frame = 0;
   if (!ready || inMenu || document.hidden || disposed) return;
   accumulator += Math.min((now - last) / 1000, 0.05); last = now;
-  let steps = 0;
+  let steps = 0; const simulationStart = performance.now();
   while (accumulator >= 1 / 60 && steps++ < 3) {
     engine._demo_step(1 / 60); accumulator -= 1 / 60;
+    // Give rendering and input a turn when a costly tick exhausts this frame.
+    if (performance.now() - simulationStart >= 8) break;
   }
+  accumulator = Math.min(accumulator, 1 / 60);
   engine._demo_render(canvas.width, canvas.height);
   ++frames; refreshHud(now);
   frame = requestAnimationFrame(animate);
@@ -213,6 +216,12 @@ async function initialize() {
         cell: (...args) => engine._demo_cell(...args),
         renderCell: (...args) => engine._demo_render_cell(...args),
         count: material => engine._demo_material_count(material),
+        bodyBox: (...args) => engine._demo_body_box(...args),
+        bodyVelocity: (...args) => engine._demo_body_velocity(...args),
+        bodyStats: slot => { const p = engine._demo_body_stats(slot) / 4; return [...engine.HEAPF32.subarray(p, p + 18)]; },
+        looseVelocity: (...args) => engine._demo_loose_velocity(...args),
+        looseOverlap: () => engine._demo_loose_overlap(),
+        reactionTimes: () => { const p = engine._demo_reaction_ms() / 4; return [...engine.HEAPF32.subarray(p, p + 5)]; },
         edit: (...args) => engine._demo_edit(...args),
         menu, get running() { return frame !== 0; },
       };

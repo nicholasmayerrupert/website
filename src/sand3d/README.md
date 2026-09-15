@@ -13,7 +13,7 @@ independent of the 2D game.
 - `npm run build` builds both the main site and the separate 3D entry and
   compresses their WASM. Ordinary site builds do not need Emscripten.
 - After a production build, run
-  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-detachment,3d-browser,3d-lighting,deployment`.
+  `node scripts/run-tests.mjs --only 3d-engine,3d-materials,3d-coupling,3d-reactive-bodies,3d-detachment,3d-browser,3d-lighting,deployment`.
 
 ## Loading boundary
 
@@ -134,7 +134,7 @@ lighting shader remain intact. Only the removed cell and its shadow may change.
 It also retreats obliquely from an open patch of ground through the detail
 levels, checking that its surface normal and illumination stay constant.
 
-Box3D advances at 60 Hz with four substeps, with its length scale set to sixteen
+Box3D advances at 60 Hz with at least four solver substeps, with its length scale set to sixteen
 voxels per metre. Static collision hulls are generated only near dynamic bodies,
 using greedily merged solid boxes. Changed hulls rebuild before the next physics
 step. `structural_support.inc` checks connectivity from edited cells, continuing
@@ -176,9 +176,21 @@ and `ReactionSystem::applyAcid`, `applyLava`, and fire rules in
   Fire decays into smoke; steam rises and can condense back into water.
 - Acid and heat also erode eligible materials on moving bodies. Voxel fragments
   and collision hulls rebuild together, preserving their transforms and momentum.
+  Changed bodies share one occupancy update per erosion pass. Reaction gases are
+  placed outside the remaining body volume; bubbles rise through liquid and vent
+  when squeezed by a moving body. Sealed liquid volumes still reject intrusion.
+  Collision shapes accumulate before one mass/inertia calculation per body.
 
 Fluids use an active-cell queue at 30 Hz. Stable enclosed cells sleep until a
 neighbor changes; lower openings also wake surfaces within their downhill reach.
+Queue membership uses packed bits. Opening cells check nearby chunk liquid counts
+before searching for draining surfaces, so moving fire and smoke away from liquid
+do not perform those searches. Structural edits mark terrain collision dirty;
+colliders rebuild together before the next physics step.
+Browser catch-up work stops after spending 8 ms on
+simulation and retains at most one pending tick. Individual physics ticks remain
+fixed at 1/60 second; overload slows simulation rather than accumulating a growing
+backlog of catch-up work.
 At most 24,000 queued cells are processed per pass, with
 deferred cells going first next time. Structural reaction edits are batched;
 the contact pass checks up to 24,000 queued cells and makes at most 32 erosion
@@ -188,6 +200,55 @@ Ordinary liquid movement does not trigger connectivity searches. Pouring stops
 after reaching the 200,000 active-window fluid/gas budget (one brush can cross
 the threshold). Existing cells remain intact.
 All material cells share chunk persistence and every distant voxel detail level.
+
+`cpp/body_materials.inc` couples the loose cells and Box3D in the loaded simulation
+window. Inverse sampling supplies body occupancy; merged planar face barriers block
+flow through thin rotating walls. Closed cavities retain their inside/outside
+membership during displacement. Swept substeps move overlapping material into
+reachable free cells without deleting it. An intrusion into a full sealed volume
+is rejected for the obstructed body. Connected liquid refills submerged wakes
+from its free surface, conserving volume as bodies rise or move sideways.
+Coupling substeps follow linear and angular travel near liquids and grains,
+keeping the swept distance below a voxel during ordinary throws. Gas displacement
+shares one search per body, material, and cavity region. Squeezed gas can project
+through the body's swept volume to free cells on its original cavity side; terrain
+and other existing bodies block that projection. Gas alone uses one coupling step
+with four rigid solver substeps. Raster ownership snapshots use contiguous storage.
+Liquid connectivity traverses vertical
+runs with a reusable visit bitmap and sparse per-chunk flow-barrier masks.
+Separate wake gaps share each connected pool's surface heap within a substep;
+displacement stops searching once it has enough reachable free cells.
+
+Exposed body faces receive hydrostatic pressure, drag, and torque. Material
+density controls floating and sinking; internal liquid and grains load their
+containers and supports. Grains transmit overburden, resist indentation, and
+receive frictional motion from moving surfaces. Displacement and drag exchange
+impulses with loose material, whose added velocity follows collision-checked
+cell paths. Incoming grain and liquid streams can push bodies. Changed body
+occupancy and barriers wake adjacent sleeping material. Shape edits rebuild
+the collision hulls, exposed faces, and cavity map together.
+
+This is a voxel-scale coupling model: connected free surfaces provide an
+approximate pressure head, dry grains use a bearing/friction model, and fluid
+momentum is damped. It does not solve full Navier–Stokes flow or elastic granular
+contacts. Loose-material coupling is limited to the loaded simulation window;
+distant bodies retain their terrain collision and archive behavior.
+
+`node scripts/bench-3d-coupling.mjs --json FILE` measures a spinning metre-wide
+timber box in 21,600-cell and 92,256-cell pools, including separate pressure,
+raster, physics, displacement, and wake timings. It verifies water conservation
+and volume exclusion. `node scripts/bench-3d.mjs --coupling --json FILE` also
+measures normal rendered frame gaps for the throw tool and those floating-box
+scenarios. Compare results on the same hardware and browser.
+`node scripts/bench-3d-reactions.mjs --json FILE` covers an acid throw, sixteen
+simultaneously dissolving pieces, a stone block falling through fire, and a
+burning generated tree, and a detached burning crown. It checks finite state, retained unreacted rigid volume,
+and the fire-resistant block's fall. The `3d-reactive-bodies` suite runs these
+same checks. `node scripts/bench-3d-reactions-browser.mjs --json FILE` separates
+step and draw timings, then measures normal RAF frame gaps for acid, fire, and
+tree combustion, including a forced crown detachment. Both reaction benchmarks
+accept `--only acidBox,fireFall,burningCrown` to select cases. Reaction outcomes
+vary with the normal browser RNG.
 
 The renderer traces through water, acid, and vapor to show the material behind
 them, with depth tinting, surface highlights, animated ripples, and emissive lava
@@ -206,8 +267,7 @@ Touch uses drag-to-look, a movement pad, height buttons, and a held tool button.
 The detail setting controls render resolution independently of CSS/device scale.
 
 This is a creative terrain demo, not the 2D game's survival/content port. There
-is no inventory or player collision. Fluids and sand use body occupancy for
-collision; buoyancy and two-way fluid forces on Box3D are not implemented. Dynamic volumes
+is no inventory or player collision. Dynamic volumes
 are at most 64³ cells (4 m per side); larger disconnected regions are partitioned.
 The 256-active-body budget reports its limit. Structural edits are planned before
 detachment; a cut requiring more bodies than available restores its structural
@@ -235,6 +295,10 @@ cover fresh-world islands crossing both vertical window edges, physical falling,
 preservation of unloaded geometry, batched erosion, and mining beyond 32 bodies.
 The engine suite checks the 256-body limit, and the browser suite renders a body
 in the second texture-array bank.
+The coupling suite checks floating and sinking, conserved displacement, grain
+support and raft loading, lateral and angular drag, incoming material impacts,
+fast sweeps, sealed-volume rejection, and watertight rotating cavities. The
+browser suite also renders a coupled floating-body scene.
 `node scripts/bench-3d.mjs --json FILE` measures engine/render submission and
 normal RAF flight on the native GPU; add `--production` for built assets.
 On Windows they use Direct3D11

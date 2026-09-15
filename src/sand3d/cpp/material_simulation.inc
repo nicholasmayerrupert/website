@@ -43,14 +43,14 @@
   void stepMaterials() {
     reactionEdits=0;
     auto active=std::move(fluidCells);fluidCells.clear();fluidCells.reserve(active.size());
-    for(int i:active)fluidQueued.erase(i);
+    for(int i:active)fluidQueued[i]=0;
     // Deferred cells go first next tick, so sustained pouring cannot starve them.
     size_t count=std::min(active.size(),size_t(24000));
     for(size_t j=count;j<active.size();++j)if(flowing(raw(active[j])))queueFluid(active[j]);
     int phase=int(emscripten_random()*4);
     const Cell sides[4]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1}};
     for(size_t j=0;j<count;++j) {
-      int i=active[j];uint8_t m=raw(i);if(!flowing(m)||fluidQueued.contains(i))continue;
+      int i=active[j];uint8_t m=raw(i);if(!flowing(m)||fluidQueued[i])continue;
       Cell c=decode(i);bool keep=reactMaterial(c,m,(phase+int(j))%6,false);
       if(gas(m)) {
         double decay=emscripten_random();
@@ -60,12 +60,14 @@
       }
       if(m==LAVA&&tick%6!=0){queueFluid(i);continue;}
       auto empty=[&](Cell p){return inside(p.x,p.y,p.z)&&!occupied[address(p.x,p.y,p.z)]&&get(p.x,p.y,p.z)==AIR;};
-      auto move=[&](Cell p){auto displaced=get(p.x,p.y,p.z);set(c.x,c.y,c.z,displaced);set(p.x,p.y,p.z,m);c=p;};
+      auto move=[&](Cell p){moveLoose(c,p);c=p;};
       bool moved=false;
       for(int fall=0;fall<(gas(m)||m==LAVA?1:3);++fall) {
-        Cell p{c.x,c.y+(gas(m)?1:-1),c.z};if(!inside(p.x,p.y,p.z)||occupied[address(p.x,p.y,p.z)])break;
+        Cell p{c.x,c.y+(gas(m)?1:-1),c.z};
+        if(!inside(p.x,p.y,p.z)||!clearPath(c,p)){if(liquid(m))impactLoose(c,p);break;}
         auto other=get(p.x,p.y,p.z);
-        if(other!=AIR&&!(liquid(m)&&(gas(other)||(liquid(other)&&density(other)<density(m)))))break;
+        if(other!=AIR&&!(gas(m)&&liquid(other))&&!(liquid(m)&&(gas(other)||(liquid(other)&&density(other)<density(m))))){if(liquid(m))impactLoose(c,p);break;}
+        if(liquid(m))noteFall(address(c.x,c.y,c.z),90.f);
         move(p);moved=true;
       }
       if(!moved&&liquid(m)) {
@@ -77,10 +79,10 @@
           auto side=liquidSides[(first+k)&7];Cell previous=c;
           for(int reach=1;reach<=liquidReach(m);++reach) {
             Cell p{c.x+side.x*reach,c.y,c.z+side.z*reach};
-            if(!empty(p))break;
+            if(!empty(p)||!clearPath(previous,p))break;
             if(side.x&&side.z&&(!empty({p.x,p.y,previous.z})||!empty({previous.x,p.y,p.z})))break;
             Cell drop{p.x,p.y-1,p.z};
-            if(empty(drop)) {
+            if(empty(drop)&&clearPath(p,drop)) {
               int distance=reach*reach*(side.x*side.x+side.z*side.z);
               if(distance<bestDistance) {
                 bestDistance=distance;
@@ -96,9 +98,9 @@
       if(!moved&&gas(m))for(int k=0;k<4&&!moved;++k) {
         auto side=sides[(phase+int(j)+k)%4];Cell destination=c;
         Cell p{c.x+side.x,c.y,c.z+side.z};
-        if(empty(p)) {
+        if(empty(p)&&clearPath(c,p)) {
           destination=p;
-          Cell rise{p.x,p.y+1,p.z};if(empty(rise))destination=rise;
+          Cell rise{p.x,p.y+1,p.z};if(empty(rise)&&clearPath(p,rise))destination=rise;
         }
         if(destination.x!=c.x||destination.y!=c.y||destination.z!=c.z){move(destination);moved=true;}
       }
@@ -121,8 +123,11 @@
     else editOriginals.clear();
   }
   void erodeBodies() {
+    PhaseTimer timer{reactionMs[2]};
     if(!materialCounts[ACID]&&!materialCounts[LAVA]&&!materialCounts[FIRE])return;
     std::vector<int> changed;
+    struct Product {Cell cell,contact;uint8_t material;};
+    std::vector<Product> products;
     for(int slot=0;slot<int(bodies.size());++slot) {
       auto& b=bodies[slot];if(!b.active)continue;auto tr=b3Body_GetTransform(b.id);int removed=0;
       int radius=std::max({b.size.x,b.size.y,b.size.z})+2;bool nearby=false;
@@ -149,11 +154,21 @@
           if((!acid&&!burn)||emscripten_random()>0.2)continue;
           material=AIR;++removed;++reactions;if(acid)++dissolved;
           if(acid&&emscripten_random()<0.4)set(p.x,p.y,p.z,AIR);
-          if(inside(c.x,c.y,c.z)&&get(c.x,c.y,c.z)==AIR)set(c.x,c.y,c.z,acid?SMOKE:FIRE);
+          products.push_back({c,p,uint8_t(acid?SMOKE:FIRE)});
           break;
         }
       }
       if(removed)changed.push_back(slot);
     }
-    for(int slot:changed)rebuildBody(slot);
+    for(int slot:changed)rebuildBody(slot,false);
+    if(!changed.empty())updateOccupied();
+    // Reaction gases occupy available space outside the remaining rigid volume.
+    for(auto product:products) {
+      auto emit=[&](Cell c) {
+        if(!inside(c.x,c.y,c.z)||occupied[address(c.x,c.y,c.z)]||get(c.x,c.y,c.z)!=AIR)return false;
+        set(c.x,c.y,c.z,product.material);return true;
+      };
+      if(emit(product.cell)||emit(product.contact))continue;
+      for(auto n:neighbors)if(emit({product.cell.x+n.x,product.cell.y+n.y,product.cell.z+n.z}))break;
+    }
   }

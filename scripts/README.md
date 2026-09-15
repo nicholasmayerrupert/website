@@ -93,6 +93,19 @@ gaps during normal RAF-driven flight. Stationary samples finish GL work before
 the next sample; flight samples include browser scheduling and streaming stalls.
 Compare only matching hardware, browser, viewport, and detail settings. Engine
 streaming-step timings are also reported by the `3d-engine` suite.
+The `3d-coupling` suite reports coupled step timings while checking conservation,
+flotation, loads, drag, impacts, fast sweeps, and sealed moving containers.
+`node scripts/bench-3d-coupling.mjs --json FILE` stresses a spinning metre-wide
+box in two pool sizes, reports coupling phase timings, and asserts conservation
+and volume exclusion. Add `--coupling` to `bench-3d.mjs` to measure actual RAF
+frame gaps for the normal throw tool and floating boxes in both pool sizes.
+The `3d-reactive-bodies` suite runs `bench-3d-reactions.mjs` with conservation
+and finite-state checks for acid-damaged blocks, sixteen dissolving pieces,
+a rigid block falling through fire, a burning generated tree, and a detached
+burning crown. Run that
+script with `--json FILE` to save timings or `--only acidBox,fireFall` to focus
+the benchmark. `bench-3d-reactions-browser.mjs --json FILE` records separate
+step/draw timings and normal RAF frame gaps for the corresponding player actions.
 
 `node scripts/bench-3d-acid.mjs --json FILE` compares water and acid simulation
 under eight equal pours followed by 600 steps. `node scripts/bench-3d-acid-browser.mjs

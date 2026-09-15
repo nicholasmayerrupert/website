@@ -36,7 +36,7 @@ constexpr Cell liquidSides[8]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1},{1,0,1},{-1,0,1
 int liquidReach(uint8_t m){return m==LAVA?2:LIQUID_REACH;}
 bool flammable(uint8_t m){return m==WOOD||m==LEAVES||m==GRASS;}
 bool dissolvable(uint8_t m){return (solid(m)&&m!=BEDROCK)||powder(m);}
-float density(uint8_t m){return m==LAVA?2.8f:m==ACID?1.1f:m==WATER?1.f:0.f;}
+float density(uint8_t m){return m==LAVA?2.8f:m==ACID?1.1f:m==WOOD||m==LEAVES?.55f:m==SAND?1.6f:m==STONE_DUST?1.8f:solid(m)?2.4f:m==WATER?1.f:0.f;}
 int localIndex(int x,int y,int z) { return x+B*(z+B*y); }
 
 // World coordinates seed coherent terrain; loaded chunks never affect generation.
@@ -96,7 +96,7 @@ struct VoxelWorld {
   int sandCount=0,generated=0,restored=0,shifts=0;
   std::vector<int> sandCells;
   std::vector<int> fluidCells;
-  std::unordered_set<int> fluidQueued;
+  PackedCells<N,1> fluidQueued{};
   std::array<int,MATERIAL_COUNT> materialCounts{};
   PackedCells<N,1> sandQueued{};
   std::vector<Cell> edits;
@@ -121,7 +121,7 @@ struct VoxelWorld {
   uint8_t raw(int i) const {return chunks[i/CELLS].cells[i%CELLS];}
   uint8_t get(int x,int y,int z) const {return inside(x,y,z)?raw(address(x,y,z)):uint8_t(AIR);}
   void queueSand(int i) {if(!sandQueued[i]){sandQueued[i]=1;sandCells.push_back(i);}}
-  void queueFluid(int i){if(fluidQueued.insert(i).second)fluidCells.push_back(i);}
+  void queueFluid(int i){if(!fluidQueued[i]){fluidQueued[i]=1;fluidCells.push_back(i);}}
   int fluidCount() const {return materialCounts[WATER]+materialCounts[ACID]+materialCounts[LAVA]+materialCounts[STEAM]+materialCounts[FIRE]+materialCounts[SMOKE];}
   bool removalKeepsConnected(int x,int y,int z) const {
     if(x==0||y==0||z==0||x==W-1||y==H-1||z==D-1)return false;
@@ -152,6 +152,15 @@ struct VoxelWorld {
     }
     return false;
   }
+  bool liquidNearOpening(int x,int y,int z) const {
+    for(int cz=std::max(0,z-LIQUID_REACH)/C;cz<=std::min(D-1,z+LIQUID_REACH)/C;++cz)
+      for(int cy=y/C;cy<=std::min(H-1,y+1)/C;++cy)
+        for(int cx=std::max(0,x-LIQUID_REACH)/C;cx<=std::min(W-1,x+LIQUID_REACH)/C;++cx) {
+          const auto& c=chunks[address(cx*C,cy*C,cz*C)/CELLS];
+          if(c.counts[WATER]||c.counts[ACID]||c.counts[LAVA])return true;
+        }
+    return false;
+  }
   void set(int x,int y,int z,uint8_t m) {
     if(!inside(x,y,z))return;
     int i=address(x,y,z);auto& c=chunks[i/CELLS];auto& v=c.cells[i%CELLS];if(v==m)return;
@@ -180,7 +189,7 @@ struct VoxelWorld {
       int a=x+n.x,b=y+n.y,d=z+n.z;if(inside(a,b,d)&&flowing(get(a,b,d)))queueFluid(address(a,b,d));
     }
     // A new lower opening can drain a sleeping surface several cells away.
-    if(m==AIR&&fluidCount())for(int rise=0;rise<=1;++rise)for(auto side:liquidSides)for(int reach=1;reach<=LIQUID_REACH;++reach) {
+    if(m==AIR&&liquidNearOpening(x,y,z))for(int rise=0;rise<=1;++rise)for(auto side:liquidSides)for(int reach=1;reach<=LIQUID_REACH;++reach) {
       int a=x+side.x*reach,b=y+rise,d=z+side.z*reach;if(!inside(a,b,d))break;
       auto source=get(a,b,d);if(source==AIR)continue;
       if(liquid(source)&&reach<=liquidReach(source))queueFluid(address(a,b,d));
@@ -303,7 +312,7 @@ struct VoxelWorld {
   }
   void resetVoxels() {
     saved.clear();prepared.clear();pending.clear();preparing=false;for(auto& c:chunks)c=TerrainChunk{};
-    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.clear();materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();editOriginals.clear();supportFrontier.clear();renderChanges.clear();
+    sandCells.clear();sandQueued.fill(0);fluidCells.clear();fluidQueued.fill(0);materialCounts.fill(0);sandCount=0;generated=restored=shifts=0;edits.clear();editOriginals.clear();supportFrontier.clear();renderChanges.clear();
     origin={-W/2,-H/2+int(4/VOXEL),-D/2+int(8/VOXEL)};fillWindow();
   }
 };

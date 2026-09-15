@@ -1,4 +1,5 @@
   void detachUnsupported() {
+    PhaseTimer timer{reactionMs[0]};
     auto seeds=std::move(edits);edits.clear();
     auto originals=std::move(editOriginals);editOriginals.clear();
     supportFrontier.clear();
@@ -89,7 +90,7 @@
       generating=true;
       for(auto [i,m]:originals){auto c=decode(i);set(c.x,c.y,c.z,m);}
       generating=false;++limitHits;edits.clear();editOriginals.clear();
-      rebuildTerrain();updateOccupied();return;
+      updateOccupied();return;
     }
     std::unordered_set<ChunkKey,KeyHash> changedExterior;
     generating=true;
@@ -109,5 +110,5 @@
       auto collider=terrainBodies.find(key);
       if(collider!=terrainBodies.end()){if(b3Body_IsValid(collider->second))b3DestroyBody(collider->second);terrainBodies.erase(collider);}
     }
-    edits.clear();editOriginals.clear();rebuildTerrain();updateOccupied();
+    edits.clear();editOriginals.clear();updateOccupied();
   }

@@ -254,6 +254,19 @@ try {
   await page.screenshot({path:resolve(artifacts,'desktop-material-lab.png')});
   assert.deepEqual(errors,[],'fluid shading and interaction run without GPU or runtime errors');
   console.log('Materials: water, acid, and lava render; keyboard pouring quenches lava; the lab shortcut works.');
+  const coupling = await page.evaluate(() => {
+    const d = window.__voxelDemo; d.menu(true); d.reset(); d.pause(false);
+    for (let z=64;z<96;++z) for (let x=0;x<32;++x) for (let y=-2;y<40;++y)
+      d.edit((x+.5)/16,(y+.5)/16,(z+.5)/16,y<0||x===0||x===31||z===64||z===95?2:y<16?8:0);
+    d.step(2);const water=d.count(8),slot=d.bodyBox(10/16,24/16,74/16,12,12,12,4);
+    d.step(180);d.camera(1,5,7,0,-1.13);d.menu(false);d.pause(true);d.render();
+    return {water,after:d.count(8),body:d.bodyStats(slot),overlap:d.looseOverlap(),error:document.getElementById('voxel-canvas').getContext('webgl2').getError()};
+  });
+  assert.equal(coupling.after,coupling.water,'rendered rigid displacement conserves water');
+  assert.equal(coupling.overlap,0);assert.equal(coupling.error,0);
+  assert.ok(coupling.body[2]>.4,'the rendered timber block floats');
+  await page.screenshot({path:resolve(artifacts,'desktop-coupled-water.png')});
+  assert.deepEqual(errors,[],'coupled body and fluid rendering remains valid');
   await page.evaluate(() => document.getElementById('voxel-canvas').getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());
   await page.waitForFunction(() => !document.getElementById('retry').hidden);
   assert.equal(await page.evaluate(() => window.__voxelDemo.running), false, 'context loss stops processing and offers recovery');

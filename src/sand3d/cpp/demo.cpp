@@ -20,11 +20,19 @@ float axis(b3Vec3 a,int k) { return k==0?a.x:k==1?a.y:a.z; }
 const Cell neighbors[6]={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
 
 struct Body {
+  struct FlowFace {b3Vec3 center,normal;float halfU,halfV;};
   b3BodyId id{};
   std::array<uint8_t,BN> cells{};
   Cell size{};
   int cellCount=0;
-  bool active=false,dirty=false;
+  std::vector<std::pair<b3Vec3,b3Vec3>> faces;
+  std::vector<FlowFace> flowFaces;
+  std::vector<uint16_t> spaces;
+  b3Transform materialPose{};
+  b3Transform rasterPose{};
+  bool rasterActive=false;
+  bool hasCavity=false;
+  bool active=false,dirty=false,fresh=true;
 };
 struct Hit {
   bool found=false;
@@ -53,6 +61,11 @@ struct Demo : VoxelWorld {
   int tool=0,tick=0,mined=0,detached=0,limitHits=0;
   float stats[36]{};
   int reactions=0,dissolved=0,reactionEdits=0;
+  float reactionMs[5]{};
+  struct PhaseTimer {
+    float& total;double start=emscripten_get_now();
+    ~PhaseTimer(){total+=float(emscripten_get_now()-start);}
+  };
   size_t reactionCursor=0;
   double stepMs=0;
   Hit target;
@@ -68,8 +81,9 @@ struct Demo : VoxelWorld {
     if(b3World_IsValid(world))b3DestroyWorld(world);
     b3SetLengthUnitsPerMeter(1/VOXEL);
     auto def=b3DefaultWorldDef();def.gravity={0,-9.81f/VOXEL,0};world=b3CreateWorld(&def);
-    resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();terrainBodies.clear();bodies.clear();savedBodies.clear();
-    mined=detached=tick=limitHits=reactions=dissolved=0;reactionCursor=0;cooldown=0;streamMs=0;
+    resetVoxels();occupied.fill(0);visited.fill(0);occupiedCells.clear();owners.clear();barriers.clear();motion.clear();terrainBodies.clear();bodies.clear();savedBodies.clear();
+    for(int chunk:edgeChunks)std::vector<uint8_t>().swap(edgeMasks[chunk]);edgeChunks.clear();
+    mined=detached=tick=limitHits=reactions=dissolved=displacedCells=blockedMoves=0;reactionCursor=0;cooldown=0;streamMs=0;
     std::fill(std::begin(keys),std::end(keys),false);held=false;
     camera={W/2.f,H/2.f,D/2.f};yaw=0;pitch=-0.18f;
     renderer.invalidateLod();
@@ -87,6 +101,10 @@ struct Demo : VoxelWorld {
     }
     if(!paused&&!edits.empty())detachUnsupported();else editOriginals.clear();
     b3Vec3 delta{float(dx),float(dy),float(dz)};
+    for(auto it=motion.begin();it!=motion.end();) {
+      auto c=decode(it->first);
+      if(!inside(c.x-dx,c.y-dy,c.z-dz))it=motion.erase(it);else ++it;
+    }
     camera=sub(camera,delta);
     // Physics uses local floats; the stream origin carries the large coordinates.
     for(auto [key,id]:terrainBodies)if(b3Body_IsValid(id)){auto tr=b3Body_GetTransform(id);b3Body_SetTransform(id,sub(tr.p,delta),tr.q);}
@@ -127,12 +145,14 @@ struct Demo : VoxelWorld {
       while(ey<sy) { bool ok=true;for(int c=z;c<ez;++c)for(int a=x;a<ex;++a)if(!available(a,ey,c))ok=false;if(!ok)break;++ey; }
       for(int c=z;c<ez;++c)for(int b=y;b<ey;++b)for(int a=x;a<ex;++a)done[ix(a,b,c)]=1;
       auto hull=b3MakeOffsetBoxHull((ex-x)*0.5f,(ey-y)*0.5f,(ez-z)*0.5f,{(ex+x)*0.5f,(ey+y)*0.5f,(ez+z)*0.5f});
-      auto shape=b3DefaultShapeDef(); shape.density=m==WOOD||m==LEAVES?0.55f:2.4f;
+      auto shape=b3DefaultShapeDef(); shape.density=density(m);shape.updateBodyMass=false;
       shape.baseMaterial.friction=0.7f; shape.baseMaterial.restitution=0.05f;
       b3CreateHullShape(body,&shape,&hull.base);
     }
+    b3Body_ApplyMassFromShapes(body);
   }
   void rebuildTerrain() {
+    PhaseTimer timer{reactionMs[3]};
     // Visible bodies keep colliding with cached terrain beyond the voxel simulation window.
     std::unordered_map<ChunkKey,bool,KeyHash> needed;
     for(const auto& body:bodies)if(body.active) {
@@ -173,21 +193,16 @@ struct Demo : VoxelWorld {
       b.size.x=std::max(b.size.x,c.x+1);b.size.y=std::max(b.size.y,c.y+1);b.size.z=std::max(b.size.z,c.z+1);
     }
     buildHulls(b.id,b.size.x,b.size.y,b.size.z,[&](int x,int y,int z){return b.cells[localIndex(x,y,z)];});
+    for(auto c:cells)for(auto n:neighbors) {
+      Cell p{c.x+n.x,c.y+n.y,c.z+n.z};
+      if(p.x>=0&&p.y>=0&&p.z>=0&&p.x<b.size.x&&p.y<b.size.y&&p.z<b.size.z&&b.cells[localIndex(p.x,p.y,p.z)])continue;
+      b.faces.push_back({{c.x+.5f+n.x*.5f,c.y+.5f+n.y*.5f,c.z+.5f+n.z*.5f},{float(n.x),float(n.y),float(n.z)}});
+    }
+    buildBodySpaces(b);buildFlowFaces(b);
     ++detached;return slot;
   }
   #include "structural_support.inc"
-  void updateOccupied() {
-    for(int i:occupiedCells)occupied[i]=0;occupiedCells.clear();
-    if(!sandCount&&!fluidCount())return;
-    for(auto& b:bodies)if(b.active) {
-      auto tr=b3Body_GetTransform(b.id);
-      for(int y=0;y<b.size.y;++y)for(int z=0;z<b.size.z;++z)for(int x=0;x<b.size.x;++x)if(b.cells[localIndex(x,y,z)]) {
-        auto p=add(tr.p,b3RotateVector(tr.q,{x+0.5f,y+0.5f,z+0.5f}));
-        int a=int(std::floor(p.x)),d=int(std::floor(p.y)),c=int(std::floor(p.z));
-        if(inside(a,d,c)){int i=address(a,d,c);if(!occupied[i]){occupied[i]=1;occupiedCells.push_back(i);}}
-      }
-    }
-  }
+  #include "body_materials.inc"
   void stepSand() {
     const Cell diagonals[8]={{1,0,0},{0,0,1},{-1,0,0},{0,0,-1},{1,0,1},{-1,0,1},{-1,0,-1},{1,0,-1}};
     auto empty=[&](int x,int y,int z){return inside(x,y,z)&&(get(x,y,z)==AIR||get(x,y,z)==WATER||get(x,y,z)==ACID)&&!occupied[address(x,y,z)];};
@@ -197,14 +212,15 @@ struct Demo : VoxelWorld {
     std::sort(grains.begin(),grains.end(),[&](int a,int b){return decode(a).y<decode(b).y;});
     for(int i:grains) {
       if(!powder(raw(i))||sandQueued[i])continue;
-      auto material=raw(i);
       auto c=decode(i);int x=c.x,y=c.y,z=c.z;bool moved=false;
-      if(empty(x,y-1,z)){auto m=get(x,y-1,z);set(x,y,z,m);set(x,y-1,z,material);continue;}
+      if(empty(x,y-1,z)&&clearPath(c,{x,y-1,z})){noteFall(i,30.f);moveLoose(c,{x,y-1,z});continue;}
+      impactLoose(c,{x,y-1,z});
       if(occupied[i]) {
-        for(int up=1;up<8;++up)if(empty(x,y+up,z)){auto m=get(x,y+up,z);set(x,y,z,m);set(x,y+up,z,material);moved=true;break;}
+        // Displacement is resolved by the body/material pass before grains move.
+        queueSand(i);continue;
       }else for(int k=0;k<8;++k) {
         auto d=diagonals[(k+tick/2+x+z)%8];
-        if(empty(x+d.x,y,z+d.z)&&empty(x+d.x,y-1,z+d.z)){auto m=get(x+d.x,y-1,z+d.z);set(x,y,z,m);set(x+d.x,y-1,z+d.z,material);moved=true;break;}
+        if(empty(x+d.x,y,z+d.z)&&empty(x+d.x,y-1,z+d.z)&&clearPath(c,{x+d.x,y-1,z+d.z})){moveLoose(c,{x+d.x,y-1,z+d.z});moved=true;break;}
       }
       if(!moved)queueSand(i);
     }
@@ -255,7 +271,8 @@ struct Demo : VoxelWorld {
     }
     rebuildBody(slot);
   }
-  void rebuildBody(int slot) {
+  void rebuildBody(int slot,bool raster=true) {
+    PhaseTimer timer{reactionMs[1]};
     auto& b=bodies[slot];auto tr=b3Body_GetTransform(b.id);auto angular=b3Body_GetAngularVelocity(b.id);
     auto velocity=b3Body_GetLinearVelocity(b.id);auto oldCenter=b3Body_GetWorldCenter(b.id);
     std::array<uint8_t,BN> seen{};
@@ -284,7 +301,7 @@ struct Demo : VoxelWorld {
       int i=createBody(cells,mats,origin,tr.q,velocity,angular);
       if(i>=0) {auto center=b3Body_GetWorldCenter(bodies[i].id);b3Body_SetLinearVelocity(bodies[i].id,add(velocity,b3Cross(angular,sub(center,oldCenter))));}
     }
-    updateOccupied();
+    if(raster)updateOccupied();
   }
   #include "material_simulation.inc"
   void useTool() {
@@ -323,6 +340,7 @@ struct Demo : VoxelWorld {
   }
   void step(float dt) {
     auto start=emscripten_get_now();
+    std::fill(std::begin(reactionMs),std::end(reactionMs),0.f);
     b3Vec3 move{};auto f=forward(),r=right();
     move=add(move,mul(f,float(keys[0])-float(keys[1])));move=add(move,mul(r,float(keys[3])-float(keys[2])));
     move.y+=float(keys[4])-float(keys[5]);
@@ -331,7 +349,7 @@ struct Demo : VoxelWorld {
     if(!paused) {
       cooldown-=dt;
       if(held&&cooldown<=0){useTool();cooldown=tool==4?0.45f:0.12f;}
-      rebuildTerrain();b3World_Step(world,dt,4);
+      rebuildTerrain();stepCoupledBodies(dt);
       for(auto& b:bodies)if(b.active) {
         auto tr=b3Body_GetTransform(b.id);
         if(length(sub(tr.p,camera))>160/VOXEL) {
@@ -340,7 +358,7 @@ struct Demo : VoxelWorld {
         }
       }
       updateOccupied();
-      if(tick%2==0){stepSand();stepMaterials();}
+      if(tick%2==0){PhaseTimer timer{reactionMs[4]};advectLoose(1.f/30);stepSand();stepMaterials();}
       if(tick%6==0)erodeBodies();
       ++tick;
     }
@@ -394,6 +412,8 @@ EMSCRIPTEN_KEEPALIVE int demo_create(int graphics) {
 EMSCRIPTEN_KEEPALIVE void demo_destroy(){delete demo;demo=nullptr;}
 EMSCRIPTEN_KEEPALIVE void demo_reset(){if(demo)demo->reset();}
 EMSCRIPTEN_KEEPALIVE void demo_step(float dt){if(demo)demo->step(std::clamp(dt,0.0f,1.0f/30));}
+EMSCRIPTEN_KEEPALIVE float* demo_coupling_ms(){return demo?demo->couplingMs:nullptr;}
+EMSCRIPTEN_KEEPALIVE float* demo_reaction_ms(){return demo?demo->reactionMs:nullptr;}
 EMSCRIPTEN_KEEPALIVE void demo_render(int w,int h){if(demo)demo->render(w,h);}
 EMSCRIPTEN_KEEPALIVE void demo_key(int key,int down){if(demo&&key>=0&&key<8)demo->keys[key]=down!=0;}
 EMSCRIPTEN_KEEPALIVE void demo_clear_input(){if(demo){std::fill(std::begin(demo->keys),std::end(demo->keys),false);demo->held=false;}}
@@ -413,5 +433,33 @@ EMSCRIPTEN_KEEPALIVE int demo_render_cell(double x,double y,double z,int level){
   if(!demo)return 0;
   if(level==0)return demo_cell(x,y,z);
   return demo->renderer.clipmap(std::clamp(level,1,3)).sample(int64_t(std::floor(x/VOXEL)),int64_t(std::floor(y/VOXEL)),int64_t(std::floor(z/VOXEL)));
+}
+EMSCRIPTEN_KEEPALIVE int demo_body_box(double x,double y,double z,int sx,int sy,int sz,int material) {
+  if(!demo||!solid(material)||sx<1||sy<1||sz<1||sx>B||sy>B||sz>B)return -1;
+  std::vector<Cell> cells;std::vector<uint8_t> materials;
+  for(int k=0;k<sz;++k)for(int j=0;j<sy;++j)for(int i=0;i<sx;++i){cells.push_back({i,j,k});materials.push_back(uint8_t(material));}
+  return demo->createBody(cells,materials,{float(x/VOXEL-demo->origin.x),float(y/VOXEL-demo->origin.y),float(z/VOXEL-demo->origin.z)});
+}
+EMSCRIPTEN_KEEPALIVE void demo_body_velocity(int slot,float x,float y,float z,float ax,float ay,float az) {
+  if(!demo||slot<0||slot>=int(demo->bodies.size())||!demo->bodies[slot].active)return;
+  auto id=demo->bodies[slot].id;b3Body_SetLinearVelocity(id,{x/VOXEL,y/VOXEL,z/VOXEL});b3Body_SetAngularVelocity(id,{ax,ay,az});
+}
+EMSCRIPTEN_KEEPALIVE void demo_loose_velocity(double x,double y,double z,float vx,float vy,float vz) {
+  if(!demo)return;Cell c{int(std::floor(x/VOXEL)-demo->origin.x),int(std::floor(y/VOXEL)-demo->origin.y),int(std::floor(z/VOXEL)-demo->origin.z)};
+  if(!inside(c.x,c.y,c.z))return;auto m=demo->get(c.x,c.y,c.z);if(!liquid(m)&&!powder(m))return;
+  demo->motion[demo->address(c.x,c.y,c.z)].velocity={vx/VOXEL,vy/VOXEL,vz/VOXEL};demo->wakeLoose(c);
+}
+EMSCRIPTEN_KEEPALIVE float* demo_body_stats(int slot) {
+  static float values[18]{};std::fill(std::begin(values),std::end(values),0.f);
+  if(!demo||slot<0||slot>=int(demo->bodies.size())||!demo->bodies[slot].active)return values;
+  auto& b=demo->bodies[slot];auto t=b3Body_GetTransform(b.id);auto v=b3Body_GetLinearVelocity(b.id),w=b3Body_GetAngularVelocity(b.id);
+  values[0]=1;values[1]=float((demo->origin.x+t.p.x)*VOXEL);values[2]=float((demo->origin.y+t.p.y)*VOXEL);values[3]=float((demo->origin.z+t.p.z)*VOXEL);
+  values[4]=t.q.v.x;values[5]=t.q.v.y;values[6]=t.q.v.z;values[7]=t.q.s;
+  values[8]=v.x*VOXEL;values[9]=v.y*VOXEL;values[10]=v.z*VOXEL;values[11]=w.x;values[12]=w.y;values[13]=w.z;
+  values[14]=b3Body_GetMass(b.id);values[15]=float(b.cellCount);values[16]=float(demo->displacedCells);values[17]=float(demo->blockedMoves);return values;
+}
+EMSCRIPTEN_KEEPALIVE int demo_loose_overlap() {
+  if(!demo)return 0;int count=0;
+  for(int i:demo->occupiedCells){auto m=demo->raw(i);count+=liquid(m)||powder(m)||gas(m);}return count;
 }
 }

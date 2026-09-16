@@ -24,7 +24,7 @@ try {
   const index=GAME_WORLD.quests.findIndex(q=>q.key===key),quest=GAME_WORLD.quests[index];
   if(!quest.giver)return;
   const npc=GAME_WORLD.residents.find(n=>n.id===quest.giver),anchor=GAME_CONTENT.anchors[npc.anchor];
-  move(anchor.x,anchor.y+(anchor.surface===-2147483648?0:e.worldSurfaceAbsAt(anchor.surface)));tick();
+  const offset=e.contentOffset(anchor.surface);move(anchor.x+offset.x,anchor.y+offset.y);tick();
   const actor=e.getCreatures().find(c=>c.npcId===quest.giver);
   assert.ok(actor,`resident ${npc.dialogue.name} spawns`);
   move(actor.x+e.getWorldOffsetX(),actor.y+e.getWorldOffsetY());
@@ -35,9 +35,10 @@ try {
  accept('mill-supplies');e.addToInventory(player,MAT.IRON_ORE,31);tick();
  assert.ok(e.interactFrontier(player,0));assert.equal(objective('mill-supplies').state,OBJECTIVE_STATE.COMPLETE);
  assert.equal(e.interactFrontier(player,0),false,'rewards cannot be claimed twice');tick();
- accept('mill-bridge');move(400,3);tick();
+ const millOffset=e.contentOffset(GAME_CONTENT.anchors['mill.bridge'].surface);
+ accept('mill-bridge');move(400+millOffset.x,3+millOffset.y);tick();
  assert.equal(objective('mill-bridge').current,0,'background guide is not a built bridge');
- for(let x=373;x<=427;x++)e.paintDisc(x-e.getWorldOffsetX(),15-e.getWorldOffsetY(),1,MAT.PINE_WOOD);
+ for(let x=373;x<=427;x++)e.paintDisc(x+millOffset.x-e.getWorldOffsetX(),15+millOffset.y-e.getWorldOffsetY(),1,MAT.PINE_WOOD);
  e.syncComponents();tick();assert.equal(objective('mill-bridge').state,OBJECTIVE_STATE.COMPLETE);
  const defeat=key=>{
   accept(key);let q=objective(key);move(q.worldX+30,q.worldY-8);e.stepWorld();tick();q=objective(key);
@@ -59,14 +60,17 @@ try {
  assert.equal(objective('windward').state,OBJECTIVE_STATE.COMPLETE);
  defeat('hollow-bellkeeper');assert.equal(e.getMission().phase,MISSION_PHASE.COMPLETE,'main story resolves independently of side quests');
  for(const key of ['old-sanctuary','archive-promise','branns-gift'])defeat(key);
- accept('buried-pass');const passFloor=e.worldSurfaceAbsAt(-790)+36;move(-860,passFloor-10);tick();
+ accept('buried-pass');const passAnchor=GAME_CONTENT.anchors['railway.instrument'];
+ const passOffset=e.contentOffset(passAnchor.surface),passArea=GAME_WORLD.quests.find(q=>q.key==='buried-pass').condition.bounds;
+ const passFloor=passOffset.y+passArea[3],passX=Math.round((passArea[0]+passArea[2])/2)+passOffset.x;
+ move(passAnchor.x+passOffset.x,passFloor-10);tick();
  assert.equal(objective('buried-pass').state,OBJECTIVE_STATE.ACTIVE,'walking around a rockfall does not excavate it');
- e.eraseDisc(-800-e.getWorldOffsetX(),passFloor-10-e.getWorldOffsetY(),19);tick();
+ e.eraseDisc(passX-e.getWorldOffsetX(),passFloor-10-e.getWorldOffsetY(),19);tick();
  assert.equal(objective('buried-pass').state,OBJECTIVE_STATE.COMPLETE);
  move(0,8);e.eraseDiscLayer(0,-80-e.getWorldOffsetX(),17-e.getWorldOffsetY(),7);e.eraseDiscLayer(1,-80-e.getWorldOffsetX(),17-e.getWorldOffsetY(),7);
  assert.equal(at(-80,17),MAT.EMPTY);assert.equal(at(-80,17,true),MAT.EMPTY);
  assert.ok(e.repairFrontierBase(player));for(let i=0;i<3;i++)e.step();assert.notEqual(at(-80,17),MAT.EMPTY);
- move(-800,passFloor-10);assert.equal(at(-800,passFloor-10),MAT.EMPTY,'repair preserves field excavation');
+ move(passX,passFloor-10);assert.equal(at(passX,passFloor-10),MAT.EMPTY,'repair preserves field excavation');
  assert.equal(e.getMission().phase,MISSION_PHASE.COMPLETE);
  console.log('ok: eight main quests, three minibosses, earned traversal, physical bridge/drain/passage, streaming, and scoped repairs');
 } finally {e.destroy();}

@@ -2,7 +2,7 @@ void ContainerSystem::initialize() {
   if (!chests.empty()) return;
   for (const auto& definition : E.content.chests) {
     AdventureChest chest;
-    chest.id = definition.id; chest.wx = definition.x;
+    chest.id = definition.id; chest.wx = definition.x + E.content.horizontalOffset(definition.surface);
     chest.wy = definition.y + E.content.surfaceOffset(definition.surface);
     chest.loot = definition.loot; chest.loot.resize(std::max(SLOT_COUNT, chest.loot.size()));
     chests.push_back(std::move(chest));

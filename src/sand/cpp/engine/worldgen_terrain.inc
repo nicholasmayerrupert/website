@@ -116,6 +116,9 @@
       if (surf + reachY < rowStart
           || surf - reachY >= rowEnd) continue;
       if (!terrain.genTreeAt(worldX, surf)) continue;
+      int worldGround = surf + L->worldOffsetY;
+      if (content.overlapsWorld(worldX - reachX, worldGround - reachY,
+                               worldX + reachX, worldGround + reachY)) continue;
       // Village streets retain a clear skyline, with groves returning at their
       // outskirts. The reservation includes roofs and mature canopy reach.
       bool nearVillage = false;

@@ -163,7 +163,7 @@ int TerrainGen::genBaseSurfaceAbs(int worldX) {
   return value;
 }
 
-int TerrainGen::genSurfaceAbs(int worldX) {
+int TerrainGen::genNaturalSurfaceAbs(int worldX) {
   if (planetDef(E.planetId).generationProfile != PGP_EARTH)
     return genBaseSurfaceAbs(worldX);
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
@@ -196,13 +196,15 @@ int TerrainGen::genSurfaceAbs(int worldX) {
     double blend = std::clamp((distance - 336.0) / 160.0, 0.0, 1.0);
     blend = blend * blend * (3.0 - 2.0 * blend);
     value = (int)std::lround(16.0 + (value - 16.0) * blend);
-    double mountain = std::fmax(0.0, 1.0 - std::abs(worldX - 900) / 400.0);
-    value -= (int)std::lround(230.0 * mountain * mountain * (3.0 - 2.0 * mountain));
   }
   cached.seed = E.L->worldSeed;
   cached.x = worldX;
   cached.value = value;
   return value;
+}
+int TerrainGen::genSurfaceAbs(int worldX) {
+  int natural = genNaturalSurfaceAbs(worldX);
+  return E.planetId == PL_FRONTIER ? E.content.stitchedSurface(worldX, natural) : natural;
 }
 // Terrain top as a BUFFER row in the current window (may be <0 or >=E.rows when the
 // surface has scrolled off; genCellAt's `y < surf` test handles that as all-sky /

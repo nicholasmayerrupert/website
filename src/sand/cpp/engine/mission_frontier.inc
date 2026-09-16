@@ -4,11 +4,12 @@ void MissionSystem::updateFrontierResidents() {
     if (residentIds[i]) {
       auto* actor = findCreature(residentIds[i]);
       const auto& home = E.content.residents[i];
+      double homeX = home.x + E.content.horizontalOffset(home.surface);
       double homeY = home.y + E.content.surfaceOffset(home.surface);
-      if (actor && E.creatures.boxInsideLoadedWindow(home.x, homeY, 8, 12, 12) &&
+      if (actor && E.creatures.boxInsideLoadedWindow(homeX, homeY, 8, 12, 12) &&
           (!actor->alive || std::fabs(actor->wy - homeY) > 72 || E.creatures.blockingCoverage(actor->wx,actor->wy,CREATURE_SPECIES[actor->species].w,CREATURE_SPECIES[actor->species].h) > .5)) {
         double safe[2];
-        if (E.psys.findSafeSpawnNearWorld(home.x, homeY, safe, nullptr) || E.psys.buildSafeSpawnPad(home.x, homeY, safe, nullptr)) {
+        if (E.psys.findSafeSpawnNearWorld(homeX, homeY, safe, nullptr) || E.psys.buildSafeSpawnPad(homeX, homeY, safe, nullptr)) {
           actor->wx = safe[0] + E.fg.worldOffsetX; actor->wy = safe[1] + E.fg.worldOffsetY;
           actor->vx = actor->vy = 0; actor->alive = true; actor->health = CREATURE_SPECIES[actor->species].maxHealth;
           bool dormant = std::none_of(E.creatures.creatures.begin(),E.creatures.creatures.end(),[&](const auto& c){return c.id==residentIds[i];});
@@ -22,7 +23,7 @@ void MissionSystem::updateFrontierResidents() {
       continue;
     }
     const auto& resident = E.content.residents[i];
-    double x = resident.x, y = resident.y + E.content.surfaceOffset(resident.surface);
+    double x = resident.x + E.content.horizontalOffset(resident.surface), y = resident.y + E.content.surfaceOffset(resident.surface);
     const auto& species = CREATURE_SPECIES[resident.species];
     if (!E.creatures.boxInsideLoadedWindow(x, y, species.w, species.h, 8)) continue;
     if (!E.creatures.findGroundSpawn(resident.species, x, y, x, y)) continue;
@@ -89,7 +90,7 @@ bool MissionSystem::startFrontier(int ownerPlayerId) {
   objectives.clear();
   for (const ContentQuest& quest : E.content.quests) {
     auto& objective = addObjective((uint8_t)quest.type, !quest.prerequisites.empty() ? OS_LOCKED : OS_ACTIVE, quest.count,
-                 quest.x, quest.y + E.content.surfaceOffset(quest.surface), MISSION_FLAG_PRIMARY_MARKER);
+                 quest.x + E.content.horizontalOffset(quest.surface), quest.y + E.content.surfaceOffset(quest.surface), MISSION_FLAG_PRIMARY_MARKER);
     objective.accepted = quest.giver == 0;
   }
   E.containers.initialize();
@@ -133,12 +134,13 @@ void MissionSystem::updateFrontier() {
     if (quest.type != OK_DEFEAT && dx * dx + dy * dy > quest.radius * quest.radius) continue;
     bool complete = true;
     int offset = E.content.surfaceOffset(quest.areaSurface);
+    int offsetX = E.content.horizontalOffset(quest.areaSurface);
     if (quest.type == OK_PASSAGE) {
       complete = false;
       for (int top = quest.top + offset; top + PLAYER_H + 1 <= quest.bottom + offset; top++) {
         bool open = true;
         for (int y = top; y < top + PLAYER_H + 2 && open; y++)
-          for (int x = quest.left; x <= quest.right; x++) {
+          for (int x = quest.left + offsetX; x <= quest.right + offsetX; x++) {
             int mat = cell(x, y);
             if (mat < 0 || E.isBlockingForActor(mat)) { open = false; break; }
           }
@@ -150,7 +152,7 @@ void MissionSystem::updateFrontier() {
       int longest = 0;
       for (int y = quest.top + offset; y <= quest.bottom + offset; y++) {
         int run = 0;
-        for (int x = quest.left; x <= quest.right; x++) {
+        for (int x = quest.left + offsetX; x <= quest.right + offsetX; x++) {
           bool usable = cell(x, y) == quest.material;
           if (usable) {
             int local = E.I(x - E.fg.worldOffsetX, y - E.fg.worldOffsetY);
@@ -171,7 +173,7 @@ void MissionSystem::updateFrontier() {
     } else if (quest.type == OK_DRAIN) {
       int liquid = 0, sampled = 0;
       for (int y = quest.top + offset; y <= quest.bottom + offset; y += 3)
-        for (int x = quest.left; x <= quest.right; x += 3) {
+        for (int x = quest.left + offsetX; x <= quest.right + offsetX; x += 3) {
           int mat = cell(x, y);
           if (mat < 0) { complete = false; continue; }
           sampled++;

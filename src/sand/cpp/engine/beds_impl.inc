@@ -47,7 +47,7 @@ void BedSystem::furnish(const Creature& resident) {
   double homeX = resident.roamRadius ? resident.homeX + species.w * .5 : resident.wx + species.w * .5;
   double homeY = resident.wy + species.h;
   if (resident.npcId) for (const auto& home : E.content.residents) if (home.id == resident.npcId) {
-    homeX = home.x + species.w * .5; homeY = home.y + E.content.surfaceOffset(home.surface) + species.h;
+    homeX = home.x + E.content.horizontalOffset(home.surface) + species.w * .5; homeY = home.y + E.content.surfaceOffset(home.surface) + species.h;
   }
   double best = 1e9;
   AdventureBed chosen;

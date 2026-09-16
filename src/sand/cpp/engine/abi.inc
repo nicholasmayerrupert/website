@@ -51,6 +51,7 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
   return e;
 }
 EMSCRIPTEN_KEEPALIVE int engine_get_planet(Engine* e) { return (int)e->planetId; }
+EMSCRIPTEN_KEEPALIVE double engine_get_world_seed(Engine* e) { return (double)e->fg.worldSeed; }
 EMSCRIPTEN_KEEPALIVE double engine_get_gravity_scale(Engine* e) { return e->gravityScale; }
 EMSCRIPTEN_KEEPALIVE void engine_set_gravity_scale(Engine* e, double scale) { e->setGravityScale(scale); }
 EMSCRIPTEN_KEEPALIVE int engine_get_weather(Engine* e) { return (int)e->weather.getKind(); }
@@ -68,6 +69,9 @@ EMSCRIPTEN_KEEPALIVE int engine_world_stored_tile_count(Engine* e) { return e->w
 EMSCRIPTEN_KEEPALIVE int engine_world_prefetch_tile_count(Engine* e) { return e->worldPrefetchTileCount(); }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->fg.worldOffsetX; }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_y(Engine* e) { return e->fg.worldOffsetY; }
+EMSCRIPTEN_KEEPALIVE int engine_content_offset_x(Engine* e, int surface) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->content.horizontalOffset(surface); }
+EMSCRIPTEN_KEEPALIVE int engine_content_offset_y(Engine* e, int surface) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->content.surfaceOffset(surface); }
+EMSCRIPTEN_KEEPALIVE int engine_world_natural_surface_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->terrain.genNaturalSurfaceAbs(worldX); }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_abs_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genSurfaceAbs(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_world_biome_at(Engine* e, int worldX) { Engine::ActiveLayerScope active(*e, &e->fg, &e->fg); return e->fg.infinite ? e->terrain.genBiomeAt(worldX) : 0; }

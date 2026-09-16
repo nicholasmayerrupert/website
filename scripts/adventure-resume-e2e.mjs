@@ -13,7 +13,8 @@ const resume = viewport => async ({ page, baseURL, check }) => {
     const { loadAdventure } = await import('/src/sand/worker/adventureSaveStore.js');
     window.resumeFixture = await loadAdventure();
     const g = document.querySelector('sand-game')._game;
-    return { cols: window.resumeFixture.cols, rows: window.resumeFixture.rows, ...g.getMissionView() };
+    return { cols: window.resumeFixture.cols, rows: window.resumeFixture.rows,
+      seed: window.__sandTest.worldSeed(), ...g.getMissionView() };
   });
   await page.setViewportSize(viewport);
   await page.waitForFunction(() => !window.__sandPerf().workerResizePending);
@@ -37,12 +38,13 @@ const resume = viewport => async ({ page, baseURL, check }) => {
   await page.waitForFunction(() => document.querySelector('sand-game')._game.getInventory()?.equipment?.length);
   const state = await page.evaluate(() => {
     const t = window.__sandTest, g = document.querySelector('sand-game')._game, dims = t.info();
-    return { ...dims, ...g.getMissionView(), solids: t.solidCount(0, 0, dims.cols, dims.rows),
+    return { ...dims, ...g.getMissionView(), seed: t.worldSeed(), solids: t.solidCount(0, 0, dims.cols, dims.rows),
       head: g.getInventory().equipment[0].definitionId };
   });
   check('fixture resumes into different world dimensions', state.cols !== original.cols || state.rows !== original.rows);
   check('restored terrain reaches the renderer', state.solids > 10000);
   check('equipment survives viewport changes', state.head === 0);
+  check('the renderer resumes the saved world seed', state.seed === original.seed);
   check('saved world position survives viewport changes', Math.abs(state.playerWorldX - original.playerWorldX) < 2
     && Math.abs(state.playerWorldY - original.playerWorldY) < 3);
   await page.waitForTimeout(2500);
@@ -65,6 +67,15 @@ const resume = viewport => async ({ page, baseURL, check }) => {
 };
 
 process.exitCode = await runBrowserCases({
+  fresh: async ({ page, baseURL, check }) => {
+    const seeds = [];
+    for (let run = 0; run < 2; run++) {
+      await page.goto(baseURL + '/game?nosave', { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.__sandPerf?.().mirrorWorldTick > 0);
+      seeds.push(await page.evaluate(() => window.__sandTest.worldSeed()));
+    }
+    check('new adventures choose different world seeds', seeds[0] !== seeds[1]);
+  },
   grow: resume({ width: 900, height: 1200 }),
   shrink: resume({ width: 390, height: 844 }),
 }, undefined, { shrink: { viewport: { width: 900, height: 1200 } } });

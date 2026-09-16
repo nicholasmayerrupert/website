@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import creatureArt from '../src/sand/content/creatureArt.js';
+import { GAME_CONTENT } from '../src/sand/content/catalog.js';
 import { runBrowserCases } from './browser-harness.mjs';
 
 process.exitCode = await runBrowserCases({
@@ -46,19 +47,21 @@ process.exitCode = await runBrowserCases({
     await page.getByText('Creature artwork', { exact: true }).click();
     check('art drawer previews the complete creature roster', await page.getByRole('region', { name: 'Creature artwork' }).locator('canvas').count() === Object.keys(creatureArt).length);
     await page.getByLabel('Jump to a scene').selectOption('railway');
-    await page.waitForFunction(() => window.__gameStudio.inspect().scene === 'railway' && Math.abs(window.__gameStudio.inspect().player.worldX + 690) < 8);
+    await page.waitForFunction(scene => window.__gameStudio.inspect().scene === 'railway'
+      && Math.abs(window.__gameStudio.inspect().player.worldX - scene.at[0] - window.__sandTest.contentOffset(scene.surface).x) < 8,
+    GAME_CONTENT.scenes.find(s => s.id === 'railway'));
     await page.getByRole('button', { name: 'Reset world' }).click();
     await page.waitForFunction(() => window.__gameStudio?.inspect().scene === 'railway', null, { timeout: 60000 });
     check('reset preserves the chosen scene', await page.getByLabel('Jump to a scene').inputValue() === 'railway');
     await page.evaluate(() => window.__gameStudio.load('foundry'));
     await page.waitForTimeout(500);
     // The streaming grid may rasterize the moving floor into the sub-cell foot margin.
-    check('long diagonal scene jumps load the terrain before placing the player', await page.evaluate(() => {
+    check('long diagonal scene jumps load the terrain before placing the player', await page.evaluate(scene => {
       const test = window.__sandTest, p = test.getPlayer(), offset = test.worldOffset(), size = test.info();
-      return Math.abs(p.x + offset.x + 995) < 8 && p.x > 8 && p.x + p.w < size.cols - 8
+      return Math.abs(p.x + offset.x - scene.at[0] - test.contentOffset(scene.surface).x) < 8 && p.x > 8 && p.x + p.w < size.cols - 8
         && p.y > 8 && p.y + p.h < size.rows - 8
         && test.solidCount(Math.floor(p.x), Math.floor(p.y), Math.ceil(p.x + p.w - 1e-6), Math.floor(p.y + p.h - .1)) === 0;
-    }));
+    }, GAME_CONTENT.scenes.find(s => s.id === 'foundry')));
     check('workbench has no browser errors', errors.length === 0, errors.join('; '));
     await page.screenshot({ path: resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts', 'workbench.png') });
   },

@@ -625,6 +625,7 @@ export function createSandGame(container, opts = {}) {
     // id: WEATHER.RAIN, WEATHER.CLEAR, or null to resume the auto cycle.
     interactQuest(objectiveId) { ctx.worldWorker?.intent('quest-interact', { objectiveId }); },
     repairBase() { ctx.worldWorker?.intent('repair-base'); },
+    getContentOffset(surface) { return ctx.engine?.contentOffset(surface) ?? { x: 0, y: 0 }; },
     getWorldSurfaceAt(worldX) { return ctx.engine?.worldSurfaceAbsAt(worldX) ?? 0; },
     setWeatherOverride(id) { loop.setWeatherOverride(id); loop.render(false); },
     getWeatherState() { return loop.getWeatherState(); },

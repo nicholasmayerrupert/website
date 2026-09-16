@@ -1,5 +1,4 @@
 import { GAME_CONTENT, GAME_SCENES } from '../content/catalog.js';
-import { ABSOLUTE } from '../content/compile.js';
 
 // Scene setup travels through the authority worker. The inspector reads its
 // replicated state, exactly as the production game does.
@@ -40,8 +39,9 @@ export function createStudioRuntime(host) {
       for (let i = 0; i < Math.abs(scene.zoomSteps); i++)
         host._game[scene.zoomSteps < 0 ? 'zoomOut' : 'zoomIn']();
       test.setDayPhase(scene.dayPhase);
-      const x = scene.at[0];
-      const y = scene.at[1] + (scene.surface === ABSOLUTE ? 0 : test.surfaceAt(scene.surface));
+      const offset = test.contentOffset(scene.surface);
+      const x = scene.at[0] + offset.x;
+      const y = scene.at[1] + offset.y;
       // Zoom can resize the loaded window; wait for its debounced operation
       // before positioning through the authority's current coordinate system.
       await new Promise(resolve => setTimeout(resolve, 250));

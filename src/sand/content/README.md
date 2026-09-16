@@ -9,6 +9,28 @@ World rectangles have inclusive cell bounds. Polygons use scanline filling.
 `fg`, `bg`, and `both` select simulated layers. Prefabs compose with `use` and
 `at`. Sites can anchor their vertical coordinates to terrain with `surfaceAt`.
 Anchors are referenced as `site.anchor`; quests never duplicate target positions.
+Surface sites use `placement: { footprint: [left, right], ground, search, blend,
+preferHigh? }`. Coordinates are local to the site. The engine searches the nearby
+terrain for low-relief ground, reserving room for neighboring sites and their
+slopes. `ground` is the local terrain datum; `blend` is the width of each graded
+shoulder. The belfry's
+`preferHigh` bias favors elevated terrain. Quintic interpolation joins the flat
+footprint to the seed's natural terrain in both layers, retaining the biome's
+soil and surface materials. The lodge's starting terrace and the deep archive
+keep their fixed anchors.
+
+An optional `terrain: [[x, height], ...]` profile shapes the native ground inside
+the footprint. Points are local to the site, ordered by x, and begin and end at
+height zero. Smooth interpolation between them gives Aster Junction a hillside
+over its railway bore and a gorge beneath its viaduct. This changes the real
+terrain in both layers, including the biome's soil, caves and vegetation.
+
+The compiler assigns placed sites a coordinate tag shared by geometry, quests,
+residents, chests, signs and studio previews. `engine.contentOffset(tag)` resolves
+both axes. Layouts depend on the saved world seed, never on viewport dimensions
+or the order chunks are loaded. Ground-level masonry has buried footings down to
+the local bearing stratum. Authored clearings and geometry reserve
+space from procedural structures and vegetation.
 
 The engine receives a bounded binary package when constructed, before generating
 terrain. Each engine owns its package, including streaming/prefetch generation.
@@ -17,7 +39,7 @@ WebAssembly. Content fingerprints distinguish authored-world revisions.
 
 ## Authoring loop
 
-1. Run `npm run dev` and open `/game?studio=hearth`.
+1. Run `npm run dev` and open `/game?studio=hearth` (add `&seed=7` to inspect another terrain seed).
 2. Choose a scene, pause it, inspect player/quest state, or step an actor turn.
 3. Expand **Edit blueprint** to stamp/cut physical foreground or background cells.
    **Edit player pixels** paints a selected animation frame and changes its timing.
@@ -59,6 +81,25 @@ Procedural world generation has its own versioned golden; editable blueprint
 revisions use the content fingerprint and content integration checks.
 
 ## Visual direction
+
+The lodge and workshops share the villages' oak framing, pale plaster, slate,
+and brick. Arched recesses, thinner roofs, porches, vaulted archive bays, and an
+open woodland canopy distinguish each location. The observatory has a faceted
+dome and copper ribs. A wrought-metal chandelier, suspended glazed lanterns,
+and hearths light the rooms through the normal simulation lighting; ambient
+overrides remain zero. Hanging bulbs emit into the foreground air so their light
+reaches the room and its background walls.
+
+`scripts/author-industrial-sites.mjs` authors Aster Junction and the Cinder Works.
+The junction spans 1,150 cells: brick-lined bore, clock-tower station, iron canopy,
+steam locomotive, coal tender, goods wagon, water tower, semaphores, telegraph
+wires and four-arch viaduct. The forge combines a barrel roof, banded chimney,
+recessed furnace, pressure vessel, flywheel and crane yard. These are destructible
+material cells, with physical rails and foundations and accessible background
+machinery. The script preserves all other sites and produces normal editable
+operations in `world.js`.
+The authoring script and studio share `scripts/game-content-format.mjs`, which
+keeps each geometry operation and coordinate tuple on one line.
 
 The world combines authored pixel textures with one-device-pixel foreground
 gutters, darker continuous background layers, and simulated lighting. Gutters

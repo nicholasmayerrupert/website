@@ -9,7 +9,8 @@ import { gearPixels } from './gearArt.js';
 import materialArt from './materialArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 7;
+export const CONTENT_WIRE_VERSION = 9;
+export const SITE_SURFACE_BASE = -100001;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
 export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special'];
@@ -36,6 +37,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
   const ids = new Set();
   const anchors = {};
   const scenes = [];
+  const placements = [];
   const emit = (layer, surface, rect, mat, path) => {
     if (!['fg', 'bg', 'both'].includes(layer)) fail(path, `unknown layer ${layer}`);
     if (!Object.hasOwn(MAT, mat)) fail(path, `unknown material ${mat}`);
@@ -81,7 +83,26 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     if (!/^[a-z][a-z0-9-]*$/.test(site.id) || ids.has(site.id)) fail('sites', `invalid or duplicate id ${site.id}`);
     ids.add(site.id);
     const origin = point(site.origin, `${site.id}.origin`);
-    const surface = site.surfaceAt === undefined ? ABSOLUTE : integer(site.surfaceAt, `${site.id}.surfaceAt`);
+    let surface = site.surfaceAt === undefined ? ABSOLUTE : integer(site.surfaceAt, `${site.id}.surfaceAt`);
+    if (site.placement && site.operations.length) {
+      const p = site.placement;
+      surface = SITE_SURFACE_BASE - placements.length;
+      if (placements.length >= 64) fail(site.id, 'too many placed sites');
+      const footprint = point(p.footprint, `${site.id}.placement.footprint`);
+      if (footprint[0] >= footprint[1]) fail(site.id, 'reversed placement footprint');
+      const terrain = p.terrain || [];
+      if (!Array.isArray(terrain) || terrain.length > 32) fail(site.id, 'expected at most 32 terrain profile points');
+      terrain.forEach((v, i) => {
+        point(v, `${site.id}.placement.terrain[${i}]`);
+        if (v[0] < footprint[0] || v[0] > footprint[1] || (i && v[0] <= terrain[i - 1][0]))
+          fail(site.id, 'terrain profile points must be ordered inside the footprint');
+      });
+      if (terrain.length && (terrain.length < 2 || terrain[0][1] !== 0 || terrain.at(-1)[1] !== 0))
+        fail(site.id, 'terrain profile must begin and end at ground level');
+      placements.push([...origin, ...footprint, integer(p.ground, 'placement.ground'),
+        integer(p.search, 'placement.search', 0, 1024), integer(p.blend, 'placement.blend', 16, 256),
+        p.preferHigh ? 1 : 0, terrain.length, ...terrain.flat()]);
+    }
     expand(site.operations, origin, surface, site.id);
     for (const [name, at] of Object.entries(site.anchors || {})) {
       point(at, `${site.id}.${name}`);
@@ -144,7 +165,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     else if (reward?.item) { rewardKind = 2; rewardId = ITEM_KIND[reward.item]; }
     if (reward && (!rewardKind || rewardId === undefined)) fail(job.key, 'unknown reward');
     return [type, prerequisites.length, target.x, target.y, target.surface, ...area,
-      job.condition.surfaceAt === undefined ? ABSOLUTE : integer(job.condition.surfaceAt, job.key), integer(job.radius ?? 23, job.key, 1, 100),
+      target.surface <= SITE_SURFACE_BASE && target.surface !== ABSOLUTE ? target.surface : (job.condition.surfaceAt === undefined ? ABSOLUTE : integer(job.condition.surfaceAt, job.key)), integer(job.radius ?? 23, job.key, 1, 100),
       rewardKind, rewardId, integer(reward?.count ?? 0, job.key, 0, 10000), material, count, species, integer(job.giver || 0, 'quest.giver', 0, 64), ...prerequisites];
   });
   for (const [speaker, dialogue] of Object.entries(world.dialogue || {})) {
@@ -281,6 +302,6 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     Math.round(world.presentation.backgroundTint * 1000),
     ...rects.flat(), ...jobs.flat(), ...clips, ...palette, ...pixels, textures.length, ...textures.flat(),
     creatures.length, ...creatures.flat(), residents.length, ...residents.flat(), ...limbColors, EQUIPMENT.length,
-    ...EQUIPMENT.flatMap(g => [g.id, g.family, g.slot, g.power, g.defense, g.stamina, g.mana, g.cooldown, g.reach, g.spell, g.style, g.price, g.spellSlots || 0, g.upgradeSlots || 0, g.initialSpell || 0, (g.statusEffects || []).length, ...(g.statusEffects || []).flatMap(effect => [effect.effect, effect.durationTicks ?? 0]), g.cleanseTags ?? 0, ...gearPixels(g.id)]), chests.length, ...chests.flat()]);
-  return { packed, hash, anchors, scenes, rectangles: rects, world, sprite };
+    ...EQUIPMENT.flatMap(g => [g.id, g.family, g.slot, g.power, g.defense, g.stamina, g.mana, g.cooldown, g.reach, g.spell, g.style, g.price, g.spellSlots || 0, g.upgradeSlots || 0, g.initialSpell || 0, (g.statusEffects || []).length, ...(g.statusEffects || []).flatMap(effect => [effect.effect, effect.durationTicks ?? 0]), g.cleanseTags ?? 0, ...gearPixels(g.id)]), chests.length, ...chests.flat(), placements.length, ...placements.flat()]);
+  return { packed, hash, anchors, scenes, placements, rectangles: rects, world, sprite };
 }

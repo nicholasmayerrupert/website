@@ -85,7 +85,7 @@ export function BlueprintEditor({ scene }) {
       ctx.fillRect(r[2] - site.origin[0] - x0, r[3] - site.origin[1] - y0, r[4] - r[2] + 1, r[5] - r[3] + 1);
     };
     for (const r of GAME_CONTENT.rectangles) {
-      if (r[1] !== (site.surfaceAt ?? -2147483648) || (r[0] !== 2 && r[0] !== (layer === 'fg' ? 0 : 1))) continue;
+      if (r[1] !== (GAME_CONTENT.scenes.find(s => s.id === site.id)?.surface ?? site.surfaceAt ?? -2147483648) || (r[0] !== 2 && r[0] !== (layer === 'fg' ? 0 : 1))) continue;
       draw(r, true);
     }
     for (const op of pending) if (op.layer === layer) draw([0, 0, op.rect[0] + site.origin[0], op.rect[1] + site.origin[1], op.rect[2] + site.origin[0], op.rect[3] + site.origin[1], MAT[op.material]], true);

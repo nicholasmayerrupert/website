@@ -128,7 +128,7 @@ export function createTalkHud(root, game, onAction) {
     const node = document.createElement('span');
     node.className = 'sg-place-sign'; node.textContent = sign.text;
     layer.appendChild(node);
-    return { x: anchor.x + sign.offset[0], y: anchor.y + sign.offset[1], node };
+    return { x: anchor.x + sign.offset[0], y: anchor.y + sign.offset[1], surface: anchor.surface, node };
   }) : [];
   const buttons = new Map();
   let activeActor = null;
@@ -229,7 +229,10 @@ export function createTalkHud(root, game, onAction) {
 
     // Project every position before changing the DOM. Projection reads canvas
     // and host bounds, so interleaved writes would force layout for each point.
-    const signPositions = signs.map(sign => game.worldToScreen(sign.x, sign.y));
+    const signPositions = signs.map(sign => {
+      const offset = game.getContentOffset(sign.surface);
+      return game.worldToScreen(sign.x + offset.x, sign.y + offset.y);
+    });
     const actorPositions = new Map(actors.map(actor =>
       [actor.id, game.worldToScreen(actor.worldX, actor.headWorldY)]));
     const recovering = recoveryBeamIsActive(game.getPlanetState?.().id, view.playerWorldY);

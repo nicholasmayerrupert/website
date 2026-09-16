@@ -15,7 +15,7 @@ struct ContentReader {
   int coordinate() { return bounded(-100000, 100000); }
   int surface() {
     int value = take();
-    if (value != INT_MIN && (value < -100000 || value > 100000)) valid = false;
+    if (value != INT_MIN && (value < -100064 || value > 100000)) valid = false;
     return value;
   }
   int material() {
@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 7) return false;
+  if (r.take() != 0x41535452 || r.take() != 9) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -197,7 +197,31 @@ bool ContentSystem::load(const int32_t* data, int length) {
     }
     nextChests.push_back(std::move(chest));
   }
+  std::vector<ContentPlacement> nextPlacements;
+  int placementCount = r.bounded(0, 64);
+  for (int i = 0; i < placementCount && r.valid; i++) {
+    ContentPlacement p{r.coordinate(), r.coordinate(), r.coordinate(), r.coordinate(),
+      r.coordinate(), r.bounded(0, 1024), r.bounded(16, 256), r.bounded(0, 1)};
+    if (p.left >= p.right) return false;
+    int points = r.bounded(0, 32);
+    for (int j = 0; j < points && r.valid; j++) {
+      int x = r.coordinate(), y = r.coordinate();
+      if (x < p.left || x > p.right || (j && x <= p.terrain.back()[0])) return false;
+      p.terrain.push_back({x, y});
+    }
+    if (!r.valid) return false;
+    if (points && (points < 2 || p.terrain.front()[1] || p.terrain.back()[1])) return false;
+    nextPlacements.push_back(p);
+  }
+  auto validSurface = [&](int surface) {
+    return surface == INT_MIN || surface >= -100000 || -100001 - surface < placementCount;
+  };
+  for (const auto& rect : nextRects) if (!validSurface(rect.surface)) return false;
+  for (const auto& quest : nextQuests) if (!validSurface(quest.surface) || !validSurface(quest.areaSurface)) return false;
+  for (const auto& resident : nextResidents) if (!validSurface(resident.surface)) return false;
+  for (const auto& chest : nextChests) if (!validSurface(chest.surface)) return false;
   if (!r.valid || r.at != length) return false;
+  placements = std::move(nextPlacements); placementsReady = false;
   for (const auto& quest : nextQuests) {
     if (quest.rewardKind == 3 && !nextEquipment.count(quest.rewardId)) return false;
     if (quest.giver && std::none_of(nextResidents.begin(), nextResidents.end(), [&](const auto& n) { return n.id == quest.giver; })) return false;
@@ -207,6 +231,20 @@ bool ContentSystem::load(const int32_t* data, int length) {
   fingerprint = nextFingerprint; spriteWidth = width; spriteHeight = height; pixelScale = scale;
   repairBounds = repair; spawn = nextSpawn; ambient = nextAmbient; backgroundTint = tint;
   rectangles = std::move(nextRects); quests = std::move(nextQuests); residents = std::move(nextResidents);
+  // Interior details do not enlarge a site's reservation. Keep the hot world
+  // queries independent of its furniture and rasterized decorative detail.
+  reservations.clear();
+  for (const ContentRect& rect : rectangles) {
+    auto contains = [](const ContentRect& a, const ContentRect& b) {
+      return a.surface == b.surface && a.left <= b.left && a.right >= b.right
+        && a.top <= b.top && a.bottom >= b.bottom;
+    };
+    if (std::any_of(reservations.begin(), reservations.end(),
+        [&](const ContentRect& existing) { return contains(existing, rect); })) continue;
+    reservations.erase(std::remove_if(reservations.begin(), reservations.end(),
+      [&](const ContentRect& existing) { return contains(rect, existing); }), reservations.end());
+    reservations.push_back(rect);
+  }
   clips = std::move(nextClips); palette = std::move(nextPalette); pixels = std::move(nextPixels);
   hasTexture = nextHasTexture;
   std::copy(nextTextures.begin(), nextTextures.end(), textures.begin());
@@ -239,16 +277,140 @@ int ContentSystem::ambientAt(int worldY) const {
   return (int)(ambient[0] + (ambient[1] - ambient[0]) * t);
 }
 
+void ContentSystem::ensurePlacements() {
+  if (placementsReady && placementSeed == E.fg.worldSeed) return;
+  placementSeed = E.fg.worldSeed;
+  placementsReady = true;
+  std::vector<size_t> order;
+  for (size_t i = 0; i < placements.size(); i++) order.push_back(i);
+  std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+    return std::abs(placements[a].x) < std::abs(placements[b].x);
+  });
+  std::vector<size_t> placed;
+  for (size_t id : order) {
+    auto& p = placements[id];
+    double best = 1e30;
+    for (int shift = -p.search; shift <= p.search; shift += 8) {
+      int center = p.x + shift, left = center + p.left, right = center + p.right;
+      // Keep the starting terrace and each site's earthworks separate.
+      if (left - p.blend < 352 && right + p.blend > -352) continue;
+      bool overlap = false;
+      for (size_t other : placed) {
+        const auto& q = placements[other];
+        int gap = p.blend + q.blend + 16;
+        if (right + gap >= q.x + q.dx + q.left && left - gap <= q.x + q.dx + q.right) { overlap = true; break; }
+      }
+      if (overlap) continue;
+      std::vector<int> samples;
+      for (int x = left; x <= right; x += 8) samples.push_back(E.terrain.genNaturalSurfaceAbs(x));
+      samples.push_back(E.terrain.genNaturalSurfaceAbs(right));
+      std::sort(samples.begin(), samples.end());
+      int level = samples[samples.size() / 2];
+      double cost = std::abs(shift) * .025;
+      for (int height : samples) cost += std::abs(height - level) / (double)samples.size();
+      cost += (samples.back() - samples.front()) * .8;
+      cost += std::abs(E.terrain.genNaturalSurfaceAbs(left - p.blend) - level) * .2;
+      cost += std::abs(E.terrain.genNaturalSurfaceAbs(right + p.blend) - level) * .2;
+      if (p.preferHigh) cost += level * .18;
+      if (cost < best) { best = cost; p.dx = shift; p.dy = level - p.y - p.ground; }
+    }
+    // A crowded search corridor extends outward, preserving disjoint shoulders.
+    if (best == 1e30) {
+      int center = p.x < 0 ? -352 - p.blend - p.right - 16 : 352 + p.blend - p.left + 16;
+      for (size_t other : placed) {
+        const auto& q = placements[other];
+        int gap = p.blend + q.blend + 16;
+        if (p.x < 0) center = imin(center, q.x + q.dx + q.left - gap - p.right - 1);
+        else center = imax(center, q.x + q.dx + q.right + gap - p.left + 1);
+      }
+      p.dx = center - p.x;
+      p.dy = E.terrain.genNaturalSurfaceAbs(center) - p.y - p.ground;
+    }
+    placed.push_back(id);
+  }
+}
+
+int ContentSystem::horizontalOffset(int surface) {
+  if (surface == INT_MIN || surface > -100001) return 0;
+  ensurePlacements();
+  return placements[(size_t)(-100001 - surface)].dx;
+}
+
+int ContentSystem::stitchedSurface(int worldX, int natural) {
+  ensurePlacements();
+  double value = natural;
+  for (const auto& p : placements) {
+    int left = p.x + p.dx + p.left, right = p.x + p.dx + p.right;
+    int distance = imax(left - worldX, worldX - right);
+    if (distance >= p.blend) continue;
+    double t = std::clamp(distance / (double)p.blend, 0.0, 1.0);
+    // Quintic shoulders meet the untouched terrain with zero blend slope.
+    double blend = t * t * t * (t * (t * 6 - 15) + 10);
+    double level = p.y + p.ground + p.dy;
+    int localX = worldX - p.x - p.dx;
+    for (size_t i = 1; i < p.terrain.size(); i++) {
+      const auto& a = p.terrain[i - 1]; const auto& b = p.terrain[i];
+      if (localX < a[0] || localX > b[0]) continue;
+      double u = (localX - a[0]) / (double)(b[0] - a[0]);
+      u = u * u * u * (u * (u * 6 - 15) + 10);
+      level += a[1] + (b[1] - a[1]) * u;
+      break;
+    }
+    value = level + (value - level) * blend;
+  }
+  return (int)std::lround(value);
+}
+
 int ContentSystem::surfaceOffset(int surface) {
-  return surface == INT_MIN ? 0 : E.terrain.genSurfaceAbs(surface);
+  if (surface == INT_MIN) return 0;
+  if (surface <= -100001) { ensurePlacements(); return placements[(size_t)(-100001 - surface)].dy; }
+  return E.terrain.genSurfaceAbs(surface);
+}
+
+bool ContentSystem::overlapsWorld(int left, int top, int right, int bottom) {
+  if (E.planetId != PL_FRONTIER) return false;
+  // Cleared interiors and access routes reserve space along with solid walls.
+  constexpr int CLEARANCE = 12;
+  for (const ContentRect& r : reservations) {
+    int dx = horizontalOffset(r.surface);
+    if (right < r.left + dx - CLEARANCE || left > r.right + dx + CLEARANCE) continue;
+    int offset = surfaceOffset(r.surface);
+    if (bottom >= r.top + offset - CLEARANCE && top <= r.bottom + offset + CLEARANCE)
+      return true;
+  }
+  return false;
 }
 
 void ContentSystem::stamp(int colStart, int colEnd, int rowStart, int rowEnd) {
   const int layer = E.L->isBackground ? 1 : 0;
+  ensurePlacements();
+  // Ground-level masonry follows the local slope down to the bearing stratum.
+  // Stamp it first so authored rooms and passages retain their clear space.
+  for (const ContentRect& r : rectangles) {
+    if (r.surface == INT_MIN || (r.layer != 2 && r.layer != layer)) continue;
+    if (r.surface <= -100001) {
+      const auto& p = placements[(size_t)(-100001 - r.surface)];
+      int ground = p.y + p.ground;
+      if (r.top > ground + 16 || r.bottom < ground - 4) continue;
+    } else if (r.top < 0 || r.top > 16) continue;
+    if (r.material != STONE && r.material != SANDSTONE
+        && r.material != PALESTONE && r.material != BRICK) continue;
+    int left = imax(colStart, r.left + horizontalOffset(r.surface) - E.L->worldOffsetX);
+    int right = imin(colEnd - 1, r.right + horizontalOffset(r.surface) - E.L->worldOffsetX);
+    if (left > right) continue;
+    int top = imax(rowStart, r.bottom + surfaceOffset(r.surface) + 1 - E.L->worldOffsetY);
+    for (int x = left; x <= right; x++) {
+      int worldX = x + E.L->worldOffsetX;
+      int ground = E.terrain.genSurfaceAbs(worldX) + TerrainGen::GEN_SKIN
+        + E.terrain.genSoilDepthAt(worldX, E.terrain.genBiomeAt(worldX)) + 4;
+      int bottom = imin(rowEnd - 1, ground - E.L->worldOffsetY);
+      for (int y = top; y <= bottom; y++) E.L->grid[E.I(x, y)] = (uint8_t)r.material;
+    }
+  }
   for (const ContentRect& r : rectangles) {
     if (r.layer != 2 && r.layer != layer) continue;
-    int left = imax(colStart, r.left - E.L->worldOffsetX);
-    int right = imin(colEnd - 1, r.right - E.L->worldOffsetX);
+    int left = imax(colStart, r.left + horizontalOffset(r.surface) - E.L->worldOffsetX);
+    int right = imin(colEnd - 1, r.right + horizontalOffset(r.surface) - E.L->worldOffsetX);
     if (left > right) continue;
     int offset = surfaceOffset(r.surface) - E.L->worldOffsetY;
     int top = imax(rowStart, r.top + offset), bottom = imin(rowEnd - 1, r.bottom + offset);

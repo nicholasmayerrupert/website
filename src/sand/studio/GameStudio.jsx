@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SandCampaign } from '../react/SandCampaign.jsx';
-import { GAME_SCENES, PLAYER_ART } from '../content/catalog.js';
+import { GAME_SCENES, GAME_WORLD, PLAYER_ART } from '../content/catalog.js';
 import { ANIMATION_STATES } from '../content/compile.js';
 import { createStudioRuntime } from './runtime.js';
 import './studio.css';
@@ -32,6 +32,8 @@ function SpritePreview() {
 export default function GameStudio() {
   const initial = new URLSearchParams(location.search).get('studio') || 'hearth';
   const clean = new URLSearchParams(location.search).has('capture');
+  const previewSeed = new URLSearchParams(location.search).get('seed');
+  const worldSeed = previewSeed !== null && Number.isFinite(Number(previewSeed)) ? Number(previewSeed) >>> 0 : GAME_WORLD.seed;
   const runtime = useRef(null);
   const selectedScene = useRef(initial);
   const [scene, setScene] = useState(initial);
@@ -60,7 +62,7 @@ export default function GameStudio() {
     return () => { clearInterval(timer); delete window.__gameStudio; };
   }, []);
   return <div className={`game-studio ${clean ? 'capture' : ''}`}>
-    <div className="studio-game"><SandCampaign key={revision} onRuntimeReady={ready} preview /></div>
+    <div className="studio-game"><SandCampaign key={revision} worldSeed={worldSeed} onRuntimeReady={ready} /></div>
     {!clean && <aside className="studio-panel">
       <header><span className="studio-eyebrow">ASTER / DEVELOPMENT</span><h1>World workbench</h1><p>The real game. One scene at a time.</p></header>
       <label htmlFor="studio-scene">Jump to a scene</label>

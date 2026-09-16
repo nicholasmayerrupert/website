@@ -798,6 +798,7 @@ function postFull(reason, fields = {}) {
     resizeId,
     cols: engine.cols, rows: engine.rows,
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
+    worldSeed: engine.getWorldSeed(),
     worldTick: engine.getTick(), perf: perf(), ...fields,
   }, bytes);
   lightEditX0 = Infinity;
@@ -1251,7 +1252,7 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
           self.postMessage({ type: 'adventure-save', savedAt: saved.savedAt, restored: true, error: '' });
           if (replayCapture) {
             const origin = engine.cols === saved.cols && engine.rows === saved.rows ? saved.bytes : engine.writeCheckpoint();
-            replayCapture.init = normalizeReplayInit({ ...data, cols: engine.cols, rows: engine.rows, checkpoint: await encodeAdventureOrigin(origin) });
+            replayCapture.init = normalizeReplayInit({ ...data, worldSeed: engine.getWorldSeed(), cols: engine.cols, rows: engine.rows, checkpoint: await encodeAdventureOrigin(origin) });
             self.postMessage({ type: 'replay-journal-reset', init: replayCapture.init });
           }
         }

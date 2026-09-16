@@ -87,8 +87,11 @@ recopied into WebAssembly.
 ## Aster: continuous Earth expedition
 
 `/game` mounts one `<sand-game planet="frontier" mission="frontier">` with a
-fixed Aster Valley seed. Frontier uses Earth's terrain and presentation profiles;
-its additional authored landmarks are streamed in absolute world coordinates.
+random seed for each new adventure; saved adventures retain their seed.
+Frontier uses Earth's terrain and presentation profiles;
+its additional authored landmarks use seed-selected terrain sites, streamed in
+absolute world coordinates. Site footprints favor low-relief ground and blend
+into the surrounding biome with graded slopes.
 There is no deployment, extraction, or world replacement between jobs.
 
 `content/world.js` authors Hearthwood Lodge, its greenhouse and cellar, the
@@ -97,6 +100,8 @@ blueprints use rectangles, polygons, and reusable prefabs in either simulated
 layer. Named anchors connect residents, signs, quests, and development scenes.
 `ContentSystem` consumes a validated per-engine package before terrain generation;
 `worldgen_frontier.inc` clips and stamps that content as the world streams.
+Authored footprints, interiors, and access routes reserve clearance from
+procedural structures and vegetation in both layers.
 Component-aware repair restores the authored lodge within its declared repair
 bounds. Natural hostile spawns exclude those bounds.
 
@@ -215,7 +220,7 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-World generation version 22 is canonical in absolute coordinates: viewport size changes
+World generation version 23 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select irregular 576–960-cell climate regions. Adjacent regions

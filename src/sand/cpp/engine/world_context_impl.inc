@@ -23,6 +23,7 @@ bool WorldContextSystem::featureApplies(
 
 bool WorldContextSystem::candidateAccepted(
     const GeneratedFeatureDef& candidate, const WorldBounds& bounds) const {
+  if (E.content.overlapsWorld(bounds.left, bounds.top, bounds.right, bounds.bottom)) return false;
   for (int family = 0; family < GFF_COUNT; family++) {
     if ((candidate.excludesMask & (1u << family)) == 0) continue;
     const GeneratedFeatureDef& excluded = FEATURES[(size_t)family];
@@ -86,7 +87,8 @@ bool WorldContextSystem::landmarkPlan(int latticeX, LandmarkPlan& out) const {
     if (!candidateAccepted(feature, bounds)) continue;
     if (E.planetId == PL_FRONTIER) {
       for (const ContentRect& rect : E.content.rectangles) {
-        if (rect.right < bounds.left || rect.left > bounds.right) continue;
+        int offsetX = E.content.horizontalOffset(rect.surface);
+        if (rect.right + offsetX < bounds.left || rect.left + offsetX > bounds.right) continue;
         int offset = E.content.surfaceOffset(rect.surface);
         if (rect.bottom + offset >= bounds.top && rect.top + offset <= bounds.bottom) {
           suitable = false; break;
@@ -300,6 +302,7 @@ bool WorldContextSystem::minePlan(int latticeX, MinePlan& out) const {
 }
 
 bool WorldContextSystem::overlapsConstruction(const WorldBounds& bounds) const {
+  if (E.content.overlapsWorld(bounds.left, bounds.top, bounds.right, bounds.bottom)) return true;
   for (const GeneratedFeatureDef& def : FEATURES) {
     if (def.family == GFF_OUTCROP || !featureApplies(def.family)) continue;
     if ((this->*def.overlaps)(def, bounds)) return true;

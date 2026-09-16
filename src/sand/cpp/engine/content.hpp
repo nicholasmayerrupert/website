@@ -2,6 +2,11 @@
 
 struct Engine;
 struct ContentRect { int layer, surface, left, top, right, bottom, material; };
+struct ContentPlacement {
+  int x, y, left, right, ground, search, blend, preferHigh;
+  int dx = 0, dy = 0;
+  std::vector<std::array<int, 2>> terrain{};
+};
 struct ContentQuest {
   int type, prerequisiteCount, x, y, surface, giver;
   int left, top, right, bottom, areaSurface, radius;
@@ -61,9 +66,17 @@ class ContentSystem {
   const ContentGear* gear(int id) const { auto it = equipment.find(id); return it == equipment.end() ? nullptr : &it->second; }
   bool load(const int32_t* data, int length);
   int surfaceOffset(int surface);
+  int horizontalOffset(int surface);
+  int stitchedSurface(int worldX, int natural);
+  void ensurePlacements();
+  bool overlapsWorld(int left, int top, int right, int bottom);
   int ambientAt(int worldY) const;
   void stamp(int colStart, int colEnd, int rowStart, int rowEnd);
   const uint8_t* spriteRow(int state, int frame, int row) const;
  private:
   Engine& E;
+  std::vector<ContentRect> reservations;
+  std::vector<ContentPlacement> placements;
+  uint32_t placementSeed = 0;
+  bool placementsReady = false;
 };

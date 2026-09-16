@@ -72,7 +72,8 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     if (keepJournal && !restarting) try { localStorage.setItem(journalKey, JSON.stringify({ tracked: GAME_JOBS[tracked]?.key, seen: [...seenCreatures] })); } catch { /* Browser storage can be disabled. */ }
   }
   function anchorPosition(anchor) {
-    return { worldX: anchor.x, worldY: anchor.y + (anchor.surface === -2147483648 ? 0 : game.getWorldSurfaceAt(anchor.surface)) };
+    const offset = game.getContentOffset(anchor.surface);
+    return { worldX: anchor.x + offset.x, worldY: anchor.y + offset.y };
   }
   function destination(index) {
     const objective = mission?.objectives[index];

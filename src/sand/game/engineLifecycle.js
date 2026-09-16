@@ -250,11 +250,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     ctx.lastCamY = NaN;
   };
 
-  // Rebuild the presentation engine for an authority snapshot whose dimensions
-  // differ from the current mirror. Keeps the current view metrics and removes
+  // Rebuild the presentation engine when an authority snapshot has different
+  // dimensions or seed. Keeps the current view metrics and removes
   // any prediction body; the next actor snapshot recreates it.
   const rebuildEngineForDims = (nextCols, nextRows) => {
-    if (ctx.engine && ctx.cols === nextCols && ctx.rows === nextRows) {
+    if (ctx.engine && ctx.cols === nextCols && ctx.rows === nextRows
+        && ctx.engine.getWorldSeed() === ctx.worldSeed) {
       if (ctx.localPlayerId) ctx.engine.removePlayer(ctx.localPlayerId);
       ctx.localPlayerId = 0;
       const skyLight = weatherSkyLight(

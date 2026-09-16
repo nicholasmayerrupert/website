@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compileContent } from '../src/sand/content/compile.js';
+import { formatWorldContent } from './game-content-format.mjs';
 
 const contentDir = resolve('src/sand/content');
 const names = new Set(['world', 'player', 'creatureArt']);
@@ -35,7 +36,8 @@ export function gameContentPlugin() {
             if (!names.has(name)) throw new Error('Unknown content source');
             const sources = Object.fromEntries([...names].map(key => [key, key === name ? data : read(key)]));
             const result = compileContent(sources.world, sources.player, sources.creatureArt);
-            writeFileSync(resolve(contentDir, `${name}.js`), `// Authored game content. Validated by content/compile.js.\nexport default ${JSON.stringify(data, null, 2)};\n`);
+            const source = name === 'world' ? formatWorldContent(data) : JSON.stringify(data, null, 2);
+            writeFileSync(resolve(contentDir, `${name}.js`), `// Authored game content. Validated by content/compile.js.\nexport default ${source};\n`);
             respond(200, { hash: result.hash.toString(16) });
           } catch (error) { respond(400, { error: error.message }); }
         });

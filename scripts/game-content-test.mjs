@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { GAME_CONTENT, GAME_WORLD, PLAYER_ART } from '../src/sand/content/catalog.js';
 import { compileContent } from '../src/sand/content/compile.js';
 import { initSandWasm, createEngineWasm, PLANET, MAT } from '../src/sand/wasmBridge/engineFactory.js';
-import { MISSION, ITEM_KIND, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import { MISSION, ITEM_KIND, CREATURE, WORLD_FEATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import materialArt from '../src/sand/content/materialArt.js';
 import { MATERIAL_BY_ID } from '../src/sand/materials.generated.js';
 
@@ -24,6 +24,8 @@ invalid(w => { w.quests[4].condition.species = 'TYPO'; }, /encounter species/);
 invalid(w => { w.residents[0].roamRadius = -1; }, /expected integer/);
 invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: ['0'] }; }, /tile/);
 invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: Array(32).fill('9'.repeat(32)) }; }, /palette index/);
+invalid(w => { w.sites.find(s => s.id === 'railway').placement.terrain = [[-10, 0], [-20, 0]]; }, /ordered/);
+invalid(w => { w.sites.find(s => s.id === 'railway').placement.terrain = [[-10, 3], [20, 0]]; }, /ground level/);
 assert.deepEqual(compileContent(GAME_WORLD, PLAYER_ART).packed, GAME_CONTENT.packed);
 console.log('ok: content rejects broken references, dependency cycles, recursive prefabs and malformed art');
 
@@ -67,7 +69,9 @@ try {
   assert.equal(e.startMission(MISSION.FRONTIER, player), true);
   const jobs = e.getMission().objectives;
   assert.equal(jobs[0].worldX, GAME_CONTENT.anchors[GAME_WORLD.quests[0].target].x);
-  assert.equal(jobs[1].worldY, GAME_CONTENT.anchors[GAME_WORLD.quests[1].target].y);
+  const millAnchor = GAME_CONTENT.anchors[GAME_WORLD.quests[1].target];
+  assert.equal(jobs[1].worldX, millAnchor.x + e.contentOffset(millAnchor.surface).x);
+  assert.equal(jobs[1].worldY, millAnchor.y + e.contentOffset(millAnchor.surface).y);
   assert.equal(jobs.at(-1).state, 0);
   const at = (x, y, bg = false) => (bg ? e.getGridBg() : e.getGrid())[(y - e.getWorldOffsetY()) * e.cols + x - e.getWorldOffsetX()];
   assert.equal(at(-16, 10), MAT.EMPTY);
@@ -109,3 +113,159 @@ const mirror = createEngineWasm({ cols: 96, rows: 96, infinite: true, storageRol
 try {
   assert.ok(mirror.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, 0, 0), 'art previews do not require authority-only grounding buffers');
 } finally { mirror.destroy(); }
+
+// An authored clearing reserves an entire procedural building before either
+// layer is stamped; the reservation follows the seed's surface elevation.
+for (const seed of [7, 12345, 0xffffffff]) {
+  const scout = createEngineWasm({ cols: 96, rows: 96, worldSeed: seed,
+    infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER });
+  let site;
+  try {
+    for (let x = 1600; x < 30000 && !site; x += 32) {
+      const y = scout.worldSurfaceAbsAt(x), context = scout.worldContextAt(x, y);
+      if ([WORLD_FEATURE.VILLAGE, WORLD_FEATURE.VILLAGE_BUILDING].includes(context.featureKind))
+        site = { x, y, ...context };
+    }
+    assert.ok(site, `seed ${seed} has a procedural settlement`);
+    const world = structuredClone(GAME_WORLD), b = site.bounds;
+    world.sites.push({ id: 'reservation-test', origin: [site.x, 0], surfaceAt: site.x,
+      operations: [{ layer: 'both', material: 'EMPTY',
+        rect: [b.left - site.x, b.top - site.y, b.right - site.x, b.bottom - site.y] }] });
+    const reserved = createEngineWasm({ cols: 96, rows: 96, worldSeed: seed,
+      infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER,
+      content: compileContent(world, PLAYER_ART) });
+    try {
+      assert.equal(reserved.worldContextAt(site.x, site.y).featureKind, WORLD_FEATURE.NONE,
+        `seed ${seed}: procedural structures respect the authored clearing`);
+      assert.equal(reserved.getWorldSeed(), seed);
+    } finally { reserved.destroy(); }
+  } finally { scout.destroy(); }
+}
+console.log('ok: authored clearings reserve procedural settlement footprints across seeds');
+
+const slopeWorld = structuredClone(GAME_WORLD);
+for (const site of slopeWorld.sites) site.operations = [];
+const terrainScout = createEngineWasm({ cols: 128, rows: 192, worldSeed: 7,
+  infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER });
+let surfaceAnchor;
+try {
+  for (let x = 600; x < 30000; x += 16) {
+    const y = terrainScout.worldSurfaceAbsAt(x);
+    if (y >= -24 && y < 0) { surfaceAnchor = x; break; }
+  }
+} finally { terrainScout.destroy(); }
+assert.ok(surfaceAnchor, 'fixture finds an elevated foundation datum');
+slopeWorld.sites.push({ id: 'foundation-test', origin: [0, 0], surfaceAt: surfaceAnchor,
+  operations: [{ layer: 'both', material: 'PALESTONE', rect: [-12, 0, 12, 1] }] });
+const grounded = createEngineWasm({ cols: 128, rows: 192, worldSeed: 7,
+  infinite: true, planetId: PLANET.FRONTIER, content: compileContent(slopeWorld, PLAYER_ART) });
+try {
+  const floor = grounded.worldSurfaceAbsAt(surfaceAnchor) + 1;
+  for (const grid of [grounded.getGrid(), grounded.getGridBg()]) {
+    for (let y = floor; y <= grounded.worldSurfaceAbsAt(0) + 1; y++) {
+      const index = (y - grounded.getWorldOffsetY()) * grounded.cols - grounded.getWorldOffsetX();
+      assert.equal(grid[index], MAT.PALESTONE, 'foundation reaches the terrain in both layers');
+    }
+  }
+} finally { grounded.destroy(); }
+console.log('ok: terrain-anchored masonry extends to solid ground in both layers');
+
+// Placement is a seed-derived world plan, independent of viewport and streaming.
+let chosenRelief = 0, fixedRelief = 0;
+const sites = GAME_WORLD.sites.filter(site => site.placement);
+const layouts = new Set();
+for (const seed of [0, 7, 42, 12345, 0xc0ffee, 0xffffffff, GAME_WORLD.seed]) {
+  const small = createEngineWasm({ cols: 96, rows: 96, worldSeed: seed,
+    infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER });
+  const large = createEngineWasm({ cols: 512, rows: 384, worldSeed: seed,
+    infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER });
+  try {
+    const occupied = [];
+    const layout = [];
+    for (const site of sites) {
+      const scene = GAME_CONTENT.scenes.find(scene => scene.id === site.id);
+      const p = site.placement, offset = small.contentOffset(scene.surface);
+      assert.deepEqual(offset, large.contentOffset(scene.surface), `${site.id}: viewport-independent placement`);
+      const left = site.origin[0] + offset.x + p.footprint[0];
+      const right = site.origin[0] + offset.x + p.footprint[1];
+      const ground = site.origin[1] + offset.y + p.ground;
+      layout.push([site.id, offset]);
+      occupied.push({ left: left - p.blend, right: right + p.blend, id: site.id });
+      for (let x = left; x <= right; x += 8) {
+        if (p.terrain?.length) continue;
+        assert.equal(small.worldSurfaceAbsAt(x), ground, `${site.id}: continuous bearing surface`);
+        assert.equal(large.worldSurfaceAbsAt(x), ground);
+      }
+      for (const [x, y] of p.terrain || []) {
+        const worldX = site.origin[0] + offset.x + x;
+        assert.equal(small.worldSurfaceAbsAt(worldX), ground + y, `${site.id}: terrain follows the hillside and gorge control points`);
+        assert.equal(large.worldSurfaceAbsAt(worldX), ground + y);
+      }
+      for (const edge of [left - p.blend, left, right, right + p.blend]) {
+        assert.ok(Math.abs(small.worldSurfaceAbsAt(edge + 1) - small.worldSurfaceAbsAt(edge - 1)) <= Math.max(3, Math.abs(small.naturalSurfaceAt(edge + 1) - small.naturalSurfaceAt(edge - 1))),
+          `${site.id}: no vertical seam at grading boundary`);
+      }
+      for (const x of [left - p.blend, right + p.blend])
+        assert.equal(small.worldSurfaceAbsAt(x), small.naturalSurfaceAt(x), `${site.id}: joins untouched terrain`);
+      const relief = center => {
+        const heights = [];
+        for (let x = p.footprint[0]; x <= p.footprint[1]; x += 8) heights.push(small.naturalSurfaceAt(center + x));
+        return Math.max(...heights) - Math.min(...heights);
+      };
+      chosenRelief += relief(site.origin[0] + offset.x);
+      fixedRelief += relief(site.origin[0]);
+    }
+    occupied.sort((a,b) => a.left - b.left);
+    for (let i = 1; i < occupied.length; i++)
+      assert.ok(occupied[i].left > occupied[i - 1].right, `seed ${seed}: ${occupied[i].id} grading cannot overlap ${occupied[i-1].id}`);
+    layouts.add(JSON.stringify(layout));
+  } finally { small.destroy(); large.destroy(); }
+}
+assert.equal(layouts.size, 7, 'each seed selects its own site layout');
+assert.ok(chosenRelief < fixedRelief * .8, `placement reduces required earthworks: ${chosenRelief} vs ${fixedRelief}`);
+console.log(`ok: seven seeds select disjoint sites with continuous terrain joins; footprint relief ${fixedRelief} -> ${chosenRelief}`);
+
+const planned = createEngineWasm({ cols: 160, rows: 160, worldSeed: 7,
+  infinite: true, planetId: PLANET.FRONTIER });
+const restored = createEngineWasm({ cols: 160, rows: 160, worldSeed: 42,
+  infinite: true, planetId: PLANET.FRONTIER });
+try {
+  const player = planned.spawnPlayerAtSurface(80);
+  assert.equal(planned.startMission(MISSION.FRONTIER, player), true);
+  // Prime the receiver's plan with a different seed before restoring the save.
+  for (const scene of GAME_CONTENT.scenes) restored.contentOffset(scene.surface);
+  assert.equal(restored.readCheckpoint(planned.writeCheckpoint()), true);
+  for (const scene of GAME_CONTENT.scenes)
+    assert.deepEqual(restored.contentOffset(scene.surface), planned.contentOffset(scene.surface),
+      `${scene.id}: checkpoint restoration reuses the saved seed's placement`);
+} finally { planned.destroy(); restored.destroy(); }
+console.log('ok: checkpoint seed restoration invalidates provisional site placement');
+
+// Bridge openings preserve the native gorge in both layers. Decorative rail
+// trim must not create hidden masonry footings across an entire span.
+const viaduct = createEngineWasm({ cols: 640, rows: 448, worldSeed: GAME_WORLD.seed,
+  infinite: true, planetId: PLANET.FRONTIER });
+try {
+  const site = GAME_WORLD.sites.find(s => s.id === 'railway');
+  const offset = viaduct.contentOffset(GAME_CONTENT.anchors['railway.viaduct'].surface);
+  const origin = [site.origin[0] + offset.x, site.origin[1] + offset.y];
+  const target = [Math.round((origin[0] + 440 - 320) / 32) * 32,
+    Math.round((origin[1] - 192) / 32) * 32];
+  for (let axis = 0; axis < 2; axis++) {
+    const current = () => axis ? viaduct.getWorldOffsetY() : viaduct.getWorldOffsetX();
+    while (current() !== target[axis]) {
+      const shift = Math.max(-128, Math.min(128, target[axis] - current()));
+      viaduct.shiftWorldXY(axis ? 0 : shift, axis ? shift : 0);
+    }
+  }
+  for (let tick = 0; tick < 30; tick++) viaduct.stepWorld();
+  for (const grid of [viaduct.getGrid(), viaduct.getGridBg()]) for (const x of [338, 407, 476, 546]) {
+    const index = (origin[1] + 40 - viaduct.getWorldOffsetY()) * viaduct.cols
+      + origin[0] + x - viaduct.getWorldOffsetX();
+    assert.equal(grid[index], MAT.EMPTY, `arch ${x}: the gorge remains open after settling`);
+  }
+  const deck = (origin[1] - viaduct.getWorldOffsetY()) * viaduct.cols
+    + origin[0] + 407 - viaduct.getWorldOffsetX();
+  assert.equal(viaduct.getGrid()[deck], MAT.IRON_ORE, 'the railway deck survives above the open gorge');
+} finally { viaduct.destroy(); }
+console.log('ok: streamed railway arches stay open and rails remain supported after settling');

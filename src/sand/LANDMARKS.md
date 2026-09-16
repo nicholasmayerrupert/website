@@ -33,7 +33,7 @@ profile, each curved rib terminates in its own buried foot, and broken limbs res
 on the slope. Small fossil rib formations also extend individual feet into soil.
 Support columns preserve natural cave voids rather than plugging entrances.
 
-The generation version is 22; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
+The generation version is 23; semantic landmarks use `WORLD_FEATURE.LANDMARK`.
 The existing engine component-registration pass owns every rigid cell. No separate
 visual overlay or unsimulated collider represents these landmarks.
 

@@ -9,7 +9,7 @@ struct Engine;
 
 // Terrain, feature plans, and semantic identities are one compatibility unit.
 // Bump this when deterministic generation or feature containment changes.
-inline constexpr int WORLD_GENERATION_VERSION = 22;
+inline constexpr int WORLD_GENERATION_VERSION = 23;
 
 class TerrainGen {
  public:
@@ -51,6 +51,7 @@ class TerrainGen {
   int genBiomeAt(int worldX);
   double genTemperatureAt(int worldX);
   double genMoistureAt(int worldX);
+  int genNaturalSurfaceAbs(int worldX);
   int genSurfaceAbs(int worldX);
   int genSurfaceAt(int worldX);
   int genSoilDepth(int biome);

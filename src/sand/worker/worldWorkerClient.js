@@ -1187,6 +1187,11 @@ export function createWorldWorkerClient(ctx, startupWorker = null) {
           let requestResync = false;
           if (Number.isInteger(packet.replayRestoreRequestId))
             applyLivePresentation();
+          if (packet.type === 'full' && Number.isInteger(packet.worldSeed)
+              && packet.worldSeed !== ctx.engine.getWorldSeed()) {
+            ctx.worldSeed = packet.worldSeed >>> 0;
+            ctx.fns.rebuildEngineForReplay?.(packet.cols, packet.rows);
+          }
           if (packet.type === 'full'
               && (packet.reason === 'replay-microscope' || packet.reason === 'replay-cancel'
                 || state.replayPlaying)

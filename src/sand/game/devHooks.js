@@ -141,7 +141,10 @@ export function installDevHooks(ctx, {
     previewScene(worldX, worldY) {
       ctx.worldWorker?.intent('preview-scene', { worldX, worldY });
     },
+    contentOffset(surface) { return engine()?.contentOffset(surface); },
+    naturalSurfaceAt(worldX) { return engine()?.naturalSurfaceAt(worldX); },
     surfaceAt(worldX) { return engine()?.worldSurfaceAbsAt(worldX); },
+    worldSeed() { return engine()?.getWorldSeed(); },
     getPlayer() { return localPlayer(); },
     getPlayers() { return playersForRender(); },
     setPlayerState(state) {

@@ -103,8 +103,8 @@ static const float OIL_IGNITE_P = 0.125f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_S
 static constexpr uint32_t WOOD_BURN_TICKS = 360, LEAF_BURN_TICKS = 120;
 static constexpr uint32_t BURN_MIN_PERCENT = 25, BURN_MAX_PERCENT = 175;
 static constexpr float BURN_ASH_P = 0.20f;
-static constexpr float BURN_SPREAD_P = 0.02f, BURN_FLAME_P = 0.08f;
-static constexpr float BURN_CROSS_FLAME_P = 0.001f;
+static constexpr float BURN_SPREAD_P = 0.02f, BURN_FLAME_P = 0.04f;
+static constexpr float BURN_CROSS_FLAME_P = 1.0f / 1500.0f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.09f;
 // Acid moves every tick but batches static corrosion every three ticks, reducing

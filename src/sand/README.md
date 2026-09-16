@@ -191,8 +191,8 @@ with an independent, uniform seeded duration per ignition. Burning fuel spreads 
 flames before topology-aware removal consumes it. Each consumed fuel cell has a
 20% chance of leaving a loose ash grain in either layer, including moving bodies.
 Ash is nonflammable grey powder with a dense, static-like charcoal texture.
-Edge emission has an 8% chance
-per tick; fuel also has a 0.1% chance to vent into the empty overlapping cell in
+Edge emission has a 4% chance
+per tick; fuel also has a 1-in-1,500 chance to vent into the empty overlapping cell in
 the other layer, including from an enclosed interior. Water, brine, and acid quench
 fuel and loose flames through cardinal contact in the same layer or overlapping
 contact in the other layer. Oil and lava do not extinguish fire.

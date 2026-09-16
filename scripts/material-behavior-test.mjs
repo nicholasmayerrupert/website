@@ -195,7 +195,7 @@ const fillDisc = (e, cx, cy, r, mat) => e.placeMaterial(cx, cy, r, mat);
 }
 
 // Powders fall and settle to inert.
-for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
+for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS', 'ASH']) {
   const e = mk();
   const mat = MAT[name];
   fillDisc(e, COLS / 2, 18, 7, mat);

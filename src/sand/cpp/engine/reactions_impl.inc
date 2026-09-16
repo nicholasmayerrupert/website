@@ -612,7 +612,8 @@ bool ReactionSystem::igniteSolid(int cell) {
   if (touchesExtinguishingLiquid(*E.L, cell)) return true;
   uint32_t ticks = (MAT_FLAGS[material] & MF_PLANTWOOD)
     ? WOOD_BURN_TICKS : LEAF_BURN_TICKS;
-  ticks = ticks * (85 + (uint32_t)(E.rand() * 31)) / 100;
+  ticks = ticks * (BURN_MIN_PERCENT
+    + (uint32_t)(E.rand() * (BURN_MAX_PERCENT - BURN_MIN_PERCENT + 1))) / 100;
   if (E.L->bodyOwner[cell] >= 0) {
     auto subject = resolveSubject(*E.L, cell);
     if (!subject.body || subject.localCell < 0) return true;
@@ -713,6 +714,8 @@ void ReactionSystem::applyBurning(bool effectEnabled, bool, bool) {
     Body* body = expired[begin].first;
     size_t end = begin + 1;
     while (end < expired.size() && expired[end].first == body) end++;
+    std::vector<uint8_t> residue(end - begin);
+    for (auto& material : residue) material = E.rand() < BURN_ASH_P ? ASH : FIRE;
     // Clear every projected sample before repairing the body's connectivity.
     E.rigid.forEachBodyCell(body, [&](int x, int y, int sample) {
       if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return;
@@ -721,7 +724,10 @@ void ReactionSystem::applyBurning(bool effectEnabled, bool, bool) {
       if (found == expired.begin() + end || found->second != sample) return;
       int cell = y * E.cols + x;
       if (E.L->bodyOwner[cell] == body->id) {
-        E.writeGridIndexUnsafe(cell, FIRE);
+        auto& material = residue[found - expired.begin() - begin];
+        E.writeGridIndexUnsafe(cell, material);
+        // A rotated fuel texel leaves at most one grain of ash.
+        material = FIRE;
         E.L->bodyOwner[cell] = -1;
       }
     });
@@ -734,7 +740,8 @@ void ReactionSystem::applyBurning(bool effectEnabled, bool, bool) {
   if (consumed.empty() && flames.empty()) return;
   bool indexed = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
   CellMutationBatch mutations(E, mutationRemovedScratch);
-  for (int cell : consumed) mutations.replaceLoose(cell, FIRE);
+  for (int cell : consumed)
+    mutations.replaceLoose(cell, E.rand() < BURN_ASH_P ? ASH : FIRE);
   for (int cell : flames)
     if (E.L->grid[cell] == EMPTY) mutations.replaceLoose(cell, FIRE);
   mutations.commitPlantErosion(indexed, true);

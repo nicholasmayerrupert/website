@@ -50,7 +50,7 @@ for (const material of [MAT.WOOD, MAT.OAK_WOOD, MAT.OAK_LEAF]) {
   assert.ok(flames > 0, 'burning fuel emits flames after the ignition source is removed');
   e.stepWorld();
   assert.notEqual(grid(e)[cell], material, 'spent fuel is consumed');
-  assert.ok(material === MAT.OAK_LEAF ? duration >= 101 && duration <= 138 : duration >= 305 && duration <= 414,
+  assert.ok(material === MAT.OAK_LEAF ? duration >= 29 && duration <= 210 : duration >= 89 && duration <= 630,
     'leaves burn faster than timber');
   e.destroy();
 }
@@ -61,7 +61,71 @@ for (let seed = 1; seed <= 8; seed++) {
   const e = make(MAT.WOOD, 0, false, seed);
   light(e); durations.add(fuel(e)); e.destroy();
 }
-assert.ok(durations.size > 4, 'ignitions vary the fuel lifetime slightly');
+assert.ok(durations.size > 4, 'ignitions vary the fuel lifetime independently');
+assert.ok(Math.max(...durations) - Math.min(...durations) > 300,
+  'ignitions span a wide, noisy range of burn times');
+
+for (const layer of [0, 1]) {
+  const e = make(MAT.WOOD, layer);
+  const cells = [];
+  for (let yy = 20; yy <= 44; yy += 3) {
+    for (let xx = 8; xx < 88; xx++) {
+      e.paintDiscLayer(layer, xx, yy + 1, 0, MAT.STONE, true);
+      e.paintDiscLayer(layer, xx, yy, 0, MAT.WOOD, true);
+      cells.push(yy * cols + xx);
+    }
+  }
+  // Connect every shelf to a grounded column.
+  for (let yy = 20; yy < rows; yy++) e.paintDiscLayer(layer, 7, yy, 0, MAT.STONE, true);
+  e.syncComponentsLayer(layer);
+  for (let tick = 0; tick < 40; tick++) {
+    for (const k of cells) e.paintDiscLayer(layer, k % cols, Math.floor(k / cols) - 1, 0, MAT.FIRE, true);
+    e.stepWorld();
+  }
+  assert.ok(cells.every(k => fuel(e, k, layer) > 0), 'all sampled fuel ignites');
+  for (let tick = 0; tick < 640; tick++) e.stepWorld();
+  const ashCount = () => [0, 1].reduce((sum, side) =>
+    sum + grid(e, side).filter(m => m === MAT.ASH).length, 0);
+  const ashes = ashCount();
+  assert.ok(cells.every(k => grid(e, layer)[k] !== MAT.WOOD), 'sampled fuel burns away');
+  assert.ok(ashes > cells.length * 0.15 && ashes < cells.length * 0.25,
+    `layer ${layer}: ${ashes}/${cells.length} fuel cells leave ash, near twenty percent`);
+  assert.ok(e.readCheckpoint(e.writeCheckpoint()), 'ash aftermath survives a checkpoint');
+  for (let tick = 0; tick < 30; tick++) e.stepWorld();
+  assert.equal(ashCount(), ashes, 'ash remains nonflammable and persists after burnout');
+  e.destroy();
+}
+console.log('ok: burnout leaves persistent loose ash at roughly twenty percent in both layers');
+
+for (const layer of [0, 1]) {
+  const e = make(MAT.WOOD, layer);
+  for (let xx = 8; xx < 88; xx++) e.paintDiscLayer(layer, xx, y, 0, MAT.WOOD, true);
+  e.syncComponentsLayer(layer);
+  for (let tick = 0; tick < 40; tick++) {
+    for (let xx = 8; xx < 88; xx++) e.paintDiscLayer(layer, xx, y - 1, 0, MAT.FIRE, true);
+    e.stepWorld();
+  }
+  for (let yy = y + 1; yy < rows; yy++) e.eraseDiscLayer(layer, x, yy, 0);
+  e.stepWorld();
+  assert.ok(e._bodyCountLayer(layer) > 0, 'burning plank detaches');
+  assert.ok(e.readCheckpoint(e.writeCheckpoint()), 'body with varied burn timers saves and reloads');
+  let sawAsh = false;
+  for (let tick = 0; tick < 640; tick++) {
+    e.stepWorld();
+    for (const side of [0, 1]) {
+      const g = grid(e, side), owners = e._bodyOwnerGrid(side);
+      for (let k = 0; k < g.length; k++) if (g[k] === MAT.ASH) {
+        sawAsh = true;
+        assert.ok(owners[k] < 0, 'ash released by a body is a loose grain');
+        assert.equal(fuel(e, k, side), 0, 'ash has no remaining fuel');
+      }
+    }
+  }
+  assert.ok(sawAsh, 'detached burning fuel produces ash');
+  assert.ok(!grid(e, layer).includes(MAT.WOOD), 'detached plank fully burns away');
+  assert.equal(e._bodyCountLayer(layer), 0, 'ash leaves no rigid body behind');
+  e.destroy();
+}
 
 for (const layer of [0, 1]) for (const cross of [false, true])
 for (const water of [MAT.WATER, MAT.BRINE, MAT.ACID]) {
@@ -148,7 +212,7 @@ for (const layer of [0, 1]) {
     e.paintDiscLayer(layer, xx, y + 1, 0, MAT.STONE, true);
   }
   e.syncComponentsLayer(layer);
-  for (let tick = 0; tick < 60; tick++) {
+  for (let tick = 0; tick < 20; tick++) {
     for (let xx = 10; xx <= 85; xx += 3) e.paintDiscLayer(layer, xx, y - 1, 0, MAT.FIRE, true);
     e.stepWorld();
   }
@@ -159,14 +223,16 @@ for (const layer of [0, 1]) {
   for (let xx = 10; xx <= 45; xx++) e.paintDiscLayer(peer, xx, y, 0, MAT.STONE, true);
   e.syncComponentsLayer(layer); e.syncComponentsLayer(peer);
   let vented = 0, opportunities = 0;
-  for (let tick = 0; tick < 200; tick++) {
+  const firstBurnout = Math.min(...Array.from({ length: 76 }, (_, i) =>
+    fuel(e, y * cols + i + 10, layer)).filter(ticks => ticks > 0));
+  for (let tick = 0; tick < Math.min(200, firstBurnout - 1); tick++) {
     clearFlames(e);
     for (let xx = 46; xx <= 85; xx++) if (fuel(e, y * cols + xx, layer)) opportunities++;
     e.stepWorld();
     for (let xx = 46; xx <= 85; xx++) vented += grid(e, peer)[y * cols + xx] === MAT.FIRE ? 1 : 0;
     for (let xx = 10; xx <= 45; xx++) assert.equal(grid(e, peer)[y * cols + xx], MAT.STONE,
       'cross-layer flames never replace occupied space');
-    assert.ok(!grid(e, layer).includes(MAT.FIRE), 'enclosed fuel has no exposed edge for local flames');
+    assert.ok(!grid(e, layer).includes(MAT.FIRE), 'enclosed fuel emits no local flames before burnout opens gaps');
   }
   assert.ok(vented > 0, 'enclosed burning fuel occasionally vents into the other layer');
   assert.ok(vented < opportunities * 0.01, 'cross-layer emission is much rarer than edge emission');
@@ -277,7 +343,7 @@ console.log('ok: rotating mixed rigid bodies burn once per fuel cell and can be 
   e.stepWorld();
   assert.equal(e._bodyJointRoleLayer(0, 0), 1, 'overlapping layers detach as a joined rigid body');
   assert.ok(e.readCheckpoint(e.writeCheckpoint()), 'joined burning-body state is valid');
-  for (let tick = 0; tick < 430; tick++) e.stepWorld();
+  for (let tick = 0; tick < 640; tick++) e.stepWorld();
   assert.ok(!grid(e).includes(MAT.WOOD), 'joined wood burns away');
   assert.ok(grid(e, 1).includes(MAT.STONE), 'burnout preserves the nonflammable peer body');
   e.destroy();

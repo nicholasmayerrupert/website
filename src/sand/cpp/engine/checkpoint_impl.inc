@@ -227,7 +227,7 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     if (body->textures.size() != body->occ.size()) return false;
     if (!body->burning.empty() && body->burning.size() != body->occ.size()) return false;
     for (size_t local = 0; local < body->burning.size(); local++)
-      if (body->burning[local] > WOOD_BURN_TICKS * 115 / 100
+      if (body->burning[local] > WOOD_BURN_TICKS * BURN_MAX_PERCENT / 100
           || (body->burning[local] && !E.persistentBurningState(E.rigid.bodyMaterialAt(body, (int)local)))) return false;
     for (uint16_t texel : body->textures) if (texel != WORLD_TEXTURE && texel >= 1024) return false;
   }

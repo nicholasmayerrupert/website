@@ -59,6 +59,8 @@ static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
 static const float OIL_IGNITE_P = 0.125f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
 static constexpr uint32_t WOOD_BURN_TICKS = 360, LEAF_BURN_TICKS = 120;
+static constexpr uint32_t BURN_MIN_PERCENT = 25, BURN_MAX_PERCENT = 175;
+static constexpr float BURN_ASH_P = 0.20f;
 static constexpr float BURN_SPREAD_P = 0.02f, BURN_FLAME_P = 0.08f;
 static constexpr float BURN_CROSS_FLAME_P = 0.001f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.

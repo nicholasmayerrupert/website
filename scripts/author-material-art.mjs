@@ -1,4 +1,4 @@
-// Hand-placed pixel motifs. Coordinates wrap at the tile edge; no random grain.
+// Pixel motifs and fixed ash grain. Coordinates wrap at the tile edge.
 // Run with --check to verify the committed, directly editable pixel rows.
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -404,6 +404,14 @@ tile('VEIN_ROCK', '51365e 724783 9b6bb0 bd8fca e2b8e5 d39ed5', () => {
   rock(); line(root, 5); line([[18, 11], [20, 5], [25, 2]], 3);
   stamp(16, 10, ['34', '.3']);
 }, 'Amethyst host rock with a wandering pale mineral vein and violet fracture faces.');
+
+tile('ASH', '303030 454545 585858 707070 898989 a0a0a0', () => {
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    let grain = Math.imul(y * SIZE + x + 1, 0x45d9f3b);
+    grain = Math.imul(grain ^ (grain >>> 16), 0x45d9f3b);
+    dot(x, y, ((grain ^ (grain >>> 16)) >>> 0) % 6);
+  }
+}, 'Dense salt-and-pepper charcoal and grey grains, like television static.');
 
 const materials = JSON.parse(readFileSync('src/sand/materials.schema.json', 'utf8')).materials;
 for (const material of materials.filter(m => m.id !== 0)) {

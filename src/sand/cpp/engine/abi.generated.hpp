@@ -5,7 +5,7 @@
 
 static const int ABI_VERSION = 59;
 
-static const uint64_t ABI_FINGERPRINT = 0xacba9e15f3e1ULL;
+static const uint64_t ABI_FINGERPRINT = 0x9a276a31734bULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals
 enum PlayerSnapshotField : int {

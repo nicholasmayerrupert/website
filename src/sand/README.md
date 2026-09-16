@@ -186,9 +186,12 @@ edits.
 ### Burning
 
 Combustible structural cells keep their material and support while burning.
-Wood burns for roughly six seconds and leaves for two at 60 ticks per second,
-with a seeded ±15% variation per ignition. Burning fuel spreads heat and emits
-flames before topology-aware removal consumes it. Edge emission has an 8% chance
+Wood burns for 1.5–10.5 seconds and leaves for 0.5–3.5 at 60 ticks per second,
+with an independent, uniform seeded duration per ignition. Burning fuel spreads heat and emits
+flames before topology-aware removal consumes it. Each consumed fuel cell has a
+20% chance of leaving a loose ash grain in either layer, including moving bodies.
+Ash is nonflammable grey powder with a dense, static-like charcoal texture.
+Edge emission has an 8% chance
 per tick; fuel also has a 0.1% chance to vent into the empty overlapping cell in
 the other layer, including from an enclosed interior. Water, brine, and acid quench
 fuel and loose flames through cardinal contact in the same layer or overlapping

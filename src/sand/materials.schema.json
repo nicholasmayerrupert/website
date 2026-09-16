@@ -218,7 +218,7 @@
   "palette": {
     "mainOrder": [
       "cube", "eraser", "rigid", "neutronium", "stone", "water", "acid", "lava", "tnt", "sand",
-      "fire", "methane", "oil", "gunpowder", "crystal", "mycelium_spore", "mycelium", "glowberry", "glowshroom",
+      "fire", "ash", "methane", "oil", "gunpowder", "crystal", "mycelium_spore", "mycelium", "glowberry", "glowshroom",
       "brine", "steam", "acrid_smoke", "ice", "oak seed", "eyeball seed", "pine seed", "willow seed", "cactus seed", "mushroom seed", "bush seed", "vine seed",
       "grass", "dirt", "snow", "mud", "salt", "gold_ore", "iron_ore", "copper_ore", "coal_ore", "brick", "clay", "sandstone", "moss",
       "wood", "oak_wood", "pine_wood", "oak_leaf", "pine_needles", "willow_leaf", "bush_leaf", "cactus", "mush_cap", "mush_stem", "vine", "plant", "driftwood", "debris", "vein_soil", "eye_wood", "eye_sclera", "eye_iris", "eye_pupil", "palestone"
@@ -229,7 +229,7 @@
       { "id": "terrain", "label": "Terrain", "accent": "#c99a6b", "labels": ["shale", "slate", "rootstone", "vein_rock", "vein_soil", "palestone", "sand", "stone", "neutronium", "dirt", "snow", "mud", "clay", "sandstone", "copper_ore", "iron_ore", "coal_ore", "gold_ore", "brick", "salt", "debris", "crystal"] },
       { "id": "fluids", "label": "Fluids", "accent": "#70bfff", "labels": ["water", "oil", "acid", "lava", "ice", "steam", "brine"] },
       { "id": "flora", "label": "Flora", "accent": "#7dd88a", "labels": ["rust_bramble", "ochre_reed", "teal_lichen", "violet_frond", "eye_wood", "eye_sclera", "eye_iris", "eye_pupil", "wood", "plant", "oak_wood", "oak_leaf", "driftwood", "moss", "pine_wood", "cactus", "mush_stem", "mush_cap", "pine_needles", "willow_leaf", "bush_leaf", "vine", "mycelium", "mycelium_spore", "glowberry", "glowshroom", "grass"], "entryKinds": ["seed"] },
-      { "id": "reactions", "label": "Reactions", "accent": "#ff856c", "labels": ["fire", "steam", "methane", "oil", "acid", "lava", "neutronium", "acrid_smoke", "salt", "brine", "gunpowder", "tnt", "debris"] },
+      { "id": "reactions", "label": "Reactions", "accent": "#ff856c", "labels": ["fire", "ash", "steam", "methane", "oil", "acid", "lava", "neutronium", "acrid_smoke", "salt", "brine", "gunpowder", "tnt", "debris"] },
       { "id": "creatures", "label": "Creatures", "accent": "#c99cff", "entryKinds": ["creature"] }
     ]
   },
@@ -307,7 +307,8 @@
     {"id": 67, "name": "SHALE", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.6, "looseSorted": false, "mobility": 0, "color": "0xff697e9e", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 7, "durability": 8, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"]},
     {"id": 68, "name": "SLATE", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.6, "looseSorted": false, "mobility": 0, "color": "0xffb69b78", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 7, "durability": 8, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"]},
     {"id": 69, "name": "ROOTSTONE", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.6, "looseSorted": false, "mobility": 0, "color": "0xff6e8a83", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 7, "durability": 8, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"]},
-    {"id": 70, "name": "VEIN_ROCK", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.6, "looseSorted": false, "mobility": 0, "color": "0xff926b9e", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 7, "durability": 8, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"]}
+    {"id": 70, "name": "VEIN_ROCK", "kind": "COMPONENT", "materialClass": "rigid", "density": 2.6, "looseSorted": false, "mobility": 0, "color": "0xff926b9e", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 7, "durability": 8, "renderAnim": "none", "flags": ["dissolvable", "rigid", "bearing"]},
+    {"id": 71, "name": "ASH", "kind": "POWDER", "materialClass": "solid", "density": 0.6, "looseSorted": true, "mobility": 1.0, "color": "0xff606060", "toolClass": "shovel", "toolTier": 0, "textureAmp": 18, "durability": 1, "renderAnim": "none", "flags": ["dissolvable", "bearing"]}
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",

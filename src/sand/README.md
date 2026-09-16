@@ -826,6 +826,15 @@ wave while pacing rigid rubble through a per-tick body budget.
 
 Players, creatures, items, and projectiles are non-grid actors. Free rigid bodies
 are entities whose occupancy is stamped into the material grid.
+Player jumps accept a fresh press up to seven actor ticks before landing or six
+ticks after walking off a ledge. Holding jump preserves the full arc; releasing
+during the rise caps upward speed for a short hop. Air acceleration, reversal,
+and release braking are independently tuned. One-cell ceiling-corner correction
+and descending ledge assistance require a clear swept body and cannot cross a
+wall or low ceiling. The jump latch, grace timers, and active-rise state travel
+with player snapshots for prediction; live jump gestures reset on checkpoint
+loading, sleep, and respawn. `platforming` covers the timing boundaries, jump
+metrics, narrow elevated landing sequences, collision limits, and reconciliation.
 During the foreground rigid solve, each live player and creature contributes an
 exact AABB kinematic collider. Rigid bodies receive ordinary contact normals,
 friction, and torque from those colliders, while actor movement remains under

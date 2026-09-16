@@ -559,7 +559,10 @@ static const int    PLAYER_W = 4, PLAYER_H = 8;
 // Soft gravity and capped acceleration keep movement readable at sand-cell scale.
 static const double P_GRAVITY = 0.078125, P_MAX_FALL = 6.0;
 static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.7875, P_RUN_MULT = 1.7;
-static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.035;
+static const double P_GROUND_FRICTION = 0.55, P_JUMP_VEL = 2.035;
+static const double P_AIR_ACCEL = 0.28, P_AIR_TURN_ACCEL = 0.42, P_AIR_BRAKE = 0.18;
+static const int P_COYOTE_TICKS = 6, P_JUMP_BUFFER_TICKS = 7;
+static const double P_JUMP_CUT_VEL = 0.95, P_CORNER_ASSIST = 1.0;
 static const double P_AIM_FACING_DEADZONE = 0.2; // retain side while aiming almost exactly vertical
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
@@ -714,7 +717,9 @@ struct Player {
   double inputX = 0, inputY = 0; // normalized analog move; ignored when analogInput is false
   bool analogInput = false;
   int prevInput = 0;       // last step's input bits (for single-shot edge detection)
-  bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
+  bool jumpReady = false;  // release arms the next press, including while airborne
+  int coyoteTicks = 0, jumpBufferTicks = 0;
+  bool jumpActive = false; // a ground/coyote jump whose rise can be cut on release
   uint32_t inputSeq = 0;   // last applied authority input sequence
   int health = 100;
   int hurtCooldown = 0; // contact-damage immunity; also protects a fresh respawn

@@ -3,11 +3,11 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 59;
+static const int ABI_VERSION = 60;
 
-static const uint64_t ABI_FINGERPRINT = 0x9a276a31734bULL;
+static const uint64_t ABI_FINGERPRINT = 0x12201517b694ULL;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals, coyoteTicks, jumpBufferTicks, jumpActive
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -68,8 +68,11 @@ enum PlayerSnapshotField : int {
   PS_STATUS_MOVE_SCALE = 56,
   PS_STATUS_CONTROLS = 57,
   PS_STATUS_VISUALS = 58,
+  PS_COYOTE_TICKS = 59,
+  PS_JUMP_BUFFER_TICKS = 60,
+  PS_JUMP_ACTIVE = 61,
 };
-static const int PS_STRIDE = 59;
+static const int PS_STRIDE = 62;
 
 struct WritePlayerSnapshotRespawnReady {
   bool value;
@@ -242,6 +245,9 @@ inline void writePlayerSnapshot(float* out, const Record& record, const WritePla
   out[PS_STATUS_MOVE_SCALE] = static_cast<float>(values.statusMoveScale.value);
   out[PS_STATUS_CONTROLS] = static_cast<float>(values.statusControls.value);
   out[PS_STATUS_VISUALS] = static_cast<float>(record.effects.visuals);
+  out[PS_COYOTE_TICKS] = static_cast<float>(record.coyoteTicks);
+  out[PS_JUMP_BUFFER_TICKS] = static_cast<float>(record.jumpBufferTicks);
+  out[PS_JUMP_ACTIVE] = (record.jumpActive ? 1.0f : 0.0f);
 }
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier, definitionId

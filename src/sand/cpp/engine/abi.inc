@@ -947,8 +947,8 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) 
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy,
                                                   int facing, int grounded, int jumpReady,
-                                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls) {
-  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed, movementPrevInput, statusMoveScale, statusControls);
+                                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls, int coyoteTicks, int jumpBufferTicks, int jumpActive) {
+  e->psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed, movementPrevInput, statusMoveScale, statusControls, coyoteTicks, jumpBufferTicks, jumpActive);
 }
 
 // Dropped-item and particle hooks plus the packed replication/render snapshot.

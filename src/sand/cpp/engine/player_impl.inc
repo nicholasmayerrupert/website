@@ -70,6 +70,16 @@ bool PlayerSystem::tryMoveX(Player& p, double d, int bury) {
           p.py -= up; p.px += adv; moved += adv; climbed = true; break;
         }
       }
+    } else if (p.vy >= 0 && (p.input & (PI_LEFT | PI_RIGHT))) {
+      // Catch a landing missed by at most one cell. Every raised position must
+      // clear the whole body, and the destination must have support beneath it.
+      for (double up = P_MOVE_SUBSTEP; up <= P_CORNER_ASSIST; up += P_MOVE_SUBSTEP) {
+        if (playerBoxHits(p.px, p.py - up, p.w, p.h)) break;
+        if (!playerBoxHits(p.px + adv, p.py - up, p.w, p.h) &&
+            rowSolid(p.px + adv, p.w, (int)std::floor(p.py - up + p.h - 1e-6) + 1)) {
+          p.py -= up; p.px += adv; moved += adv; climbed = true; break;
+        }
+      }
     }
     if (!climbed) return true;
   }
@@ -97,7 +107,21 @@ bool PlayerSystem::moveUp(Player& p, double d) { // d < 0
     double adv = (d - moved > -P_MOVE_SUBSTEP) ? (d - moved) : -P_MOVE_SUBSTEP;
     int curTop = (int)std::floor(p.py);
     int newTop = (int)std::floor(p.py + adv);
-    if (newTop != curTop && rowSolid(p.px, p.w, curTop - 1)) return true;
+    if (newTop != curTop && rowSolid(p.px, p.w, curTop - 1)) {
+      bool corrected = false;
+      int preferred = p.vx < 0 ? -1 : 1;
+      for (int side : {preferred, -preferred}) {
+        for (double offset = P_MOVE_SUBSTEP; offset <= P_CORNER_ASSIST; offset += P_MOVE_SUBSTEP) {
+          double x = p.px + side * offset;
+          if (playerBoxHits(x, p.py, p.w, p.h)) break;
+          if (!playerBoxHits(x, p.py + adv, p.w, p.h)) {
+            p.px = x; corrected = true; break;
+          }
+        }
+        if (corrected) break;
+      }
+      if (!corrected) return true;
+    }
     p.py += adv; moved += adv;
   }
   return false;
@@ -285,6 +309,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
   E.status.clear(p.effects);
   p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
+  p.coyoteTicks = p.jumpBufferTicks = 0; p.jumpActive = false;
   p.deathTicks = 0; p.buriedTicks = 0; p.bowChargeTicks = 0; p.lastDamageTick = E.actorTick;
   p.respawnPending = false;
   p.jetpackFuel = 1.0; p.jetpackActive = false;
@@ -528,17 +553,20 @@ void PlayerSystem::integratePlayer(Player& p) {
 
   // horizontal accel / friction
   double previousVx = p.vx;
+  double accel = p.grounded ? P_MOVE_ACCEL :
+    (p.vx * moveX < 0 ? P_AIR_TURN_ACCEL : P_AIR_ACCEL);
   if (moveStrength < 1e-6) {
-    p.vx *= (p.grounded ? P_GROUND_FRICTION : P_AIR_FRICTION);
+    if (p.grounded) p.vx *= P_GROUND_FRICTION;
+    else p.vx = std::copysign(std::max(0.0, std::fabs(p.vx) - P_AIR_BRAKE), p.vx);
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
   } else {
-    p.vx += P_MOVE_ACCEL * moveX;
+    p.vx += accel * moveX;
   }
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
   // Locomotion brakes collision momentum with bounded acceleration.
-  p.vx = std::max(previousVx - P_MOVE_ACCEL,
-                  std::min(previousVx + P_MOVE_ACCEL, p.vx));
+  p.vx = std::max(previousVx - accel,
+                  std::min(previousVx + accel, p.vx));
   if (inLiquid) {
     p.vx *= P_LIQUID_DRAG_X;
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
@@ -547,18 +575,28 @@ void PlayerSystem::integratePlayer(Player& p) {
     p.vx = std::max(-P_MAX_FALL, std::min(P_MAX_FALL, p.vx + forceX));
   }
 
-  // jump: allowed when grounded OR shallowly buried (sand piled into his feet, up
-  // to P_BURY_JUMP_MAX deep) — he can leap out of a light burial, but deeper than
-  // that the jump is denied and he must dig. Re-arm only on release so a press isn't
-  // lost to a single-frame `grounded` flicker. While SWIMMING the jump key is
-  // consumed as the swim-up impulse below instead of a leap.
+  // Release arms a fresh press anywhere. Buffered requests survive release but
+  // expire quickly; holding through a landing cannot create another request.
   int bury = buryDepth(p);
-  bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
-  if (canJump && !wantJump) p.jumpReady = true;
-  if (!swimming && wantJump && canJump && p.jumpReady) {
-    p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false;
-    E.audio.emit(SE_JUMP, p.px + p.w * 0.5, p.py + p.h, 0.8, EMPTY, 0);
+  bool jumpReleased = !(p.input & PI_JUMP) && !p.jumpReady;
+  if (p.jumpBufferTicks > 0) p.jumpBufferTicks--;
+  if (!(p.input & PI_JUMP)) p.jumpReady = true;
+  else if (p.jumpReady) { p.jumpBufferTicks = P_JUMP_BUFFER_TICKS; p.jumpReady = false; }
+  if (rooted || swimming || bury > P_BURY_JUMP_MAX) {
+    p.coyoteTicks = p.jumpBufferTicks = 0; p.jumpActive = false;
   }
+  bool canJump = !rooted && !swimming && bury <= P_BURY_JUMP_MAX &&
+    !p.jumpActive && (p.grounded || bury > 0 || p.coyoteTicks > 0);
+  auto launchJump = [&]() {
+    p.vy = wantJump ? -P_JUMP_VEL : -P_JUMP_CUT_VEL;
+    p.grounded = false; p.jumpActive = true;
+    p.coyoteTicks = p.jumpBufferTicks = 0;
+    E.audio.emit(SE_JUMP, p.px + p.w * 0.5, p.py + p.h, 0.8, EMPTY, 0);
+  };
+  if (canJump && p.jumpBufferTicks > 0) launchJump();
+  if (p.coyoteTicks > 0) p.coyoteTicks--;
+  if (p.jumpActive && jumpReleased && !wantJetpack && p.vy < -P_JUMP_CUT_VEL)
+    p.vy = -P_JUMP_CUT_VEL;
 
   if (E.planetId == PL_FRONTIER) {
     if (p.grounded) p.airDashUsed = false;
@@ -569,7 +607,7 @@ void PlayerSystem::integratePlayer(Player& p) {
       p.actionState = p.grounded ? AS_DODGE : AS_DASH;
       p.actionTicks = p.actionDuration = 16; p.actionDefinition = 0;
       p.dodgeCooldown = 36; p.stamina -= cost;
-      if (!p.grounded) { p.airDashUsed = true; p.vy = 0; }
+      if (!p.grounded) { p.airDashUsed = true; p.vy = 0; p.jumpActive = false; p.coyoteTicks = 0; }
     }
     if (!rooted && p.actionTicks > 0 && (p.actionState == AS_DODGE || p.actionState == AS_DASH)) {
       p.vx = p.facing * 2.4;
@@ -626,6 +664,16 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (!wasGrounded && p.grounded && !inLiquid) p.landingImpact = impactVy;
   if (!wasGrounded && p.grounded && !inLiquid && impactVy > 0.28)
     E.audio.emit(SE_LAND, p.px + p.w * 0.5, p.py + p.h, std::min(1.5, impactVy / P_MAX_FALL + 0.25), EMPTY, 0);
+  if (p.grounded && impactVy >= 0) {
+    p.jumpActive = false;
+    p.airDashUsed = false;
+    if (!rooted && !swimming && buryDepth(p) <= P_BURY_JUMP_MAX) {
+      p.coyoteTicks = P_COYOTE_TICKS;
+      if (p.jumpBufferTicks > 0) launchJump();
+    }
+  } else if (wasGrounded && !p.jumpActive && !rooted && !inLiquid) {
+    p.coyoteTicks = P_COYOTE_TICKS;
+  }
 
   // ---- animation state (deterministic; reuses the fluid sample computed above) ----
   // Priority: liquid overrides airborne overrides grounded-move overrides idle. The
@@ -1046,6 +1094,7 @@ void PlayerSystem::updatePlayers() {
         p.vx = p.vy = 0;
         p.grounded = false;
         p.jumpReady = false;
+        p.coyoteTicks = p.jumpBufferTicks = 0; p.jumpActive = false;
         p.jetpackActive = false;
         p.deathTicks = 0;
         p.hurtCooldown = imax(p.hurtCooldown, 60);
@@ -1077,11 +1126,14 @@ void PlayerSystem::stepPlayerOnly(int id) {
 // Snap a player to an authoritative state (reconciliation), before replaying its
 // unacknowledged inputs.
 void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
-                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls) {
+                                  double jetpackFuel, int jetpackActive, int abilities, int stamina, int actionTicks, int actionState, int dodgeCooldown, int airDashUsed, int movementPrevInput, double statusMoveScale, int statusControls, int coyoteTicks, int jumpBufferTicks, int jumpActive) {
   Player* p = findPlayer(id);
   if (!p) return;
   p->px = x; p->py = y; p->vx = vx; p->vy = vy;
   p->facing = facing; p->grounded = grounded != 0; p->jumpReady = jumpReady != 0;
+  p->coyoteTicks = std::clamp(coyoteTicks, 0, P_COYOTE_TICKS);
+  p->jumpBufferTicks = std::clamp(jumpBufferTicks, 0, P_JUMP_BUFFER_TICKS);
+  p->jumpActive = jumpActive != 0;
   p->jetpackFuel = std::isfinite(jetpackFuel) ? std::max(0.0, std::min(1.0, jetpackFuel)) : 0.0;
   p->jetpackActive = jetpackActive != 0 && p->jetpackFuel > 0;
   p->abilities = abilities; p->stamina = stamina; p->actionTicks = actionTicks; p->actionState = actionState;

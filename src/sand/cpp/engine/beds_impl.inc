@@ -220,6 +220,7 @@ int BedSystem::use(int player, int id) {
   p->py = bed->wy + 4 - p->h - E.fg.worldOffsetY;
   p->vx = p->vy = 0; p->grounded = true;
   p->input = p->prevInput = 0; p->inputX = p->inputY = 0;
+  p->coyoteTicks = p->jumpBufferTicks = 0; p->jumpActive = false; p->jumpReady = true;
   p->shieldActive = false; p->actionTicks = 0; p->actionState = AS_IDLE;
   E.magic.cancelCharge(*p); E.psys.resetPlayerMine(*p); E.inv.resetPlayerPlaceStroke(*p);
   for (auto& b : beds) if (b.id == id) { b.sleeper = -p->id; b.seeking = false; }

@@ -214,7 +214,7 @@ export function initSandWasm() {
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         playerMineTarget: c('engine_player_mine_target', 'number', ['number', 'number', 'number']),
-        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
@@ -1324,10 +1324,10 @@ const renderStrides = Object.freeze({
     },
     setPlayerState(id, {
       x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false,
-      jetpackFuel = 1, jetpackActive = false, abilities = 0, stamina = 100, actionTicks = 0, actionState = 0, dodgeCooldown = 0, airDashUsed = false, movementPrevInput = 0, statusMoveScale = 1, statusControls = 0,
+      jetpackFuel = 1, jetpackActive = false, abilities = 0, stamina = 100, actionTicks = 0, actionState = 0, dodgeCooldown = 0, airDashUsed = false, movementPrevInput = 0, statusMoveScale = 1, statusControls = 0, coyoteTicks = 0, jumpBufferTicks = 0, jumpActive = false,
     }) {
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0,
-        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed ? 1 : 0, movementPrevInput, statusMoveScale, statusControls);
+        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0, abilities, stamina, actionTicks, actionState, dodgeCooldown, airDashUsed ? 1 : 0, movementPrevInput, statusMoveScale, statusControls, coyoteTicks, jumpBufferTicks, jumpActive ? 1 : 0);
     },
 
     // Authority snapshots are copied out of the serialization scratch blob;

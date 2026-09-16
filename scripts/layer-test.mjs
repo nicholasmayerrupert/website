@@ -184,6 +184,39 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   host.destroy(); mirror.destroy();
 }
 
+// Sparse packets retain disjoint edits across delayed consumption, partial
+// edge chunks, and a second edit after the first packet was consumed.
+{
+  console.log('presentation diff: bounded chunks accumulate and reset');
+  const opts = { cols: 67, rows: 73, infinite: false, sinksOn: false };
+  const host = createEngineWasm({ ...opts, storageRole: 'authority' });
+  const mirror = createEngineWasm({ ...opts, storageRole: 'presentation' });
+  mirror.applyWorldMirror(host.serializeWorld(), 0, 0);
+  host.resetDirty();
+  host.paintDiscLayer(0, 16, 16, 0, MAT.SAND, true);
+  const small = host.serializeDiff().slice();
+  check('isolated edit sends less than half a complete chunk', small.length < 2048,
+    `(${small.length} bytes)`);
+  host.paintDiscLayer(0, 31, 31, 0, MAT.WATER, true);
+  host.paintDiscLayer(1, 65, 71, 0, MAT.OIL, true);
+  const matches = () => [false, true].every(bg => {
+    const a = bg ? host.getGridBg() : host.getGrid();
+    const b = bg ? mirror.getGridBg() : mirror.getGrid();
+    const textures = mirror.getTextureTexels(bg), burning = mirror.getBurningVisual(bg);
+    return a.every((v, i) => v === b[i])
+      && host.getTextureTexels(bg).every((v, i) => v === textures[i])
+      && host.getBurningVisual(bg).every((v, i) => v === burning[i]);
+  });
+  check('delayed packet applies', mirror.applyDiffMirror(host.serializeDiff()));
+  check('both layers match after accumulated boundary edits', matches());
+  host.consumeReplicaDirty();
+  for (let turn = 0; turn < 12; turn++) host.stepWorld();
+  host.paintDiscLayer(1, 2, 2, 0, MAT.FIRE, true);
+  check('packet after consume applies', mirror.applyDiffMirror(host.serializeDiff()));
+  check('movement and subsequent edits retain all packet planes', matches());
+  host.destroy(); mirror.destroy();
+}
+
 // 6c. The initial infinite-world buffer can clip tall generated foliage at its
 // top edge. That edge is deterministic open sky here, so crown leaves must not
 // inherit unloaded-world support and pin a non-physical outline in place. Stone

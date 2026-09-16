@@ -552,6 +552,56 @@ void ReactionSystem::prepareActiveLists() {
   }
 }
 
+// Skip inert runs in contact passes without maintaining a second material index.
+// Candidates retain grid order, including the shared RNG order of cross-layer fire.
+static constexpr auto FIRE_CONTACT_MATERIALS = [] {
+  constexpr int count = [] {
+    int n = 0;
+    for (int m = 0; m < TABLE; m++) n += MAT_REACTION_PROFILE[m] == MRP_FIRE;
+    return n;
+  }();
+  std::array<uint8_t, count> materials{};
+  int n = 0;
+  for (int m = 0; m < TABLE; m++)
+    if (MAT_REACTION_PROFILE[m] == MRP_FIRE) materials[n++] = (uint8_t)m;
+  return materials;
+}();
+
+template<bool IncludeIce>
+static uint32_t reactionContactMask(const Layer& layer, int cell) {
+  v128_t materials = wasm_v128_load(layer.grid + cell);
+  v128_t candidates = wasm_i8x16_splat(0);
+  for (uint8_t material : FIRE_CONTACT_MATERIALS)
+    candidates = wasm_v128_or(candidates,
+      wasm_i8x16_eq(materials, wasm_i8x16_splat(material)));
+  if constexpr (IncludeIce)
+    candidates = wasm_v128_or(candidates,
+      wasm_i8x16_eq(materials, wasm_i8x16_splat(ICE)));
+  uint32_t mask = wasm_i8x16_bitmask(candidates);
+  if (layer.burningPresent) {
+    for (int offset = 0; offset < 16; offset += 4)
+      mask |= (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(
+        wasm_v128_load(layer.burning.current + cell + offset),
+        wasm_i32x4_splat(0))) << offset;
+  }
+  return mask;
+}
+
+template<bool IncludeIce, class Visit>
+static void forEachReactionContact(const Layer& layer, const Layer* peer,
+                                   int first, int last, Visit&& visit) {
+  int cell = first;
+  for (; cell + 15 <= last; cell += 16) {
+    uint32_t mask = reactionContactMask<IncludeIce>(layer, cell);
+    if (peer) mask |= reactionContactMask<IncludeIce>(*peer, cell);
+    while (mask) {
+      visit(cell + __builtin_ctz(mask));
+      mask &= mask - 1;
+    }
+  }
+  for (; cell <= last; cell++) visit(cell);
+}
+
 static bool extinguishesFire(uint8_t material) {
   return material == WATER || material == BRINE || material == ACID;
 }
@@ -563,13 +613,13 @@ void ReactionSystem::applyQuenching(bool effectEnabled, bool, bool) {
   // Observe contact before either bodies or liquids can move away from it.
   for (int y = 1; y < E.rows; y++)
     E.forEachActiveSpan(y, 1, E.cols - 2, true, [&](int minX, int maxX) {
-      for (int x = minX; x <= maxX; x++) {
-        int cell = y * E.cols + x;
+      forEachReactionContact<false>(*E.L, nullptr,
+          y * E.cols + minX, y * E.cols + maxX, [&](int cell) {
         if (E.L->burningAt(cell) && touchesExtinguishingLiquid(*E.L, cell))
           extinguishSolid(*E.L, cell);
         if (E.bgEnabled && E.hasMaterialReactionProfile(E.L->grid[cell], MRP_FIRE)
             && extinguishesFire(peer.grid[cell])) flames.replaceLoose(cell, EMPTY);
-      }
+      });
     });
   flames.commitBodiesOnly();
 }
@@ -1168,8 +1218,9 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
     E.forEachActiveUnionSpan(&E.fg, foregroundActive, &E.bg, backgroundActive,
                              y, 1, E.cols - 2, true,
                              [&](int minX, int maxX) {
-      for (int x = minX; x <= maxX; x++) {
-        int cell = y * E.cols + x;
+      forEachReactionContact<true>(E.fg, &E.bg,
+          y * E.cols + minX, y * E.cols + maxX, [&](int cell) {
+        int x = cell - y * E.cols;
         uint8_t foreground = E.fg.grid[cell];
         uint8_t background = E.bg.grid[cell];
         bool fgBurning = E.fg.burningAt(cell), bgBurning = E.bg.burningAt(cell);
@@ -1177,13 +1228,13 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
             && touchesExtinguishingLiquid(E.fg, cell)) {
           if (fgBurning) extinguishSolid(E.fg, cell);
           if (E.hasMaterialReactionProfile(foreground, MRP_FIRE)) extinguishFg.push_back(cell);
-          continue;
+          return;
         }
         if ((E.hasMaterialReactionProfile(background, MRP_FIRE) || bgBurning)
             && touchesExtinguishingLiquid(E.bg, cell)) {
           if (bgBurning) extinguishSolid(E.bg, cell);
           if (E.hasMaterialReactionProfile(background, MRP_FIRE)) extinguishBg.push_back(cell);
-          continue;
+          return;
         }
         if (fgBurning && background == EMPTY && E.rand() < BURN_CROSS_FLAME_P)
           flamesBg.push_back(cell);
@@ -1221,7 +1272,7 @@ void ReactionSystem::applyCrossLayerMaterialContact(bool effectEnabled,
               crossFrozenIceFg.insert(cell);
           }
         }
-      }
+      });
     });
   }
 

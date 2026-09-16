@@ -205,6 +205,8 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
     layer->forceSourcePresent=true; layer->prefetchStore.clear();
     layer->burningPresent=true;
     std::fill(layer->dirtyRender.begin(),layer->dirtyRender.end(),1);
+    std::fill(layer->dirtyRenderBounds.begin(), layer->dirtyRenderBounds.end(),
+      std::array<uint8_t, 4>{0, 0, CHUNK_SIZE - 1, CHUNK_SIZE - 1});
   }
   for (const auto& peer:a.peers) {
     auto found=a.bodies.find({peer.layer,peer.id}); if (found==a.bodies.end()) return false;

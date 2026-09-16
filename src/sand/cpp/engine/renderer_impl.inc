@@ -22,10 +22,8 @@ void Renderer::setTextureAt(Layer& layer, int cell, uint16_t texel) {
   // Texture-only movement must reach the renderer without waking simulation.
   int y = cell / E.cols, x = cell - y * E.cols;
   int chunk = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
-  if (!layer.dirtyRender[chunk]) {
-    layer.dirtyRender[chunk] = 1;
-    layer.dirtyRenderCount++;
-  }
+  layer.markRenderBounds(chunk, x & (CHUNK_SIZE - 1), y & (CHUNK_SIZE - 1),
+                         x & (CHUNK_SIZE - 1), y & (CHUNK_SIZE - 1));
 }
 
 void Renderer::captureComponentTextures(Comp& component, const Layer& layer) {

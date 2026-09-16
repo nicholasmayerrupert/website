@@ -141,6 +141,14 @@ component registration, and restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
+- Quenching and cross-layer fire/ice contact scans use SIMD masks to skip inert
+  runs while retaining cell order and RNG consumption. Movement candidate and
+  layer-transfer scans use a schema-derived two-nibble SIMD lookup for loose
+  materials, preserving alternating row traversal and gas ordering.
+- Replication retains padded cell bounds within each dirty chunk and merges
+  adjacent equal-height rectangles. Texture-only edits expand the same bounds;
+  packet consumption resets their validity with the existing dirty chunk flags.
+  Rendering retains its chunk scheduling, and the packet layout is unchanged.
 - Free-body ice scans its cached raster boundary before rigid integration and
   preflights only the local cells selected to freeze. Supported ice can bake on
   pose stability while its outline is still accreting, so grounded bodies leave

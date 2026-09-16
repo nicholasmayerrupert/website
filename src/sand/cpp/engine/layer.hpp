@@ -116,6 +116,22 @@ struct Layer {
 #undef SAND_DECLARE_CELL_CHANNEL
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
+  // Inclusive local bounds inside each dirty render chunk. Packet rectangles
+  // retain the scheduler's padding without expanding to whole chunks.
+  std::vector<std::array<uint8_t, 4>> dirtyRenderBounds;
+  void markRenderBounds(int chunk, int x0, int y0, int x1, int y1) {
+    auto& bounds = dirtyRenderBounds[chunk];
+    if (!dirtyRender[chunk]) {
+      dirtyRender[chunk] = 1;
+      dirtyRenderCount++;
+      bounds = {(uint8_t)x0, (uint8_t)y0, (uint8_t)x1, (uint8_t)y1};
+    } else {
+      bounds[0] = (uint8_t)std::min((int)bounds[0], x0);
+      bounds[1] = (uint8_t)std::min((int)bounds[1], y0);
+      bounds[2] = (uint8_t)std::max((int)bounds[2], x1);
+      bounds[3] = (uint8_t)std::max((int)bounds[3], y1);
+    }
+  }
   std::vector<int32_t> dirtyRects;
   std::vector<int32_t> chunkStamp, vacatedStamp, assemblyWakeStamp, blastGasStamp;
   // Sorted, merged inclusive spans retain disjoint activity on each row.
@@ -400,7 +416,7 @@ struct Layer {
     SAND_PERSISTENT_CELL_CHANNELS(SAND_RELEASE_CELL_CHANNEL)
 #undef SAND_RELEASE_CELL_CHANNEL
     grid = next = nullptr;
-    releaseBuffer(dirtyRender); releaseBuffer(dirtyRects);
+    releaseBuffer(dirtyRender); releaseBuffer(dirtyRenderBounds); releaseBuffer(dirtyRects);
     releaseBuffer(rowMarkSpans); releaseBuffer(simOnlyRowMarkSpans);
     releaseBuffer(chunkStamp); releaseBuffer(activeRowSpans);
     releaseBuffer(vacatedStamp); releaseBuffer(assemblyWakeStamp);
@@ -444,6 +460,7 @@ struct Layer {
     burningPresent = false;
     grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
+    dirtyRenderBounds.resize(dirtyRender.size());
     rowMarkSpans.clear(); rowMarkSpans.resize(rows);
     simOnlyRowMarkSpans.clear(); simOnlyRowMarkSpans.resize(rows);
     growingPlantComponents.clear(); myceliumComponents.clear(); iceComponents.clear();
@@ -570,12 +587,13 @@ struct Layer {
     size_t n = (size_t)newCols * newRows;
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
-      release(dirtyRender); release(dirtyRects); release(rowMarkSpans);
+      release(dirtyRender); release(dirtyRenderBounds); release(dirtyRects); release(rowMarkSpans);
       release(simOnlyRowMarkSpans);
       release(light); release(lightBase); release(skyLight); release(skyTopInput);
       release(skyDownValue); release(skyDownDepth); release(renderPixels);
     }
     dirtyRender.assign((size_t)newChunkCols * newChunkRows, 0);
+    dirtyRenderBounds.resize(dirtyRender.size());
     dirtyRects.clear();
     rowMarkSpans.clear(); rowMarkSpans.resize(newRows);
     simOnlyRowMarkSpans.clear(); simOnlyRowMarkSpans.resize(newRows);

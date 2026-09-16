@@ -145,8 +145,8 @@
         if (isGasMaterial(m)) activeGasRow.push_back(k);
       };
       forEachActiveSpan(y, 0, cols - 1, ltr, [&](int minX, int maxX) {
-        if (ltr) for (int x = minX; x <= maxX; x++) gather(x);
-        else for (int x = maxX; x >= minX; x--) gather(x);
+        forEachLooseCell(L->grid, nullptr, rb + minX, rb + maxX, ltr,
+                         [&](int cell) { gather(cell - rb); });
       });
       activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
     }
@@ -534,8 +534,8 @@
       };
       forEachActiveUnionSpan(&fg, fgA, &bg, bgA, y, 0, cols - 1, ltr,
                              [&](int mn, int mx) {
-        if (ltr) for (int x = mn; x <= mx; x++) transferAt(x);
-        else for (int x = mx; x >= mn; x--) transferAt(x);
+        forEachLooseCell(fg.grid, bg.grid, y * cols + mn, y * cols + mx, ltr,
+                         [&](int cell) { transferAt(cell - y * cols); });
       });
     }
   }

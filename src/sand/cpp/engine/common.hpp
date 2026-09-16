@@ -18,11 +18,53 @@
 #include <type_traits>
 #include <emscripten.h>
 #include <emscripten/console.h>
+#include <wasm_simd128.h>
 
 // Material ids, kinds, and flat lookup tables — generated from
 // src/sand/materials.schema.json (the single source shared with JS). Run
 // `npm run generate` after editing the schema.
 #include "materials.generated.hpp"
+
+// A two-nibble lookup tests sixteen material IDs without scalar table gathers.
+// Each low-nibble entry holds the eligible high nibbles as bits.
+static uint32_t looseCellMask16(const uint8_t* cells) {
+  static const auto lookup = [] {
+    std::array<uint8_t, 32> table{};
+    for (int m = 0; m < TABLE; m++)
+      if (MAT_CLASS[m] == MC_SOLID || MAT_CLASS[m] == MC_LIQUID
+          || MAT_CLASS[m] == MC_GAS || DENSITY_SORTED[m])
+        table[(m & 15) + (m >= 128 ? 16 : 0)] |= 1u << ((m >> 4) & 7);
+    return table;
+  }();
+  v128_t materials = wasm_v128_load(cells);
+  v128_t low = wasm_v128_and(materials, wasm_i8x16_splat(15));
+  v128_t entries = wasm_v128_bitselect(
+    wasm_i8x16_swizzle(wasm_v128_load(lookup.data() + 16), low),
+    wasm_i8x16_swizzle(wasm_v128_load(lookup.data()), low),
+    wasm_i8x16_lt(materials, wasm_i8x16_splat(0)));
+  v128_t bits = wasm_i8x16_swizzle(
+    wasm_i8x16_make(1, 2, 4, 8, 16, 32, 64, -128, 1, 2, 4, 8, 16, 32, 64, -128),
+    wasm_u8x16_shr(materials, 4));
+  return wasm_i8x16_bitmask(wasm_i8x16_ne(
+    wasm_v128_and(entries, bits), wasm_i8x16_splat(0)));
+}
+
+template<class Visit>
+static void forEachLooseCell(const uint8_t* grid, const uint8_t* peer,
+                            int first, int last, bool forward, Visit&& visit) {
+  int cell = forward ? first : last - 15;
+  for (; cell >= first && cell + 15 <= last; cell += forward ? 16 : -16) {
+    uint32_t mask = looseCellMask16(grid + cell);
+    if (peer) mask |= looseCellMask16(peer + cell);
+    while (mask) {
+      int bit = forward ? __builtin_ctz(mask) : 31 - __builtin_clz(mask);
+      visit(cell + bit);
+      mask &= ~(1u << bit);
+    }
+  }
+  if (forward) for (; cell <= last; cell++) visit(cell);
+  else for (cell += 15; cell >= first; cell--) visit(cell);
+}
 
 // JS<->WASM ABI manifest — snapshot strides + named field offsets, shared
 // enums (PlayerInput/Tool/CreativeKind), INV_* constants, and ABI_VERSION.

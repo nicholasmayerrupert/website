@@ -96,7 +96,25 @@ bool ReplicationSystem::applyWorldMirror(const uint8_t* buf, int len) {
 void ReplicationSystem::writeDiffLayer(bool background) {
   Layer* lay = background ? &E.bg : &E.fg;
   Engine::ActiveLayerScope active(E, lay);
-  E.buildDirtyRects();
+  E.foldRowMarksToRender();
+  lay->dirtyRects.clear();
+  for (int cy = 0; cy < E.chunkRows; cy++) {
+    for (int cx = 0; cx < E.chunkCols; cx++) {
+      int chunk = cy * E.chunkCols + cx;
+      if (!lay->dirtyRender[chunk]) continue;
+      const auto& bounds = lay->dirtyRenderBounds[chunk];
+      int x0 = cx * CHUNK_SIZE + bounds[0], y0 = cy * CHUNK_SIZE + bounds[1];
+      int x1 = imin(E.cols, cx * CHUNK_SIZE + bounds[2] + 1);
+      int y1 = imin(E.rows, cy * CHUNK_SIZE + bounds[3] + 1);
+      size_t n = lay->dirtyRects.size();
+      if (n && lay->dirtyRects[n - 2] == x0 && lay->dirtyRects[n - 3] == y0
+          && lay->dirtyRects[n - 1] == y1) {
+        lay->dirtyRects[n - 2] = x1;
+      } else {
+        lay->dirtyRects.insert(lay->dirtyRects.end(), {x0, y0, x1, y1});
+      }
+    }
+  }
   int rc = (int)(lay->dirtyRects.size() / 4);
   size_t section = blob.size(), cursor = section + 2;
   diffRectOffsets.resize(rc);

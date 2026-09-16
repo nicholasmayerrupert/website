@@ -880,10 +880,10 @@
           int rb = cy * chunkCols;
           for (int cx = c0; cx <= c1; cx++) {
             int ci = rb + cx;
-            if (!L->dirtyRender[ci]) {
-              L->dirtyRender[ci] = 1;
-              L->dirtyRenderCount++;
-            }
+            L->markRenderBounds(ci,
+              imax(0, px0 - cx * CHUNK_SIZE), imax(0, py0 - cy * CHUNK_SIZE),
+              imin(CHUNK_SIZE - 1, px1 - cx * CHUNK_SIZE),
+              imin(CHUNK_SIZE - 1, py1 - cy * CHUNK_SIZE));
           }
         }
       }

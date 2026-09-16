@@ -6,11 +6,69 @@ import {
 } from '../src/sand/timing/fixedRateClock.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 import { createGameLoop } from '../src/sand/game/gameLoop.js';
+import { createTurnTimer } from '../src/sand/timing/turnTimer.js';
 
 const { check, done } = makeChecker('split actor/world timing');
 
 check(`shared simulation interval is exactly 1000/60ms (${SIM_STEP_MS})`,
   SIM_STEP_MS === 1000 / 60);
+
+{
+  let now = 0, channel, nextId = 0, calls = 0;
+  const messages = [], timers = new Map();
+  const timer = createTurnTimer({
+    performance: { now: () => now },
+    MessageChannel: class {
+      constructor() {
+        channel = this;
+        this.port1 = { onmessage: null, close() {} };
+        this.port2 = { postMessage: value => messages.push(value), close() {} };
+      }
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextId;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+  });
+  const deliver = () => channel.port1.onmessage({ data: messages.shift() });
+  timer.schedule(() => calls++, 2.5);
+  check('short turn timers yield through a message before arming',
+    messages.length === 1 && timers.size === 0 && calls === 0);
+  now = 1.5;
+  deliver();
+  const [id, armed] = [...timers][0];
+  check('message latency is subtracted from the requested deadline', armed.delay === 1);
+  timers.delete(id); now = 2.5; armed.callback();
+  check('one deadline invokes one callback', calls === 1);
+
+  timer.schedule(() => calls += 100, 0);
+  timer.cancel();
+  timer.schedule(() => calls++, 0);
+  deliver();
+  check('a canceled queued message cannot fire a replacement early', calls === 1);
+  deliver();
+  check('the replacement fires on its own message', calls === 2 && timers.size === 0);
+
+  timer.schedule(() => calls += 100, 5);
+  deliver();
+  const stale = [...timers.values()][0].callback;
+  timer.cancel();
+  stale();
+  check('cancel clears an armed timeout and rejects stale callbacks', calls === 2 && timers.size === 0);
+
+  timer.schedule(() => {
+    calls++;
+    timer.schedule(() => calls++, 0);
+  }, 0);
+  deliver();
+  check('a callback scheduling another turn yields again', calls === 3 && messages.length === 1);
+  timer.close();
+  deliver();
+  timer.schedule(() => calls++, 0);
+  check('closing discards pending turns and prevents new schedules', calls === 3 && messages.length === 0);
+}
 
 {
   const turns = createTurnDeadline({ now: 0 });
@@ -106,9 +164,11 @@ const makeFloorEngine = () => {
 {
   const originalRaf = globalThis.requestAnimationFrame;
   const originalCancel = globalThis.cancelAnimationFrame;
+  const originalDocument = globalThis.document;
   let pendingFrame;
   globalThis.requestAnimationFrame = (callback) => { pendingFrame = callback; return 1; };
   globalThis.cancelAnimationFrame = () => { pendingFrame = null; };
+  globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} };
   const e = createEngineWasm({ cols: 200, rows: 120, worldSeed: 1, sinksOn: false });
   e.setViewport(1, 4, 80, 60);
   e.setPlayMode(false);
@@ -121,8 +181,10 @@ const makeFloorEngine = () => {
       state: { ready: false, replayPlaying: false },
       applyPending() { return false; }, config() {}, updateControl() {},
       consumeSoundEvents() { return []; },
+      getProjectilesForRender() { return []; },
+      getCreaturesForRender() { return []; },
     },
-    audio: { updatePlayerEffects() {} },
+    audio: { updatePlayerEffects() {}, updateSpellEffects() {}, updateScore() {} },
   };
   const loop = createGameLoop(ctx, {
     parallaxCamera: (value) => value, updatePointer() {}, updateMineProgress() {},
@@ -185,6 +247,8 @@ const makeFloorEngine = () => {
     e.destroy();
     globalThis.requestAnimationFrame = originalRaf;
     globalThis.cancelAnimationFrame = originalCancel;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
   }
 }
 

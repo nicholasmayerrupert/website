@@ -23,6 +23,7 @@ import {
 import { isMaterialId, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
 import { createTurnDeadline, SIM_STEP_MS } from '../timing/fixedRateClock.js';
+import { createTurnTimer } from '../timing/turnTimer.js';
 import {
   encodeWorkerLiveness,
   WORKER_LIVENESS_STAGE,
@@ -40,7 +41,7 @@ const LIVE_SIM_COLS = 512;
 const LIVE_SIM_ROWS = 352;
 
 let engine = null;
-let timer = 0;
+const turnTimer = createTurnTimer();
 let epoch = 1;
 let sequence = 0;
 let awaitingAck = false;
@@ -259,7 +260,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   initGeneration++;
-  clearTimeout(timer);
+  turnTimer.close();
   stopReplayBufferTimers();
   void replayBufferSession?.cache.clear();
   clearTimeout(saveTimer); saveTimer = 0;
@@ -976,9 +977,8 @@ function applyContinuous(now) {
 }
 
 function schedule(delay = null) {
-  clearTimeout(timer);
   const wait = delay ?? turnDeadline.nextDelay(performance.now());
-  timer = setTimeout(run, wait);
+  turnTimer.schedule(run, wait);
 }
 
 function executeTurn(
@@ -1133,7 +1133,7 @@ function run() {
 
 async function initializeAuthority(data, { scheduleRuns = true, usePending = true } = {}) {
   const generation = ++initGeneration;
-  clearTimeout(timer);
+  turnTimer.cancel();
   try {
     await initSandWasm();
   } catch (error) {
@@ -1448,7 +1448,7 @@ async function runReplayCapsule(requestId, value, { playback = false } = {}) {
     return;
   }
 
-  clearTimeout(timer);
+  turnTimer.cancel();
   replayRunning = true;
   replayTransportSuppressed = !playback;
   replayPlaybackStart = null;
@@ -1564,7 +1564,7 @@ async function runReplayCapsule(requestId, value, { playback = false } = {}) {
         finish();
         return;
       }
-      timer = setTimeout(replayTurn, turnDeadline.nextDelay(performance.now()));
+      turnTimer.schedule(replayTurn, turnDeadline.nextDelay(performance.now()));
     } catch (error) {
       fail(error);
     }
@@ -1580,14 +1580,14 @@ async function runReplayCapsule(requestId, value, { playback = false } = {}) {
       if (started || closing || !replayRunning) return;
       started = true;
       replayPlaybackStart = null;
-      clearTimeout(timer);
+      turnTimer.cancel();
       turnDeadline.reset(performance.now());
-      timer = setTimeout(replayTurn, turnDeadline.nextDelay(performance.now()));
+      turnTimer.schedule(replayTurn, turnDeadline.nextDelay(performance.now()));
     };
     replayPlaybackStart = start;
     // A renderer normally ACKs on its next RAF. Keep a bounded fallback for a
     // hidden/throttled document so playback cannot remain armed forever.
-    timer = setTimeout(start, 500);
+    turnTimer.schedule(start, 500);
     return;
   }
   const replaySlice = () => {
@@ -1823,7 +1823,7 @@ async function startReplayBuffer(requestId, value) {
   stopReplayBufferTimers();
   replayBufferSession = null;
   replayMicroscopeSession = null;
-  clearTimeout(timer);
+  turnTimer.cancel();
   replayRunning = true;
   replayTransportSuppressed = true;
   replayCaptureStarting = false;
@@ -2106,7 +2106,7 @@ async function resumeReplayBuffer(requestId, value) {
 }
 
 async function resetReplayMicroscope(capsule, options) {
-  clearTimeout(timer);
+  turnTimer.cancel();
   replayRunning = true;
   replayTransportSuppressed = true;
   replayCaptureStarting = false;

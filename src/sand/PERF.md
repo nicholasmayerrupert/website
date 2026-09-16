@@ -149,6 +149,10 @@ component registration, and restoration. Browser presentation exposes
   adjacent equal-height rectangles. Texture-only edits expand the same bounds;
   packet consumption resets their validity with the existing dirty chunk flags.
   Rendering retains its chunk scheduling, and the packet layout is unchanged.
+- Live authority and realtime replay turns arm their deadline timers from a
+  MessageChannel task. This avoids the nested timeout minimum adding idle time
+  to expensive turns. The message handoff is included in the deadline, and the
+  fixed-rate clock still bounds recovery to one immediate turn after an overrun.
 - Free-body ice scans its cached raster boundary before rigid integration and
   preflights only the local cells selected to freeze. Supported ice can bake on
   pose stability while its outline is still accreting, so grounded bodies leave

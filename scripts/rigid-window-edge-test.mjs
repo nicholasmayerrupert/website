@@ -89,6 +89,30 @@ check(`no penetration rebound loop (${penetrationRebounds})`,
   penetrationRebounds === 0);
 
 engine.destroy();
+
+// An airborne body reaching any loaded-window edge may freeze at its latest
+// valid pose, but must never rewind its accumulated travel to the spawn pose.
+for (const background of [false, true]) {
+  const e = attachTestHooks(createEngineWasmRaw({
+    cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: true,
+  }));
+  e.setBgEnabled(background);
+  for (let band = 0; band < 4; band++) e.shiftWorldXY(0, -128);
+  e.spawnBox(180, 90, 8, 3);
+  let prior = e._bodyState(0);
+  let maxJump = 0, minY = prior.py;
+  for (let tick = 0; tick < 60; tick++) {
+    e._setBodyMotion(0, 0, -3, 0);
+    e.stepWorld();
+    const body = e._bodyState(0);
+    maxJump = Math.max(maxJump, Math.hypot(body.px - prior.px, body.py - prior.py));
+    minY = Math.min(minY, body.py);
+    prior = body;
+  }
+  check(`airborne boundary recovery stays local (background=${background}, jump=${maxJump}, y=${prior.py})`,
+    minY < 8 && maxJump <= 3.1 && prior.py < 8);
+  e.destroy();
+}
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

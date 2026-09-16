@@ -243,7 +243,22 @@ bool RigidBodySystem::preserveRasterRecoveryMotion(
 }
 
 void RigidBodySystem::resolveWorldRasterAssignment() {
+  auto checkpointBody = [&](Body* body, Layer& layer) {
+    Engine::ActiveLayerScope scope(E, &layer);
+    if (!bodyFullyInsideLoadedWindow(body)) return;
+    body->acceptedWorldPx = layer.worldOffsetX + body->px;
+    body->acceptedWorldPy = layer.worldOffsetY + body->py;
+    body->acceptedAngle = body->angle;
+    body->acceptedRasterGeometryRevision = body->geometryRevision;
+    body->acceptedRasterPoseValid = true;
+  };
+  auto checkpointIndependentBodies = [&]() {
+    for (Body* body : E.fg.bodies) checkpointBody(body, E.fg);
+    if (E.bgEnabled)
+      for (Body* body : E.bg.bodies) checkpointBody(body, E.bg);
+  };
   if (!E.bgEnabled) {
+    checkpointIndependentBodies();
     worldRasterAssignmentValid = true;
     worldRasterAcceptedRosterValid = false;
     return;
@@ -261,6 +276,7 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
     nodeCount++;
   }
   if (!hasJoint || nodeCount < 2) {
+    checkpointIndependentBodies();
     worldRasterAssignmentValid = true;
     worldRasterAcceptedRosterValid = false;
     return;
@@ -269,13 +285,6 @@ void RigidBodySystem::resolveWorldRasterAssignment() {
   auto geometryMatchesAccepted = [&](Body* body) {
     return body->acceptedRasterPoseValid
       && body->acceptedRasterGeometryRevision == body->geometryRevision;
-  };
-  auto checkpointBody = [&](Body* body, Layer& layer) {
-    body->acceptedWorldPx = layer.worldOffsetX + body->px;
-    body->acceptedWorldPy = layer.worldOffsetY + body->py;
-    body->acceptedAngle = body->angle;
-    body->acceptedRasterGeometryRevision = body->geometryRevision;
-    body->acceptedRasterPoseValid = true;
   };
   size_t rosterIndex = 0;
   auto rosterEntryMatches = [&](Body* body, int bodyLayer, Body* peer) {

@@ -148,6 +148,7 @@ class ForceSystem {
   std::vector<uint64_t> currentBinSignatures[2];
   std::vector<uint8_t> changedBins[2];
   std::vector<NeutroniumSeed> neutroniumSeeds;
+  std::unordered_map<const Body*, std::pair<double, double>> neutroniumBodyForces;
   std::vector<GeometryPoint> dynamicNeutroniumPoints;
   std::vector<int> neutroniumKdOrder;
   std::vector<NeutroniumKdNode> neutroniumKdNodes;
@@ -183,6 +184,7 @@ class ForceSystem {
   void addNeutroniumEmitters(Layer* layer, LayerState& state);
   void buildBins(LayerState& state);
   void buildNeutroniumIndex();
+  void prepareNeutroniumBodyForces();
   int buildNeutroniumKdNode(int begin, int end, int depth);
   static int compareNeutroniumBodyRank(
       int firstCells, int firstLayer, int firstBodyId,
@@ -219,7 +221,8 @@ class ForceSystem {
                                int targetNeutroniumCells,
                                int targetBodyLayer,
                                double& forceX, double& forceY,
-                               bool continuousLiquid = false) const;
+                               bool continuousLiquid = false,
+                               const ForceEmitter** source = nullptr) const;
   bool sampleLayer(Layer* layer, double x, double y, uint8_t target,
                    int sourceBodyId, double& forceX, double& forceY,
                    int targetNeutroniumCells = 0,

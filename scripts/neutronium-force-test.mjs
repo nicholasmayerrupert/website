@@ -1180,8 +1180,8 @@ for (const [label, discardActivity] of [
   engine.destroy();
 }
 
-// Equal moving sources use a stable identity tie-break instead of applying
-// reciprocal attraction, so the dominant source cannot change every tick.
+// Equal moving sources attract symmetrically without moving their horizontal
+// centre of mass.
 {
   const engine = createEngineWasm();
   engine.setBgEnabled(false);
@@ -1192,15 +1192,17 @@ for (const [label, discardActivity] of [
   for (let i = 0; i < 5; i++) engine.stepWorld();
   const olderAfter = engine._bodyState(0);
   const newerAfter = engine._bodyState(1);
-  check('equal neutronium bodies choose one stable dominant source',
+  check('equal neutronium bodies approach with balanced momentum',
     olderBefore && olderAfter && newerBefore && newerAfter
-      && Math.abs(olderAfter.px - olderBefore.px) < 1e-9
-      && Math.abs(olderAfter.vx) < 1e-9
-      && newerAfter.px < newerBefore.px - 2);
+      && olderAfter.px > olderBefore.px + 0.5
+      && newerAfter.px < newerBefore.px - 0.5
+      && Math.abs(olderAfter.vx + newerAfter.vx) < 1e-9
+      && Math.abs(olderAfter.px + newerAfter.px
+        - olderBefore.px - newerBefore.px) < 1e-9);
   engine.destroy();
 }
 
-// Dominance uses physical size across layers rather than layer-local body ids.
+// Mutual forces use physical mass and distinguish matching ids across layers.
 {
   const engine = createEngineWasm();
   engine.setBgEnabled(true);
@@ -1211,16 +1213,16 @@ for (const [label, discardActivity] of [
   for (let i = 0; i < 4; i++) engine.stepWorld();
   const smallAfter = engine._bodyStateLayer(0, 0);
   const largeAfter = engine._bodyStateLayer(1, 0);
-  check('larger neutronium dominates a smaller body across layers',
+  check('cross-layer neutronium exchanges equal and opposite impulses',
     smallBefore && smallAfter && largeBefore && largeAfter
-      && smallAfter.px > smallBefore.px + 2
-      && Math.abs(largeAfter.px - largeBefore.px) < 1e-9
-      && Math.abs(largeAfter.vx) < 1e-9);
+      && smallAfter.px > smallBefore.px + 1
+      && largeAfter.px < largeBefore.px
+      && Math.abs(smallAfter.vx / smallAfter.invMass
+        + largeAfter.vx / largeAfter.invMass) < 1e-8);
   engine.destroy();
 }
 
-// Dense equal-size fields use the nearest eligible older body while preserving
-// the body-id dominance order.
+// Dense fields select nearest-source pairs once and conserve total momentum.
 {
   const engine = createEngineWasm();
   engine.setBgEnabled(false);
@@ -1236,17 +1238,18 @@ for (const [label, discardActivity] of [
   engine.stepWorld();
   const oldestAfter = engine._bodyState(0);
   const newestAfter = engine._bodyState(63);
-  check('dense neutronium keeps exact nearest-source dominance',
+  const momentumX = Array.from({ length: 64 }, (_, i) => engine._bodyState(i))
+    .reduce((sum, body) => sum + body.vx / body.invMass, 0);
+  check('dense neutronium attraction conserves horizontal momentum',
     oldestBefore && oldestAfter && newestBefore && newestAfter
-      && Math.abs(oldestAfter.vx) < 1e-9
+      && Math.abs(momentumX) < 1e-8
       && newestAfter.px < newestBefore.px
       && newestAfter.vx < 0);
   engine.destroy();
 }
 
-// Between moving neutronium bodies, the larger source dominates the smaller
-// target. Offset contacts can keep compacting without the small body's field
-// launching the dominant mass sideways or upward.
+// Unequal neutronium bodies accelerate in inverse proportion to their masses.
+// Their combined mass keeps falling while offset contacts compact the pair.
 {
   const engine = createEngineWasm();
   engine.setBgEnabled(false);
@@ -1260,10 +1263,11 @@ for (const [label, discardActivity] of [
   check('a larger neutronium body attracts a smaller one',
     smallBefore && smallApproaching
       && smallApproaching.px > smallBefore.px + 2);
-  check('the smaller neutronium body does not pull the larger one back',
+  check('the larger neutronium body receives the matching reaction',
     largeBefore && largeBeforeContact
-      && Math.abs(largeBeforeContact.px - largeBefore.px) < 1e-9
-      && Math.abs(largeBeforeContact.vx) < 1e-9);
+      && largeBeforeContact.px < largeBefore.px
+      && Math.abs(smallApproaching.vx / smallApproaching.invMass
+        + largeBeforeContact.vx / largeBeforeContact.invMass) < 1e-8);
   for (let i = 4; i < 20; i++) engine.stepWorld();
   const smallAfter = engine._bodyState(0);
   const largeAfter = engine._bodyState(1);
@@ -1288,6 +1292,38 @@ for (const [label, discardActivity] of [
       && settledSeparation < initialSeparation * 0.5
       && largeAfter.vy > 0 && Math.abs(largeAfter.vx) < 0.75);
   engine.destroy();
+}
+
+// Attraction between vertically separated sources must preserve planetary
+// freefall of their centre of mass, including when the smaller piece is below.
+for (const lowerIsSmall of [false, true]) {
+  const engine = createEngineWasm();
+  const control = createEngineWasm();
+  engine.setBgEnabled(false);
+  control.setBgEnabled(false);
+  for (const e of [engine, control]) {
+    const mat = e === engine ? MAT.NEUTRONIUM : MAT.RIGID;
+    e.spawnBox(90, 25, lowerIsSmall ? 4 : 1, 3, mat);
+    e.spawnBox(90, 55, lowerIsSmall ? 1 : 4, 3, mat);
+  }
+  const center = (e, field = 'py') => {
+    const a = e._bodyState(0), b = e._bodyState(1);
+    return (a[field] / a.invMass + b[field] / b.invMass)
+      / (1 / a.invMass + 1 / b.invMass);
+  };
+  const start = center(engine);
+  let maxError = 0, maxVelocityError = 0;
+  for (let step = 0; step < 4; step++) {
+    engine.stepWorld();
+    control.stepWorld();
+    maxError = Math.max(maxError, Math.abs(center(engine) - center(control)));
+    maxVelocityError = Math.max(maxVelocityError,
+      Math.abs(center(engine, 'vy') - center(control, 'vy')));
+  }
+  check(`vertical pair keeps Earth's freefall (small below=${lowerIsSmall}, error=${maxError})`,
+    center(engine) > start && maxError < 0.01 && maxVelocityError < 1e-9);
+  engine.destroy();
+  control.destroy();
 }
 
 // Sustained attraction through a stack must preserve a separate raster for

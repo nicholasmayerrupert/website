@@ -1188,6 +1188,7 @@ void ForceSystem::prepareWorldTick() {
     states[1].binLinks.clear();
   }
   buildNearestNeutroniumField();
+  prepareNeutroniumBodyForces();
   prepareLooseCachesAndDirtyBins();
   if (states[0].emitters.empty() && states[1].emitters.empty()) {
     E.fg.forceActive = E.bg.forceActive = false;
@@ -1271,8 +1272,10 @@ bool ForceSystem::sampleState(
 bool ForceSystem::sampleNearestNeutronium(
     Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
     int targetNeutroniumCells, int targetBodyLayer,
-    double& forceX, double& forceY, bool continuousLiquid) const {
+    double& forceX, double& forceY, bool continuousLiquid,
+    const ForceEmitter** source) const {
   forceX = forceY = 0;
+  if (source) *source = nullptr;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows
       || neutroniumSeeds.empty())
     return false;
@@ -1351,7 +1354,55 @@ bool ForceSystem::sampleNearestNeutronium(
   double inverseDistance = 1.0 / distance;
   forceX = dx * inverseDistance * magnitude;
   forceY = dy * inverseDistance * magnitude;
+  if (source) *source = &emitter;
   return true;
+}
+
+void ForceSystem::prepareNeutroniumBodyForces() {
+  neutroniumBodyForces.clear();
+  if (neutroniumSeeds.empty()) return;
+  std::unordered_map<int, Body*> bodies[2];
+  for (int index = 0; index < (E.bgEnabled ? 2 : 1); index++) {
+    Layer& layer = index ? E.bg : E.fg;
+    for (Body* body : layer.bodies)
+      if (body->jointRole != 2 && bodyNeutroniumCellCount(body) > 0)
+        bodies[index][body->id] = body;
+  }
+  for (int index = 0; index < (E.bgEnabled ? 2 : 1); index++) {
+    Layer* layer = index ? &E.bg : &E.fg;
+    for (Body* body : layer->bodies) {
+      if (body->jointRole == 2) continue;
+      int cells = bodyNeutroniumCellCount(body);
+      if (!cells || body->invMass <= 0) continue;
+      double ax, ay;
+      const ForceEmitter* source = nullptr;
+      if (!sampleNearestNeutronium(layer, body->px, body->py, FORCE_RIGID,
+            body->id, cells, index, ax, ay, false, &source)) continue;
+      auto& acceleration = neutroniumBodyForces[body];
+      if (source->sourceBodyId < 0) {
+        acceleration.first += ax;
+        acceleration.second += ay;
+        continue;
+      }
+      auto found = bodies[source->sourceBodyLayer].find(source->sourceBodyId);
+      if (found == bodies[source->sourceBodyLayer].end()) continue;
+      Body* other = found->second;
+      if (other->invMass <= 0) continue;
+      // The rank selects each nearest-source pair once. Its internal force is
+      // central and equal-and-opposite, with bounded relative acceleration.
+      double dx = other->px - body->px, dy = other->py - body->py;
+      double distance = std::hypot(dx, dy);
+      if (distance <= 1e-9) continue;
+      double impulse = std::hypot(ax, ay)
+        / (body->invMass + other->invMass);
+      double ix = dx / distance * impulse, iy = dy / distance * impulse;
+      acceleration.first += ix * body->invMass;
+      acceleration.second += iy * body->invMass;
+      auto& reaction = neutroniumBodyForces[other];
+      reaction.first -= ix * other->invMass;
+      reaction.second -= iy * other->invMass;
+    }
+  }
 }
 
 bool ForceSystem::sampleLayer(
@@ -1461,16 +1512,30 @@ bool ForceSystem::sampleBody(
   int neutroniumCells = bodyNeutroniumCellCount(body);
   bool centreReplacesGravity = false;
   if (replacesGravity) *replacesGravity = false;
+  if (neutroniumCells > 0) {
+    forceX = forceY = 0;
+    auto found = neutroniumBodyForces.find(body);
+    if (found != neutroniumBodyForces.end()) {
+      forceX = found->second.first;
+      forceY = found->second.second;
+    }
+    for (int sourceIndex = 0; sourceIndex < 2; sourceIndex++) {
+      double ax, ay;
+      sampleState(states[sourceIndex], body->px, body->py, FORCE_RIGID,
+        layerBit(layer), sourceIndex == targetLayer ? body->id : -1, ax, ay);
+      forceX += ax;
+      forceY += ay;
+    }
+    // Mutual attraction accelerates relative motion; planetary gravity acts on
+    // the complete mass even inside a strong field.
+    return forceX * forceX + forceY * forceY > 1e-12;
+  }
   if (sampleLayer(layer, body->px, body->py, FORCE_RIGID, body->id,
                   forceX, forceY, neutroniumCells,
                   neutroniumCells > 0 ? targetLayer : -1, false, &centreReplacesGravity)) {
     if (replacesGravity) *replacesGravity = centreReplacesGravity;
     return true;
   }
-  // Moving neutronium uses body-level dominance metadata. Keep that exact path
-  // to one query; ordinary long bodies can fall back to their exposed cells.
-  if (neutroniumCells > 0) return false;
-
   double cs = std::cos(body->angle), sn = std::sin(body->angle);
   double bestMagnitude2 = 0;
   uint8_t targetBit = layerBit(layer);

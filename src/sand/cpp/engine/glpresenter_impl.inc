@@ -687,7 +687,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     : .6 * (1-ease((actionPhase-mineContact)/(1-mineContact)));
   if (E.planetId == PL_FRONTIER && shieldActive) bodyLean -= .22;
   double bodyBob = mining ? .18 * std::sin(actionPhase * 3.14159265) : 0;
-  if (alive) {
+  if (alive && !art.playerLayers) {
     static const double WALK_BOB[4] = {0.0, -0.10, 0.0, -0.06};
     static const double RUN_BOB[4] = {-0.14, 0.0, -0.11, 0.0};
     static const double SWIM_BOB[4] = {-0.08, 0.02, 0.08, 0.0};
@@ -701,6 +701,17 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   double sprY = (pyc + PLAYER_H - camRow + bodyBob) * cell + glOffY - spriteHeight * pixel;
   if (alive && E.planetId != PL_FRONTIER) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
 
+  auto bodyPoint = [&](double col, double row) {
+    double x = sprX + col * pixel, y = sprY + row * pixel;
+    if (cutting) {
+      double upper = 1 - row / (spriteHeight - 1);
+      double source = facing > 0 ? col : spriteWidth - 1 - col;
+      double step = cutPose.stride * ease((row - 27) / 15) * (source >= 18 ? 1 : -.35);
+      x += facing * std::round((cutPose.lean * upper + step) / art.pixelScale) * pixel;
+      y += std::round(cutPose.crouch * upper / art.pixelScale) * pixel;
+    }
+    return std::array<double, 2>{x, y};
+  };
   auto worldSquare = [&](double wx, double wy, double size,
                          float r, float g, float b, float a = 1.0f) {
     double x = (wx - camCol) * cell + glOffX;
@@ -719,6 +730,64 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       worldSquare(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, size, r, g, b);
     }
   };
+  auto appearance = [&](int part) {
+    int style = 0;
+    if (E.planetId == PL_FRONTIER && equipment) {
+      const auto* item = art.gear(equipment[art.playerPartSlots[part]]);
+      if (item) style = imax(0, imin(6, item->style));
+    }
+    return style;
+  };
+  auto drawPart = [&](int partId, double x, double y, double degrees, float shade, double stretch, bool deform) {
+    const auto& part = art.playerParts[appearance(partId)][partId];
+    const double angle = degrees * 3.141592653589793 / 180.0, cs = std::cos(angle), sn = std::sin(angle);
+    double left = 1e9, top = 1e9, right = -1e9, bottom = -1e9;
+    for (int v : {0, part.height}) for (int u : {0, part.width}) {
+      double dx = u - part.pivotX, dy = (v - part.pivotY) * stretch;
+      double xx = x + dx * cs - dy * sn, yy = y + dx * sn + dy * cs;
+      left = std::min(left, xx); right = std::max(right, xx); top = std::min(top, yy); bottom = std::max(bottom, yy);
+    }
+    auto sample = [&](int xx, int yy) -> uint32_t {
+      double dx = xx + .5 - x, dy = yy + .5 - y;
+      int u = (int)std::floor(dx * cs + dy * sn + part.pivotX);
+      int v = (int)std::floor((-dx * sn + dy * cs) / stretch + part.pivotY);
+      return u >= 0 && v >= 0 && u < part.width && v < part.height ? part.pixels[v * part.width + u] : 0;
+    };
+    for (int yy = (int)std::floor(top); yy < (int)std::ceil(bottom); yy++) {
+      for (int xx = (int)std::floor(left); xx < (int)std::ceil(right);) {
+        uint32_t color = sample(xx, yy); int run = 1;
+        if (!color) { xx++; continue; }
+        while (xx + run < (int)std::ceil(right) && sample(xx + run, yy) == color && !(deform && cutting && yy >= 27 && (xx >= 18) != (xx + run >= 18))) run++;
+        float r = ((color >> 16) & 255) / 255.f * shade, g = ((color >> 8) & 255) / 255.f * shade, b = (color & 255) / 255.f * shade;
+        if (own) b = std::min(1.f, b * 1.10f); else r = std::min(1.f, r * 1.06f);
+        float flash = alive && hurtAge >= 0 && hurtAge < 2 ? .52f : 0;
+        glUniform4f(glc->uColor, r * light * (1-flash)+flash, g * light * (1-flash)+flash*.65f, b * light * (1-flash)+flash*.65f, 1);
+        int col = facing > 0 ? xx : spriteWidth - xx - run;
+        auto point = deform ? bodyPoint(col, yy) : std::array<double, 2>{sprX + col * pixel, sprY + yy * pixel};
+        glSolidDev(point[0], point[1], run * pixel, pixel); xx += run;
+      }
+    }
+  };
+  auto sourcePoint = [&](double wx, double wy) {
+    double x = ((wx - camCol) * cell + glOffX - sprX) / pixel;
+    return std::array<double, 2>{facing > 0 ? x : spriteWidth - x, ((wy - camRow) * cell + glOffY - sprY) / pixel};
+  };
+  auto swimShoulder = [&](bool rear) {
+    const auto& pose = art.playerPoses[art.clips[animState].offset + animFrame];
+    for (const auto& p : pose) if (p.part == 1) {
+      double x = p.x - (rear ? 3 : 1), y = p.y + 4;
+      return std::array<double, 2>{camCol + (sprX - glOffX) / cell + (facing > 0 ? x : spriteWidth - x) * art.pixelScale,
+        camRow + (sprY - glOffY) / cell + y * art.pixelScale};
+    }
+    return std::array<double, 2>{pxc + PLAYER_W * .5, pyc + PLAYER_H * .4};
+  };
+  auto armPart = [&](int part, double x0, double y0, double x1, double y1, float shade) {
+    auto p = sourcePoint(x0, y0);
+    double degrees = std::atan2(-facing * (x1-x0), y1-y0) * 180 / 3.141592653589793;
+    const auto& piece = art.playerParts[appearance(part)][part];
+    double stretch = std::max(.1, std::hypot(x1-x0, y1-y0) / art.pixelScale / imax(1, piece.height - 2));
+    drawPart(part, p[0], p[1], degrees, shade, stretch, false);
+  };
   const auto& outline = art.palette[art.limbColors[0]];
   auto sleeve = art.palette[art.limbColors[1]];
   auto skin = art.palette[art.limbColors[2]];
@@ -732,6 +801,9 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
   auto drawHand = [&](double hx, double hy, bool rear) {
     float shade = rear ? .78f : 1.0f;
+    if (art.playerLayers) {
+      auto p = sourcePoint(hx, hy); drawPart(8, p[0], p[1], 0, shade, 1, false); return;
+    }
     if (E.planetId == PL_FRONTIER)
       worldSquare(hx, hy, .80, outline[0], outline[1], outline[2]);
     worldSquare(hx, hy, .57, hand[0] * shade, hand[1] * shade, hand[2] * shade);
@@ -741,6 +813,9 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   auto articulatedArm = [&](double sx, double sy, double ex, double ey,
                             double hx, double hy, bool rear) {
     float shade = rear ? .78f : 1.0f;
+    if (art.playerLayers) {
+      armPart(6, sx, sy, ex, ey, shade); armPart(7, ex, ey, hx, hy, shade); drawHand(hx, hy, rear); return;
+    }
     segment(sx, sy, ex, ey, .72, outline[0], outline[1], outline[2]);
     segment(ex, ey, hx, hy, .64, outline[0], outline[1], outline[2]);
     segment(sx, sy, ex, ey, .53, sleeve[0] * shade, sleeve[1] * shade, sleeve[2] * shade);
@@ -755,16 +830,25 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     static const double WALK_SWING[4] = {-0.66, -0.16, 0.66, 0.16};
     static const double RUN_SWING[4] = {-0.94, -0.24, 0.94, 0.24};
     static const double SWIM_STROKE[4] = {-0.70, 0.08, 0.78, 0.18};
-    double swing = animState == AS_WALK ? WALK_SWING[animFrame % 4]
-                 : animState == AS_RUN ? RUN_SWING[animFrame % 4]
-                 : animState == AS_WADE ? WALK_SWING[animFrame % 4] * .42
-                 : animState == AS_SWIM ? SWIM_STROKE[animFrame % 4]
+    int limbPhase = animFrame * 4 / imax(1, art.clips[animState].count);
+    double swing = animState == AS_WALK ? WALK_SWING[limbPhase % 4]
+                 : animState == AS_RUN ? RUN_SWING[limbPhase % 4]
+                 : animState == AS_WADE ? WALK_SWING[limbPhase % 4] * .42
+                 : animState == AS_SWIM ? SWIM_STROKE[limbPhase % 4]
                  : animState == AS_IDLE ? (animFrame ? .08 : -.08)
                  : 0.0;
     if (rear) swing = -swing;
     sx = pxc + PLAYER_W * .5 + facing * (rear ? -.08 : .42);
     sy = pyc + PLAYER_H * .39 + bodyBob;
-    if (animState == AS_RISE) {
+    if (animState == AS_SWIM && art.playerLayers) {
+      // Reach, catch, pull, and recover; the far arm trails by half a stroke.
+      static const double HAND[8][2] = {{8,-2},{8,1},{5,5},{0,6},{-5,4},{-4,1},{0,0},{5,-1}};
+      int phase = (animFrame * 8 / imax(1, art.clips[animState].count) + (rear ? 4 : 0)) % 8;
+      auto shoulder = swimShoulder(rear); sx = shoulder[0]; sy = shoulder[1];
+      hx = sx + facing * HAND[phase][0] * art.pixelScale;
+      hy = sy + HAND[phase][1] * art.pixelScale;
+      ex = (sx + hx) * .5 - facing * .25; ey = (sy + hy) * .5 + .55;
+    } else if (animState == AS_RISE) {
       ex = sx + facing * (rear ? .45 : .72); ey = sy - (rear ? .46 : .68);
       hx = ex + facing * .52; hy = ey - .48;
     } else if (animState == AS_FALL) {
@@ -857,25 +941,19 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   // Facing right exposes the right hand; facing left exposes the left hand.
   const bool rightHandRear = E.planetId == PL_FRONTIER && facing < 0;
   const bool hasShield = alive && E.planetId == PL_FRONTIER && equipment && equipment[6];
-  auto bodyPoint = [&](double col, double row) {
-    double x = sprX + col * pixel, y = sprY + row * pixel;
-    if (cutting) {
-      double upper = 1 - row / (spriteHeight - 1);
-      double source = facing > 0 ? col : spriteWidth - 1 - col;
-      double step = cutPose.stride * ease((row - 27) / 15) * (source >= 18 ? 1 : -.35);
-      x += facing * std::round((cutPose.lean * upper + step) / art.pixelScale) * pixel;
-      y += std::round(cutPose.crouch * upper / art.pixelScale) * pixel;
-    }
-    return std::array<double, 2>{x, y};
-  };
+  const bool swimFreeHand = animState == AS_SWIM && gear && (gear->family == GF_SWORD || gear->family == GF_WAND) && !hasShield;
   auto drawBody = [&]() {
     double rearSX = 0, rearSY = 0, rearEX = 0, rearEY = 0, rearHX = 0, rearHY = 0;
-    if (alive && !aimedWeapon && (!hasShield || rightHandRear)) {
+    if (alive && ((!aimedWeapon && (!hasShield || rightHandRear)) || (swimFreeHand && !rightHandRear))) {
       relaxedArmPose(true, rearSX, rearSY, rearEX, rearEY, rearHX, rearHY);
       articulatedArm(rearSX, rearSY, rearEX, rearEY, rearHX, rearHY, true);
     }
 
-    for (int r = 0; r < spriteHeight; r++) {
+    if (art.playerLayers) {
+      int poseFrame = animState == AS_GUARD_RAISE && !shieldActive ? art.clips[animState].count - 1 - animFrame : animFrame;
+      const auto& pose = art.playerPoses[art.clips[animState].offset + poseFrame];
+      for (const auto& p : pose) drawPart(p.part, p.x, p.y, p.angle, p.shade / 100.f, 1, true);
+    } else for (int r = 0; r < spriteHeight; r++) {
       int poseFrame = animState == AS_GUARD_RAISE && !shieldActive ? art.clips[animState].count - 1 - animFrame : animFrame;
       const uint8_t* row = art.spriteRow(animState, poseFrame, r);
       // Merge adjacent authored pixels of the same color into one quad.
@@ -914,12 +992,12 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         c += run;
       }
     }
-    if (alive && !aimedWeapon && (!hasShield || !rightHandRear)) {
+    if (alive && ((!aimedWeapon && (!hasShield || !rightHandRear)) || (swimFreeHand && rightHandRear))) {
       double sx, sy, ex, ey, hx, hy;
       relaxedArmPose(false, sx, sy, ex, ey, hx, hy);
       articulatedArm(sx, sy, ex, ey, hx, hy, false);
     }
-    if (alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
+    if (!art.playerLayers && alive && E.planetId == PL_FRONTIER && equipment && animState != AS_DODGE && animState != AS_SWIM) {
       auto piece = [&](int x,int y,int w,int h,float r,float g,float b) {
         int col = facing > 0 ? x : spriteWidth-x-w;
         glUniform4f(glc->uColor,r*light,g*light,b*light,1);
@@ -964,6 +1042,9 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     bool rear = !rightHandRear;
     double shoulderX = pxc+PLAYER_W*.5 + facing*(bodyLean + (rear ? -.3 : .3));
     double shoulderY = pyc+PLAYER_H-spriteHeight*art.pixelScale*.60+bodyBob+cutPose.crouch*.60;
+    if (art.playerLayers && animState == AS_SWIM) {
+      auto shoulder = swimShoulder(rear); shoulderX = shoulder[0]; shoulderY = shoulder[1];
+    }
     double restX = shoulderX + facing*(rear ? 2.0 : .7), restY = shoulderY+2.4;
     // The guard follows the visible body's oval, with room above the head.
     double radiusX = spriteWidth*art.pixelScale*.4+.4;
@@ -1011,6 +1092,9 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     // of orbiting around the center of the player's torso.
     double shoulderX = pxc + PLAYER_W * .5 + facing*(bodyLean + (E.planetId == PL_FRONTIER ? (rightHandRear ? -.3 : .3) : 0));
     double shoulderY = pyc + (E.planetId == PL_FRONTIER ? PLAYER_H-spriteHeight*art.pixelScale*.60 : PLAYER_H*.42) + bodyBob + cutPose.crouch*.60;
+    if (art.playerLayers && animState == AS_SWIM) {
+      auto shoulder = swimShoulder(rightHandRear); shoulderX = shoulder[0]; shoulderY = shoulder[1];
+    }
     double targetX=aimX,targetY=aimY;
     if (E.planetId==PL_FRONTIER && heldItemKind==IK_MINING_TOOL && animState==AS_AXE && own && glSurvivalPreviewLocked) {
       targetX=glSurvivalPreviewX+.5;targetY=glSurvivalPreviewY+.5;

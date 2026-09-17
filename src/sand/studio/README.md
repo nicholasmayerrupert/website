@@ -63,3 +63,12 @@ The viewer suite checks the full roster, context reuse, playback controls,
 source frames, deep links, and actual frost-breath projectiles. The frost suite
 checks all three attacks and idle/walk stability through both native and
 replicated rendering paths, including contact-velocity pulses at a wall.
+
+## Player and armor review
+
+Open `/game?player` to inspect generated player components and all existing armor
+sets in the WebGL renderer. Choose a complete set or mix the six slots separately;
+select any player state, facing, weapon, shield and aim angle. Pause and step for
+foot and hand registration checks. No equipment or saves in the adventure are
+modified by this viewer. `window.__playerViewer` supports `select`, `pause`,
+`play`, `step`, `seek(frame)` and `inspect` for repeatable agent/browser checks.

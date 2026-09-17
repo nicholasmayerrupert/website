@@ -9,8 +9,9 @@ export const CREATURE_ATTACK_ANIMATIONS = {
     { name: 'Ice spear', windup: range('windup', 6, 3), attack: range('attack', 6, 3), recover: range('recover', 6, 3) },
   ],
   BONE_DINOSAUR: [
-    { name: 'Bite' }, { name: 'Rush' },
-    { name: 'Fire breath', attack: { clip: 'special', loop: true } },
+    { name: 'Bite', windup: range('windup', 0, 1), attack: range('attack', 0, 2), recover: range('recover', 0, 1) },
+    { name: 'Rush', windup: range('windup', 1, 1), attack: range('attack', 2, 2, true), recover: range('recover', 1, 1) },
+    { name: 'Fire breath', windup: range('windup', 2, 1), attack: range('special', 0, 2, true), recover: range('recover', 2, 1) },
   ],
 };
 

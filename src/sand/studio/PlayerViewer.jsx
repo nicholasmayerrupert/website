@@ -1,0 +1,17 @@
+import {useEffect,useRef,useState} from 'react';
+import player from '../content/player.js';
+import {ARMOR_SETS,EQUIPMENT_SLOTS} from '../content/equipment.js';
+import {createPlayerViewer} from './playerViewerRuntime.js';
+import './creatureViewer.css';
+export default function PlayerViewer(){
+ const canvas=useRef(null),api=useRef(null),[config,setConfig]=useState({styles:Array(6).fill(1),state:'walk',facing:1,weapon:1,shield:false,aim:0}),[error,setError]=useState('');
+ useEffect(()=>{let disposed=false;createPlayerViewer(canvas.current).then(v=>{if(disposed){v.dispose();return;}api.current=v;window.__playerViewer=v;}).catch(e=>setError(e.message));return()=>{disposed=true;api.current?.dispose();delete window.__playerViewer;};},[]);
+ const change=next=>{const value={...config,...next};setConfig(value);api.current?.select(value);};
+ return <main className="creature-viewer"><header><div><small>ASTER / PLAYER WORKBENCH</small><h1>Player & armor</h1><p>Mix equipment. Inspect feet, grips, and shield poses in the game renderer.</p></div><a href="/game?nosave">Play Aster ↗</a></header>
+ {error&&<p role="alert">{error}</p>}
+ <div className="creature-viewer-controls"><label>Complete set<select aria-label="Complete set" onChange={e=>change({styles:Array(6).fill(Number(e.target.value))})} defaultValue="1"><option value="0">Base clothing</option>{ARMOR_SETS.map((s,i)=><option key={s.name} value={i+1}>{s.name}</option>)}</select></label>
+ {EQUIPMENT_SLOTS.slice(0,6).map((slot,i)=><label key={slot}>{slot}<select aria-label={slot} value={config.styles[i]} onChange={e=>change({styles:config.styles.map((s,k)=>k===i?Number(e.target.value):s)})}><option value="0">Unequipped</option>{ARMOR_SETS.map((s,j)=><option key={s.name} value={j+1}>{s.name}</option>)}</select></label>)}</div>
+ <div className="creature-viewer-controls"><label>Pose<select aria-label="Pose" value={config.state} onChange={e=>change({state:e.target.value})}>{Object.keys(player.clips).map(s=><option key={s}>{s}</option>)}</select></label><label>Facing<select aria-label="Facing" value={config.facing} onChange={e=>change({facing:Number(e.target.value)})}><option value="1">Right</option><option value="-1">Left</option></select></label><label>Weapon<select aria-label="Weapon" value={config.weapon} onChange={e=>change({weapon:Number(e.target.value)})}>{[[0,'Empty hands'],[1,'Sword'],[4,'Axe'],[7,'Spear'],[10,'Bow'],[13,'Wand']].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label><input type="checkbox" checked={config.shield} onChange={e=>change({shield:e.target.checked,state:e.target.checked?'guard':'idle'})}/>Shield raised</label><label>Aim<input aria-label="Aim" type="range" min="-1.5" max="1.5" step=".1" value={config.aim} onChange={e=>change({aim:Number(e.target.value)})}/></label></div>
+ <canvas ref={canvas} width="960" height="480" aria-label="Player preview" style={{width:'100%',imageRendering:'pixelated',border:'1px solid #43606b'}}/>
+ <div className="creature-viewer-controls"><button onClick={()=>api.current?.play()}>Play</button><button onClick={()=>api.current?.pause()}>Pause</button><button onClick={()=>api.current?.step()}>Step tick</button></div><p>All six equipment slots use generated component art. Leather, cloth and plate have separate silhouettes; Briarbound, Mistweaver and Oathkeeper use material-color variants. This preview uses controlled poses; normal play retains the real combat timing and input.</p></main>;
+}

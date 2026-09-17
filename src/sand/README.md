@@ -117,8 +117,12 @@ invalidates the repair region's saved tiles, component fragments, and bodies.
 Repairs preserve field terrain, inventory, and quest progress. The journaled
 `repair-base` intent follows the worker authority and full-resync path.
 
-`content/player.js` owns the player palette, seven animation clips, frame timing,
-and source pixels. `content/creatureArt.js` owns all creature sprites and palettes.
+`content/player.js` owns the player palette, animation clips, frame timing,
+and registered component layers. `content/playerLayers.js` authors shared body
+poses and equipment-slot composition from generated `content/playerParts.js`.
+The game renderer and inventory mannequin use the same component art; see
+`art/player/README.md` and development-only `/game?player` for the authoring loop.
+`content/creatureArt.js` owns all creature sprites and palettes.
 Authored material tiles live in `content/materialArt.js`; `world.js` owns tile
 overrides and ambient-light presentation. Foreground cells have one-device-pixel
 gutters at scales of three pixels per cell and above, revealing the continuous
@@ -1399,7 +1403,8 @@ a 96-tick fire stream (32 slow, overlapping pulses) and a long recovery. The
 wings, ribs and a vertebral tail; an ember heart glows within the cage. Fire pulses emerge from
 the mouth, retain ownership through checkpoints, and ignite open air at impact
 without excavating stone. The dragon tolerates fire and drops a cinderjaw fang.
-`node scripts/author-enemy-art.mjs --only BONE_DINOSAUR` rebuilds its eight clips;
+`node scripts/author-enemy-art.mjs --only BONE_DINOSAUR` imports the approved
+full-sprite sheets in `art/skeleton-dragon/` into its eight clips;
 `dinosaur` checks habitat, combat and persistence, and `dinosaur-e2e` captures
 both melee attacks, the flame stream, burning terrain, and a full sprite atlas.
 

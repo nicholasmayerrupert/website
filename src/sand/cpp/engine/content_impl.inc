@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 10) return false;
+  if (r.take() != 0x41535452 || r.take() != 11) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -115,6 +115,25 @@ bool ContentSystem::load(const int32_t* data, int length) {
   if (expectedOffset != frameCount) return false;
   auto nextPalette = r.colors(paletteSize);
   auto nextPixels = r.pixels(frameCount * width * height, paletteSize);
+  bool nextPlayerLayers = r.bounded(0, 1) != 0;
+  std::array<int, 10> nextPartSlots{};
+  std::array<std::array<ContentPlayerPart, 10>, 7> nextPlayerParts{};
+  std::vector<std::vector<ContentPlayerPlacement>> nextPlayerPoses;
+  if (nextPlayerLayers) {
+    for (int& slot : nextPartSlots) slot = r.bounded(0, 5);
+    for (auto& set : nextPlayerParts) for (auto& part : set) {
+      part.width = r.bounded(1, 32); part.height = r.bounded(1, 32);
+      part.pivotX = r.bounded(0, part.width); part.pivotY = r.bounded(0, part.height);
+      for (int i = 0; i < part.width * part.height && r.valid; i++) part.pixels.push_back((uint32_t)r.take());
+    }
+    for (int f = 0; f < frameCount && r.valid; f++) {
+      int count = r.bounded(1, 16);
+      std::vector<ContentPlayerPlacement> pose;
+      for (int i = 0; i < count && r.valid; i++) pose.push_back({r.bounded(0, 9), r.bounded(-64, 96), r.bounded(-64, 96), r.bounded(-360, 360), r.bounded(0, 100)});
+      nextPlayerPoses.push_back(std::move(pose));
+    }
+  }
+  if (!r.valid) return false;
   std::array<bool, 256> nextHasTexture{};
   std::vector<std::array<uint32_t, 32 * 32>> nextTextures(256);
   int textureCount = r.bounded(0, 256);
@@ -254,6 +273,8 @@ bool ContentSystem::load(const int32_t* data, int length) {
     reservations.push_back(rect);
   }
   clips = std::move(nextClips); palette = std::move(nextPalette); pixels = std::move(nextPixels);
+  playerLayers = nextPlayerLayers; playerPartSlots = nextPartSlots;
+  playerParts = std::move(nextPlayerParts); playerPoses = std::move(nextPlayerPoses);
   hasTexture = nextHasTexture;
   std::copy(nextTextures.begin(), nextTextures.end(), textures.begin());
   for (int m = 0; m < TABLE; m++) {

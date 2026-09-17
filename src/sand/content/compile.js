@@ -11,7 +11,7 @@ import { gearPixels } from './gearArt.js';
 import materialArt from './materialArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 10;
+export const CONTENT_WIRE_VERSION = 11;
 export const SITE_SURFACE_BASE = -100001;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
@@ -210,6 +210,33 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     }
   }
   const textureSources = { ...materialArt, ...world.textures };
+  const layers = [];
+  if (sprite.layers) {
+    const { slots, sets, poses } = sprite.layers;
+    if (slots?.length !== 10 || sets?.length !== 7) fail('sprite.layers', 'expected ten parts and seven appearances');
+    layers.push(1, ...slots.map(s => integer(s, 'layer.slot', 0, 5)));
+    for (const set of sets) {
+      if (set.parts?.length !== 10) fail('sprite.layers', 'expected ten parts per appearance');
+      for (const part of set.parts) {
+        const w = integer(part.width, 'part.width', 1, 32), h = integer(part.height, 'part.height', 1, 32);
+        if (part.pixels?.length !== w * h) fail('part.pixels', 'incorrect pixel count');
+        layers.push(w, h, integer(part.pivot?.[0], 'part.pivot.x', 0, w), integer(part.pivot?.[1], 'part.pivot.y', 0, h),
+          ...part.pixels.map(c => integer(c, 'part.color', 0, 0xffffffff) | 0));
+      }
+    }
+    for (const state of ANIMATION_STATES) {
+      if (poses?.[state]?.length !== sprite.clips[state].frames.length) fail('layer.poses', 'must match clip frames');
+      for (const pose of poses[state]) {
+        if (!Array.isArray(pose) || pose.length < 1 || pose.length > 16) fail('layer.pose', 'expected 1…16 placements');
+        layers.push(pose.length);
+        for (const p of pose) {
+          if (p.length !== 5) fail('layer.pose', 'expected part, x, y, angle, shade');
+          layers.push(integer(p[0], 'pose.part', 0, 9), integer(p[1], 'pose.x', -64, 96), integer(p[2], 'pose.y', -64, 96),
+            integer(p[3], 'pose.angle', -360, 360), integer(p[4], 'pose.shade', 0, 100));
+        }
+      }
+    }
+  } else layers.push(0);
   const hash = contentHash({ world, sprite, creatureArt: creatureSources, creatureAnimations: CREATURE_ATTACK_ANIMATIONS, equipment: EQUIPMENT, textures: textureSources });
   for (const key of Object.keys(CREATURE)) if (!creatureSources[key]) fail('creatureArt', `missing art for ${key}`);
   const creatures = Object.entries(creatureSources).map(([key, art]) => {
@@ -308,7 +335,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     integer(world.presentation.deepLight, 'deepLight', 0, 255),
     integer(world.presentation.fadeTop, 'fadeTop'), integer(world.presentation.fadeBottom, 'fadeBottom'),
     Math.round(world.presentation.backgroundTint * 1000),
-    ...rects.flat(), ...jobs.flat(), ...clips, ...palette, ...pixels, textures.length, ...textures.flat(),
+    ...rects.flat(), ...jobs.flat(), ...clips, ...palette, ...pixels, ...layers, textures.length, ...textures.flat(),
     creatures.length, ...creatures.flat(), residents.length, ...residents.flat(), ...limbColors, EQUIPMENT.length,
     ...EQUIPMENT.flatMap(g => [g.id, g.family, g.slot, g.power, g.defense, g.stamina, g.mana, g.cooldown, g.reach, g.spell, g.style, g.price, g.spellSlots || 0, g.upgradeSlots || 0, g.initialSpell || 0, (g.statusEffects || []).length, ...(g.statusEffects || []).flatMap(effect => [effect.effect, effect.durationTicks ?? 0]), g.cleanseTags ?? 0, ...gearPixels(g.id)]), chests.length, ...chests.flat(), placements.length, ...placements.flat()]);
   return { packed, hash, anchors, scenes, placements, rectangles: rects, world, sprite };

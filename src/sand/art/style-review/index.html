@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Player & dragon · Art comparison</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#14232b;color:#e5eee9}*{box-sizing:border-box}body{max-width:1400px;margin:auto;padding:32px}header{display:flex;justify-content:space-between;align-items:center;gap:24px}h1{margin:6px 0 12px;font-size:clamp(25px,3vw,40px)}p{color:#afc3c9;line-height:1.55;max-width:900px}a{color:#b0dec8}small{color:#93b6aa;letter-spacing:.1em}nav{display:flex;gap:10px;margin:24px 0}button{background:#243b46;border:1px solid #50707c;color:#e7eee7;border-radius:7px;padding:10px 18px;cursor:pointer;font:inherit}button[aria-pressed=true]{background:#b6dec7;color:#182c2c;border-color:#b6dec7}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:20px}figure{margin:0;background:#1e2f37;border:1px solid #3b5661;border-radius:8px;overflow:hidden}figcaption{padding:16px 18px;border-bottom:1px solid #3b5661}figcaption span{display:block;margin-top:4px;font-size:13px;color:#a5bec6}img{display:block;width:100%;height:auto;image-rendering:pixelated}.note{background:#203740;border-left:3px solid #9cc7b0;padding:14px 18px;margin-top:22px}.note p{margin:0}.details{font-size:14px}footer{margin-top:28px;color:#9cb5bd;font-size:14px}@media(max-width:700px){body{padding:18px}.comparison{grid-template-columns:1fr}header{display:block}}
+</style>
+</head>
+<body>
+<header><div><small>ASTER / ART DIRECTION</small><h1 id="title">Skeleton dragon</h1></div><a href="/game?creature=BONE_DINOSAUR" id="game">Open current creature in game ↗</a></header>
+<p>Compare the current artwork with a generated candidate. These are the original design comparisons. The approved dragon and modular player components are now installed in the game.</p>
+<nav aria-label="Character"><button id="dragon" aria-pressed="true">Skeleton dragon</button><button id="player" aria-pressed="false">Player body</button></nav>
+<div class="comparison">
+<figure><figcaption>Current<span id="before-caption">Existing game sprites, enlarged without smoothing</span></figcaption><img id="before" src="dragon-before-grid.png" alt="Current skeleton dragon sprites"></figure>
+<figure><figcaption>Candidate<span id="after-caption">Generated skeletal dragon design study</span></figcaption><img id="after" src="dragon-candidate-v1.png" alt="Generated skeleton dragon candidate"></figure>
+</div>
+<div class="note"><p id="poses">Left to right, top to bottom: idle, bite anticipation, bite release, breath pose. The candidate is a design study, not a complete attack sequence.</p></div>
+<p class="details" id="detail">Selected design, now installed with movement, bite, rush, fire-breath and death clips. Fire and projectile effects stay in the engine.</p>
+<footer><a href="caster-native-comparison.png">Acid caster comparison: top two rows before, bottom two after</a> · <a href="/game?creature=CAUSTIC_MORTARMAN">Simplified caster in game</a> · <a href="player-armor-research.md">Player armor research</a><br>Generated with the built-in image tool. <a href="prompts.json">Generation briefs</a> · <a href="attack-frame-plan.md">Attack-row budget and acceptance criteria</a></footer>
+<script>
+const entries={dragon:{title:'Skeleton dragon',before:'dragon-before-grid.png',after:'dragon-candidate-v1.png',caption:'Generated skeletal dragon design study',poses:'Left to right, top to bottom: idle, bite anticipation, bite release, breath pose. The candidate is a design study, not a complete attack sequence.',detail:'Selected design, now installed with movement, bite, rush, fire-breath and death clips. Fire and projectile effects stay in the engine.'},player:{title:'Player body — separate arms',before:'player-before-grid.png',after:'player-body-candidate-v2.png',caption:'Generated body layer; arms and weapons are drawn separately',poses:'Left to right, top to bottom: idle, left contact, first passing, right contact, second passing, jump. The current column shows the corresponding existing body poses.',detail:'The head, torso, hips and legs form one body layer. This candidate informed the generated component pipeline. Open /game?player to review the installed body, separate arms and interchangeable armor.'}};
+function choose(key){const e=entries[key];document.querySelector('#title').textContent=e.title;for(const kind of ['before','after']){const img=document.querySelector('#'+kind);img.src=e[kind];img.alt=(kind==='before'?'Current ':'Candidate ')+e.title;}document.querySelector('#after-caption').textContent=e.caption;document.querySelector('#poses').textContent=e.poses;document.querySelector('#detail').textContent=e.detail;document.querySelector('#game').hidden=key==='player';for(const k of Object.keys(entries))document.querySelector('#'+k).setAttribute('aria-pressed',String(k===key));history.replaceState(null,'','#'+key);}
+for(const key of Object.keys(entries))document.querySelector('#'+key).onclick=()=>choose(key);
+choose(location.hash==='#player'?'player':'dragon');
+</script>
+</body></html>

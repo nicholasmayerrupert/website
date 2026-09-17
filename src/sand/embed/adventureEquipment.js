@@ -1,5 +1,6 @@
-import { ARMOR_SETS, EQUIPMENT_BY_ID, EQUIPMENT_SLOTS } from '../content/equipment.js';
+import { EQUIPMENT_BY_ID, EQUIPMENT_SLOTS } from '../content/equipment.js';
 import { PLAYER_PREVIEW } from '../content/catalog.js';
+import { equippedPlayerPreview } from '../content/playerLayers.js';
 import { gearIcon } from './gearIcon.js';
 
 export function createAdventureEquipment(game, inventory) {
@@ -39,20 +40,12 @@ export function createAdventureEquipment(game, inventory) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; stats.append(dt, dd);
     }
     const ctx = preview.getContext('2d'); ctx.clearRect(0, 0, preview.width, preview.height);
-    const palette = Object.keys(PLAYER_PREVIEW.palette);
-    PLAYER_PREVIEW.rows.forEach((row, y) => [...row].forEach((pixel, x) => {
-      if (pixel === '.') return;
-      const index = palette.indexOf(pixel);
-      const part = index === 3 || index === 4 ? 5 : y < 12 ? 0 : y < 28 ? 1 : y < 38 ? 3 : 4;
-      const armor = EQUIPMENT_BY_ID[gear[part]?.definitionId];
-      let color = PLAYER_PREVIEW.palette[pixel];
-      if (armor?.style && index !== 1 && !(index >= 10 && index <= 12)) {
-        const shade = index === 2 || index === 7 ? .5 : [4, 6, 9].includes(index) ? 1.2 : .85;
-        const hex = ARMOR_SETS[armor.style - 1].color.slice(1);
-        color = `rgb(${[0, 2, 4].map(at => Math.min(255, Math.round(parseInt(hex.slice(at, at + 2), 16) * shade))).join(',')})`;
-      }
-      ctx.fillStyle = color; ctx.fillRect(x, y, 1, 1);
-    }));
+    const styles = Array.from({ length: 6 }, (_, slot) => EQUIPMENT_BY_ID[gear[slot]?.definitionId]?.style || 0);
+    equippedPlayerPreview(styles).forEach((color, at) => {
+      if (!color) return;
+      ctx.fillStyle = `#${(color & 0xffffff).toString(16).padStart(6, '0')}`;
+      ctx.fillRect(at % preview.width, Math.floor(at / preview.width), 1, 1);
+    });
     inventory.tooltips.refresh();
   }
   return { el: section, refresh };

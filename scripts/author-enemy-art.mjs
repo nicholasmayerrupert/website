@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { importFrostGiantArt } from './import-frost-giant-art.mjs';
 import { importCreatureArt } from './import-creature-art.mjs';
+import { importSkeletonDragonArt } from './import-skeleton-dragon-art.mjs';
 const output = new URL('../src/sand/content/creatureArt.js', import.meta.url);
 const source = readFileSync(output, 'utf8');
 const art = JSON.parse(source.slice(source.indexOf('export default ') + 15).trim().replace(/;$/, ''));
@@ -263,6 +264,7 @@ const chosen=only<0?sets:sets.filter(([key])=>key===process.argv[only+1]);
 if(!chosen.length)throw new Error('Unknown enemy sprite set');
 for(const [key,width,height,palette,draw] of chosen) {
   if(key==='FROST_GIANT') { art[key]=await importFrostGiantArt();continue; }
+  if(key==='BONE_DINOSAUR') { art[key]=await importSkeletonDragonArt();continue; }
   if(key!=='BONE_DINOSAUR' && existsSync(new URL(`../src/sand/art/creatures/${key.toLowerCase()}.png`, import.meta.url))) {
     Object.assign(art, await importCreatureArt([key])); continue;
   }

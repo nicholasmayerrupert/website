@@ -19,6 +19,7 @@ process.exitCode = await runBrowserCases({
     await page.goto(baseURL+'/held-art-fixture');
     const colors=await page.evaluate(async()=>{
       const {initSandWasm,createEngineWasm,PLANET,MAT}=await import('/src/sand/wasmBridge/engineFactory.js');
+      const {OFF,STRIDES,ITEM_KIND}=await import('/src/sand/wasmBridge/abi.generated.js');
       await initSandWasm();
       const e=createEngineWasm({cols:128,rows:100,planetId:PLANET.FRONTIER,infinite:false,sinksOn:false});
       const canvas=document.createElement('canvas');canvas.width=768;canvas.height=600;document.body.append(canvas);
@@ -27,10 +28,19 @@ process.exitCode = await runBrowserCases({
         e.glSetFlags(false,false,true);e.setSkyLight(200);e.setPlayMode(true);e.setSurvivalInventory(true);
         for(let x=1;x<127;x++)e.paintDisc(x,70,0,MAT.STONE,true);e.syncComponents();
         const id=e.spawnPlayer(50,62);e.glSetPlayers(false,null,id);
+        let fixedPose;
         return [320,321].map(definition=>{
           e.addGear(id,definition,1);
           e.inventoryMove(id,e.getInventory(id).slots.findIndex(s=>s.definitionId===definition),5);
-          e.setSelectedSlot(id,5);e.setPlayerInput(id,{bits:0,aimX:80,aimY:65});e.stepActors();e.glRenderFrame(true);
+          e.setSelectedSlot(id,5);e.setPlayerInput(id,{bits:0,aimX:80,aimY:65});e.stepActors();
+          if (!fixedPose) {
+            fixedPose=new Float32Array(STRIDES.glPlayerExt);
+            const p=e.getPlayer(id);
+            for(const [key,at] of Object.entries(OFF.glPlayerExt))fixedPose[at]=Number(p[key]??0);
+          }
+          fixedPose[OFF.glPlayerExt.heldDefinition]=definition;
+          fixedPose[OFF.glPlayerExt.heldItemKind]=ITEM_KIND.GEAR;
+          e.syncActorTick(0);e.glSetPlayers(true,fixedPose,id);e.glRenderFrame(true);
           const pixels=e.glReadPixels(300,336,78,90);let red=0,blue=0;
           for(let i=0;i<pixels.length;i+=4){
             const [r,g,b]=pixels.subarray(i,i+3);
@@ -47,6 +57,17 @@ process.exitCode = await runBrowserCases({
   desktop: async ({ page, baseURL, check }) => {
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await open(page, baseURL);
+    const mannequin = await page.evaluate(async () => {
+      const {equippedPlayerPreview}=await import('/src/sand/content/playerLayers.js');
+      const {EQUIPMENT_BY_ID}=await import('/src/sand/content/equipment.js');
+      const gear=document.querySelector('sand-game')._game.getInventory().equipment;
+      const canvas=document.querySelector('sand-game').shadowRoot.querySelector('.ad-character');
+      const actual=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+      const expected=equippedPlayerPreview(Array.from({length:6},(_,i)=>EQUIPMENT_BY_ID[gear[i]?.definitionId]?.style||0));
+      return expected.every((c,i)=>actual[i*4]===(c>>>16&255)&&actual[i*4+1]===(c>>>8&255)&&actual[i*4+2]===(c&255)&&actual[i*4+3]===(c>>>24));
+    });
+    check('inventory mannequin uses equipped component pixels without palette recoloring',mannequin);
+    await page.locator('.ad-equipment').screenshot({path:(process.env.SAND_TEST_ARTIFACTS||'.sand-artifacts')+'/equipped-player.png'});
     await page.evaluate(() => document.fonts.load('14px "Sand Pixel"'));
     check('all visible inventory text uses the pixel font', await page.locator('.ad-inventory').evaluate(root => [...root.querySelectorAll('*')].filter(node => node.getClientRects().length && [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())).every(node => getComputedStyle(node).fontFamily.includes('Sand Pixel'))));
     const order = await page.locator('.inv-pack .inv-slot').evaluateAll(nodes => nodes.map(n => n.dataset.index));

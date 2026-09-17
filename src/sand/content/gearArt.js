@@ -1,4 +1,5 @@
 import { ARMOR_SETS, EQUIPMENT_BY_ID, GEAR_FAMILY } from './equipment.js';
+import { armorIconPixels } from './playerLayers.js';
 
 // Pixel-center rasterization of the shared 16×16 gear silhouettes.
 const cache = new Map();
@@ -6,7 +7,10 @@ export function gearPixels(id) {
   if (cache.has(id)) return cache.get(id);
   const pixels = new Uint32Array(256), gear = EQUIPMENT_BY_ID[id];
   if (!gear) return pixels;
-  const cloth = ARMOR_SETS[gear.style - 1]?.color || '#7d9368';
+  if (gear.family === GEAR_FAMILY.ARMOR) {
+    const icon = armorIconPixels(gear.style, gear.slot);
+    cache.set(id, icon); return icon;
+  }
   const trim = ARMOR_SETS[gear.style - 1]?.trim || '#c4a569';
   const color = hex => {
     const rgb = parseInt(hex.slice(1), 16);
@@ -108,18 +112,6 @@ export function gearPixels(id) {
     } else if (gear.spell === 9) path('M9 2h2L8 5h3L5 10l2-4H5Z', runeColor);
     else path('M7 2h2v2h2v3H9v2H7V7H5V4h2Z', runeColor);
     rect(7, 3, 1, 3, '#ffefc4');
-  } else if (gear.family === GEAR_FAMILY.ARMOR) {
-    const shapes = [
-      'M5 2h6v1h2v10H3V3h2Z M5 5v6h6V5Z',
-      'M5 2h6v2h3v8h-3v3H5v-3H2V4h3Z',
-      'M2 4h4v5h1v4H1V7h1Z M10 4h4v3h1v6H9V9h1Z',
-      'M4 2h8v12H9V8H7v6H4Z',
-      'M3 3h4v9H2v2h6V3Z M10 3h3v9h2v2H9V3Z',
-      'M6 1h4l4 13H2Z',
-    ];
-    path(shapes[gear.slot], cloth); rect(5, 3, 6, 1, trim);
-    if (gear.slot === 1) { rect(5, 10, 6, 2, '#483d2d'); rect(7, 10, 2, 2, trim); }
-    if (gear.style >= 4 && gear.slot === 0) { rect(4, 6, 8, 2, '#29342c'); rect(7, 3, 2, 10, trim); }
   } else if (gear.family === GEAR_FAMILY.SHIELD) {
     path('M2 2h12v7h-1v2h-2v2H9v2H7v-2H5v-2H3V9H2Z', trim);
     path('M4 4h8v5h-1v2H9v2H7v-2H5V9H4Z', '#51694b');

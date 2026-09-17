@@ -29,7 +29,7 @@ separate weapon/projectile effects remain presentation effects.
 `content/creatureAnimations.js` maps each attack's windup, release and recovery
 to a named clip and explicit frame range. Unspecified attacks use the complete
 standard clips. The compiler validates and packs the ranges in content wire
-version 10. The viewer reads that same mapping; it does not infer frost attack
+version 11. The viewer reads that same mapping; it does not infer frost attack
 segments from frame counts. Additional attack poses can be imported and mapped
 without adding species branches to the controller or renderer.
 
@@ -54,3 +54,33 @@ walk / blocked / resume demonstration as `animation-test.webm`, with a PNG and
 JSON checks alongside it in the test artifact directory. Wall-contact pulses
 are injected for a repeatable rendering regression; the frost and combat
 suites separately exercise actual attacks and projectiles.
+
+## Player components and armor
+
+The player uses authored part placements shared by every equipment appearance.
+`content/playerLayers.js` defines poses in a 32×44 native coordinate space;
+`art/player/README.md` describes regeneration. All 29 existing animation states
+keep their gameplay timing. The content packet carries registered head, torso,
+hips, thigh, shin, boot, arm, forearm, hand and cape pixels, plus one placement
+list per clip frame. Each equipment slot chooses its own appearance. Flat body
+frames in `player.js` are baked previews; modular rendering consumes its `layers`.
+
+Grounded poses define ankle positions first, solve knees bending toward the toes,
+and keep soles horizontal. The four walk contacts/passing poses alternate the
+near and far leading legs. Torso rotation is positive toward facing, including
+dash and dodge. The renderer mirrors the whole composition for left-facing play.
+It does not add an extra walking bob that would lift planted feet.
+
+Arms use the existing gameplay hand and aiming anchors, drawing generated sleeve,
+bracer and glove components between joints. Front/back ordering follows the
+weapon and shield paths. Armor icons are composed from the same filled part art.
+`/game?player` exposes the real renderer with per-slot equipment, poses, facing,
+weapons, shield and aim controls. `player-layers` and `player-layers-e2e` cover feet,
+lean direction, complete armor coverage and mixed-set rendering.
+
+Swimming keeps the existing eight-frame clip. Alternating trailing kicks, a
+forward torso, and a trailing cape share the equipment pose. The renderer anchors
+the reach/catch/pull/recovery arm stroke to that torso; a free hand can paddle
+while the other carries a sword or wand. Two-handed equipment retains its grip.
+The player workbench fills with water when selecting Swim. Aquatic creatures use
+their existing movement clips; land creatures retain their escape/wading poses.

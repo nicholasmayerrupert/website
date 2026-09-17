@@ -17,6 +17,11 @@ struct ContentQuest {
 };
 struct ContentGear { int id, family, slot, power, defense, stamina, mana, cooldown, reach, spell, style, price; int spellSlots = 0, upgradeSlots = 0, initialSpell = 0; std::vector<StatusApplication> statusEffects{}; int cleanseTags = 0; std::array<uint32_t,256> icon{}; };
 struct ContentResident { int id, species, x, y, surface, roamRadius; };
+struct ContentPlayerPart {
+  int width = 0, height = 0, pivotX = 0, pivotY = 0;
+  std::vector<uint32_t> pixels;
+};
+struct ContentPlayerPlacement { int part, x, y, angle, shade; };
 // Immutable authored definitions belong to an engine instance. Mutable quest,
 // actor, and terrain state remains with the subsystem that simulates it.
 class ContentSystem {
@@ -40,6 +45,10 @@ class ContentSystem {
   std::vector<ContentResident> residents;
   std::vector<std::array<float, 4>> palette;
   std::vector<uint8_t> pixels;
+  bool playerLayers = false;
+  std::array<int, 10> playerPartSlots{};
+  std::array<std::array<ContentPlayerPart, 10>, 7> playerParts{};
+  std::vector<std::vector<ContentPlayerPlacement>> playerPoses;
   std::array<ContentCreatureArt, CS_COUNT> creatureArt;
   std::vector<ContentChest> chests;
   std::map<int, ContentGear> equipment;

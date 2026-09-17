@@ -8,7 +8,7 @@ const directory = new URL('../src/sand/art/creatures/', import.meta.url);
 const manifestPath = new URL('manifest.json', directory);
 const symbols = 'abcdefghijklmnopqrstuvwxyzABCDE';
 
-function cutFrame(image, column, row, columns = 4, rows = 3) {
+export function cutFrame(image, column, row, columns = 4, rows = 3) {
   const left = Math.round(column * image.width / columns), top = Math.round(row * image.height / rows);
   const width = Math.round((column + 1) * image.width / columns) - left;
   const height = Math.round((row + 1) * image.height / rows) - top;
@@ -50,7 +50,7 @@ function cutFrame(image, column, row, columns = 4, rows = 3) {
   return { pixels, background, width, height, minX, maxX, minY, maxY };
 }
 
-function makePalette(frames) {
+export function makePalette(frames) {
   const histogram = new Map();
   for (const frame of frames) for (const rgb of frame) if (rgb) {
     const key = rgb.map(c => Math.round(c / 8) * 8).join(',');

@@ -1574,21 +1574,23 @@ void RigidBodySystem::resolveSpawnedJointOverlaps(
     const std::vector<Body*>& newborns) {
   if (newborns.empty()) return;
   const size_t gridSize = (size_t)E.cols * E.rows;
-  spawnSeparationStamp.reset(gridSize);
-  spawnReservationStamp.reset(gridSize);
+  for (int layer = 0; layer < 2; layer++) {
+    spawnSeparationStamp[layer].reset(gridSize);
+    spawnReservationStamp[layer].reset(gridSize);
+  }
   std::unordered_set<Body*> newbornSet;
   newbornSet.reserve(newborns.size() * 2);
   for (Body* body : newborns) {
     if (!body) continue;
     newbornSet.insert(body);
-    auto addMember = [&](Body* member) {
+    auto addMember = [&](Body* member, int layer) {
       ensureBodyRaster(member);
       for (const BodyRasterCell& cell : member->rasterFootprint)
-        spawnSeparationStamp.add(cell.y * E.cols + cell.x);
+        spawnSeparationStamp[layer].add(cell.y * E.cols + cell.x);
     };
-    addMember(body);
+    addMember(body, 0);
     if (body->jointRole == 1 && body->jointPeer)
-      addMember(body->jointPeer);
+      addMember(body->jointPeer, 1);
   }
 
   struct ExistingBody { Body* body; int layer; };
@@ -1600,54 +1602,42 @@ void RigidBodySystem::resolveSpawnedJointOverlaps(
   for (Body* body : E.bg.bodies)
     if (body->jointRole == 0) existing.push_back({body, 1});
 
-  auto ownsCell = [](const ExistingBody& entry, int layer, int owner) {
-    if (owner < 0) return false;
-    if (entry.body->jointRole == 1) return owner == entry.body->id;
-    return entry.layer == layer && owner == entry.body->id;
-  };
+  // A joint shares its pose across layers, but each material footprint only
+  // collides with occupants of that same layer.
+  struct SpawnCell { int x, y, layer; };
   auto candidateClear = [&](const ExistingBody& entry,
-                            const std::vector<std::pair<int, int>>& footprint,
+                            const std::vector<SpawnCell>& footprint,
                             int dx, int dy) {
-    Body* body = entry.body;
-    for (const auto& cell : footprint) {
-      int x = cell.first + dx, y = cell.second + dy;
+    for (const SpawnCell& cell : footprint) {
+      int x = cell.x + dx, y = cell.y + dy;
       if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
       int k = y * E.cols + x;
-      if (spawnSeparationStamp.has(k) || spawnReservationStamp.has(k))
+      if (spawnSeparationStamp[cell.layer].has(k)
+          || spawnReservationStamp[cell.layer].has(k))
         return false;
-      int fgOwner = E.fg.bodyOwner[k];
-      int bgOwner = E.bg.bodyOwner[k];
-      if ((fgOwner >= 0 && !ownsCell(entry, 0, fgOwner))
-          || (bgOwner >= 0 && !ownsCell(entry, 1, bgOwner)))
-        return false;
-      auto layerClear = [&](Layer& layer, int layerIndex) {
-        int owner = layer.bodyOwner[k];
-        return ownsCell(entry, layerIndex, owner)
-          || (owner < 0 && layer.grid[k] == EMPTY);
-      };
-      if (!layerClear(entry.layer ? E.bg : E.fg, entry.layer)) return false;
-      if (body->jointRole == 1
-          && !layerClear(entry.layer ? E.fg : E.bg, 1 - entry.layer))
-        return false;
+      Layer& layer = cell.layer ? E.bg : E.fg;
+      int owner = layer.bodyOwner[k];
+      if (owner != entry.body->id
+          && (owner >= 0 || layer.grid[k] != EMPTY)) return false;
     }
     return true;
   };
 
   for (const ExistingBody& entry : existing) {
     Body* body = entry.body;
-    std::vector<std::pair<int, int>> footprint;
+    std::vector<SpawnCell> footprint;
     int overlap = 0;
-    auto addMember = [&](Body* member) {
+    auto addMember = [&](Body* member, int layer) {
       ensureBodyRaster(member);
       footprint.reserve(footprint.size() + member->rasterFootprint.size());
       for (const BodyRasterCell& cell : member->rasterFootprint) {
-        footprint.push_back({cell.x, cell.y});
-        overlap += spawnSeparationStamp.has(cell.y * E.cols + cell.x);
+        footprint.push_back({cell.x, cell.y, layer});
+        overlap += spawnSeparationStamp[layer].has(cell.y * E.cols + cell.x);
       }
     };
-    addMember(body);
+    addMember(body, entry.layer);
     if (body->jointRole == 1 && body->jointPeer)
-      addMember(body->jointPeer);
+      addMember(body->jointPeer, 1);
     if (overlap <= R_STRUCTURE_RASTER_ALIAS_CELLS) continue;
 
     int bestDx = 0, bestDy = 0;
@@ -1732,12 +1722,10 @@ void RigidBodySystem::resolveSpawnedJointOverlaps(
     rigidSpawnSeparations++;
     rigidSpawnMaxSeparation = std::fmax(
       rigidSpawnMaxSeparation, std::hypot(bestDx, bestDy));
-    for (const auto& cell : footprint) {
-      int k = (cell.second + bestDy) * E.cols + cell.first + bestDx;
-      spawnReservationStamp.add(k);
-      E.markLayerSimCell(entry.layer ? &E.bg : &E.fg, k);
-      if (body->jointRole == 1)
-        E.markLayerSimCell(entry.layer ? &E.fg : &E.bg, k);
+    for (const SpawnCell& cell : footprint) {
+      int k = (cell.y + bestDy) * E.cols + cell.x + bestDx;
+      spawnReservationStamp[cell.layer].add(k);
+      E.markLayerSimCell(cell.layer ? &E.bg : &E.fg, k);
     }
   }
 }

@@ -109,7 +109,7 @@ class RigidBodySystem {
   StampSet splitMemberStamp;
   std::vector<int> splitBodyStack;
   StampSet splitWasBodyStamp, splitClaimedStamp;
-  StampSet spawnSeparationStamp, spawnReservationStamp;
+  std::array<StampSet, 2> spawnSeparationStamp, spawnReservationStamp;
   // Per-contact body-cell erosion probabilities.
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
   static constexpr double RIGID_FIRE_ERODE_P = 0.055;

@@ -269,6 +269,9 @@ independent local centers of mass, and a piece that survives in only one layer
 becomes an ordinary body there.
 This joint is assigned only when one structural detachment creates both halves;
 ordinary bodies never acquire a cross-layer joint through contact or overlap.
+Spawn separation checks newborn occupancy, candidate clearance, and reserved
+cells independently in each layer. Projected overlap between opposite-layer
+material footprints does not move an existing body.
 
 When a component-backed body sleeps on terrain or powder, its current raster is
 registered as isolated material components and the body is deleted. Every

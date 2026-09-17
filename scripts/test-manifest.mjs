@@ -105,6 +105,7 @@ export const UNIT_SUITES = [
   ['rigid-window-edge', 'rigid-window-edge-test.mjs'],
   ['tnt-rigid-bake', 'tnt-rigid-bake-stress-test.mjs', exclusive(120_000)],
   ['rigid-placement-weld', 'rigid-placement-weld-test.mjs'],
+  ['rigid-spawn-layer', 'rigid-spawn-layer-test.mjs'],
   ['rigid-shape-stress', 'rigid-shape-stress-test.mjs', exclusive(180_000)],
   ['rigid-sliver', 'rigid-sliver-test.mjs'],
   ['floating-body', 'floating-body-repro.mjs'],

@@ -1,5 +1,8 @@
 # Frost giant animation source
 
+See the [general sprite guide](../README.md) for shared authoring guidance;
+this larger source set is a creature-specific exception to the compact budget.
+
 The game renders full, palette-indexed sprite frames. There is no runtime limb
 rig. `animation-sheet.png` is the approved ImageGen character sheet: idle,
 walk, ice breath, ground smash, ice spear, hurt, and death, with eight poses

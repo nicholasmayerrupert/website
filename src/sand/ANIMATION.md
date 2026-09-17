@@ -1,5 +1,8 @@
 # Creature animation
 
+For generation budgets, pose design and visual review, read the
+[sprite authoring guide](art/README.md). This document describes runtime playback.
+
 `cpp/engine/creature_animation.hpp` owns creature presentation playback. The
 simulation supplies motion, life state, attack stage, attack identity and attack
 progress. `GLPresenter` adapts native creatures and replicated snapshots into
@@ -11,6 +14,7 @@ Each creature has a local clip clock. Entering a clip starts at its first pose;
 repeated renders at one actor tick cannot advance it. Rewinding the actor clock
 or returning after a long absence resets playback. Walking and swimming advance
 proportionally to velocity relative to the species' nominal movement speed.
+Swimming uses both velocity axes and a half-speed minimum cadence for treading water.
 Flying uses elapsed time so a hovering creature keeps flapping. A shared speed
 filter with separate start and stop thresholds suppresses brief collision
 velocity pulses. These clocks are presentation state, not checkpoint state;
@@ -29,7 +33,7 @@ separate weapon/projectile effects remain presentation effects.
 `content/creatureAnimations.js` maps each attack's windup, release and recovery
 to a named clip and explicit frame range. Unspecified attacks use the complete
 standard clips. The compiler validates and packs the ranges in content wire
-version 11. The viewer reads that same mapping; it does not infer frost attack
+version 12. The viewer reads that same mapping; it does not infer frost attack
 segments from frame counts. Additional attack poses can be imported and mapped
 without adding species branches to the controller or renderer.
 
@@ -83,4 +87,29 @@ forward torso, and a trailing cape share the equipment pose. The renderer anchor
 the reach/catch/pull/recovery arm stroke to that torso; a free hand can paddle
 while the other carries a sword or wand. Two-handed equipment retains its grip.
 The player workbench fills with water when selecting Swim. Aquatic creatures use
-their existing movement clips; land creatures retain their escape/wading poses.
+their existing movement clips. Amphibious creatures have a separate three-frame
+`swim` clip selected by the simulation's replicated `swimming` flag. Fluid
+coverage uses a small presentation hysteresis around the species threshold;
+shallow wading retains ground animation. Attacks, hurt and death retain priority
+and use their existing poses. Flying and stationary creatures need no swim art.
+
+## Creature swimming art
+
+`art/creatures/swim/manifest.json` registers the 25 generated strips, native
+registration offsets and individual visual-review notes. Every strip uses three
+distinct propulsion stages: reach, pull and recovery, or an extended/tucked/
+opposite kick for equipped knights. Sources, reference images and exact prompts
+are retained beside the manifest.
+
+Run `node scripts/import-creature-swim.mjs` to rebuild all swimming clips, or
+pass creature keys to rebuild a subset. The importer uses the existing palette
+and pixel scale, removes the magenta background and registers whole silhouettes.
+It pads canvases when an extended stroke needs room, preserving the center/bottom
+anchor and every existing land/combat pixel. The complete authoring script and
+compact creature importer also reapply registered swimming art.
+
+`/game?creature=VILLAGE_GUARD&swim` opens the water workbench. Water depth and
+Forward/Rise/Tread controls exercise the same renderer and snapshot path as the
+game. Run `node scripts/run-tests.mjs --only creature-swim,creature-swim-e2e`
+for submerged-physics, state-transfer, dry-transition and all-roster rendering
+checks. The browser suite saves a three-pose water strip for every swimmer.

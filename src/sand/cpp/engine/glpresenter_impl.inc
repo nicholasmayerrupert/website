@@ -2165,7 +2165,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     double attackProgress,
                     double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtAge, double shelterCharge, float light,
-                    int camCol, int camRow, int npcId, bool stunned, double vx, int actorId, double vy) {
+                    int camCol, int camRow, int npcId, bool stunned, double vx, int actorId, double vy, bool swimming) {
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
   const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
@@ -2450,15 +2450,15 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   animation.hurtAge = hurtAge; animation.stunned = stunned; animation.rescuing = rescueProgress > 0;
   animation.vx = vx; animation.vy = vy;
   animation.motion = speciesDef.locomotion == CL_FLYING ? CreatureAnimationController::FLY
-    : speciesDef.locomotion == CL_AQUATIC ? CreatureAnimationController::SWIM
+    : swimming ? CreatureAnimationController::SWIM
     : speciesDef.locomotion == CL_STATIONARY ? CreatureAnimationController::STILL : CreatureAnimationController::GROUND;
-  animation.referenceSpeed = speciesDef.locomotion == CL_AQUATIC ? speciesDef.swimSpeed : speciesDef.walkSpeed;
+  animation.referenceSpeed = swimming ? speciesDef.swimSpeed : speciesDef.walkSpeed;
   animation.stage = attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK
     : attackState == CAS_RECOVERING ? CC_RECOVER : CC_IDLE;
   animation.pattern = attackPattern;
   animation.progress = attackState == CAS_FIRING ? 1 - attackProgress : attackProgress;
   int frame = creatureAnimation.sample(art, animation).frame;
-  if (alive && CREATURE_SPECIES[speciesId].locomotion == CL_AMPHIBIOUS) {
+  if (alive && !swimming && CREATURE_SPECIES[speciesId].locomotion == CL_AMPHIBIOUS) {
     double shadowY = (py - camRow + CREATURE_SPECIES[speciesId].h) * cell + glOffY - 0.16 * cell;
     double shadowW = humanNpc ? 5.0 : 7.0;
     glUniform4f(glc->uColor, 8/255.f * light, 10/255.f * light, 14/255.f * light, 0.24f);
@@ -2715,7 +2715,7 @@ void GLPresenter::glDrawCreatures() {
                         (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
                         c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], glActorHurtAge(SA_CREATURE, (int)c[CSN_ID], (int)c[CSN_HEALTH], c[CSN_ALIVE] > .5f), c[CSN_SHELTER_CHARGE],
-                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID], ((int)c[CSN_STATUS_VISUALS] & SV_SHOCK) && ((int)c[CSN_STATUS_CONTROLS] & SC_ROOT), c[CSN_VX], (int)c[CSN_ID], c[CSN_VY]);
+                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID], ((int)c[CSN_STATUS_VISUALS] & SV_SHOCK) && ((int)c[CSN_STATUS_CONTROLS] & SC_ROOT), c[CSN_VX], (int)c[CSN_ID], c[CSN_VY], c[CSN_SWIMMING] > .5f);
       if (c[CSN_ALIVE] && !c[CSN_SPAWN_PROGRESS]) glDrawStatusEffects((int)c[CSN_STATUS_VISUALS], c[CSN_X], c[CSN_Y], c[CSN_W], c[CSN_H], c[CSN_ID] * .37, (int)c[CSN_SPECIES]);
     }
   } else {
@@ -2728,7 +2728,7 @@ void GLPresenter::glDrawCreatures() {
                         c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
                         c.spawnProgress, c.rescueProgress, glActorHurtAge(SA_CREATURE, c.id, c.health, c.alive), c.shelterCharge,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
-                        camCol, camRow, c.npcId, (c.effects.visuals & SV_SHOCK) && (c.effects.controls & SC_ROOT), c.vx, c.id, c.vy);
+                        camCol, camRow, c.npcId, (c.effects.visuals & SV_SHOCK) && (c.effects.controls & SC_ROOT), c.vx, c.id, c.vy, c.swimming);
       if (c.alive) glDrawStatusEffects(c.effects.visuals, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h, c.id * .37, c.species);
     }
     for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {

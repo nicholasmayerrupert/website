@@ -11,7 +11,7 @@ import { gearPixels } from './gearArt.js';
 import materialArt from './materialArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 11;
+export const CONTENT_WIRE_VERSION = 12;
 export const SITE_SURFACE_BASE = -100001;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
@@ -252,7 +252,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     const clipRecords = [], pixels = [];
     let frameOffset = 0;
     for (const state of CREATURE_CLIPS) {
-      const clip = art.clips?.[state] || art.clips?.idle || { frames: art.frames, ticks: 9 };
+      const clip = art.clips?.[state] || (state === 'swim' ? art.clips?.move : null) || art.clips?.idle || { frames: art.frames, ticks: 9 };
       if (!Array.isArray(clip.frames) || clip.frames.length < 1 || clip.frames.length > MAX_CLIP_FRAMES)
         fail(`${key}.${state}`, 'expected 1…32 frames');
       const durations = clip.durations || clip.frames.map(() => clip.ticks);

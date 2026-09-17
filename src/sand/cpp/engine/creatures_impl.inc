@@ -1025,6 +1025,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
   }
   applyStatusMovement(c, s);
   double wet = fluidCoverage(c.wx, c.wy, s.w, s.h);
+  c.swimming = wet >= s.fluidThreshold + (c.swimming ? -.04 : .04);
   double tx = 0, ty = 0; bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (wet >= s.fluidThreshold) {
     if (c.habitatScanCooldown > 0) c.habitatScanCooldown--;
@@ -1688,7 +1689,8 @@ void CreatureSystem::updateCreatures() {
     bool sleeping = E.beds.rest(c);
     if (sleeping) continue;
     if (species(c).locomotion == CL_AQUATIC) {
-      if (fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold) {
+      c.swimming = fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold;
+      if (c.swimming) {
         c.hasHabitatGoal = false;
         c.habitatScanCooldown = 0;
         c.grounded = false;

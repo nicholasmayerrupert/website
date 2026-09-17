@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 60;
+static const int ABI_VERSION = 61;
 
-static const uint64_t ABI_FINGERPRINT = 0x493a91d17b85ULL;
+static const uint64_t ABI_FINGERPRINT = 0xc2458b90449eULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals, coyoteTicks, jumpBufferTicks, jumpActive
 enum PlayerSnapshotField : int {
@@ -285,7 +285,7 @@ inline void writeItemSnapshot(float* out, const Record& record) {
   out[IS_DEFINITION_ID] = static_cast<float>(record.definitionId);
 }
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge, npcId, statusVisuals, statusControls
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern, rescueProgress, hurtCooldown, shelterCharge, npcId, statusVisuals, statusControls, swimming
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -312,8 +312,9 @@ enum CreatureSnapshotField : int {
   CSN_NPC_ID = 22,
   CSN_STATUS_VISUALS = 23,
   CSN_STATUS_CONTROLS = 24,
+  CSN_SWIMMING = 25,
 };
-static const int CSN_STRIDE = 25;
+static const int CSN_STRIDE = 26;
 
 struct WriteCreatureSnapshotX {
   float value;
@@ -386,6 +387,7 @@ inline void writeCreatureSnapshot(float* out, const Record& record, const WriteC
   out[CSN_NPC_ID] = static_cast<float>(record.npcId);
   out[CSN_STATUS_VISUALS] = static_cast<float>(record.effects.visuals);
   out[CSN_STATUS_CONTROLS] = static_cast<float>(record.effects.controls);
+  out[CSN_SWIMMING] = (record.swimming ? 1.0f : 0.0f);
 }
 
 struct WriteCreatureTelegraphSnapshotX {
@@ -453,6 +455,7 @@ inline void writeCreatureTelegraphSnapshot(float* out, const Record& record, con
   out[CSN_NPC_ID] = static_cast<float>(0);
   out[CSN_STATUS_VISUALS] = static_cast<float>(0);
   out[CSN_STATUS_CONTROLS] = static_cast<float>(0);
+  out[CSN_SWIMMING] = (false ? 1.0f : 0.0f);
 }
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected, pool, definitionId, wandSpellSlots, wandUpgradeSlots, wandManaCost, wandNextSpell, wandSpell0, wandSpell1, wandSpell2, wandSpell3, wandSpell4, wandUpgrade0, wandUpgrade1, wandUpgrade2, wandUpgrade3, wandLink0, wandLink1, wandLink2, wandLink3

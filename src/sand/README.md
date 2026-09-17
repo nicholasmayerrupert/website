@@ -132,6 +132,8 @@ for the material-art authoring loop.
 The WebGL presenter reads this data; character pixels are not embedded in C++.
 Creature clip selection, local playback and attack mappings are described in
 [ANIMATION.md](ANIMATION.md).
+Before generating or editing character sprites, read the
+[sprite authoring guide](art/README.md) for pose/frame budgets and visual review.
 
 `react/SandCampaign.jsx` presents the journal, tracked destination, pause menu,
 and maintenance dialogue. `J` opens the journal; `T` talks to nearby residents.

@@ -3,7 +3,7 @@ import creatureArt from '../content/creatureArt.js';
 import { ATTACK_NAMES, CREATURE_ROSTER, PREVIEW_MODES, createCreatureViewer, previewClip, drawCreatureFrame } from './creatureViewerRuntime.js';
 import './creatureViewer.css';
 
-const LABELS = { idle: 'Idle', move: 'Walk / move', windup: 'Windup', attack: 'Attack', recover: 'Recovery', hurt: 'Hurt', death: 'Death', special: 'Special', simulation: 'Live encounter' };
+const LABELS = { idle: 'Idle', move: 'Walk / move', swim: 'Swim', windup: 'Windup', attack: 'Attack', recover: 'Recovery', hurt: 'Hurt', death: 'Death', special: 'Special', simulation: 'Live encounter' };
 function FrameStrip({ creature, mode, pattern, facing, frame, onSelect }) {
   const ref = useRef(null), art = creatureArt[creature];
   const clip = useMemo(() => previewClip(creature, mode, pattern), [creature, mode, pattern]);
@@ -27,7 +27,7 @@ export default function CreatureViewer() {
     let cancelled = false, timer;
     const requested = new URLSearchParams(location.search).get('creature')?.toUpperCase();
     const creature = CREATURE_ROSTER.some(d => d.key === requested) ? requested : 'FROST_GIANT';
-    createCreatureViewer(game.current, source.current, { creature }).then(api => {
+    createCreatureViewer(game.current, source.current, { creature, ...(new URLSearchParams(location.search).has('swim')?{mode:'swim',water:'deep'}:{}) }).then(api => {
       if (cancelled) { api.dispose(); return; }
       runtime.current = api; window.__creatureViewer = api; setState(api.inspect());
       timer = setInterval(() => setState(api.inspect()), 100);
@@ -56,7 +56,9 @@ export default function CreatureViewer() {
       <label>Creature<select aria-label="Creature" value={creature} disabled={!state} onChange={e => change({ creature: e.target.value, pattern: 0 })}>{CREATURE_ROSTER.map(d => <option value={d.key} key={d.key}>{d.name}</option>)}</select></label>
       <label>Attack pattern<select aria-label="Attack pattern" value={state?.pattern || 0} disabled={!state} onChange={e => change({ pattern: Number(e.target.value) })}>{(ATTACK_NAMES[creature] || ['Pattern 1', 'Pattern 2', 'Pattern 3']).map((name, i) => <option value={i} key={i}>{name}</option>)}</select></label>
       <label>Facing<select aria-label="Facing" value={state?.facing || 1} disabled={!state} onChange={e => change({ facing: Number(e.target.value) })}><option value="1">Right</option><option value="-1">Left</option></select></label>
-      <label className="creature-viewer-check"><input type="checkbox" checked={state?.travel ?? true} disabled={!state} onChange={e => change({ travel: e.target.checked })} />Move across ground</label>
+      <label className="creature-viewer-check"><input type="checkbox" checked={state?.travel ?? true} disabled={!state} onChange={e => change({ travel: e.target.checked })} />Travel through scene</label>
+      <label>Water<select aria-label="Water" value={state?.water || 'dry'} disabled={!state} onChange={e=>change({water:e.target.value})}><option value="dry">Dry ground</option><option value="shallow">Shallow water</option><option value="deep">Deep water</option></select></label>
+      <label>Swim motion<select aria-label="Swim motion" value={state?.swimMotion || 'horizontal'} disabled={!state || state.water!=='deep'} onChange={e=>change({swimMotion:e.target.value})}><option value="horizontal">Forward</option><option value="rise">Straight upward</option><option value="still">Tread water</option></select></label>
     </div>
     <nav aria-label="Animation">{PREVIEW_MODES.map(mode => <button key={mode} disabled={!state} aria-pressed={state?.mode === mode} onClick={() => change({ mode })}>{LABELS[mode]}</button>)}</nav>
     <div className="creature-viewer-stage">
@@ -72,7 +74,7 @@ export default function CreatureViewer() {
       <label>Speed<select aria-label="Playback speed" value={state?.speed || 1} disabled={!state} onChange={e => action(api => api.setSpeed(Number(e.target.value)))}><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option></select></label>
       <output aria-label="Playback status">{state ? `Tick ${state.tick} · ${state.mode === 'simulation' ? 'simulation' : `frame ${state.frame + 1} / ${state.frames}`}` : 'Loading…'}</output>
     </div>
-    <p className="creature-viewer-note">{sourceOnly ? 'Special is shown as source artwork; its in-game trigger varies by creature. Use Live encounter to see the actual behavior.' : state?.mode === 'simulation' ? 'Live encounter runs the real AI, attacks, projectiles and terrain. Restarts every four seconds. Some creatures do not attack.' : 'Controlled poses use the game renderer with AI paused. Move across ground reveals foot sliding; turn it off to study the cycle in place.'}</p>
+    <p className="creature-viewer-note">{sourceOnly ? 'Special is shown as source artwork; its in-game trigger varies by creature. Use Live encounter to see the actual behavior.' : state?.mode === 'simulation' ? 'Live encounter runs the real AI, attacks, projectiles and terrain. Restarts every four seconds. Some creatures do not attack.' : 'Controlled poses use the game renderer with AI paused. Travel reveals sliding; turn it off to study the cycle in place. Water and swim motion controls compare paddling, rising, and treading water.'}</p>
     {state && state.mode !== 'simulation' && <>
       <div className="creature-viewer-frame-header"><h2>Source frames</h2><span>{art.width} × {art.height} · {state.frames} poses</span></div>
       <label className="creature-viewer-scrubber">Frame<input aria-label="Animation frame" type="range" min="0" max={state.frames - 1} value={state.frame} onChange={e => action(api => api.seekFrame(Number(e.target.value)))} /><span>{state.frame + 1}</span></label>

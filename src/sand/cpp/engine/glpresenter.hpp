@@ -174,7 +174,7 @@ class GLPresenter {
                          double attackProgress,
                          double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtAge, double shelterCharge, float light,
-                         int camCol, int camRow, int npcId = 0, bool stunned = false, double vx = 0, int actorId = 0, double vy = 0);
+                         int camCol, int camRow, int npcId = 0, bool stunned = false, double vx = 0, int actorId = 0, double vy = 0, bool swimming = false);
   void glDrawCreatures();
   void glDrawStatusEffects(int visuals, double x, double y, double w, double h, double phase, int species = -1);
   void glDrawPreview();

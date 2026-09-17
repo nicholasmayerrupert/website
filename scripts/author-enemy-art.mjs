@@ -282,5 +282,6 @@ for(const [key,width,height,palette,draw] of chosen) {
   }
   art[key]=record;
 }
+await (await import('./import-creature-swim.mjs')).importRegisteredSwim(art);
 writeFileSync(output, '// Editable native-resolution creature clips.\nexport default '+JSON.stringify(art,null,2)+';\n');
-console.log(`Authored ${chosen.length} species with eight animation clips each.`);
+console.log(`Authored ${chosen.length} species with registered animation clips.`);

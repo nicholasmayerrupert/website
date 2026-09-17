@@ -1,0 +1,604 @@
+{
+  "layout": {
+    "columns": 3,
+    "rows": 1
+  },
+  "creatures": [
+    {
+      "key": "FOX",
+      "name": "Ember fox",
+      "frames": 3,
+      "file": "fox-3.png",
+      "reference": "references/fox.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Downward forepaw pull separates the two extended paddles; muzzle and tail remain steady."
+      },
+      "size": 1,
+      "ticks": 10
+    },
+    {
+      "key": "HARE",
+      "name": "hare",
+      "frames": 3,
+      "file": "hare-3.png",
+      "reference": "references/hare.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Long reach, gathered legs/downward paws, then trailing kick; horizontal head registration corrected."
+      },
+      "size": 1.28,
+      "ticks": 10,
+      "offsets": [
+        [
+          -3,
+          0
+        ],
+        [
+          5,
+          0
+        ],
+        [
+          -2,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "CRAWLER",
+      "name": "Mossback crawler",
+      "frames": 3,
+      "file": "crawler-3.png",
+      "reference": "references/crawler.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Legs spread, pull beneath shell, then recover; shell and eyes retain their shape."
+      },
+      "size": 1.12,
+      "ticks": 10
+    },
+    {
+      "key": "MOLE",
+      "name": "mole",
+      "frames": 3,
+      "file": "mole-3.png",
+      "reference": "references/mole.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Broad claws reach, sweep down, and tuck; extended claw fits the padded canvas."
+      },
+      "size": 1.15,
+      "ticks": 10
+    },
+    {
+      "key": "DYNAMITEER",
+      "name": "Briar goblin",
+      "frames": 3,
+      "file": "dynamiteer-3.png",
+      "reference": "references/dynamiteer.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Free hand reaches, pulls down and recovers while the knife remains readable."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "BORE_SENTINEL",
+      "name": "Hollow knight",
+      "frames": 3,
+      "file": "bore_sentinel-3.png",
+      "reference": "references/bore_sentinel.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Extended scissor kick, compact knee tuck and opposite kick; helmet registration corrected."
+      },
+      "size": 1.18,
+      "ticks": 10,
+      "offsets": [
+        [
+          -3,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "CAUSTIC_MORTARMAN",
+      "name": "Fen witch",
+      "frames": 3,
+      "file": "caustic_mortarman-3.png",
+      "reference": "references/caustic_mortarman.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Staff stays readable while the free arm reaches, pulls down and folds in; hat/head aligned."
+      },
+      "size": 1.25,
+      "ticks": 10,
+      "offsets": [
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "MINIGUNNER",
+      "name": "Oathless archer",
+      "frames": 3,
+      "file": "minigunner-3.png",
+      "reference": "references/minigunner.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "One-arm paddle with visible low pull and tucked recovery; bow and hood retained."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -2,
+          0
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "SURVEYOR",
+      "name": "surveyor",
+      "frames": 3,
+      "file": "surveyor-3.png",
+      "reference": "references/surveyor.png",
+      "width": 60,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Long reach, downward arm pull and tucked recovery; face stays registered."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "QUARRY_FOREMAN",
+      "name": "The Stonebound",
+      "frames": 3,
+      "file": "quarry_foreman-3.png",
+      "reference": "references/quarry_foreman.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Both fists reach, drop below the chest and recover; rocky silhouette remains readable in water."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -2,
+          0
+        ],
+        [
+          -3,
+          0
+        ],
+        [
+          5,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "REACTOR_WARDEN",
+      "name": "Ashen Sentinel",
+      "frames": 3,
+      "file": "reactor_warden-3.png",
+      "reference": "references/reactor_warden.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Clear extended/tucked/opposite kicks with shield forward; helmet alignment corrected."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -6,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "VILLAGER",
+      "name": "villager",
+      "frames": 3,
+      "file": "villager-3.png",
+      "reference": "references/villager.png",
+      "width": 60,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Both arms reach, pull down and tuck; scarf trails behind without replacing the stroke."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "THORNBOUND_HART",
+      "name": "Thornbound Hart",
+      "frames": 3,
+      "file": "thornbound_hart-3.png",
+      "reference": "references/thornbound_hart.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Alternating extended and gathered leg paddles; antlers and muzzle aligned."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -6,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "MIRE_MATRON",
+      "name": "Mire Matron",
+      "frames": 3,
+      "file": "mire_matron-3.png",
+      "reference": "references/mire_matron.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Wide tendril reach, downward pull and gathered recovery; complete tendrils fit the canvas."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -3,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "CINDER_CASTELLAN",
+      "name": "Cinder Castellan",
+      "frames": 3,
+      "file": "cinder_castellan-3.png",
+      "reference": "references/cinder_castellan.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Extended/tucked/opposite kicks, with hammer retained and helmet aligned."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -5,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "HOLLOW_BELLKEEPER",
+      "name": "Hollow Bellkeeper",
+      "frames": 3,
+      "file": "hollow_bellkeeper-3.png",
+      "reference": "references/hollow_bellkeeper.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Free-arm reach, low pull and hand-to-chest recovery; staff retained and helmet registered."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -3,
+          0
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          5,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "BRIAR_WOLF",
+      "name": "Briar wolf",
+      "frames": 3,
+      "file": "briar_wolf-3.png",
+      "reference": "references/briar_wolf.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Forward paw reach, low paddle and recovery with trailing hind legs; muzzle stays steady."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "BONE_GUARD",
+      "name": "Bone guard",
+      "frames": 3,
+      "file": "bone_guard-3.png",
+      "reference": "references/bone_guard.png",
+      "width": 72,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Long bone-leg kicks alternate through a compact tuck; skull aligned and equipment readable."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -2,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "ROOT_KNIGHT",
+      "name": "Root Knight",
+      "frames": 3,
+      "file": "root_knight-3.png",
+      "reference": "references/root_knight.png",
+      "width": 108,
+      "height": 108,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Scissor kicks separated by a compact tuck; horned helmet aligned."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -4,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "FROST_GIANT",
+      "name": "Frost giant",
+      "frames": 3,
+      "file": "frost_giant-3.png",
+      "reference": "references/frost_giant.png",
+      "width": 80,
+      "height": 88,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Long two-arm reach, deep downward pull and tightly tucked recovery; hands fit fully without clipping."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "MUMMY",
+      "name": "mummy",
+      "frames": 3,
+      "file": "mummy-3.png",
+      "reference": "references/mummy.png",
+      "width": 84,
+      "height": 96,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Long reach, low two-arm pull and tucked knees/hands; head and wrapping silhouette remain readable."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "LAVA_TOAD",
+      "name": "lava toad",
+      "frames": 3,
+      "file": "lava_toad-3.png",
+      "reference": "references/lava_toad.png",
+      "width": 102,
+      "height": 78,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Full hind-leg extension, wide gathered kick and compact tuck; orange eyes remain stable."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "VILLAGE_GUARD",
+      "name": "village guard",
+      "frames": 3,
+      "file": "village_guard-3.png",
+      "reference": "references/village_guard.png",
+      "width": 78,
+      "height": 84,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Opposite long kicks separated by both knees tucked; head registration corrected."
+      },
+      "size": 1.2,
+      "ticks": 10,
+      "offsets": [
+        [
+          -2,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          -3,
+          0
+        ]
+      ]
+    },
+    {
+      "key": "VILLAGE_HUNTER",
+      "name": "village hunter",
+      "frames": 3,
+      "file": "village_hunter-3-v2.png",
+      "reference": "references/village_hunter.png",
+      "width": 84,
+      "height": 84,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Regenerated to expose a long forward free arm, a vertical downward pull and a tucked recovery."
+      },
+      "size": 1.2,
+      "ticks": 10
+    },
+    {
+      "key": "BONE_DINOSAUR",
+      "name": "Cinderjaw Dragon",
+      "frames": 3,
+      "file": "bone_dinosaur-3.png",
+      "reference": "references/bone_dinosaur.png",
+      "width": 84,
+      "height": 56,
+      "review": {
+        "native": "reviewed",
+        "inWater": "reviewed",
+        "notes": "Foreclaws reach, pull down and tuck while hind legs extend/gather; skull, ribs and wings stay stable."
+      },
+      "size": 1.2,
+      "ticks": 10
+    }
+  ]
+}

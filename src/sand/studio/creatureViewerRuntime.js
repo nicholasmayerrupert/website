@@ -8,7 +8,7 @@ import { BESTIARY } from '../content/bestiary.js';
 export const CREATURE_ROSTER = schema.enums.CreatureSpecies.descriptors.map(def => ({
   ...def, key: def.key.replace('CREATURE_', ''), name: BESTIARY[def.id]?.name || def.name,
 }));
-export const PREVIEW_MODES = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special', 'simulation'];
+export const PREVIEW_MODES = ['idle', 'move', 'swim', 'windup', 'attack', 'recover', 'hurt', 'death', 'special', 'simulation'];
 export const ATTACK_NAMES = Object.fromEntries(Object.entries(CREATURE_ATTACK_ANIMATIONS).map(([key, attacks]) => [key, attacks.map(a => a.name)]));
 export function previewClip(key, mode, pattern = 0) {
   return creaturePreviewClip(key, creatureArt[key], mode === 'simulation' ? 'idle' : mode, pattern);
@@ -32,7 +32,7 @@ export function drawCreatureFrame(ctx, key, frame, x, y, scale, facing = 1) {
 
 export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
   await initSandWasm();
-  let config = { creature: 'FROST_GIANT', mode: 'move', pattern: 0, facing: 1, travel: true, ...initial };
+  let config = { creature: 'FROST_GIANT', mode: 'move', pattern: 0, facing: 1, travel: true, water: 'dry', swimMotion: 'horizontal', ...initial };
   let engine, initialSnapshot, tick = 0, paused = false, speed = 1, accumulator = 0, last = 0, raf = 0, disposed = false;
   let definition, art, clip, actorId, startX, startY;
   const ground = 108, o = OFF.creatureSnapshot, ctx = sourceCanvas.getContext('2d');
@@ -51,10 +51,17 @@ export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
     engine.syncActorTick(tick);
     const duration = clipDuration(clip), phase = (tick % duration) / duration;
     const values = { facing: config.facing, vx: 0, animFrame: 0, attackState: A.IDLE, attackProgress: 0, attackPattern: config.pattern };
-    if (config.mode === 'move') {
-      values.vx = config.facing * (definition.stats.walkSpeed || definition.stats.swimSpeed || .15);
+    values.swimming = definition.stats.locomotion === 'CL_AQUATIC' || (config.water === 'deep' && definition.stats.locomotion === 'CL_AMPHIBIOUS');
+    if (config.mode === 'move' || config.mode === 'swim') {
+      const swim = config.mode === 'swim';
+      const speed = (swim ? definition.stats.swimSpeed : definition.stats.walkSpeed) || .15;
+      values.vx = swim && config.swimMotion !== 'horizontal' ? 0 : config.facing * speed;
+      values.vy = swim && config.swimMotion === 'rise' ? -speed : 0;
       values.animFrame = 1;
-      if (config.travel) values.x = startX + config.facing * ((tick * Math.abs(values.vx)) % 42);
+      if (config.travel) {
+        values.x = startX + config.facing * ((tick * Math.abs(values.vx)) % 42);
+        if (values.vy) values.y = startY - (tick * Math.abs(values.vy)) % 10;
+      }
     }
     if (config.mode === 'windup') Object.assign(values, { attackState: A.CHARGING, attackProgress: phase });
     if (config.mode === 'attack') Object.assign(values, { attackState: A.FIRING, attackProgress: 1 - phase });
@@ -83,16 +90,19 @@ export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
     for (let x = 0; x < 224; x++) for (let y = ground; y < 144; y++)
       engine.paintDisc(x, y, 0, y === ground && x % 12 === 0 ? MAT.SANDSTONE : MAT.STONE, true);
     const aquatic = definition.stats.locomotion === 'CL_AQUATIC';
-    if (aquatic) for (let x = 0; x < 224; x++) for (let y = 72; y < ground; y++) engine.paintDisc(x, y, 0, MAT.WATER, true);
+
     if (config.mode === 'simulation' && !(config.creature === 'FROST_GIANT' && config.pattern === 1))
       for (let x = 168; x < 173; x++) for (let y = 80; y < ground; y++) engine.paintDisc(x, y, 0, MAT.STONE, true);
     engine.syncComponents();
     startX = config.facing > 0 ? 76 : 132;
-    startY = ground - definition.stats.h - (aquatic || definition.stats.locomotion === 'CL_FLYING' ? 15 : 0);
-    actorId = engine.spawnScriptedCreature(definition.id, startX, startY);
+    startY = ground - definition.stats.h - (aquatic || config.water === 'deep' || definition.stats.locomotion === 'CL_FLYING' ? 15 : 0);
+    actorId = engine.spawnScriptedCreature(definition.id, startX, ground - definition.stats.h);
     if (actorId < 0) throw new Error(`Could not spawn ${config.creature}`);
     initialSnapshot = engine.getCreatureSnapshotData().slice();
     if (initialSnapshot.length !== STRIDES.creatureSnapshot) throw new Error('Preview needs exactly one creature');
+    initialSnapshot[o.x] = startX; initialSnapshot[o.y] = startY;
+    const surface = config.water === 'shallow' ? ground - Math.max(1, Math.floor(definition.stats.h * .20)) : startY - 5;
+    if (aquatic || config.water !== 'dry') for (let x = 0; x < 224; x++) for (let y = Math.max(0,surface); y < ground; y++) engine.paintDisc(x,y,0,MAT.WATER,true);
     initialSnapshot[o.facing] = config.facing;
     initialSnapshot[o.aimX] = startX + config.facing * (config.creature === 'FROST_GIANT' && config.pattern === 1 ? 18 : 68);
     initialSnapshot[o.aimY] = ground - 7;
@@ -129,6 +139,9 @@ export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
   const api = {
     select(next) {
       const candidate = { ...config, ...next };
+      if (next.mode === 'swim') candidate.water = 'deep';
+      else if (next.mode === 'move' || next.mode === 'idle') candidate.water = 'dry';
+      if (next.water && ['move','idle','swim'].includes(candidate.mode)) candidate.mode = next.water === 'deep' ? 'swim' : 'move';
       if (!CREATURE_ROSTER.some(d => d.key === candidate.creature)) throw new Error('Unknown creature');
       if (!PREVIEW_MODES.includes(candidate.mode)) throw new Error('Unknown preview mode');
       candidate.pattern = Math.max(0, Math.min(2, Math.floor(Number(candidate.pattern) || 0)));

@@ -1,8 +1,11 @@
 # Compact creature animation sheets
 
+Read the [general sprite guide](../README.md) for pose budgets, generation and
+individual visual-review requirements. This file describes the compact layout.
+
 These ImageGen sheets supply the 33 creatures other than the frost giant and
-cinderjaw dragon. The frost giant has its own source directory and importer;
-the dragon and the player's separately aimed arms retain their existing art.
+cinderjaw dragon. Both have their own source directories and importers;
+the player uses a separate modular component pipeline.
 The engine draws complete palette-indexed sprites, with no runtime limb rig.
 
 Each sheet has four columns and three rows, read left to right:
@@ -22,8 +25,10 @@ The dedicated sheets replace the movement row during import, matching idle
 height, foot baseline, and palette. Most biped frames hold for nine ticks;
 the frost giant holds for twelve.
 
-This gives twelve unique poses per compact creature. `special` reuses the attack pose, keeping the
-engine's eight-clip contract without adding another generated drawing. Combat
+This gives twelve unique base poses per compact creature. `special` reuses the attack pose.
+The eight base clips are supplemented by a ninth `swim` clip; creatures that need
+it have three additional poses in [swim/](swim/README.md), imported automatically
+by this script. Other creatures reuse movement art for that clip. Combat
 patterns, their timing, damage, projectiles, telegraphs, and particles still
 come from the engine. Multiple attacks can share this compact anticipation /
 release / recovery sequence.

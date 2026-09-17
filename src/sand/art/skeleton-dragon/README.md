@@ -1,5 +1,7 @@
 # Approved skeleton dragon
 
+See the [general sprite guide](../README.md) for pose budgets and visual review.
+
 The user selected `../style-review/dragon-candidate-v1.png`. `locomotion.png` and
 `attacks.png` extend that design into the runtime animation set. Both sheets
 were generated with the built-in image tool; briefs are in `prompts.json` and the

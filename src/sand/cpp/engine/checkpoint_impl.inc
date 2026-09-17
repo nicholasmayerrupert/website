@@ -278,6 +278,9 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   for (const auto& chest:E.containers.chests) for (const auto& slot:chest.loot) if (!E.magic.validItem(slot)) return false;
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;
   auto restoreEffects = [&](Creature& c) {
+    const auto& species = E.creatures.species(c);
+    c.swimming = (species.locomotion == CL_AQUATIC || species.locomotion == CL_AMPHIBIOUS)
+      && E.creatures.fluidCoverage(c.wx, c.wy, species.w, species.h) >= species.fluidThreshold;
     if (!E.status.valid(c.effects)) return false;
     E.status.rebuild(c.effects);
     return true;

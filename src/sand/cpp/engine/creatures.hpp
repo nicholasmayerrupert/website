@@ -103,6 +103,7 @@ struct Creature {
   bool missionActor = false;
   alignas(8) CreatureNavigation navigation;
   StatusState effects;
+  bool swimming = false; // Derived water locomotion, also carried by presentation mirrors.
 };
 
 struct CreatureSpawnTelegraph {

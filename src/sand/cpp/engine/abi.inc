@@ -1037,6 +1037,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     const float* in = data + i * CSN_STRIDE;
     if (!abiPackedIntegerInRange(in[CSN_SPECIES], 0, CS_COUNT - 1)
         || !isCreatureSpeciesAbiValue((int)in[CSN_SPECIES])
+        || !abiPackedIntegerInRange(in[CSN_SWIMMING], 0, 1)
         || !abiPackedIntegerInRange(in[CSN_ANIM_FRAME], 0, 255)
         || !abiPackedIntegerInRange(
           in[CSN_ATTACK_STATE], CAS_IDLE, CAS_RECOVERING)
@@ -1065,6 +1066,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.npcId = (int)in[CSN_NPC_ID];
     c.effects.visuals = (int)in[CSN_STATUS_VISUALS];
     c.effects.controls = (int)in[CSN_STATUS_CONTROLS];
+    c.swimming = in[CSN_SWIMMING] != 0;
     e->creatures.creatures.push_back(c);
   }
 }

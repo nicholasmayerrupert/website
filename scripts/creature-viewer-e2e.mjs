@@ -44,6 +44,7 @@ process.exitCode = await runBrowserCases({
     await page.getByRole('button', { name: 'Special', exact: true }).click();
     check('special artwork is inspectable in source view', await page.getByLabel('Source animation preview').isVisible());
     await page.getByLabel('Creature', { exact: true }).selectOption('FROST_GIANT');
+    await page.getByLabel('Water', { exact: true }).selectOption('dry');
     await page.getByLabel('Attack pattern').selectOption('0');
     await page.getByRole('button', { name: 'Live encounter', exact: true }).click();
     const breath = await page.evaluate(async () => {

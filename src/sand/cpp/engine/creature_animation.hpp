@@ -18,7 +18,7 @@ struct ContentClip {
     return count - 1;
   }
 };
-enum CreatureClip { CC_IDLE, CC_MOVE, CC_WINDUP, CC_ATTACK, CC_RECOVER, CC_HURT, CC_DEATH, CC_SPECIAL, CC_COUNT };
+enum CreatureClip { CC_IDLE, CC_MOVE, CC_WINDUP, CC_ATTACK, CC_RECOVER, CC_HURT, CC_DEATH, CC_SPECIAL, CC_SWIM, CC_COUNT };
 struct CreatureAnimationRange {
   int clip = CC_IDLE, start = 0, count = 1;
   bool loop = false;
@@ -57,7 +57,7 @@ class CreatureAnimationController {
     if (input.motion == GROUND && std::abs(input.vy) > .06) moving = true;
     const bool reacting = input.alive && (input.hurtAge >= 0 || input.stunned);
     int clip = !input.alive ? CC_DEATH : reacting ? CC_HURT : input.rescuing ? CC_SPECIAL
-      : input.stage != CC_IDLE ? input.stage : moving ? CC_MOVE : CC_IDLE;
+      : input.stage != CC_IDLE ? input.stage : input.motion == SWIM ? CC_SWIM : moving ? CC_MOVE : CC_IDLE;
     CreatureAnimationRange range{clip, 0, art.clips[clip].count, true};
     const bool attacking = input.alive && !reacting && !input.rescuing && input.stage >= CC_WINDUP && input.stage <= CC_RECOVER;
     if (attacking) range = art.attacks[std::clamp(input.pattern, 0, 2)][input.stage - CC_WINDUP];
@@ -65,8 +65,8 @@ class CreatureAnimationController {
     else {
       // At nominal travel speed the authored frame durations apply. Slower travel
       // advances feet more slowly; wings retain their time-based flap cadence.
-      double rate = clip == CC_MOVE && input.motion != FLY
-        ? std::clamp(speed / std::max(.01, input.referenceSpeed), 0.0, 3.0) : 1.0;
+      double rate = (clip == CC_MOVE || clip == CC_SWIM) && input.motion != FLY
+        ? std::clamp(speed / std::max(.01, input.referenceSpeed), clip == CC_SWIM ? .5 : 0.0, 3.0) : 1.0;
       // Snapshot velocities are floats; nominal cadence must not drift at frame boundaries.
       if (std::abs(rate - 1) < .000001) rate = 1;
       state.phase += elapsed * rate;

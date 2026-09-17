@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 11) return false;
+  if (r.take() != 0x41535452 || r.take() != 12) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);

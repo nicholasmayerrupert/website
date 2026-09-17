@@ -62,7 +62,19 @@ int main() {
   controller.sample(art,input); input.tick = 2;
   assert(controller.sample(art,input).frame == art.clips[CC_MOVE].offset + 1);
   input = {}; input.id = 4; input.motion = CreatureAnimationController::SWIM; input.vy = .2;
-  assert(controller.sample(art,input).clip == CC_MOVE); // vertical swimming
+  assert(controller.sample(art,input).clip == CC_SWIM); // vertical swimming
+  const auto swimStart = controller.sample(art,input); input.tick = 3;
+  assert(controller.sample(art,input).frame != swimStart.frame);
+  input.vy = 0; input.tick = 9;
+  const auto tread = controller.sample(art,input); input.tick = 11;
+  assert(tread.clip == CC_SWIM && controller.sample(art,input).frame != tread.frame);
+  input.stage = CC_ATTACK; input.progress = .5;
+  assert(controller.sample(art,input).clip == CC_ATTACK); // reuse the attack in water
+  input.hurtAge = 0;
+  assert(controller.sample(art,input).clip == CC_HURT);
+  input = {}; input.id = 8; input.motion = CreatureAnimationController::SWIM;
+  controller.sample(art,input); input.tick = 6; input.motion = CreatureAnimationController::GROUND;
+  assert(controller.sample(art,input).clip == CC_IDLE); // bank transition
   input = {}; input.id = 5; input.tick = 10;
   auto idle = controller.sample(art,input);
   input.tick = 11;

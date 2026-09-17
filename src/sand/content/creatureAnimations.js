@@ -1,5 +1,5 @@
 // Attack phases reference existing clips; their ranges never depend on atlas offsets.
-export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special'];
+export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special', 'swim'];
 export const ATTACK_PHASES = ['windup', 'attack', 'recover'];
 const range = (clip, start, count, loop = false) => ({ clip, start, count, loop });
 export const CREATURE_ATTACK_ANIMATIONS = {
@@ -22,6 +22,7 @@ export function attackAnimation(key, art, pattern, phase) {
 }
 
 export function creaturePreviewClip(key, art, mode, pattern = 0) {
+  if (mode === 'swim' && !art.clips.swim) mode = 'move';
   const mapping = ATTACK_PHASES.includes(mode) ? attackAnimation(key, art, pattern, mode)
     : { clip: mode, start: 0, count: art.clips[mode].frames.length };
   const clip = art.clips[mapping.clip];

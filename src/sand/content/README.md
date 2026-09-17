@@ -21,8 +21,8 @@ keep their fixed anchors.
 
 An optional `terrain: [[x, height], ...]` profile shapes the native ground inside
 the footprint. Points are local to the site, ordered by x, and begin and end at
-height zero. Smooth interpolation between them gives Aster Junction a hillside
-over its railway bore and a gorge beneath its viaduct. This changes the real
+height zero. Smooth interpolation between them gives Oldroot Mine a hillside
+over its timber-braced galleries and a level working yard. This changes the real
 terrain in both layers, including the biome's soil, caves and vegetation.
 
 The compiler assigns placed sites a coordinate tag shared by geometry, quests,
@@ -90,12 +90,15 @@ and hearths light the rooms through the normal simulation lighting; ambient
 overrides remain zero. Hanging bulbs emit into the foreground air so their light
 reaches the room and its background walls.
 
-`scripts/author-industrial-sites.mjs` authors Aster Junction and the Cinder Works.
-The junction spans 1,150 cells: brick-lined bore, clock-tower station, iron canopy,
-steam locomotive, coal tender, goods wagon, water tower, semaphores, telegraph
-wires and four-arch viaduct. The forge combines a barrel roof, banded chimney,
-recessed furnace, pressure vessel, flywheel and crane yard. These are destructible
-material cells, with physical rails and foundations and accessible background
+`scripts/author-industrial-sites.mjs` authors Oldroot Mine and the Cinder Works.
+The mine has an oak-braced entrance, two hand-hewn galleries, a stepped incline,
+a hand-wound shaft hoist, slate-roofed sorting shelter, ore bins and stacked logs.
+Lanterns guide the route past a physical rockfall to harvestable iron, coal,
+copper and gold seams. Reopening the iron gallery unlocks Brann’s iron delivery
+and Iven’s gold errand; the near coal seam supplies Mira’s lantern. Coffers sit
+on gallery floors and in the yard. The forge combines a barrel roof, banded
+chimney, recessed furnace, pressure vessel, flywheel and crane yard. These are
+destructible material cells with grounded foundations and accessible background
 machinery. The script preserves all other sites and produces normal editable
 operations in `world.js`.
 The authoring script and studio share `scripts/game-content-format.mjs`, which

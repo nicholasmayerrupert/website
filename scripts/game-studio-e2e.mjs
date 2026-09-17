@@ -46,13 +46,13 @@ process.exitCode = await runBrowserCases({
     check('content writer rejects unknown sources', rejected === 400);
     await page.getByText('Creature artwork', { exact: true }).click();
     check('art drawer previews the complete creature roster', await page.getByRole('region', { name: 'Creature artwork' }).locator('canvas').count() === Object.keys(creatureArt).length);
-    await page.getByLabel('Jump to a scene').selectOption('railway');
-    await page.waitForFunction(scene => window.__gameStudio.inspect().scene === 'railway'
+    await page.getByLabel('Jump to a scene').selectOption('mine');
+    await page.waitForFunction(scene => window.__gameStudio.inspect().scene === 'mine'
       && Math.abs(window.__gameStudio.inspect().player.worldX - scene.at[0] - window.__sandTest.contentOffset(scene.surface).x) < 8,
-    GAME_CONTENT.scenes.find(s => s.id === 'railway'));
+    GAME_CONTENT.scenes.find(s => s.id === 'mine'));
     await page.getByRole('button', { name: 'Reset world' }).click();
-    await page.waitForFunction(() => window.__gameStudio?.inspect().scene === 'railway', null, { timeout: 60000 });
-    check('reset preserves the chosen scene', await page.getByLabel('Jump to a scene').inputValue() === 'railway');
+    await page.waitForFunction(() => window.__gameStudio?.inspect().scene === 'mine', null, { timeout: 60000 });
+    check('reset preserves the chosen scene', await page.getByLabel('Jump to a scene').inputValue() === 'mine');
     await page.evaluate(() => window.__gameStudio.load('foundry'));
     await page.waitForTimeout(500);
     // The streaming grid may rasterize the moving floor into the sub-cell foot margin.

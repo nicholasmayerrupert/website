@@ -20,7 +20,7 @@ accommodates the sprite's world size.
 - **Source pixels** and the clickable frame strip show authored pixels exactly,
   without lighting or effects. Use the frame slider or Next frame for exact
   inspection. Special always uses this view because its gameplay trigger is
-  species-specific. Attack-stage strips isolate the selected frost attack.
+  species-specific. Attack-stage strips use the same explicit clip/range mappings as the engine.
 - **Live encounter** runs actors, terrain, attacks, and projectiles for four
   seconds, then resets. Some creatures do not attack. The pattern selector
   selects an initial pattern; subsequent behavior belongs to the real AI.

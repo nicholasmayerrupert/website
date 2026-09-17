@@ -141,9 +141,6 @@ class GLPresenter {
   struct ActorReaction {
     int health = -1, hitTick = -1000, seenTick = -1;
     bool alive = false, seen = false;
-    int motionTick = -1;
-    double motionSpeed = 0;
-    bool walking = false;
   };
   std::unordered_map<int64_t, ActorReaction> glActorReactions;
   struct ActorDeform {
@@ -151,7 +148,7 @@ class GLPresenter {
     double x = 0, y = 0, scaleX = 1, scaleY = 1, shear = 0, shiftX = 0;
   } glActorDeform;
   int glActorHurtAge(int kind, int id, int health, bool alive);
-  bool glCreatureWalking(int id, double vx);
+  CreatureAnimationController creatureAnimation;
   void glBeginActorReaction(double x, double y, double w, double h, int hurtAge, bool stunned, int facing);
   void glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
                   int shieldHealth, bool shieldActive, int camCol, int camRow);
@@ -177,7 +174,7 @@ class GLPresenter {
                          double attackProgress,
                          double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtAge, double shelterCharge, float light,
-                         int camCol, int camRow, int npcId = 0, bool stunned = false, double vx = 0, int actorId = 0);
+                         int camCol, int camRow, int npcId = 0, bool stunned = false, double vx = 0, int actorId = 0, double vy = 0);
   void glDrawCreatures();
   void glDrawStatusEffects(int visuals, double x, double y, double w, double h, double phase, int species = -1);
   void glDrawPreview();

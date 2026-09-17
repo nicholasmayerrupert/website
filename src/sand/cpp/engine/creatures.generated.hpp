@@ -42,7 +42,6 @@ enum CreatureSpeciesId : uint8_t {
 };
 
 enum CreaturePopulationProfile : uint8_t { CPOP_AMBIENT = 0, CPOP_ENCOUNTER, CPOP_SCRIPTED, CPOP_COUNT };
-enum CreatureRenderBob : uint8_t { CRB_NONE = 0, CRB_WALKER, CRB_AQUATIC, CRB_BIRD, CRB_WASP, CRB_HARE, CRB_COUNT };
 enum CreatureProtection : uint8_t { CPROT_NONE = 0, CPROT_ALWAYS, CPROT_PROTECTED_CREW, CPROT_COUNT };
 
 enum CreatureBehaviorProfile : uint8_t {
@@ -136,15 +135,6 @@ enum CreatureTelegraphHandler : uint8_t {
   CTH_WARDEN = 5,
   CTH_COUNT = 6,
 };
-enum CreatureAnimationProfile : uint8_t {
-  CAP_GENERIC = 0,
-  CAP_DYNAMITE = 1,
-  CAP_BORE = 2,
-  CAP_MORTAR = 3,
-  CAP_WASP = 4,
-  CAP_MINIGUN = 5,
-  CAP_COUNT = 6,
-};
 enum CreatureFlyingMovement : uint8_t {
   CFM_DEFAULT = 0,
   CFM_CLUSTER = 1,
@@ -161,7 +151,6 @@ struct CreatureBehaviorProfileDef {
   CreatureAttackHandler attack;
   CreatureTelegraphHandler telegraph;
   InventoryItemKind dropItem;
-  CreatureAnimationProfile animation;
   CreatureFlyingMovement flyingMovement;
   int nearRange, farRange;
   CreatureWeaponOverlay weaponOverlay;
@@ -203,14 +192,14 @@ inline constexpr std::array<CreatureRenderProfileDef, CRP_COUNT> CREATURE_RENDER
 }};
 
 inline constexpr std::array<CreatureBehaviorProfileDef, CRBH_COUNT> CREATURE_BEHAVIOR_PROFILES = {{
-  {CRBH_GENERIC, CAH_GENERIC, CTH_NONE, IK_MATERIAL, CAP_GENERIC, CFM_DEFAULT, 0, 0, CWO_NONE, false},
-  {CRBH_DYNAMITEER, CAH_DYNAMITEER, CTH_NONE, IK_DYNAMITE_SATCHEL, CAP_DYNAMITE, CFM_DEFAULT, 28, 58, CWO_NONE, false},
-  {CRBH_BORE_SENTINEL, CAH_BORE_SENTINEL, CTH_BORE, IK_BORE_CANNON, CAP_BORE, CFM_DEFAULT, 46, 88, CWO_NONE, false},
-  {CRBH_CAUSTIC_MORTARMAN, CAH_CAUSTIC_MORTARMAN, CTH_MORTAR, IK_ACID_MORTAR, CAP_MORTAR, CFM_DEFAULT, 36, 76, CWO_NONE, false},
-  {CRBH_CLUSTER_WASP, CAH_CLUSTER_WASP, CTH_CLUSTER, IK_CLUSTER_LAUNCHER, CAP_WASP, CFM_CLUSTER, 0, 0, CWO_NONE, false},
-  {CRBH_MINIGUNNER, CAH_MINIGUNNER, CTH_NONE, IK_MINIGUN, CAP_MINIGUN, CFM_DEFAULT, 38, 92, CWO_MINIGUN, false},
-  {CRBH_QUARRY_FOREMAN, CAH_BOSS, CTH_QUARRY, IK_DYNAMITE_SATCHEL, CAP_DYNAMITE, CFM_DEFAULT, 28, 58, CWO_NONE, true},
-  {CRBH_REACTOR_WARDEN, CAH_BOSS, CTH_WARDEN, IK_MINIGUN, CAP_MINIGUN, CFM_DEFAULT, 38, 92, CWO_MINIGUN, true},
+  {CRBH_GENERIC, CAH_GENERIC, CTH_NONE, IK_MATERIAL, CFM_DEFAULT, 0, 0, CWO_NONE, false},
+  {CRBH_DYNAMITEER, CAH_DYNAMITEER, CTH_NONE, IK_DYNAMITE_SATCHEL, CFM_DEFAULT, 28, 58, CWO_NONE, false},
+  {CRBH_BORE_SENTINEL, CAH_BORE_SENTINEL, CTH_BORE, IK_BORE_CANNON, CFM_DEFAULT, 46, 88, CWO_NONE, false},
+  {CRBH_CAUSTIC_MORTARMAN, CAH_CAUSTIC_MORTARMAN, CTH_MORTAR, IK_ACID_MORTAR, CFM_DEFAULT, 36, 76, CWO_NONE, false},
+  {CRBH_CLUSTER_WASP, CAH_CLUSTER_WASP, CTH_CLUSTER, IK_CLUSTER_LAUNCHER, CFM_CLUSTER, 0, 0, CWO_NONE, false},
+  {CRBH_MINIGUNNER, CAH_MINIGUNNER, CTH_NONE, IK_MINIGUN, CFM_DEFAULT, 38, 92, CWO_MINIGUN, false},
+  {CRBH_QUARRY_FOREMAN, CAH_BOSS, CTH_QUARRY, IK_DYNAMITE_SATCHEL, CFM_DEFAULT, 28, 58, CWO_NONE, true},
+  {CRBH_REACTOR_WARDEN, CAH_BOSS, CTH_WARDEN, IK_MINIGUN, CFM_DEFAULT, 38, 92, CWO_MINIGUN, true},
 }};
 
 inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
@@ -225,7 +214,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_MINNOW, false, CRB_AQUATIC, false, CPROT_NONE},
+   CRP_MINNOW, false, CPROT_NONE},
   {CS_PIKE, "pike", CL_AQUATIC, 7, 3, 55,
    0, 0.48, 0.07, 0, 0,
    0.64, 58, 0.6,
@@ -237,7 +226,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_PIKE, false, CRB_AQUATIC, false, CPROT_NONE},
+   CRP_PIKE, false, CPROT_NONE},
   {CS_FOX, "fox", CL_AMPHIBIOUS, 7, 4, 42,
    0.34, 0.3, 0.06, 0.075, 1.15,
    0.3, 62, 0.5,
@@ -249,7 +238,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_FOREST) | (1u << BIOME_TUNDRA), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_FOX, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_FOX, false, CPROT_NONE},
   {CS_HARE, "hare", CL_AMPHIBIOUS, 5, 3, 24,
    0.34, 0.3, 0.07, 0.075, 1.3,
    0.3, 44, 0,
@@ -261,7 +250,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_FOREST) | (1u << BIOME_TUNDRA), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_HARE, false, CRB_HARE, false, CPROT_NONE},
+   CRP_HARE, false, CPROT_NONE},
   {CS_CRAWLER, "crawler", CL_AMPHIBIOUS, 7, 3, 48,
    0.25, 0.22, 0.052, 0.075, 0.95,
    0.34, 70, 0.7,
@@ -273,7 +262,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, (1u << CAVE_MUSHROOM) | (1u << CAVE_LUSH) | (1u << CAVE_DEEP_VOID),
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_CRAWLER, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_CRAWLER, false, CPROT_NONE},
   {CS_MOLE, "mole", CL_AMPHIBIOUS, 6, 3, 34,
    0.22, 0.18, 0.048, 0.075, 0.82,
    0.36, 40, 0,
@@ -285,7 +274,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, (1u << CAVE_DEFAULT) | (1u << CAVE_LUSH) | (1u << CAVE_DEEP_FOSSIL),
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_MOLE, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_MOLE, false, CPROT_NONE},
   {CS_BIRD, "bird", CL_FLYING, 5, 3, 20,
    0, 0.5, 0.06, 0, 0,
    0, 54, 0,
@@ -297,7 +286,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_FOREST) | (1u << BIOME_JUNGLE), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_AMBIENT, 0, true, CRBH_GENERIC,
-   CRP_BIRD, false, CRB_BIRD, false, CPROT_NONE},
+   CRP_BIRD, false, CPROT_NONE},
   {CS_DYNAMITEER, "dynamiteer", CL_AMPHIBIOUS, 7, 5, 72,
    0.23, 0.17, 0.045, 0.075, 1,
    0.3, 92, 72,
@@ -309,7 +298,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_DESERT) | (1u << BIOME_ROCKY) | (1u << BIOME_TUNDRA), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 2, true, CRBH_DYNAMITEER,
-   CRP_DYNAMITEER, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_DYNAMITEER, false, CPROT_NONE},
   {CS_BORE_SENTINEL, "bore sentinel", CL_AMPHIBIOUS, 9, 6, 170,
    0.12, 0.11, 0.026, 0.075, 0.72,
    0.34, 138, 118,
@@ -321,7 +310,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, (1u << CAVE_DEEP_GEODE) | (1u << CAVE_DEEP_FOSSIL),
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 4, true, CRBH_BORE_SENTINEL,
-   CRP_BORE_SENTINEL, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_BORE_SENTINEL, false, CPROT_NONE},
   {CS_CAUSTIC_MORTARMAN, "caustic mortarman", CL_AMPHIBIOUS, 8, 6, 120,
    0.16, 0.14, 0.034, 0.075, 0.82,
    0.32, 112, 92,
@@ -333,7 +322,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_DESERT) | (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_CAUSTIC_MORTARMAN,
-   CRP_CAUSTIC_MORTARMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_CAUSTIC_MORTARMAN, false, CPROT_NONE},
   {CS_CLUSTER_WASP, "cluster wasp", CL_FLYING, 7, 5, 68,
    0, 0.46, 0.055, 0, 0,
    0, 124, 104,
@@ -345,7 +334,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_FOREST) | (1u << BIOME_JUNGLE) | (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_CLUSTER_WASP,
-   CRP_CLUSTER_WASP, false, CRB_WASP, false, CPROT_NONE},
+   CRP_CLUSTER_WASP, false, CPROT_NONE},
   {CS_MINIGUNNER, "minigunner", CL_AMPHIBIOUS, 9, 6, 165,
    0.15, 0.11, 0.03, 0.075, 0.76,
    0.34, 138, 118,
@@ -357,7 +346,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, (1u << CAVE_CRYSTAL) | (1u << CAVE_DEEP_MAGMA) | (1u << CAVE_DEEP_VOID),
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 4, true, CRBH_MINIGUNNER,
-   CRP_MINIGUNNER, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_MINIGUNNER, false, CPROT_NONE},
   {CS_SURVEYOR, "surveyor", CL_AMPHIBIOUS, 4, 8, 70,
    0.12, 0.16, 0.036, 0.075, 0.72,
    0.34, 36, 0,
@@ -369,7 +358,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_GENERIC,
-   CRP_SURVEYOR, true, CRB_WALKER, false, CPROT_PROTECTED_CREW},
+   CRP_SURVEYOR, true, CPROT_PROTECTED_CREW},
   {CS_SHIELD_ANCHOR, "shield anchor", CL_STATIONARY, 7, 7, 210,
    0, 0, 0, 0, 0,
    0, 0, 0,
@@ -381,7 +370,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_GENERIC,
-   CRP_SHIELD_ANCHOR, false, CRB_WALKER, true, CPROT_NONE},
+   CRP_SHIELD_ANCHOR, false, CPROT_NONE},
   {CS_QUARRY_FOREMAN, "quarry foreman", CL_AMPHIBIOUS, 10, 7, 520,
    0.19, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 112,
@@ -393,7 +382,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_REACTOR_WARDEN, "reactor warden", CL_AMPHIBIOUS, 11, 8, 760,
    0.13, 0.1, 0.028, 0.075, 0.72,
    0.34, 162, 132,
@@ -405,7 +394,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_REACTOR_WARDEN,
-   CRP_REACTOR_WARDEN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_REACTOR_WARDEN, false, CPROT_NONE},
   {CS_REACTOR_CORE, "reactor core", CL_STATIONARY, 9, 12, 460,
    0, 0, 0, 0, 0,
    0, 0, 0,
@@ -417,7 +406,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_GENERIC,
-   CRP_REACTOR_CORE, false, CRB_WALKER, true, CPROT_NONE},
+   CRP_REACTOR_CORE, false, CPROT_NONE},
   {CS_IRIS_COMMANDER, "IRIS commander", CL_STATIONARY, 4, 8, 100,
    0, 0, 0, 0, 0,
    0, 0, 0,
@@ -429,7 +418,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_GENERIC,
-   CRP_IRIS_COMMANDER, true, CRB_NONE, false, CPROT_ALWAYS},
+   CRP_IRIS_COMMANDER, true, CPROT_ALWAYS},
   {CS_IRIS_ENGINEER, "IRIS engineer", CL_STATIONARY, 4, 8, 100,
    0, 0, 0, 0, 0,
    0, 0, 0,
@@ -441,7 +430,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_GENERIC,
-   CRP_IRIS_ENGINEER, true, CRB_NONE, false, CPROT_PROTECTED_CREW},
+   CRP_IRIS_ENGINEER, true, CPROT_PROTECTED_CREW},
   {CS_VILLAGER, "villager", CL_AMPHIBIOUS, 4, 8, 60,
    0.1, 0.14, 0.03, 0.075, 0.7,
    0.34, 28, 0,
@@ -453,7 +442,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, false, CRBH_GENERIC,
-   CRP_VILLAGER, true, CRB_WALKER, false, CPROT_NONE},
+   CRP_VILLAGER, true, CPROT_NONE},
   {CS_THORNBOUND_HART, "Thornbound Hart", CL_AMPHIBIOUS, 16, 17, 420,
    0.28, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 90,
@@ -465,7 +454,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_MIRE_MATRON, "Mire Matron", CL_AMPHIBIOUS, 17, 12, 560,
    0.28, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 90,
@@ -477,7 +466,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_CINDER_CASTELLAN, "Cinder Castellan", CL_AMPHIBIOUS, 10, 19, 680,
    0.28, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 90,
@@ -489,7 +478,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_HOLLOW_BELLKEEPER, "Hollow Bellkeeper", CL_AMPHIBIOUS, 11, 23, 850,
    0.28, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 90,
@@ -501,7 +490,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_BRIAR_WOLF, "briar wolf", CL_AMPHIBIOUS, 7, 4, 42,
    0.34, 0.3, 0.06, 0.075, 1.15,
    0.3, 62, 0.5,
@@ -513,7 +502,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_PLAINS) | (1u << BIOME_FOREST) | (1u << BIOME_TUNDRA), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_GENERIC,
-   CRP_FOX, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_FOX, false, CPROT_NONE},
   {CS_BELL_BAT, "bell bat", CL_FLYING, 7, 5, 68,
    0, 0.46, 0.055, 0, 0,
    0, 124, 104,
@@ -525,7 +514,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_FOREST) | (1u << BIOME_JUNGLE) | (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_CLUSTER_WASP,
-   CRP_CLUSTER_WASP, false, CRB_WASP, false, CPROT_NONE},
+   CRP_CLUSTER_WASP, false, CPROT_NONE},
   {CS_BONE_GUARD, "bone guard", CL_AMPHIBIOUS, 9, 6, 165,
    0.27, 0.11, 0.03, 0.075, 0.76,
    0.34, 138, 10,
@@ -537,7 +526,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, (1u << CAVE_CRYSTAL) | (1u << CAVE_DEEP_MAGMA) | (1u << CAVE_DEEP_VOID),
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 4, true, CRBH_GENERIC,
-   CRP_MINIGUNNER, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_MINIGUNNER, false, CPROT_NONE},
   {CS_FEN_WISP, "fen wisp", CL_FLYING, 7, 5, 68,
    0, 0.46, 0.055, 0, 0,
    0, 124, 104,
@@ -549,7 +538,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     (1u << BIOME_FOREST) | (1u << BIOME_JUNGLE) | (1u << BIOME_SWAMP), 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_CLUSTER_WASP,
-   CRP_CLUSTER_WASP, false, CRB_WASP, false, CPROT_NONE},
+   CRP_CLUSTER_WASP, false, CPROT_NONE},
   {CS_ROOT_KNIGHT, "The Root Knight", CL_AMPHIBIOUS, 8, 13, 280,
    0.19, 0.14, 0.038, 0.075, 0.92,
    0.32, 148, 112,
@@ -561,7 +550,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, true, CRBH_QUARRY_FOREMAN,
-   CRP_QUARRY_FOREMAN, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_QUARRY_FOREMAN, false, CPROT_NONE},
   {CS_FROST_GIANT, "frost giant", CL_AMPHIBIOUS, 12, 19, 240,
    0.16, 0.14, 0.038, 0.075, 0.92,
    0.32, 110, 66,
@@ -573,7 +562,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 7, true, CRBH_GENERIC,
-   CRP_FROST_GIANT, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_FROST_GIANT, false, CPROT_NONE},
   {CS_MUMMY, "mummy", CL_AMPHIBIOUS, 5, 10, 90,
    0.23, 0.11, 0.03, 0.075, 0.76,
    0.34, 80, 12,
@@ -585,7 +574,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 16, 20},
    CPOP_ENCOUNTER, 3, true, CRBH_GENERIC,
-   CRP_MUMMY, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_MUMMY, false, CPROT_NONE},
   {CS_LAVA_TOAD, "lava toad", CL_AMPHIBIOUS, 9, 7, 125,
    0.18, 0.14, 0.038, 0.075, 0.92,
    0.32, 105, 60,
@@ -597,7 +586,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 5, true, CRBH_GENERIC,
-   CRP_LAVA_TOAD, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_LAVA_TOAD, false, CPROT_NONE},
   {CS_VILLAGE_GUARD, "village guard", CL_AMPHIBIOUS, 4, 8, 120,
    0.23, 0.14, 0.03, 0.075, 0.7,
    0.34, 64, 10,
@@ -609,7 +598,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, false, CRBH_GENERIC,
-   CRP_VILLAGE_GUARD, true, CRB_WALKER, false, CPROT_NONE},
+   CRP_VILLAGE_GUARD, true, CPROT_NONE},
   {CS_VILLAGE_HUNTER, "village hunter", CL_AMPHIBIOUS, 4, 8, 85,
    0.25, 0.14, 0.03, 0.075, 0.7,
    0.34, 80, 48,
@@ -621,7 +610,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_SCRIPTED, 0, false, CRBH_GENERIC,
-   CRP_VILLAGE_HUNTER, true, CRB_WALKER, false, CPROT_NONE},
+   CRP_VILLAGE_HUNTER, true, CPROT_NONE},
   {CS_BONE_DINOSAUR, "cinderjaw dragon", CL_AMPHIBIOUS, 24, 22, 320,
    0.34, 0.12, 0.045, 0.075, 1.05,
    0.32, 120, 24,
@@ -633,7 +622,7 @@ inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{
     0u, 0u,
     INT_MIN, INT_MAX, 10, 20},
    CPOP_ENCOUNTER, 8, true, CRBH_GENERIC,
-   CRP_BONE_DINOSAUR, false, CRB_WALKER, false, CPROT_NONE},
+   CRP_BONE_DINOSAUR, false, CPROT_NONE},
 }};
 
 inline constexpr std::array<uint8_t, 7> AMBIENT_CREATURE_SPECIES = {{
@@ -652,7 +641,6 @@ constexpr bool creatureBehaviorProfilesAreValid(
     if ((size_t)behavior.id != index
         || (unsigned)behavior.attack >= CAH_COUNT
         || (unsigned)behavior.telegraph >= CTH_COUNT
-        || (unsigned)behavior.animation >= CAP_COUNT
         || (unsigned)behavior.flyingMovement >= CFM_COUNT
         || (unsigned)behavior.weaponOverlay >= CWO_COUNT) return false;
   }
@@ -673,7 +661,6 @@ constexpr bool creatureRegistriesAreComplete() {
         || (unsigned)species.population >= CPOP_COUNT
         || (unsigned)species.behaviorProfile >= CRBH_COUNT
         || (unsigned)species.renderProfile >= CRP_COUNT
-        || (unsigned)species.renderBob >= CRB_COUNT
         || (unsigned)species.protection >= CPROT_COUNT) return false;
   }
   return true;

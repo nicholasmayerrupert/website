@@ -1,4 +1,5 @@
 #pragma once
+#include "creature_animation.hpp"
 
 struct Engine;
 struct ContentRect { int layer, surface, left, top, right, bottom, material; };
@@ -16,27 +17,6 @@ struct ContentQuest {
 };
 struct ContentGear { int id, family, slot, power, defense, stamina, mana, cooldown, reach, spell, style, price; int spellSlots = 0, upgradeSlots = 0, initialSpell = 0; std::vector<StatusApplication> statusEffects{}; int cleanseTags = 0; std::array<uint32_t,256> icon{}; };
 struct ContentResident { int id, species, x, y, surface, roamRadius; };
-struct ContentClip {
-  int count = 1, ticks = 8, offset = 0, duration = 8;
-  std::vector<int> durations{8};
-  int frameAt(int tick) const {
-    int phase = imax(0, tick) % duration;
-    for (int i = 0; i < count; i++) {
-      if (phase < durations[(size_t)i]) return i;
-      phase -= durations[(size_t)i];
-    }
-    return count - 1;
-  }
-};
-enum CreatureClip { CC_IDLE, CC_MOVE, CC_WINDUP, CC_ATTACK, CC_RECOVER, CC_HURT, CC_DEATH, CC_SPECIAL, CC_COUNT };
-struct ContentCreatureArt {
-  int width = 0, height = 0;
-  double scale = 1;
-  std::array<ContentClip, CC_COUNT> clips;
-  std::vector<std::array<float, 4>> palette;
-  std::vector<uint8_t> pixels;
-};
-
 // Immutable authored definitions belong to an engine instance. Mutable quest,
 // actor, and terrain state remains with the subsystem that simulates it.
 class ContentSystem {

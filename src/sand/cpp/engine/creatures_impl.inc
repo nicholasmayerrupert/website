@@ -1724,44 +1724,8 @@ void CreatureSystem::updateCreatures() {
     if (audibleMotion && (c.grounded || soundSpecies.locomotion == CL_AQUATIC || soundSpecies.locomotion == CL_FLYING)
         && (E.actorTick + c.id * 7) % movePeriod == 0)
       emitVoice(c, SE_CREATURE_MOVE, .55);
-    // Four authored poses per species. Tie pose selection to locomotion where
-    // it matters so feet, wings, and body arcs describe the actual movement
-    // instead of every creature sharing the same two-frame global blink.
-    const CreatureBehaviorProfileDef& behavior = creatureBehavior(species(c));
-    if (behavior.animation == CAP_DYNAMITE) {
-      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
-      else c.animFrame = std::fabs(c.vx) > 0.035 ? (uint8_t)(((E.actorTick / 5) + c.id) & 1) : 0;
-    } else if (behavior.animation == CAP_BORE) {
-      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.50 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
-      else c.animFrame = std::fabs(c.vx) > 0.025 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
-    } else if (behavior.animation == CAP_MORTAR) {
-      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
-      else c.animFrame = std::fabs(c.vx) > 0.025 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
-    } else if (behavior.animation == CAP_WASP) {
-      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
-      else c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
-    } else if (behavior.animation == CAP_MINIGUN) {
-      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = (uint8_t)(2 + ((E.actorTick / 2) & 1));
-      else c.animFrame = std::fabs(c.vx) > 0.02 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
-    } else if (species(c).renderBob == CRB_BIRD) {
-      c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
-    } else if (species(c).renderBob == CRB_HARE) {
-      if (c.vy < -0.18) c.animFrame = 1;       // launch: long rear-leg extension
-      else if (c.vy > 0.18) c.animFrame = 3;  // descent: forelegs reach for ground
-      else if (!c.grounded) c.animFrame = 2;  // compact silhouette at the apex
-      else c.animFrame = 0;                   // settled crouch
-    } else if (species(c).locomotion == CL_AQUATIC) {
-      int cadence = std::fabs(c.vx) + std::fabs(c.vy) > 0.42 ? 3 : 5;
-      c.animFrame = (uint8_t)(((E.actorTick / cadence) + c.id) & 3);
-    } else {
-      bool moving = std::fabs(c.vx) > 0.035;
-      c.animFrame = moving ? (uint8_t)(((E.actorTick / 5) + c.id) & 3) : 0;
-    }
+    // The snapshot field carries the authoritative death pose; live playback is presentation-owned.
+    c.animFrame = 0;
     if (isProtectedNpc(c)) c.health = species(c).maxHealth;
   }
 }

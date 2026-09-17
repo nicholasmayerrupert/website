@@ -336,7 +336,10 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
   if (c.attackState == CAS_RECOVERING) {
     c.vx *= .7;
     c.attackProgress = ++c.attackTicks / 15.0;
-    if (c.attackTicks >= 15) { c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0; }
+    if (c.attackTicks >= 15) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+      c.attackPattern = (c.attackPattern + 1) % 3;
+    }
     return;
   }
   if (c.attackState == CAS_CHARGING) {
@@ -416,7 +419,7 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
   }
   if (c.attackTicks >= attack.duration) {
     c.attackState = CAS_RECOVERING; c.attackTicks = 0; c.attackProgress = 0;
-    c.attackPattern = (c.attackPattern + 1) % 3; c.attackCooldown = attack.recovery;
+    c.attackCooldown = attack.recovery;
     c.vx *= .3; c.vy *= .6;
   }
 }

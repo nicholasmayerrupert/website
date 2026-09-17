@@ -54,8 +54,6 @@ struct CreatureSpecies {
   uint8_t behaviorProfile;
   uint8_t renderProfile;
   bool humanNpc;
-  uint8_t renderBob;
-  bool stationaryCycle;
   uint8_t protection;
 };
 

@@ -2088,9 +2088,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_MINNOW",
-            "humanNpc": false,
-            "bob": "CRB_AQUATIC",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2144,9 +2142,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_PIKE",
-            "humanNpc": false,
-            "bob": "CRB_AQUATIC",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2212,9 +2208,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_FOX",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2271,9 +2265,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_HARE",
-            "humanNpc": false,
-            "bob": "CRB_HARE",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2335,9 +2327,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_CRAWLER",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2404,9 +2394,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_MOLE",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2470,9 +2458,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_BIRD",
-            "humanNpc": false,
-            "bob": "CRB_BIRD",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2546,9 +2532,7 @@
           "behaviorProfile": "CRBH_DYNAMITEER",
           "render": {
             "profile": "CRP_DYNAMITEER",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2621,9 +2605,7 @@
           "behaviorProfile": "CRBH_BORE_SENTINEL",
           "render": {
             "profile": "CRP_BORE_SENTINEL",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2692,9 +2674,7 @@
           "behaviorProfile": "CRBH_CAUSTIC_MORTARMAN",
           "render": {
             "profile": "CRP_CAUSTIC_MORTARMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2765,9 +2745,7 @@
           "behaviorProfile": "CRBH_CLUSTER_WASP",
           "render": {
             "profile": "CRP_CLUSTER_WASP",
-            "humanNpc": false,
-            "bob": "CRB_WASP",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2843,9 +2821,7 @@
           "behaviorProfile": "CRBH_MINIGUNNER",
           "render": {
             "profile": "CRP_MINIGUNNER",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2890,9 +2866,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_SURVEYOR",
-            "humanNpc": true,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_PROTECTED_CREW"
         },
@@ -2937,9 +2911,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_SHIELD_ANCHOR",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": true
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -2986,9 +2958,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3035,9 +3005,7 @@
           "behaviorProfile": "CRBH_REACTOR_WARDEN",
           "render": {
             "profile": "CRP_REACTOR_WARDEN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3082,9 +3050,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_REACTOR_CORE",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": true
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3129,9 +3095,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_IRIS_COMMANDER",
-            "humanNpc": true,
-            "bob": "CRB_NONE",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_ALWAYS"
         },
@@ -3176,9 +3140,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_IRIS_ENGINEER",
-            "humanNpc": true,
-            "bob": "CRB_NONE",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_PROTECTED_CREW"
         },
@@ -3234,9 +3196,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_VILLAGER",
-            "humanNpc": true,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_NONE"
         },
@@ -3283,9 +3243,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3332,9 +3290,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3381,9 +3337,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3430,9 +3384,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3496,9 +3448,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_FOX",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3561,9 +3511,7 @@
           "behaviorProfile": "CRBH_CLUSTER_WASP",
           "render": {
             "profile": "CRP_CLUSTER_WASP",
-            "humanNpc": false,
-            "bob": "CRB_WASP",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3632,9 +3580,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_MINIGUNNER",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3697,9 +3643,7 @@
           "behaviorProfile": "CRBH_CLUSTER_WASP",
           "render": {
             "profile": "CRP_CLUSTER_WASP",
-            "humanNpc": false,
-            "bob": "CRB_WASP",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3746,9 +3690,7 @@
           "behaviorProfile": "CRBH_QUARRY_FOREMAN",
           "render": {
             "profile": "CRP_QUARRY_FOREMAN",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3805,9 +3747,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_FROST_GIANT",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3862,9 +3802,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_MUMMY",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3921,9 +3859,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_LAVA_TOAD",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         },
@@ -3972,9 +3908,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_VILLAGE_GUARD",
-            "humanNpc": true,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_NONE"
         },
@@ -4023,9 +3957,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_VILLAGE_HUNTER",
-            "humanNpc": true,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": true
           },
           "protection": "CPROT_NONE"
         },
@@ -4082,9 +4014,7 @@
           "behaviorProfile": "CRBH_GENERIC",
           "render": {
             "profile": "CRP_BONE_DINOSAUR",
-            "humanNpc": false,
-            "bob": "CRB_WALKER",
-            "stationaryCycle": false
+            "humanNpc": false
           },
           "protection": "CPROT_NONE"
         }

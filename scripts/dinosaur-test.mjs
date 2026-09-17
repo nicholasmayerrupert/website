@@ -27,7 +27,8 @@ arena('a full exhalation emits 32 slow pulses, locks facing and leaves a recover
   assert.equal(c.facing,1,'a player behind the dinosaur cannot rotate the stream');assert.ok(Math.abs(c.x-90)<.1);
   for(const p of e.getProjectiles())if(p.kind===K.FIRE_BREATH){seen.add(p.id);assert.ok(Math.hypot(p.vx,p.vy)>1.4&&Math.hypot(p.vx,p.vy)<1.7);assert.equal(p.owner,-id);}
  }
- assert.equal(seen.size,32);const c=e.getCreatures().find(c=>c.id===id);assert.equal(c.attackState,A.RECOVERING);assert.equal(c.attackPattern,0);assert.equal(c.health,320);
+ assert.equal(seen.size,32);const c=e.getCreatures().find(c=>c.id===id);assert.equal(c.attackState,A.RECOVERING);assert.equal(c.attackPattern,2,'recovery retains the attack that just fired');assert.equal(c.health,320);
+ tick(e,15);assert.equal(e.getCreatures().find(c=>c.id===id).attackPattern,0,'the next pattern starts after recovery');
 });
 for(const pattern of [0,1])arena(`melee pattern ${pattern} damages nearby players without projectiles`,(e,id)=>{
  e.setPlayerState(id,{x:119,y:112,vx:0,vy:0});dinosaur(e,{pattern,aimX:122,aimY:115});const hp=e.getPlayer(id).health;

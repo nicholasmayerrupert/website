@@ -126,6 +126,8 @@ background texture. Rigid bodies carry texture coordinates through rotation,
 baking, fracture, welding, streaming, and checkpoints. See `content/README.md`
 for the material-art authoring loop.
 The WebGL presenter reads this data; character pixels are not embedded in C++.
+Creature clip selection, local playback and attack mappings are described in
+[ANIMATION.md](ANIMATION.md).
 
 `react/SandCampaign.jsx` presents the journal, tracked destination, pause menu,
 and maintenance dialogue. `J` opens the journal; `T` talks to nearby residents.

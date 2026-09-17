@@ -4,16 +4,17 @@ export { contentHash } from './hash.js';
 import { MAT } from '../materials.js';
 import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
 import creatureArt from './creatureArt.js';
+import { CREATURE_CLIPS, ATTACK_PHASES, CREATURE_ATTACK_ANIMATIONS, attackAnimation } from './creatureAnimations.js';
+export { CREATURE_CLIPS } from './creatureAnimations.js';
 import { EQUIPMENT } from './equipment.js';
 import { gearPixels } from './gearArt.js';
 import materialArt from './materialArt.js';
 
 export const CONTENT_VERSION = 3;
-export const CONTENT_WIRE_VERSION = 9;
+export const CONTENT_WIRE_VERSION = 10;
 export const SITE_SURFACE_BASE = -100001;
 export const ABSOLUTE = -2147483648;
 export const ANIMATION_STATES = Object.keys(PLAYER_ANIMATION).filter(key => key !== 'COUNT').map(key => key.toLowerCase());
-export const CREATURE_CLIPS = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special'];
 export const MAX_CLIP_FRAMES = 32;
 const fail = (path, message) => { throw new Error(`${path}: ${message}`); };
 const integer = (value, path, min = -100000, max = 100000) => {
@@ -209,7 +210,7 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
     }
   }
   const textureSources = { ...materialArt, ...world.textures };
-  const hash = contentHash({ world, sprite, creatureArt: creatureSources, equipment: EQUIPMENT, textures: textureSources });
+  const hash = contentHash({ world, sprite, creatureArt: creatureSources, creatureAnimations: CREATURE_ATTACK_ANIMATIONS, equipment: EQUIPMENT, textures: textureSources });
   for (const key of Object.keys(CREATURE)) if (!creatureSources[key]) fail('creatureArt', `missing art for ${key}`);
   const creatures = Object.entries(creatureSources).map(([key, art]) => {
     if (!Object.hasOwn(CREATURE, key)) fail(key, 'unknown creature');
@@ -241,8 +242,15 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
       }
       frameOffset += clip.frames.length;
     }
+    const attacks = [0, 1, 2].flatMap(pattern => ATTACK_PHASES.flatMap(phase => {
+      const range = attackAnimation(key, art, pattern, phase), clip = CREATURE_CLIPS.indexOf(range.clip);
+      if (clip < 0 || typeof range.loop !== 'boolean') fail(key, 'invalid attack animation');
+      integer(range.start, key, 0, art.clips[range.clip].frames.length - 1);
+      integer(range.count, key, 1, art.clips[range.clip].frames.length - range.start);
+      return [clip, range.start, range.count, Number(range.loop)];
+    }));
     return [CREATURE[key], art.width, art.height, Math.round(art.pixelScale * 1000), colors.length,
-      frameOffset, ...clipRecords, ...colors, ...pixels];
+      frameOffset, ...clipRecords, ...attacks, ...colors, ...pixels];
   });
   const textures = Object.entries(textureSources).map(([material, texture]) => {
     const size = texture?.rows?.length;

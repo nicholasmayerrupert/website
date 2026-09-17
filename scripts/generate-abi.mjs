@@ -130,7 +130,6 @@ if (creatureDescriptors.length > 64)
 const behaviorPolicySpecs = [
   { field: 'attack', macro: 'SAND_CREATURE_ATTACK_POLICY', prefix: 'CAH_', enumName: 'CreatureAttackHandler', countName: 'CAH_COUNT' },
   { field: 'telegraph', macro: 'SAND_CREATURE_TELEGRAPH_POLICY', prefix: 'CTH_', enumName: 'CreatureTelegraphHandler', countName: 'CTH_COUNT' },
-  { field: 'animation', macro: 'SAND_CREATURE_ANIMATION_POLICY', prefix: 'CAP_', enumName: 'CreatureAnimationProfile', countName: 'CAP_COUNT' },
   { field: 'flying', macro: 'SAND_CREATURE_FLYING_POLICY', prefix: 'CFM_', enumName: 'CreatureFlyingMovement', countName: 'CFM_COUNT' },
   { field: 'weaponOverlay', macro: 'SAND_CREATURE_WEAPON_OVERLAY_POLICY', prefix: 'CWO_', enumName: 'CreatureWeaponOverlay', countName: 'CWO_COUNT' },
 ];
@@ -159,7 +158,7 @@ const behaviorPolicyValues = Object.fromEntries(behaviorPolicySpecs.map((spec) =
   new Set(behaviorPolicyRows[spec.field].map(({ symbol }) => symbol)),
 ]));
 
-const creatureBehaviorPattern = /^SAND_CREATURE_BEHAVIOR_PROFILE\(\s*(CRBH_[A-Z0-9_]+)\s*,\s*(CAH_[A-Z0-9_]+)\s*,\s*(CTH_[A-Z0-9_]+)\s*,\s*(IK_[A-Z0-9_]+)\s*,\s*(CAP_[A-Z0-9_]+)\s*,\s*(CFM_[A-Z0-9_]+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(CWO_[A-Z0-9_]+)\s*,\s*(true|false)\s*\)$/;
+const creatureBehaviorPattern = /^SAND_CREATURE_BEHAVIOR_PROFILE\(\s*(CRBH_[A-Z0-9_]+)\s*,\s*(CAH_[A-Z0-9_]+)\s*,\s*(CTH_[A-Z0-9_]+)\s*,\s*(IK_[A-Z0-9_]+)\s*,\s*(CFM_[A-Z0-9_]+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(CWO_[A-Z0-9_]+)\s*,\s*(true|false)\s*\)$/;
 const creatureBehaviorRows = readFileSync(creatureBehaviorProfilesPath, 'utf8')
   .split(/\r?\n/)
   .map((line) => line.trim())
@@ -170,9 +169,9 @@ const creatureBehaviorRows = readFileSync(creatureBehaviorProfilesPath, 'utf8')
       `invalid creature behavior handler row ${index + 1}: ${line}`);
     return {
       profile: match[1], attack: match[2], telegraph: match[3],
-      dropItem: match[4], animation: match[5], flying: match[6],
-      nearRange: Number(match[7]), farRange: Number(match[8]),
-      weaponOverlay: match[9], initialPattern: match[10] === 'true',
+      dropItem: match[4], flying: match[5],
+      nearRange: Number(match[6]), farRange: Number(match[7]),
+      weaponOverlay: match[8], initialPattern: match[9] === 'true',
     };
   });
 if (creatureBehaviorRows.length !== behaviorProfiles.length)
@@ -230,7 +229,6 @@ const locomotions = new Set(['CL_AQUATIC', 'CL_AMPHIBIOUS', 'CL_FLYING', 'CL_STA
 const habitats = new Set(['CH_WATER', 'CH_SURFACE', 'CH_CAVE', 'CH_AIR']);
 const populationProfiles = new Set(['CPOP_AMBIENT', 'CPOP_ENCOUNTER', 'CPOP_SCRIPTED']);
 const targetValues = new Set(['CT_PLAYER', 'CT_PREY']);
-const bobProfiles = new Set(['CRB_NONE', 'CRB_WALKER', 'CRB_AQUATIC', 'CRB_BIRD', 'CRB_WASP', 'CRB_HARE']);
 const protections = new Set(['CPROT_NONE', 'CPROT_ALWAYS', 'CPROT_PROTECTED_CREW']);
 const behaviorProfileNames = new Set(behaviorProfiles.map(([name]) => name));
 const renderProfileNames = new Set(renderProfiles.map(([name]) => name));
@@ -359,9 +357,7 @@ for (const descriptor of creatureDescriptors) {
   if (!behaviorProfileNames.has(descriptor.behaviorProfile))
     throw new Error(`${label}.behaviorProfile is unknown`);
   if (!renderProfileNames.has(descriptor.render?.profile)
-      || !bobProfiles.has(descriptor.render?.bob)
-      || typeof descriptor.render?.humanNpc !== 'boolean'
-      || typeof descriptor.render?.stationaryCycle !== 'boolean')
+      || typeof descriptor.render?.humanNpc !== 'boolean')
     throw new Error(`${label}.render metadata is invalid`);
   if (!protections.has(descriptor.protection))
     throw new Error(`${label}.protection is unknown`);
@@ -976,7 +972,6 @@ creaturesHpp += creatureDescriptors.map((descriptor) =>
   `  ${descriptor.cSymbol} = ${descriptor.key},`).join('\n');
 creaturesHpp += `\n  CS_COUNT = ${creatureDescriptors.length},\n};\n\n`;
 creaturesHpp += 'enum CreaturePopulationProfile : uint8_t { CPOP_AMBIENT = 0, CPOP_ENCOUNTER, CPOP_SCRIPTED, CPOP_COUNT };\n'
-  + 'enum CreatureRenderBob : uint8_t { CRB_NONE = 0, CRB_WALKER, CRB_AQUATIC, CRB_BIRD, CRB_WASP, CRB_HARE, CRB_COUNT };\n'
   + 'enum CreatureProtection : uint8_t { CPROT_NONE = 0, CPROT_ALWAYS, CPROT_PROTECTED_CREW, CPROT_COUNT };\n\n';
 creaturesHpp += 'enum CreatureBehaviorProfile : uint8_t {\n';
 creaturesHpp += behaviorProfiles.map(([name, id]) => `  ${name} = ${id},`).join('\n');
@@ -998,7 +993,7 @@ creaturesHpp += '\n';
 creaturesHpp += 'struct CreatureBehaviorProfileDef {\n'
   + '  CreatureBehaviorProfile id;\n  CreatureAttackHandler attack;\n'
   + '  CreatureTelegraphHandler telegraph;\n  InventoryItemKind dropItem;\n'
-  + '  CreatureAnimationProfile animation;\n  CreatureFlyingMovement flyingMovement;\n'
+  + '  CreatureFlyingMovement flyingMovement;\n'
   + '  int nearRange, farRange;\n  CreatureWeaponOverlay weaponOverlay;\n'
   + '  bool initializeAttackPattern;\n};\n\n';
 creaturesHpp += 'struct CreatureRenderProfileDef {\n'
@@ -1009,7 +1004,7 @@ creaturesHpp += creatureRenderRows.map(({ profile, asset }) =>
 creaturesHpp += '\n}};\n\n';
 creaturesHpp += 'inline constexpr std::array<CreatureBehaviorProfileDef, CRBH_COUNT> CREATURE_BEHAVIOR_PROFILES = {{\n';
 creaturesHpp += creatureBehaviorRows.map((row) =>
-  `  {${row.profile}, ${row.attack}, ${row.telegraph}, ${row.dropItem}, ${row.animation}, ${row.flying}, ${row.nearRange}, ${row.farRange}, ${row.weaponOverlay}, ${row.initialPattern}},`).join('\n');
+  `  {${row.profile}, ${row.attack}, ${row.telegraph}, ${row.dropItem}, ${row.flying}, ${row.nearRange}, ${row.farRange}, ${row.weaponOverlay}, ${row.initialPattern}},`).join('\n');
 creaturesHpp += '\n}};\n\n';
 
 const creatureRow = (descriptor) => {
@@ -1031,7 +1026,7 @@ const creatureRow = (descriptor) => {
     + `    ${cppMask(world.preferredSurfaceBiomes)}, ${cppMask(world.preferredCaveBiomes)},\n`
     + `    ${world.minDepth ?? 'INT_MIN'}, ${world.maxDepth ?? 'INT_MAX'}, ${world.baseWeight ?? 10}, ${world.preferredBonus ?? 20}},\n`
     + `   ${population.profile}, ${population.encounterCost}, ${population.countsTowardNaturalCap}, ${descriptor.behaviorProfile},\n`
-    + `   ${descriptor.render.profile}, ${descriptor.render.humanNpc}, ${descriptor.render.bob}, ${descriptor.render.stationaryCycle}, ${descriptor.protection}},`;
+    + `   ${descriptor.render.profile}, ${descriptor.render.humanNpc}, ${descriptor.protection}},`;
 };
 creaturesHpp += 'inline constexpr std::array<CreatureSpecies, CS_COUNT> CREATURE_SPECIES = {{\n';
 creaturesHpp += creatureDescriptors.map(creatureRow).join('\n');
@@ -1052,7 +1047,6 @@ creaturesHpp += '\ntemplate <size_t N>\n'
   + '    if ((size_t)behavior.id != index\n'
   + '        || (unsigned)behavior.attack >= CAH_COUNT\n'
   + '        || (unsigned)behavior.telegraph >= CTH_COUNT\n'
-  + '        || (unsigned)behavior.animation >= CAP_COUNT\n'
   + '        || (unsigned)behavior.flyingMovement >= CFM_COUNT\n'
   + '        || (unsigned)behavior.weaponOverlay >= CWO_COUNT) return false;\n'
   + '  }\n  return true;\n}\n\n'
@@ -1070,7 +1064,6 @@ creaturesHpp += '\ntemplate <size_t N>\n'
   + '        || (unsigned)species.population >= CPOP_COUNT\n'
   + '        || (unsigned)species.behaviorProfile >= CRBH_COUNT\n'
   + '        || (unsigned)species.renderProfile >= CRP_COUNT\n'
-  + '        || (unsigned)species.renderBob >= CRB_COUNT\n'
   + '        || (unsigned)species.protection >= CPROT_COUNT) return false;\n'
   + '  }\n  return true;\n}\n'
   + 'static_assert(creatureRegistriesAreComplete(),\n'

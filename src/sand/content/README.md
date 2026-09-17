@@ -204,3 +204,8 @@ Branching choices, escorts, and a dedicated encounter editor remain expansion
 work. Deliver each stage as a playable example with a named development scene
 and ordinary-input acceptance checks. The chapter's remaining playthrough and
 balance work is tracked in [ADVENTURE.md](ADVENTURE.md#verification-and-remaining-acceptance-work).
+
+Creature attack mappings live in `creatureAnimations.js`. Each pattern maps its
+windup, attack and recovery to a clip/range, with an optional loop. The compiler
+validates these ranges and includes them in the content packet. Playback and
+regression coverage are documented in [../ANIMATION.md](../ANIMATION.md).

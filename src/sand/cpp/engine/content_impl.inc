@@ -59,7 +59,7 @@ struct ContentReader {
 bool ContentSystem::load(const int32_t* data, int length) {
   if (!data || length < 22 || length > 8000000) return false;
   ContentReader r{data, length};
-  if (r.take() != 0x41535452 || r.take() != 9) return false;
+  if (r.take() != 0x41535452 || r.take() != 10) return false;
   uint32_t nextFingerprint = (uint32_t)r.take();
   int rectangleCount = r.bounded(0, 20000), questCount = r.bounded(1, 128);
   int width = r.bounded(1, 64), height = r.bounded(1, 64);
@@ -142,6 +142,14 @@ bool ContentSystem::load(const int32_t* data, int length) {
       expectedOffset += clip.count;
     }
     if (expectedOffset != frames) return false;
+    for (auto& attack : art.attacks) for (auto& range : attack) {
+      range.clip = r.bounded(0, CC_COUNT - 1);
+      if (!r.valid) return false;
+      const auto& clip = art.clips[range.clip];
+      range.start = r.bounded(0, clip.count - 1);
+      range.count = r.bounded(1, clip.count - range.start);
+      range.loop = r.bounded(0, 1) != 0;
+    }
     art.palette = r.colors(colorCount);
     art.pixels = r.pixels(art.width * art.height * frames, colorCount);
   }

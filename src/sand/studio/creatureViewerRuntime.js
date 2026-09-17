@@ -2,22 +2,16 @@ import { initSandWasm, createEngineWasm, MAT, PLANET } from '../wasmBridge/engin
 import { CREATURE_ATTACK_STATE as A, OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import schema from '../abi.schema.json';
 import creatureArt from '../content/creatureArt.js';
+import { CREATURE_ATTACK_ANIMATIONS, creaturePreviewClip } from '../content/creatureAnimations.js';
 import { BESTIARY } from '../content/bestiary.js';
 
 export const CREATURE_ROSTER = schema.enums.CreatureSpecies.descriptors.map(def => ({
   ...def, key: def.key.replace('CREATURE_', ''), name: BESTIARY[def.id]?.name || def.name,
 }));
 export const PREVIEW_MODES = ['idle', 'move', 'windup', 'attack', 'recover', 'hurt', 'death', 'special', 'simulation'];
-export const ATTACK_NAMES = {
-  FROST_GIANT: ['Ice breath', 'Ground smash', 'Ice spear'],
-  BONE_DINOSAUR: ['Bite', 'Rush', 'Fire breath'],
-};
+export const ATTACK_NAMES = Object.fromEntries(Object.entries(CREATURE_ATTACK_ANIMATIONS).map(([key, attacks]) => [key, attacks.map(a => a.name)]));
 export function previewClip(key, mode, pattern = 0) {
-  const art = creatureArt[key], name = mode === 'simulation' ? 'idle' : mode;
-  const clip = art.clips?.[name] || { ticks: 9, frames: art.frames };
-  if (key !== 'FROST_GIANT' || !['windup', 'attack', 'recover'].includes(name)) return clip;
-  const count = clip.frames.length / 3, start = pattern * count;
-  return { ...clip, frames: clip.frames.slice(start, start + count), durations: clip.durations?.slice(start, start + count) };
+  return creaturePreviewClip(key, creatureArt[key], mode === 'simulation' ? 'idle' : mode, pattern);
 }
 export function clipDuration(clip) { return clip.frames.reduce((sum, _, i) => sum + (clip.durations?.[i] || clip.ticks), 0); }
 export function clipFrame(clip, tick) {
@@ -65,7 +59,7 @@ export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
     if (config.mode === 'windup') Object.assign(values, { attackState: A.CHARGING, attackProgress: phase });
     if (config.mode === 'attack') Object.assign(values, { attackState: A.FIRING, attackProgress: 1 - phase });
     if (config.mode === 'recover') Object.assign(values, { attackState: A.RECOVERING, attackProgress: phase,
-      attackPattern: config.creature === 'FROST_GIANT' ? (config.pattern + 1) % 3 : config.pattern });
+      attackPattern: config.pattern });
     if (config.mode === 'hurt') values.health = definition.stats.maxHealth - (tick % 36 ? 1 : 0);
     if (config.mode === 'death') Object.assign(values, { alive: 0, animFrame: clipFrame(clip, tick) });
     place(values);
@@ -150,8 +144,9 @@ export async function createCreatureViewer(canvas, sourceCanvas, initial = {}) {
       paused = true;
       const target = Math.max(0, Math.min(clip.frames.length - 1, Math.floor(index)));
       if (config.mode === 'simulation') return;
-      tick = clip.frames.slice(0, target).reduce((sum, _, i) => sum + (clip.durations?.[i] || clip.ticks), 0);
-      pose(); render();
+      const targetTick = clip.frames.slice(0, target).reduce((sum, _, i) => sum + (clip.durations?.[i] || clip.ticks), 0);
+      reset();
+      for (let i = 0; i < targetTick; i++) { advance(); render(); }
     },
     inspect() {
       const data = actorData();

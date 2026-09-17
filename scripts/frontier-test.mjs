@@ -60,13 +60,24 @@ try {
  assert.equal(objective('windward').state,OBJECTIVE_STATE.COMPLETE);
  defeat('hollow-bellkeeper');assert.equal(e.getMission().phase,MISSION_PHASE.COMPLETE,'main story resolves independently of side quests');
  for(const key of ['old-sanctuary','archive-promise','branns-gift'])defeat(key);
- accept('buried-pass');const passAnchor=GAME_CONTENT.anchors['railway.instrument'];
+ for(const key of ['iron-promise','golden-thread'])
+  assert.equal(objective(key).state,OBJECTIVE_STATE.LOCKED,'ore errands require the reopened mine');
+ accept('buried-pass');const passAnchor=GAME_CONTENT.anchors['mine.gallery'];
  const passOffset=e.contentOffset(passAnchor.surface),passArea=GAME_WORLD.quests.find(q=>q.key==='buried-pass').condition.bounds;
  const passFloor=passOffset.y+passArea[3],passX=Math.round((passArea[0]+passArea[2])/2)+passOffset.x;
  move(passAnchor.x+passOffset.x,passFloor-10);tick();
  assert.equal(objective('buried-pass').state,OBJECTIVE_STATE.ACTIVE,'walking around a rockfall does not excavate it');
  e.eraseDisc(passX-e.getWorldOffsetX(),passFloor-10-e.getWorldOffsetY(),19);tick();
  assert.equal(objective('buried-pass').state,OBJECTIVE_STATE.COMPLETE);
+ tick();
+ for(const key of ['iron-promise','golden-thread']) {
+  assert.equal(objective(key).state,OBJECTIVE_STATE.ACTIVE,'opening the gallery unlocks ore errands');
+  accept(key);
+  const index=GAME_WORLD.quests.findIndex(q=>q.key===key),quest=GAME_WORLD.quests[index];
+  e.addToInventory(player,MAT[quest.condition.material],quest.condition.count);tick();
+  assert.ok(e.interactFrontier(player,index),`${key}: deliver ore to its keeper`);
+  assert.equal(objective(key).state,OBJECTIVE_STATE.COMPLETE);
+ }
  move(0,8);e.eraseDiscLayer(0,-80-e.getWorldOffsetX(),17-e.getWorldOffsetY(),7);e.eraseDiscLayer(1,-80-e.getWorldOffsetX(),17-e.getWorldOffsetY(),7);
  assert.equal(at(-80,17),MAT.EMPTY);assert.equal(at(-80,17,true),MAT.EMPTY);
  assert.ok(e.repairFrontierBase(player));for(let i=0;i<3;i++)e.step();assert.notEqual(at(-80,17),MAT.EMPTY);

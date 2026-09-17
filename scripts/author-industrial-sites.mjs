@@ -1,4 +1,4 @@
-// Material geometry for the western railway and Cinder Works. The generated
+// Material geometry for the Oldroot Mine and Cinder Works. The generated
 // operations remain ordinary editable content in the world workbench.
 import { writeFileSync } from 'node:fs';
 import world from '../src/sand/content/world.js';
@@ -51,171 +51,126 @@ function drawing() {
   return {ops,rect,poly,line,ellipse,arch,text,lantern,bolts};
 }
 
-function railway() {
-  const d=drawing(),{rect,poly,line,ellipse,arch,text,lantern,bolts}=d;
-  // Open-air station, native hillside tunnel, and a gorge beneath the viaduct.
-  rect('EMPTY',-192,-172,295,-1,'both');
-  rect('EMPTY',296,-90,590,-1,'both');
-  rect('EMPTY',-550,-80,-507,-1,'both');
-  rect('EMPTY',-197,-80,-193,-1,'both');
-  // A tunnel bored through the terrain profile; the exterior keeps native soil.
-  rect('STONE',-506,-58,-198,8,'both');
-  rect('EMPTY',-510,-48,-194,0,'fg');
-  rect('DEEPSTONE',-506,-48,-198,0);
-  for(let x=-492;x<=-215;x+=38) {
-    rect('BRICK',x,-49,x+3,0);
-    poly('BRICK',[[x,-49],[x+8,-55],[x+29,-55],[x+35,-49],[x+35,0],[x+32,0],[x+32,-46],[x+27,-51],[x+9,-51],[x+4,-46],[x+4,0],[x,0]]);
-    rect('IRON_ORE',x+1,-39,x+34,-38);
-    bolts(x+3,-39,x+31,9);
+function mine() {
+  const d=drawing(),{rect,poly,line,ellipse,text,lantern}=d;
+  // A cutaway hillside: rock encloses two hand-hewn levels and a sloping adit.
+  rect('EMPTY',-30,-140,330,-1,'both');
+  poly('STONE',[[-314,-59],[-302,-76],[-106,-76],[-58,-63],[-36,-45],[-36,12],[-314,12]],'both');
+  poly('DEEPSTONE',[[-300,-45],[-284,-57],[-114,-57],[-63,-47],[-34,-34],[-34,-1],[-300,-1]]);
+  poly('EMPTY',[[-300,-43],[-284,-55],[-114,-55],[-63,-45],[-30,-32],[-30,-1],[-300,-1]],'fg');
+  rect('STONE',-309,36,70,107,'both');
+  poly('DEEPSTONE',[[-296,61],[-282,45],[-239,43],[-197,49],[-126,51],[-112,58],[60,58],[60,95],[-296,95]]);
+  poly('EMPTY',[[-296,63],[-282,47],[-239,45],[-197,51],[-126,53],[-112,60],[60,60],[60,94],[-296,94]],'fg');
+  // The inclined working joins both levels; shallow stone steps carry the player.
+  poly('DEEPSTONE',[[-163,57],[-100,-1],[-48,-1],[-48,1],[-140,95],[-171,95]]);
+  poly('EMPTY',[[-163,57],[-100,-2],[-48,-2],[-48,0],[-140,94],[-171,94]],'fg');
+  for(let i=0;i<47;i++)rect('STONE',-50-i*2,i*2,-48-i*2,i*2+1,'both');
+  // Quiet geological bedding and small fractures keep the galleries irregular.
+  for(const [x,y,w] of [[-289,-31,28],[-249,-44,31],[-219,-19,18],[-152,-39,25],[-282,65,31],[-243,53,23],[-196,77,28],[-91,74,28],[-22,68,24]]) {
+    poly('SLATE',[[x,y],[x+8,y-3],[x+w,y-2],[x+w-5,y],[x+9,y+1]]);
+    line('STONE',x+3,y+5,x+12,y+7);
   }
-  rect('COPPER_ORE',-503,-43,-201,-43);
-  for(const x of [-471,-395,-281,-220])lantern(x,-31,-48);
-  // Side-view voussoirs and battered masonry identify both tunnel mouths.
-  for(const x of [-506,-201]) {
-    poly('PALESTONE',[[x-9,6],[x-8,-40],[x-4,-54],[x+3,-60],[x+9,-57],[x+10,6]],'bg');
-    rect('SLATE',x-6,-45,x-3,2);
-    for(let y=-50;y<0;y+=7)rect('STONE',x-7,y,x+7,y);
-    rect('PALESTONE',x-14,-60,x+12,-56,'both');
-    rect('PALESTONE',x-15,0,x+14,5,'both');
+  // Oak pit props, wedged cap beams, pegs, and diagonal knee braces.
+  function frame(x,top,bottom,width=40) {
+    for(const px of [x,x+width]) {
+      rect('OAK_WOOD',px,top,px+4,bottom);
+      rect('PINE_WOOD',px+1,top+2,px+1,bottom-2);
+      rect('STONE',px-2,bottom-2,px+6,bottom+3);
+      rect('IRON_ORE',px,top+5,px+4,top+6);
+    }
+    rect('OAK_WOOD',x-3,top-4,x+width+7,top+1);
+    rect('PINE_WOOD',x-1,top-3,x+width+5,top-3);
+    line('OAK_WOOD',x+4,top+14,x+17,top+1,3);
+    line('OAK_WOOD',x+width,top+14,x+width-13,top+1,3);
+    rect('COPPER_ORE',x+2,top-1,x+2,top-1);
+    rect('COPPER_ORE',x+width+2,top-1,x+width+2,top-1);
   }
-  // Track bed: sleepers sit below a thin continuous rail; the web is riveted.
-  rect('SHALE',-548,2,598,8,'both');
-  for(let x=-544;x<=592;x+=10)rect('OAK_WOOD',x,1,x+4,4,'both');
-  rect('IRON_ORE',-550,0,600,1,'both');
-  rect('SLATE',-549,0,599,0);
-  for(let x=-535;x<590;x+=40){rect('IRON_ORE',x,2,x+7,3);bolts(x+1,2,x+6,4);}
-  // The rockfall spans the bore and remains the physical excavation objective.
-  poly('STONE',[[-359,-51],[-339,-49],[-329,-32],[-332,-19],[-320,0],[-368,0],[-359,-15]],'fg');
-  poly('SANDSTONE',[[-353,-40],[-342,-43],[-334,-32],[-342,-25],[-354,-28]],'fg');
-  poly('SLATE',[[-364,-10],[-351,-18],[-342,-7],[-335,-1],[-370,-1]],'fg');
-  // Westbound semaphore, mile post, and points lever.
-  function signal(x,flipped=false) {
-    rect('PALESTONE',x-4,-3,x+5,0,'both');rect('IRON_ORE',x,-69,x+2,-4);
-    rect('PALESTONE',x,-65,x,-6);rect('IRON_ORE',x-3,-65,x+6,-59);
-    const dir=flipped?-1:1;
-    line('BRICK',x+1,-63,x+dir*23,-63,4);rect('PALESTONE',x+dir*18-1,-65,x+dir*18+1,-61);
-    ellipse('COPPER_ORE',x+1,-62,4,5);rect('LIGHT',x+1,-63,x+1,-62,'both');
-    for(let y=-55;y<-5;y+=6)rect('IRON_ORE',x+5,y,x+10,y);
-    rect('IRON_ORE',x+10,-57,x+10,-4);
+  for(const x of [-286,-230,-172,-114])frame(x,-45,-1);
+  for(const x of [-278,-218,-94,-34])frame(x,62,94,40);
+  // Exposed seams are foreground ore and can be harvested with ordinary tools.
+  function seam(material,points) {poly('SLATE',points,'both');poly(material,points.map(([x,y],i)=>[x+(i%2?0:2),y+1]),'fg');}
+  seam('IRON_ORE',[[-295,-7],[-290,-21],[-283,-26],[-274,-19],[-265,-13],[-256,-8],[-259,-1],[-295,-1]]);
+  seam('IRON_ORE',[[-256,-52],[-246,-57],[-230,-55],[-225,-49],[-241,-47]]);
+  seam('COAL_ORE',[[-132,-2],[-129,-12],[-120,-21],[-111,-17],[-102,-8],[-104,-1]]);
+  seam('GOLD_ORE',[[-294,84],[-287,74],[-279,72],[-272,77],[-263,83],[-259,94],[-294,94]]);
+  seam('COPPER_ORE',[[-205,52],[-198,55],[-186,54],[-174,57],[-172,62],[-190,62],[-205,58]]);
+  // The collapsed upper working seals the old iron face from floor to roof.
+  poly('STONE',[[-200,-54],[-184,-55],[-174,-42],[-177,-29],[-164,-12],[-166,-1],[-206,-1],[-201,-18],[-209,-33]],'fg');
+  poly('SANDSTONE',[[-199,-40],[-187,-47],[-177,-36],[-185,-27],[-198,-30]],'fg');
+  poly('SLATE',[[-204,-15],[-191,-25],[-179,-18],[-169,-2],[-204,-2]],'fg');
+  line('STONE',-197,-12,-182,-6,3,'fg');
+  // The mouth has battered stone cheeks and massive pegged timber, under turf.
+  poly('STONE',[[-68,5],[-69,-42],[-60,-62],[-48,-70],[-33,-66],[-23,-52],[-23,5]]);
+  poly('DEEPSTONE',[[-56,0],[-56,-42],[-49,-52],[-37,-53],[-28,-39],[-28,0]]);
+  rect('OAK_WOOD',-62,-54,-57,1);rect('OAK_WOOD',-28,-54,-23,1);
+  rect('OAK_WOOD',-69,-59,-17,-52,'both');
+  line('PINE_WOOD',-67,-58,-20,-58,2);
+  line('OAK_WOOD',-56,-39,-43,-52,4);line('OAK_WOOD',-29,-39,-42,-52,4);
+  for(const x of [-61,-27]){rect('IRON_ORE',x,-48,x+3,-46);rect('IRON_ORE',x,-14,x+3,-12);}
+  poly('MOSS',[[-71,-62],[-63,-69],[-44,-74],[-26,-66],[-18,-60],[-30,-61],[-47,-67],[-60,-64]]);
+  for(const [x,y] of [[-66,-61],[-33,-67],[-23,-61]])rect('MOSS',x,y,x+2,y+9);
+  // Split-log threshold and the footpath lead into a small working yard.
+  rect('STONE',-47,0,331,7,'both');
+  rect('SHALE',-44,0,326,1,'both');
+  rect('OAK_WOOD',-46,-1,-20,1,'both');
+  for(const x of [-42,-33,-24])rect('PINE_WOOD',x,-1,x+1,-1,'both');
+  // A hand-wound shaft hoist: shingled headframe, wooden drum and rope bucket.
+  rect('DEEPSTONE',29,1,61,96);rect('EMPTY',31,0,58,94,'fg');
+  for(const x of [25,61]){rect('STONE',x-5,0,x+8,12,'both');rect('OAK_WOOD',x,-83,x+5,-1);rect('PINE_WOOD',x+1,-81,x+1,-5);}
+  rect('OAK_WOOD',22,-84,70,-78);
+  line('OAK_WOOD',29,-48,60,-77,4);line('OAK_WOOD',61,-48,31,-77,4);
+  poly('SLATE',[[16,-84],[31,-100],[61,-100],[77,-84],[77,-80],[16,-80]],'both');
+  line('PALESTONE',19,-85,33,-98);line('PINE_WOOD',33,-99,60,-99);
+  for(let x=30;x<63;x+=9)line('STONE',x,-95,x+9,-84);
+  rect('OAK_WOOD',12,-34,81,-31);rect('IRON_ORE',15,-33,78,-32);
+  ellipse('OAK_WOOD',43,-33,14,11);rect('PINE_WOOD',33,-42,54,-24);
+  for(let x=34;x<55;x+=3)rect('SANDSTONE',x,-42,x,-24);
+  ellipse('OAK_WOOD',65,-33,15,15);ellipse('EMPTY',65,-33,10,10);
+  for(const [dx,dy] of [[13,0],[0,13],[-9,9],[9,9]])line('OAK_WOOD',65-dx,-33-dy,65+dx,-33+dy,2);
+  ellipse('IRON_ORE',65,-33,3,3);line('OAK_WOOD',77,-32,83,-25,3);
+  line('SANDSTONE',42,-77,42,46);ellipse('OAK_WOOD',43,-76,5,5);
+  ellipse('IRON_ORE',43,-76,2,2);
+  poly('OAK_WOOD',[[34,47],[51,47],[49,64],[36,64]]);rect('IRON_ORE',34,48,51,49);rect('IRON_ORE',36,61,49,62);
+  line('IRON_ORE',35,47,42,41);line('IRON_ORE',50,47,42,41);
+  // Pegged ladder and intermediate timber shelves make the shallow shaft legible.
+  for(const x of [52,59])rect('OAK_WOOD',x,7,x,92);
+  for(let y=11;y<91;y+=6)rect('PINE_WOOD',52,y,59,y);
+  rect('OAK_WOOD',58,35,62,37,'both');rect('OAK_WOOD',29,72,34,74,'both');
+  // Low sorting shelter: uneven slate, oak trusses, wattle panels, ore bins.
+  rect('SANDSTONE',124,-50,257,-2);
+  for(let x=130;x<=250;x+=12)rect('PINE_WOOD',x,-47,x,-17);
+  rect('OAK_WOOD',120,-54,261,-49);
+  poly('SLATE',[[111,-54],[127,-76],[247,-72],[271,-53],[269,-49],[110,-50]],'both');
+  for(let x=128;x<=239;x+=16)line('STONE',x,-73,x+17,-55);
+  line('PALESTONE',114,-54,129,-73);line('OAK_WOOD',127,-75,246,-71,2);
+  for(const x of [121,184,257]) {
+    rect('OAK_WOOD',x,-50,x+5,0);rect('PINE_WOOD',x+1,-48,x+1,-4);
+    line('OAK_WOOD',x+4,-35,x+16,-49,3);line('OAK_WOOD',x,-35,x-12,-49,3);
+    rect('STONE',x-2,-3,x+7,3,'both');
   }
-  signal(-174);signal(278,true);signal(579);
-  rect('PALESTONE',-528,-12,-523,-1);text('7',-527,-10,'DEEPSTONE');
-  rect('IRON_ORE',257,-5,269,-2);line('IRON_ORE',263,-5,270,-17,2);ellipse('COPPER_ORE',270,-18,3,3);
-  // Station house: slate hipped roof, warm stone quoins, a clock tower.
-  rect('BRICK',-155,-69,-39,-1);
-  rect('PALESTONE',-158,-5,-36,-1);
-  poly('SLATE',[[-165,-68],[-142,-91],[-62,-91],[-29,-68],[-29,-65],[-165,-65]],'both');
-  line('PALESTONE',-161,-68,-142,-88);line('COPPER_ORE',-141,-89,-64,-89);
-  for(let x=-140;x<=-62;x+=13)line('IRON_ORE',x,-88,x-8,-69);
-  for(const x of [-155,-43]){rect('PALESTONE',x,-64,x+3,-6);for(let y=-60;y<-8;y+=9)rect('STONE',x,y,x+3,y+2);}
-  for(const x of [-140,-61]){
-    arch('PALESTONE',x,-52,x+15,-22);arch('GLASS',x+2,-49,x+13,-23);
-    rect('OAK_WOOD',x+7,-43,x+8,-23);rect('OAK_WOOD',x+2,-34,x+13,-33);
-    rect('PALESTONE',x-2,-22,x+17,-20);
+  rect('DEEPSTONE',130,-38,160,-18);rect('OAK_WOOD',128,-40,163,-37);text('ORE',137,-33,'SANDSTONE');
+  rect('OAK_WOOD',132,-16,176,-12);rect('OAK_WOOD',135,-12,138,-1);rect('OAK_WOOD',170,-12,173,-1);
+  poly('IRON_ORE',[[137,-17],[142,-24],[148,-25],[155,-19],[161,-26],[168,-23],[173,-17]]);
+  for(const [x,m] of [[202,'IRON_ORE'],[230,'COPPER_ORE']]) {
+    poly(m,[[x,-13],[x+4,-21],[x+10,-23],[x+17,-16],[x+22,-13]]);
+    rect('OAK_WOOD',x-2,-13,x+24,-2);
+    for(let px=x;px<x+24;px+=6)rect('PINE_WOOD',px,-12,px,-3);
+    rect('IRON_ORE',x-2,-11,x+24,-10);rect('IRON_ORE',x-2,-4,x+24,-3);
   }
-  arch('PALESTONE',-108,-37,-84,0);arch('DEEPSTONE',-105,-34,-87,0);
-  rect('OAK_WOOD',-104,-9,-88,-1);rect('IRON_ORE',-112,-58,-78,-47);text('WESTERN',-109,-55);
-  lantern(-97,-42,-48);lantern(-142,-17,-23);
-  // Tower rises through the house roof; clock face uses actual cell geometry.
-  rect('BRICK',-118,-132,-77,-75);rect('PALESTONE',-121,-101,-74,-97);
-  rect('PALESTONE',-120,-132,-75,-129);rect('PALESTONE',-118,-125,-115,-104);rect('PALESTONE',-80,-125,-77,-104);
-  poly('SLATE',[[-125,-132],[-112,-147],[-97,-151],[-82,-147],[-70,-132],[-70,-129],[-125,-129]],'both');
-  line('COPPER_ORE',-97,-158,-97,-151,2);ellipse('GOLD_ORE',-97,-158,2,2);
-  ellipse('IRON_ORE',-97,-116,14,14);ellipse('COPPER_ORE',-97,-116,12,12);ellipse('PALESTONE',-97,-116,10,10);
-  line('IRON_ORE',-97,-116,-97,-123,1);line('IRON_ORE',-97,-116,-91,-112,1);ellipse('IRON_ORE',-97,-116,2,2);
-  for(const [x,y]of[[-97,-125],[-88,-116],[-97,-107],[-106,-116]])rect('DEEPSTONE',x,y,x,y);
-  rect('LIGHT',-97,-125,-97,-125,'both');
-  // Open platform canopy, with curved iron brackets and a clerestory ridge.
-  poly('SLATE',[[-32,-76],[-15,-87],[155,-87],[187,-75],[187,-72],[-32,-72]],'both');
-  rect('COPPER_ORE',-20,-76,177,-74);rect('PALESTONE',-11,-87,153,-86);
-  for(const x of [-24,68,177]) {
-    rect('IRON_ORE',x,-73,x+2,-2);rect('COPPER_ORE',x,-72,x,-3);
-    rect('PALESTONE',x-3,-5,x+5,-1);
-    poly('IRON_ORE',[[x-16,-73],[x-13,-69],[x-5,-65],[x,-57],[x+2,-57],[x+7,-65],[x+15,-70],[x+17,-73],[x+13,-73],[x+5,-69],[x+1,-62],[x-3,-68],[x-12,-73]]);
+  // A stacked timber crib, a two-handled barrow, and hand tools tell the work.
+  for(const [x,y] of [[282,-5],[295,-5],[308,-5],[288,-15],[301,-15]]) {
+    rect('OAK_WOOD',x-5,y-4,x+5,y+4);ellipse('PINE_WOOD',x,y,5,5);ellipse('OAK_WOOD',x,y,2,2);
   }
-  for(const x of [0,50,102,158])lantern(x,-53,-74);
-  rect('IRON_ORE',34,-75,34,-72);rect('IRON_ORE',93,-75,93,-72);rect('OAK_WOOD',28,-72,101,-64);text('ASTER JUNCTION',32,-70);
-  // Benches and a luggage trolley stay in the background, leaving a clear walk.
-  rect('OAK_WOOD',-66,-12,-39,-9);rect('OAK_WOOD',-66,-20,-39,-17);
-  rect('IRON_ORE',-63,-9,-62,-2);rect('IRON_ORE',-43,-9,-42,-2);
-  rect('IRON_ORE',222,-10,248,-8);ellipse('IRON_ORE',227,-5,3,3);ellipse('IRON_ORE',242,-5,3,3);
-  rect('OAK_WOOD',226,-23,236,-11);rect('COPPER_ORE',238,-18,246,-11);rect('PALESTONE',230,-22,231,-12);
-  // Water tank: curved stave barrel, hoop bands, braced trestle and filling arm.
-  for(const x of [199,229])rect('OAK_WOOD',x,-77,x+3,-1);
-  line('OAK_WOOD',199,-68,231,-8,3);line('OAK_WOOD',231,-68,200,-8,3);
-  ellipse('IRON_ORE',216,-101,23,6);rect('OAK_WOOD',193,-102,239,-77);ellipse('OAK_WOOD',216,-77,23,5);
-  for(let x=197;x<239;x+=6)rect('PINE_WOOD',x,-100,x,-79);
-  for(const y of [-98,-80]){rect('IRON_ORE',192,y,240,y+2);bolts(195,y,237,7);}
-  ellipse('SLATE',216,-103,25,5);rect('COPPER_ORE',195,-106,236,-105);
-  rect('IRON_ORE',237,-95,243,-91);rect('IRON_ORE',241,-94,244,-49);rect('IRON_ORE',180,-52,243,-49);
-  rect('COPPER_ORE',181,-51,241,-51);rect('IRON_ORE',179,-51,182,-43);
-  // Steam locomotive, left-facing: smokebox, boiler bands, cab, running board.
-  poly('IRON_ORE',[[7,-24],[13,-38],[28,-43],[77,-43],[85,-35],[85,-21],[10,-21]]);
-  poly('SLATE',[[17,-35],[28,-39],[73,-39],[79,-34],[79,-27],[17,-27]]);
-  rect('PALESTONE',29,-40,74,-39);
-  for(const x of [32,53,74]){rect('COPPER_ORE',x,-41,x+2,-23);rect('PALESTONE',x,-40,x,-26);}
-  ellipse('IRON_ORE',14,-31,8,12);ellipse('SLATE',12,-31,5,8);
-  ellipse('COPPER_ORE',9,-35,4,4);rect('LIGHT',7,-36,7,-34,'both');
-  poly('IRON_ORE',[[23,-40],[23,-51],[18,-55],[18,-59],[33,-59],[33,-55],[29,-51],[29,-40]]);
-  rect('COPPER_ORE',18,-59,33,-57);ellipse('COPPER_ORE',57,-45,7,6);rect('IRON_ORE',49,-43,65,-41);
-  rect('IRON_ORE',79,-55,108,-20);rect('OAK_WOOD',81,-51,105,-23);
-  rect('IRON_ORE',80,-56,109,-53);poly('SLATE',[[76,-57],[79,-62],[106,-62],[112,-57],[112,-54],[76,-54]]);
-  rect('GLASS',83,-50,91,-37);rect('GLASS',95,-50,104,-37);rect('COPPER_ORE',93,-50,94,-23);
-  rect('LIGHT',98,-47,99,-46,'both');rect('IRON_ORE',80,-27,108,-24);
-  rect('IRON_ORE',9,-21,111,-17);rect('COPPER_ORE',11,-21,109,-20);bolts(14,-18,109,9);
-  poly('IRON_ORE',[[7,-18],[-3,-5],[12,-5],[17,-18]]);
-  for(let x=0;x<13;x+=4)line('PALESTONE',x+5,-16,x,-6);
-  function wheel(x,y,r) {
-    ellipse('IRON_ORE',x,y,r,r);ellipse('COPPER_ORE',x,y,r-2,r-2);ellipse('DEEPSTONE',x,y,r-4,r-4);
-    for(let a=0;a<Math.PI*2;a+=Math.PI/3)line('IRON_ORE',x,y,x+Math.cos(a)*(r-3),y+Math.sin(a)*(r-3));
-    ellipse('PALESTONE',x,y,2,2);
-  }
-  for(const x of [34,57,80])wheel(x,-10,10);wheel(101,-7,6);
-  line('PALESTONE',28,-10,85,-10,2);line('COPPER_ORE',35,-11,64,-16,2);line('IRON_ORE',17,-22,32,-11,2);
-  for(const x of [28,83,110]){rect('COPPER_ORE',x-1,-22,x+1,-19);rect('LIGHT',x,-21,x,-20,'both');}
-  rect('COPPER_ORE',85,-34,106,-29);text('07',89,-34,'PALESTONE');
-  // Coal tender and an ochre goods wagon; couplers connect every vehicle.
-  rect('IRON_ORE',111,-10,119,-8);rect('IRON_ORE',117,-28,162,-12);
-  rect('OAK_WOOD',120,-26,159,-15);rect('IRON_ORE',118,-30,161,-27);
-  poly('COAL_ORE',[[121,-29],[123,-35],[129,-32],[136,-39],[143,-36],[149,-37],[159,-30]]);
-  rect('COPPER_ORE',120,-24,159,-24);wheel(126,-7,6);wheel(153,-7,6);
-  rect('IRON_ORE',162,-10,170,-8);rect('IRON_ORE',169,-16,213,-12);
-  poly('OAK_WOOD',[[171,-16],[171,-43],[176,-47],[205,-47],[211,-43],[211,-16]]);
-  poly('SLATE',[[168,-44],[175,-50],[205,-50],[215,-44],[215,-41],[168,-41]]);
-  rect('PINE_WOOD',186,-39,200,-18);rect('IRON_ORE',192,-39,193,-18);
-  for(const x of [172,183,203,210])rect('IRON_ORE',x,-41,x,-17);
-  line('IRON_ORE',173,-39,182,-19);line('IRON_ORE',204,-39,209,-19);
-  rect('PALESTONE',188,-32,197,-27);text('R',191,-32,'DEEPSTONE');
-  wheel(179,-7,6);wheel(205,-7,6);
-  // Arch rings and piers span the native gorge without cutting its floor.
-  rect('SLATE',298,6,592,20,'both');
-  for(const [left,right] of [[311,366],[380,435],[449,504],[518,575]]) {
-    const cx=(left+right)/2,r=(right-left)/2,cy=20+r;
-    const arc=radius=>Array.from({length:25},(_,i)=>[cx-Math.cos(i*Math.PI/24)*radius,cy-Math.sin(i*Math.PI/24)*radius]);
-    poly('BRICK',[[left,20],[right,20],...arc(r).toReversed()],'both');
-    poly('BRICK',[...arc(r),...arc(r-7).toReversed()],'both');
-    poly('PALESTONE',[...arc(r-1),...arc(r-3).toReversed()],'both');
-    rect('BRICK',left-6,20,left+1,112,'both');rect('BRICK',right-1,20,right+7,112,'both');
-    for(let a=Math.PI+.15;a<2*Math.PI-.1;a+=Math.PI/8)line('STONE',cx+Math.cos(a)*(r-7),cy+Math.sin(a)*(r-7),cx+Math.cos(a)*r,cy+Math.sin(a)*r,1,'both');
-    rect('PALESTONE',cx-2,18,cx+2,25,'both');
-  }
-  rect('SLATE',296,5,594,9,'both');rect('IRON_ORE',296,10,594,11,'both');
-  for(const x of [300,370,439,508,582]) {rect('PALESTONE',x,18,x+5,105,'both');rect('STONE',x-2,104,x+7,112,'both');}
-  // Fine wrought railing leaves the train silhouette and the ravine readable.
-  rect('IRON_ORE',297,-13,593,-12);rect('IRON_ORE',297,-4,593,-4);
-  for(let x=298;x<594;x+=12){rect('IRON_ORE',x,-12,x,-1);rect('COPPER_ORE',x,-14,x,-13);}
-  for(const x of [307,438,585])lantern(x,-29,-42);
-  for(const x of [307,438,585]){rect('IRON_ORE',x+6,-44,x+7,0);line('IRON_ORE',x+6,-43,x-2,-43,2);}
-  // Drainage channel beneath the central arches, contained within the gorge.
-  rect('WATER',401,88,477,96,'fg');
-  // Telegraph wire, poles and insulators make the line continue past the yard.
-  for(const x of [-530,-160,290,598]) {
-    rect('OAK_WOOD',x,-86,x+2,-1);rect('OAK_WOOD',x-9,-80,x+11,-78);
-    for(const dx of [-7,0,8])rect('GLASS',x+dx,-84,x+dx+2,-81);
-  }
-  for(const [a,b] of [[-160,290],[290,598]]) {
-    for(let i=0;i<24;i++){const t=i/24,u=(i+1)/24;line('IRON_ORE',a+(b-a)*t,-83+Math.sin(t*Math.PI)*10,a+(b-a)*u,-83+Math.sin(u*Math.PI)*10);}
-  }
+  ellipse('OAK_WOOD',94,-5,5,5);ellipse('IRON_ORE',94,-5,2,2);
+  poly('OAK_WOOD',[[79,-21],[102,-21],[99,-10],[84,-10]]);line('OAK_WOOD',79,-14,72,-8,2);
+  line('PINE_WOOD',100,-14,112,-19,2);
+  line('OAK_WOOD',167,-26,177,-7,2);line('IRON_ORE',163,-27,174,-30,2);
+  rect('OAK_WOOD',249,-35,250,-12);poly('IRON_ORE',[[245,-14],[254,-14],[253,-7],[247,-7]]);
+  // Modest timber sign and lantern pools guide the way from yard to gold face.
+  rect('OAK_WOOD',-15,-44,16,-30);rect('PINE_WOOD',-15,-44,16,-43);
+  text('OLDROOT',-13,-41,'SANDSTONE');text('MINE',-9,-35,'SANDSTONE');
+  rect('OAK_WOOD',-3,-30,0,-1);
+  for(const [x,y,top] of [[-267,-25,-43],[-215,-26,-43],[-151,-24,-43],[-42,-32,-52],[-104,21,4],[-137,52,35],[-265,78,61],[-188,77,61],[-74,79,62],[16,-16,-33],[179,-27,-49],[251,-25,-49]])lantern(x,y,top);
   return d.ops;
 }
 
@@ -300,15 +255,15 @@ function foundry() {
   return d.ops;
 }
 
-const rail=world.sites.find(s=>s.id==='railway');
-Object.assign(rail,{
-  name:'Aster Junction',
-  description:'A mountain railway: the western bore, a sleeping steam train, and a four-arch viaduct over the gorge.',
-  anchors:{instrument:[-396,-10],station:[-96,-10],viaduct:[438,-10]},
-  preview:{at:[rail.origin[0]+15,rail.origin[1]-12],dayPhase:.45,zoomSteps:-2},
-  placement:{footprint:[-550,600],ground:0,search:1024,blend:96,
-    terrain:[[-550,0],[-510,-14],[-457,-76],[-360,-112],[-282,-104],[-218,-43],[-178,0],[296,0],[345,77],[416,101],[499,94],[552,62],[600,0]]},
-  operations:railway(),
+const mineSite=world.sites.find(s=>s.id==='mine');
+Object.assign(mineSite,{
+  id:'mine',name:'Oldroot Mine',
+  description:'An oak-braced hillside mine, with a hand-wound hoist, lamplit galleries and a weathered ore-sorting shelter.',
+  anchors:{gallery:[-242,-10],mouth:[-39,-10],shaft:[44,-10],gold:[-268,83],yard:[159,-10]},
+  preview:{at:[mineSite.origin[0]-40,mineSite.origin[1]-10],dayPhase:.35,zoomSteps:-3},
+  placement:{footprint:[-360,340],ground:0,search:1024,blend:96,
+    terrain:[[-360,0],[-326,-67],[-276,-139],[-224,-157],[-158,-134],[-99,-104],[-62,-81],[-18,0],[340,0]]},
+  operations:mine(),
 });
 const forge=world.sites.find(s=>s.id==='foundry');
 Object.assign(forge,{
@@ -318,15 +273,41 @@ Object.assign(forge,{
   placement:{...forge.placement,footprint:[-178,183]},operations:foundry(),
 });
 const pass=world.quests.find(q=>q.key==='buried-pass');
-pass.condition.bounds=[rail.origin[0]-352,rail.origin[1]-48,rail.origin[0]-332,rail.origin[1]];
-pass.place='Aster Junction · The western bore';
-pass.summary='Clear the rockfall blocking the western railway.';
-pass.description='The mountain line once carried ore and travelers through Aster Junction. Open an actor-height passage through the collapsed western bore.';
-pass.hint='Follow the rails into the hillside. Dig through the fallen stone between the brick tunnel ribs.';
+Object.assign(pass,{
+  title:'The sealed gallery',target:'mine.gallery',radius:72,
+  condition:{kind:'passage',bounds:[mineSite.origin[0]-196,mineSite.origin[1]-48,mineSite.origin[0]-176,mineSite.origin[1]],surfaceAt:mineSite.surfaceAt},
+  place:'West · Oldroot Mine',summary:'Reopen the collapsed iron gallery at Oldroot Mine.',
+  description:'Oldroot once supplied the valley with iron, coal and a little gold. A roof fall has sealed its upper working. Iven will trade a Stonebreak rune for a passage back to the old iron face.',
+  hint:'Enter beneath the timber lintel and follow the lanterns left. Clear a person-high gap through the fallen stone between the oak pit props.',
+});
+Object.assign(world.quests.find(q=>q.key==='iron-promise'),{
+  after:['buried-pass'],place:'Oldroot Mine → Brann’s forge',
+  summary:'Bring Brann 48 iron ore from the reopened workings.',
+  description:'With Oldroot’s gallery open, Brann can forge shields for the valley again. Work the exposed iron seams beyond the rockfall and bring him 48 iron ore.',
+  hint:'Rust-red iron is exposed at the far end of the upper gallery. Return to Brann and hand over the ore.',
+});
+Object.assign(world.quests.find(q=>q.key==='golden-thread'),{
+  after:['buried-pass'],place:'Oldroot Mine → Hearthwood',
+  summary:'Recover 12 gold ore for Iven’s falling charm.',
+  description:'Iven remembers a golden seam below Oldroot’s iron working. Now the gallery is open, follow the stepped incline to the lower lanterns. Bring him 12 gold ore for a charm that softens a fall.',
+  hint:'The stone steps descend beside the mine mouth. Gold glints in the left wall of the lower gallery; bring 12 ore back to Iven.',
+});
+Object.assign(world.quests.find(q=>q.key==='miras-lantern'),{
+  description:'Mira needs 20 coal to keep her reading lantern lit. Oldroot’s near working has a dark seam before the collapse, reachable even while the iron gallery is sealed.',
+  hint:'Look for the black seam just inside Oldroot Mine, above the steps. Bring 20 coal back to Mira.',
+});
+world.residents.find(n=>n.id===7).dialogue.variants=[
+  {quest:'golden-thread',state:'complete',text:'Oldroot’s gold has a little sunlight in it still. Keep the charm close on the high paths. I have copper wares whenever you need them.'},
+  {quest:'buried-pass',state:'complete',text:'Lamplight in the old working again! Brann needs its iron, and there is gold below: take the stone steps down, then follow the lower lanterns left. Bring me twelve gold ore and I will bind you a falling charm.'},
+  {quest:'buried-pass',state:'active',text:'West of Hearthwood is Oldroot Mine. The hand winch is still standing, but fallen stone seals the iron gallery. Follow the upper lanterns left and open a person-high passage. I have a Stonebreak rune for whoever gets the old working open.'},
+];
 world.quests.find(q=>q.key==='last-shift').place='Far west · The Cinder Works';
-for(const [site,positions] of [[rail,[[-443,-7],[-401,-7],[-150,-7],[240,-16],[562,-7]]],[forge,[[-153,-7],[-73,-7],[-30,-7],[48,-7],[169,-7]]]]) {
-  const anchorName=site===rail?'instrument':'foreman',anchor=site.anchors[anchorName];
-  world.chests.filter(c=>c.anchor===`${site.id}.${anchorName}`).forEach((c,i)=>{c.offset=[positions[i][0]-anchor[0],positions[i][1]-anchor[1]];});
-}
+const mineCaches=[[-247,-7],[-239,87],[-166,87],[146,-7],[287,-7]];
+const mineNames=['Ironworker’s coffer','Deep seam coffer','Pit-prop supplies','Ore sorter’s coffer','Timber-yard stores'];
+world.chests.filter(c=>c.anchor.startsWith('mine.')).forEach((c,i)=>{
+  c.anchor='mine.gallery';c.offset=mineCaches[i].map((v,axis)=>v-mineSite.anchors.gallery[axis]);c.name=mineNames[i];
+});
+const forgeCaches=[[-153,-7],[-73,-7],[-30,-7],[48,-7],[169,-7]];
+world.chests.filter(c=>c.anchor==='foundry.foreman').forEach((c,i)=>{c.offset=forgeCaches[i].map((v,axis)=>v-forge.anchors.foreman[axis]);});
 writeFileSync(new URL('../src/sand/content/world.js',import.meta.url),'// Authored places and stories for the Hollow Bell chapter.\nexport default '+formatWorldContent(world)+';\n');
-console.log(`Authored ${rail.operations.length} railway and ${forge.operations.length} foundry operations.`);
+console.log(`Authored ${mineSite.operations.length} mine and ${forge.operations.length} foundry operations.`);

@@ -6,7 +6,7 @@ presentation, pause, tracking, and the repair conversation. The engine owns
 physical objectives, rewards, terrain, and station repairs. Read
 [`../README.md`](../README.md#aster-continuous-earth-expedition) for the runtime map.
 
-The station, western railway, drowned archive, and eastern observatory share
+The station, Oldroot Mine, drowned archive, and eastern observatory share
 normal world streaming and destruction. No mission transition recreates the
 world. The station repair intent preserves changes beyond station grounds.
 

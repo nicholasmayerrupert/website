@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { GAME_CONTENT, GAME_WORLD, PLAYER_ART } from '../src/sand/content/catalog.js';
 import { compileContent } from '../src/sand/content/compile.js';
-import { initSandWasm, createEngineWasm, PLANET, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm, PLANET, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { MISSION, ITEM_KIND, CREATURE, WORLD_FEATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import materialArt from '../src/sand/content/materialArt.js';
 import { MATERIAL_BY_ID } from '../src/sand/materials.generated.js';
@@ -24,8 +24,8 @@ invalid(w => { w.quests[4].condition.species = 'TYPO'; }, /encounter species/);
 invalid(w => { w.residents[0].roamRadius = -1; }, /expected integer/);
 invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: ['0'] }; }, /tile/);
 invalid(w => { w.textures.STONE = { palette: ['#ffffff'], rows: Array(32).fill('9'.repeat(32)) }; }, /palette index/);
-invalid(w => { w.sites.find(s => s.id === 'railway').placement.terrain = [[-10, 0], [-20, 0]]; }, /ordered/);
-invalid(w => { w.sites.find(s => s.id === 'railway').placement.terrain = [[-10, 3], [20, 0]]; }, /ground level/);
+invalid(w => { w.sites.find(s => s.id === 'mine').placement.terrain = [[-10, 0], [-20, 0]]; }, /ordered/);
+invalid(w => { w.sites.find(s => s.id === 'mine').placement.terrain = [[-10, 3], [20, 0]]; }, /ground level/);
 assert.deepEqual(compileContent(GAME_WORLD, PLAYER_ART).packed, GAME_CONTENT.packed);
 console.log('ok: content rejects broken references, dependency cycles, recursive prefabs and malformed art');
 
@@ -241,31 +241,54 @@ try {
 } finally { planned.destroy(); restored.destroy(); }
 console.log('ok: checkpoint seed restoration invalidates provisional site placement');
 
-// Bridge openings preserve the native gorge in both layers. Decorative rail
-// trim must not create hidden masonry footings across an entire span.
-const viaduct = createEngineWasm({ cols: 640, rows: 448, worldSeed: GAME_WORLD.seed,
+// Stream the mine through the real authority and settle its destructible cells.
+const mine = createEngineWasm({ cols: 768, rows: 448, worldSeed: GAME_WORLD.seed,
   infinite: true, planetId: PLANET.FRONTIER });
 try {
-  const site = GAME_WORLD.sites.find(s => s.id === 'railway');
-  const offset = viaduct.contentOffset(GAME_CONTENT.anchors['railway.viaduct'].surface);
+  const site = GAME_WORLD.sites.find(s => s.id === 'mine');
+  const offset = mine.contentOffset(GAME_CONTENT.anchors['mine.mouth'].surface);
   const origin = [site.origin[0] + offset.x, site.origin[1] + offset.y];
-  const target = [Math.round((origin[0] + 440 - 320) / 32) * 32,
-    Math.round((origin[1] - 192) / 32) * 32];
+  const target = [Math.round((origin[0] - 384) / 32) * 32,
+    Math.round((origin[1] - 224) / 32) * 32];
   for (let axis = 0; axis < 2; axis++) {
-    const current = () => axis ? viaduct.getWorldOffsetY() : viaduct.getWorldOffsetX();
+    const current = () => axis ? mine.getWorldOffsetY() : mine.getWorldOffsetX();
     while (current() !== target[axis]) {
       const shift = Math.max(-128, Math.min(128, target[axis] - current()));
-      viaduct.shiftWorldXY(axis ? 0 : shift, axis ? shift : 0);
+      mine.shiftWorldXY(axis ? 0 : shift, axis ? shift : 0);
     }
   }
-  for (let tick = 0; tick < 30; tick++) viaduct.stepWorld();
-  for (const grid of [viaduct.getGrid(), viaduct.getGridBg()]) for (const x of [338, 407, 476, 546]) {
-    const index = (origin[1] + 40 - viaduct.getWorldOffsetY()) * viaduct.cols
-      + origin[0] + x - viaduct.getWorldOffsetX();
-    assert.equal(grid[index], MAT.EMPTY, `arch ${x}: the gorge remains open after settling`);
+  const cell = (x, y, bg = false) => (bg ? mine.getGridBg() : mine.getGrid())[
+    (origin[1] + y - mine.getWorldOffsetY()) * mine.cols + origin[0] + x - mine.getWorldOffsetX()];
+  for (let tick = 0; tick < 90; tick++) mine.stepWorld();
+  for (const [x, y] of [[-246,-12],[-144,-12],[-40,-12],[-85,20],[-115,49],[-239,80],[-165,80],[-46,82],[40,30]])
+    assert.equal(cell(x, y), MAT.EMPTY, `mine passage ${x},${y} stays open after settling`);
+  for (const [x,y,m] of [[-60,-55,'OAK_WOOD'],[34,-88,'SLATE'],[150,-59,'SLATE'],[-185,-10,'SLATE']])
+    assert.equal(cell(x,y), MAT[m], `mine roof or rockfall ${x},${y} stays supported`);
+  assert.equal(cell(-284,-35,true), MAT.OAK_WOOD, 'oak pit props retain background membership');
+  assert.equal(cell(-250,80,true), MAT.DEEPSTONE, 'the deep gallery retains its background');
+  for (const chest of GAME_WORLD.chests.filter(c => c.anchor === 'mine.gallery')) {
+    const x = site.anchors.gallery[0] + chest.offset[0], y = site.anchors.gallery[1] + chest.offset[1];
+    for (let dy=-3;dy<=3;dy++) for (let dx=-3;dx<=3;dx++)
+      assert.equal(cell(x+dx,y+dy),MAT.EMPTY,`${chest.name} has foreground clearance`);
   }
-  const deck = (origin[1] - viaduct.getWorldOffsetY()) * viaduct.cols
-    + origin[0] + 407 - viaduct.getWorldOffsetX();
-  assert.equal(viaduct.getGrid()[deck], MAT.IRON_ORE, 'the railway deck survives above the open gorge');
-} finally { viaduct.destroy(); }
-console.log('ok: streamed railway arches stay open and rails remain supported after settling');
+  for (const [material, area, required] of [
+    ['IRON_ORE',[-298,-57,-225,-1],48], ['COAL_ORE',[-133,-22,-101,-1],20],
+    ['GOLD_ORE',[-296,71,-257,94],12],
+  ]) {
+    let count=0;
+    for(let y=area[1];y<=area[3];y++) for(let x=area[0];x<=area[2];x++)
+      if(cell(x,y)===MAT[material])count++;
+    assert.ok(count>=required,`${material}: ${count} harvestable cells cover the ${required}-ore errand`);
+  }
+  const player = mine.spawnPlayer(origin[0]-239-mine.getWorldOffsetX(), origin[1]+86-mine.getWorldOffsetY());
+  mine.setPlayerInput(player, { bits: INPUT.RIGHT });
+  for (let tick=0;tick<360;tick++) {
+    mine.stepActors();
+    if(mine.getPlayer(player).x+mine.getWorldOffsetX()>origin[0]-35)break;
+  }
+  const climbed=mine.getPlayer(player);
+  assert.ok(climbed.alive && climbed.x+mine.getWorldOffsetX()>origin[0]-40
+    && climbed.y+mine.getWorldOffsetY()<=origin[1]-7,
+  `walk from the lower gold working to the mouth: ${climbed.x+mine.getWorldOffsetX()-origin[0]},${climbed.y+mine.getWorldOffsetY()-origin[1]}`);
+} finally { mine.destroy(); }
+console.log('ok: streamed mine galleries, pit props, roofs, coffers and quest ore survive settling');

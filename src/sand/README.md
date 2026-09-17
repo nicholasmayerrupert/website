@@ -95,7 +95,7 @@ into the surrounding biome with graded slopes.
 There is no deployment, extraction, or world replacement between jobs.
 
 `content/world.js` authors Hearthwood Lodge, its greenhouse and cellar, the
-western railway, the flooded archive, and Windward Observatory. Material
+Oldroot Mine, the flooded archive, and Windward Observatory. Material
 blueprints use rectangles, polygons, and reusable prefabs in either simulated
 layer. Named anchors connect residents, signs, quests, and development scenes.
 `ContentSystem` consumes a validated per-engine package before terrain generation;
@@ -106,7 +106,7 @@ Component-aware repair restores the authored lodge within its declared repair
 bounds. Natural hostile spawns exclude those bounds.
 
 `mission_frontier.inc` evaluates authored reach, passage, drain, build, delivery, and encounter conditions,
-prerequisites, and rewards. The railway needs an actor-height opening; the archive
+prerequisites, and rewards. The mine needs an actor-height opening through its collapsed gallery; the archive
 needs a drainage route into its cistern; the mountain instrument requires a climb.
 Returning to Vale completes the expedition after all three. Rewards are awarded
 before completion is recorded, so a full inventory cannot silently lose them.

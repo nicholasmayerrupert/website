@@ -532,6 +532,23 @@ int GLPresenter::glActorHurtAge(int kind, int id, int health, bool alive) {
   return alive && age >= 0 && age < 15 ? age : -1;
 }
 
+bool GLPresenter::glCreatureWalking(int id, double vx) {
+  auto& state = glActorReactions[((int64_t)SA_CREATURE << 32) | (uint32_t)id];
+  const double speed = std::fabs(vx);
+  if (state.motionTick < 0 || E.actorTick < state.motionTick) {
+    state.motionSpeed = speed;
+    state.walking = speed > .06;
+  } else if (E.actorTick > state.motionTick) {
+    // Contact corrections create short velocity pulses at walls. Filter those
+    // on the actor clock, with separate start/stop thresholds to keep one pose.
+    const double weight = 1 - std::pow(.75, imin(30, E.actorTick - state.motionTick));
+    state.motionSpeed += (speed - state.motionSpeed) * weight;
+    if (state.walking ? state.motionSpeed < .025 : state.motionSpeed > .06) state.walking = !state.walking;
+  }
+  state.motionTick = E.actorTick;
+  return state.walking;
+}
+
 void GLPresenter::glBeginActorReaction(double x, double y, double w, double h, int hurtAge, bool stunned, int facing) {
   glActorDeform = ActorDeform{};
   if (hurtAge < 0 && !stunned) return;
@@ -2081,7 +2098,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     double attackProgress,
                     double aimX, double aimY, double spawnProgress,
                     double rescueProgress, int hurtAge, double shelterCharge, float light,
-                    int camCol, int camRow, int npcId, bool stunned) {
+                    int camCol, int camRow, int npcId, bool stunned, double vx, int actorId) {
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
   const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
@@ -2360,7 +2377,10 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   stunned = stunned && alive;
   bool reacting = alive && (hurtAge >= 0 || stunned);
-  int clipState = !alive ? CC_DEATH : reacting ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : animFrame ? CC_MOVE : CC_IDLE;
+  // Walker motion selects the clip independently of its cyclic pose counter.
+  bool moving = speciesDef.renderBob == CRB_WALKER ? std::fabs(vx) > .035 : animFrame != 0;
+  if (speciesId == CS_FROST_GIANT && alive && actorId > 0) moving = glCreatureWalking(actorId, vx);
+  int clipState = !alive ? CC_DEATH : reacting ? CC_HURT : attackState == CAS_CHARGING ? CC_WINDUP : attackState == CAS_FIRING ? CC_ATTACK : attackState == CAS_RECOVERING ? CC_RECOVER : moving ? CC_MOVE : CC_IDLE;
   bool breathing = alive && !reacting && attackState == CAS_FIRING &&
     ((speciesId == CS_FROST_GIANT && attackPattern == 0) || (speciesId == CS_BONE_DINOSAUR && attackPattern == 2));
   if (breathing) clipState = CC_SPECIAL;
@@ -2383,7 +2403,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     if (speciesDef.renderBob == CRB_BIRD) sy += (frame == 0 ? -0.35 : frame == 2 ? 0.20 : 0.0) * cell;
     else if (speciesDef.renderBob == CRB_WASP) sy += (frame == 0 ? -0.28 : frame == 2 ? 0.16 : 0.0) * cell;
     else if (speciesDef.renderBob == CRB_AQUATIC) sy += (frame == 1 ? -0.12 : frame == 3 ? 0.12 : 0.0) * cell;
-    else if (speciesDef.renderBob == CRB_WALKER && (frame & 1)) sy -= 0.10 * cell;
+    else if (speciesDef.renderBob == CRB_WALKER && speciesId != CS_FROST_GIANT && (frame & 1)) sy -= 0.10 * cell;
   }
   if (alive && CREATURE_SPECIES[speciesId].locomotion == CL_AMPHIBIOUS) {
     double shadowY = (py - camRow + CREATURE_SPECIES[speciesId].h) * cell + glOffY - 0.16 * cell;
@@ -2645,7 +2665,7 @@ void GLPresenter::glDrawCreatures() {
                         (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
                         c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         c[CSN_SPAWN_PROGRESS], c[CSN_RESCUE_PROGRESS], glActorHurtAge(SA_CREATURE, (int)c[CSN_ID], (int)c[CSN_HEALTH], c[CSN_ALIVE] > .5f), c[CSN_SHELTER_CHARGE],
-                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID], ((int)c[CSN_STATUS_VISUALS] & SV_SHOCK) && ((int)c[CSN_STATUS_CONTROLS] & SC_ROOT));
+                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow, (int)c[CSN_NPC_ID], ((int)c[CSN_STATUS_VISUALS] & SV_SHOCK) && ((int)c[CSN_STATUS_CONTROLS] & SC_ROOT), c[CSN_VX], (int)c[CSN_ID]);
       if (c[CSN_ALIVE] && !c[CSN_SPAWN_PROGRESS]) glDrawStatusEffects((int)c[CSN_STATUS_VISUALS], c[CSN_X], c[CSN_Y], c[CSN_W], c[CSN_H], c[CSN_ID] * .37, (int)c[CSN_SPECIES]);
     }
   } else {
@@ -2658,7 +2678,7 @@ void GLPresenter::glDrawCreatures() {
                         c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
                         c.spawnProgress, c.rescueProgress, glActorHurtAge(SA_CREATURE, c.id, c.health, c.alive), c.shelterCharge,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
-                        camCol, camRow, c.npcId, (c.effects.visuals & SV_SHOCK) && (c.effects.controls & SC_ROOT));
+                        camCol, camRow, c.npcId, (c.effects.visuals & SV_SHOCK) && (c.effects.controls & SC_ROOT), c.vx, c.id);
       if (c.alive) glDrawStatusEffects(c.effects.visuals, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h, c.id * .37, c.species);
     }
     for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {

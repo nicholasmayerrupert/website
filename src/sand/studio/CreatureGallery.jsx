@@ -3,7 +3,7 @@ import { CREATURE } from '../wasmBridge/abi.generated.js';
 import { BESTIARY } from '../content/bestiary.js';
 import creatureArt from '../content/creatureArt.js';
 
-function CreatureCard({ name, art }) {
+function CreatureCard({ name, art, species }) {
   const canvas = useRef(null);
   const [clipName, setClipName] = useState('idle');
   useEffect(() => {
@@ -22,10 +22,10 @@ function CreatureCard({ name, art }) {
     draw(); const timer = setInterval(draw, 100);
     return () => clearInterval(timer);
   }, [art, clipName]);
-  return <figure><div><canvas ref={canvas} width={art.width} height={art.height} aria-label={`${name} animation`} style={{ width: art.width * 3, height: art.height * 3 }} /></div><figcaption>{name}</figcaption><select aria-label={`${name} clip`} value={clipName} onChange={e => setClipName(e.target.value)}>{Object.keys(art.clips || { idle: null }).map(clip => <option key={clip}>{clip}</option>)}</select></figure>;
+  return <figure><div><canvas ref={canvas} width={art.width} height={art.height} aria-label={`${name} animation`} style={{ width: art.width * 3, height: art.height * 3 }} /></div><figcaption><a href={`/game?creature=${species}`}>{name} ↗</a></figcaption><select aria-label={`${name} clip`} value={clipName} onChange={e => setClipName(e.target.value)}>{Object.keys(art.clips || { idle: null }).map(clip => <option key={clip}>{clip}</option>)}</select></figure>;
 }
 
 export function CreatureGallery() {
   return <section className="studio-creatures" aria-label="Creature artwork">{Object.entries(creatureArt).map(([key, art]) =>
-    <CreatureCard key={key} art={art} name={BESTIARY[CREATURE[key]]?.name || key.toLowerCase().replaceAll('_', ' ')} />)}</section>;
+    <CreatureCard key={key} species={key} art={art} name={BESTIARY[CREATURE[key]]?.name || key.toLowerCase().replaceAll('_', ' ')} />)}</section>;
 }

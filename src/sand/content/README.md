@@ -143,7 +143,7 @@ in `npm run game:capture -- hearth` and other scenes too: source swatches do not
 include the runtime lighting and transparency. `game-content` checks complete
 static tiles against actual WASM pixels; `render` checks animation and streaming.
 
-Creature sprite sets use quarter- or half-cell source pixels and dark outline
+Creature sprite sets use per-species pixel scales and dark outline
 palettes. Wildlife, ranged enemies, bosses, and devices have distinct silhouettes
 and distinct movement and combat poses. Land creatures anchor artwork at their physical feet; swimmers
 and flyers center it around their body. Combat dimensions remain in the species
@@ -188,10 +188,15 @@ the player. Scene coordinates therefore refer to already loaded terrain.
 `enemy_attacks.def` and `enemy_drops.def` under `cpp/engine/` own adventure combat
 cadences and signature rewards. Biome exclusions, physical dimensions, and
 population costs belong to the species descriptors in `abi.schema.json`.
-`scripts/author-enemy-art.mjs` rebuilds the five elemental-enemy and village-role
-sprite sets from articulated pixel geometry. It preserves every other species.
-The compiled sprites remain editable in `creatureArt.js`; rerunning the author
-script replaces those five sets.
+`scripts/import-creature-art.mjs` imports the 33 compact full-sprite sheets in
+`src/sand/art/creatures/`: four movement poses, idle, anticipation, release,
+recovery, hurt, and three death poses. Special reuses release. The frost giant
+has its own sheet importer; the cinderjaw dragon retains authored pixel geometry.
+`scripts/author-enemy-art.mjs` rebuilds the six adventure sets and routes the
+sheet-backed species through their importers. The player retains separately
+aimable arms and weapons. The compiled sprites remain editable in
+`creatureArt.js`; rerunning an importer replaces its selected sets. Review all
+creatures at `/game?creature=FROST_GIANT` during development.
 
 ## Further authoring work
 

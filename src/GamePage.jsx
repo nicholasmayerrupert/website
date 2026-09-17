@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useEffect } from 'react';
 const GameStudio = import.meta.env.DEV ? lazy(() => import('./sand/studio/GameStudio.jsx')) : null;
+const CreatureViewer = import.meta.env.DEV ? lazy(() => import('./sand/studio/CreatureViewer.jsx')) : null;
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { SandGame } from './sand/react/SandGame';
 import { SandCampaign } from './sand/react/SandCampaign';
@@ -39,6 +40,7 @@ export default function GamePage() {
     return () => { document.title = prev; };
   }, []);
 
+  if (import.meta.env.DEV && GAME_QUERY.has('creature')) return <Suspense fallback={null}><CreatureViewer /></Suspense>;
   if (import.meta.env.DEV && GAME_QUERY.has('studio')) return <Suspense fallback={null}><GameStudio /></Suspense>;
   if (!DIRECT_SANDBOX) return <SandCampaign />;
 

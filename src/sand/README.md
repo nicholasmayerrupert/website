@@ -139,6 +139,11 @@ screenshot and state JSON. See [content/README.md](content/README.md) for author
 and [content/ADVENTURE.md](content/ADVENTURE.md#verification-and-remaining-acceptance-work)
 for remaining gameplay acceptance work.
 
+Development-only `/game?creature=FROST_GIANT` opens the creature workbench for
+the complete roster: game-rendered poses, full source frames, slow playback,
+frame stepping, facing, and live encounters with real effects. See
+[studio/README.md](studio/README.md) for controls and the browser inspection API.
+
 World changes and job progress persist through streaming and authoritative
 checkpoints in IndexedDB. Journal → Settings & controls → Start fresh resets
 the saved adventure. The legacy campaign metadata and mission definitions remain
@@ -1375,8 +1380,12 @@ and recovery; the spear visibly grows in the giant's hands before launch. Sprite
 shoulders sit behind the head and collar, and the smash reaches the ground on
 its contact frame. Windup, attack, and recovery clips contain three ordered
 segments for breath, smash, and spear; the renderer selects the matching segment.
-The giant steps through its weight shift and fractures into falling ice plates on death. `node scripts/author-enemy-art.mjs --only FROST_GIANT` rebuilds
-just this sprite set. `frost-giant-e2e` captures the attacks through the WebGL
+The giant uses the approved sheet in `art/frost-giant/animation-sheet.png` and
+a separate full-sprite `walk-sheet.png`, with registered feet and pelvis.
+`node scripts/author-enemy-art.mjs --only FROST_GIANT` imports these sheets into
+palette-indexed clips; see `art/frost-giant/README.md` for the mapping. The engine
+supplies the breath, held spear, projectile flight, and impact effects.
+`frost-giant-e2e` captures the attacks through the WebGL
 presentation path.
 
 Cinderjaw dragons are large grounded skeletal dragons confined to bone-highlands surface

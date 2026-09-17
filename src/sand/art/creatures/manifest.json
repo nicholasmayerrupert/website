@@ -1,0 +1,780 @@
+{
+  "layout": {
+    "columns": 4,
+    "rows": 3
+  },
+  "order": [
+    "move0",
+    "move1",
+    "move2",
+    "move3",
+    "idle",
+    "windup",
+    "attack",
+    "recover",
+    "hurt",
+    "death0",
+    "death1",
+    "death2"
+  ],
+  "creatures": {
+    "MINNOW": {
+      "name": "minnow",
+      "species": 0,
+      "locomotion": "CL_AQUATIC",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 52.5,
+        "height": 28.5,
+        "bottom": 55
+      },
+      "reference": "references/minnow.png",
+      "sheet": "minnow.png",
+      "status": "imported",
+      "generation": "exec-af0d67ed-3a83-4e9f-b346-d7b03fa70f8a.png"
+    },
+    "PIKE": {
+      "name": "Silverfang pike",
+      "species": 1,
+      "locomotion": "CL_AQUATIC",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 57,
+        "height": 28.5,
+        "bottom": 55
+      },
+      "reference": "references/pike.png",
+      "sheet": "pike.png",
+      "status": "imported",
+      "generation": "exec-23fe6e48-dfc1-4d45-9edb-3f26caa80568.png"
+    },
+    "FOX": {
+      "name": "Ember fox",
+      "species": 2,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 58.5,
+        "bottom": 77
+      },
+      "reference": "references/fox.png",
+      "sheet": "fox.png",
+      "status": "imported",
+      "generation": "exec-b351a5ef-0a90-4f25-b1a3-fa0e5bf0cdde.png"
+    },
+    "HARE": {
+      "name": "hare",
+      "species": 3,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 55.5,
+        "height": 63,
+        "bottom": 77
+      },
+      "reference": "references/hare.png",
+      "sheet": "hare.png",
+      "status": "imported",
+      "generation": "exec-f3aafd5a-e98c-4884-929d-13375e403641.png"
+    },
+    "CRAWLER": {
+      "name": "Mossback crawler",
+      "species": 4,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 45,
+        "bottom": 77
+      },
+      "reference": "references/crawler.png",
+      "sheet": "crawler.png",
+      "status": "imported",
+      "generation": "exec-22b71403-0ab7-4100-901a-c3f7c5874ff4.png"
+    },
+    "MOLE": {
+      "name": "mole",
+      "species": 5,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 58.5,
+        "bottom": 77
+      },
+      "reference": "references/mole.png",
+      "sheet": "mole.png",
+      "status": "imported",
+      "generation": "exec-1dfb6a9a-f953-46b9-a739-67d9d427e2c4.png"
+    },
+    "BIRD": {
+      "name": "bird",
+      "species": 6,
+      "locomotion": "CL_FLYING",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 55.5,
+        "height": 40.5,
+        "bottom": 62
+      },
+      "reference": "references/bird.png",
+      "sheet": "bird.png",
+      "status": "imported",
+      "generation": "exec-e90ea12d-7de5-497f-99da-1b8bc5ecae0e.png"
+    },
+    "DYNAMITEER": {
+      "name": "Briar goblin",
+      "species": 7,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 42,
+        "height": 52.5,
+        "bottom": 77
+      },
+      "reference": "references/dynamiteer.png",
+      "sheet": "dynamiteer.png",
+      "status": "imported",
+      "walkSheet": "walk/dynamiteer.png",
+      "moveTicks": 9,
+      "generation": "exec-33fad0ff-ffcb-4024-8949-6453217d0778.png",
+      "walkGeneration": "exec-561fdda5-7a87-407c-bfcc-222e07698eba.png"
+    },
+    "BORE_SENTINEL": {
+      "name": "Hollow knight",
+      "species": 8,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 42,
+        "height": 54,
+        "bottom": 77
+      },
+      "reference": "references/bore_sentinel.png",
+      "sheet": "bore_sentinel.png",
+      "status": "imported",
+      "walkSheet": "walk/bore_sentinel.png",
+      "moveTicks": 9,
+      "generation": "exec-338411c3-54a2-4294-9b95-66b8d59d0acb.png",
+      "walkGeneration": "exec-d5f5d6e5-905f-4208-a071-b6f72720ed58.png"
+    },
+    "CAUSTIC_MORTARMAN": {
+      "name": "Fen witch",
+      "species": 9,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 40.5,
+        "height": 63,
+        "bottom": 77
+      },
+      "reference": "references/caustic_mortarman.png",
+      "sheet": "caustic_mortarman.png",
+      "status": "imported",
+      "walkSheet": "walk/caustic_mortarman.png",
+      "moveTicks": 9,
+      "generation": "exec-46c0db71-4a6d-4895-8d93-4f6ba29d202e.png",
+      "walkGeneration": "exec-7e5ea367-c62c-4fc0-963c-9ac03ecadc09.png"
+    },
+    "CLUSTER_WASP": {
+      "name": "Thornwing",
+      "species": 10,
+      "locomotion": "CL_FLYING",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 55.5,
+        "height": 40.5,
+        "bottom": 62
+      },
+      "reference": "references/cluster_wasp.png",
+      "sheet": "cluster_wasp.png",
+      "status": "imported",
+      "generation": "exec-8e51b034-b8c0-478f-892f-78efc064c869.png"
+    },
+    "MINIGUNNER": {
+      "name": "Oathless archer",
+      "species": 11,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 46.5,
+        "height": 58.5,
+        "bottom": 77
+      },
+      "reference": "references/minigunner.png",
+      "sheet": "minigunner.png",
+      "status": "imported",
+      "walkSheet": "walk/minigunner.png",
+      "moveTicks": 9,
+      "generation": "exec-7992c25a-4544-45e7-aa3e-22888c1b3774.png",
+      "walkGeneration": "exec-924b1522-3ebc-4e5a-8990-a6bc4544a81f.png"
+    },
+    "SURVEYOR": {
+      "name": "surveyor",
+      "species": 12,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 60,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 30,
+        "height": 61.5,
+        "bottom": 77
+      },
+      "reference": "references/surveyor.png",
+      "sheet": "surveyor.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#18221d",
+        "d": "#293629",
+        "g": "#625578",
+        "G": "#9985a7",
+        "l": "#b8b18a",
+        "L": "#e2d5ad",
+        "b": "#40342b",
+        "B": "#70553b",
+        "t": "#96764d",
+        "h": "#e2ad7b",
+        "s": "#b77d54",
+        "H": "#f6c993",
+        "r": "#475976",
+        "R": "#829bac",
+        "a": "#b69254",
+        "A": "#e2c478",
+        "w": "#e6ead9"
+      },
+      "walkSheet": "walk/surveyor.png",
+      "moveTicks": 9,
+      "generation": "exec-50389875-95c6-4e3c-b6e4-8619d6907505.png",
+      "walkGeneration": "exec-5de88c7e-3adc-4de2-bda2-7b917d425417.png"
+    },
+    "SHIELD_ANCHOR": {
+      "name": "shield anchor",
+      "species": 13,
+      "locomotion": "CL_STATIONARY",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 45,
+        "bottom": 77
+      },
+      "reference": "references/shield_anchor.png",
+      "sheet": "shield_anchor.png",
+      "status": "imported",
+      "generation": "exec-6ae12809-da2b-4331-9d12-186d97824538.png"
+    },
+    "QUARRY_FOREMAN": {
+      "name": "The Stonebound",
+      "species": 14,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 58.5,
+        "height": 46.5,
+        "bottom": 107
+      },
+      "reference": "references/quarry_foreman.png",
+      "sheet": "quarry_foreman.png",
+      "status": "imported",
+      "walkSheet": "walk/quarry_foreman.png",
+      "moveTicks": 9,
+      "generation": "exec-0d972662-8e82-4200-b35c-5397578dc755.png",
+      "walkGeneration": "exec-4b95cbe1-9a9d-4204-9a9a-3dd76bfc2278.png"
+    },
+    "REACTOR_WARDEN": {
+      "name": "Ashen Sentinel",
+      "species": 15,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 42,
+        "height": 61.5,
+        "bottom": 107
+      },
+      "reference": "references/reactor_warden.png",
+      "sheet": "reactor_warden.png",
+      "status": "imported",
+      "walkSheet": "walk/reactor_warden.png",
+      "moveTicks": 9,
+      "generation": "exec-a2752466-1821-4817-8a60-afc289ec544b.png",
+      "walkGeneration": "exec-4639c540-cbf5-4d69-a04f-b5177a63c1f6.png"
+    },
+    "REACTOR_CORE": {
+      "name": "reactor core",
+      "species": 16,
+      "locomotion": "CL_STATIONARY",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 45,
+        "bottom": 77
+      },
+      "reference": "references/reactor_core.png",
+      "sheet": "reactor_core.png",
+      "status": "imported",
+      "generation": "exec-37ca45f1-f98e-477a-8f14-07d9f17fbd53.png"
+    },
+    "IRIS_COMMANDER": {
+      "name": "IRIS commander",
+      "species": 17,
+      "locomotion": "CL_STATIONARY",
+      "grounded": true,
+      "width": 60,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 30,
+        "height": 61.5,
+        "bottom": 77
+      },
+      "reference": "references/iris_commander.png",
+      "sheet": "iris_commander.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#18221d",
+        "d": "#293629",
+        "g": "#52674a",
+        "G": "#829365",
+        "l": "#b8b18a",
+        "L": "#e2d5ad",
+        "b": "#40342b",
+        "B": "#70553b",
+        "t": "#96764d",
+        "h": "#e2ad7b",
+        "s": "#b77d54",
+        "H": "#f6c993",
+        "r": "#794330",
+        "R": "#b96842",
+        "a": "#b69254",
+        "A": "#e2c478",
+        "w": "#e6ead9"
+      },
+      "walkSheet": "walk/iris_commander.png",
+      "moveTicks": 9,
+      "generation": "exec-b7817e81-0131-4ddc-83ff-2e0d909ac507.png",
+      "walkGeneration": "exec-3a05776a-1b8a-4ef0-acdc-4185e96c2515.png"
+    },
+    "IRIS_ENGINEER": {
+      "name": "IRIS engineer",
+      "species": 18,
+      "locomotion": "CL_STATIONARY",
+      "grounded": true,
+      "width": 60,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 30,
+        "height": 61.5,
+        "bottom": 77
+      },
+      "reference": "references/iris_engineer.png",
+      "sheet": "iris_engineer.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#18221d",
+        "d": "#293629",
+        "g": "#715b43",
+        "G": "#a98558",
+        "l": "#746652",
+        "L": "#b49b71",
+        "b": "#40342b",
+        "B": "#70553b",
+        "t": "#96764d",
+        "h": "#e2ad7b",
+        "s": "#b77d54",
+        "H": "#f6c993",
+        "r": "#58392c",
+        "R": "#9a6543",
+        "a": "#b69254",
+        "A": "#e2c478",
+        "w": "#e6ead9"
+      },
+      "walkSheet": "walk/iris_engineer.png",
+      "moveTicks": 9,
+      "generation": "exec-e0e80bd5-c098-4a43-bfd1-d3c838f9f8eb.png",
+      "walkGeneration": "exec-f90131c8-e108-4300-9322-37b33e9116fd.png"
+    },
+    "VILLAGER": {
+      "name": "villager",
+      "species": 19,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 60,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 30,
+        "height": 61.5,
+        "bottom": 77
+      },
+      "reference": "references/villager.png",
+      "sheet": "villager.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#18221d",
+        "d": "#293629",
+        "g": "#52674a",
+        "G": "#829365",
+        "l": "#b8b18a",
+        "L": "#e2d5ad",
+        "b": "#40342b",
+        "B": "#70553b",
+        "t": "#96764d",
+        "h": "#e2ad7b",
+        "s": "#b77d54",
+        "H": "#f6c993",
+        "r": "#794330",
+        "R": "#b96842",
+        "a": "#b69254",
+        "A": "#e2c478",
+        "w": "#e6ead9"
+      },
+      "walkSheet": "walk/villager.png",
+      "moveTicks": 9,
+      "generation": "exec-9091ae1f-581a-4e7f-9a06-0529d025c100.png",
+      "walkGeneration": "exec-4684faf3-8f06-422a-952a-f131f984b101.png"
+    },
+    "THORNBOUND_HART": {
+      "name": "Thornbound Hart",
+      "species": 20,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 84,
+        "height": 90,
+        "bottom": 107
+      },
+      "reference": "references/thornbound_hart.png",
+      "sheet": "thornbound_hart.png",
+      "status": "imported",
+      "generation": "exec-7392bee7-db4c-40e5-8096-93c496574c47.png"
+    },
+    "MIRE_MATRON": {
+      "name": "Mire Matron",
+      "species": 21,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 85.5,
+        "height": 81,
+        "bottom": 107
+      },
+      "reference": "references/mire_matron.png",
+      "sheet": "mire_matron.png",
+      "status": "imported",
+      "generation": "exec-540cba6a-6862-433a-abce-6c0ccf8359f7.png"
+    },
+    "CINDER_CASTELLAN": {
+      "name": "Cinder Castellan",
+      "species": 22,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 72,
+        "height": 87,
+        "bottom": 107
+      },
+      "reference": "references/cinder_castellan.png",
+      "sheet": "cinder_castellan.png",
+      "status": "imported",
+      "walkSheet": "walk/cinder_castellan.png",
+      "moveTicks": 9,
+      "clipFrames": {
+        "windup": [
+          6
+        ],
+        "attack": [
+          7
+        ],
+        "recover": [
+          4
+        ]
+      },
+      "generation": "exec-04ceccc8-023a-4fcb-af02-905be5f622b1.png",
+      "walkGeneration": "exec-ad5ed804-63c2-4085-a9f9-76bf1843dc99.png"
+    },
+    "HOLLOW_BELLKEEPER": {
+      "name": "Hollow Bellkeeper",
+      "species": 23,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 66,
+        "height": 85.5,
+        "bottom": 107
+      },
+      "reference": "references/hollow_bellkeeper.png",
+      "sheet": "hollow_bellkeeper.png",
+      "status": "imported",
+      "walkSheet": "walk/hollow_bellkeeper.png",
+      "moveTicks": 9,
+      "generation": "exec-9b6af712-b2da-4063-adf9-a0716261d8ff.png",
+      "walkGeneration": "exec-0bc93326-475f-4c62-86c2-c832c103d054.png"
+    },
+    "BRIAR_WOLF": {
+      "name": "Briar wolf",
+      "species": 24,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 60,
+        "height": 63,
+        "bottom": 77
+      },
+      "reference": "references/briar_wolf.png",
+      "sheet": "briar_wolf.png",
+      "status": "imported",
+      "generation": "exec-ccd18aa6-94b3-46ad-9092-fd1dcde5e5d9.png"
+    },
+    "BELL_BAT": {
+      "name": "Bell bat",
+      "species": 25,
+      "locomotion": "CL_FLYING",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 55.5,
+        "height": 40.5,
+        "bottom": 62
+      },
+      "reference": "references/bell_bat.png",
+      "sheet": "bell_bat.png",
+      "status": "imported",
+      "generation": "exec-b9a26df6-6c20-4fa0-85a6-a0a28675c43a.png"
+    },
+    "BONE_GUARD": {
+      "name": "Bone guard",
+      "species": 26,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 42,
+        "height": 52.5,
+        "bottom": 77
+      },
+      "reference": "references/bone_guard.png",
+      "sheet": "bone_guard.png",
+      "status": "imported",
+      "walkSheet": "walk/bone_guard.png",
+      "moveTicks": 9,
+      "generation": "exec-4d9b47b6-820b-428a-9155-e8d51801eca8.png",
+      "walkGeneration": "exec-f5f08662-b3de-4856-af54-88fae2870a6d.png"
+    },
+    "FEN_WISP": {
+      "name": "Fen wisp",
+      "species": 27,
+      "locomotion": "CL_FLYING",
+      "grounded": false,
+      "width": 72,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 37.5,
+        "height": 54,
+        "bottom": 67
+      },
+      "reference": "references/fen_wisp.png",
+      "sheet": "fen_wisp.png",
+      "status": "imported",
+      "generation": "exec-fd1afa65-6f22-4508-beb4-d11a632844f0.png"
+    },
+    "ROOT_KNIGHT": {
+      "name": "Root Knight",
+      "species": 28,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 108,
+      "height": 108,
+      "pixelScale": 0.3333333333333333,
+      "targetBounds": {
+        "width": 42,
+        "height": 61.5,
+        "bottom": 107
+      },
+      "reference": "references/root_knight.png",
+      "sheet": "root_knight.png",
+      "status": "imported",
+      "walkSheet": "walk/root_knight.png",
+      "moveTicks": 9,
+      "generation": "exec-051772b0-337a-46b4-a4d3-9ebc6436fefe.png",
+      "walkGeneration": "exec-64b18160-1c95-4ef8-a9be-6019be2fabab.png"
+    },
+    "MUMMY": {
+      "name": "mummy",
+      "species": 30,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 84,
+      "height": 96,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 49.5,
+        "height": 79.5,
+        "bottom": 95
+      },
+      "reference": "references/mummy.png",
+      "sheet": "mummy.png",
+      "status": "imported",
+      "walkSheet": "walk/mummy.png",
+      "moveTicks": 9,
+      "generation": "exec-92fe83b5-7e77-4272-994b-8b1982e59bd8.png",
+      "walkGeneration": "exec-faa56f69-368f-4632-a696-95f3dec745a2.png"
+    },
+    "LAVA_TOAD": {
+      "name": "lava toad",
+      "species": 31,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 102,
+      "height": 78,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 79.5,
+        "height": 49.5,
+        "bottom": 77
+      },
+      "reference": "references/lava_toad.png",
+      "sheet": "lava_toad.png",
+      "status": "imported",
+      "generation": "exec-62213377-8dc9-4cfd-a150-11e3fe75b5eb.png"
+    },
+    "VILLAGE_GUARD": {
+      "name": "village guard",
+      "species": 32,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 78,
+      "height": 84,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 39,
+        "height": 64.5,
+        "bottom": 83
+      },
+      "reference": "references/village_guard.png",
+      "sheet": "village_guard.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#222b2b",
+        "d": "#434b48",
+        "b": "#788782",
+        "l": "#b4bca6",
+        "w": "#e6e2c3",
+        "r": "#954e3e",
+        "a": "#bd9659",
+        "s": "#c59b75"
+      },
+      "walkSheet": "walk/village_guard.png",
+      "moveTicks": 9,
+      "generation": "exec-9a50380f-04b5-43f6-b3b9-9d351348b73c.png",
+      "walkGeneration": "exec-883631fa-da19-4c6a-a209-40c4e9723b74.png"
+    },
+    "VILLAGE_HUNTER": {
+      "name": "village hunter",
+      "species": 33,
+      "locomotion": "CL_AMPHIBIOUS",
+      "grounded": true,
+      "width": 84,
+      "height": 84,
+      "pixelScale": 0.16666666666666666,
+      "targetBounds": {
+        "width": 52.5,
+        "height": 67.5,
+        "bottom": 83
+      },
+      "reference": "references/village_hunter.png",
+      "sheet": "village_hunter.png",
+      "status": "imported",
+      "palette": {
+        ".": "#000000",
+        "o": "#242e25",
+        "d": "#494839",
+        "b": "#647b4b",
+        "l": "#a2ae75",
+        "w": "#e5dab5",
+        "r": "#4c6144",
+        "a": "#b39158",
+        "s": "#bf9470"
+      },
+      "walkSheet": "walk/village_hunter.png",
+      "moveTicks": 9,
+      "generation": "exec-fd60e5b2-0783-4bbf-a2d4-5f7ac4514aab.png",
+      "walkGeneration": "exec-06ea2c88-bfa8-49ef-ae41-63f364f28a15.png"
+    }
+  }
+}

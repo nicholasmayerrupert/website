@@ -175,6 +175,7 @@ export const BROWSER_SUITES = [
   ['pointer-buttons-e2e', 'pointer-buttons-e2e.mjs', exclusive(120_000)],
   ['hud-stability-e2e', 'hud-stability-e2e.mjs', exclusive(120_000)],
   ['game-studio-e2e', 'game-studio-e2e.mjs', exclusive(120_000)],
+  ['creature-viewer-e2e', 'creature-viewer-e2e.mjs', exclusive(120_000)],
   ['adventure-tools-e2e', 'adventure-tools-e2e.mjs', exclusive(120_000)],
   ['status-render-e2e', 'status-render-e2e.mjs', exclusive(120_000)],
   ['burning-e2e', 'burning-e2e.mjs', exclusive(120_000)],

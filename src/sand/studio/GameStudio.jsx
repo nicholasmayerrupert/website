@@ -72,6 +72,7 @@ export default function GameStudio() {
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Opening scene…</p>}
       <SpritePreview />
+      <p><a href="/game?creature=FROST_GIANT">Open creature workbench ↗</a></p>
       <details><summary>Edit blueprint</summary><BlueprintEditor key={scene} scene={scene} /></details>
       <details><summary>Edit player pixels</summary><PixelEditor /></details>
       <details onToggle={e => setShowCreatures(e.currentTarget.open)}><summary>Creature artwork</summary>{showCreatures && <CreatureGallery />}</details>

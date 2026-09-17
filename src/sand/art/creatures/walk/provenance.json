@@ -1,0 +1,74 @@
+{
+  "DYNAMITEER": {
+    "generation": "exec-561fdda5-7a87-407c-bfcc-222e07698eba.png",
+    "correction": true
+  },
+  "BORE_SENTINEL": {
+    "generation": "exec-d5f5d6e5-905f-4208-a071-b6f72720ed58.png",
+    "correction": true
+  },
+  "CAUSTIC_MORTARMAN": {
+    "generation": "exec-7e5ea367-c62c-4fc0-963c-9ac03ecadc09.png",
+    "correction": true
+  },
+  "MINIGUNNER": {
+    "generation": "exec-924b1522-3ebc-4e5a-8990-a6bc4544a81f.png",
+    "correction": true
+  },
+  "SURVEYOR": {
+    "generation": "exec-5de88c7e-3adc-4de2-bda2-7b917d425417.png",
+    "correction": true
+  },
+  "QUARRY_FOREMAN": {
+    "generation": "exec-4b95cbe1-9a9d-4204-9a9a-3dd76bfc2278.png",
+    "correction": false
+  },
+  "REACTOR_WARDEN": {
+    "generation": "exec-4639c540-cbf5-4d69-a04f-b5177a63c1f6.png",
+    "correction": true
+  },
+  "IRIS_COMMANDER": {
+    "generation": "exec-3a05776a-1b8a-4ef0-acdc-4185e96c2515.png",
+    "correction": true
+  },
+  "IRIS_ENGINEER": {
+    "generation": "exec-f90131c8-e108-4300-9322-37b33e9116fd.png",
+    "correction": true
+  },
+  "VILLAGER": {
+    "generation": "exec-4684faf3-8f06-422a-952a-f131f984b101.png",
+    "correction": true
+  },
+  "CINDER_CASTELLAN": {
+    "generation": "exec-ad5ed804-63c2-4085-a9f9-76bf1843dc99.png",
+    "correction": false
+  },
+  "HOLLOW_BELLKEEPER": {
+    "generation": "exec-0bc93326-475f-4c62-86c2-c832c103d054.png",
+    "correction": true
+  },
+  "BONE_GUARD": {
+    "generation": "exec-f5f08662-b3de-4856-af54-88fae2870a6d.png",
+    "correction": false
+  },
+  "ROOT_KNIGHT": {
+    "generation": "exec-64b18160-1c95-4ef8-a9be-6019be2fabab.png",
+    "correction": false
+  },
+  "MUMMY": {
+    "generation": "exec-faa56f69-368f-4632-a696-95f3dec745a2.png",
+    "correction": false
+  },
+  "VILLAGE_GUARD": {
+    "generation": "exec-883631fa-da19-4c6a-a209-40c4e9723b74.png",
+    "correction": false
+  },
+  "VILLAGE_HUNTER": {
+    "generation": "exec-06ea2c88-bfa8-49ef-ae41-63f364f28a15.png",
+    "correction": false
+  },
+  "FROST_GIANT": {
+    "generation": "exec-69ebed43-c56f-455f-a795-5df87287bd08.png",
+    "correction": true
+  }
+}

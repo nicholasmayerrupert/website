@@ -3,20 +3,45 @@
 Read the [general sprite guide](../README.md) for pose budgets, generation and
 individual visual-review requirements. This file describes the compact layout.
 
-These ImageGen sheets supply the 33 creatures other than the frost giant and
-cinderjaw dragon. Both have their own source directories and importers;
+These ImageGen sheets supply 34 creatures including the frost giant. The
+cinderjaw dragon has its own source directory and half-cell importer;
 the player uses a separate modular component pipeline.
 The engine draws complete palette-indexed sprites, with no runtime limb rig.
 
-Each sheet has four columns and three rows, read left to right:
+Unified sources live in `atlases/<creature>.png`, with four columns and either
+three or four rows, or six for the frost giant. The per-creature `atlas` entry in `manifest.json` declares
+the layout and swimming frame indices. Read left to right:
 
 | Row | Pose 1 | Pose 2 | Pose 3 | Pose 4 |
 | --- | --- | --- | --- | --- |
 | 1 | Movement 1 | Movement 2 | Movement 3 | Movement 4 |
 | 2 | Idle | Windup | Attack | Recovery |
 | 3 | Hurt | Death 1 | Death 2 | Death 3 |
+| 4 (optional) | Swim reach | Swim pull | Swim recovery | Empty |
 
-Bipeds use separate two-column, two-row walking sheets under `walk/`. Their
+The first row includes the authored walking poses. One source therefore owns
+the creature's movement, combat, reactions, and swimming. Fish use three rows
+and reuse movement for swimming. `../grid-v2-prompts.json` and
+`../roster-grid-prompts.json` record exact built-in ImageGen prompts and IDs.
+The frost giant's 24-pose layout is described in `../frost-giant/README.md`.
+`atlas.count` declares larger pose sets. Optional `atlas.rowEdges` records
+measured row boundaries in source pixels for unevenly spaced generated sheets.
+
+Unified atlases import at `pixelScale: 0.5`. Their native dimensions, rather
+than the generated PNG dimensions, define the actual pixel grid. The importer
+chooses scale from the idle pose and adds canvas padding for wide poses. Human
+NPCs use `fit: "height"` and a 21-pixel standing target (10.5 world cells),
+comparable to the player's 10.25-cell body. Wide weapons and swimming limbs
+must not reduce standing height. Other revised creatures also use height fitting
+with their established standing height rounded to the nearest half cell.
+Human palette indices retain resident tints. The `creature-art-atlas` test checks
+the native half-cell grid across all 35 runtime creature records.
+
+Sources without an `atlas` entry use the three-row compact layout and the
+separate supplements described below. Existing source PNGs remain references;
+the manifest is the authority for which files are active.
+
+Archived biped references include two-column, two-row walking sheets under `walk/`. Their
 four poses are left-leg-forward contact, close passing, right-leg-forward
 contact, and opposite passing. The near leg stays lighter and the far leg stays
 in shadow so the alternating feet remain readable. `pose-guide.svg` and its
@@ -56,7 +81,8 @@ The importer uses the project's Playwright Chromium to decode local PNGs
 isolated specks, uses one scale across each sheet, registers grounded movement
 against a shared contact floor, and quantizes the complete set to at most 31
 opaque colors. It writes `src/sand/content/creatureArt.js`; no WASM rebuild is
-needed for art-only changes. Production ships the compiled content packet,
+needed for art-only changes. Unified sources use at most twelve opaque colors,
+or the registered human tint palette. Production ships the compiled content packet,
 not the large source PNGs.
 
 Review at `/game?creature=CLUSTER_WASP`, selecting any creature and clip. Use

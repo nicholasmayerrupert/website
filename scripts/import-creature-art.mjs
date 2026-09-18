@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import art from '../src/sand/content/creatureArt.js';
 import { cutFrame } from './creature-art-pixels.mjs';
+import { sampleCreatureAtlas } from './creature-art-atlas.mjs';
 export { cutFrame } from './creature-art-pixels.mjs';
 
 const directory = new URL('../src/sand/art/creatures/', import.meta.url);
 const manifestPath = new URL('manifest.json', directory);
 const symbols = 'abcdefghijklmnopqrstuvwxyzABCDE';
 
-export function makePalette(frames) {
+export function makePalette(frames, limit = 31) {
   const histogram = new Map();
   for (const frame of frames) for (const rgb of frame) if (rgb) {
     const key = rgb.map(c => Math.round(c / 8) * 8).join(',');
@@ -18,7 +19,7 @@ export function makePalette(frames) {
   }
   const boxes = [[...histogram.values()]];
   const range = box => [0, 1, 2].map(c => Math.max(...box.map(p => p.rgb[c])) - Math.min(...box.map(p => p.rgb[c])));
-  while (boxes.length < 31) {
+  while (boxes.length < limit) {
     let best = -1, score = -1;
     boxes.forEach((box, i) => {
       const value = Math.max(...range(box)) * Math.sqrt(box.reduce((n, p) => n + p.count, 0));
@@ -42,6 +43,7 @@ export function makePalette(frames) {
 }
 
 function convert(image, metadata) {
+  if (metadata.atlas) return convertAtlas(image, metadata);
   const source = Array.from({ length: 12 }, (_, i) => cutFrame(image, i % 4, Math.floor(i / 4)));
   const idle = source[4], { width, height, targetBounds, grounded } = metadata;
   let scale = Math.max((idle.maxX - idle.minX + 1) / targetBounds.width, (idle.maxY - idle.minY + 1) / targetBounds.height);
@@ -84,6 +86,40 @@ function convert(image, metadata) {
     idle: clip([4], 12), move: clip([0, 1, 2, 3], metadata.moveTicks ?? 7),
     windup: clip(metadata.clipFrames?.windup ?? [5], 9), attack: clip(metadata.clipFrames?.attack ?? [6], 4), recover: clip(metadata.clipFrames?.recover ?? [7], 5),
     hurt: clip([8], 3), death: clip([9, 10, 11], 7), special: clip([6], 8),
+  } };
+}
+
+function convertAtlas(image, metadata) {
+  const { frames, width, height } = sampleCreatureAtlas(image, metadata);
+  const { palette, colors } = metadata.palette
+    ? { palette: metadata.palette, colors: Object.values(metadata.palette).slice(1).map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))) }
+    : makePalette(frames, metadata.colorLimit ?? 12);
+  const symbols = Object.keys(palette).slice(1), cache = new Map();
+  const encoded = frames.map(frame => {
+    const pixels = frame.map(rgb => {
+      if (!rgb) return '.';
+      const key = rgb.join(',');
+      if (!cache.has(key)) {
+        let best = Infinity, at = 0;
+        colors.forEach((color, i) => {
+          const distance = color.reduce((n, value, c) => n + (value - rgb[c]) ** 2, 0);
+          if (distance < best) { best = distance; at = i; }
+        });
+        cache.set(key, symbols[at]);
+      }
+      return cache.get(key);
+    });
+    if (pixels.filter(c => c !== '.').length < 12) throw new Error('Empty atlas pose');
+    return Array.from({ length: height }, (_, y) => pixels.slice(y * width, (y + 1) * width).join(''));
+  });
+  const clip = (indices, ticks) => ({ ticks, frames: indices.map(i => encoded[i]) });
+  return { width, height, pixelScale: metadata.pixelScale, palette, clips: {
+    idle: clip([4], 12), move: clip([0, 1, 2, 3], metadata.moveTicks ?? 7),
+    windup: clip(metadata.clipFrames?.windup ?? [5], 9), attack: clip(metadata.clipFrames?.attack ?? [6], 4), recover: clip(metadata.clipFrames?.recover ?? [7], 5),
+    hurt: clip(metadata.clipFrames?.hurt ?? [8], 3),
+    death: clip(metadata.clipFrames?.death ?? [9, 10, 11], metadata.deathTicks ?? 7),
+    special: clip(metadata.clipFrames?.special ?? [6], 8),
+    ...(metadata.atlas.swim ? { swim: clip(metadata.atlas.swim, metadata.swimTicks ?? 10) } : {}),
   } };
 }
 
@@ -151,7 +187,7 @@ export async function importCreatureArt(keys) {
         await importCreatureWalk(result[key], walk, metadata, page);
       }
       metadata.status = 'imported';
-      console.log(`Imported ${key}: 12 poses, ${metadata.width}×${metadata.height}`);
+      console.log(`Imported ${key}: ${metadata.atlas?.count ?? (metadata.atlas?.swim ? 15 : 12)} poses, ${result[key].width}×${result[key].height} @ ${metadata.pixelScale} cell/pixel`);
     }
   } finally { await browser.close(); }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');

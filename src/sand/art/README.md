@@ -1,5 +1,28 @@
 # Sprite authoring guide
 
+## Workflow at a glance
+
+- **Edit approved art with built-in ImageGen.** Supply the existing sheets as
+  references; preserve character identity, equipment, facing and pose meanings.
+  Save the source PNGs and exact prompts in this directory.
+- **Use one coarse square grid.** Creature pixels occupy **0.5 × 0.5 world
+  cells**. Request flat colors, about 12 colors total, three tones per material,
+  and **no sub-pixel texture, gradients, antialiasing or fine fur**. Enforce the
+  native grid during import; a blocky-looking source image alone is insufficient.
+- **Keep one atlas per creature.** Four columns; normally 12 poses, plus a
+  fourth row for three swimming poses. Give distinct boss attacks extra rows.
+  Declare layout, clip mappings and any uneven row boundaries in the manifest.
+- **Preserve physical size and registration.** Fit standing height; pad wide
+  attacks and swimming poses instead of shrinking the body. Keep feet grounded
+  and heads stable. Human NPCs target 10.5 cells; the player is about 10.25.
+- **Keep the player modular.** Coarsen body and armor parts together while
+  preserving pivots and equipment anchors. Parts use half-cell color blocks;
+  the existing rig still rotates them on its finer coordinate grid.
+- **Import, inspect, then test.** Review every native pose and animated loop
+  in both facings at game size, including swimming. Fix clipping, stray pixels,
+  missing facial features and weak gait changes. Run affected suites and build;
+  passing tests do not establish visual quality. Keep this guide current.
+
 Read this before generating or changing character sprites. These are starting
 budgets, not quotas: use the fewest clearly different poses that communicate the
 action. Add drawings when an actual playback review shows a missing movement
@@ -48,8 +71,8 @@ Reuse attack/hurt/death poses in water unless individual review shows a problem.
 
 ## Generation and import
 
-Use complete body sprites for creatures. Generate a compact base sheet, then
-small focused strips for deficient gaits or extra actions. State the exact grid,
+Use complete body sprites for creatures. Keep movement, combat and swimming
+in one atlas; revise deficient poses or add rows for extra actions. State the exact grid,
 pose order, facing and limb positions in the prompt. Reference the approved
 character, preserve its native resolution/palette, and keep details readable at
 game scale. Leave room for extended hands, feet, tails and weapons.
@@ -59,6 +82,27 @@ baseline. Keep left/right legs identifiable and knees anatomically correct.
 Use the flat key background expected by that importer. Keep water, projectiles,
 breath, splashes, particles and ground shadows out of character drawings when
 the engine supplies them.
+
+Production character art targets a half-world-cell visual pixel grid. All 35
+creature types use a true `pixelScale: 0.5` native raster. The 34 creatures in
+the main manifest use four-column sources under `creatures/atlases/`, with
+swimming in an optional fourth row (the frost giant has six rows). The dragon
+uses its dedicated half-cell importer. The
+manifest declares the layout; wide poses add padding rather than reducing
+standing height. Human NPC standing bodies target 10.5 cells to match the
+player. Other creatures retain their manifest's physical target bounds.
+
+The player uses `player/*-grid-v2.png` modular atlases, half-cell color samples,
+and twelve-color palettes within the existing attachment coordinate space.
+The [player guide](player/README.md) describes rig-grid and edge limitations.
+Exact revision prompts are in `grid-v2-prompts.json` and `roster-grid-prompts.json`. Their shared requirement
+is one square grid for outlines and details, flat colors, and **no sub-pixel
+texturing**, gradients, fine fur, or smaller marks inside larger pixels.
+Generated source art still requires native-raster and animation review.
+
+Existing unsuffixed and `-coarse-v1.png` sources remain reference art or active
+sources for assets listed in their manifests. Collision, equipment, and attack
+timing are independent of the source layout.
 
 Retain source images, exact prompts, references and registration/timing metadata.
 Use the relevant importer; production consumes palette-indexed content rather

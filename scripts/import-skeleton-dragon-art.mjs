@@ -4,7 +4,7 @@ import {cutFrame,makePalette} from './import-creature-art.mjs';
 export async function importSkeletonDragonArt(){
  const frames=[];
  for(const name of ['locomotion','attacks']){
-  const {data,info}=await sharp(fileURLToPath(new URL(`../src/sand/art/skeleton-dragon/${name}.png`,import.meta.url))).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  const {data,info}=await sharp(fileURLToPath(new URL(`../src/sand/art/skeleton-dragon/${name}-coarse-v1.png`,import.meta.url))).ensureAlpha().raw().toBuffer({resolveWithObject:true});
   const image={data,width:info.width,height:info.height};
   frames.push(...Array.from({length:12},(_,i)=>cutFrame(image,i%4,Math.floor(i/4))));
  }

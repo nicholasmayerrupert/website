@@ -23,244 +23,360 @@
       "species": 0,
       "locomotion": "CL_AQUATIC",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 52.5,
-        "height": 28.5,
-        "bottom": 55
+        "width": 17.5,
+        "height": 9.5,
+        "bottom": 25
       },
       "reference": "references/minnow.png",
-      "sheet": "minnow.png",
+      "sheet": "atlases/minnow.png",
       "status": "imported",
-      "generation": "exec-af0d67ed-3a83-4e9f-b346-d7b03fa70f8a.png"
+      "generation": "exec-0caa7158-f866-4c94-a6ad-dfde9524dc69.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12
     },
     "PIKE": {
       "name": "Silverfang pike",
       "species": 1,
       "locomotion": "CL_AQUATIC",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 57,
-        "height": 28.5,
-        "bottom": 55
+        "width": 19,
+        "height": 9.5,
+        "bottom": 25
       },
       "reference": "references/pike.png",
-      "sheet": "pike.png",
+      "sheet": "atlases/pike.png",
       "status": "imported",
-      "generation": "exec-23fe6e48-dfc1-4d45-9edb-3f26caa80568.png"
+      "generation": "exec-35d8a704-dd59-48d4-a99a-c76d514ff1aa.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12
     },
     "FOX": {
       "name": "Ember fox",
       "species": 2,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 58.5,
-        "bottom": 77
+        "width": 20,
+        "height": 19.5,
+        "bottom": 25
       },
       "reference": "references/fox.png",
-      "sheet": "fox.png",
+      "sheet": "atlases/fox.png",
       "status": "imported",
-      "generation": "exec-b351a5ef-0a90-4f25-b1a3-fa0e5bf0cdde.png"
+      "generation": "exec-6c70c4ce-3de7-4579-9092-59cbe0505ccc.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "HARE": {
       "name": "hare",
       "species": 3,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 55.5,
-        "height": 63,
-        "bottom": 77
+        "width": 18.5,
+        "height": 20,
+        "bottom": 25
       },
       "reference": "references/hare.png",
-      "sheet": "hare.png",
+      "sheet": "atlases/hare.png",
       "status": "imported",
-      "generation": "exec-f3aafd5a-e98c-4884-929d-13375e403641.png"
+      "generation": "exec-6e09c67a-ee41-462d-84e8-ed1762d37dba.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "CRAWLER": {
       "name": "Mossback crawler",
       "species": 4,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 45,
-        "bottom": 77
+        "width": 20,
+        "height": 13,
+        "bottom": 25
       },
       "reference": "references/crawler.png",
-      "sheet": "crawler.png",
+      "sheet": "atlases/crawler.png",
       "status": "imported",
-      "generation": "exec-22b71403-0ab7-4100-901a-c3f7c5874ff4.png"
+      "generation": "exec-402f617c-4de6-4af1-9112-20cddf4cbf10.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "MOLE": {
       "name": "mole",
       "species": 5,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 58.5,
-        "bottom": 77
+        "width": 20,
+        "height": 15,
+        "bottom": 25
       },
       "reference": "references/mole.png",
-      "sheet": "mole.png",
+      "sheet": "atlases/mole.png",
       "status": "imported",
-      "generation": "exec-1dfb6a9a-f953-46b9-a739-67d9d427e2c4.png"
+      "generation": "exec-184cc097-8ac5-4959-8a70-538a2373832e.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "BIRD": {
       "name": "bird",
       "species": 6,
       "locomotion": "CL_FLYING",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 55.5,
-        "height": 40.5,
-        "bottom": 62
+        "width": 18.5,
+        "height": 13,
+        "bottom": 25
       },
       "reference": "references/bird.png",
-      "sheet": "bird.png",
+      "sheet": "atlases/bird.png",
       "status": "imported",
-      "generation": "exec-e90ea12d-7de5-497f-99da-1b8bc5ecae0e.png"
+      "generation": "exec-2273788f-325d-4e49-af54-e0b702835148.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "DYNAMITEER": {
       "name": "Briar goblin",
       "species": 7,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 42,
-        "height": 52.5,
-        "bottom": 77
+        "width": 14,
+        "height": 16,
+        "bottom": 25
       },
       "reference": "references/dynamiteer.png",
-      "sheet": "dynamiteer.png",
+      "sheet": "atlases/dynamiteer.png",
       "status": "imported",
-      "walkSheet": "walk/dynamiteer.png",
       "moveTicks": 9,
-      "generation": "exec-33fad0ff-ffcb-4024-8949-6453217d0778.png",
-      "walkGeneration": "exec-561fdda5-7a87-407c-bfcc-222e07698eba.png"
+      "generation": "exec-17a6e795-7947-4335-bcaf-5cb01816bd21.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "BORE_SENTINEL": {
       "name": "Hollow knight",
       "species": 8,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 42,
-        "height": 54,
-        "bottom": 77
+        "width": 14,
+        "height": 15,
+        "bottom": 25
       },
       "reference": "references/bore_sentinel.png",
-      "sheet": "bore_sentinel.png",
+      "sheet": "atlases/bore_sentinel.png",
       "status": "imported",
-      "walkSheet": "walk/bore_sentinel.png",
       "moveTicks": 9,
-      "generation": "exec-338411c3-54a2-4294-9b95-66b8d59d0acb.png",
-      "walkGeneration": "exec-d5f5d6e5-905f-4208-a071-b6f72720ed58.png"
+      "generation": "exec-45cd7bab-f364-41a1-af92-8e8bb92e661c.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "CAUSTIC_MORTARMAN": {
       "name": "Fen witch",
       "species": 9,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 40.5,
-        "height": 63,
-        "bottom": 77
+        "width": 13.5,
+        "height": 18,
+        "bottom": 25
       },
       "reference": "references/caustic_mortarman.png",
-      "sheet": "caustic_mortarman.png",
+      "sheet": "atlases/caustic_mortarman.png",
       "status": "imported",
-      "walkSheet": "walk/caustic_mortarman.png",
       "moveTicks": 9,
-      "generation": "exec-55666ed2-de96-4673-81af-169a52425cd3.png",
-      "walkGeneration": "exec-75691812-072a-4be6-8d5c-4b71c649a734.png"
+      "generation": "exec-5bc8681b-08a7-4e27-bb12-9f19570042b6.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ],
+        "rowEdges": [
+          0,
+          296,
+          590,
+          814,
+          1024
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "CLUSTER_WASP": {
       "name": "Thornwing",
       "species": 10,
       "locomotion": "CL_FLYING",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 55.5,
-        "height": 40.5,
-        "bottom": 62
+        "width": 18.5,
+        "height": 13,
+        "bottom": 25
       },
       "reference": "references/cluster_wasp.png",
-      "sheet": "cluster_wasp.png",
+      "sheet": "atlases/cluster_wasp.png",
       "status": "imported",
-      "generation": "exec-8e51b034-b8c0-478f-892f-78efc064c869.png"
+      "generation": "exec-fc71bd91-e048-480a-a2a1-774e6eb87f4f.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "MINIGUNNER": {
       "name": "Oathless archer",
       "species": 11,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 46.5,
-        "height": 58.5,
-        "bottom": 77
+        "width": 15.5,
+        "height": 20,
+        "bottom": 25
       },
       "reference": "references/minigunner.png",
-      "sheet": "minigunner.png",
+      "sheet": "atlases/minigunner.png",
       "status": "imported",
-      "walkSheet": "walk/minigunner.png",
       "moveTicks": 9,
-      "generation": "exec-7992c25a-4544-45e7-aa3e-22888c1b3774.png",
-      "walkGeneration": "exec-924b1522-3ebc-4e5a-8990-a6bc4544a81f.png"
+      "generation": "exec-d0ea5903-d943-4484-aa68-50394eca4014.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "SURVEYOR": {
       "name": "surveyor",
       "species": 12,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 60,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 20,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 30,
-        "height": 61.5,
-        "bottom": 77
+        "width": 10,
+        "height": 21,
+        "bottom": 25
       },
       "reference": "references/surveyor.png",
-      "sheet": "surveyor.png",
+      "sheet": "atlases/surveyor.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -282,104 +398,146 @@
         "A": "#e2c478",
         "w": "#e6ead9"
       },
-      "walkSheet": "walk/surveyor.png",
       "moveTicks": 9,
-      "generation": "exec-50389875-95c6-4e3c-b6e4-8619d6907505.png",
-      "walkGeneration": "exec-5de88c7e-3adc-4de2-bda2-7b917d425417.png"
+      "generation": "exec-33b49c3b-6378-4304-98f8-329beec4d31b.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "SHIELD_ANCHOR": {
       "name": "shield anchor",
       "species": 13,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 45,
-        "bottom": 77
+        "width": 20,
+        "height": 13,
+        "bottom": 25
       },
       "reference": "references/shield_anchor.png",
-      "sheet": "shield_anchor.png",
+      "sheet": "atlases/shield_anchor.png",
       "status": "imported",
-      "generation": "exec-6ae12809-da2b-4331-9d12-186d97824538.png"
+      "generation": "exec-b6a88b73-4356-4084-aaf8-3460704e1909.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "QUARRY_FOREMAN": {
       "name": "The Stonebound",
       "species": 14,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 58.5,
-        "height": 46.5,
-        "bottom": 107
+        "width": 39,
+        "height": 31,
+        "bottom": 71
       },
       "reference": "references/quarry_foreman.png",
-      "sheet": "quarry_foreman.png",
+      "sheet": "atlases/quarry_foreman.png",
       "status": "imported",
-      "walkSheet": "walk/quarry_foreman.png",
       "moveTicks": 9,
-      "generation": "exec-0d972662-8e82-4200-b35c-5397578dc755.png",
-      "walkGeneration": "exec-4b95cbe1-9a9d-4204-9a9a-3dd76bfc2278.png"
+      "generation": "exec-74390479-d18c-4dc4-8aa1-23438db05019.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "REACTOR_WARDEN": {
       "name": "Ashen Sentinel",
       "species": 15,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 42,
-        "height": 61.5,
-        "bottom": 107
+        "width": 28,
+        "height": 37,
+        "bottom": 71
       },
       "reference": "references/reactor_warden.png",
-      "sheet": "reactor_warden.png",
+      "sheet": "atlases/reactor_warden.png",
       "status": "imported",
-      "walkSheet": "walk/reactor_warden.png",
       "moveTicks": 9,
-      "generation": "exec-a2752466-1821-4817-8a60-afc289ec544b.png",
-      "walkGeneration": "exec-4639c540-cbf5-4d69-a04f-b5177a63c1f6.png"
+      "generation": "exec-e3eba205-3c65-41d6-ab74-e2286b88a2c0.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "REACTOR_CORE": {
       "name": "reactor core",
       "species": 16,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 45,
-        "bottom": 77
+        "width": 20,
+        "height": 12,
+        "bottom": 25
       },
       "reference": "references/reactor_core.png",
-      "sheet": "reactor_core.png",
+      "sheet": "atlases/reactor_core.png",
       "status": "imported",
-      "generation": "exec-37ca45f1-f98e-477a-8f14-07d9f17fbd53.png"
+      "generation": "exec-38d9f150-ee0d-49e4-897b-bb9445a26756.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "IRIS_COMMANDER": {
       "name": "IRIS commander",
       "species": 17,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
-      "width": 60,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 20,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 30,
-        "height": 61.5,
-        "bottom": 77
+        "width": 10,
+        "height": 21,
+        "bottom": 25
       },
       "reference": "references/iris_commander.png",
-      "sheet": "iris_commander.png",
+      "sheet": "atlases/iris_commander.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -401,26 +559,35 @@
         "A": "#e2c478",
         "w": "#e6ead9"
       },
-      "walkSheet": "walk/iris_commander.png",
       "moveTicks": 9,
-      "generation": "exec-b7817e81-0131-4ddc-83ff-2e0d909ac507.png",
-      "walkGeneration": "exec-3a05776a-1b8a-4ef0-acdc-4185e96c2515.png"
+      "generation": "exec-ac30319e-5b57-4969-9d6e-8c00afdacb2f.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12
     },
     "IRIS_ENGINEER": {
       "name": "IRIS engineer",
       "species": 18,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
-      "width": 60,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 20,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 30,
-        "height": 61.5,
-        "bottom": 77
+        "width": 10,
+        "height": 21,
+        "bottom": 25
       },
       "reference": "references/iris_engineer.png",
-      "sheet": "iris_engineer.png",
+      "sheet": "atlases/iris_engineer.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -442,26 +609,35 @@
         "A": "#e2c478",
         "w": "#e6ead9"
       },
-      "walkSheet": "walk/iris_engineer.png",
       "moveTicks": 9,
-      "generation": "exec-e0e80bd5-c098-4a43-bfd1-d3c838f9f8eb.png",
-      "walkGeneration": "exec-f90131c8-e108-4300-9322-37b33e9116fd.png"
+      "generation": "exec-a4b9eeb1-7002-4260-8d2f-75b7d3efcf73.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12
     },
     "VILLAGER": {
       "name": "villager",
       "species": 19,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 60,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 20,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 30,
-        "height": 61.5,
-        "bottom": 77
+        "width": 10,
+        "height": 21,
+        "bottom": 25
       },
       "reference": "references/villager.png",
-      "sheet": "villager.png",
+      "sheet": "atlases/villager.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -483,64 +659,96 @@
         "A": "#e2c478",
         "w": "#e6ead9"
       },
-      "walkSheet": "walk/villager.png",
       "moveTicks": 9,
-      "generation": "exec-9091ae1f-581a-4e7f-9a06-0529d025c100.png",
-      "walkGeneration": "exec-4684faf3-8f06-422a-952a-f131f984b101.png"
+      "generation": "exec-2d742e68-d185-4cdc-814a-0d71810eda0d.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "THORNBOUND_HART": {
       "name": "Thornbound Hart",
       "species": 20,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 84,
-        "height": 90,
-        "bottom": 107
+        "width": 56,
+        "height": 60,
+        "bottom": 71
       },
       "reference": "references/thornbound_hart.png",
-      "sheet": "thornbound_hart.png",
+      "sheet": "atlases/thornbound_hart.png",
       "status": "imported",
-      "generation": "exec-7392bee7-db4c-40e5-8096-93c496574c47.png"
+      "generation": "exec-46afd99b-7d09-4e67-b920-04556a236a21.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "MIRE_MATRON": {
       "name": "Mire Matron",
       "species": 21,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 85.5,
-        "height": 81,
-        "bottom": 107
+        "width": 57,
+        "height": 42,
+        "bottom": 71
       },
       "reference": "references/mire_matron.png",
-      "sheet": "mire_matron.png",
+      "sheet": "atlases/mire_matron.png",
       "status": "imported",
-      "generation": "exec-540cba6a-6862-433a-abce-6c0ccf8359f7.png"
+      "generation": "exec-20c87a93-6ff3-42fc-b5ac-28275f914326.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "CINDER_CASTELLAN": {
       "name": "Cinder Castellan",
       "species": 22,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 72,
-        "height": 87,
-        "bottom": 107
+        "width": 48,
+        "height": 53,
+        "bottom": 71
       },
       "reference": "references/cinder_castellan.png",
-      "sheet": "cinder_castellan.png",
+      "sheet": "atlases/cinder_castellan.png",
       "status": "imported",
-      "walkSheet": "walk/cinder_castellan.png",
       "moveTicks": 9,
       "clipFrames": {
         "windup": [
@@ -553,180 +761,280 @@
           4
         ]
       },
-      "generation": "exec-04ceccc8-023a-4fcb-af02-905be5f622b1.png",
-      "walkGeneration": "exec-ad5ed804-63c2-4085-a9f9-76bf1843dc99.png"
+      "generation": "exec-726afc7a-a5f5-4b3d-93ca-83f427385843.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "HOLLOW_BELLKEEPER": {
       "name": "Hollow Bellkeeper",
       "species": 23,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 66,
-        "height": 85.5,
-        "bottom": 107
+        "width": 44,
+        "height": 51,
+        "bottom": 71
       },
       "reference": "references/hollow_bellkeeper.png",
-      "sheet": "hollow_bellkeeper.png",
+      "sheet": "atlases/hollow_bellkeeper.png",
       "status": "imported",
-      "walkSheet": "walk/hollow_bellkeeper.png",
       "moveTicks": 9,
-      "generation": "exec-9b6af712-b2da-4063-adf9-a0716261d8ff.png",
-      "walkGeneration": "exec-0bc93326-475f-4c62-86c2-c832c103d054.png"
+      "generation": "exec-eb78796f-f4f4-41f0-a209-0d4a6796b89a.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ],
+        "rowEdges": [
+          0,
+          296,
+          580,
+          780,
+          1024
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "BRIAR_WOLF": {
       "name": "Briar wolf",
       "species": 24,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 60,
-        "height": 63,
-        "bottom": 77
+        "width": 20,
+        "height": 21,
+        "bottom": 25
       },
       "reference": "references/briar_wolf.png",
-      "sheet": "briar_wolf.png",
+      "sheet": "atlases/briar_wolf.png",
       "status": "imported",
-      "generation": "exec-ccd18aa6-94b3-46ad-9092-fd1dcde5e5d9.png"
+      "generation": "exec-c59ec54c-f379-4008-b2f7-09c0a6d8e9e3.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "BELL_BAT": {
       "name": "Bell bat",
       "species": 25,
       "locomotion": "CL_FLYING",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 55.5,
-        "height": 40.5,
-        "bottom": 62
+        "width": 18.5,
+        "height": 12,
+        "bottom": 25
       },
       "reference": "references/bell_bat.png",
-      "sheet": "bell_bat.png",
+      "sheet": "atlases/bell_bat.png",
       "status": "imported",
-      "generation": "exec-b9a26df6-6c20-4fa0-85a6-a0a28675c43a.png"
+      "generation": "exec-2715c262-c4f4-4511-9a76-48c22f7fd5ec.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "BONE_GUARD": {
       "name": "Bone guard",
       "species": 26,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 42,
-        "height": 52.5,
-        "bottom": 77
+        "width": 14,
+        "height": 18,
+        "bottom": 25
       },
       "reference": "references/bone_guard.png",
-      "sheet": "bone_guard.png",
+      "sheet": "atlases/bone_guard.png",
       "status": "imported",
-      "walkSheet": "walk/bone_guard.png",
       "moveTicks": 9,
-      "generation": "exec-4d9b47b6-820b-428a-9155-e8d51801eca8.png",
-      "walkGeneration": "exec-f5f08662-b3de-4856-af54-88fae2870a6d.png"
+      "generation": "exec-e3a0cced-ec09-4eea-a2ae-31962af76691.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "FEN_WISP": {
       "name": "Fen wisp",
       "species": 27,
       "locomotion": "CL_FLYING",
       "grounded": false,
-      "width": 72,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 24,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 37.5,
-        "height": 54,
-        "bottom": 67
+        "width": 12.5,
+        "height": 18,
+        "bottom": 25
       },
       "reference": "references/fen_wisp.png",
-      "sheet": "fen_wisp.png",
+      "sheet": "atlases/fen_wisp.png",
       "status": "imported",
-      "generation": "exec-fd1afa65-6f22-4508-beb4-d11a632844f0.png"
+      "generation": "exec-38fc61dc-1438-4859-81e5-7d933c82beb3.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 3
+      },
+      "colorLimit": 12,
+      "fit": "height"
     },
     "ROOT_KNIGHT": {
       "name": "Root Knight",
       "species": 28,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 108,
-      "height": 108,
-      "pixelScale": 0.3333333333333333,
+      "width": 72,
+      "height": 72,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 42,
-        "height": 61.5,
-        "bottom": 107
+        "width": 28,
+        "height": 41,
+        "bottom": 71
       },
       "reference": "references/root_knight.png",
-      "sheet": "root_knight.png",
+      "sheet": "atlases/root_knight.png",
       "status": "imported",
-      "walkSheet": "walk/root_knight.png",
       "moveTicks": 9,
-      "generation": "exec-051772b0-337a-46b4-a4d3-9ebc6436fefe.png",
-      "walkGeneration": "exec-64b18160-1c95-4ef8-a9be-6019be2fabab.png"
+      "generation": "exec-6743db1d-dc39-49ac-b7d4-7c04ac220458.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "MUMMY": {
       "name": "mummy",
       "species": 30,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 84,
-      "height": 96,
-      "pixelScale": 0.16666666666666666,
+      "width": 28,
+      "height": 32,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 49.5,
-        "height": 79.5,
-        "bottom": 95
+        "width": 16.5,
+        "height": 23,
+        "bottom": 31
       },
       "reference": "references/mummy.png",
-      "sheet": "mummy.png",
+      "sheet": "atlases/mummy.png",
       "status": "imported",
-      "walkSheet": "walk/mummy.png",
       "moveTicks": 9,
-      "generation": "exec-92fe83b5-7e77-4272-994b-8b1982e59bd8.png",
-      "walkGeneration": "exec-faa56f69-368f-4632-a696-95f3dec745a2.png"
+      "generation": "exec-1cbc4005-c5e6-4e75-9e23-e0cc39185ad5.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ],
+        "rowEdges": [
+          0,
+          305,
+          583,
+          820,
+          1024
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "LAVA_TOAD": {
       "name": "lava toad",
       "species": 31,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 102,
-      "height": 78,
-      "pixelScale": 0.16666666666666666,
+      "width": 34,
+      "height": 26,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 79.5,
-        "height": 49.5,
-        "bottom": 77
+        "width": 26.5,
+        "height": 17,
+        "bottom": 25
       },
       "reference": "references/lava_toad.png",
-      "sheet": "lava_toad.png",
+      "sheet": "atlases/lava_toad.png",
       "status": "imported",
-      "generation": "exec-62213377-8dc9-4cfd-a150-11e3fe75b5eb.png"
+      "generation": "exec-daccc1df-3c2c-46ef-be38-50b3ff4afaec.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "colorLimit": 12,
+      "swimTicks": 10,
+      "fit": "height"
     },
     "VILLAGE_GUARD": {
       "name": "village guard",
       "species": 32,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 78,
-      "height": 84,
-      "pixelScale": 0.16666666666666666,
+      "width": 26,
+      "height": 28,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 39,
-        "height": 64.5,
-        "bottom": 83
+        "width": 13,
+        "height": 21,
+        "bottom": 27
       },
       "reference": "references/village_guard.png",
-      "sheet": "village_guard.png",
+      "sheet": "atlases/village_guard.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -739,26 +1047,36 @@
         "a": "#bd9659",
         "s": "#c59b75"
       },
-      "walkSheet": "walk/village_guard.png",
       "moveTicks": 9,
-      "generation": "exec-9a50380f-04b5-43f6-b3b9-9d351348b73c.png",
-      "walkGeneration": "exec-883631fa-da19-4c6a-a209-40c4e9723b74.png"
+      "generation": "exec-8c4c5854-d555-4073-9f8a-c91ad943ad9e.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12,
+      "swimTicks": 10
     },
     "VILLAGE_HUNTER": {
       "name": "village hunter",
       "species": 33,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
-      "width": 84,
-      "height": 84,
-      "pixelScale": 0.16666666666666666,
+      "width": 28,
+      "height": 28,
+      "pixelScale": 0.5,
       "targetBounds": {
-        "width": 52.5,
-        "height": 67.5,
-        "bottom": 83
+        "width": 17.5,
+        "height": 21,
+        "bottom": 27
       },
       "reference": "references/village_hunter.png",
-      "sheet": "village_hunter.png",
+      "sheet": "atlases/village_hunter.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -771,10 +1089,99 @@
         "a": "#b39158",
         "s": "#bf9470"
       },
-      "walkSheet": "walk/village_hunter.png",
       "moveTicks": 9,
-      "generation": "exec-fd60e5b2-0783-4bbf-a2d4-5f7ac4514aab.png",
-      "walkGeneration": "exec-06ea2c88-bfa8-49ef-ae41-63f364f28a15.png"
+      "generation": "exec-599e9684-64f4-476c-a35e-50a4be2defe7.png",
+      "atlas": {
+        "columns": 4,
+        "rows": 4,
+        "swim": [
+          12,
+          13,
+          14
+        ]
+      },
+      "fit": "height",
+      "colorLimit": 12,
+      "swimTicks": 10
+    },
+    "FROST_GIANT": {
+      "name": "Frost giant",
+      "grounded": true,
+      "width": 46,
+      "height": 50,
+      "pixelScale": 0.5,
+      "fit": "height",
+      "targetBounds": {
+        "width": 31.36,
+        "height": 39,
+        "bottom": 49
+      },
+      "sheet": "atlases/frost_giant.png",
+      "status": "imported",
+      "colorLimit": 12,
+      "moveTicks": 12,
+      "swimTicks": 10,
+      "deathTicks": 4,
+      "atlas": {
+        "columns": 4,
+        "rows": 6,
+        "count": 24,
+        "swim": [
+          21,
+          22,
+          23
+        ]
+      },
+      "clipFrames": {
+        "windup": [
+          8,
+          8,
+          8,
+          12,
+          12,
+          12,
+          16,
+          16,
+          16
+        ],
+        "attack": [
+          9,
+          10,
+          10,
+          13,
+          14,
+          14,
+          17,
+          18,
+          18
+        ],
+        "recover": [
+          11,
+          11,
+          11,
+          15,
+          15,
+          15,
+          19,
+          19,
+          19
+        ],
+        "hurt": [
+          5
+        ],
+        "death": [
+          6,
+          7,
+          20
+        ],
+        "special": [
+          9,
+          10,
+          9,
+          10
+        ]
+      },
+      "generation": "exec-aaed6334-941c-461d-9579-e980de0e5527.png"
     }
   }
 }

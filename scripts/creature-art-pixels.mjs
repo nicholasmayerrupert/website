@@ -1,8 +1,8 @@
 // Shared chroma-key extraction for generated creature sprite sheets.
-export function cutFrame(image, column, row, columns = 4, rows = 3) {
-  const left = Math.round(column * image.width / columns), top = Math.round(row * image.height / rows);
+export function cutFrame(image, column, row, columns = 4, rows = 3, rowEdges) {
+  const left = Math.round(column * image.width / columns), top = rowEdges?.[row] ?? Math.round(row * image.height / rows);
   const width = Math.round((column + 1) * image.width / columns) - left;
-  const height = Math.round((row + 1) * image.height / rows) - top;
+  const height = (rowEdges?.[row + 1] ?? Math.round((row + 1) * image.height / rows)) - top;
   const pixels = new Array(width * height), background = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const at = ((top + y) * image.width + left + x) * 4;

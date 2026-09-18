@@ -6,6 +6,7 @@
 const exclusive = (timeoutMs) => ({ timeoutMs, concurrency: 'exclusive' });
 
 export const UNIT_SUITES = [
+  ['creature-art-atlas', 'creature-art-atlas-test.mjs'],
   ['creature-swim', 'creature-swim-test.mjs'],
   ['creature-swim-e2e', 'creature-swim-e2e.mjs', exclusive(180_000)],
   ['creature-animation', 'creature-animation-test.mjs'],

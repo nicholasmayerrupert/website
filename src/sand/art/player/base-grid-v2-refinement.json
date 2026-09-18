@@ -1,0 +1,6 @@
+{
+  "tool": "built-in image_gen",
+  "source": "base-grid-v2.png (initial grid-v2 edit)",
+  "generation": "exec-e5a6aadf-ce52-4437-977b-204620fb605b.png",
+  "prompt": "Edit ONLY THE HEAD in the upper-left tile of this modular player component atlas. Keep the other nine components and all cell positions EXACTLY unchanged. The head will be sampled to SIX columns by SEVEN rows of logical pixels. Redesign ONLY its internal face pattern to be unmistakably readable at 6x7: broad dark-brown hair cap, warm flat skin plane, and ONE LARGE DARK SQUARE EYE on the right-facing cheek (about one sixth of total head width and one seventh of its height), fully inside the silhouette and separate from nose/outer contour. The eye must survive center sampling at that tiny native resolution. No miniature glint. Keep existing hair silhouette, right-facing profile, head bounds and neck attachment. Strict uniform square pixel grid, completely flat colors, no sub-pixel texture, no antialiasing, no fine features. The rest of the atlas remains untouched, four columns by three rows with the last two cells empty, uniform dark teal background."
+}

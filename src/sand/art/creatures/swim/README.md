@@ -1,11 +1,14 @@
 # Swimming strips
 
-The manifest registers three generated poses for each of the 25 amphibious
-creatures. Aquatic fish retain their movement art; flyers and stationary creatures
+This manifest registers separate swimming sources for creatures whose main
+manifest does not contain a unified `atlas.swim` mapping. Unified atlases store
+swimming in their fourth row (sixth for the frost giant) and are imported by `import-creature-art.mjs`;
+they have no active entry here. Aquatic fish retain their movement art; flyers and stationary creatures
 do not need additional swimming poses. Attack, hurt and death clips are shared
 with the existing creature art.
 
-Each PNG contains one row: reach, pull, recovery. Equipped knights instead use
+The dragon is the only active separate strip. The other PNGs are retained as
+source references. Each PNG contains one row: reach, pull, recovery. Equipped knights instead use
 an extended kick, a compact knee tuck and the opposite kick. `references/` holds
 the native creature appearance used for generation; `prompts/` records the exact
 built-in ImageGen prompt and generated source filename for every accepted strip.
@@ -14,7 +17,8 @@ From the repository root:
 
 ```sh
 node scripts/import-creature-swim.mjs
-node scripts/import-creature-swim.mjs FROST_GIANT VILLAGE_GUARD
+node scripts/import-creature-art.mjs FROST_GIANT
+node scripts/import-creature-art.mjs VILLAGE_GUARD
 node scripts/run-tests.mjs --only creature-swim,creature-swim-e2e
 ```
 

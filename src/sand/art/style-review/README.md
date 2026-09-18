@@ -1,5 +1,18 @@
 # Player and dragon art review
 
+`roster-grid-overview.png` shows all 35 imported creature types at a shared
+scale of three display pixels per native half-cell pixel.
+`roster-grid-comparison.png` compares selected creatures before and after the
+full-roster pass at eight display pixels per world cell. The exact prompts for
+its 23 revised sources are in `../roster-grid-prompts.json`.
+
+`grid-v2-comparison.png` compares the pre-pass and revised imported idle art at
+the same world scale (12 display pixels per world cell). The player preview is
+the baked body; runtime arms and equipment are exercised by the player viewer.
+The six human NPC types stand at 10.5 cells, alongside the player's 10.25-cell
+idle body. Source prompts are in `../grid-v2-prompts.json`, with the base face
+refinement recorded in `../player/base-grid-v2-refinement.json`.
+
 Open `/src/sand/art/style-review/index.html` on the development server for a
 side-by-side comparison of the current sprites and generated candidates.
 The dragon design is imported through `../skeleton-dragon/`; the player body

@@ -4,7 +4,12 @@
 
 - **Edit approved art with built-in ImageGen.** Supply the existing sheets as
   references; preserve character identity, equipment, facing and pose meanings.
-  Save the source PNGs and exact prompts in this directory.
+  Keep raw generated PNGs in an ignored working directory until compacted;
+  save only compact source PNGs and exact prompts in this directory.
+- **Compaction is mandatory before import or commit.** Active PNGs have a real square pixel grid,
+  flat palettes and binary transparency. Deterministic grid conversion and
+  manual pixel touch-ups use the raster tools; edit these small PNGs directly.
+  Preview enlarged pixels with nearest-neighbor sampling, without smoothing.
 - **Use one coarse square grid.** Creature pixels occupy **0.5 × 0.5 world
   cells**. Request flat colors, about 12 colors total, three tones per material,
   and **no sub-pixel texture, gradients, antialiasing or fine fur**. Enforce the
@@ -71,6 +76,55 @@ Reuse attack/hurt/death poses in water unless individual review shows a problem.
 
 ## Generation and import
 
+**Required pipeline: generate → compact → touch up → import → review/test →
+commit.** A generated sheet is not finished until it has been reduced to its
+actual pixel grid. Never commit full-resolution generation outputs, enlarged
+pixel-art copies, or multi-megabyte sprite references. This applies to every
+new sprite, replacement sheet, armor component, swimming strip and archived
+character reference.
+
+1. Keep raw generation outputs and temporary comparison images under an ignored
+   directory such as `.sand-artifacts/sprite-authoring/`. Register the intended
+   sheet layout and source row boundaries before conversion. When replacing a
+   compact atlas with a fresh large image, update or clear its old `rowEdges`
+   and remap `pixelDetails` to the new grid.
+2. Place the sheet at its registered path and immediately run
+   `node scripts/compact-sprite-art.mjs --references` from the repository root.
+   Do not leave the raw large file in the art directory. New asset directories
+   must be added to the compactor or reduced with the same grid/palette rules
+   before their files are staged.
+3. Touch up eyes and other essential details directly on the compact grid.
+   Use hard transparency and nearest-neighbor previews; no smoothing or dithering.
+4. Run the relevant importers, inspect the rebuilt animation at game size, and
+   run the affected checks. Inspect PNG dimensions and file sizes before staging:
+   active character sheets must fit within 512×512 pixels; archived character
+   references must have a maximum 384-pixel edge. Active sheets should be
+   kilobytes, not megabytes. A compliant canvas size alone does not excuse
+   texture noise or an unnecessarily large file.
+5. Commit only the compact PNGs, prompts, registration metadata and regenerated
+   runtime data. Delete temporary raw outputs after review; do not retain large
+   originals elsewhere in the repository as backups.
+
+`node scripts/compact-sprite-art.mjs` converts oversized active sources using
+center-point sampling, explicit row boundaries and palette reduction without
+dithering. Small sources are left untouched so hand edits survive reruns.
+The short edge of each pose cell is normally 32 pixels, or 64 for large
+creatures; aspect ratios are retained with integer grid rounding. Creature
+sources use at most 16 opaque colors, and dragon sources at most 24. This
+authoring grid is separate from the registered half-world-cell runtime grid.
+
+Add `--references` to reduce archived sheets and character references to a
+maximum 384-pixel edge and 32 colors. These are visual references, not active
+import inputs. `source-grid-report.json` records dimensions and file sizes for
+the conversion. Original generated sheets remain available in Git history;
+shrinking tracked files does not remove those historical Git objects.
+
+Transparent sources use alpha as their exact silhouette. Import does not
+chroma-key their black pixels or remove detached one-pixel details. The fox's
+eyes are manually placed in its 32×32 source poses, with closed eyelids in
+the death poses. Its `atlas.pixelDetails` pins those source coordinates to
+the nearest runtime pixel so the smaller game grid cannot skip the eyes.
+
 Use complete body sprites for creatures. Keep movement, combat and swimming
 in one atlas; revise deficient poses or add rows for extra actions. State the exact grid,
 pose order, facing and limb positions in the prompt. Reference the approved
@@ -104,7 +158,7 @@ Existing unsuffixed and `-coarse-v1.png` sources remain reference art or active
 sources for assets listed in their manifests. Collision, equipment, and attack
 timing are independent of the source layout.
 
-Retain source images, exact prompts, references and registration/timing metadata.
+Retain compact source images, exact prompts, compact references and registration/timing metadata.
 Use the relevant importer; production consumes palette-indexed content rather
 than the large source sheets. Preserve existing land/combat art when adding a
 new clip. Check actual native dimensions in the manifest: canvas padding may be

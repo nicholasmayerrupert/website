@@ -43,5 +43,19 @@ export function sampleCreatureAtlas(image, metadata) {
     if (sx < 0 || sy < 0 || sx >= f.width || sy >= f.height || f.background[sy * f.width + sx]) return null;
     return f.pixels[sy * f.width + sx];
   }));
+  // Authored one-pixel features keep their nearest native-grid location.
+  for (const [index, details] of Object.entries(metadata.atlas.pixelDetails ?? {})) {
+    const i = Number(index), f = source[i];
+    const floorPadding = metadata.grounded && !swim.includes(i) ? extraBottom : 0;
+    for (const [sx, sy] of details) {
+      if (!f || !Number.isInteger(sx) || !Number.isInteger(sy) || sx < 0 || sy < 0 || sx >= f.width || sy >= f.height)
+        throw new Error('Invalid atlas pixel detail');
+      const x = Math.round((sx - anchors[i].x) / scale + (width - 1) / 2);
+      const y = Math.round((sy - anchors[i].y) / scale + extraTop + floorPadding + anchors[i].targetY);
+      if (x < 0 || y < 0 || x >= width || y >= height || f.background[sy * f.width + sx])
+        throw new Error('Atlas pixel detail falls outside its opaque sprite');
+      frames[i][y * width + x] = f.pixels[sy * f.width + sx];
+    }
+  }
   return { width, height, frames };
 }

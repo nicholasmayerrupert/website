@@ -6,7 +6,7 @@ import {cutFrame} from './creature-art-pixels.mjs';
 const root=new URL('../src/sand/art/creatures/swim/',import.meta.url);
 export async function importCreatureSwim(record,meta){
  const {data,info}=await sharp(fileURLToPath(new URL(meta.file,root))).ensureAlpha().raw().toBuffer({resolveWithObject:true});
- for(let i=0;i<data.length;i+=4)if(data[i+3]<128||(data[i]>150&&data[i+2]>150&&data[i+1]<120&&Math.min(data[i],data[i+2])>data[i+1]*1.5)){data[i]=255;data[i+1]=0;data[i+2]=255;data[i+3]=255;}
+ for(let i=0;i<data.length;i+=4)if(data[i+3]<128||(data[i]>150&&data[i+2]>150&&data[i+1]<120&&Math.min(data[i],data[i+2])>data[i+1]*1.5)){data[i]=255;data[i+1]=0;data[i+2]=255;data[i+3]=meta.sourceGrid?0:255;}
  // Restore the registered land canvas before recomputing swim padding.
  const padX=(record.width-meta.width)/2,padY=record.height-meta.height;
  if(padX||padY)for(const [name,clip] of Object.entries(record.clips))if(name!=='swim')clip.frames=clip.frames.map(f=>f.slice(padY,padY+meta.height).map(row=>row.slice(padX,padX+meta.width)));
@@ -30,7 +30,7 @@ export async function importCreatureSwim(record,meta){
   const x=(group.minX+group.maxX)/2,y=(group.minY+group.maxY)/2;
   const distances=bodies.map(b=>Math.hypot(Math.max(b.minX-x,0,x-b.maxX),Math.max(b.minY-y,0,y-b.maxY)));
   const i=distances.indexOf(Math.min(...distances));
-  if(group.points.length<20)continue;
+  if(group.points.length<(meta.sourceGrid?1:20))continue;
   for(const at of group.points)source[i].background[at]=0;
   for(const bound of ['minX','minY'])source[i][bound]=Math.min(source[i][bound],group[bound]);
   for(const bound of ['maxX','maxY'])source[i][bound]=Math.max(source[i][bound],group[bound]);

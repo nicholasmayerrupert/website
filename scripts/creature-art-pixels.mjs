@@ -4,16 +4,19 @@ export function cutFrame(image, column, row, columns = 4, rows = 3, rowEdges) {
   const width = Math.round((column + 1) * image.width / columns) - left;
   const height = (rowEdges?.[row + 1] ?? Math.round((row + 1) * image.height / rows)) - top;
   const pixels = new Array(width * height), background = new Uint8Array(width * height);
+  let hasTransparency = false;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const at = ((top + y) * image.width + left + x) * 4;
     pixels[y * width + x] = [...image.data.subarray(at, at + 3)];
+    if (image.data[at + 3] < 128) { background[y * width + x] = 1; hasTransparency = true; }
   }
   const corners = [pixels[0], pixels[width - 1], pixels[(height - 1) * width], pixels.at(-1)];
   const color = [0, 1, 2].map(c => corners.map(p => p[c]).sort((a, b) => a - b)[1]);
   // Chroma key also clears enclosed gaps between legs, wings, and weapons.
-  pixels.forEach((rgb, i) => { if (rgb.reduce((n, value, c) => n + (value - color[c]) ** 2, 0) < 380) background[i] = 1; });
+  if (!hasTransparency) pixels.forEach((rgb, i) => { if (rgb.reduce((n, value, c) => n + (value - color[c]) ** 2, 0) < 380) background[i] = 1; });
   const visited = new Uint8Array(pixels.length), components = [];
-  for (let start = 0; start < pixels.length; start++) {
+  // Transparent pixel art carries an exact mask; even a detached single pixel is intentional.
+  for (let start = 0; !hasTransparency && start < pixels.length; start++) {
     if (visited[start] || background[start]) continue;
     const component = [start]; visited[start] = 1;
     for (let i = 0; i < component.length; i++) {
@@ -40,4 +43,3 @@ export function cutFrame(image, column, row, columns = 4, rows = 3, rowEdges) {
   if (maxX < 0) throw new Error(`Empty sheet cell ${column},${row}`);
   return { pixels, background, width, height, minX, maxX, minY, maxY };
 }
-

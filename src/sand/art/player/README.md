@@ -30,8 +30,11 @@ pixels and poses rather than the flattened preview. The wire compiler validates
 and packs parts and placements; C++ renders the equipped parts using the same
 frame index. No player mesh or image file is loaded at runtime.
 
-The importer reads the `-grid-v2.png` component atlases. Exact ImageGen prompts
-and generation IDs are in `../grid-v2-prompts.json`. The brief requires one
+The importer reads the `-grid-v2.png` component atlases.
+These active atlases are compact transparent pixel art; edit the small source
+pixels directly and use nearest-neighbor enlargement for visual review.
+Part pivots and rig dimensions remain defined by the importer.
+Exact ImageGen prompts and generation IDs are in `../grid-v2-prompts.json`. The brief requires one
 square grid, flat colors, and no sub-pixel texturing. Import samples each part
 at half-cell resolution, including transparency, then stores each sample in a
 2×2 block within the rig's quarter-cell coordinate space. Odd part dimensions

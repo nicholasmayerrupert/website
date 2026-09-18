@@ -26,6 +26,11 @@ and reuse movement for swimming. `../grid-v2-prompts.json` and
 The frost giant's 24-pose layout is described in `../frost-giant/README.md`.
 `atlas.count` declares larger pose sets. Optional `atlas.rowEdges` records
 measured row boundaries in source pixels for unevenly spaced generated sheets.
+The committed PNGs are compact, palette-limited sources with hard transparency;
+`atlas.rowEdges` uses their current pixel coordinates. Optional
+`atlas.pixelDetails` maps a pose index to `[x, y]` source points whose color must
+survive native-grid sampling (for example, a manually placed eye). Edit these
+pixels in the source PNG and keep their coordinates in sync with the manifest.
 
 Unified atlases import at `pixelScale: 0.5`. Their native dimensions, rather
 than the generated PNG dimensions, define the actual pixel grid. The importer

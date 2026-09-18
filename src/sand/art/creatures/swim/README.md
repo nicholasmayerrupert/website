@@ -37,3 +37,10 @@ its test artifact directory. Visual review remains necessary after regeneration.
 
 Open `/game?creature=VILLAGE_GUARD&swim` to compare the source and game views,
 change water depth, and select Forward, Straight upward or Tread water.
+
+## Compact source pixels
+
+The registered dragon strip uses a compact square grid, up to 24 opaque colors
+and hard transparency. Its `sourceGrid` flag preserves small detached details
+during component extraction. Other active swimming poses live in the unified
+creature atlases; the remaining strips and references are compact archives.

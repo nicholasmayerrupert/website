@@ -18,7 +18,8 @@
         "notes": "Foreclaws reach, pull down and tuck while hind legs extend/gather; skull, ribs and wings stay stable."
       },
       "size": 1.2,
-      "ticks": 10
+      "ticks": 10,
+      "sourceGrid": true
     }
   ]
 }

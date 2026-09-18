@@ -4,6 +4,18 @@ import art from '../src/sand/content/creatureArt.js';
 import parts from '../src/sand/content/playerParts.js';
 import { CREATURE_ATTACK_ANIMATIONS } from '../src/sand/content/creatureAnimations.js';
 import { readFileSync, existsSync } from 'node:fs';
+import sharp from 'sharp';
+import { fileURLToPath } from 'node:url';
+import { cutFrame } from './creature-art-pixels.mjs';
+
+// Alpha is authoritative: black pixels and detached one-pixel details survive import.
+const transparent = { width: 8, height: 8, data: Buffer.alloc(8 * 8 * 4) };
+transparent.data.set([0, 0, 0, 255], 0);
+transparent.data.set([220, 140, 60, 255], (4 * 8 + 4) * 4);
+const extracted = cutFrame(transparent, 0, 0, 1, 1);
+assert.equal(extracted.background[0], 0, 'opaque black must not become chroma-key background');
+assert.equal(extracted.background[4 * 8 + 4], 0, 'a detached native pixel must not be filtered as a source speck');
+assert.equal(extracted.background[1], 1, 'transparent pixels remain empty');
 
 const image = { width: 256, height: 256, data: Buffer.alloc(256 * 256 * 4) };
 for (let i = 0; i < image.data.length; i += 4) image.data.set([32, 54, 64, 255], i);
@@ -28,6 +40,12 @@ assert.equal(idle.bottom, result.height - 1, 'standing feet stay on the shared g
 assert(attack.left > 0 && attack.right < result.width - 1, 'attack fits without clipping');
 assert(result.frames.every(frame => frame.length === result.width * result.height));
 assert.throws(() => sampleCreatureAtlas(image, { ...metadata, atlas: { columns: 3, rows: 4 } }), /layout/);
+image.data.set([0, 0, 0, 255], ((64 + 30) * image.width + 28) * 4);
+const isBlack = pixel => pixel?.every(value => value === 0);
+assert(!sampleCreatureAtlas(image, metadata).frames[4].some(isBlack), 'fixture detail lies between regular samples');
+const detailed = { ...metadata, atlas: { ...metadata.atlas, pixelDetails: { 4: [[28, 30]] } } };
+assert(sampleCreatureAtlas(image, detailed).frames[4].some(isBlack), 'authored eye survives native-grid sampling');
+assert.throws(() => sampleCreatureAtlas(image, { ...metadata, atlas: { ...metadata.atlas, pixelDetails: { 4: [[999, 0]] } } }), /pixel detail/);
 const manifest = JSON.parse(readFileSync(new URL('../src/sand/art/creatures/manifest.json', import.meta.url)));
 for (const [key, record] of Object.entries(art)) {
   assert.equal(record.pixelScale, .5, `${key}: roster-wide half-cell native grid`);
@@ -42,6 +60,15 @@ for (const [key, record] of Object.entries(art)) {
     assert(source?.atlas && source.pixelScale === .5, `${key}: repeatable half-cell atlas import`);
     assert(!source.walkSheet, `${key}: walk belongs to the unified atlas`);
     assert(existsSync(new URL('../src/sand/art/creatures/' + source.sheet, import.meta.url)), `${key}: source exists`);
+    const { data, info } = await sharp(fileURLToPath(new URL('../src/sand/art/creatures/' + source.sheet, import.meta.url))).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    assert(info.width <= 512 && info.height <= 512, `${key}: compact source grid`);
+    const colors = new Set();
+    for (let i = 0; i < data.length; i += 4) {
+      assert(data[i + 3] === 0 || data[i + 3] === 255, `${key}: hard alpha edges`);
+      if (data[i + 3]) colors.add(data.subarray(i, i + 3).toString('hex'));
+    }
+    assert(colors.size <= 16, `${key}: flat source palette`);
+    assert.equal(source.atlas.rowEdges.at(-1), info.height, `${key}: source row boundaries`);
   }
   for (const attack of CREATURE_ATTACK_ANIMATIONS[key] ?? []) for (const range of Object.values(attack).filter(v => typeof v === 'object'))
     assert(range.start + range.count <= record.clips[range.clip].frames.length, `${key}: complete attack range`);

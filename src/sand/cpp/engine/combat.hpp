@@ -12,10 +12,10 @@ inline const EnemyAttack* enemyAttackProfile(uint8_t species, int pattern = 0) {
   if (species == CS_FROST_GIANT && pattern == 2) {
     static constexpr EnemyAttack shard{EM_ICE_SHARD, 309, 44, 24, 62, 88, 30}; return &shard;
   }
-  if (species == CS_BONE_DINOSAUR && pattern == 1) {
+  if (species == CS_CINDERJAW_DRAGON && pattern == 1) {
     static constexpr EnemyAttack rush{EM_LUNGE, 0, 29, 30, 48, 46, 28}; return &rush;
   }
-  if (species == CS_BONE_DINOSAUR && pattern == 2) {
+  if (species == CS_CINDERJAW_DRAGON && pattern == 2) {
     static constexpr EnemyAttack breath{EM_FIRE_STREAM, 300, 40, 96, 71, 90, 9}; return &breath;
   }
   if (species == CS_FEN_WISP && pattern == 1) {

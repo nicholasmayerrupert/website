@@ -69,7 +69,7 @@ await writeJson('creatures/manifest.json', manifest);
 for (const name of ['base', 'wayfarer', 'hedgeweaver', 'hearthguard'])
   await compact(`player/${name}-grid-v2.png`, { count: 10 });
 for (const name of ['locomotion', 'attacks'])
-  await compact(`skeleton-dragon/${name}-coarse-v1.png`, { shortEdge: 64, colors: 24 });
+  await compact(`cinderjaw-dragon/${name}-coarse-v1.png`, { shortEdge: 64, colors: 24 });
 const swim = await readJson('creatures/swim/manifest.json');
 for (const metadata of swim.creatures) {
   // A swim limb may cross a nominal cell edge; sample the complete strip together.
@@ -93,7 +93,7 @@ if (process.argv.includes('--references')) {
       report[name] = { before: { width: metadata.width, height: metadata.height, bytes: input.length }, after: { width: result.width, height: result.height, bytes: output.length } };
     }
   }
-  for (const directory of ['creatures', 'player', 'skeleton-dragon', 'frost-giant']) await references(directory);
+  for (const directory of ['creatures', 'player', 'cinderjaw-dragon', 'frost-giant']) await references(directory);
 }
 if (Object.keys(report).length) await writeJson('source-grid-report.json', report);
 const entries = Object.values(report);

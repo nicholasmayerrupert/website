@@ -1198,9 +1198,9 @@ async function initializeAuthority(data, { scheduleRuns = true, usePending = tru
         activePlanetId, PLANET_GAMEPLAY_FLAG.SCRIPTED_CREW,
       )) {
         if (activePlanetId !== PLANET.FRONTIER) {
-          engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
-          engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
-          engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
+          engine.spawnScriptedCreature(CREATURE.VILLAGER_KEEPER, -64, 8);
+          engine.spawnScriptedCreature(CREATURE.VILLAGER_SMITH, 64, 8);
+          engine.spawnScriptedCreature(CREATURE.VILLAGER_SCHOLAR, 30, -23);
         }
       }
       if (localPlayerId && Array.isArray(data.loadout)) {

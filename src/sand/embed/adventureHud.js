@@ -1,7 +1,7 @@
 import { BESTIARY } from '../content/bestiary.js';
 import { GAME_CONTENT, GAME_JOBS, GAME_WORLD } from '../content/catalog.js';
 import { MATERIAL_BY_ID } from '../materials.generated.js';
-import { OBJECTIVE_STATE, ITEM_KIND } from '../wasmBridge/abi.generated.js';
+import { OBJECTIVE_STATE, ITEM_KIND, CREATURE } from '../wasmBridge/abi.generated.js';
 import { ADVENTURE_STYLE } from './adventureStyle.js';
 import { ADVENTURE_INVENTORY_STYLE } from './adventureInventoryStyle.js';
 import { createBedHud } from './bedHud.js';
@@ -61,10 +61,15 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   let previousFocus = null, noticeTimer = 0, lastSignature = '', destroyed = false;
   let restarting = false;
   const completed = new Set(), seenCreatures = new Set();
-  const journalKey = `aster-journal:3:${GAME_WORLD.seed}`;
+  const journalKey = `aster-journal:4:${GAME_WORLD.seed}`;
   const keepJournal = !new URLSearchParams(location.search).has('nosave') && !new URLSearchParams(location.search).has('studio');
   if (keepJournal) try {
-    const saved = JSON.parse(localStorage.getItem(journalKey) || '{}');
+    const current = localStorage.getItem(journalKey);
+    const saved = JSON.parse(current || localStorage.getItem(`aster-journal:3:${GAME_WORLD.seed}`) || '{}');
+    if (!current && Array.isArray(saved.seen)) {
+      const oldSpecies = [0, 1, 2, 3, 4, 5, 6, 7, 21, 8, 20, 9, 10, 22, 11, 17, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];
+      saved.seen = saved.seen.map(id => oldSpecies[id]);
+    }
     tracked = GAME_JOBS.findIndex(job => job.key === saved.tracked);
     for (const id of Array.isArray(saved.seen) ? saved.seen : []) if (BESTIARY[id]) seenCreatures.add(id);
   } catch { /* The adventure remains playable when browser storage is unavailable. */ }
@@ -244,7 +249,7 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
     restarting = true; sheet.inert = true; restartStatus.textContent = 'Starting a fresh adventure…';
     try {
       await game.deleteAdventureSave();
-      try { localStorage.removeItem(journalKey); } catch { /* Browser storage can be disabled. */ }
+      try { localStorage.removeItem(journalKey); localStorage.removeItem(`aster-journal:3:${GAME_WORLD.seed}`); } catch { /* Browser storage can be disabled. */ }
       location.reload();
     } catch (error) {
       restarting = false; sheet.inert = false;
@@ -409,14 +414,14 @@ export function createAdventureHud(root, game, inventory, { setPaused, closeDial
   chestFrame = requestAnimationFrame(trackChest);
   const refresh = setInterval(() => {
     const hero = game.getPlayer(), view = game.getMissionView();
-    const bosses = {20:'Thornbound Hart',21:'Mire Matron',22:'Cinder Castellan',23:'The Hollow Bellkeeper',14:'The Stonebound',15:'Ashen Sentinel',28:'Root Knight'};
+    const bosses = Object.fromEntries(['THORNBOUND_HART', 'MIRE_MATRON', 'CINDER_CASTELLAN', 'HOLLOW_BELLKEEPER', 'STONE_GUARDIAN', 'ROOT_KNIGHT'].map(key => [CREATURE[key], BESTIARY[CREATURE[key]].name]));
     const actors = game.getCombatActors();
     const seenCount = seenCreatures.size;
     for (const c of actors) if (hero && Math.hypot(c.x-hero.x,c.y-hero.y)<100 && BESTIARY[c.species]) seenCreatures.add(c.species);
     if (seenCreatures.size !== seenCount) saveJournal();
     const foe = actors.find(c => c.alive && bosses[c.species] && hero && Math.hypot(c.x-hero.x,c.y-hero.y)<110);
     bossBar.hidden = !!panel || dialogueOpen || !foe;
-    if (foe) { bossName.textContent = bosses[foe.species]; bossHealth.max = foe.maxHealth || [420,560,680,850][foe.species-20] || 280; bossHealth.value = foe.health; }
+    if (foe) { bossName.textContent = bosses[foe.species]; bossHealth.max = foe.maxHealth || 280; bossHealth.value = foe.health; }
     trailHint.hidden = !!panel || dialogueOpen;
     const target = mission?.objectives[tracked];
     if (target && target.state !== OBJECTIVE_STATE.COMPLETE) trailHint.textContent = `◇ ${GAME_JOBS[tracked].title} · ${target.current}/${target.required}`;

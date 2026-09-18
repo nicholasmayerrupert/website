@@ -1201,6 +1201,7 @@ js += `export const CREATURE_SPECIES_DEFS = Object.freeze(${JSON.stringify(creat
   behaviorProfile: behaviorProfileId.get(descriptor.behaviorProfile),
   renderProfile: renderProfileId.get(descriptor.render.profile),
   humanNpc: descriptor.render.humanNpc,
+  variantOf: descriptor.variantOf?.replace(/^CREATURE_/, '') ?? null,
   creative: descriptor.creative
     ? { order: descriptor.creative.order, colors: descriptor.creative.colors }
     : null,

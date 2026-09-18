@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 61;
+static const int ABI_VERSION = 62;
 
-static const uint64_t ABI_FINGERPRINT = 0xc2458b90449eULL;
+static const uint64_t ABI_FINGERPRINT = 0x02d624cf2668ULL;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive, weaponKick, hurtCooldown, mana, stamina, actionTicks, actionState, abilities, heldDefinition, gear0, gear1, gear2, gear3, gear4, gear5, gear6, gear7, gear8, actionDuration, dodgeCooldown, airDashUsed, movementPrevInput, manaMax, manaCastCost, spellCharge, swordCombo, sleepingBed, respawnBed, bedStatus, bedRevision, statusMoveScale, statusControls, statusVisuals, coyoteTicks, jumpBufferTicks, jumpActive
 enum PlayerSnapshotField : int {
@@ -1325,34 +1325,29 @@ enum CreatureSpeciesAbi : int {
   CREATURE_CRAWLER = 4,
   CREATURE_MOLE = 5,
   CREATURE_BIRD = 6,
-  CREATURE_DYNAMITEER = 7,
-  CREATURE_BORE_SENTINEL = 8,
-  CREATURE_CAUSTIC_MORTARMAN = 9,
-  CREATURE_CLUSTER_WASP = 10,
-  CREATURE_MINIGUNNER = 11,
-  CREATURE_SURVEYOR = 12,
-  CREATURE_SHIELD_ANCHOR = 13,
-  CREATURE_QUARRY_FOREMAN = 14,
-  CREATURE_REACTOR_WARDEN = 15,
-  CREATURE_REACTOR_CORE = 16,
-  CREATURE_IRIS_COMMANDER = 17,
-  CREATURE_IRIS_ENGINEER = 18,
-  CREATURE_VILLAGER = 19,
-  CREATURE_THORNBOUND_HART = 20,
-  CREATURE_MIRE_MATRON = 21,
-  CREATURE_CINDER_CASTELLAN = 22,
-  CREATURE_HOLLOW_BELLKEEPER = 23,
-  CREATURE_BRIAR_WOLF = 24,
-  CREATURE_BELL_BAT = 25,
-  CREATURE_BONE_GUARD = 26,
-  CREATURE_FEN_WISP = 27,
-  CREATURE_ROOT_KNIGHT = 28,
-  CREATURE_FROST_GIANT = 29,
-  CREATURE_MUMMY = 30,
-  CREATURE_LAVA_TOAD = 31,
-  CREATURE_VILLAGE_GUARD = 32,
-  CREATURE_VILLAGE_HUNTER = 33,
-  CREATURE_BONE_DINOSAUR = 34,
+  CREATURE_BRIAR_GOBLIN = 7,
+  CREATURE_FEN_WITCH = 8,
+  CREATURE_OATHLESS_ARCHER = 9,
+  CREATURE_VILLAGER_SCHOLAR = 10,
+  CREATURE_STONE_GUARDIAN = 11,
+  CREATURE_VILLAGER_KEEPER = 12,
+  CREATURE_VILLAGER_SMITH = 13,
+  CREATURE_VILLAGER = 14,
+  CREATURE_THORNBOUND_HART = 15,
+  CREATURE_MIRE_MATRON = 16,
+  CREATURE_CINDER_CASTELLAN = 17,
+  CREATURE_HOLLOW_BELLKEEPER = 18,
+  CREATURE_BRIAR_WOLF = 19,
+  CREATURE_BELL_BAT = 20,
+  CREATURE_BONE_GUARD = 21,
+  CREATURE_FEN_WISP = 22,
+  CREATURE_ROOT_KNIGHT = 23,
+  CREATURE_FROST_GIANT = 24,
+  CREATURE_MUMMY = 25,
+  CREATURE_LAVA_TOAD = 26,
+  CREATURE_VILLAGE_GUARD = 27,
+  CREATURE_VILLAGE_HUNTER = 28,
+  CREATURE_CINDERJAW_DRAGON = 29,
 };
 
 static constexpr bool isCreatureSpeciesAbiValue(int value) {
@@ -1364,18 +1359,13 @@ static constexpr bool isCreatureSpeciesAbiValue(int value) {
     case CREATURE_CRAWLER:
     case CREATURE_MOLE:
     case CREATURE_BIRD:
-    case CREATURE_DYNAMITEER:
-    case CREATURE_BORE_SENTINEL:
-    case CREATURE_CAUSTIC_MORTARMAN:
-    case CREATURE_CLUSTER_WASP:
-    case CREATURE_MINIGUNNER:
-    case CREATURE_SURVEYOR:
-    case CREATURE_SHIELD_ANCHOR:
-    case CREATURE_QUARRY_FOREMAN:
-    case CREATURE_REACTOR_WARDEN:
-    case CREATURE_REACTOR_CORE:
-    case CREATURE_IRIS_COMMANDER:
-    case CREATURE_IRIS_ENGINEER:
+    case CREATURE_BRIAR_GOBLIN:
+    case CREATURE_FEN_WITCH:
+    case CREATURE_OATHLESS_ARCHER:
+    case CREATURE_VILLAGER_SCHOLAR:
+    case CREATURE_STONE_GUARDIAN:
+    case CREATURE_VILLAGER_KEEPER:
+    case CREATURE_VILLAGER_SMITH:
     case CREATURE_VILLAGER:
     case CREATURE_THORNBOUND_HART:
     case CREATURE_MIRE_MATRON:
@@ -1391,7 +1381,7 @@ static constexpr bool isCreatureSpeciesAbiValue(int value) {
     case CREATURE_LAVA_TOAD:
     case CREATURE_VILLAGE_GUARD:
     case CREATURE_VILLAGE_HUNTER:
-    case CREATURE_BONE_DINOSAUR:
+    case CREATURE_CINDERJAW_DRAGON:
       return true;
     default: return false;
   }
@@ -2217,4 +2207,4 @@ inline constexpr StatusDefinition STATUS_DEFINITIONS[] = {
   {STATUS_SHOCKED, SSP_REFRESH, 30, 120, 1, 0, 0, 1, 65, 3, 0, 0, SV_SHOCK},
   {STATUS_ELECTRIFIED, SSP_REFRESH, 120, 600, 1, 30, -2, 0.6, 1, 0, 0, 0, SV_SHOCK},
 };
-inline constexpr int STATUS_CREATURE_IMMUNITIES[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 4};
+inline constexpr int STATUS_CREATURE_IMMUNITIES[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 4};

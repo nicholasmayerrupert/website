@@ -166,7 +166,7 @@ function rescueSurveyors(engine, playerId) {
   engine.drainSoundEvents();
 
   for (let attempt = 0; attempt < 8; attempt++) {
-    const target = livingSpecies(engine, CREATURE.SURVEYOR)[0];
+    const target = livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR)[0];
     if (!target) break;
     engine.setPlayerState(playerId, {
       x: target.x - 5,
@@ -232,11 +232,11 @@ function rescueSurveyors(engine, playerId) {
 
 const EXTRACTION_ENEMIES = new Set([
   CREATURE.CRAWLER,
-  CREATURE.DYNAMITEER,
-  CREATURE.BORE_SENTINEL,
-  CREATURE.CAUSTIC_MORTARMAN,
-  CREATURE.CLUSTER_WASP,
-  CREATURE.MINIGUNNER,
+  CREATURE.BRIAR_GOBLIN,
+  CREATURE.BONE_GUARD,
+  CREATURE.FEN_WITCH,
+  CREATURE.BELL_BAT,
+  CREATURE.OATHLESS_ARCHER,
 ]);
 
 function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
@@ -287,9 +287,9 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   check(
     'Greenfall enemies begin in clear, supported, hazard-free world space',
     [
-      ...livingSpecies(engine, CREATURE.DYNAMITEER),
-      ...livingSpecies(engine, CREATURE.MINIGUNNER),
-      ...livingSpecies(engine, CREATURE.BORE_SENTINEL),
+      ...livingSpecies(engine, CREATURE.BRIAR_GOBLIN),
+      ...livingSpecies(engine, CREATURE.OATHLESS_ARCHER),
+      ...livingSpecies(engine, CREATURE.BONE_GUARD),
     ].every((creature) => safelyPlacedInWorld(engine, creature)),
   );
   const landing = engine.getMission();
@@ -298,9 +298,9 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   check(
     'guards remain on their authored encounter platforms',
     [
-      [CREATURE.DYNAMITEER, -25, 19],
-      [CREATURE.MINIGUNNER, 94, 77],
-      [CREATURE.BORE_SENTINEL, -5, 127],
+      [CREATURE.BRIAR_GOBLIN, -25, 19],
+      [CREATURE.OATHLESS_ARCHER, 94, 77],
+      [CREATURE.BONE_GUARD, -5, 127],
     ].every(([species, x, y]) => {
       const c = livingSpecies(engine, species)[0];
       return (
@@ -334,47 +334,47 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
       snapshot.objectives.length === 3 &&
       snapshot.objectives[0].type === OBJECTIVE_KIND.ANCHOR &&
       snapshot.objectives[0].required === 1 &&
-      livingSpecies(engine, CREATURE.SHIELD_ANCHOR).length === 1,
+      livingSpecies(engine, CREATURE.FEN_WISP).length === 1,
   );
-  const crewIds = livingSpecies(engine, CREATURE.SURVEYOR).map((c) => c.id);
+  const crewIds = livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).map((c) => c.id);
   check(
     'all three researchers begin in powered shelters',
     crewIds.length === 3 &&
-      livingSpecies(engine, CREATURE.SURVEYOR).every(
+      livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).every(
         (c) => c.shelterCharge === 1,
       ),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.SURVEYOR));
+  eliminate(engine, livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR));
   check(
     'powered shelters protect researchers from collateral damage',
-    livingSpecies(engine, CREATURE.SURVEYOR).length === 3 &&
+    livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).length === 3 &&
       engine.getMission().phase === MISSION_PHASE.ACTIVE,
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
+  eliminate(engine, livingSpecies(engine, CREATURE.FEN_WISP));
   snapshot = engine.getMission();
   check(
     'destroying the jammer unlocks rescue while all three guards are alive',
     snapshot.objectives[0].state === OBJECTIVE_STATE.COMPLETE &&
       snapshot.objectives[1].state === OBJECTIVE_STATE.ACTIVE &&
-      [CREATURE.DYNAMITEER, CREATURE.MINIGUNNER, CREATURE.BORE_SENTINEL].every(
+      [CREATURE.BRIAR_GOBLIN, CREATURE.OATHLESS_ARCHER, CREATURE.BONE_GUARD].every(
         (species) => livingSpecies(engine, species).length === 1,
       ),
   );
   check(
     'shelter opening animates on the same existing actors',
-    livingSpecies(engine, CREATURE.SURVEYOR).every(
+    livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).every(
       (c) => crewIds.includes(c.id) && c.shelterCharge > 0,
     ),
   );
   eliminate(engine, [
-    ...livingSpecies(engine, CREATURE.DYNAMITEER),
-    ...livingSpecies(engine, CREATURE.MINIGUNNER),
-    ...livingSpecies(engine, CREATURE.BORE_SENTINEL),
+    ...livingSpecies(engine, CREATURE.BRIAR_GOBLIN),
+    ...livingSpecies(engine, CREATURE.OATHLESS_ARCHER),
+    ...livingSpecies(engine, CREATURE.BONE_GUARD),
   ]);
   for (let tick = 0; tick < 46; tick++) engine.stepActors();
   check(
     'shelters finish opening without replacing their occupants',
-    livingSpecies(engine, CREATURE.SURVEYOR).every(
+    livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).every(
       (c) => crewIds.includes(c.id) && c.shelterCharge === 0,
     ),
   );
@@ -384,7 +384,7 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   );
   check(
     'researchers retain safe refuge positions after release',
-    livingSpecies(engine, CREATURE.SURVEYOR).every((c) =>
+    livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR).every((c) =>
       safelyPlacedInWorld(engine, c),
     ),
   );
@@ -523,9 +523,9 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
 {
   const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
   engine.startMission(MISSION.GREENFALL_RECOVERY, playerId);
-  eliminate(engine, livingSpecies(engine, CREATURE.DYNAMITEER));
-  eliminate(engine, livingSpecies(engine, CREATURE.MINIGUNNER));
-  const bore = livingSpecies(engine, CREATURE.BORE_SENTINEL)[0];
+  eliminate(engine, livingSpecies(engine, CREATURE.BRIAR_GOBLIN));
+  eliminate(engine, livingSpecies(engine, CREATURE.OATHLESS_ARCHER));
+  const bore = livingSpecies(engine, CREATURE.BONE_GUARD)[0];
   const mission = engine.getMission();
   const centerX = mission.extractionX + 105 - engine.getWorldOffsetX();
   const surfaceY = mission.extractionY + 6 - engine.getWorldOffsetY();
@@ -546,7 +546,7 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
     !firedAcrossFloors,
   );
   engine.setPlayerState(playerId, {
-    x: bore.x + 35,
+    x: bore.x + 9,
     y: bore.y - 2,
     vx: 0,
     vy: 0,
@@ -564,7 +564,7 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
 {
   const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
   engine.startMission(MISSION.GREENFALL_RECOVERY, playerId);
-  const guardId = livingSpecies(engine, CREATURE.MINIGUNNER)[0].id;
+  const guardId = livingSpecies(engine, CREATURE.OATHLESS_ARCHER)[0].id;
   let charging = 0, firing = 0, recovery = 0, fired = false;
   for (let tick = 0; tick < 600; tick++) {
     const guard = engine.getCreatures().find(c => c.id === guardId);
@@ -578,8 +578,8 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
     } else if (state === 2) { fired = true; firing++; }
     else if (fired) recovery++;
   }
-  check('relay minigunner gives a full windup, short burst, and recovery window',
-    charging === 60 && firing === 48 && recovery >= 120);
+  check(`relay archer gives a bow draw, release, and recovery window (${charging}/${firing}/${recovery})`,
+    charging === 23 && firing === 12 && recovery >= 48);
   engine.destroy();
 }
 
@@ -601,25 +601,25 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   check(
     'Moon actors begin in clear, supported, hazard-free world space',
     [
-      ...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
-      ...livingSpecies(engine, CREATURE.SURVEYOR),
-      ...livingSpecies(engine, CREATURE.SHIELD_ANCHOR),
+      ...livingSpecies(engine, CREATURE.VILLAGER_SMITH),
+      ...livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR),
+      ...livingSpecies(engine, CREATURE.FEN_WISP),
     ].every((creature) => safelyPlacedInWorld(engine, creature)),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
+  eliminate(engine, livingSpecies(engine, CREATURE.FEN_WISP));
   let snapshot = engine.getMission();
   check(
     'two Moon anchors unlock the quarry foreman',
     snapshot.objectives[0].current === 2 &&
-      livingSpecies(engine, CREATURE.QUARRY_FOREMAN).length === 1,
+      livingSpecies(engine, CREATURE.STONE_GUARDIAN).length === 1,
   );
   check(
     'the quarry foreman materializes in safe existing world space',
-    livingSpecies(engine, CREATURE.QUARRY_FOREMAN).every((creature) =>
+    livingSpecies(engine, CREATURE.STONE_GUARDIAN).every((creature) =>
       safelyPlacedInWorld(engine, creature),
     ),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.QUARRY_FOREMAN));
+  eliminate(engine, livingSpecies(engine, CREATURE.STONE_GUARDIAN));
   snapshot = engine.getMission();
   check(
     'defeating the foreman starts the Moon extraction',
@@ -678,38 +678,38 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   check(
     'Mars actors begin in clear, supported, hazard-free world space',
     [
-      ...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
-      ...livingSpecies(engine, CREATURE.SURVEYOR),
-      ...livingSpecies(engine, CREATURE.SHIELD_ANCHOR),
+      ...livingSpecies(engine, CREATURE.VILLAGER_SMITH),
+      ...livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR),
+      ...livingSpecies(engine, CREATURE.FEN_WISP),
     ].every((creature) => safelyPlacedInWorld(engine, creature)),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
+  eliminate(engine, livingSpecies(engine, CREATURE.FEN_WISP));
   let snapshot = engine.getMission();
   check(
     'three Mars anchors unlock the reactor warden',
     snapshot.objectives[0].current === 3 &&
-      livingSpecies(engine, CREATURE.REACTOR_WARDEN).length === 1,
+      livingSpecies(engine, CREATURE.CINDER_CASTELLAN).length === 1,
   );
   check(
     'the reactor warden materializes in safe existing world space',
-    livingSpecies(engine, CREATURE.REACTOR_WARDEN).every((creature) =>
+    livingSpecies(engine, CREATURE.CINDER_CASTELLAN).every((creature) =>
       safelyPlacedInWorld(engine, creature),
     ),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.REACTOR_WARDEN));
+  eliminate(engine, livingSpecies(engine, CREATURE.CINDER_CASTELLAN));
   snapshot = engine.getMission();
   check(
     'defeating the warden exposes the reactor core',
     snapshot.objectives[2].state === OBJECTIVE_STATE.ACTIVE &&
-      livingSpecies(engine, CREATURE.REACTOR_CORE).length === 1,
+      livingSpecies(engine, CREATURE.STONE_GUARDIAN).length === 1,
   );
   check(
     'the reactor core materializes in safe existing world space',
-    livingSpecies(engine, CREATURE.REACTOR_CORE).every((creature) =>
+    livingSpecies(engine, CREATURE.STONE_GUARDIAN).every((creature) =>
       safelyPlacedInWorld(engine, creature),
     ),
   );
-  eliminate(engine, livingSpecies(engine, CREATURE.REACTOR_CORE));
+  eliminate(engine, livingSpecies(engine, CREATURE.STONE_GUARDIAN));
   snapshot = engine.getMission();
   check(
     'breaching the core triggers the severe threat spike',
@@ -750,13 +750,13 @@ function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
   const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
   engine.startMission(MISSION.GREENFALL_RECOVERY, playerId);
   eliminate(engine, [
-    ...livingSpecies(engine, CREATURE.DYNAMITEER),
-    ...livingSpecies(engine, CREATURE.MINIGUNNER),
-    ...livingSpecies(engine, CREATURE.BORE_SENTINEL),
+    ...livingSpecies(engine, CREATURE.BRIAR_GOBLIN),
+    ...livingSpecies(engine, CREATURE.OATHLESS_ARCHER),
+    ...livingSpecies(engine, CREATURE.BONE_GUARD),
   ]);
-  eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
+  eliminate(engine, livingSpecies(engine, CREATURE.FEN_WISP));
   for (let tick = 0; tick < 46; tick++) engine.stepActors();
-  eliminate(engine, [livingSpecies(engine, CREATURE.SURVEYOR)[0]]);
+  eliminate(engine, [livingSpecies(engine, CREATURE.VILLAGER_SCHOLAR)[0]]);
   check(
     'planetside Greenfall hostages remain vulnerable mission actors',
     engine.getMission().phase === MISSION_PHASE.FAILED,

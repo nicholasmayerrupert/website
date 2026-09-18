@@ -85,12 +85,12 @@ const completeSnapshot = (record, codecName) => record
   engine.cameraSet(0, 0);
   engine.spawnPlayerAtSurface(224);
   engine.setCreatureRuntime(true, false);
-  const requested = engine._spawnNearFocus(CREATURE.DYNAMITEER, 0x5151);
+  const requested = engine._spawnNearFocus(CREATURE.BRIAR_GOBLIN, 0x5151);
   const warning = engine.getCreatures().find((creature) =>
     creature.spawnProgress > 0);
   check('telegraph writer emits its explicit sparse actor semantics',
     requested && completeSnapshot(warning, 'creatureSnapshot')
-      && warning.species === CREATURE.DYNAMITEER
+      && warning.species === CREATURE.BRIAR_GOBLIN
       && warning.w > 0 && warning.h > 0 && warning.maxHealth > 0
       && warning.facing === 1 && warning.spawnProgress > 0
       && !warning.alive && warning.vx === 0 && warning.vy === 0

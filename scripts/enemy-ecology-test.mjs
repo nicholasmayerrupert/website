@@ -151,7 +151,7 @@ arena('Cindermaw creates a bounded patch of lava and preserves projectile checkp
  const lava=e.getGrid().filter(m=>m===MAT.LAVA).length;
  assert.ok(lava>0&&lava<=40,`bounded lava deposit (${lava})`);
 });
-for(const [species,trophy]of [[CREATURE.BRIAR_WOLF,424],[CREATURE.BELL_BAT,425],[CREATURE.BONE_GUARD,426],[CREATURE.FEN_WISP,427],[CREATURE.FROST_GIANT,429],[CREATURE.MUMMY,430],[CREATURE.LAVA_TOAD,431],[CREATURE.BONE_DINOSAUR,432]]){
+for(const [species,trophy]of [[CREATURE.BRIAR_WOLF,424],[CREATURE.BELL_BAT,425],[CREATURE.BONE_GUARD,426],[CREATURE.FEN_WISP,427],[CREATURE.FROST_GIANT,429],[CREATURE.MUMMY,430],[CREATURE.LAVA_TOAD,431],[CREATURE.CINDERJAW_DRAGON,432]]){
  arena(`species ${species} guarantees its own collectable trophy`,(e,id)=>{
   assert.ok(e.startMission(MISSION.FRONTIER,id));
   const cid=enemy(e,species);e.setCreatureRuntime(false,false);

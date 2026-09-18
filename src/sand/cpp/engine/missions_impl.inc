@@ -128,11 +128,11 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     extractionY = E.terrain.genSurfaceAbs(extractionX) - 5;
     addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                  MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    spawnMissionResident(CS_IRIS_ENGINEER, centerX - side + 8, anchorY);
-    spawnMissionResident(CS_SURVEYOR, centerX + side - 8, depth(.68));
+    spawnMissionResident(CS_VILLAGER_SMITH, centerX - side + 8, anchorY);
+    spawnMissionResident(CS_VILLAGER_SCHOLAR, centerX + side - 8, depth(.68));
     anchors.targetActorId = spawnMissionCreature(
-      CS_SHIELD_ANCHOR, centerX - side, anchorY, anchors.id);
-    spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + side, depth(.68), anchors.id);
+      CS_FEN_WISP, centerX - side, anchorY, anchors.id);
+    spawnMissionCreature(CS_FEN_WISP, centerX + side, depth(.68), anchors.id);
     refreshObjectiveMarker(anchors);
   } else {
     int y0 = depth(.36), y1 = depth(.58), y2 = depth(.78);
@@ -149,12 +149,12 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     extractionY = E.terrain.genSurfaceAbs(extractionX) - 6;
     addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                  MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    spawnMissionResident(CS_IRIS_ENGINEER, centerX - side + 8, y0);
-    spawnMissionResident(CS_SURVEYOR, centerX + side - 8, y2);
+    spawnMissionResident(CS_VILLAGER_SMITH, centerX - side + 8, y0);
+    spawnMissionResident(CS_VILLAGER_SCHOLAR, centerX + side - 8, y2);
     anchors.targetActorId = spawnMissionCreature(
-      CS_SHIELD_ANCHOR, centerX - side, y0, anchors.id);
-    spawnMissionCreature(CS_SHIELD_ANCHOR, centerX, y1, anchors.id);
-    spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + side, y2, anchors.id);
+      CS_FEN_WISP, centerX - side, y0, anchors.id);
+    spawnMissionCreature(CS_FEN_WISP, centerX, y1, anchors.id);
+    spawnMissionCreature(CS_FEN_WISP, centerX + side, y2, anchors.id);
     refreshObjectiveMarker(anchors);
     core.targetActorId = 0;
   }
@@ -191,24 +191,24 @@ void MissionSystem::activateObjective(int objectiveId) {
     }
     if (missionId != MI_GREENFALL_RECOVERY) {
       objective->targetActorId = spawnMissionCreature(
-        CS_SURVEYOR, objective->worldX, objective->worldY,
+        CS_VILLAGER_SCHOLAR, objective->worldX, objective->worldY,
         objective->id, -8);
-      spawnMissionCreature(CS_SURVEYOR, objective->worldX,
+      spawnMissionCreature(CS_VILLAGER_SCHOLAR, objective->worldX,
                            objective->worldY, objective->id, 0);
-      spawnMissionCreature(CS_SURVEYOR, objective->worldX,
+      spawnMissionCreature(CS_VILLAGER_SCHOLAR, objective->worldX,
                            objective->worldY, objective->id, 8);
     }
   } else if (objective->type == OK_ANCHOR) {
     objective->targetActorId = spawnMissionCreature(
-      CS_SHIELD_ANCHOR, objective->worldX, objective->worldY, objective->id);
+      CS_FEN_WISP, objective->worldX, objective->worldY, objective->id);
   } else if (objective->type == OK_BOSS) {
     uint8_t species = missionId == MI_SILENT_QUARRY
-      ? CS_QUARRY_FOREMAN : CS_REACTOR_WARDEN;
+      ? CS_STONE_GUARDIAN : CS_CINDER_CASTELLAN;
     objective->targetActorId = spawnMissionCreature(
       species, objective->worldX, objective->worldY, objective->id);
   } else if (objective->type == OK_CORE) {
     objective->targetActorId = spawnMissionCreature(
-      CS_REACTOR_CORE, objective->worldX, objective->worldY,
+      CS_STONE_GUARDIAN, objective->worldX, objective->worldY,
       objective->id);
   }
   refreshObjectiveMarker(*objective);
@@ -271,7 +271,7 @@ void MissionSystem::onCreatureKilled(Creature& creature) {
     }
     return;
   }
-  if (creature.species == CS_SURVEYOR) {
+  if (creature.species == CS_VILLAGER_SCHOLAR) {
     fail();
     return;
   }
@@ -284,7 +284,7 @@ void MissionSystem::onCreatureKilled(Creature& creature) {
 }
 
 bool MissionSystem::rescueCreature(Creature& creature) {
-  if (!active() || creature.species != CS_SURVEYOR || !creature.alive ||
+  if (!active() || creature.species != CS_VILLAGER_SCHOLAR || !creature.alive ||
       creature.shelterCharge > 0)
     return false;
   MissionObjective* objective = findObjective(creature.missionObjective);
@@ -366,14 +366,14 @@ void MissionSystem::updateThreat() {
   int cadence = missionId == MI_RED_FURNACE ? 150
               : missionId == MI_SILENT_QUARRY ? 210 : 600;
   static const uint8_t GREENFALL_ROSTER[] = {
-    CS_CRAWLER, CS_DYNAMITEER, CS_CRAWLER, CS_CLUSTER_WASP
+    CS_CRAWLER, CS_BRIAR_GOBLIN, CS_CRAWLER, CS_BELL_BAT
   };
   static const uint8_t QUARRY_ROSTER[] = {
-    CS_BORE_SENTINEL, CS_MINIGUNNER, CS_DYNAMITEER, CS_CLUSTER_WASP
+    CS_BONE_GUARD, CS_OATHLESS_ARCHER, CS_BRIAR_GOBLIN, CS_BELL_BAT
   };
   static const uint8_t FURNACE_ROSTER[] = {
-    CS_MINIGUNNER, CS_BORE_SENTINEL, CS_CLUSTER_WASP,
-    CS_CAUSTIC_MORTARMAN, CS_DYNAMITEER
+    CS_OATHLESS_ARCHER, CS_BONE_GUARD, CS_BELL_BAT,
+    CS_FEN_WITCH, CS_BRIAR_GOBLIN
   };
   const uint8_t* roster = missionId == MI_RED_FURNACE ? FURNACE_ROSTER
                         : missionId == MI_SILENT_QUARRY ? QUARRY_ROSTER

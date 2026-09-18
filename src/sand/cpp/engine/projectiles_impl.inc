@@ -1,7 +1,7 @@
 // Tunables for the three captured enemy weapons live with their actor-clock
 // implementation. Their inventory/ABI identities are generated separately.
 // Thrown dynamite is deliberately more destructive than static TNT: the
-// satchel and dynamiteer share this projectile path and therefore the same
+// satchel and briar_goblin share this projectile path and therefore the same
 // readable danger radius.
 static constexpr int DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL = 32;
 static constexpr double DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL = 30.0;
@@ -401,7 +401,7 @@ void ProjectileSystem::fireRescueBeam(Player& player) {
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
     bool linked = false;
     for (Creature& creature : E.creatures.creatures) {
-      if (!creature.alive || creature.species != CS_SURVEYOR) continue;
+      if (!creature.alive || creature.species != CS_VILLAGER_SCHOLAR) continue;
       const CreatureSpecies& species = E.creatures.species(creature);
       double nx = std::max(creature.wx, std::min(wx, creature.wx + species.w));
       double ny = std::max(creature.wy, std::min(wy, creature.wy + species.h));

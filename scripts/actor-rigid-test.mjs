@@ -38,7 +38,7 @@ const cutSlab = (mode, paired = false) => {
   }
   e.stepWorld();
   check(`${mode}: slab begins supported`, e._bodyCount() === 0);
-  const wasp = mode.includes('wasp') ? e.spawnCreature(CREATURE.CLUSTER_WASP, 130, 88) : null;
+  const wasp = mode.includes('wasp') ? e.spawnCreature(CREATURE.BELL_BAT, 130, 88) : null;
   const villager = mode.includes('rider') ? e.spawnCreature(CREATURE.VILLAGER, 175, 52) : null;
   check(`${mode}: requested actors spawn`, (wasp === null || wasp > 0)
     && (villager === null || villager > 0));
@@ -103,7 +103,7 @@ const impact = (halfW, halfH, species = null) => {
   e.destroy();
   return result;
 };
-const small = impact(2, 2), large = impact(18, 8), flyer = impact(18, 8, CREATURE.CLUSTER_WASP);
+const small = impact(2, 2), large = impact(18, 8), flyer = impact(18, 8, CREATURE.BELL_BAT);
 check(`rigid impulse moves the player (${large.actor.x.toFixed(2)}, peak vx ${large.maxVx.toFixed(2)})`,
   large.actor.x > 108 && large.maxVx > 1.5);
 check('heavier bodies retain more of their incoming motion', large.body.vx > small.body.vx + 0.3);
@@ -134,7 +134,7 @@ for (const rotating of [false, true]) {
 // A rotating tip must hit an actor even with no centre translation.
 {
   const e = mk();
-  const id = e.spawnCreature(CREATURE.CLUSTER_WASP, 143, 94);
+  const id = e.spawnCreature(CREATURE.BELL_BAT, 143, 94);
   e.spawnBox(120, 90, 30, 2, MAT.RIGID);
   e._setBodyMotion(0, 0, 0, 0.04);
   for (let t = 0; t < 8; t++) e.stepWorld();
@@ -146,19 +146,19 @@ for (const rotating of [false, true]) {
 
 // Trapping against terrain damages and displaces actors without making them
 // immovable anchors. Protected crew retain their existing protection policy.
-for (const species of [null, CREATURE.MINIGUNNER, CREATURE.IRIS_COMMANDER]) {
+for (const species of [null, CREATURE.OATHLESS_ARCHER, CREATURE.VILLAGER_KEEPER]) {
   const e = mk();
   rect(e, 0, 105, COLS, ROWS);
-  const id = species === null ? e.spawnPlayer(78, 97) : e.spawnCreature(species, 78, species === CREATURE.MINIGUNNER ? 99 : 97);
+  const id = species === null ? e.spawnPlayer(78, 97) : e.spawnCreature(species, 78, species === CREATURE.OATHLESS_ARCHER ? 99 : 97);
   check(`crush target ${species} spawns`, id > 0);
   e.spawnBox(80, 78, 8, 3, MAT.RIGID);
   e._setBodyMotion(0, 0, 20, 0);
   for (let t = 0; t < 45; t++) turn(e);
   const actor = species === null ? e.getPlayer(id) : creature(e, id);
   const b = e._bodyState(0);
-  check(`crush target ${species} yields to falling slab`, actor?.alive && !overlaps(e, actor, species === CREATURE.MINIGUNNER ? 9 : 4, species === CREATURE.MINIGUNNER ? 6 : 8) && b.py > 100);
+  check(`crush target ${species} yields to falling slab`, actor?.alive && !overlaps(e, actor, species === CREATURE.OATHLESS_ARCHER ? 9 : 4, species === CREATURE.OATHLESS_ARCHER ? 6 : 8) && b.py > 100);
   check(`crush target ${species} keeps bounded damage`, actor.health >= 1
-    && (species === CREATURE.IRIS_COMMANDER ? actor.health === actor.maxHealth : actor.health < (actor.maxHealth ?? 100)));
+    && (species === CREATURE.VILLAGER_KEEPER ? actor.health === actor.maxHealth : actor.health < (actor.maxHealth ?? 100)));
   e.destroy();
 }
 
@@ -196,8 +196,8 @@ for (const species of [null, CREATURE.MINIGUNNER, CREATURE.IRIS_COMMANDER]) {
     rect(e, 108, 80, 112, ROWS, MAT.STONE, layer);
   }
   e.stepWorld();
-  const backgroundActor = e.spawnCreature(CREATURE.CLUSTER_WASP, 180, 88);
-  const foregroundActor = e.spawnCreature(CREATURE.CLUSTER_WASP, 101, 88);
+  const backgroundActor = e.spawnCreature(CREATURE.BELL_BAT, 180, 88);
+  const foregroundActor = e.spawnCreature(CREATURE.BELL_BAT, 101, 88);
   check('joint foreground/background contact targets spawn', backgroundActor > 0 && foregroundActor > 0);
   for (let layer = 0; layer < 2; layer++)
     rect(e, 108, 80, 112, ROWS, MAT.EMPTY, layer);

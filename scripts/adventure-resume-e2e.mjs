@@ -1,5 +1,6 @@
 import { runBrowserCases } from './browser-harness.mjs';
 import process from 'node:process';
+import { readFileSync } from 'node:fs';
 
 const resume = viewport => async ({ page, baseURL, check }) => {
   await page.goto(baseURL + '/game', { waitUntil: 'domcontentloaded' });
@@ -67,6 +68,39 @@ const resume = viewport => async ({ page, baseURL, check }) => {
 };
 
 process.exitCode = await runBrowserCases({
+  'roster migration': async ({ page, baseURL, check }) => {
+    await page.goto(baseURL);
+    const fixture = readFileSync(new URL('./fixtures/adventure-roster-v10.checkpoint.gz', import.meta.url)).toString('base64');
+    const migrated = await page.evaluate(async encoded => {
+      const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('aster-adventures', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('checkpoints');
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('checkpoints', 'readwrite'), store = tx.objectStore('checkpoints');
+        store.clear(); store.put({ bytes, compressed:true, savedAt:123 }, 'hollow-bell:2:10874365');
+        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+      const { loadAdventure, saveAdventure, deleteAdventure } = await import('/src/sand/worker/adventureSaveStore.js');
+      const { initSandWasm, createEngineWasm, PLANET } = await import('/src/sand/wasmBridge/engineFactory.js');
+      const { CREATURE } = await import('/src/sand/wasmBridge/abi.generated.js');
+      const old = await loadAdventure();
+      await initSandWasm();
+      const engine = createEngineWasm({cols:old.cols, rows:old.rows, planetId:PLANET.FRONTIER});
+      try {
+        if (!engine.readCheckpoint(old.bytes)) throw new Error('Roster checkpoint rejected');
+        const mummy = engine.getCreatures().some(c => c.species === CREATURE.MUMMY);
+        await saveAdventure(engine.writeCheckpoint(), 456);
+        const current = await loadAdventure();
+        await deleteAdventure();
+        return { mummy, oldTime:old.savedAt, newTime:current.savedAt };
+      } finally { engine.destroy(); }
+    }, fixture);
+    check('old save key migrates to the current roster and remains saveable', migrated.mummy && migrated.oldTime === 123 && migrated.newTime === 456);
+  },
   fresh: async ({ page, baseURL, check }) => {
     const seeds = [];
     for (let run = 0; run < 2; run++) {

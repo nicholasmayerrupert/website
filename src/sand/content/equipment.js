@@ -87,7 +87,7 @@ const trophies = [
   [409, 'Caustic gland', 'A sealed bladder of caustic bile.', '#a4bd59', 'gland'],
   [410, 'Wasp stinger', 'A barbed, amber-tipped stinger.', '#e0bd64', 'fang'],
   [411, 'Archer fletching', 'Dark flight feathers bound with silver thread.', '#b8a29a', 'feather'],
-  [414, 'Quarry seal', 'A heavy seal carried by the quarry foreman.', '#ac956b', 'coin'],
+  [414, 'Quarry seal', 'A heavy seal carried by the Stone Guardian.', '#ac956b', 'coin'],
   [415, 'Warden heart', 'A smouldering heart behind a lattice of cold iron.', '#ed8d4e', 'crystal'],
   [416, 'Reactor shard', 'A fragment of the silent reactor.', '#a8d5c6', 'crystal'],
   [420, 'Thornbound antler', 'Living thorns wind around this ancient antler.', '#b9c58d', 'antler'],

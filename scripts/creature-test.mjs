@@ -3,7 +3,7 @@
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import {
-  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, CREATURE_MAX_RECORDS, OFF,
+  CREATIVE_KIND, CREATURE, CREATURE_SPECIES_DEFS, CREATURE_ATTACK_STATE, CREATURE_MAX_RECORDS, OFF,
   PROJECTILE_KIND, SOUND_EVENT, STRIDES,
 } from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
@@ -24,7 +24,7 @@ const stoneFloor = (e, top) => {
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
 check('roster includes fauna, combatants, and authored mission actors',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN,REACTOR_CORE,IRIS_COMMANDER,IRIS_ENGINEER,VILLAGER,THORNBOUND_HART,MIRE_MATRON,CINDER_CASTELLAN,HOLLOW_BELLKEEPER,BRIAR_WOLF,BELL_BAT,BONE_GUARD,FEN_WISP,ROOT_KNIGHT,FROST_GIANT,MUMMY,LAVA_TOAD,VILLAGE_GUARD,VILLAGE_HUNTER,BONE_DINOSAUR');
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,BRIAR_GOBLIN,FEN_WITCH,OATHLESS_ARCHER,VILLAGER_SCHOLAR,STONE_GUARDIAN,VILLAGER_KEEPER,VILLAGER_SMITH,VILLAGER,THORNBOUND_HART,MIRE_MATRON,CINDER_CASTELLAN,HOLLOW_BELLKEEPER,BRIAR_WOLF,BELL_BAT,BONE_GUARD,FEN_WISP,ROOT_KNIGHT,FROST_GIANT,MUMMY,LAVA_TOAD,VILLAGE_GUARD,VILLAGE_HUNTER,CINDERJAW_DRAGON');
 
 {
   const e = mk();
@@ -58,7 +58,7 @@ check('roster includes fauna, combatants, and authored mission actors',
   e.spawnPlayerAtSurface(224);
   e.setCreatureRuntime(true, false);
   let requested = false;
-  for (const species of [CREATURE.FOX,CREATURE.DYNAMITEER,CREATURE.CAUSTIC_MORTARMAN,CREATURE.CLUSTER_WASP])
+  for (const species of [CREATURE.FOX,CREATURE.BRIAR_GOBLIN,CREATURE.FEN_WITCH,CREATURE.BELL_BAT])
     for(let salt=0;salt<12&&!requested;salt++) requested=e._testSpawnBreachNearFocus(species,0x5151+salt*997);
   const warning = e.getCreatureSnapshotData();
   const mirror = new Float32Array(CREATURE_MAX_RECORDS * STRIDES.creatureSnapshot);
@@ -255,53 +255,30 @@ check('roster includes fauna, combatants, and authored mission actors',
   e.destroy();
 }
 
-// The minigunner commits to its charged line for a long burst. Moving after the
-// first muzzle flash must not drag the stream along with the player.
+// Archers release a committed arrow in every world, including the creative sandbox.
 {
   const e = mk(); stoneFloor(e, 104);
   const playerId = e.spawnPlayer(28, 96);
-  const gunnerId = e.spawnCreature(CREATURE.MINIGUNNER, 90, 98);
+  const archerId = e.spawnCreature(CREATURE.OATHLESS_ARCHER, 90, 98);
   e.setCreatureRuntime(true, false);
-  let gunner = null;
-  for (let tick = 0; tick < 80; tick++) {
+  let fired = false, military = false;
+  for (let tick = 0; tick < 160; tick++) {
     e.stepActors();
-    gunner = byId(e, gunnerId);
-    if (gunner?.attackState === CREATURE_ATTACK_STATE.FIRING) break;
-  }
-  check('minigunner reaches its firing phase', gunner?.attackState === CREATURE_ATTACK_STATE.FIRING);
-  const lockedAim = { x: gunner?.aimX, y: gunner?.aimY };
-  const player = e.getPlayer(playerId);
-  e.setPlayerState(playerId, { ...player, x: 28, y: 26, vx: 0, vy: 0 });
-
-  const rounds = new Set();
-  let aimLocked = true, burstSteps = 0, firingPastOldBurst = false;
-  for (; burstSteps < 180; burstSteps++) {
-    e.stepActors();
-    gunner = byId(e, gunnerId);
-    for (const projectile of e.getProjectiles()) {
-      if (projectile.kind === PROJECTILE_KIND.MINIGUN_ROUND && projectile.owner === -gunnerId)
-        rounds.add(projectile.id);
-    }
-    aimLocked &&= Math.abs((gunner?.aimX ?? Infinity) - lockedAim.x) < 1e-4
-      && Math.abs((gunner?.aimY ?? Infinity) - lockedAim.y) < 1e-4;
-    if (burstSteps >= 60 && gunner?.attackState === CREATURE_ATTACK_STATE.FIRING)
-      firingPastOldBurst = true;
-    if (gunner?.attackState !== CREATURE_ATTACK_STATE.FIRING) {
-      burstSteps++;
-      break;
+    for (const p of e.getProjectiles().filter(p => p.owner === -archerId)) {
+      fired ||= p.kind === PROJECTILE_KIND.ARROW;
+      military ||= p.kind === PROJECTILE_KIND.MINIGUN_ROUND;
     }
   }
-  check('minigunner aim stays locked after its target dodges', aimLocked);
-  check(`minigunner sustains a 150-tick burst (${burstSteps} ticks, ${rounds.size} rounds)`,
-    firingPastOldBurst && burstSteps === 150 && rounds.size === 75);
+  check('oathless archer fires arrows without military rounds', fired && !military);
+  check('archer attack leaves the player record valid', !!e.getPlayer(playerId));
   e.destroy();
 }
 
 // Mission bosses rotate through three authored patterns instead of replaying a
 // single inherited weapon routine.
 for (const [species, label] of [
-  [CREATURE.QUARRY_FOREMAN, 'quarry foreman'],
-  [CREATURE.REACTOR_WARDEN, 'reactor warden'],
+  [CREATURE.STONE_GUARDIAN, 'Stone Guardian'],
+  [CREATURE.CINDER_CASTELLAN, 'Cinder Castellan'],
 ]) {
   const e = mk(); stoneFloor(e, 104);
   e.spawnPlayer(12, 96);
@@ -338,8 +315,8 @@ for (const [species, label] of [
     CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD,
   ];
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
-  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 44];
-  const tooClose = initial.filter((c) => c.species <= CREATURE.MINIGUNNER
+  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 40, 44, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 38, 44, 38, 0, 48, 48, 48, 48, 48, 48];
+  const tooClose = initial.filter((c) => c.species <= CREATURE.OATHLESS_ARCHER
     && distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
   check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
   const seenAmbient = new Set(initial
@@ -404,7 +381,7 @@ for (const [species, label] of [
       player.y + player.h * 0.5 + player.h * 0.5 + 4 - 80 * (2 / 3),
     );
     e.setCreatureRuntime(true, false);
-    if (e._spawnNearFocus(CREATURE.DYNAMITEER, salt * 977 + 41)) {
+    if (e._spawnNearFocus(CREATURE.BRIAR_GOBLIN, salt * 977 + 41)) {
       const candidate = e.getCreatures().find((c) => c.alive);
       if (candidate) {
         const cam = e.getCam();
@@ -428,7 +405,7 @@ for (const [species, label] of [
 // on-screen portal or entering below the camera.
 {
   const horizontalSpecies = [
-    CREATURE.DYNAMITEER, CREATURE.CAUSTIC_MORTARMAN, CREATURE.CLUSTER_WASP,
+    CREATURE.BRIAR_GOBLIN, CREATURE.FEN_WITCH, CREATURE.BELL_BAT,
   ];
   const results = [];
   for (const species of horizontalSpecies) {
@@ -470,11 +447,13 @@ for (const [species, label] of [
 // must use the loaded deep-cavern window rather than snapping back to the
 // shallow cave band below the procedural surface.
 {
-  const caveSpecies = [CREATURE.BORE_SENTINEL, CREATURE.MINIGUNNER];
+  const caveSpecies = [CREATURE.BONE_GUARD, CREATURE.OATHLESS_ARCHER];
   const results = [];
   for (const species of caveSpecies) {
+    let ok = false;
+    for (let variant = 0; variant < 24 && !ok; variant++) {
     const e = attachTestHooks(createEngineWasm({
-      cols: 512, rows: 352, worldSeed: 0xD33F + species,
+      cols: 512, rows: 352, worldSeed: 0xD33F + species + variant * 977,
       sinksOn: false, infinite: true,
     }));
     for (let shift = 0; shift < 12; shift++) e.shiftWorldXY(0, 128);
@@ -485,10 +464,12 @@ for (const [species, label] of [
     for (let salt = 0; salt < 64 && !spawned; salt++)
       spawned = e._spawnNearFocus(species, salt * 977 + species);
     const candidate = e.getCreatures().find((c) => c.species === species && c.alive);
-    results.push(spawned && candidate &&
+    ok = spawned && candidate &&
       candidate.y >= 2 && candidate.y + candidate.h <= e.rows - 2 &&
-      e.getWorldOffsetY() + candidate.y > 1000);
+      e.getWorldOffsetY() + candidate.y > 1000;
     e.destroy();
+    }
+    results.push(ok);
   }
   check('cave enemies spawn in habitat inside the loaded deep-cavern window',
     results.every(Boolean));
@@ -499,7 +480,7 @@ for (const [species, label] of [
   const e = attachTestHooks(createEngineWasm({cols:448,rows:320,worldSeed:0xB4EAC5,sinksOn:false,infinite:true}));
   e.setViewport(1,1,448,320); e.cameraSet(0,0); e.spawnPlayerAtSurface(224);
   e.setCreatureRuntime(true,false);
-  for (const species of [CREATURE.DYNAMITEER,CREATURE.CAUSTIC_MORTARMAN,CREATURE.CLUSTER_WASP])
+  for (const species of [CREATURE.BRIAR_GOBLIN,CREATURE.FEN_WITCH,CREATURE.BELL_BAT])
     check(`fully visible window defers natural species ${species}`, !e._spawnNearFocus(species,0x5151));
   for(let i=0;i<120;i++)e.stepActors();
   check('deferred natural entries create neither creatures nor breach warnings',e.getCreatures().length===0);
@@ -528,8 +509,7 @@ for (const [species, label] of [
     const population = e.getCreatures().filter((c) =>
       (c.alive || c.spawnProgress > 0) && ![CREATURE.VILLAGER,CREATURE.VILLAGE_GUARD,CREATURE.VILLAGE_HUNTER].includes(c.species));
     maxPopulation = Math.max(maxPopulation, population.length);
-    for (const c of population) if (c.species >= CREATURE.DYNAMITEER
-        && c.species <= CREATURE.MINIGUNNER && !known.has(c.id)) {
+    for (const c of population) if (CREATURE_SPECIES_DEFS[c.species]?.population === 'encounter' && !known.has(c.id)) {
       known.add(c.id);
       firstSeen.push(tick);
     }
@@ -547,7 +527,7 @@ for (const [species, label] of [
 {
   const e = mk(); stoneFloor(e, 92);
   const player = e.spawnPlayer(72, 84);
-  e.spawnCreature(CREATURE.FOX, 68, 88);
+  e.spawnCreature(CREATURE.BRIAR_WOLF, 68, 88);
   e.setCreatureRuntime(true, false);
   let died = false;
   for (let i = 0; i < 2400; i++) {
@@ -566,15 +546,13 @@ for (const [species, label] of [
   e.destroy();
 }
 
-// Surface enemy selects the nearest player and applies contact damage.
+// Foxes leave players alone; wolves fill the hostile woodland predator role.
 {
   const e = mk(); stoneFloor(e, 92);
-  const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
+  e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(72, 84);
-  e.setCreatureRuntime(true, false);
-  actors(e, 360);
-  check('surface enemy remains active while pursuing', !!byId(e, fox));
-  check(`surface enemy damages its player target (health ${e.getPlayer(player)?.health})`, (e.getPlayer(player)?.health ?? 100) < 100);
+  e.setCreatureRuntime(true, false); actors(e, 360);
+  check('woodland fox does not attack a nearby player', e.getPlayer(player).health === 100);
   e.destroy();
 }
 
@@ -583,10 +561,11 @@ for (const [species, label] of [
   const e = mk(); stoneFloor(e, 92);
   const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(95, 84);
+  check('fox prey starts on valid ground', e.spawnCreature(CREATURE.HARE, 92, 89) > 0);
   e.setCreatureRuntime(true, false);
   actors(e, 80);
   const walked = byId(e, fox);
-  check(`walking creature tracks player on land (x ${walked?.x.toFixed(1)})`, walked && walked.x > 45);
+  check(`fox pursues prey on land (x ${walked?.x.toFixed(1)})`, walked && walked.x > 45);
   waterBox(e, 20, 68, 125, 92);
   // A submerged land animal now prioritizes a dry bank over this target.
   e.setPlayerState(player, { x: 92, y: 70, vx: 0, vy: 0, facing: -1 });

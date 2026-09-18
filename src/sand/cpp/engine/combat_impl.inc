@@ -209,21 +209,21 @@ void CombatSystem::enemyAttack(Creature& c) {
   }
   const auto& species = E.creatures.species(c);
   bool boss = c.species >= CS_THORNBOUND_HART && c.species <= CS_HOLLOW_BELLKEEPER;
-  bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
+  bool heavy = boss || c.species == CS_ROOT_KNIGHT || c.species == CS_STONE_GUARDIAN || c.species == CS_CINDER_CASTELLAN;
   bool enraged = c.health * 2 < species.maxHealth;
   int damage = heavy ? (enraged ? 28 : 22) : imax(10, imin(18, species.damage));
   int windup = heavy ? (enraged ? 26 : 36) : 16;
   bool ring = (c.species == CS_HOLLOW_BELLKEEPER && c.attackPattern == 0) || (heavy && c.attackPattern == 2 && c.species != CS_MIRE_MATRON);
   int duration = ring ? 50 : 18;
   bool contact = (c.species == CS_THORNBOUND_HART && c.attackPattern == 0) || c.species == CS_BRIAR_WOLF || c.species == CS_FOX || c.species == CS_BONE_GUARD;
-  bool slam = c.species == CS_ROOT_KNIGHT || c.species == CS_QUARRY_FOREMAN;
+  bool slam = c.species == CS_ROOT_KNIGHT || c.species == CS_STONE_GUARDIAN;
   double x = c.wx + species.w * .5, y = c.wy + species.h * .5;
   double localX = x - E.fg.worldOffsetX, localY = y - E.fg.worldOffsetY;
   if (c.attackState == CAS_FIRING) {
     int tick = c.attackTicks++;
     c.attackProgress = 1 - c.attackTicks / (double)duration;
     bool toll = ring;
-    bool archer = c.species == CS_MINIGUNNER;
+    bool archer = c.species == CS_OATHLESS_ARCHER;
     if (tick == 0 && archer && (int)E.projectiles.projectiles.size() < PROJECTILE_MAX) {
       double dx=c.attackAimX-x,dy=c.attackAimY-y,d=std::max(1.0,std::hypot(dx,dy));
       Projectile arrow; arrow.id=E.projectiles.nextId++; arrow.owner=-c.id; arrow.kind=PK_ARROW;
@@ -307,7 +307,7 @@ void CombatSystem::creatureAttack(Creature& c, const EnemyAttack& base) {
   const EnemyAttack& attack = base;
   double x = c.wx + species.w * .5, y = c.wy + species.h * .5;
   double lx = x - E.fg.worldOffsetX, ly = y - E.fg.worldOffsetY;
-  if ((c.species == CS_FROST_GIANT || c.species == CS_BONE_DINOSAUR) && (c.attackState == CAS_CHARGING || c.attackState == CAS_FIRING)) {
+  if ((c.species == CS_FROST_GIANT || c.species == CS_CINDERJAW_DRAGON) && (c.attackState == CAS_CHARGING || c.attackState == CAS_FIRING)) {
     if (attack.move != EM_LUNGE || c.attackState != CAS_FIRING) c.facing = c.attackAimX >= x ? 1 : -1;
     c.vx *= .65;
   }

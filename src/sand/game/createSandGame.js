@@ -532,9 +532,9 @@ export function createSandGame(container, opts = {}) {
       const offsetY = ctx.engine.getWorldOffsetY();
       return ctx.engine.getCreatures()
         .filter(({ species, alive, npcId }) =>
-          alive && (npcId || species === CREATURE.SURVEYOR ||
-            species === CREATURE.IRIS_COMMANDER ||
-            species === CREATURE.IRIS_ENGINEER))
+          alive && (npcId || species === CREATURE.VILLAGER_SCHOLAR ||
+            species === CREATURE.VILLAGER_KEEPER ||
+            species === CREATURE.VILLAGER_SMITH))
         .map((actor) => ({
           ...actor,
           worldX: offsetX + actor.x + actor.w * 0.5,

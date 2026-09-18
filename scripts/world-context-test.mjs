@@ -140,13 +140,13 @@ check('ordinary terrain remains unclaimed by a generated feature',
 check('surface enemies cannot naturally materialize inside a designated building',
   building
     && !earth._spawnWorldAllowed(
-      CREATURE.DYNAMITEER, building.x, building.y));
-check('settlements raise the dynamiteer spawn-pool affinity',
+      CREATURE.BRIAR_GOBLIN, building.x, building.y));
+check('settlements raise the briar_goblin spawn-pool affinity',
   villageCommons && ordinarySurface
     && earth._spawnWorldWeight(
-      CREATURE.DYNAMITEER, villageCommons.x, villageCommons.y)
+      CREATURE.BRIAR_GOBLIN, villageCommons.x, villageCommons.y)
       > earth._spawnWorldWeight(
-        CREATURE.DYNAMITEER, ordinarySurface.x, ordinarySurface.y));
+        CREATURE.BRIAR_GOBLIN, ordinarySurface.x, ordinarySurface.y));
 
 const plains = findContext(earth,
   (context) => context.surfaceBiome === BIOME.PLAINS
@@ -158,9 +158,9 @@ const swamp = findContext(earth,
   { minX: -12000, maxX: 12000, minDepth: 0, maxDepth: 0, xStep: 16 });
 check('surface biome changes caustic-mortarman spawn-pool affinity',
   plains && swamp
-    && earth._spawnWorldWeight(CREATURE.CAUSTIC_MORTARMAN, swamp.x, swamp.y)
+    && earth._spawnWorldWeight(CREATURE.FEN_WITCH, swamp.x, swamp.y)
       > earth._spawnWorldWeight(
-        CREATURE.CAUSTIC_MORTARMAN, plains.x, plains.y));
+        CREATURE.FEN_WITCH, plains.x, plains.y));
 
 const ordinaryCave = mine && findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.NONE
@@ -175,11 +175,11 @@ const ordinaryCave = mine && findContext(earth,
     maxDepth: mine.context.depth,
     yStep: 1,
   });
-check('mine regions raise the minigunner spawn-pool affinity',
+check('mine regions raise the oathless_archer spawn-pool affinity',
   mine && ordinaryCave
-    && earth._spawnWorldWeight(CREATURE.MINIGUNNER, mine.x, mine.y)
+    && earth._spawnWorldWeight(CREATURE.OATHLESS_ARCHER, mine.x, mine.y)
       > earth._spawnWorldWeight(
-        CREATURE.MINIGUNNER, ordinaryCave.x, ordinaryCave.y));
+        CREATURE.OATHLESS_ARCHER, ordinaryCave.x, ordinaryCave.y));
 
 const point = building && [building.x, building.y];
 const beforeShift = point && earth.worldContextAt(...point);

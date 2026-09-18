@@ -14,6 +14,9 @@
   cells**. Request flat colors, about 12 colors total, three tones per material,
   and **no sub-pixel texture, gradients, antialiasing or fine fur**. Enforce the
   native grid during import; a blocky-looking source image alone is insufficient.
+- **Keep only active sources.** Delete superseded sheets and duplicate references;
+  keep experiments and review renders in an ignored directory. The manifest is
+  the source inventory, and git history preserves previous art.
 - **Keep one atlas per creature.** Four columns; normally 12 poses, plus a
   fourth row for three swimming poses. Give distinct boss attacks extra rows.
   Declare layout, clip mappings and any uneven row boundaries in the manifest.
@@ -80,8 +83,7 @@ Reuse attack/hurt/death poses in water unless individual review shows a problem.
 commit.** A generated sheet is not finished until it has been reduced to its
 actual pixel grid. Never commit full-resolution generation outputs, enlarged
 pixel-art copies, or multi-megabyte sprite references. This applies to every
-new sprite, replacement sheet, armor component, swimming strip and archived
-character reference.
+new sprite, replacement sheet, armor component, swimming strip and character reference.
 
 1. Keep raw generation outputs and temporary comparison images under an ignored
    directory such as `.sand-artifacts/sprite-authoring/`. Register the intended
@@ -97,9 +99,9 @@ character reference.
    Use hard transparency and nearest-neighbor previews; no smoothing or dithering.
 4. Run the relevant importers, inspect the rebuilt animation at game size, and
    run the affected checks. Inspect PNG dimensions and file sizes before staging:
-   active character sheets must fit within 512×512 pixels; archived character
-   references must have a maximum 384-pixel edge. Active sheets should be
-   kilobytes, not megabytes. A compliant canvas size alone does not excuse
+   active character sheets must fit within 512×512 pixels. Keep unused references
+   outside the tracked source directory. Active sheets should be
+   under 100 KB each; the art test enforces the source inventory and size limits. A compliant canvas size alone does not excuse
    texture noise or an unnecessarily large file.
 5. Commit only the compact PNGs, prompts, registration metadata and regenerated
    runtime data. Delete temporary raw outputs after review; do not retain large
@@ -137,8 +139,8 @@ Use the flat key background expected by that importer. Keep water, projectiles,
 breath, splashes, particles and ground shadows out of character drawings when
 the engine supplies them.
 
-Production character art targets a half-world-cell visual pixel grid. All 35
-creature types use a true `pixelScale: 0.5` native raster. The 34 creatures in
+Production character art targets a half-world-cell visual pixel grid. All 30
+creature appearances use a true `pixelScale: 0.5` native raster. The 29 appearances in
 the main manifest use four-column sources under `creatures/atlases/`, with
 swimming in an optional fourth row (the frost giant has six rows). The dragon
 uses its dedicated half-cell importer. The
@@ -158,7 +160,7 @@ Existing unsuffixed and `-coarse-v1.png` sources remain reference art or active
 sources for assets listed in their manifests. Collision, equipment, and attack
 timing are independent of the source layout.
 
-Retain compact source images, exact prompts, compact references and registration/timing metadata.
+Retain active compact source images, exact prompts and registration/timing metadata.
 Use the relevant importer; production consumes palette-indexed content rather
 than the large source sheets. Preserve existing land/combat art when adding a
 new clip. Check actual native dimensions in the manifest: canvas padding may be
@@ -186,6 +188,6 @@ build/benchmark requirements when changing simulation or rendering code.
 ## Pipeline references
 
 - [Compact creatures](creatures/README.md) and [swimming strips](creatures/swim/README.md)
-- [Frost giant](frost-giant/README.md) and [skeleton dragon](skeleton-dragon/README.md)
+- [Frost giant](frost-giant/README.md) and [skeleton dragon](cinderjaw-dragon/README.md)
 - [Player components and armor](player/README.md)
 - [Runtime animation architecture and checks](../ANIMATION.md)

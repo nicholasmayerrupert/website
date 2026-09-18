@@ -156,18 +156,18 @@ void MissionSystem::buildGreenfall(int centerX, int surfaceY) {
                MISSION_FLAG_PRIMARY_MARKER);
   addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-  int jammer = spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + 100,
+  int jammer = spawnMissionCreature(CS_FEN_WISP, centerX + 100,
                                     surfaceY + 127, 0);
   objectives[0].targetActorId = jammer;
   bool placed = jammer != 0;
   for (int x : {-64, -48, -32}) {
-    int id = spawnMissionCreature(CS_SURVEYOR, centerX + x, surfaceY + 127, 1);
+    int id = spawnMissionCreature(CS_VILLAGER_SCHOLAR, centerX + x, surfaceY + 127, 1);
     placed &= id != 0;
     if (Creature* creature = findCreature(id)) creature->shelterCharge = 1;
   }
   const std::array<std::array<int, 3>, 3> guards{{
-    {{CS_DYNAMITEER, -25, 19}}, {{CS_MINIGUNNER, 94, 77}},
-    {{CS_BORE_SENTINEL, -5, 127}},
+    {{CS_BRIAR_GOBLIN, -25, 19}}, {{CS_OATHLESS_ARCHER, 94, 77}},
+    {{CS_BONE_GUARD, -5, 127}},
   }};
   for (const auto& guard : guards) {
     int id = spawnMissionCreature((uint8_t)guard[0], centerX + guard[1],

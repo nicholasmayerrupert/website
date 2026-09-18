@@ -35,7 +35,7 @@ for(const d of descriptors){
  }finally{e.destroy();}
 }
 console.log('ok: every species routes hurt and death through the authority, and protected residents stay protected');
-for(const species of [CREATURE.FOX,CREATURE.FROST_GIANT,CREATURE.BONE_DINOSAUR,CREATURE.MUMMY]){
+for(const species of [CREATURE.BRIAR_WOLF,CREATURE.FROST_GIANT,CREATURE.CINDERJAW_DRAGON,CREATURE.MUMMY]){
  const e=createEngineWasm({cols:192,rows:144,sinksOn:false,worldSeed:72,planetId:PLANET.FRONTIER});
  try{
   e.setCreatureRuntime(false,false);for(let x=0;x<192;x++)for(let y=120;y<144;y++)e.paintDisc(x,y,0,MAT.STONE,true);e.syncComponents();
@@ -56,7 +56,7 @@ console.log('ok: presentation mirrors cannot duplicate creature sounds');
 {
  const e=createEngineWasm({cols:192,rows:144,sinksOn:false,worldSeed:72,planetId:PLANET.FRONTIER});
  try{
-  e.setCreatureRuntime(false,false);e.spawnScriptedCreature(CREATURE.REACTOR_CORE,60,55);e.setCreatureRuntime(true,false);
+  e.setCreatureRuntime(false,false);e.spawnScriptedCreature(CREATURE.STONE_GUARDIAN,60,55);e.setCreatureRuntime(true,false);
   let calls=0;for(let i=0;i<1200;i++){e.stepActors();calls+=events(e).filter(v=>v.type===S.CREATURE_CALL).length;}
   assert.ok(calls>=1&&calls<=2,'idle calls are sparse rather than emitted every frame');
  }finally{e.destroy();}

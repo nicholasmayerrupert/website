@@ -2,8 +2,8 @@ import { CREATURE_SPECIES_DEFS, OFF, STRIDES } from '../wasmBridge/abi.generated
 import { SCORE_TRACKS } from './scoreTracks.js';
 
 const BOSSES = new Set(['thornbound_hart', 'mire_matron', 'cinder_castellan',
-  'hollow_bellkeeper', 'quarry_foreman', 'reactor_warden', 'iris_commander']);
-const SCRIPTED_HOSTILES = new Set([...BOSSES, 'root_knight', 'iris_engineer', 'shield_anchor']);
+  'hollow_bellkeeper', 'stone_guardian', 'reactor_warden', 'villager_keeper']);
+const SCRIPTED_HOSTILES = new Set([...BOSSES, 'root_knight', 'villager_smith', 'shield_anchor']);
 
 // Read the existing presentation snapshot; nearby NPCs and wildlife do not
 // turn exploration into combat. All coordinates here are window-local.

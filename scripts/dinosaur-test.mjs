@@ -13,7 +13,7 @@ function arena(name,fn){
  }finally{e.destroy();}
 }
 function dinosaur(e,{x=90,pattern=2,state=A.FIRING,aimX=200,aimY=110}={}){
- const id=e.spawnScriptedCreature(CREATURE.BONE_DINOSAUR,x,98),data=e.getCreatureSnapshotData().slice(),o=OFF.creatureSnapshot;
+ const id=e.spawnScriptedCreature(CREATURE.CINDERJAW_DRAGON,x,98),data=e.getCreatureSnapshotData().slice(),o=OFF.creatureSnapshot;
  for(let at=0;at<data.length;at+=STRIDES.creatureSnapshot)if(data[at+o.id]===id){
   data[at+o.y]=98;data[at+o.attackState]=state;data[at+o.attackPattern]=pattern;data[at+o.attackProgress]=state===A.FIRING?1:0;
   data[at+o.aimX]=aimX;data[at+o.aimY]=aimY;data[at+o.facing]=aimX>=x+12?1:-1;
@@ -58,7 +58,7 @@ arena('fire pulses and creature identity survive a checkpoint with deterministic
  e.startMission(MISSION.FRONTIER,id);const cid=dinosaur(e);tick(e,16);e.setCreatureRuntime(false,false);
  const restored=createEngineWasm(options);
  try{assert.ok(restored.readCheckpoint(e.writeCheckpoint()));restored.setCreatureRuntime(false,false);
-  assert.deepEqual(restored.getProjectiles(),e.getProjectiles());assert.ok(restored.getCreatures().some(c=>c.id===cid&&c.species===CREATURE.BONE_DINOSAUR));
+  assert.deepEqual(restored.getProjectiles(),e.getProjectiles());assert.ok(restored.getCreatures().some(c=>c.id===cid&&c.species===CREATURE.CINDERJAW_DRAGON));
   tick(e,65);tick(restored,65);assert.equal(restored.gridHash(),e.gridHash());assert.deepEqual(restored.getProjectiles(),e.getProjectiles());
  }finally{restored.destroy();}
 });
@@ -67,18 +67,18 @@ arena('fire pulses and creature identity survive a checkpoint with deterministic
  try{
   let bone,plains;
   for(let x=0;x<12000;x+=32){const y=e.worldSurfaceAbsAt(x)-24,c=e.worldContextAt(x,y);
-   if(!bone&&c.surfaceBiome===BIOME.ROCKY&&e._spawnWorldWeight(CREATURE.BONE_DINOSAUR,x,y)>0)bone=[x,y];
+   if(!bone&&c.surfaceBiome===BIOME.ROCKY&&e._spawnWorldWeight(CREATURE.CINDERJAW_DRAGON,x,y)>0)bone=[x,y];
    if(!plains&&c.surfaceBiome===BIOME.PLAINS)plains=[x,y];if(bone&&plains)break;
   }
-  assert.ok(bone&&plains);assert.equal(e._spawnWorldWeight(CREATURE.BONE_DINOSAUR,...plains),0);
+  assert.ok(bone&&plains);assert.equal(e._spawnWorldWeight(CREATURE.CINDERJAW_DRAGON,...plains),0);
   const ox=Math.floor((bone[0]-256)/32)*32,oy=Math.floor((bone[1]-176)/32)*32;
   while(e.getWorldOffsetX()!==ox){const d=ox-e.getWorldOffsetX();e.shiftWorldXY(Math.sign(d)*Math.min(256,Math.abs(d)),0);}
   while(e.getWorldOffsetY()!==oy){const d=oy-e.getWorldOffsetY();e.shiftWorldXY(0,Math.sign(d)*Math.min(128,Math.abs(d)));}
   e.setMirrorCreatures(new Float32Array(),ox,oy);e.setCreatureRuntime(true,false);
   const px=bone[0]-ox,py=bone[1]-oy;e.spawnPlayer(px,py);e.setViewport(1,1,64,64);e.cameraSet(px-32,py-32);
-  let spawned=false;for(let salt=0;salt<160&&!spawned;salt++)spawned=e._spawnNearFocus(CREATURE.BONE_DINOSAUR,salt*997+51);
+  let spawned=false;for(let salt=0;salt<160&&!spawned;salt++)spawned=e._spawnNearFocus(CREATURE.CINDERJAW_DRAGON,salt*997+51);
   assert.ok(spawned,`the large body fits a real bone-highlands habitat near ${bone}`);
-  const c=e.getCreatures().find(c=>c.species===CREATURE.BONE_DINOSAUR&&c.alive);
+  const c=e.getCreatures().find(c=>c.species===CREATURE.CINDERJAW_DRAGON&&c.alive);
   assert.ok(e._spawnWorldAllowed(c.species,ox+c.x+c.w*.5,oy+c.y+c.h*.5));
   assert.equal(e._spawnNaturalAt(c.species,ox+c.x+50,oy+c.y),0,'one tyrant fills the local species cap');
   for(let i=0;i<5;i++)e.shiftWorldXY(128,0);tick(e);for(let i=0;i<5;i++)e.shiftWorldXY(-128,0);tick(e);
@@ -99,9 +99,9 @@ arena('fire pulses and creature identity survive a checkpoint with deterministic
   let successes=0;
   for(let salt=0;salt<8;salt++){
    e.setMirrorCreatures(new Float32Array(),ox,oy);
-   if(!e._spawnNearFocus(CREATURE.BONE_DINOSAUR,salt*997+51))continue;
+   if(!e._spawnNearFocus(CREATURE.CINDERJAW_DRAGON,salt*997+51))continue;
    successes++;
-   const c=e.getCreatures().find(c=>c.species===CREATURE.BONE_DINOSAUR),cam=e.getCam();
+   const c=e.getCreatures().find(c=>c.species===CREATURE.CINDERJAW_DRAGON),cam=e.getCam();
    assert.ok(c.x+c.w<=cam.x-20||c.x>=cam.x+340||c.y+c.h<=cam.y-20||c.y>=cam.y+200,'the complete body clears the visible safety margin');
    assert.ok(e._spawnWorldAllowed(c.species,ox+c.x+c.w*.5,oy+c.y+c.h*.5));
   }

@@ -29,8 +29,8 @@ const root = new Node();
 root.host = { clientWidth: 640, clientHeight: 480 };
 const view = { viewCols: 128, viewRows: 96, playerWorldX: 20, playerWorldY: 20 };
 const actors = [
-  { id: 1, npcId: 1, species: CREATURE.IRIS_COMMANDER, alive: true, worldX: 20, worldY: 20, headWorldY: 12 },
-  { id: 2, npcId: 2, species: CREATURE.IRIS_ENGINEER, alive: true, worldX: 40, worldY: 20, headWorldY: 12 },
+  { id: 1, npcId: 1, species: CREATURE.VILLAGER_KEEPER, alive: true, worldX: 20, worldY: 20, headWorldY: 12 },
+  { id: 2, npcId: 2, species: CREATURE.VILLAGER_SMITH, alive: true, worldX: 40, worldY: 20, headWorldY: 12 },
 ];
 const game = {
   getPlanetState: () => ({ id: PLANET.FRONTIER }),

@@ -72,8 +72,11 @@ The survival combat pools are broad within their physical realm:
 
 | Context | Eligible enemies | Affinities |
 | --- | --- | --- |
-| Any surface biome | Dynamiteer, caustic mortarman, cluster wasp | Dynamiteers favor open biomes and settlements; mortarmen favor desert and swamp; wasps favor forest, jungle, and swamp |
-| Any cave biome | Bore sentinel, minigunner | Bore sentinels favor mines and geode/fossil depths; minigunners favor mines and crystal/magma/void depths |
+| Plains and rocky surface | Briar goblin | Prefers settlements outside buildings |
+| Desert and swamp surface | Fen witch | Poison magic near wetland and desert paths |
+| Rocky and Watchwood surface | Bell bat | Swooping flyer |
+| Default, fossil, and void caves | Bone guard | Prefers mines and deep structures |
+| Crystal, magma, and void caves | Oathless archer | Prefers mines and deep structures |
 
 Surface combatants cannot naturally materialize inside designated building
 interiors, and cave enemies cannot materialize beneath a settlement. The

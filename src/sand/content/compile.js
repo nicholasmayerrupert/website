@@ -2,7 +2,7 @@ import { contentHash } from './hash.js';
 export { contentHash } from './hash.js';
 // The same content compiler runs in Node, the browser, and the authority worker.
 import { MAT } from '../materials.js';
-import { CREATURE, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
+import { CREATURE, CREATURE_SPECIES_DEFS, GEAR_FAMILY, ITEM_KIND, OBJECTIVE_KIND, PLAYER_ANIMATION, STATUS_EFFECT_DEFS } from '../wasmBridge/abi.generated.js';
 import creatureArt from './creatureArt.js';
 import { CREATURE_CLIPS, ATTACK_PHASES, CREATURE_ATTACK_ANIMATIONS, attackAnimation } from './creatureAnimations.js';
 export { CREATURE_CLIPS } from './creatureAnimations.js';
@@ -119,8 +119,11 @@ export function compileContent(world, sprite, creatureSources = creatureArt) {
   const residents = (world.residents || []).map(resident => {
     if (!Object.hasOwn(CREATURE, resident.species)) fail('residents', `unknown creature ${resident.species}`);
     if (!anchors[resident.anchor]) fail('residents', `missing anchor ${resident.anchor}`);
+    const appearance = resident.appearance || resident.species;
+    if (appearance !== resident.species && CREATURE_SPECIES_DEFS.find(d => d.id === CREATURE[appearance])?.variantOf !== resident.species)
+      fail('residents', `invalid appearance ${appearance} for ${resident.species}`);
     const at = anchors[resident.anchor];
-    return [integer(resident.id, 'resident.id', 1, 64), CREATURE[resident.species], at.x, at.y, at.surface,
+    return [integer(resident.id, 'resident.id', 1, 64), CREATURE[appearance], at.x, at.y, at.surface,
       integer(resident.roamRadius ?? 0, 'resident.roamRadius', 0, 48)];
   });
   if (residents.length > 64) fail('residents', 'at most 64 residents');

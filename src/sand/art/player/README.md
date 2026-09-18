@@ -3,7 +3,8 @@
 See the [general sprite guide](../README.md) for shared consistency and review
 requirements; the player's component poses use this dedicated pipeline.
 
-`base.png`, `wayfarer.png`, `hedgeweaver.png`, and `hearthguard.png` were generated
+`base-grid-v2.png`, `wayfarer-grid-v2.png`, `hedgeweaver-grid-v2.png`, and
+`hearthguard-grid-v2.png` were generated
 with the built-in image tool; `prompts.json` records the exact briefs. Each atlas
 has four columns and three rows, with ten occupied cells: head, torso, hips,
 thigh, shin, boot, upper arm, forearm, hand, cape. The last two cells are empty.

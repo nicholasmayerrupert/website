@@ -92,4 +92,4 @@ for (const [key, sprite] of Object.entries(art)) for (let pattern = 0; pattern <
 }
 assert.equal(attackAnimation('FROST_GIANT',art.FROST_GIANT,0,'attack').clip,'special');
 assert.equal(attackAnimation('FROST_GIANT',art.FROST_GIANT,2,'recover').start,6);
-console.log('PASS: attack mappings and viewer ranges for all 35 creatures');
+console.log('PASS: attack mappings and viewer ranges for all 30 creature appearances');

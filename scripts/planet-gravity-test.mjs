@@ -92,9 +92,9 @@ check('Kestrel is a physical foreground/background world',
   engine.setCreatureRuntime(true, false);
   const playerId = engine.spawnPlayerAtSurface(engine.cols / 2);
   const crewIds = [
-    engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8),
-    engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8),
-    engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23),
+    engine.spawnScriptedCreature(CREATURE.VILLAGER_KEEPER, -64, 8),
+    engine.spawnScriptedCreature(CREATURE.VILLAGER_SMITH, 64, 8),
+    engine.spawnScriptedCreature(CREATURE.VILLAGER_SCHOLAR, 30, -23),
   ];
   const crewStart = crewIds.map((id) => {
     const crew = engine.getCreatures().find((creature) => creature.id === id);

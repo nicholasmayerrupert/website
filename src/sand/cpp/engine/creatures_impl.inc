@@ -138,7 +138,6 @@ bool CreatureSystem::worldRuleAllows(
 bool CreatureSystem::worldRuleAllows(
     uint8_t speciesId, double wx, double wy) const {
   if (speciesId >= CS_COUNT) return false;
-  if (speciesId >= CS_THORNBOUND_HART && CREATURE_SPECIES[speciesId].hostile && E.planetId != PL_FRONTIER) return false;
   if (E.planetId == PL_FRONTIER && speciesId < CS_COUNT
       && CREATURE_SPECIES[speciesId].hostile
       && wx >= E.content.repairBounds[0] - 64 && wx <= E.content.repairBounds[2] + 64
@@ -155,7 +154,7 @@ bool CreatureSystem::worldRuleAllows(
 
 int CreatureSystem::worldSpawnWeight(
     uint8_t speciesId, const WorldContext& context) const {
-  if (speciesId >= CS_COUNT || (speciesId >= CS_THORNBOUND_HART && CREATURE_SPECIES[speciesId].hostile && E.planetId != PL_FRONTIER)) return 0;
+  if (speciesId >= CS_COUNT) return 0;
   if (speciesId == CS_MUMMY && (context.featureKind != WF_LANDMARK || context.surfaceBiome != BIOME_DESERT)) return 0;
   const CreatureWorldRule& rule = CREATURE_SPECIES[speciesId].world;
   if (!worldRuleAllows(rule, context)) return 0;
@@ -1083,7 +1082,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       if (c.grounded && !boxHitsSolid(ahead, c.wy + 1, s.w, s.h)) wish = 0;
     }
     // Released researchers wait for extraction instead of fleeing their rescuer.
-    if (c.missionActor && c.species == CS_SURVEYOR &&
+    if (c.missionActor && c.species == CS_VILLAGER_SCHOLAR &&
         E.missions.missionId == MI_GREENFALL_RECOVERY) wish = 0;
     wish = navigateGround(c, s, wish, tx, ty, hasTarget);
     c.vx = accelerateToward(c.vx, wish, s.accel);
@@ -1125,7 +1124,7 @@ void CreatureSystem::moveFlying(Creature& c) {
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   double phase = (E.actorTick + c.id * 43) * 0.025;
   double desiredX, desiredY;
-  if (hasTarget && creatureBehavior(s).flyingMovement == CFM_CLUSTER) {
+  if (hasTarget && creatureBehavior(s).flyingMovement == CFM_HOVER) {
     double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
     if (c.attackState != CAS_IDLE) desiredX = 0;
     else if (distance > 82) desiredX = dx;
@@ -1145,8 +1144,8 @@ void CreatureSystem::moveFlying(Creature& c) {
   else if (!hasTarget && altitude > 52) desiredY = 1;
   double d = std::sqrt(desiredX * desiredX + desiredY * desiredY); if (d < 1e-6) d = 1;
   double speed = s.swimSpeed;
-  if (hasTarget && !submerged && creatureBehavior(s).flyingMovement != CFM_CLUSTER) {
-    const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
+  if (hasTarget && !submerged && creatureBehavior(s).flyingMovement != CFM_HOVER) {
+    const auto* attack = (species(c).hostile || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
     double reach = attack ? attack->reach : s.attackRange;
     speed *= std::min(1.0, std::max(0.0, d - reach * .55) / 4);
   }
@@ -1165,19 +1164,7 @@ void CreatureSystem::moveFlying(Creature& c) {
   if (!moveCreatureAxis(c, c.wy, c.vy, false, blocked)) c.vy = 0;
 }
 
-static constexpr int DYNAMITE_CHARGE_TICKS = 30;
-static constexpr int DYNAMITE_THROW_TICKS = 8;
-static constexpr int BORE_CHARGE_TICKS = 90;
-static constexpr int BORE_LOCK_TICKS = 30;
-static constexpr int BORE_FIRE_TICKS = 6;
 static constexpr int BORE_CANNON_DAMAGE = 70;
-static constexpr int MORTARMAN_CHARGE_TICKS = 42;
-static constexpr int MORTARMAN_FIRE_TICKS = 8;
-static constexpr int CLUSTER_WASP_CHARGE_TICKS = 32;
-static constexpr int CLUSTER_WASP_FIRE_TICKS = 8;
-static constexpr int MINIGUNNER_CHARGE_TICKS = 18;
-static constexpr int MINIGUNNER_BURST_TICKS = 150;
-static constexpr int MINIGUNNER_SHOT_INTERVAL = 2;
 
 static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
                                    double bx0, double by0, double bx1, double by1, double expand) {
@@ -1192,187 +1179,6 @@ static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
   };
   return clip(-dx, x0 - bx0) && clip(dx, bx1 - x0) &&
          clip(-dy, y0 - by0) && clip(dy, by1 - y0);
-}
-
-void CreatureSystem::updateChargedProjectileAttack(
-    Creature& c, CreatureAttackHandler attack, int chargeTicks, int firingTicks) {
-  const CreatureSpecies& s = species(c);
-  if (c.attackState == CAS_FIRING) {
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)firingTicks);
-    if (++c.attackTicks >= firingTicks) {
-      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    // Keep tracking throughout the wind-up. If the target vanishes, fire at its
-    // last observed position instead of cancelling the committed attack.
-    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
-    if (attack != CAH_DYNAMITEER || c.attackAimX != 0 || c.attackAimY != 0)
-      c.facing = c.attackAimX >= c.wx + s.w * 0.5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
-    if (c.attackTicks >= chargeTicks) {
-      double targetX = c.attackAimX - E.fg.worldOffsetX;
-      double targetY = c.attackAimY - E.fg.worldOffsetY;
-      switch (attack) {
-        case CAH_DYNAMITEER:
-          E.projectiles.spawnDynamite(c, targetX, targetY);
-          break;
-        case CAH_CAUSTIC_MORTARMAN:
-          E.projectiles.spawnAcidShell(c, targetX, targetY);
-          break;
-        case CAH_CLUSTER_WASP:
-          E.projectiles.spawnClusterBomb(c, targetX, targetY);
-          break;
-        default:
-          __builtin_trap();
-      }
-      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
-      c.attackCooldown = s.attackCooldown;
-    }
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
-  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
-}
-
-void CreatureSystem::updateMinigunnerAttack(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  bool relayGuard = c.missionActor && E.missions.missionId == MI_GREENFALL_RECOVERY;
-  int chargeTicks = relayGuard ? 60 : MINIGUNNER_CHARGE_TICKS;
-  int burstTicks = relayGuard ? 48 : MINIGUNNER_BURST_TICKS;
-  if (c.attackState == CAS_FIRING) {
-    // The burst commits to its charged line, allowing a block or sidestep.
-    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
-    if ((c.attackTicks % MINIGUNNER_SHOT_INTERVAL) == 0) {
-      E.projectiles.spawnMinigunRound(c,
-        c.attackAimX - E.fg.worldOffsetX,
-        c.attackAimY - E.fg.worldOffsetY);
-    }
-    c.attackTicks++;
-    c.attackProgress = std::max(0.0,
-      1.0 - c.attackTicks / (double)burstTicks);
-    if (c.attackTicks >= burstTicks) {
-      if (relayGuard) c.attackCooldown = 120;
-      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
-    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
-    if (c.attackTicks >= chargeTicks) {
-      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
-      c.attackCooldown = s.attackCooldown;
-    }
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
-  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
-}
-
-void CreatureSystem::updateBossAttack(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  bool warden = creatureBehavior(s).telegraph == CTH_WARDEN;
-  int chargeTicks = c.attackPattern == 2 ? 78 : (c.attackPattern == 1 ? 52 : 34);
-  int fireTicks = c.attackPattern == 0 ? (warden ? 64 : 14) : 18;
-
-  if (c.attackState == CAS_FIRING) {
-    if (warden && c.attackPattern == 0 && (c.attackTicks % 4) == 0) {
-      double spread = ((c.attackTicks / 4) % 5 - 2) * 2.2;
-      E.projectiles.spawnMinigunRound(
-        c, c.attackAimX - E.fg.worldOffsetX,
-        c.attackAimY - E.fg.worldOffsetY + spread);
-    }
-    c.attackTicks++;
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)fireTicks);
-    if (c.attackTicks >= fireTicks) {
-      c.attackState = CAS_IDLE;
-      c.attackTicks = 0;
-      c.attackProgress = 0;
-      c.attackPattern = (uint8_t)((c.attackPattern + 1) % 3);
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    if (hasTarget && c.attackTicks < chargeTicks - 18) {
-      c.attackAimX = tx;
-      c.attackAimY = ty;
-    }
-    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
-    if (c.attackTicks < chargeTicks) return;
-
-    double localTargetX = c.attackAimX - E.fg.worldOffsetX;
-    double localTargetY = c.attackAimY - E.fg.worldOffsetY;
-    double localX = c.wx - E.fg.worldOffsetX + s.w * .5;
-    double localY = c.wy - E.fg.worldOffsetY + s.h * .48;
-    if (!warden && c.attackPattern == 0) {
-      E.projectiles.spawnDynamite(c, localTargetX - 7, localTargetY);
-      E.projectiles.spawnDynamite(c, localTargetX, localTargetY - 3);
-      E.projectiles.spawnDynamite(c, localTargetX + 7, localTargetY);
-    } else if (!warden && c.attackPattern == 1) {
-      Engine::ActiveLayerScope active(E, &E.fg);
-      E.explosives.detonate((int)std::lround(localX), (int)std::lround(localY + s.h * .42),
-                 13, 15.0, 0, DEBRIS,
-                 (uint32_t)(E.actorTick ^ (c.id * 0x9e3779b9u)));
-    } else if (warden && c.attackPattern == 1) {
-      E.projectiles.spawnAcidShell(c, localTargetX - 5, localTargetY);
-      E.projectiles.spawnClusterBomb(c, localTargetX + 5, localTargetY);
-    } else if (c.attackPattern == 2) {
-      double dx = c.attackAimX - (E.fg.worldOffsetX + localX);
-      double dy = c.attackAimY - (E.fg.worldOffsetY + localY);
-      double d = std::hypot(dx, dy);
-      if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
-      dx /= d;
-      dy /= d;
-      localX += dx * (s.w * .5 + .8);
-      localY += dy * (s.h * .35 + .8);
-      fireBoreLine(localX, localY, dx, dy, warden ? 58 : 44, 0, c.id);
-      E.projectiles.spawnBoreBeam(-c.id, localX, localY, dx, dy);
-    }
-    c.attackState = CAS_FIRING;
-    c.attackTicks = 0;
-    c.attackProgress = 1;
-    c.attackCooldown = imax(70, s.attackCooldown / 2);
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * .5);
-  double dy = ty - (c.wy + s.h * .5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING;
-  c.attackTicks = 0;
-  c.attackProgress = 0;
-  c.attackAimX = tx;
-  c.attackAimY = ty;
-  c.facing = dx >= 0 ? 1 : -1;
-  E.audio.emit(c.attackPattern == 2 ? SE_BORE_CHARGE : SE_CREATURE_ALERT,
-               c.wx - E.fg.worldOffsetX + s.w * .5,
-               c.wy - E.fg.worldOffsetY + s.h * .42,
-               1.0, c.species, 0);
 }
 
 void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, int damage,
@@ -1435,20 +1241,6 @@ void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, in
                  other.wy - E.fg.worldOffsetY + os.h * 0.5, 0.8, other.species, 0);
   }
   E.audio.emit(SE_BORE_FIRE, ox, oy, 1.0, STONE, 0);
-}
-
-void CreatureSystem::fireBore(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  double ox = c.wx - E.fg.worldOffsetX + s.w * 0.5;
-  double oy = c.wy - E.fg.worldOffsetY + s.h * 0.42;
-  double dx = c.attackAimX - (E.fg.worldOffsetX + ox);
-  double dy = c.attackAimY - (E.fg.worldOffsetY + oy);
-  double d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
-  dx /= d; dy /= d;
-  // Start beyond the sentinel's own hull, then extend to the loaded-window edge.
-  ox += dx * (s.w * 0.5 + 0.75); oy += dy * (s.h * 0.35 + 0.75);
-  fireBoreLine(ox, oy, dx, dy, s.damage, 0, c.id);
 }
 
 void CreatureSystem::fireBore(Player& p) {
@@ -1537,66 +1329,9 @@ void CreatureSystem::crushCreature(Creature& c) {
                c.wy - E.fg.worldOffsetY + s.h * 0.5, 0.65, c.species, 0);
 }
 
-void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  if (c.attackState == CAS_FIRING) {
-    c.attackProgress = 1;
-    if (++c.attackTicks >= BORE_FIRE_TICKS) {
-      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
-    }
-    return;
-  }
-
-  double tx = 0, ty = 0;
-  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
-  if (c.attackState == CAS_CHARGING) {
-    // Track for most of the charge, then leave a clearly committed line for the
-    // final beat so the player can escape before terrain and actors are cut.
-    if (hasTarget && c.attackTicks < BORE_CHARGE_TICKS - BORE_LOCK_TICKS) {
-      c.attackAimX = tx; c.attackAimY = ty;
-    }
-    c.facing = c.attackAimX >= c.wx + s.w * 0.5 ? 1 : -1;
-    c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)BORE_CHARGE_TICKS);
-    if (c.attackTicks >= BORE_CHARGE_TICKS) {
-      fireBore(c);
-      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
-      c.attackCooldown = s.attackCooldown;
-    }
-    return;
-  }
-
-  if (!hasTarget || c.attackCooldown > 0) return;
-  double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5);
-  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
-  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
-  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
-  E.audio.emit(SE_BORE_CHARGE, c.wx - E.fg.worldOffsetX + s.w * 0.5,
-               c.wy - E.fg.worldOffsetY + s.h * 0.42, 0.9, STONE, 0);
-}
-
 void CreatureSystem::attackTarget(Creature& c) {
-  if ((E.planetId == PL_FRONTIER && species(c).hostile) || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) { E.combat.enemyAttack(c); return; }
+  if ((species(c).hostile && (c.targetKind != CT_PREY || c.attackState != CAS_IDLE)) || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) { E.combat.enemyAttack(c); return; }
   const CreatureSpecies& s = species(c);
-  switch (creatureBehavior(s).attack) {
-    case CAH_DYNAMITEER:
-      updateChargedProjectileAttack(
-        c, CAH_DYNAMITEER, DYNAMITE_CHARGE_TICKS, DYNAMITE_THROW_TICKS);
-      return;
-    case CAH_BORE_SENTINEL: updateBoreSentinelAttack(c); return;
-    case CAH_CAUSTIC_MORTARMAN:
-      updateChargedProjectileAttack(
-        c, CAH_CAUSTIC_MORTARMAN, MORTARMAN_CHARGE_TICKS, MORTARMAN_FIRE_TICKS);
-      return;
-    case CAH_CLUSTER_WASP:
-      updateChargedProjectileAttack(
-        c, CAH_CLUSTER_WASP, CLUSTER_WASP_CHARGE_TICKS, CLUSTER_WASP_FIRE_TICKS);
-      return;
-    case CAH_MINIGUNNER: updateMinigunnerAttack(c); return;
-    case CAH_BOSS: updateBossAttack(c); return;
-    case CAH_GENERIC: break;
-    default: __builtin_trap();
-  }
   if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -1709,7 +1444,7 @@ void CreatureSystem::updateCreatures() {
         blockingCoverage(c.wx, c.wy, species(c).w, species(c).h) >= 0.5) c.health--;
     uint8_t contactHazard = contactHazardAtBox(
       c.wx, c.wy, species(c).w, species(c).h, E.actorTick + c.id * 7);
-    if (contactHazard != CHP_NONE && !((c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)) || (c.species == CS_BONE_DINOSAUR && contactHazard == CHP_FIRE)))
+    if (contactHazard != CHP_NONE && !((c.species == CS_LAVA_TOAD && (contactHazard == CHP_FIRE || contactHazard == CHP_LAVA)) || (c.species == CS_CINDERJAW_DRAGON && contactHazard == CHP_FIRE)))
       c.health -= CONTACT_HAZARD_CREATURE_DAMAGE[contactHazard];
     int priorAttack = c.attackState, priorCooldown = c.attackCooldown;
     if (encounterEngaged && !(c.effects.controls & SC_DISARM)) attackTarget(c);

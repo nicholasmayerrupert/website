@@ -404,7 +404,7 @@ for (const [label, mat, limit] of [
 {
   const { engine } = createSuspendedSource();
   const playerId = engine.spawnPlayer(55, 72);
-  const enemyId = engine.spawnScriptedCreature(CREATURE.MINIGUNNER, 55, 82);
+  const enemyId = engine.spawnScriptedCreature(CREATURE.OATHLESS_ARCHER, 55, 82);
   const birdId = engine.spawnScriptedCreature(CREATURE.BIRD, 55, 68);
   engine.setCreatureRuntime(true, false);
   const playerBefore = engine.getPlayer(playerId);

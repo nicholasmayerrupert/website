@@ -19,7 +19,7 @@ double CreatureSystem::targetWalkWish(Creature& c, const CreatureSpecies& s, dou
   double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
   if (c.attackState != CAS_IDLE) return 0;
   const auto& behavior = creatureBehavior(s);
-  const auto* attack = E.planetId == PL_FRONTIER ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
+  const auto* attack = ((species(c).hostile && c.targetKind != CT_PREY) || c.species == CS_VILLAGE_GUARD || c.species == CS_VILLAGE_HUNTER) ? enemyAttackProfile(c.species, c.attackPattern) : nullptr;
   bool ranged = attack ? attack->move >= EM_RUNE : behavior.farRange > 0;
   double near = ranged ? (attack ? attack->reach * .35 : behavior.nearRange) : 0;
   double far = attack ? attack->reach * (ranged ? .80 : .72)
@@ -66,7 +66,7 @@ double CreatureSystem::navigateGround(Creature& c, const CreatureSpecies& s,
     uint8_t hazard = contactHazardAtBox(x, y, s.w, s.h + 1, 0);
     if (hazard == CHP_NONE) return false;
     if (c.species == CS_LAVA_TOAD && (hazard == CHP_FIRE || hazard == CHP_LAVA)) return false;
-    return !(c.species == CS_BONE_DINOSAUR && hazard == CHP_FIRE);
+    return !(c.species == CS_CINDERJAW_DRAGON && hazard == CHP_FIRE);
   };
   double ahead = c.wx + dir * std::max(2.0, speed * 8);
   bool obstacle = boxHitsSolid(ahead, c.wy - 1.25, s.w, s.h);

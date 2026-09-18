@@ -53,7 +53,7 @@ export default function CreatureViewer() {
     {error && <p role="alert">{error}</p>}
     {!state && !error && <p role="status">Loading the game renderer…</p>}
     <div className="creature-viewer-controls">
-      <label>Creature<select aria-label="Creature" value={creature} disabled={!state} onChange={e => change({ creature: e.target.value, pattern: 0 })}>{CREATURE_ROSTER.map(d => <option value={d.key} key={d.key}>{d.name}</option>)}</select></label>
+      <label>Creature<select aria-label="Creature" value={creature} disabled={!state} onChange={e => change({ creature: e.target.value, pattern: 0 })}>{[false, true].map(variants => <optgroup key={String(variants)} label={variants ? 'Villager appearances' : 'Creatures'}>{CREATURE_ROSTER.filter(d => !!d.variantOf === variants).map(d => <option value={d.key} key={d.key}>{d.name}</option>)}</optgroup>)}</select></label>
       <label>Attack pattern<select aria-label="Attack pattern" value={state?.pattern || 0} disabled={!state} onChange={e => change({ pattern: Number(e.target.value) })}>{(ATTACK_NAMES[creature] || ['Pattern 1', 'Pattern 2', 'Pattern 3']).map((name, i) => <option value={i} key={i}>{name}</option>)}</select></label>
       <label>Facing<select aria-label="Facing" value={state?.facing || 1} disabled={!state} onChange={e => change({ facing: Number(e.target.value) })}><option value="1">Right</option><option value="-1">Left</option></select></label>
       <label className="creature-viewer-check"><input type="checkbox" checked={state?.travel ?? true} disabled={!state} onChange={e => change({ travel: e.target.checked })} />Travel through scene</label>
@@ -80,6 +80,6 @@ export default function CreatureViewer() {
       <label className="creature-viewer-scrubber">Frame<input aria-label="Animation frame" type="range" min="0" max={state.frames - 1} value={state.frame} onChange={e => action(api => api.seekFrame(Number(e.target.value)))} /><span>{state.frame + 1}</span></label>
       <FrameStrip {...state} onSelect={frame => action(api => api.seekFrame(frame))} />
     </>}
-    <footer>All {CREATURE_ROSTER.length} creatures use the current game content. This development viewer is available at <code>/game?creature={creature}</code>.</footer>
+    <footer>{CREATURE_ROSTER.filter(d => !d.variantOf).length} creatures and {CREATURE_ROSTER.filter(d => d.variantOf).length} villager appearances use the current game content. This development viewer is available at <code>/game?creature={creature}</code>.</footer>
   </main>;
 }

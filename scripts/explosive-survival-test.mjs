@@ -1,5 +1,4 @@
-// Deterministic combat regression for /game: the starter blast gun, the
-// dynamiteer's fused throw, and the bore sentinel's telegraphed two-layer cut.
+// Player tool combat, ammunition, pickups, and fantasy mob loot regression.
 
 import {
   initSandWasm, createEngineWasm as createEngineWasmRaw,
@@ -81,20 +80,15 @@ function drainTypeCount(e, wantedType) {
 
 const countStone = (grid) => grid.reduce((total, material) => total + (material === MAT.STONE ? 1 : 0), 0);
 
-function killForWeaponDrop(e, species, itemKind, x, y, label) {
-  const id = e.spawnCreature(species, x, y);
-  const creature = e.getCreatures().find((candidate) => candidate.id === id);
-  const hitX = Math.floor(creature.x + creature.w * 0.5);
-  const hitY = Math.floor(creature.y + creature.h * 0.5);
-  check(`${label} can be dealt lethal damage`, e.damageCreatures(hitX, hitY, 2, 999));
-  e.stepActors();
-  check(`${label} enters its corpse state`, e.getCreatures().find((candidate) => candidate.id === id)?.alive === false);
-  for (let tick = 0; tick < 25; tick++) e.stepActors();
-  const drops = e.getItems().filter((item) => item.kind === 0 && item.itemKind === itemKind);
-  const expectedAmmo = WEAPON_PICKUP_AMMO[itemKind];
-  check(`${label} death drops one fully loaded weapon (${expectedAmmo} ammo)`,
-    drops.length === 1 && drops[0].count === expectedAmmo);
-  return drops[0];
+function stageWeaponPickup(e, itemKind, x, y, label) {
+  const donor = e.spawnPlayer(x, y);
+  e.addSpecialItem(donor, itemKind, WEAPON_PICKUP_AMMO[itemKind]);
+  const slot = e.getInventory(donor).slots.findIndex(s => s.itemKind === itemKind);
+  e.inventoryCursorPick(donor, slot, false);
+  check(`${label} can be dropped as a whole weapon`, e.throwFromCursor(donor, true));
+  e.removePlayer(donor);
+  for (let tick = 0; tick < 42; tick++) e.stepActors();
+  return e.getItems().find(i => i.itemKind === itemKind);
 }
 
 function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
@@ -121,6 +115,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const equipped = e.getInventory(playerId);
   check(`${label} can be equipped`, slot >= 0 && equipped.selected === slot
     && e.getPlayer(playerId).heldItemKind === itemKind);
+  e.setPlayerState(playerId, { ...e.getPlayer(playerId), x: 64, y: FLOOR - e.getPlayer(playerId).h, vx: 0, vy: 0 });
   return slot;
 }
 
@@ -130,7 +125,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(24, FLOOR - 8);
-  const enemy = e.spawnCreature(CREATURE.DYNAMITEER, 60, FLOOR - 5);
+  const enemy = e.spawnCreature(CREATURE.BRIAR_GOBLIN, 60, FLOOR - 5);
   e.setCreatureRuntime(false, false); // stationary target; projectile + blast systems still run
   const kit = e.getInventory(player);
   check('player spawns with the blast gun selected', kit.selected === 0
@@ -231,14 +226,12 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.destroy();
 }
 
-// Armed enemies deterministically surrender their weapon once. The generic
-// dropped-item path carries that special stack into the inventory, where the
-// captured satchel can be equipped and used to throw a player-owned charge.
+// A dropped satchel can be collected, equipped, and used for player-owned charges.
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.DYNAMITEER, ITEM_KIND.DYNAMITE_SATCHEL, 82, FLOOR - 5, 'dynamiteer',
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.DYNAMITE_SATCHEL, 82, FLOOR - 5, 'briar_goblin',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.DYNAMITE_SATCHEL, drop, 'dynamite satchel');
   const pose = e.getPlayer(player);
@@ -256,62 +249,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('a successful dynamite throw consumes exactly one satchel charge',
     e.getInventory(player).slots[slot]?.count === 9);
   for (let tick = 0; tick < 25; tick++) e.stepActors();
-  check('dynamiteer corpse cleanup does not create another satchel',
+  check('satchel use does not create another pickup',
     !e.getItems().some((item) => item.itemKind === ITEM_KIND.DYNAMITE_SATCHEL)
       && e.getInventory(player).slots.filter((item) =>
         item.itemKind === ITEM_KIND.DYNAMITE_SATCHEL && item.count > 0).length === 1);
-  e.destroy();
-}
-
-// A dynamiteer visibly winds up, launches a rotating/bouncing projectile with a
-// replicated fuse, and its autonomous detonation hurts the player and terrain.
-{
-  const e = arena();
-  const player = e.spawnPlayer(30, FLOOR - 8);
-  const thrower = e.spawnCreature(CREATURE.DYNAMITEER, 66, FLOOR - 5);
-  const stoneBefore = countStone(e.getGrid());
-  const sounds = new Set();
-  let sawCharge = false, sawThrow = false, rotationFinite = true, firstFuse = 0, minFuse = Infinity;
-  let extendedVictimStaged = false, extendedVictimDistance = 0, healthBeforeExtendedBlast = 0;
-  for (let tick = 0; tick < 190; tick++) {
-    e.stepActors(); drainTypes(e, sounds);
-    const c = e.getCreatures().find((candidate) => candidate.id === thrower);
-    sawCharge ||= c?.attackState === CREATURE_ATTACK_STATE.CHARGING && c.attackProgress > 0;
-    const dynamite = e.getProjectiles().find((p) => p.kind === PROJECTILE_KIND.DYNAMITE);
-    if (dynamite) {
-      sawThrow = true;
-      if (!firstFuse) firstFuse = dynamite.fuse;
-      minFuse = Math.min(minFuse, dynamite.fuse);
-      rotationFinite &&= Number.isFinite(dynamite.rotation);
-      if (dynamite.fuse === 1 && !extendedVictimStaged) {
-        const victim = e.getPlayer(player);
-        const blastX = Math.round(dynamite.x) + 0.5;
-        const blastY = Math.round(dynamite.y) + 0.5;
-        const onRight = blastX + 25 + victim.w < COLS - 1;
-        const victimX = onRight ? blastX + 25 : blastX - 25 - victim.w;
-        const victimY = Math.max(1, Math.min(FLOOR - victim.h, blastY - victim.h * 0.5));
-        e.setPlayerState(player, {
-          ...victim, x: victimX, y: victimY, vx: 0, vy: 0, grounded: false,
-        });
-        const nearestX = Math.max(victimX, Math.min(blastX, victimX + victim.w));
-        const nearestY = Math.max(victimY, Math.min(blastY, victimY + victim.h));
-        extendedVictimDistance = Math.hypot(nearestX - blastX, nearestY - blastY);
-        healthBeforeExtendedBlast = victim.health;
-        extendedVictimStaged = true;
-      }
-    }
-    if (sawThrow && !dynamite) break;
-  }
-  check('dynamiteer enters a replicated wind-up state', sawCharge);
-  check(`dynamiteer throws a live fused projectile (${firstFuse} -> ${minFuse})`, sawThrow && firstFuse > minFuse && minFuse > 0);
-  check('thrown dynamite exposes finite rotation throughout flight', rotationFinite);
-  check('dynamite expires into an autonomous explosion', !e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.DYNAMITE)
-    && sounds.has(SOUND_EVENT.FUSE) && sounds.has(SOUND_EVENT.WEAPON_EXPLOSION));
-  check('enemy dynamite damages the player', e.getPlayer(player).health < 100 || !e.getPlayer(player).alive);
-  check(`enlarged dynamite blast deals heavy damage beyond the old radius (${extendedVictimDistance.toFixed(1)} cells)`,
-    extendedVictimStaged && extendedVictimDistance > 22
-      && healthBeforeExtendedBlast - e.getPlayer(player).health >= 20);
-  check('enemy dynamite destroys terrain', countStone(e.getGrid()) < stoneBefore);
   e.destroy();
 }
 
@@ -321,8 +262,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.BORE_SENTINEL, ITEM_KIND.BORE_CANNON, 76, FLOOR - 6, 'bore sentinel',
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.BORE_CANNON, 76, FLOOR - 6, 'bore sentinel',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.BORE_CANNON, drop, 'bore cannon');
   const pose = e.getPlayer(player);
@@ -330,7 +271,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const wallX = Math.min(COLS - 40, Math.floor(pose.x) + 30);
   for (let y = beamY - 8; y <= beamY + 8; y++) e.placeMaterial(wallX, y, 0, MAT.STONE);
   e.syncComponents();
-  const target = e.spawnCreature(CREATURE.DYNAMITEER, wallX + 24, FLOOR - 5);
+  const target = e.spawnCreature(CREATURE.BRIAR_GOBLIN, wallX + 24, FLOOR - 5);
   e.setCreatureRuntime(false, false);
   const cutCell = beamY * COLS + wallX;
   const targetHealth = e.getCreatures().find((creature) => creature.id === target)?.health;
@@ -361,122 +302,30 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     opening >= pose.h + 2);
   check('bore cannon preserves its owner immunity', e.getPlayer(player).health === 100);
   for (let tick = 0; tick < 25; tick++) e.stepActors();
-  check('bore sentinel corpse cleanup does not create another cannon',
+  check('bore use does not create another pickup',
     !e.getItems().some((item) => item.itemKind === ITEM_KIND.BORE_CANNON)
       && e.getInventory(player).slots.filter((item) =>
         item.itemKind === ITEM_KIND.BORE_CANNON && item.count > 0).length === 1);
   e.destroy();
 }
 
-// Enemy throws use the same swept path rule as the gun: the projectile begins
-// inside actor space rather than teleporting past a wall touching the thrower.
-{
+// Fantasy mobs never drop the player's industrial tools.
+for (const species of [CREATURE.BRIAR_GOBLIN, CREATURE.FEN_WITCH, CREATURE.OATHLESS_ARCHER, CREATURE.BONE_GUARD, CREATURE.BELL_BAT]) {
   const e = arena();
-  e.spawnPlayer(30, FLOOR - 8);
-  const thrower = e.spawnCreature(CREATURE.DYNAMITEER, 66, FLOOR - 5);
-  for (let y = FLOOR - 6; y < FLOOR; y++) e.placeMaterial(65, y, 0, MAT.STONE);
-  e.syncComponents();
-  let thrown = null;
-  for (let tick = 0; tick < 50 && !thrown; tick++) {
-    e.stepActors();
-    thrown = e.getProjectiles().find((p) => p.kind === PROJECTILE_KIND.DYNAMITE);
-  }
-  const actor = e.getCreatures().find((c) => c.id === thrower);
-  check('dynamite originates on the thrower side of an adjacent wall', thrown && actor && thrown.x > 65 && thrown.x >= actor.x);
+  const id = e.spawnScriptedCreature(species, 80, 60);
+  const c = e.getCreatures().find(c => c.id === id);
+  e.damageCreatures(c.x + c.w / 2, c.y + c.h / 2, 2, 999);
+  for (let tick = 0; tick < 30; tick++) e.stepActors();
+  check(`creature ${species} drops no industrial weapon`, !e.getItems().some(i => Object.hasOwn(WEAPON_PICKUP_AMMO, i.itemKind)));
   e.destroy();
 }
 
-// The bore sentinel tracks for 60 ticks, then leaves a harmless committed line
-// for 30 more ticks before firing. The cut uses the component-aware batch eraser
-// in both layers and its thick segment hurts actors that did not dodge.
-{
-  const e = arena({ wall: true, background: true });
-  const dodger = e.spawnPlayer(24, FLOOR - 8);
-  const sentinel = e.spawnCreature(CREATURE.BORE_SENTINEL, 86, FLOOR - 6);
-  const cutCell = (FLOOR - 4) * COLS + 56;
-  check('bore test wall begins in both simulated layers', e.getGrid()[cutCell] === MAT.STONE && e.getGridBg()[cutCell] === MAT.STONE);
-  const sounds = new Set();
-  e.stepActors(); drainTypes(e, sounds); // acquire target and enter charge
-  for (let tick = 0; tick < 60; tick++) { e.stepActors(); drainTypes(e, sounds); }
-  const lockStart = e.getCreatures().find((candidate) => candidate.id === sentinel);
-  check('bore warning tracks for exactly 60 charge ticks before locking',
-    lockStart?.attackState === CREATURE_ATTACK_STATE.CHARGING
-      && lockStart.attackProgress > 0.65 && lockStart.attackProgress < 0.68);
-  const lockedAim = { x: lockStart?.aimX, y: lockStart?.aimY };
-
-  const beforeDodge = e.getPlayer(dodger);
-  e.setPlayerState(dodger, { ...beforeDodge, x: beforeDodge.x, y: 15, vx: 0, vy: 0 });
-  const victim = e.spawnPlayer(24, FLOOR - 8);
-  for (let tick = 0; tick < 29; tick++) { e.stepActors(); drainTypes(e, sounds); }
-  const finalWarning = e.getCreatures().find((candidate) => candidate.id === sentinel);
-  check('bore aim stays committed for the final 30-tick dodge window',
-    finalWarning?.attackState === CREATURE_ATTACK_STATE.CHARGING
-      && finalWarning.attackProgress > 0.98
-      && Math.abs(finalWarning.aimX - lockedAim.x) < 1e-4
-      && Math.abs(finalWarning.aimY - lockedAim.y) < 1e-4);
-  check('the full 90-tick warning remains non-destructive',
-    e.getPlayer(dodger).health === 100 && e.getPlayer(victim).health === 100
-      && e.getGrid()[cutCell] === MAT.STONE && e.getGridBg()[cutCell] === MAT.STONE);
-
-  e.stepActors(); drainTypes(e, sounds);
-  const fired = e.getCreatures().find((candidate) => candidate.id === sentinel);
-  check('bore sentinel exposes a replicated firing animation window',
-    fired?.attackState === CREATURE_ATTACK_STATE.FIRING);
-  check('the locked warning gives the original target time to dodge', e.getPlayer(dodger).health === 100);
-  check('bore beam damages an actor that remains on the committed line', e.getPlayer(victim).health === 58);
-  check('bore beam cuts the foreground and background wall', e.getGrid()[cutCell] === MAT.EMPTY && e.getGridBg()[cutCell] === MAT.EMPTY);
-  check('bore charge and fire semantic sounds are emitted', sounds.has(SOUND_EVENT.BORE_CHARGE) && sounds.has(SOUND_EVENT.BORE_FIRE));
-  e.destroy();
-}
-
-// Each new demolition crew has an autonomous telegraph and emits its distinct
-// projectile/sound from the AI path—not just from the captured player weapon.
-{
-  const scenarios = [
-    {
-      label: 'caustic mortarman', species: CREATURE.CAUSTIC_MORTARMAN,
-      x: 68, y: FLOOR - 6, projectile: PROJECTILE_KIND.ACID_SHELL,
-      sound: SOUND_EVENT.ACID_MORTAR,
-    },
-    {
-      label: 'cluster wasp', species: CREATURE.CLUSTER_WASP,
-      x: 70, y: FLOOR - 28, projectile: PROJECTILE_KIND.CLUSTER_BOMB,
-      sound: SOUND_EVENT.CLUSTER_LAUNCH,
-    },
-    {
-      label: 'minigunner', species: CREATURE.MINIGUNNER,
-      x: 68, y: FLOOR - 6, projectile: PROJECTILE_KIND.MINIGUN_ROUND,
-      sound: SOUND_EVENT.MINIGUN,
-    },
-  ];
-  for (const scenario of scenarios) {
-    const e = arena();
-    e.spawnPlayer(30, FLOOR - 8);
-    const enemy = e.spawnCreature(scenario.species, scenario.x, scenario.y);
-    const sounds = new Set();
-    let sawCharge = false, sawProjectile = false;
-    for (let tick = 0; tick < 100; tick++) {
-      e.stepActors(); drainTypes(e, sounds);
-      const creature = e.getCreatures().find((candidate) => candidate.id === enemy);
-      sawCharge ||= creature?.attackState === CREATURE_ATTACK_STATE.CHARGING
-        && creature.attackProgress > 0;
-      sawProjectile ||= e.getProjectiles().some((projectile) =>
-        projectile.kind === scenario.projectile);
-      if (sawCharge && sawProjectile && sounds.has(scenario.sound)) break;
-    }
-    check(`${scenario.label} telegraphs and launches its autonomous attack`,
-      sawCharge && sawProjectile && sounds.has(scenario.sound));
-    e.destroy();
-  }
-}
-
-// Defeating each new crew member yields one polished, singleton weapon. The
-// ordinary pickup/equip path then drives the same destructive projectile logic.
+// Dropped player tools retain their ammunition and destructive projectile behavior.
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.CAUSTIC_MORTARMAN, ITEM_KIND.ACID_MORTAR,
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.ACID_MORTAR,
     78, FLOOR - 6, 'caustic mortarman',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.ACID_MORTAR, drop, 'acid mortar');
@@ -509,8 +358,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.CLUSTER_WASP, ITEM_KIND.CLUSTER_LAUNCHER,
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.CLUSTER_LAUNCHER,
     78, FLOOR - 30, 'cluster wasp',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.CLUSTER_LAUNCHER, drop, 'cluster launcher');
@@ -556,7 +405,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       firstChildFuses = children.map((child) => child.fuse);
     if (children.length === 16 && !heavyTargetId) {
       const splitX = Math.max(2, Math.min(COLS - 11, children[0].x - 4.5));
-      heavyTargetId = e.spawnCreature(CREATURE.BORE_SENTINEL, splitX, FLOOR - 6);
+      heavyTargetId = e.spawnCreature(CREATURE.BONE_GUARD, splitX, FLOOR - 6);
       const target = e.getCreatures().find((creature) => creature.id === heavyTargetId);
       heavyTargetStart = target?.health ?? 0;
       heavyTargetMin = heavyTargetStart;
@@ -641,9 +490,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
-    72, FLOOR - 6, 'minigunner',
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'oathless_archer',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, drop, 'minigun');
   const pose = e.getPlayer(player);
@@ -780,9 +629,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const firstDrop = killForWeaponDrop(
-    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
-    72, FLOOR - 6, 'first ammo-test minigunner',
+  const firstDrop = stageWeaponPickup(
+    e, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'first ammo-test oathless_archer',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, firstDrop, 'ammo-test minigun');
 
@@ -819,9 +668,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.setPlayerInput(player, { bits: 0, aimX: COLS - 3, aimY: pose.y - 12, seq: 3 });
   e.stepActors();
 
-  const secondDrop = killForWeaponDrop(
-    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
-    150, FLOOR - 6, 'second ammo-test minigunner',
+  const secondDrop = stageWeaponPickup(
+    e, ITEM_KIND.MINIGUN,
+    150, FLOOR - 6, 'second ammo-test oathless_archer',
   );
   const beforePickup = e.getPlayer(player);
   e.setPlayerState(player, {
@@ -848,9 +697,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 {
   const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
-  const drop = killForWeaponDrop(
-    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
-    72, FLOOR - 6, 'empty-latch minigunner',
+  const drop = stageWeaponPickup(
+    e, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'empty-latch oathless_archer',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, drop, 'empty-latch minigun');
   const pose = e.getPlayer(player);

@@ -27,7 +27,7 @@ The eight main quests form one continuous route:
    playable. Vale and Elowen acknowledge the restored bell.
 
 Twelve side quests cover material deliveries, excavation, homecoming, and three
-miniboss encounters: the Root Knight, the Stonebound, and the Ashen Sentinel.
+miniboss encounters: the Root Knight, the Stone Guardian, and the Cinder Castellan.
 Oldroot Mine’s collapsed iron gallery unlocks ore errands for Brann and Iven;
 its near coal seam supplies Mira, and a stepped incline reaches the lower gold
 working. Eight named residents give quests in contextual conversations. `world.js` owns

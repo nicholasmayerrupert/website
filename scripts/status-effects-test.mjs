@@ -88,7 +88,7 @@ run('environment applies lingering fire and immersion extinguishes it',(e,id)=>{
 });
 run('creature effects pause during hibernation and retain identity through saves',(e,id)=>{
  e.startMission(MISSION.FRONTIER,id);
- const c=e.spawnScriptedCreature(CREATURE.SHIELD_ANCHOR,110+e.getWorldOffsetX(),70+e.getWorldOffsetY());
+ const c=e.spawnScriptedCreature(CREATURE.FEN_WISP,110+e.getWorldOffsetX(),70+e.getWorldOffsetY());
  e.applyStatusEffect(A.CREATURE,c,S.POISONED,300,2,A.PLAYER,id);
  const original=statuses(e,c,A.CREATURE);e.shiftWorldXY(128,0);e.shiftWorldXY(128,0);e.setCreatureRuntime(true,false);tick(e);
  assert.deepEqual(statuses(e,c,A.CREATURE),[]);tick(e,80);

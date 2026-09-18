@@ -5,11 +5,10 @@
   },
   "creatures": [
     {
-      "key": "BONE_DINOSAUR",
+      "key": "CINDERJAW_DRAGON",
       "name": "Cinderjaw Dragon",
       "frames": 3,
-      "file": "bone_dinosaur-3-coarse-v1.png",
-      "reference": "references/bone_dinosaur.png",
+      "file": "cinderjaw_dragon-3-coarse-v1.png",
       "width": 84,
       "height": 56,
       "review": {

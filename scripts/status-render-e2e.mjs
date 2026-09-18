@@ -59,7 +59,7 @@ process.exitCode=await runBrowserCases({ 'status-render':async({page,baseURL,che
   e.glSetItems(new Float32Array(0)); e.glSetProjectiles(new Float32Array(0));
   const same = (a, b) => a.every((v, i) => v === b[i]);
   const changes = (a, b) => a.reduce((n, v, i) => n + (i % 4 === 0 && (v !== b[i] || a[i+1] !== b[i+1] || a[i+2] !== b[i+2]) ? 1 : 0), 0);
-  const results = [], gallery = new Set([-1, CREATURE.BRIAR_WOLF, CREATURE.BELL_BAT, CREATURE.MINNOW, CREATURE.FROST_GIANT, CREATURE.LAVA_TOAD, CREATURE.BONE_DINOSAUR]);
+  const results = [], gallery = new Set([-1, CREATURE.BRIAR_WOLF, CREATURE.BELL_BAT, CREATURE.MINNOW, CREATURE.FROST_GIANT, CREATURE.LAVA_TOAD, CREATURE.CINDERJAW_DRAGON]);
   const creatureSizes = (await (await fetch('/src/sand/abi.schema.json')).json()).enums.CreatureSpecies.descriptors;
   const subjects = [{ id: -1, name: 'Player', w: 4, h: 9 }, ...CREATURE_SPECIES_DEFS];
   for (const subject of subjects) {

@@ -8,7 +8,7 @@ export const CREATURE_ATTACK_ANIMATIONS = {
     { name: 'Ground smash', windup: range('windup', 3, 3), attack: range('attack', 3, 3), recover: range('recover', 3, 3) },
     { name: 'Ice spear', windup: range('windup', 6, 3), attack: range('attack', 6, 3), recover: range('recover', 6, 3) },
   ],
-  BONE_DINOSAUR: [
+  CINDERJAW_DRAGON: [
     { name: 'Bite', windup: range('windup', 0, 1), attack: range('attack', 0, 2), recover: range('recover', 0, 1) },
     { name: 'Rush', windup: range('windup', 1, 1), attack: range('attack', 2, 2, true), recover: range('recover', 1, 1) },
     { name: 'Fire breath', windup: range('windup', 2, 1), attack: range('special', 0, 2, true), recover: range('recover', 2, 1) },

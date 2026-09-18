@@ -114,7 +114,7 @@ console.log('ok: real WASM consumes per-instance content, keeps structures stabl
 
 const mirror = createEngineWasm({ cols: 96, rows: 96, infinite: true, storageRole: 'presentation', planetId: PLANET.FRONTIER });
 try {
-  assert.ok(mirror.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, 0, 0), 'art previews do not require authority-only grounding buffers');
+  assert.ok(mirror.spawnScriptedCreature(CREATURE.VILLAGER_KEEPER, 0, 0), 'art previews do not require authority-only grounding buffers');
 } finally { mirror.destroy(); }
 
 // An authored clearing reserves an entire procedural building before either

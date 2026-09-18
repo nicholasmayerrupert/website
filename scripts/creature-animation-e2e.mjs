@@ -27,7 +27,7 @@ strong { color:#9ee6c1; } #result { margin-top:12px; }
     ]);
     await initSandWasm();
     const scenes = [], checks = [], o = OFF.creatureSnapshot;
-    for (const key of ['VILLAGE_GUARD','FROST_GIANT','BONE_DINOSAUR']) {
+    for (const key of ['VILLAGE_GUARD','FROST_GIANT','CINDERJAW_DRAGON']) {
       const def = CREATURE_ROSTER.find(d => d.key === key), section = document.createElement('section');
       section.innerHTML = `<header><span>${def.name}</span><strong>Walking</strong></header>`;
       const canvas = document.createElement('canvas'); canvas.width = 1040; canvas.height = 208;
@@ -44,7 +44,7 @@ strong { color:#9ee6c1; } #result { margin-top:12px; }
       }
       function hash() { const pixels=e.glReadPixels(0,0,canvas.width,canvas.height);let h=2166136261;for(const v of pixels)h=Math.imul(h^v,16777619);return h>>>0; }
       const nominal=def.stats.walkSpeed || .15;
-      if (key !== 'BONE_DINOSAUR') {
+      if (key !== 'CINDERJAW_DRAGON') {
         const paths=[];
         for (const external of [false,true]) {
           render(0,nominal,external);

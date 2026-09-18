@@ -1,6 +1,6 @@
 namespace {
 static constexpr uint32_t CHECKPOINT_MAGIC = 0x52455453;
-static constexpr uint32_t CHECKPOINT_VERSION = 10;
+static constexpr uint32_t CHECKPOINT_VERSION = 11;
 static constexpr size_t CHECKPOINT_MAX = 192u * 1024u * 1024u;
 uint32_t checkpointHash(const uint8_t* data, size_t size) {
   uint32_t hash = 2166136261u;
@@ -194,6 +194,19 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   a.version=version;
   checkpointState(a,E);
   if (!a.valid || a.at!=bytes.size()) return false;
+  if (version <= 10) {
+    static constexpr uint8_t speciesMap[] = {0, 1, 2, 3, 4, 5, 6, 7, 21, 8, 20, 9, 10, 22, 11, 17, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
+    auto migrate = [&](auto& actor) {
+      if (actor.species >= sizeof(speciesMap)) return false;
+      actor.species = speciesMap[actor.species];
+      return true;
+    };
+    for (auto& c : E.creatures.creatures) if (!migrate(c)) return false;
+    for (auto& bucket : E.creatures.dormantRegions)
+      for (auto& c : bucket.second) if (!migrate(c)) return false;
+    for (auto& spawn : E.creatures.pendingSpawns) if (!migrate(spawn)) return false;
+  }
+
   if (E.worldClock.dayTick < 0 || E.worldClock.dayTick >= WorldClockSystem::DAY_TICKS) return false;
   const size_t cells=(size_t)E.cols*E.rows;
   for (auto* layer:{&E.fg,&E.bg}) {
@@ -278,6 +291,11 @@ bool CheckpointSystem::read(const uint8_t* data, int length) {
   for (const auto& chest:E.containers.chests) for (const auto& slot:chest.loot) if (!E.magic.validItem(slot)) return false;
   if (E.missions.objectives.size()!=E.content.quests.size() || E.missions.residentIds.size()!=E.content.residents.size()) return false;
   auto restoreEffects = [&](Creature& c) {
+    if (c.species >= CS_COUNT) return false;
+    if (version <= 10) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+      c.attackPattern = 0;
+    }
     const auto& species = E.creatures.species(c);
     c.swimming = (species.locomotion == CL_AQUATIC || species.locomotion == CL_AMPHIBIOUS)
       && E.creatures.fluidCoverage(c.wx, c.wy, species.w, species.h) >= species.fluidThreshold;

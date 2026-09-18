@@ -15,12 +15,12 @@ refinement recorded in `../player/base-grid-v2-refinement.json`.
 
 Open `/src/sand/art/style-review/index.html` on the development server for a
 side-by-side comparison of the current sprites and generated candidates.
-The dragon design is imported through `../skeleton-dragon/`; the player body
+The dragon design is imported through `../cinderjaw-dragon/`; the player body
 candidate is a style reference for the component pipeline in `../player/`.
 
 - `dragon-candidate-v1.png`: **user-selected design**, with idle, bite anticipation, bite release and breath
   design poses in a two-by-two grid. This is a design study, not a complete
-  movement or attack set. Complete runtime sheets live in `../skeleton-dragon/`.
+  movement or attack set. Complete runtime sheets live in `../cinderjaw-dragon/`.
 - `player-body-candidate-v2.png`: six modular body-only poses. Head, torso,
   hips and legs are present; arms, hands and weapons are absent. A selected body
   needs native-resolution conversion and an attachment/aiming check before it

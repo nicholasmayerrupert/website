@@ -31,7 +31,6 @@
         "height": 9.5,
         "bottom": 25
       },
-      "reference": "references/minnow.png",
       "sheet": "atlases/minnow.png",
       "status": "imported",
       "generation": "exec-0caa7158-f866-4c94-a6ad-dfde9524dc69.png",
@@ -48,7 +47,7 @@
       "colorLimit": 12
     },
     "PIKE": {
-      "name": "Silverfang pike",
+      "name": "pike",
       "species": 1,
       "locomotion": "CL_AQUATIC",
       "grounded": false,
@@ -60,7 +59,6 @@
         "height": 9.5,
         "bottom": 25
       },
-      "reference": "references/pike.png",
       "sheet": "atlases/pike.png",
       "status": "imported",
       "generation": "exec-35d8a704-dd59-48d4-a99a-c76d514ff1aa.png",
@@ -77,7 +75,7 @@
       "colorLimit": 12
     },
     "FOX": {
-      "name": "Ember fox",
+      "name": "fox",
       "species": 2,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
@@ -89,7 +87,6 @@
         "height": 19.5,
         "bottom": 25
       },
-      "reference": "references/fox.png",
       "sheet": "atlases/fox.png",
       "status": "imported",
       "generation": "exec-6c70c4ce-3de7-4579-9092-59cbe0505ccc.png",
@@ -229,7 +226,6 @@
         "height": 20,
         "bottom": 25
       },
-      "reference": "references/hare.png",
       "sheet": "atlases/hare.png",
       "status": "imported",
       "generation": "exec-6e09c67a-ee41-462d-84e8-ed1762d37dba.png",
@@ -254,7 +250,7 @@
       "fit": "height"
     },
     "CRAWLER": {
-      "name": "Mossback crawler",
+      "name": "crawler",
       "species": 4,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
@@ -266,7 +262,6 @@
         "height": 13,
         "bottom": 25
       },
-      "reference": "references/crawler.png",
       "sheet": "atlases/crawler.png",
       "status": "imported",
       "generation": "exec-402f617c-4de6-4af1-9112-20cddf4cbf10.png",
@@ -303,7 +298,6 @@
         "height": 15,
         "bottom": 25
       },
-      "reference": "references/mole.png",
       "sheet": "atlases/mole.png",
       "status": "imported",
       "generation": "exec-184cc097-8ac5-4959-8a70-538a2373832e.png",
@@ -340,7 +334,6 @@
         "height": 13,
         "bottom": 25
       },
-      "reference": "references/bird.png",
       "sheet": "atlases/bird.png",
       "status": "imported",
       "generation": "exec-2273788f-325d-4e49-af54-e0b702835148.png",
@@ -357,8 +350,8 @@
       "colorLimit": 12,
       "fit": "height"
     },
-    "DYNAMITEER": {
-      "name": "Briar goblin",
+    "BRIAR_GOBLIN": {
+      "name": "briar goblin",
       "species": 7,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
@@ -370,8 +363,7 @@
         "height": 16,
         "bottom": 25
       },
-      "reference": "references/dynamiteer.png",
-      "sheet": "atlases/dynamiteer.png",
+      "sheet": "atlases/briar_goblin.png",
       "status": "imported",
       "moveTicks": 9,
       "generation": "exec-17a6e795-7947-4335-bcaf-5cb01816bd21.png",
@@ -395,47 +387,9 @@
       "swimTicks": 10,
       "fit": "height"
     },
-    "BORE_SENTINEL": {
-      "name": "Hollow knight",
+    "FEN_WITCH": {
+      "name": "fen witch",
       "species": 8,
-      "locomotion": "CL_AMPHIBIOUS",
-      "grounded": true,
-      "width": 24,
-      "height": 26,
-      "pixelScale": 0.5,
-      "targetBounds": {
-        "width": 14,
-        "height": 15,
-        "bottom": 25
-      },
-      "reference": "references/bore_sentinel.png",
-      "sheet": "atlases/bore_sentinel.png",
-      "status": "imported",
-      "moveTicks": 9,
-      "generation": "exec-45cd7bab-f364-41a1-af92-8e8bb92e661c.png",
-      "atlas": {
-        "columns": 4,
-        "rows": 4,
-        "swim": [
-          12,
-          13,
-          14
-        ],
-        "rowEdges": [
-          0,
-          32,
-          64,
-          96,
-          128
-        ]
-      },
-      "colorLimit": 12,
-      "swimTicks": 10,
-      "fit": "height"
-    },
-    "CAUSTIC_MORTARMAN": {
-      "name": "Fen witch",
-      "species": 9,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 24,
@@ -446,8 +400,7 @@
         "height": 18,
         "bottom": 25
       },
-      "reference": "references/caustic_mortarman.png",
-      "sheet": "atlases/caustic_mortarman.png",
+      "sheet": "atlases/fen_witch.png",
       "status": "imported",
       "moveTicks": 9,
       "generation": "exec-5bc8681b-08a7-4e27-bb12-9f19570042b6.png",
@@ -471,39 +424,9 @@
       "swimTicks": 10,
       "fit": "height"
     },
-    "CLUSTER_WASP": {
-      "name": "Thornwing",
-      "species": 10,
-      "locomotion": "CL_FLYING",
-      "grounded": false,
-      "width": 24,
-      "height": 26,
-      "pixelScale": 0.5,
-      "targetBounds": {
-        "width": 18.5,
-        "height": 13,
-        "bottom": 25
-      },
-      "reference": "references/cluster_wasp.png",
-      "sheet": "atlases/cluster_wasp.png",
-      "status": "imported",
-      "generation": "exec-fc71bd91-e048-480a-a2a1-774e6eb87f4f.png",
-      "atlas": {
-        "columns": 4,
-        "rows": 3,
-        "rowEdges": [
-          0,
-          32,
-          64,
-          96
-        ]
-      },
-      "colorLimit": 12,
-      "fit": "height"
-    },
-    "MINIGUNNER": {
-      "name": "Oathless archer",
-      "species": 11,
+    "OATHLESS_ARCHER": {
+      "name": "oathless archer",
+      "species": 9,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 24,
@@ -514,8 +437,7 @@
         "height": 20,
         "bottom": 25
       },
-      "reference": "references/minigunner.png",
-      "sheet": "atlases/minigunner.png",
+      "sheet": "atlases/oathless_archer.png",
       "status": "imported",
       "moveTicks": 9,
       "generation": "exec-d0ea5903-d943-4484-aa68-50394eca4014.png",
@@ -539,9 +461,9 @@
       "swimTicks": 10,
       "fit": "height"
     },
-    "SURVEYOR": {
-      "name": "surveyor",
-      "species": 12,
+    "VILLAGER_SCHOLAR": {
+      "name": "villager scholar",
+      "species": 10,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 20,
@@ -552,8 +474,7 @@
         "height": 21,
         "bottom": 25
       },
-      "reference": "references/surveyor.png",
-      "sheet": "atlases/surveyor.png",
+      "sheet": "atlases/villager_scholar.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -597,39 +518,9 @@
       "colorLimit": 12,
       "swimTicks": 10
     },
-    "SHIELD_ANCHOR": {
-      "name": "shield anchor",
-      "species": 13,
-      "locomotion": "CL_STATIONARY",
-      "grounded": true,
-      "width": 24,
-      "height": 26,
-      "pixelScale": 0.5,
-      "targetBounds": {
-        "width": 20,
-        "height": 13,
-        "bottom": 25
-      },
-      "reference": "references/shield_anchor.png",
-      "sheet": "atlases/shield_anchor.png",
-      "status": "imported",
-      "generation": "exec-b6a88b73-4356-4084-aaf8-3460704e1909.png",
-      "atlas": {
-        "columns": 4,
-        "rows": 3,
-        "rowEdges": [
-          0,
-          32,
-          64,
-          96
-        ]
-      },
-      "colorLimit": 12,
-      "fit": "height"
-    },
-    "QUARRY_FOREMAN": {
-      "name": "The Stonebound",
-      "species": 14,
+    "STONE_GUARDIAN": {
+      "name": "stone guardian",
+      "species": 11,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -640,8 +531,7 @@
         "height": 31,
         "bottom": 71
       },
-      "reference": "references/quarry_foreman.png",
-      "sheet": "atlases/quarry_foreman.png",
+      "sheet": "atlases/stone_guardian.png",
       "status": "imported",
       "moveTicks": 9,
       "generation": "exec-74390479-d18c-4dc4-8aa1-23438db05019.png",
@@ -665,77 +555,9 @@
       "swimTicks": 10,
       "fit": "height"
     },
-    "REACTOR_WARDEN": {
-      "name": "Ashen Sentinel",
-      "species": 15,
-      "locomotion": "CL_AMPHIBIOUS",
-      "grounded": true,
-      "width": 72,
-      "height": 72,
-      "pixelScale": 0.5,
-      "targetBounds": {
-        "width": 28,
-        "height": 37,
-        "bottom": 71
-      },
-      "reference": "references/reactor_warden.png",
-      "sheet": "atlases/reactor_warden.png",
-      "status": "imported",
-      "moveTicks": 9,
-      "generation": "exec-e3eba205-3c65-41d6-ab74-e2286b88a2c0.png",
-      "atlas": {
-        "columns": 4,
-        "rows": 4,
-        "swim": [
-          12,
-          13,
-          14
-        ],
-        "rowEdges": [
-          0,
-          64,
-          128,
-          192,
-          256
-        ]
-      },
-      "colorLimit": 12,
-      "swimTicks": 10,
-      "fit": "height"
-    },
-    "REACTOR_CORE": {
-      "name": "reactor core",
-      "species": 16,
-      "locomotion": "CL_STATIONARY",
-      "grounded": true,
-      "width": 24,
-      "height": 26,
-      "pixelScale": 0.5,
-      "targetBounds": {
-        "width": 20,
-        "height": 12,
-        "bottom": 25
-      },
-      "reference": "references/reactor_core.png",
-      "sheet": "atlases/reactor_core.png",
-      "status": "imported",
-      "generation": "exec-38d9f150-ee0d-49e4-897b-bb9445a26756.png",
-      "atlas": {
-        "columns": 4,
-        "rows": 3,
-        "rowEdges": [
-          0,
-          32,
-          64,
-          96
-        ]
-      },
-      "colorLimit": 12,
-      "fit": "height"
-    },
-    "IRIS_COMMANDER": {
-      "name": "IRIS commander",
-      "species": 17,
+    "VILLAGER_KEEPER": {
+      "name": "villager keeper",
+      "species": 12,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
       "width": 20,
@@ -746,8 +568,7 @@
         "height": 21,
         "bottom": 25
       },
-      "reference": "references/iris_commander.png",
-      "sheet": "atlases/iris_commander.png",
+      "sheet": "atlases/villager_keeper.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -790,9 +611,9 @@
       "fit": "height",
       "colorLimit": 12
     },
-    "IRIS_ENGINEER": {
-      "name": "IRIS engineer",
-      "species": 18,
+    "VILLAGER_SMITH": {
+      "name": "villager smith",
+      "species": 13,
       "locomotion": "CL_STATIONARY",
       "grounded": true,
       "width": 20,
@@ -803,8 +624,7 @@
         "height": 21,
         "bottom": 25
       },
-      "reference": "references/iris_engineer.png",
-      "sheet": "atlases/iris_engineer.png",
+      "sheet": "atlases/villager_smith.png",
       "status": "imported",
       "palette": {
         ".": "#000000",
@@ -849,7 +669,7 @@
     },
     "VILLAGER": {
       "name": "villager",
-      "species": 19,
+      "species": 14,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 20,
@@ -860,7 +680,6 @@
         "height": 21,
         "bottom": 25
       },
-      "reference": "references/villager.png",
       "sheet": "atlases/villager.png",
       "status": "imported",
       "palette": {
@@ -907,7 +726,7 @@
     },
     "THORNBOUND_HART": {
       "name": "Thornbound Hart",
-      "species": 20,
+      "species": 15,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -918,7 +737,6 @@
         "height": 60,
         "bottom": 71
       },
-      "reference": "references/thornbound_hart.png",
       "sheet": "atlases/thornbound_hart.png",
       "status": "imported",
       "generation": "exec-46afd99b-7d09-4e67-b920-04556a236a21.png",
@@ -943,7 +761,7 @@
     },
     "MIRE_MATRON": {
       "name": "Mire Matron",
-      "species": 21,
+      "species": 16,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -954,7 +772,6 @@
         "height": 42,
         "bottom": 71
       },
-      "reference": "references/mire_matron.png",
       "sheet": "atlases/mire_matron.png",
       "status": "imported",
       "generation": "exec-20c87a93-6ff3-42fc-b5ac-28275f914326.png",
@@ -980,7 +797,7 @@
     },
     "CINDER_CASTELLAN": {
       "name": "Cinder Castellan",
-      "species": 22,
+      "species": 17,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -991,7 +808,6 @@
         "height": 53,
         "bottom": 71
       },
-      "reference": "references/cinder_castellan.png",
       "sheet": "atlases/cinder_castellan.png",
       "status": "imported",
       "moveTicks": 9,
@@ -1029,7 +845,7 @@
     },
     "HOLLOW_BELLKEEPER": {
       "name": "Hollow Bellkeeper",
-      "species": 23,
+      "species": 18,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -1040,7 +856,6 @@
         "height": 51,
         "bottom": 71
       },
-      "reference": "references/hollow_bellkeeper.png",
       "sheet": "atlases/hollow_bellkeeper.png",
       "status": "imported",
       "moveTicks": 9,
@@ -1066,8 +881,8 @@
       "fit": "height"
     },
     "BRIAR_WOLF": {
-      "name": "Briar wolf",
-      "species": 24,
+      "name": "briar wolf",
+      "species": 19,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 24,
@@ -1078,7 +893,6 @@
         "height": 21,
         "bottom": 25
       },
-      "reference": "references/briar_wolf.png",
       "sheet": "atlases/briar_wolf.png",
       "status": "imported",
       "generation": "exec-c59ec54c-f379-4008-b2f7-09c0a6d8e9e3.png",
@@ -1102,8 +916,8 @@
       "swimTicks": 10
     },
     "BELL_BAT": {
-      "name": "Bell bat",
-      "species": 25,
+      "name": "bell bat",
+      "species": 20,
       "locomotion": "CL_FLYING",
       "grounded": false,
       "width": 24,
@@ -1114,7 +928,6 @@
         "height": 12,
         "bottom": 25
       },
-      "reference": "references/bell_bat.png",
       "sheet": "atlases/bell_bat.png",
       "status": "imported",
       "generation": "exec-2715c262-c4f4-4511-9a76-48c22f7fd5ec.png",
@@ -1132,8 +945,8 @@
       "fit": "height"
     },
     "BONE_GUARD": {
-      "name": "Bone guard",
-      "species": 26,
+      "name": "bone guard",
+      "species": 21,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 24,
@@ -1144,7 +957,6 @@
         "height": 18,
         "bottom": 25
       },
-      "reference": "references/bone_guard.png",
       "sheet": "atlases/bone_guard.png",
       "status": "imported",
       "moveTicks": 9,
@@ -1170,8 +982,8 @@
       "fit": "height"
     },
     "FEN_WISP": {
-      "name": "Fen wisp",
-      "species": 27,
+      "name": "fen wisp",
+      "species": 22,
       "locomotion": "CL_FLYING",
       "grounded": false,
       "width": 24,
@@ -1182,7 +994,6 @@
         "height": 18,
         "bottom": 25
       },
-      "reference": "references/fen_wisp.png",
       "sheet": "atlases/fen_wisp.png",
       "status": "imported",
       "generation": "exec-38fc61dc-1438-4859-81e5-7d933c82beb3.png",
@@ -1200,8 +1011,8 @@
       "fit": "height"
     },
     "ROOT_KNIGHT": {
-      "name": "Root Knight",
-      "species": 28,
+      "name": "The Root Knight",
+      "species": 23,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 72,
@@ -1212,7 +1023,6 @@
         "height": 41,
         "bottom": 71
       },
-      "reference": "references/root_knight.png",
       "sheet": "atlases/root_knight.png",
       "status": "imported",
       "moveTicks": 9,
@@ -1239,7 +1049,7 @@
     },
     "MUMMY": {
       "name": "mummy",
-      "species": 30,
+      "species": 25,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 28,
@@ -1250,7 +1060,6 @@
         "height": 23,
         "bottom": 31
       },
-      "reference": "references/mummy.png",
       "sheet": "atlases/mummy.png",
       "status": "imported",
       "moveTicks": 9,
@@ -1277,7 +1086,7 @@
     },
     "LAVA_TOAD": {
       "name": "lava toad",
-      "species": 31,
+      "species": 26,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 34,
@@ -1288,7 +1097,6 @@
         "height": 17,
         "bottom": 25
       },
-      "reference": "references/lava_toad.png",
       "sheet": "atlases/lava_toad.png",
       "status": "imported",
       "generation": "exec-daccc1df-3c2c-46ef-be38-50b3ff4afaec.png",
@@ -1314,7 +1122,7 @@
     },
     "VILLAGE_GUARD": {
       "name": "village guard",
-      "species": 32,
+      "species": 27,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 26,
@@ -1325,7 +1133,6 @@
         "height": 21,
         "bottom": 27
       },
-      "reference": "references/village_guard.png",
       "sheet": "atlases/village_guard.png",
       "status": "imported",
       "palette": {
@@ -1363,7 +1170,7 @@
     },
     "VILLAGE_HUNTER": {
       "name": "village hunter",
-      "species": 33,
+      "species": 28,
       "locomotion": "CL_AMPHIBIOUS",
       "grounded": true,
       "width": 28,
@@ -1374,7 +1181,6 @@
         "height": 21,
         "bottom": 27
       },
-      "reference": "references/village_hunter.png",
       "sheet": "atlases/village_hunter.png",
       "status": "imported",
       "palette": {
@@ -1411,7 +1217,7 @@
       "swimTicks": 10
     },
     "FROST_GIANT": {
-      "name": "Frost giant",
+      "name": "frost giant",
       "grounded": true,
       "width": 46,
       "height": 50,
@@ -1496,7 +1302,8 @@
           10
         ]
       },
-      "generation": "exec-aaed6334-941c-461d-9579-e980de0e5527.png"
+      "generation": "exec-aaed6334-941c-461d-9579-e980de0e5527.png",
+      "species": 24
     }
   }
 }

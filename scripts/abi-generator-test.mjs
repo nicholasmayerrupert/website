@@ -218,26 +218,26 @@ run('new behavior profile without a handler is rejected', (schema) => {
 run('duplicate behavior handler row is rejected', () => {},
   'duplicate profile row', {
     behaviorProfiles: sourceBehaviorProfiles.replace(
-      /^SAND_CREATURE_BEHAVIOR_PROFILE\(CRBH_REACTOR_WARDEN,.*$/m,
+      /^SAND_CREATURE_BEHAVIOR_PROFILE\(CRBH_HOVER,.*$/m,
       sourceBehaviorProfiles.match(
         /^SAND_CREATURE_BEHAVIOR_PROFILE\(CRBH_GENERIC,.*$/m)[0]),
   });
 run('missing creature attack policy is rejected', () => {},
-  'behavior policy ids must be unique and dense in source order', {
+  'behavior policies must be non-empty', {
     behaviorPolicies: sourceBehaviorPolicies.replace(
       /^SAND_CREATURE_ATTACK_POLICY\(CAH_GENERIC, 0\)\n/m, ''),
   });
 run('duplicate creature policy ids are rejected', () => {},
   'behavior policy ids must be unique and dense in source order', {
     behaviorPolicies: sourceBehaviorPolicies.replace(
-      'SAND_CREATURE_ATTACK_POLICY(CAH_BOSS, 6)',
-      'SAND_CREATURE_ATTACK_POLICY(CAH_BOSS, 5)'),
+      'SAND_CREATURE_FLYING_POLICY(CFM_HOVER, 1)',
+      'SAND_CREATURE_FLYING_POLICY(CFM_HOVER, 0)'),
   });
 run('reordered creature policies are rejected', () => {},
   'behavior policy ids must be unique and dense in source order', {
     behaviorPolicies: sourceBehaviorPolicies.replace(
-      'SAND_CREATURE_ATTACK_POLICY(CAH_GENERIC, 0)\nSAND_CREATURE_ATTACK_POLICY(CAH_DYNAMITEER, 1)',
-      'SAND_CREATURE_ATTACK_POLICY(CAH_DYNAMITEER, 1)\nSAND_CREATURE_ATTACK_POLICY(CAH_GENERIC, 0)'),
+      'SAND_CREATURE_FLYING_POLICY(CFM_DEFAULT, 0)\nSAND_CREATURE_FLYING_POLICY(CFM_HOVER, 1)',
+      'SAND_CREATURE_FLYING_POLICY(CFM_HOVER, 1)\nSAND_CREATURE_FLYING_POLICY(CFM_DEFAULT, 0)'),
   });
 run('new render profile without a handler is rejected', (schema) => {
   schema.creatureRenderProfiles.CRP_FIXTURE =
@@ -488,10 +488,10 @@ check('empty external player and item snapshots avoid null pointer ranges',
     && creatureRenderer.includes('if (glUseExtItems && data && count > 0)'));
 check('creature ids and descriptor order preserve the stable ABI',
   CREATURE.MINNOW === 0
-    && CREATURE.DYNAMITEER === 7
-    && CREATURE.VILLAGER === 19
+    && CREATURE.BRIAR_GOBLIN === 7
+    && CREATURE.VILLAGER === 14
     && CREATURE_SPECIES_DEFS.length === sourceSchema.enums.CreatureSpecies.descriptors.length
-    && CREATURE_SPECIES_DEFS[19].key === 'villager');
+    && CREATURE_SPECIES_DEFS[CREATURE.VILLAGER].key === 'villager');
 const sourceCreativeSpecies = sourceSchema.enums.CreatureSpecies.descriptors
   .filter((descriptor) => descriptor.creative !== undefined)
   .sort((a, b) => a.creative.order - b.creative.order);

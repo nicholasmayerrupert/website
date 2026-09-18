@@ -40,7 +40,7 @@ async function decode(record) {
   } else bytes = new Uint8Array(record.bytes);
   if (bytes.length < 24 || bytes.length > 192 * 1024 * 1024) throw new Error('Invalid checkpoint size');
   const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (header.getUint32(0, true) !== 0x52455453 || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(header.getUint32(4, true))) throw new Error('Unsupported checkpoint');
+  if (header.getUint32(0, true) !== 0x52455453 || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(header.getUint32(4, true))) throw new Error('Unsupported checkpoint');
   let hash = 2166136261;
   for (let i = 0; i < bytes.length - 4; i++) hash = Math.imul(hash ^ bytes[i], 16777619) >>> 0;
   if (hash !== header.getUint32(bytes.length - 4, true)) throw new Error('Checkpoint checksum mismatch');
@@ -53,7 +53,20 @@ export async function loadAdventure() {
       const request = db.transaction('checkpoints').objectStore('checkpoints').get(recordKey);
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
-    try { return await decode(await get(key)); }
+    try {
+      const current = await get(key);
+      if (current) return await decode(current);
+      // Only this content identity accepts the version-10 roster save namespace.
+      if (identity === 0x8d031860) {
+        try { return await decode(await get('hollow-bell:2:10874365')); }
+        catch (error) {
+          const previous = await decode(await get('hollow-bell:2:10874365:previous'));
+          if (!previous) throw error;
+          return previous;
+        }
+      }
+      return null;
+    }
     catch (error) {
       const record = await get(`${key}:previous`);
       const previous = await decode(record);

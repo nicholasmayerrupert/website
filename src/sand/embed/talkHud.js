@@ -8,18 +8,18 @@ import {
 } from '../wasmBridge/abi.generated.js';
 
 const TALKABLES = Object.freeze({
-  [CREATURE.SURVEYOR]: {
-    name: 'IRIS Surveyor',
+  [CREATURE.VILLAGER_SCHOLAR]: {
+    name: 'Village scholar',
     dialogue: 'Hold the rescue beam (3) on me.',
     shipDialogue: 'Three researchers are trapped at Greenfall Relay.',
   },
-  [CREATURE.IRIS_COMMANDER]: {
-    name: 'Commander Vale',
+  [CREATURE.VILLAGER_KEEPER]: {
+    name: 'Keeper Vale',
     dialogue: 'Earth: extract three researchers from Greenfall Relay.',
     action: 'Earth mission',
   },
-  [CREATURE.IRIS_ENGINEER]: {
-    name: 'Engineer Osei',
+  [CREATURE.VILLAGER_SMITH]: {
+    name: 'Smith Osei',
     dialogue: 'Hold F to block; release to fire. Hold Space to thrust.',
   },
 });
@@ -299,7 +299,7 @@ export function createTalkHud(root, game, onAction) {
     }
 
     const commander = actors.find(
-      ({ species, alive }) => species === CREATURE.IRIS_COMMANDER && alive,
+      ({ species, alive }) => species === CREATURE.VILLAGER_KEEPER && alive,
     );
     if (!commander) {
       questMarker.hidden = true;

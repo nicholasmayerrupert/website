@@ -234,7 +234,7 @@ for (const [label, sourceAngle, blocked] of [
 {
   const e = arena();
   const id = e.spawnPlayer(28, FLOOR - 8);
-  e.spawnCreature(CREATURE.BORE_SENTINEL, 90, FLOOR - 6);
+  e.spawnCreature(CREATURE.BONE_GUARD, 90, FLOOR - 6);
   let p = e.getPlayer(id);
   for (let tick = 0; tick < 120 && p.shieldHealth === 200; tick++) {
     e.setPlayerInput(id, {
@@ -252,7 +252,7 @@ for (const [label, sourceAngle, blocked] of [
 {
   const e = arena();
   const id = e.spawnPlayer(72, FLOOR - 8);
-  e.spawnCreature(CREATURE.MINIGUNNER, 122, FLOOR - 6);
+  e.spawnCreature(CREATURE.OATHLESS_ARCHER, 122, FLOOR - 6);
   let p = e.getPlayer(id);
   for (let tick = 0; tick < 100 && p.shieldHealth === 200; tick++) {
     e.setPlayerInput(id, {

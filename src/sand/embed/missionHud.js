@@ -16,10 +16,10 @@ const MISSION_NAMES = Object.freeze({
 
 const OBJECTIVE_LABELS = Object.freeze({
   [OBJECTIVE_KIND.CLEAR]: 'Clear the demolition crew',
-  [OBJECTIVE_KIND.RESCUE]: 'Beam out the surveyors',
-  [OBJECTIVE_KIND.ANCHOR]: 'Disable the shield anchors',
+  [OBJECTIVE_KIND.RESCUE]: 'Beam out the villager_scholars',
+  [OBJECTIVE_KIND.ANCHOR]: 'Dispel the ward wisps',
   [OBJECTIVE_KIND.BOSS]: 'Defeat the facility commander',
-  [OBJECTIVE_KIND.CORE]: 'Breach the reactor core',
+  [OBJECTIVE_KIND.CORE]: 'Defeat the Stone Guardian',
   [OBJECTIVE_KIND.EXTRACT]: 'Reach the extraction beacon',
 });
 

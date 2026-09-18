@@ -62,7 +62,7 @@ run('an enemy spell damages the player only when its projectile arrives',(e,id)=
  assert.ok(e.getPlayer(id).health<before,'the traveling attack deals damage on contact');
  assert.ok(soundTypes(e).includes(SOUND_EVENT.SPELL_IMPACT));
 });
-for(const species of [CREATURE.FEN_WISP,CREATURE.MIRE_MATRON,CREATURE.CINDER_CASTELLAN,CREATURE.MINIGUNNER]){
+for(const species of [CREATURE.FEN_WISP,CREATURE.MIRE_MATRON,CREATURE.CINDER_CASTELLAN,CREATURE.OATHLESS_ARCHER]){
  run(`enemy ${species} launches a visible shot that carves the first wall`,(e,id)=>{
   backgroundFloor(e);
   for(let layer=0;layer<2;layer++){

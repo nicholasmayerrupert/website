@@ -3657,7 +3657,7 @@ export default {
       "key": "last-shift",
       "title": "An oath of cinders",
       "place": "Far west · The Cinder Works",
-      "summary": "Shut down the quarry foreman.",
+      "summary": "Shut down the Stone Guardian.",
       "description": "The Cinder Castellan holds the forge beneath an unbroken oath. End its vigil and recover the clapper for the Hollow Bell.",
       "hint": "The hammer’s light marks its landing. Dodge the slam, cross the scorched floor, and punish its long recovery.",
       "target": "foundry.foreman",
@@ -3939,12 +3939,12 @@ export default {
     },
     {
       "key": "archive-promise",
-      "title": "The Stonebound reader",
+      "title": "Stone Guardian reader",
       "giver": 3,
       "target": "archive.console",
       "condition": {
         "kind": "defeat",
-        "species": "QUARRY_FOREMAN",
+        "species": "STONE_GUARDIAN",
         "count": 1
       },
       "after": [
@@ -3996,7 +3996,7 @@ export default {
       "target": "foundry.foreman",
       "condition": {
         "kind": "defeat",
-        "species": "REACTOR_WARDEN",
+        "species": "CINDER_CASTELLAN",
         "count": 1
       },
       "after": [
@@ -4009,8 +4009,8 @@ export default {
         "name": "Cinder cleaver"
       },
       "place": "A gift of living fire",
-      "summary": "An ashen sentinel has risen in the reclaimed court. Brann asks you to quiet its living flame.",
-      "description": "An ashen sentinel has risen in the reclaimed court. Brann asks you to quiet its living flame.",
+      "summary": "The Cinder Castellan has risen again in the reclaimed court. Brann asks you to quiet its living flame.",
+      "description": "The Cinder Castellan has risen again in the reclaimed court. Brann asks you to quiet its living flame.",
       "hint": "Watch the marked ground. Move before the blow falls, then punish its recovery.",
       "color": "#c6b37b",
       "symbol": "◇",
@@ -4043,7 +4043,7 @@ export default {
     }
   ],
   "dialogue": {
-    "IRIS_COMMANDER": {
+    "VILLAGER_KEEPER": {
       "name": "Vale",
       "role": "Keeper of the valley",
       "text": "Osei needs iron for the mill tools. The western rail line leads to a cutting yard that still thinks the war is on. Down below, our history is drowning. Pick a problem and leave this place better than you found it.",
@@ -4062,7 +4062,7 @@ export default {
         }
       ]
     },
-    "IRIS_ENGINEER": {
+    "VILLAGER_SMITH": {
       "name": "Osei",
       "role": "Maker & mender",
       "text": "Bring me 24 iron ore. There is a vein by Willow Mill, east of here. I’ll cut enough timber for the crossing. Keep the water flowing underneath; we still need the mill.",
@@ -4081,7 +4081,7 @@ export default {
         }
       ]
     },
-    "SURVEYOR": {
+    "VILLAGER_SCHOLAR": {
       "name": "The archivist",
       "role": "A very patient reader",
       "text": "Water follows the openings you give it. There is a hollow beneath the archive. That might be all you need.",
@@ -4114,7 +4114,8 @@ export default {
   "residents": [
     {
       "id": 1,
-      "species": "IRIS_COMMANDER",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_KEEPER",
       "anchor": "hearth.vale",
       "roamRadius": 8,
       "dialogue": {
@@ -4127,7 +4128,8 @@ export default {
     },
     {
       "id": 2,
-      "species": "IRIS_ENGINEER",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SMITH",
       "anchor": "hearth.osei",
       "roamRadius": 8,
       "dialogue": {
@@ -4140,7 +4142,8 @@ export default {
     },
     {
       "id": 3,
-      "species": "SURVEYOR",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SCHOLAR",
       "anchor": "hearth.mira",
       "roamRadius": 8,
       "dialogue": {
@@ -4153,7 +4156,8 @@ export default {
     },
     {
       "id": 4,
-      "species": "IRIS_ENGINEER",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SMITH",
       "anchor": "foundry.brann",
       "roamRadius": 8,
       "dialogue": {
@@ -4166,7 +4170,8 @@ export default {
     },
     {
       "id": 5,
-      "species": "IRIS_COMMANDER",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_KEEPER",
       "anchor": "watchwood.rowan",
       "roamRadius": 8,
       "dialogue": {
@@ -4179,7 +4184,8 @@ export default {
     },
     {
       "id": 6,
-      "species": "SURVEYOR",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SCHOLAR",
       "anchor": "archive.senna",
       "roamRadius": 8,
       "dialogue": {
@@ -4192,7 +4198,8 @@ export default {
     },
     {
       "id": 7,
-      "species": "IRIS_ENGINEER",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SMITH",
       "anchor": "hearth.iven",
       "roamRadius": 8,
       "dialogue": {
@@ -4222,7 +4229,8 @@ export default {
     },
     {
       "id": 8,
-      "species": "SURVEYOR",
+      "species": "VILLAGER",
+      "appearance": "VILLAGER_SCHOLAR",
       "anchor": "observatory.elowen",
       "roamRadius": 8,
       "dialogue": {

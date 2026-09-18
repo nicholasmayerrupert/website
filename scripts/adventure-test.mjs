@@ -143,6 +143,14 @@ try {
   const before=invalid.getGrid().slice();
   assert.equal(invalid.readCheckpoint(broken),false);
   assert.deepEqual(invalid.getGrid(),before,'checksum validation precedes mutation');
+  const rosterFixture = JSON.parse(readFileSync(new URL('./fixtures/adventure-roster-v10.json', import.meta.url)));
+  const rosterSave = createEngineWasm({...options, cols:rosterFixture.cols, rows:rosterFixture.rows}); fresh.push(rosterSave);
+  assert.ok(rosterSave.readCheckpoint(gunzipSync(readFileSync(new URL('./fixtures/adventure-roster-v10.checkpoint.gz',import.meta.url)))), 'version 10 roster saves migrate');
+  const oldKeys = 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,BRIAR_GOBLIN,BONE_GUARD,FEN_WITCH,BELL_BAT,OATHLESS_ARCHER,VILLAGER_SCHOLAR,FEN_WISP,STONE_GUARDIAN,CINDER_CASTELLAN,STONE_GUARDIAN,VILLAGER_KEEPER,VILLAGER_SMITH,VILLAGER,THORNBOUND_HART,MIRE_MATRON,CINDER_CASTELLAN,HOLLOW_BELLKEEPER,BRIAR_WOLF,BELL_BAT,BONE_GUARD,FEN_WISP,ROOT_KNIGHT,FROST_GIANT,MUMMY,LAVA_TOAD,VILLAGE_GUARD,VILLAGE_HUNTER,CINDERJAW_DRAGON'.split(',');
+  for (const [id, oldSpecies] of rosterFixture.creatures)
+    assert.equal(rosterSave.getCreatures().find(c => c.id === id)?.species, CREATURE[oldKeys[oldSpecies]], `migrated ${oldKeys[oldSpecies]}`);
+  assert.ok(rosterSave.getCreatures().some(c => c.species === CREATURE.MUMMY), 'mummy survives migration');
+  console.log('ok: version 10 roster migration preserves mummy and renamed creatures');
   const legacy=createEngineWasm({...options,cols:160,rows:128});fresh.push(legacy);
   assert.ok(legacy.readCheckpoint(gunzipSync(readFileSync(new URL('./fixtures/adventure-v3.checkpoint.gz',import.meta.url)))),'version 3 saves migrate');
   assert.deepEqual(legacy.getDayClock(),{phase:5/24,held:false});

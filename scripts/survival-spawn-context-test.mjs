@@ -14,33 +14,33 @@ await initSandWasm();
 const { check, done } = makeChecker('survival semantic spawning');
 const SEED = 0xC0FFEE;
 const SURFACE_ROSTER = [
-  CREATURE.DYNAMITEER,
-  CREATURE.CAUSTIC_MORTARMAN,
-  CREATURE.CLUSTER_WASP,
+  CREATURE.BRIAR_GOBLIN,
+  CREATURE.FEN_WITCH,
+  CREATURE.BELL_BAT,
 ];
 const CAVE_ROSTER = [
-  CREATURE.BORE_SENTINEL,
-  CREATURE.MINIGUNNER,
+  CREATURE.BONE_GUARD,
+  CREATURE.OATHLESS_ARCHER,
 ];
 const surfacePools = new Map([
-  [BIOME.PLAINS,[CREATURE.DYNAMITEER]], [BIOME.FOREST,[CREATURE.CLUSTER_WASP]],
-  [BIOME.DESERT,[CREATURE.CAUSTIC_MORTARMAN]], [BIOME.ROCKY,[CREATURE.DYNAMITEER]],
-  [BIOME.TUNDRA,[]], [BIOME.JUNGLE,[CREATURE.CLUSTER_WASP]],
-  [BIOME.SWAMP,[CREATURE.CAUSTIC_MORTARMAN,CREATURE.CLUSTER_WASP]], [BIOME.WATCHWOOD,[]],
+  [BIOME.PLAINS,[CREATURE.BRIAR_GOBLIN]], [BIOME.FOREST,[]],
+  [BIOME.DESERT,[CREATURE.FEN_WITCH]], [BIOME.ROCKY,[CREATURE.BRIAR_GOBLIN,CREATURE.BELL_BAT]],
+  [BIOME.TUNDRA,[]], [BIOME.JUNGLE,[]],
+  [BIOME.SWAMP,[CREATURE.FEN_WITCH]], [BIOME.WATCHWOOD,[CREATURE.BELL_BAT]],
 ]);
 const cavePools = new Map([
-  [CAVE_BIOME.DEFAULT,[]], [CAVE_BIOME.CRYSTAL,[CREATURE.MINIGUNNER]],
-  [CAVE_BIOME.MUSHROOM,[]], [CAVE_BIOME.LUSH,[]], [CAVE_BIOME.DEEP_MAGMA,[CREATURE.MINIGUNNER]],
-  [CAVE_BIOME.DEEP_GEODE,[CREATURE.BORE_SENTINEL]], [CAVE_BIOME.DEEP_FOSSIL,[CREATURE.BORE_SENTINEL]],
-  [CAVE_BIOME.DEEP_VOID,[CREATURE.MINIGUNNER]],
+  [CAVE_BIOME.DEFAULT,[CREATURE.BONE_GUARD]], [CAVE_BIOME.CRYSTAL,[CREATURE.OATHLESS_ARCHER]],
+  [CAVE_BIOME.MUSHROOM,[]], [CAVE_BIOME.LUSH,[]], [CAVE_BIOME.DEEP_MAGMA,[CREATURE.OATHLESS_ARCHER]],
+  [CAVE_BIOME.DEEP_GEODE,[]], [CAVE_BIOME.DEEP_FOSSIL,[CREATURE.BONE_GUARD]],
+  [CAVE_BIOME.DEEP_VOID,[CREATURE.BONE_GUARD,CREATURE.OATHLESS_ARCHER]],
 ]);
 const COMBAT_ROSTER = [...SURFACE_ROSTER, ...CAVE_ROSTER];
 const LABEL = new Map([
-  [CREATURE.DYNAMITEER, 'dynamiteer'],
-  [CREATURE.BORE_SENTINEL, 'bore sentinel'],
-  [CREATURE.CAUSTIC_MORTARMAN, 'caustic mortarman'],
-  [CREATURE.CLUSTER_WASP, 'cluster wasp'],
-  [CREATURE.MINIGUNNER, 'minigunner'],
+  [CREATURE.BRIAR_GOBLIN, 'briar_goblin'],
+  [CREATURE.BONE_GUARD, 'bone guard'],
+  [CREATURE.FEN_WITCH, 'fen witch'],
+  [CREATURE.BELL_BAT, 'bell bat'],
+  [CREATURE.OATHLESS_ARCHER, 'oathless_archer'],
 ]);
 const make = (options = {}) => attachTestHooks(createEngineWasm({
   cols: 320,
@@ -161,23 +161,23 @@ for (const biome of Object.values(CAVE_BIOME)) {
 
 const weightAt = (species, point) =>
   point ? earth._spawnWorldWeight(species, point.x, point.y) : 0;
-check('dynamiteers prefer open plains over forest',
-  weightAt(CREATURE.DYNAMITEER, surfacePoints.get(BIOME.PLAINS))
-    > weightAt(CREATURE.DYNAMITEER, surfacePoints.get(BIOME.FOREST)));
+check('briar_goblins prefer open plains over forest',
+  weightAt(CREATURE.BRIAR_GOBLIN, surfacePoints.get(BIOME.PLAINS))
+    > weightAt(CREATURE.BRIAR_GOBLIN, surfacePoints.get(BIOME.FOREST)));
 check('mortarmen prefer desert over plains',
-  weightAt(CREATURE.CAUSTIC_MORTARMAN, surfacePoints.get(BIOME.DESERT))
-    > weightAt(CREATURE.CAUSTIC_MORTARMAN, surfacePoints.get(BIOME.PLAINS)));
-check('wasps prefer forest over desert',
-  weightAt(CREATURE.CLUSTER_WASP, surfacePoints.get(BIOME.FOREST))
-    > weightAt(CREATURE.CLUSTER_WASP, surfacePoints.get(BIOME.DESERT)));
-check('bore sentinels prefer geode caves over default caves',
-  weightAt(CREATURE.BORE_SENTINEL,
-    cavePoints.get(CAVE_BIOME.DEEP_GEODE))
-    > weightAt(CREATURE.BORE_SENTINEL,
-      cavePoints.get(CAVE_BIOME.DEFAULT)));
-check('minigunners prefer crystal caves over default caves',
-  weightAt(CREATURE.MINIGUNNER, cavePoints.get(CAVE_BIOME.CRYSTAL))
-    > weightAt(CREATURE.MINIGUNNER, cavePoints.get(CAVE_BIOME.DEFAULT)));
+  weightAt(CREATURE.FEN_WITCH, surfacePoints.get(BIOME.DESERT))
+    > weightAt(CREATURE.FEN_WITCH, surfacePoints.get(BIOME.PLAINS)));
+check('bell bats inhabit rocky regions rather than desert',
+  weightAt(CREATURE.BELL_BAT, surfacePoints.get(BIOME.ROCKY))
+    > weightAt(CREATURE.BELL_BAT, surfacePoints.get(BIOME.DESERT)));
+check('bone guards inhabit fossil caves rather than geode caves',
+  weightAt(CREATURE.BONE_GUARD,
+    cavePoints.get(CAVE_BIOME.DEEP_FOSSIL))
+    > weightAt(CREATURE.BONE_GUARD,
+      cavePoints.get(CAVE_BIOME.DEEP_GEODE)));
+check('oathless_archers prefer crystal caves over default caves',
+  weightAt(CREATURE.OATHLESS_ARCHER, cavePoints.get(CAVE_BIOME.CRYSTAL))
+    > weightAt(CREATURE.OATHLESS_ARCHER, cavePoints.get(CAVE_BIOME.DEFAULT)));
 
 const interior = findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.VILLAGE_BUILDING
@@ -216,17 +216,17 @@ const mine = findContext(earth,
   });
 const minePool = mine ? poolAt(earth, mine.x, mine.y) : [];
 check(`crystal mine galleries admit archers (${poolNames(minePool) || 'none'})`,
-  mine && samePool(minePool, [CREATURE.MINIGUNNER]) && earth._spawnWorldWeight(CREATURE.MINIGUNNER,mine.x,mine.y)>=30);
+  mine && samePool(minePool, [CREATURE.OATHLESS_ARCHER]) && earth._spawnWorldWeight(CREATURE.OATHLESS_ARCHER,mine.x,mine.y)>=30);
 const mineSpawn = mine && spawnInsideFeature(
   earth,
-  CREATURE.MINIGUNNER,
+  CREATURE.OATHLESS_ARCHER,
   mine,
   (context) => context.featureKind === WORLD_FEATURE.MINE
     && has(context, WORLD_AREA.MINE)
     && has(context, WORLD_AREA.UNDERGROUND)
     && !has(context, WORLD_AREA.SETTLEMENT),
 );
-check('a material-valid minigunner can spawn in a mine gallery', !!mineSpawn);
+check('a material-valid oathless_archer can spawn in a mine gallery', !!mineSpawn);
 earth.destroy();
 
 const residents = make({ cols: 768, rows: 360 });

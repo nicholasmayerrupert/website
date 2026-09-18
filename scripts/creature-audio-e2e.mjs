@@ -53,7 +53,7 @@ try {
   const packet=new Float32Array(species.length*STRIDES.soundEvent);species.forEach(([,id],i)=>packet.set(event(S.CREATURE_ALERT,id),i*STRIDES.soundEvent));
   crowded.playEvents(packet,listener);const voiceCount=crowdStarts.length;
   if(voiceCount<4||voiceCount>8)throw new Error(`Crowd voice budget: ${voiceCount}`);
-  crowded.setMuted(true);crowded.playEvents(event(S.CREATURE_DEATH,CREATURE.BONE_DINOSAUR),listener);
+  crowded.setMuted(true);crowded.playEvents(event(S.CREATURE_DEATH,CREATURE.CINDERJAW_DRAGON),listener);
   if(crowdStarts.length!==voiceCount)throw new Error('Muted creature created audio');
   await crowd.startRendering();crowded.destroy();
   return {levels,decoded,voiceCount,seconds,rate,pcm:btoa(binary),species:species.map(([key,id])=>({key,id,name:BESTIARY[id]?.name||key.toLowerCase().replaceAll('_',' ')}))};
@@ -65,6 +65,6 @@ try {
   writeFileSync(resolve(dir,`species-${result.species[i].id}.wav`),Buffer.concat([header,pcm.subarray(i*length,(i+1)*length)]));
  }
  writeFileSync(resolve(dir,'levels.json'),JSON.stringify({levels:result.levels,decoded:result.decoded,crowdVoices:result.voiceCount},null,2));
- writeFileSync(resolve(dir,'index.html'),`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Creature voices</title><style>body{margin:32px;background:#191e22;color:#ebdfc4;font:16px system-ui;max-width:1100px}h1{font-size:32px}p{color:#aeb8b5}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}article{padding:18px;border:1px solid #46514e;border-radius:8px;background:#232b2d}h2{font-size:18px;margin:0 0 12px}audio{width:100%}</style><h1>Creature voices</h1><p>All 35 species · recorded through the game mixer<br>Each clip plays: quiet call → attack → hurt → death.</p><main>${result.species.map(s=>`<article><h2>${s.name}</h2><audio controls preload="none" src="species-${s.id}.wav"></audio></article>`).join('')}</main><script>document.addEventListener('play',e=>{for(const a of document.querySelectorAll('audio'))if(a!==e.target)a.pause()},true)</script>`);
+ writeFileSync(resolve(dir,'index.html'),`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Creature voices</title><style>body{margin:32px;background:#191e22;color:#ebdfc4;font:16px system-ui;max-width:1100px}h1{font-size:32px}p{color:#aeb8b5}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}article{padding:18px;border:1px solid #46514e;border-radius:8px;background:#232b2d}h2{font-size:18px;margin:0 0 12px}audio{width:100%}</style><h1>Creature voices</h1><p>27 creatures and 3 villager appearances · recorded through the game mixer<br>Each clip plays: quiet call → attack → hurt → death.</p><main>${result.species.map(s=>`<article><h2>${s.name}</h2><audio controls preload="none" src="species-${s.id}.wav"></audio></article>`).join('')}</main><script>document.addEventListener('play',e=>{for(const a of document.querySelectorAll('audio'))if(a!==e.target)a.pause()},true)</script>`);
  console.log(`ok: ${result.species.length} species, ${result.levels.length} live voice cues, ${result.decoded} decoded recordings; crowd bounded to ${result.voiceCount} voices (${dir})`);
 }finally{await browser?.close();await server.close();}

@@ -2,7 +2,7 @@
 
 The active source is `../creatures/atlases/frost_giant.png`, a four-column,
 six-row ImageGen atlas. Its exact edit prompt and generation ID are recorded in
-`../roster-grid-prompts.json`. The other PNGs in this directory are references.
+`../roster-grid-prompts.json`. Only the registered compact atlas is retained.
 
 | Row | Pose 1 | Pose 2 | Pose 3 | Pose 4 |
 | --- | --- | --- | --- | --- |

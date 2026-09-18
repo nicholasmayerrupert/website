@@ -2168,7 +2168,6 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
                     int camCol, int camRow, int npcId, bool stunned, double vx, int actorId, double vy, bool swimming) {
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const CreatureSpecies& speciesDef = CREATURE_SPECIES[(size_t)speciesId];
-  const CreatureBehaviorProfileDef& behavior = creatureBehavior(speciesDef);
   const auto& art = E.content.creatureArt[(size_t)speciesId];
   if (!art.width || !art.height) return;
   bool humanNpc = speciesDef.humanNpc;
@@ -2216,154 +2215,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(cx - slitW * .5, cy - slitH * .5, slitW, slitH);
     return;
   }
-  if (E.planetId != PL_FRONTIER) {
-  if (alive && E.planetId != PL_FRONTIER && behavior.weaponOverlay == CWO_MINIGUN && attackState == CAS_CHARGING) {
-    double ox = px + speciesDef.w * .56, oy = py + speciesDef.h * .48;
-    double dx = aimX - ox, dy = aimY - oy;
-    int samples = imin(28, imax(2, (int)(std::hypot(dx, dy) / 3)));
-    for (int i = 1; i <= samples; i++) {
-      double t = i / (double)samples;
-      glUniform4f(glc->uColor, 1, .65f, .15f, (float)(.18 + attackProgress * .38));
-      glSolidDev((ox + dx * t - camCol) * cell + glOffX,
-                 (oy + dy * t - camRow) * cell + glOffY, .3 * cell, .3 * cell);
-    }
-  }
-  bool bossBore = (behavior.telegraph == CTH_QUARRY
-                   || behavior.telegraph == CTH_WARDEN) && attackPattern == 2;
-  if (alive && (behavior.telegraph == CTH_BORE || bossBore) &&
-      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    double ox = px + CREATURE_SPECIES[speciesId].w * 0.5;
-    double oy = py + CREATURE_SPECIES[speciesId].h * 0.42;
-    double dx = aimX - ox, dy = aimY - oy, d = std::hypot(dx, dy);
-    if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
-    dx /= d; dy /= d;
-    ox += dx * (CREATURE_SPECIES[speciesId].w * 0.5 + 0.75);
-    oy += dy * (CREATURE_SPECIES[speciesId].h * 0.35 + 0.75);
-    double length = 1e9;
-    if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - ox) / dx);
-    else if (dx < -1e-9) length = std::min(length, (1.0 - ox) / dx);
-    if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - oy) / dy);
-    else if (dy < -1e-9) length = std::min(length, (1.0 - oy) / dy);
-    if (std::isfinite(length) && length > 0) {
-      double progress = std::max(0.0, std::min(1.0, attackProgress));
-      double spacing = attackState == CAS_FIRING ? 1.35 : 2.6 - progress * 1.25;
-      int samples = imax(1, (int)std::ceil(length / spacing));
-      for (int i = 0; i <= samples; i++) {
-        double t = length * i / samples;
-        double bx = (ox + dx * t - camCol) * cell + glOffX;
-        double by = (oy + dy * t - camRow) * cell + glOffY;
-        if (attackState == CAS_FIRING) {
-          double outer = cell * (CREATURE_BORE_RADIUS * 2.0 + .35);
-          glUniform4f(glc->uColor, .95f, .18f, .055f, .40f);
-          glSolidDev(bx - outer * .5, by - outer * .5, outer, outer);
-          glUniform4f(glc->uColor, 1.0f, .88f, .34f, .96f);
-          glSolidDev(bx - cell * .68, by - cell * .68, cell * 1.36, cell * 1.36);
-        } else {
-          double width = cell * (.18 + progress * .38);
-          glUniform4f(glc->uColor, 1.0f, .34f + .48f * progress, .10f, .18f + .58f * progress);
-          glSolidDev(bx - width * .5, by - width * .5, width, width);
-        }
-      }
-    }
-  }
-  if (alive && behavior.telegraph == CTH_MORTAR &&
-      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    double ox = px + CREATURE_SPECIES[speciesId].w * .60;
-    double oy = py + CREATURE_SPECIES[speciesId].h * .28;
-    double dx = aimX - ox, dy = aimY - oy;
-    double dist = std::hypot(dx, dy);
-    double progress = std::max(0.0, std::min(1.0, attackProgress));
-    double lift = std::max(5.0, std::min(16.0, dist * .20));
-    int samples = imax(10, (int)std::ceil(dist / 3.0));
-    for (int i = 0; i <= samples; i++) {
-      double t = i / (double)samples;
-      double wx = ox + dx * t;
-      double wy = oy + dy * t - std::sin(t * 3.141592653589793) * lift;
-      double bx = (wx - camCol) * cell + glOffX;
-      double by = (wy - camRow) * cell + glOffY;
-      double pulse = .14 + progress * .34;
-      if (attackState == CAS_FIRING) pulse = .72;
-      double size = cell * (.18 + progress * .22);
-      glUniform4f(glc->uColor, .55f, 1.0f, .12f, (float)pulse);
-      glSolidDev(bx - size * .5, by - size * .5, size, size);
-    }
-    // The landing reticle expands into the acid splash footprint, making the
-    // danger readable even when the arc passes above the viewport.
-    double targetX = (aimX - camCol) * cell + glOffX;
-    double targetY = (aimY - camRow) * cell + glOffY;
-    double radius = cell * (1.4 + progress * 2.2);
-    glUniform4f(glc->uColor, .62f, 1.0f, .16f,
-                attackState == CAS_FIRING ? .82f : (float)(.22 + progress * .40));
-    glSolidDev(targetX - radius, targetY - cell * .14, radius * 2.0, cell * .28);
-    glSolidDev(targetX - cell * .14, targetY - radius * .48, cell * .28, radius * .96);
-    if (attackState == CAS_FIRING) {
-      glUniform4f(glc->uColor, .82f, 1.0f, .34f, .95f);
-      glSolidDev((ox - camCol) * cell + glOffX - cell * .55,
-                 (oy - camRow) * cell + glOffY - cell * .55, cell * 1.10, cell * 1.10);
-    }
-  }
-  if (alive && behavior.telegraph == CTH_CLUSTER &&
-      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    double ox = px + CREATURE_SPECIES[speciesId].w * .58;
-    double oy = py + CREATURE_SPECIES[speciesId].h * .55;
-    double dx = aimX - ox, dy = aimY - oy, dist = std::hypot(dx, dy);
-    double progress = std::max(0.0, std::min(1.0, attackProgress));
-    int samples = imax(4, (int)std::ceil(dist / (3.4 - progress * 1.4)));
-    for (int i = 0; i <= samples; i++) {
-      if ((i & 1) && attackState != CAS_FIRING) continue;
-      double t = i / (double)samples;
-      double bx = (ox + dx * t - camCol) * cell + glOffX;
-      double by = (oy + dy * t - camRow) * cell + glOffY;
-      double size = cell * (.16 + progress * .26);
-      glUniform4f(glc->uColor, 1.0f, .48f + .34f * (float)progress, .08f,
-                  attackState == CAS_FIRING ? .86f : (float)(.18 + progress * .45));
-      glSolidDev(bx - size * .5, by - size * .5, size, size);
-    }
-    // Four corner brackets communicate the carrier's cluster radius without
-    // covering the player at the center of the target.
-    double tx = (aimX - camCol) * cell + glOffX;
-    double ty = (aimY - camRow) * cell + glOffY;
-    double r = cell * (2.2 + progress * 1.4), arm = cell * .72;
-    glUniform4f(glc->uColor, 1.0f, .62f, .12f,
-                attackState == CAS_FIRING ? .90f : (float)(.24 + progress * .45));
-    for (int sxSign : {-1, 1}) for (int sySign : {-1, 1}) {
-      double bx = tx + sxSign * r, by = ty + sySign * r;
-      glSolidDev(bx - (sxSign < 0 ? 0 : arm), by - cell * .11, arm, cell * .22);
-      glSolidDev(bx - cell * .11, by - (sySign < 0 ? 0 : arm), cell * .22, arm);
-    }
-  }
-  if (alive && behavior.telegraph == CTH_QUARRY && attackPattern == 1 &&
-      attackState == CAS_CHARGING) {
-    double progress = std::max(0.0, std::min(1.0, attackProgress));
-    double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
-    double cy = (py + CREATURE_SPECIES[speciesId].h - camRow) * cell + glOffY;
-    for (int ring = 0; ring < 3; ring++) {
-      double radius = cell * (2.5 + ring * 2.4 + progress * 3.2);
-      glUniform4f(glc->uColor, 1.0f, .43f + ring * .12f, .08f,
-                  (float)(.18 + progress * .34));
-      glSolidDev(cx - radius, cy - cell * .12, radius * 2, cell * .24);
-      glSolidDev(cx - cell * .12, cy - radius * .20, cell * .24, radius * .40);
-    }
-  }
-  if (alive && behavior.telegraph == CTH_WARDEN && attackPattern == 1 &&
-      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    double progress = std::max(0.0, std::min(1.0, attackProgress));
-    double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
-    double cy = (py + CREATURE_SPECIES[speciesId].h * .45 - camRow) * cell + glOffY;
-    for (int spark = 0; spark < 8; spark++) {
-      double angle = spark * .785398 + E.actorTick * .08;
-      double radius = cell * (1.8 + progress * 2.2);
-      double size = cell * (.24 + progress * .22);
-      glUniform4f(glc->uColor, spark & 1 ? .36f : 1.0f,
-                  spark & 1 ? .92f : .42f, .94f,
-                  (float)(.38 + progress * .42));
-      glSolidDev(cx + std::cos(angle) * radius - size * .5,
-                 cy + std::sin(angle) * radius - size * .5, size, size);
-    }
-  }
-  }
-  if (alive && E.planetId == PL_FRONTIER && speciesDef.hostile && (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    bool heavy = (speciesId >= CS_THORNBOUND_HART && speciesId <= CS_HOLLOW_BELLKEEPER) || speciesId == CS_ROOT_KNIGHT || speciesId == CS_QUARRY_FOREMAN || speciesId == CS_REACTOR_WARDEN;
+  if (alive && speciesDef.hostile && (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    bool heavy = (speciesId >= CS_THORNBOUND_HART && speciesId <= CS_HOLLOW_BELLKEEPER) || speciesId == CS_ROOT_KNIGHT || speciesId == CS_STONE_GUARDIAN || speciesId == CS_CINDER_CASTELLAN;
     bool chargeAttack = (speciesId == CS_THORNBOUND_HART && attackPattern == 0) || speciesId == CS_BRIAR_WOLF || speciesId == CS_FOX || speciesId == CS_BONE_GUARD;
     bool ring = (speciesId == CS_HOLLOW_BELLKEEPER && attackPattern == 0) || (heavy && attackPattern == 2 && speciesId != CS_MIRE_MATRON);
     auto mark = [&](double wx, double wy, double radius, float opacity) {
@@ -2547,53 +2400,6 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     double drawY = (alive || departing) ? sy + r * cell * art.scale : corpseBase - (art.height - r) * pixelH * art.scale;
     glSolidDev(sx + cc * cell * art.scale, drawY, run * cell * art.scale, pixelH * art.scale);
     c += run;
-  }
-  if (alive && E.planetId != PL_FRONTIER && behavior.weaponOverlay == CWO_MINIGUN) {
-    // Draw the active weapon over the body sprite so its grip remains attached
-    // while the barrel pack follows the authoritative target in both axes.
-    double gunX = px + CREATURE_SPECIES[speciesId].w * .56;
-    if (attackState == CAS_FIRING) gunX -= facing * ((E.actorTick & 1) ? .35 : .12);
-    double gunY = py + CREATURE_SPECIES[speciesId].h * .48;
-    bool tracking = attackState == CAS_CHARGING || attackState == CAS_FIRING;
-    double dx = tracking ? aimX - gunX : (double)facing;
-    double dy = tracking ? aimY - gunY : 0.0;
-    double d = std::hypot(dx, dy);
-    if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
-    dx /= d; dy /= d;
-    double nx = -dy, ny = dx;
-    gunX += dx * .55;
-    gunY += dy * .55;
-    auto gunPixel = [&](double forward, double side, double size,
-                        float r, float g, float b, float a = 1.0f) {
-      double wx = gunX + dx * forward + nx * side;
-      double wy = gunY + dy * forward + ny * side;
-      double bx = (wx - camCol) * cell + glOffX;
-      double by = (wy - camRow) * cell + glOffY;
-      glUniform4f(glc->uColor, r * light, g * light, b * light, a);
-      glSolidDev(bx - size * cell * .5, by - size * cell * .5, size * cell, size * cell);
-    };
-    gunPixel(-.42, 0, 1.06, .08f, .12f, .16f);
-    gunPixel(-.02, 0, .92, .24f, .32f, .36f);
-    gunPixel(-.28, .62, 1.16, .12f, .17f, .20f);
-    gunPixel(-.28, .62, .72, .76f, .57f, .19f);
-    int rotorRate = attackState == CAS_FIRING ? 2 : 6;
-    int rotor = tracking ? (E.actorTick / rotorRate) % 3 : 0;
-    for (int barrel = 0; barrel < 3; barrel++) {
-      float shine = barrel == rotor ? .72f : .38f;
-      for (int seg = 0; seg < 8; seg++)
-        gunPixel(.42 + seg * .42, (barrel - 1) * .34, .27,
-                 shine, shine * .88f, shine * .67f);
-    }
-    for (int brace = 0; brace < 4; brace++)
-      gunPixel(.66 + brace * .75, 0, .18, .09f, .12f, .14f);
-    gunPixel(3.50, 0, .60, .17f, .21f, .22f);
-    if (attackState == CAS_FIRING) {
-      float flash = (E.actorTick & 1) ? 1.0f : .72f;
-      gunPixel(3.86, 0, .66, 1.0f, .42f * flash, .04f, .95f);
-      gunPixel(4.18, 0, .38, 1.0f, .92f, .35f, .98f);
-      gunPixel(3.92, -.50, .28, 1.0f, .62f, .08f, .82f);
-      gunPixel(3.92, .50, .28, 1.0f, .62f, .08f, .82f);
-    }
   }
   // A segmented, hard-edged health bar appears only after damage (or during
   // death), matching the survival HUD without adding noise to ambient mobs.

@@ -869,18 +869,11 @@ remain short-lived and visual-only.
 Campaign deployments and `/game?sandbox` use the same explosive survival rules.
 Players spawn with a lower-cadence automatic blast gun whose swept,
 high-velocity rounds detonate on the first liquid, solid, or creature hit.
-Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
-lock, and then erase a player-traversable line through both simulated layers.
-Captured bore cannons deal 70 damage to creatures while preserving the
-sentinel's existing damage against players. Caustic mortarmen lob large,
-double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
-carriers that bounce off terrain and split on actor impact or fuse expiry into
-sixteen independently scattering
-mini-dynamites with distinct 0.1–0.37 second fuses and 18-cell blasts. Each
-bomblet contributes reduced actor damage independently instead of losing most
-of the volley to the ordinary explosion hurt cooldown; and
-minigunners commit their aim
-before saturating that line with long bursts of rapid, pinprick explosive rounds.
+Enemies use the same fantasy attacks in every world: goblin blades, archer
+arrows, witch curses, bat swoops, wisp magic, and the authored boss patterns.
+Player tools include dynamite satchels, bore cannons, acid mortars, cluster
+launchers, and miniguns. Bore cannons deal 70 damage to creatures; cluster
+carriers split into sixteen scattering charges.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
 the articulated player animation, an airborne rechargeable jetpack, and
@@ -895,9 +888,8 @@ damages players and corrodes creatures.
 Mining, material pickups,
 block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
 default), and crafting remain
-part of survival: the starter mining tool is iron-tier, and defeated
-demolition crews can also drop their weapons into
-that same inventory. Captured dynamite satchels carry 10 throws, bore cannons 15
+part of survival: the starter mining tool is iron-tier. Fantasy enemies drop
+their registered trophies and equipment. Player dynamite satchels carry 10 throws, bore cannons 15
 beams, acid mortars 20 shells, cluster launchers 15 carriers, and miniguns 250
 rounds. Picking up a duplicate weapon merges its full ammo load into the existing
 weapon, while the bound starter blast gun remains unlimited. The starting
@@ -951,11 +943,11 @@ collection lull. Explicit development/scripted breach requests remain separate
 from natural population policy.
 
 Surface and cave biome masks are hard exclusions. Plains and rocky regions carry
-brigands; desert and swamp carry caustic casters; forests and jungles carry wasps.
-Bore sentinels inhabit geode/fossil depths and archers inhabit crystal, magma,
+briar goblins; desert and swamp carry fen witches.
+Bone guards inhabit ordinary, fossil, and void caves and archers inhabit crystal, magma,
 and void depths. Adventure adds briar wolves in forest/Watchwood/jungle,
 bell bats in rocky/Watchwood regions, fen wisps in swamp/jungle, frost giants in
-tundra, cinderjaw tyrants in the bone highlands, mummies inside desert pyramid/tomb
+tundra, Cinderjaw Dragons in the bone highlands, mummies inside desert pyramid/tomb
 landmarks, and lava toads in magma caves. The director samples entering bands as well as the current biome, and
 validates each final pose against its own world context and physical habitat.
 Pyramid room searches include floors above and below the natural surface.
@@ -970,7 +962,7 @@ melee and hunters use bows against nearby hostiles, remain near their home,
 and cannot damage the player. Each role has its own sprite set. Site identity follows
 the immutable village/building plan, so residents hibernate and restore with
 their absolute pose instead of duplicating as the window streams. Villagers,
-surveyors, and IRIS crew render with an upright 9x10 human silhouette aligned to
+scholars, keepers, and smiths render with an upright 9x10 human silhouette aligned to
 their tall 4x8 actor shape.
 
 ### Controls
@@ -1405,8 +1397,8 @@ a 96-tick fire stream (32 slow, overlapping pulses) and a long recovery. The
 wings, ribs and a vertebral tail; an ember heart glows within the cage. Fire pulses emerge from
 the mouth, retain ownership through checkpoints, and ignite open air at impact
 without excavating stone. The dragon tolerates fire and drops a cinderjaw fang.
-`node scripts/author-enemy-art.mjs --only BONE_DINOSAUR` imports the approved
-full-sprite sheets in `art/skeleton-dragon/` into its eight clips;
+`node scripts/author-enemy-art.mjs --only CINDERJAW_DRAGON` imports the approved
+full-sprite sheets in `art/cinderjaw-dragon/` into its eight clips;
 `dinosaur` checks habitat, combat and persistence, and `dinosaur-e2e` captures
 both melee attacks, the flame stream, burning terrain, and a full sprite atlas.
 
@@ -1455,3 +1447,17 @@ checkpoints, and are reserved for future crafting. `content/equipment.js` owns
 names and lore; `gearArt.js` supplies the shared inventory and ground-drop art.
 Use `node scripts/run-tests.mjs --only enemy-ecology,adventure-combat,spell-diversity,survival-spawn-context,enemy-combat-e2e`
 for the focused combat, ecology, loot, streaming, and browser checks.
+
+## Creature roster
+
+The game uses woodland wildlife and dark-fantasy enemies. The canonical roster
+in `abi.schema.json` has 27 base types (including the mummy) and three villager
+appearance variants. Named villagers retain their identities, dialogue and
+quests; `variantOf` groups their looks under Villager. Use canonical names in
+code, bestiary entries, sprite filenames and the viewer. Avoid duplicate types
+that only rename an existing combat role. Hostile actors share the fantasy
+combat system across worlds: blades, arrows, poison magic, bites and boss attacks.
+
+Sprite generation **must** include grid compaction and pixel cleanup before
+import or commit. Only active compact source sheets belong in the repository;
+remove superseded or unused PNGs. Follow [the mandatory sprite pipeline](art/README.md).

@@ -108,7 +108,7 @@ struct Creature {
 
 struct CreatureSpawnTelegraph {
   int id = 0;
-  uint8_t species = CS_DYNAMITEER;
+  uint8_t species = CS_BRIAR_GOBLIN;
   double wx = 0, wy = 0;
   int ticksRemaining = 0, totalTicks = 1;
 };
@@ -193,10 +193,6 @@ class CreatureSystem {
   void moveAmphibious(Creature& c);
   void moveFlying(Creature& c);
   void attackTarget(Creature& c);
-  void updateBoreSentinelAttack(Creature& c);
-  void updateMinigunnerAttack(Creature& c);
-  void updateBossAttack(Creature& c);
-  void fireBore(Creature& c);
   void fireBore(Player& p);
   void fireBoreLine(double ox, double oy, double dx, double dy, int damage,
                     int immunePlayerId, int immuneCreatureId);
@@ -214,6 +210,4 @@ class CreatureSystem {
   bool worldRuleAllows(
     const CreatureWorldRule& rule, const WorldContext& context) const;
   int worldSpawnWeight(uint8_t speciesId, const WorldContext& context) const;
-  void updateChargedProjectileAttack(Creature& c, CreatureAttackHandler attack,
-                                     int chargeTicks, int firingTicks);
 };

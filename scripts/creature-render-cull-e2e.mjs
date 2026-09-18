@@ -27,24 +27,24 @@ process.exitCode = await runBrowserCases({ 'creature-render-cull': async ({ page
     };
     const c = CREATURE, a = CREATURE_ATTACK_STATE;
     const cases = [
-      ['center sprite', c.IRIS_ENGINEER, 110, 105, {}],
-      ['left-edge sprite', c.IRIS_ENGINEER, 62, 105, {}],
-      ['right-edge sprite', c.IRIS_ENGINEER, 189, 105, {}],
-      ['top-edge sprite', c.IRIS_ENGINEER, 110, 65, {}],
-      ['bottom-edge sprite', c.IRIS_ENGINEER, 110, 160, {}],
+      ['center sprite', c.VILLAGER_SMITH, 110, 105, {}],
+      ['left-edge sprite', c.VILLAGER_SMITH, 62, 105, {}],
+      ['right-edge sprite', c.VILLAGER_SMITH, 189, 105, {}],
+      ['top-edge sprite', c.VILLAGER_SMITH, 110, 65, {}],
+      ['bottom-edge sprite', c.VILLAGER_SMITH, 110, 160, {}],
       ['offscreen idle sprite', c.ROOT_KNIGHT, 30, 100, {}],
       ['portal reaches viewport', c.ROOT_KNIGHT, 53, 100, { spawnProgress: .3 }],
-      ['shelter reaches viewport', c.IRIS_ENGINEER, 60, 100, { shelterCharge: 1 }],
-      ['rescue ascent', c.SURVEYOR, 110, 164, { rescueProgress: 1.7 }],
-      ['rescue sparks', c.SURVEYOR, 110, 166, { rescueProgress: .7 }],
+      ['shelter reaches viewport', c.VILLAGER_SMITH, 60, 100, { shelterCharge: 1 }],
+      ['rescue ascent', c.VILLAGER_SCHOLAR, 110, 164, { rescueProgress: 1.7 }],
+      ['rescue sparks', c.VILLAGER_SCHOLAR, 110, 166, { rescueProgress: .7 }],
       ['health bar', c.ROOT_KNIGHT, 110, 166, { health: 20 }],
       ['charge path from offscreen', c.BONE_GUARD, 35, 110, { attackState: a.CHARGING }],
       ['shockwave from offscreen', c.HOLLOW_BELLKEEPER, 32, 100, { attackState: a.FIRING, attackPattern: 0, attackProgress: .3 }],
       ['aimed spell from offscreen', c.MIRE_MATRON, 30, 105, { attackState: a.FIRING, attackPattern: 1 }],
-      ['bore from offscreen', c.BORE_SENTINEL, 30, 105, { attackState: a.FIRING }],
-      ['mortar from offscreen', c.CAUSTIC_MORTARMAN, 30, 105, { attackState: a.CHARGING }],
-      ['cluster from offscreen', c.CLUSTER_WASP, 30, 105, { attackState: a.CHARGING }],
-      ['weapon reaches viewport', c.MINIGUNNER, 59, 105, { attackState: a.FIRING }],
+      ['bore from offscreen', c.BONE_GUARD, 30, 105, { attackState: a.FIRING }],
+      ['mortar from offscreen', c.FEN_WITCH, 30, 105, { attackState: a.CHARGING }],
+      ['cluster from offscreen', c.FEN_WISP, 30, 105, { attackState: a.CHARGING }],
+      ['weapon reaches viewport', c.OATHLESS_ARCHER, 59, 105, { attackState: a.FIRING }],
     ];
     try {
       for (const planet of [PLANET.FRONTIER, PLANET.EARTH]) {

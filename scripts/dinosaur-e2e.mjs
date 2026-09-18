@@ -14,7 +14,7 @@ try {
  const results=await page.evaluate(async()=>{
   const [{initSandWasm,createEngineWasm,MAT,PLANET},{CREATURE,CREATURE_ATTACK_STATE:A,OFF,STRIDES,PROJECTILE_KIND:K},{default:art}]=await Promise.all([import('/src/sand/wasmBridge/engineFactory.js'),import('/src/sand/wasmBridge/abi.generated.js'),import('/src/sand/content/creatureArt.js')]);
   await initSandWasm();const results=[],pictures=[];
-  const sprite=art.BONE_DINOSAUR;
+  const sprite=art.CINDERJAW_DRAGON;
   const sheet=document.createElement('canvas');sheet.width=1344;sheet.height=8*150;const ctx=sheet.getContext('2d');
   ctx.fillStyle='#202329';ctx.fillRect(0,0,sheet.width,sheet.height);
   for(const [row,[state,clip]]of Object.entries(Object.entries(sprite.clips))){
@@ -30,7 +30,7 @@ try {
    for(let x=0;x<240;x++)for(let y=120;y<160;y++)e.paintDisc(x,y,0,MAT.STONE,true);
    if(pattern===2)for(let x=178;x<186;x++)for(let y=86;y<120;y++)e.paintDisc(x,y,0,MAT.WOOD,true);
    e.syncComponents();e.spawnPlayer(pattern===2?24:99,112);
-   const cid=e.spawnScriptedCreature(CREATURE.BONE_DINOSAUR,68,98);
+   const cid=e.spawnScriptedCreature(CREATURE.CINDERJAW_DRAGON,68,98);
    const pose=(state,progress)=>{
     const data=e.getCreatureSnapshotData().slice(),o=OFF.creatureSnapshot;
     for(let at=0;at<data.length;at+=STRIDES.creatureSnapshot)if(data[at+o.id]===cid){

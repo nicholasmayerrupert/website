@@ -3,7 +3,7 @@ import { sampleCreatureAtlas } from './creature-art-atlas.mjs';
 import art from '../src/sand/content/creatureArt.js';
 import parts from '../src/sand/content/playerParts.js';
 import { CREATURE_ATTACK_ANIMATIONS } from '../src/sand/content/creatureAnimations.js';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import sharp from 'sharp';
 import { fileURLToPath } from 'node:url';
 import { cutFrame } from './creature-art-pixels.mjs';
@@ -47,6 +47,22 @@ const detailed = { ...metadata, atlas: { ...metadata.atlas, pixelDetails: { 4: [
 assert(sampleCreatureAtlas(image, detailed).frames[4].some(isBlack), 'authored eye survives native-grid sampling');
 assert.throws(() => sampleCreatureAtlas(image, { ...metadata, atlas: { ...metadata.atlas, pixelDetails: { 4: [[999, 0]] } } }), /pixel detail/);
 const manifest = JSON.parse(readFileSync(new URL('../src/sand/art/creatures/manifest.json', import.meta.url)));
+const sourceRoot = new URL('../src/sand/art/', import.meta.url);
+const swimManifest = JSON.parse(readFileSync(new URL('creatures/swim/manifest.json', sourceRoot)));
+const registeredSources = new Set([
+  ...Object.values(manifest.creatures).map(d => `creatures/${d.sheet}`),
+  ...swimManifest.creatures.map(d => `creatures/swim/${d.file}`),
+  ...['base', 'wayfarer', 'hedgeweaver', 'hearthguard'].map(name => `player/${name}-grid-v2.png`),
+  ...['locomotion', 'attacks'].map(name => `cinderjaw-dragon/${name}-coarse-v1.png`),
+]);
+for (const name of readdirSync(sourceRoot, { recursive: true }).filter(name => name.endsWith('.png'))) {
+  assert(registeredSources.delete(name), `${name}: unregistered or duplicate sprite source`);
+  const file = new URL(name, sourceRoot), metadata = await sharp(fileURLToPath(file)).metadata();
+  assert(metadata.width <= 512 && metadata.height <= 512, `${name}: compact before committing`);
+  assert(statSync(file).size < 100_000, `${name}: source exceeds the compact sprite budget`);
+}
+assert.equal(registeredSources.size, 0, 'all registered sprite sources exist');
+
 for (const [key, record] of Object.entries(art)) {
   assert.equal(record.pixelScale, .5, `${key}: roster-wide half-cell native grid`);
   for (const [name, clip] of Object.entries(record.clips)) for (const frame of clip.frames) {
@@ -55,7 +71,7 @@ for (const [key, record] of Object.entries(art)) {
     assert(frame.some(row => /[^.]/.test(row)), `${key}/${name}: nonempty pose`);
     assert(frame.every(row => [...row].every(p => Object.hasOwn(record.palette, p))), `${key}/${name}: valid palette`);
   }
-  if (key !== 'BONE_DINOSAUR') {
+  if (key !== 'CINDERJAW_DRAGON') {
     const source = manifest.creatures[key];
     assert(source?.atlas && source.pixelScale === .5, `${key}: repeatable half-cell atlas import`);
     assert(!source.walkSheet, `${key}: walk belongs to the unified atlas`);
@@ -73,7 +89,7 @@ for (const [key, record] of Object.entries(art)) {
   for (const attack of CREATURE_ATTACK_ANIMATIONS[key] ?? []) for (const range of Object.values(attack).filter(v => typeof v === 'object'))
     assert(range.start + range.count <= record.clips[range.clip].frames.length, `${key}: complete attack range`);
 }
-for (const key of ['VILLAGER', 'VILLAGE_GUARD', 'VILLAGE_HUNTER', 'IRIS_COMMANDER', 'IRIS_ENGINEER', 'SURVEYOR']) {
+for (const key of ['VILLAGER', 'VILLAGE_GUARD', 'VILLAGE_HUNTER', 'VILLAGER_KEEPER', 'VILLAGER_SMITH', 'VILLAGER_SCHOLAR']) {
   const record = art[key], occupied = record.clips.idle.frames[0].flatMap((row, y) => /[^.]/.test(row) ? [y] : []);
   const standingHeight = (Math.max(...occupied) - Math.min(...occupied) + 1) * record.pixelScale;
   assert.equal(record.pixelScale, .5, `${key}: half-cell native grid`);

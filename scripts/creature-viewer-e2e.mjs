@@ -37,9 +37,9 @@ process.exitCode = await runBrowserCases({
       }
       return results;
     });
-    check('the complete roster spawns without accumulating GL contexts', roster.length === 35 && roster.every(s => s.correct && s.contexts === 1));
-    await page.getByLabel('Creature', { exact: true }).selectOption('BONE_DINOSAUR');
-    await page.waitForFunction(() => location.search.includes('creature=BONE_DINOSAUR'));
+    check('the complete roster spawns without accumulating GL contexts', roster.length === 30 && roster.every(s => s.correct && s.contexts === 1));
+    await page.getByLabel('Creature', { exact: true }).selectOption('CINDERJAW_DRAGON');
+    await page.waitForFunction(() => location.search.includes('creature=CINDERJAW_DRAGON'));
     check('roster selection keeps the URL shareable', true);
     await page.getByRole('button', { name: 'Special', exact: true }).click();
     check('special artwork is inspectable in source view', await page.getByLabel('Source animation preview').isVisible());

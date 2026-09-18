@@ -131,6 +131,19 @@ bool RigidBodySystem::solveSupportShock(const StepState& step, SubstepState& sta
   if (shockLayerCount > 1 && shockContactCount >= 4) {
     rigidShockIslands++;
     rigidShockMaxLayers = imax(rigidShockMaxLayers, shockLayerCount);
+    // The support solve is a trial. Its infinite-mass layer approximation
+    // must converge before its velocities and contact impulses are accepted.
+    shockVelocityScratch.resize(step.n);
+    for (int bi = 0; bi < step.n; bi++) {
+      if (shockComponent[bi] < 0) continue;
+      Body* body = step.solverBodies[bi];
+      shockVelocityScratch[bi] = {body->vx, body->vy, body->omega};
+    }
+    shockImpulseScratch.resize(nc);
+    for (int oi = islandStart; oi < islandEnd; oi++) {
+      int ci = state.contactOrder[oi];
+      shockImpulseScratch[ci] = {contacts[ci].accJn, contacts[ci].accJt};
+    }
     shockDeferredScratch.assign(nc, {0, 0, 0});
     auto& deferred = shockDeferredScratch;
     // A layer solve treats the lower body as infinite mass. The omitted
@@ -243,7 +256,23 @@ bool RigidBodySystem::solveSupportShock(const StepState& step, SubstepState& sta
         contactVelocityResidual(contacts[state.contactOrder[oi]]));
     shockVelocityConverged =
       shockResidual <= solverResidualTolerance;
-    if (!shockVelocityConverged) rigidShockFallbacks++;
+    if (!shockVelocityConverged) {
+      rigidShockFallbacks++;
+      // The ordinary finite-mass solve starts from the same warm-started
+      // state, without retaining an unconverged trial's artificial motion.
+      for (int bi = 0; bi < step.n; bi++) {
+        if (shockComponent[bi] < 0) continue;
+        Body* body = step.solverBodies[bi];
+        body->vx = shockVelocityScratch[bi][0];
+        body->vy = shockVelocityScratch[bi][1];
+        body->omega = shockVelocityScratch[bi][2];
+      }
+      for (int oi = islandStart; oi < islandEnd; oi++) {
+        int ci = state.contactOrder[oi];
+        contacts[ci].accJn = shockImpulseScratch[ci][0];
+        contacts[ci].accJt = shockImpulseScratch[ci][1];
+      }
+    }
     ShockAttemptState& history = shockAttemptCache[shockIslandKey];
     history.lastTick = E.tick;
     if (shockVelocityConverged) {

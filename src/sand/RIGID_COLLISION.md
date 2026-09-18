@@ -151,6 +151,9 @@ records. Persistent contact and broadphase caches stay on `RigidBodySystem`.
   of at least twelve single-layer bodies under spatial force also run velocity
   constraints to a no-op or the cap so sustained acceleration converges as one
   contact network. Cross-layer joint islands retain residual convergence.
+  Support propagation accepts its trial only when the velocity constraints
+  converge. A failed trial restores body velocities and accumulated contact
+  impulses before the ordinary finite-mass solve runs.
 - The continuous solve is reconciled with the integer output raster before
   stamping. Structure-scale bodies receive an exact footprint check. Shared
   output cells between two large bodies are separated by the smallest
@@ -382,6 +385,9 @@ Run related checks together through `scripts/run-tests.mjs --only`:
 - `rigid-roof-motion,rigid-terrain-contact` checks the roof replay's correction,
   continued motion, final baking, both-layer clearance, and ownership. The roof
   fixture observes authority turns 745–840 and extends to 1061 for rest.
+- `rigid-burning-support` replays a stone slab released by burning timber and
+  checks bounded upward motion, continued falling, material retention, and
+  raster ownership throughout the collapse.
 
 Motion metrics report net travel per stage, so canceling movements within one
 stage are not summed. The 0.3-cell bias limit is distinct from final projection,

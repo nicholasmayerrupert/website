@@ -353,6 +353,8 @@ class RigidBodySystem {
   std::vector<int> shockStackScratch, shockComponentScratch;
   std::vector<int> shockLevelScratch, shockBodyLevelScratch;
   std::vector<std::array<double, 3>> shockDeferredScratch;
+  std::vector<std::array<double, 3>> shockVelocityScratch;
+  std::vector<std::array<double, 2>> shockImpulseScratch;
   ContactCache nextContactCacheScratch;
   std::vector<Contact> solverContactScratch;
   std::vector<int> broadphaseOrderScratch;

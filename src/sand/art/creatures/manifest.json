@@ -223,12 +223,12 @@
       "pixelScale": 0.5,
       "targetBounds": {
         "width": 18.5,
-        "height": 20,
+        "height": 12,
         "bottom": 25
       },
       "sheet": "atlases/hare.png",
       "status": "imported",
-      "generation": "exec-6e09c67a-ee41-462d-84e8-ed1762d37dba.png",
+      "generation": "exec-60503b1f-8585-4705-a056-318cbe7e1857.png",
       "atlas": {
         "columns": 4,
         "rows": 4,
@@ -1245,12 +1245,12 @@
         ],
         "rowEdges": [
           0,
-          64,
-          128,
-          192,
-          256,
-          320,
-          384
+          44,
+          88,
+          132,
+          176,
+          220,
+          264
         ]
       },
       "clipFrames": {
@@ -1302,7 +1302,7 @@
           10
         ]
       },
-      "generation": "exec-aaed6334-941c-461d-9579-e980de0e5527.png",
+      "generation": "exec-258bd3d4-1be7-454d-bf17-5905eae5d204.png",
       "species": 24
     }
   }

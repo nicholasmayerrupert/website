@@ -2,7 +2,10 @@
 
 The active source is `../creatures/atlases/frost_giant.png`, a four-column,
 six-row ImageGen atlas. Its exact edit prompt and generation ID are recorded in
-`../roster-grid-prompts.json`. Only the registered compact atlas is retained.
+`../sprite-redo-prompts.json`. Only the registered compact atlas is retained.
+The source is 176×264 pixels (44×44 per pose), with twelve flat colors and
+binary transparency. Its slate skin, grey beard and ragged fur use broad shapes
+for a restrained dark-fantasy appearance.
 
 | Row | Pose 1 | Pose 2 | Pose 3 | Pose 4 |
 | --- | --- | --- | --- | --- |

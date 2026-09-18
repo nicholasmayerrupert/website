@@ -155,6 +155,11 @@ Exact revision prompts are in `grid-v2-prompts.json` and `roster-grid-prompts.js
 is one square grid for outlines and details, flat colors, and **no sub-pixel
 texturing**, gradients, fine fur, or smaller marks inside larger pixels.
 Generated source art still requires native-raster and animation review.
+The rabbit, frost giant and dragon replacement prompts and conversion settings
+are in `sprite-redo-prompts.json`. The rabbit targets 12 native pixels in standing
+height, including its ears. Show reviews from imported runtime pixels enlarged
+with nearest-neighbor sampling; a high-resolution generation preview does not
+demonstrate the final game resolution.
 
 Existing unsuffixed and `-coarse-v1.png` sources remain reference art or active
 sources for assets listed in their manifests. Collision, equipment, and attack

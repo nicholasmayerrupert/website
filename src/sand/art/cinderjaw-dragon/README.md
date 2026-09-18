@@ -3,7 +3,8 @@
 See the [general sprite guide](../README.md) for pose budgets and visual review.
 
 The Cinderjaw Dragon uses a skeletal woodland-fantasy design. Exact generation
-briefs are recorded in `prompts.json` and `walk-correction.txt`.
+briefs for the active sources are recorded in `../sprite-redo-prompts.json`.
+The two 384×192 sheets and 288×64 swimming strip share a 24-color palette.
 
 The active `locomotion-coarse-v1.png`, `attacks-coarse-v1.png` and registered
 swim strip are compact transparent sources, with at most 24 opaque colors.

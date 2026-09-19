@@ -40,6 +40,13 @@ assert.equal(idle.bottom, result.height - 1, 'standing feet stay on the shared g
 assert(attack.left > 0 && attack.right < result.width - 1, 'attack fits without clipping');
 assert(result.frames.every(frame => frame.length === result.width * result.height));
 assert.throws(() => sampleCreatureAtlas(image, { ...metadata, atlas: { columns: 3, rows: 4 } }), /layout/);
+const twoPoseImage = { ...image, data: Buffer.from(image.data) };
+for (let y = 0; y < 64; y++) twoPoseImage.data.fill(0, (y * 256 + 128) * 4, (y + 1) * 256 * 4);
+const twoPose = sampleCreatureAtlas(twoPoseImage, { ...metadata, clipFrames: { move: [0, 1] } });
+assert.deepEqual(twoPose.frames[0], result.frames[0], 'empty unused walk cells preserve the active pose');
+assert.deepEqual(twoPose.frames[2], [], 'unused walk cells need no duplicate drawing');
+assert.deepEqual(twoPose.frames[3], [], 'both unused walk cells remain empty');
+assert.throws(() => sampleCreatureAtlas(image, { ...metadata, clipFrames: { move: [] } }), /movement frames/);
 image.data.set([0, 0, 0, 255], ((64 + 30) * image.width + 28) * 4);
 const isBlack = pixel => pixel?.every(value => value === 0);
 assert(!sampleCreatureAtlas(image, metadata).frames[4].some(isBlack), 'fixture detail lies between regular samples');
@@ -55,7 +62,7 @@ const registeredSources = new Set([
   ...['base', 'wayfarer', 'hedgeweaver', 'hearthguard'].map(name => `player/${name}-grid-v2.png`),
   ...['locomotion', 'attacks'].map(name => `cinderjaw-dragon/${name}-coarse-v1.png`),
 ]);
-for (const name of readdirSync(sourceRoot, { recursive: true }).filter(name => name.endsWith('.png'))) {
+for (const name of readdirSync(sourceRoot, { recursive: true }).map(name => name.replaceAll('\\', '/')).filter(name => name.endsWith('.png'))) {
   assert(registeredSources.delete(name), `${name}: unregistered or duplicate sprite source`);
   const file = new URL(name, sourceRoot), metadata = await sharp(fileURLToPath(file)).metadata();
   assert(metadata.width <= 512 && metadata.height <= 512, `${name}: compact before committing`);
@@ -85,6 +92,12 @@ for (const [key, record] of Object.entries(art)) {
     }
     assert(colors.size <= 16, `${key}: flat source palette`);
     assert.equal(source.atlas.rowEdges.at(-1), info.height, `${key}: source row boundaries`);
+    const movement = source.clipFrames?.move ?? [0, 1, 2, 3];
+    assert.equal(record.clips.move.frames.length, movement.length, `${key}: selected movement count`);
+    for (let slot = 0; slot < 4; slot++) if (!movement.includes(slot)) {
+      for (let y = 0; y < source.atlas.rowEdges[1]; y++) for (let x = slot * info.width / 4; x < (slot + 1) * info.width / 4; x++)
+        assert.equal(data[(y * info.width + x) * 4 + 3], 0, `${key}: unused walk cells must be transparent`);
+    }
   }
   for (const attack of CREATURE_ATTACK_ANIMATIONS[key] ?? []) for (const range of Object.values(attack).filter(v => typeof v === 'object'))
     assert(range.start + range.count <= record.clips[range.clip].frames.length, `${key}: complete attack range`);

@@ -40,3 +40,11 @@ variants, and comparison renders in an ignored working directory. Git history
 preserves previous sources. Exact active generation prompts are recorded in
 `../grid-v2-prompts.json` and `../roster-grid-prompts.json`; their historical
 wording does not define current creature identifiers.
+
+`walk-revision-prompts.json` records the Cinder Castellan, Hollow Bellkeeper,
+Root Knight and village hunter walk references and generation prompts. Their
+compact atlases use the two distinct generated contact/passing poses through
+`clipFrames.move: [0, 1]`. Only those two drawings occupy the first row; the
+remaining two cells are transparent. Import skips unselected movement cells.
+These poses use grid compaction and the existing palette, with no hand-drawn
+limb changes. Review notes live in each creature's `walkRevision` entry.

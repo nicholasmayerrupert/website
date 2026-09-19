@@ -83,7 +83,7 @@ function convert(image, metadata) {
   });
   const clip = (indices, ticks) => ({ ticks, frames: indices.map(i => encoded[i]) });
   return { width, height, pixelScale: metadata.pixelScale, palette, clips: {
-    idle: clip([4], 12), move: clip([0, 1, 2, 3], metadata.moveTicks ?? 7),
+    idle: clip([4], 12), move: clip(metadata.clipFrames?.move ?? [0, 1, 2, 3], metadata.moveTicks ?? 7),
     windup: clip(metadata.clipFrames?.windup ?? [5], 9), attack: clip(metadata.clipFrames?.attack ?? [6], 4), recover: clip(metadata.clipFrames?.recover ?? [7], 5),
     hurt: clip([8], 3), death: clip([9, 10, 11], 7), special: clip([6], 8),
   } };
@@ -96,6 +96,7 @@ function convertAtlas(image, metadata) {
     : makePalette(frames, metadata.colorLimit ?? 12);
   const symbols = Object.keys(palette).slice(1), cache = new Map();
   const encoded = frames.map(frame => {
+    if (!frame.length) return [];
     const pixels = frame.map(rgb => {
       if (!rgb) return '.';
       const key = rgb.join(',');
@@ -114,7 +115,7 @@ function convertAtlas(image, metadata) {
   });
   const clip = (indices, ticks) => ({ ticks, frames: indices.map(i => encoded[i]) });
   return { width, height, pixelScale: metadata.pixelScale, palette, clips: {
-    idle: clip([4], 12), move: clip([0, 1, 2, 3], metadata.moveTicks ?? 7),
+    idle: clip([4], 12), move: clip(metadata.clipFrames?.move ?? [0, 1, 2, 3], metadata.moveTicks ?? 7),
     windup: clip(metadata.clipFrames?.windup ?? [5], 9), attack: clip(metadata.clipFrames?.attack ?? [6], 4), recover: clip(metadata.clipFrames?.recover ?? [7], 5),
     hurt: clip(metadata.clipFrames?.hurt ?? [8], 3),
     death: clip(metadata.clipFrames?.death ?? [9, 10, 11], metadata.deathTicks ?? 7),

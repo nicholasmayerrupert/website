@@ -820,6 +820,10 @@
         ],
         "recover": [
           4
+        ],
+        "move": [
+          0,
+          1
         ]
       },
       "generation": "exec-726afc7a-a5f5-4b3d-93ca-83f427385843.png",
@@ -841,7 +845,30 @@
       },
       "colorLimit": 12,
       "swimTicks": 10,
-      "fit": "height"
+      "fit": "height",
+      "palette": {
+        ".": "#000000",
+        "a": "#121f1e",
+        "b": "#6b492c",
+        "c": "#a06331",
+        "d": "#a52923",
+        "e": "#d63f2a",
+        "f": "#df7c31",
+        "g": "#b97f3d",
+        "h": "#dd9944",
+        "i": "#24241e",
+        "j": "#413d2c",
+        "k": "#f0b357",
+        "l": "#f4d081"
+      },
+      "walkRevision": {
+        "prompt": "walk-revision-prompts.json",
+        "sourceGrid": [
+          96,
+          64
+        ],
+        "review": "Two generated contact/passing poses selected by clipFrames.move. Native-grid compaction and original palette conversion only; no manually drawn leg or body changes."
+      }
     },
     "HOLLOW_BELLKEEPER": {
       "name": "Hollow Bellkeeper",
@@ -878,7 +905,36 @@
       },
       "colorLimit": 12,
       "swimTicks": 10,
-      "fit": "height"
+      "fit": "height",
+      "palette": {
+        ".": "#000000",
+        "a": "#bf80be",
+        "b": "#18262c",
+        "c": "#997832",
+        "d": "#a66eaa",
+        "e": "#8f628f",
+        "f": "#534b30",
+        "g": "#634873",
+        "h": "#f9d362",
+        "i": "#d4a63c",
+        "j": "#edbe48",
+        "k": "#ecc374",
+        "l": "#fce886"
+      },
+      "clipFrames": {
+        "move": [
+          0,
+          1
+        ]
+      },
+      "walkRevision": {
+        "prompt": "walk-revision-prompts.json",
+        "sourceGrid": [
+          96,
+          74
+        ],
+        "review": "Two generated contact/passing poses selected by clipFrames.move. Native-grid compaction and original palette conversion only; no manually drawn leg or body changes."
+      }
     },
     "BRIAR_WOLF": {
       "name": "briar wolf",
@@ -1045,7 +1101,36 @@
       },
       "colorLimit": 12,
       "swimTicks": 10,
-      "fit": "height"
+      "fit": "height",
+      "palette": {
+        ".": "#000000",
+        "a": "#735030",
+        "b": "#e6b863",
+        "c": "#1d2927",
+        "d": "#f1c577",
+        "e": "#919149",
+        "f": "#c5a556",
+        "g": "#52422c",
+        "h": "#65613c",
+        "i": "#7c6034",
+        "j": "#81803f",
+        "k": "#f2daa6",
+        "l": "#fcf0cb"
+      },
+      "clipFrames": {
+        "move": [
+          0,
+          1
+        ]
+      },
+      "walkRevision": {
+        "prompt": "walk-revision-prompts.json",
+        "sourceGrid": [
+          96,
+          64
+        ],
+        "review": "Two generated contact/passing poses selected by clipFrames.move. Native-grid compaction and original palette conversion only; no manually drawn leg or body changes."
+      }
     },
     "MUMMY": {
       "name": "mummy",
@@ -1214,7 +1299,21 @@
       },
       "fit": "height",
       "colorLimit": 12,
-      "swimTicks": 10
+      "swimTicks": 10,
+      "clipFrames": {
+        "move": [
+          0,
+          1
+        ]
+      },
+      "walkRevision": {
+        "prompt": "walk-revision-prompts.json",
+        "sourceGrid": [
+          32,
+          32
+        ],
+        "review": "Two generated contact/passing poses selected by clipFrames.move. Native-grid compaction and original palette conversion only; no manually drawn leg or body changes."
+      }
     },
     "FROST_GIANT": {
       "name": "frost giant",

@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { startTestServer } from './browser-harness.mjs';
+import creatureArt from '../src/sand/content/creatureArt.js';
 
 const dir = resolve(process.env.SAND_TEST_ARTIFACTS || '.sand-artifacts/creature-animation');
 mkdirSync(dir, { recursive: true });
@@ -10,7 +11,7 @@ const server = await startTestServer();
 let browser;
 try {
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1120, height: 1000 }, recordVideo: { dir, size: { width: 1120, height: 1000 } } });
+  const context = await browser.newContext({ viewport: { width: 1120, height: 1700 }, recordVideo: { dir, size: { width: 1120, height: 1700 } } });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/animation-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -27,7 +28,7 @@ strong { color:#9ee6c1; } #result { margin-top:12px; }
     ]);
     await initSandWasm();
     const scenes = [], checks = [], o = OFF.creatureSnapshot;
-    for (const key of ['VILLAGE_GUARD','FROST_GIANT','CINDERJAW_DRAGON']) {
+    for (const key of ['VILLAGE_GUARD','FROST_GIANT','CINDER_CASTELLAN','HOLLOW_BELLKEEPER','ROOT_KNIGHT','VILLAGE_HUNTER']) {
       const def = CREATURE_ROSTER.find(d => d.key === key), section = document.createElement('section');
       section.innerHTML = `<header><span>${def.name}</span><strong>Walking</strong></header>`;
       const canvas = document.createElement('canvas'); canvas.width = 1040; canvas.height = 208;
@@ -77,7 +78,7 @@ strong { color:#9ee6c1; } #result { margin-top:12px; }
   });
   for (const check of result) {
     if ('walkFrames' in check) {
-      assert.equal(check.walkFrames,4,`${check.creature}: four walking poses`);
+      assert.equal(check.walkFrames,creatureArt[check.creature].clips.move.frames.length,`${check.creature}: all authored walking poses`);
       assert.ok(check.wallStable,`${check.creature}: blocked velocity pulses must settle`);
       assert.ok(check.pauseStable,`${check.creature}: repeated render must not advance`);
     } else assert.ok(check.mirrorMatches,`${check.creature}: native and replicated paths match`);

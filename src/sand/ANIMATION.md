@@ -51,9 +51,10 @@ node scripts/run-tests.mjs --only creature-animation,creature-animation-e2e,crea
 
 The controller test compiles the actual standalone C++ header and checks local
 phase, speed, pause, rewind, collision settling, attack ranges, reactions,
-hovering and vertical swimming. The browser test renders village guard and
-frost giant through both native and replicated paths, compares blocked-pose
-pixels and checks four distinct walking poses. It records a three-creature
+hovering and vertical swimming. The browser test renders village guard, frost
+giant, Cinder Castellan, Hollow Bellkeeper, Root Knight and village hunter through
+both native and replicated paths, compares blocked-pose pixels and checks every
+authored walking pose. It records a six-creature
 walk / blocked / resume demonstration as `animation-test.webm`, with a PNG and
 JSON checks alongside it in the test artifact directory. Wall-contact pulses
 are injected for a repeatable rendering regression; the frost and combat
